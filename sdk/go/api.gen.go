@@ -1382,101 +1382,6 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
-type Dagger struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-// Build the Dagger CLI
-func (r *Dagger) Cli() *Directory {
-	q := r.Q.Select("cli")
-
-	return &Directory{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Dagger) DevShell() *Container {
-	q := r.Q.Select("devShell")
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Lint the Dagger engine code
-func (r *Dagger) EngineLint() *EnvironmentCheck {
-	q := r.Q.Select("engineLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Lint everything (engine, sdks, etc)
-func (r *Dagger) Lint() *EnvironmentCheck {
-	q := r.Q.Select("lint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Lint the Nodejs SDK
-func (r *Dagger) NodejsLint() *EnvironmentCheck {
-	q := r.Q.Select("nodejsLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Lint the Dagger Python SDK
-func (r *Dagger) PythonLint() *EnvironmentCheck {
-	q := r.Q.Select("pythonLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type Daggergo struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-// Lint the Dagger Go SDK
-// TODO: once namespacing is in place, can just name this "Lint"
-func (r *Daggergo) GoLint() *EnvironmentCheck {
-	q := r.Q.Select("goLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type Daggerpython struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-// Lint the Python SDK
-func (r *Daggerpython) PyLint() *EnvironmentCheck {
-	q := r.Q.Select("py_lint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // A directory.
 type Directory struct {
 	Q *querybuilder.Selection
@@ -2230,36 +2135,13 @@ func (r *EnvironmentCheck) Name(ctx context.Context) (string, error) {
 }
 
 // TODO
-func (r *EnvironmentCheck) Result(ctx context.Context) ([]EnvironmentCheckResult, error) {
+func (r *EnvironmentCheck) Result() *EnvironmentCheckResult {
 	q := r.Q.Select("result")
 
-	q = q.Select("name output success")
-
-	type result struct {
-		Name    string
-		Output  string
-		Success bool
+	return &EnvironmentCheckResult{
+		Q: q,
+		C: r.C,
 	}
-
-	convert := func(fields []result) []EnvironmentCheckResult {
-		out := []EnvironmentCheckResult{}
-
-		for i := range fields {
-			out = append(out, EnvironmentCheckResult{name: &fields[i].Name, output: &fields[i].Output, success: &fields[i].Success})
-		}
-
-		return out
-	}
-	var response []result
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.C)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
 }
 
 // TODO
@@ -2429,6 +2311,38 @@ func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
+}
+
+func (r *EnvironmentCheckResult) Subresults(ctx context.Context) ([]EnvironmentCheckResult, error) {
+	q := r.Q.Select("subresults")
+
+	q = q.Select("name output success")
+
+	type subresults struct {
+		Name    string
+		Output  string
+		Success bool
+	}
+
+	convert := func(fields []subresults) []EnvironmentCheckResult {
+		out := []EnvironmentCheckResult{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCheckResult{name: &fields[i].Name, output: &fields[i].Output, success: &fields[i].Success})
+		}
+
+		return out
+	}
+	var response []subresults
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.C)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 func (r *EnvironmentCheckResult) Success(ctx context.Context) (bool, error) {
@@ -3816,33 +3730,6 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
-func (r *Client) Dagger() *Dagger {
-	q := r.Q.Select("dagger")
-
-	return &Dagger{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Client) Daggergo() *Daggergo {
-	q := r.Q.Select("daggergo")
-
-	return &Daggergo{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Client) Daggerpython() *Daggerpython {
-	q := r.Q.Select("daggerpython")
-
-	return &Daggerpython{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // The default platform of the builder.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.Q.Select("defaultPlatform")
@@ -3911,6 +3798,18 @@ func (r *Client) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentChec
 	}
 
 	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// Create a new environment check result.
+func (r *Client) EnvironmentCheckResult(success bool, output string) *EnvironmentCheckResult {
+	q := r.Q.Select("environmentCheckResult")
+	q = q.Arg("success", success)
+	q = q.Arg("output", output)
+
+	return &EnvironmentCheckResult{
 		Q: q,
 		C: r.C,
 	}

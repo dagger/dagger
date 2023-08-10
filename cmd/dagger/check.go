@@ -18,10 +18,9 @@ import (
 )
 
 var checkCmd = &cobra.Command{
-	Use:                "check [suite]",
+	Use:                "checks [suite]",
 	DisableFlagParsing: true,
-	Aliases:            []string{"test"},
-	Long:               `Run your environment's checks.`,
+	Long:               `Query the status of your environment's checks.`,
 	RunE:               loadEnvCmdWrapper(RunCheck),
 }
 
@@ -34,15 +33,9 @@ func init() {
 	checkCmd.AddCommand(
 		&cobra.Command{
 			Use:          "list",
-			Long:         `List your environment's checks.`,
+			Long:         `List your environment's checks without updating their status.`,
 			SilenceUsage: true,
 			RunE:         loadEnvCmdWrapper(ListChecks),
-		},
-		&cobra.Command{
-			Use:                "run",
-			Long:               `Run your environment's checks.`,
-			DisableFlagParsing: true,
-			RunE:               loadEnvCmdWrapper(RunCheck),
 		},
 	)
 
@@ -122,18 +115,14 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		return fmt.Errorf("failed to get environment commands: %w", err)
 	}
 
-	allLeafCmds := map[string]*cobra.Command{}
+	var subCmds []*cobra.Command
 	for _, envCheck := range envChecks {
 		envCheck := envCheck
-		subChecks, err := addCheck(ctx, &envCheck, c)
+		subCmd, err := addCheck(ctx, &envCheck, c)
 		if err != nil {
 			return fmt.Errorf("failed to add cmd: %w", err)
 		}
-		for _, subCheck := range subChecks {
-			if subCheck.Annotations["leaf"] == "true" {
-				allLeafCmds[subCheck.Name()] = subCheck
-			}
-		}
+		subCmds = append(subCmds, subCmd)
 	}
 
 	subCmd, restOfArgs, err := cmd.Find(dynamicCmdArgs)
@@ -153,12 +142,10 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		// default to running all checks
 		// TODO: this case also gets triggered if you try to run a check that doesn't exist, fix
 		var eg errgroup.Group
-		var i int
-		for _, leafCmd := range allLeafCmds {
-			leafCmd := leafCmd
-			leafCmd.SetArgs(restOfArgs)
-			i++
-			eg.Go(leafCmd.Execute)
+		for _, subCmd := range subCmds {
+			subCmd := subCmd
+			subCmd.SetArgs(restOfArgs)
+			eg.Go(subCmd.Execute)
 		}
 		err := eg.Wait()
 		if err != nil {
@@ -176,7 +163,7 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 	return nil
 }
 
-func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.Client) ([]*cobra.Command, error) {
+func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.Client) (*cobra.Command, error) {
 	rec := progrock.RecorderFromContext(ctx)
 
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
@@ -230,28 +217,44 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 				envCheck = envCheck.SetStringFlag(flagName, flagVal)
 			}
 
-			results, err := envCheck.Result(ctx)
+			result := envCheck.Result()
+			success, err := result.Success(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get check result: %w", err)
+				return fmt.Errorf("failed to get check result success: %w", err)
 			}
-			for _, result := range results {
-				success, err := result.Success(ctx)
+			name, err := result.Name(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get check result name: %w", err)
+			}
+			output, err := result.Output(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get check result output: %w", err)
+			}
+			subcheckSuffix := " " + strcase.ToKebab(name)
+			if success {
+				cmd.Println(termenv.String("PASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
+			} else {
+				cmd.Println(termenv.String("FAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
+			}
+			cmd.Println(output)
+			// TODO: handle arbitrary levels of nested results
+			subresults, err := result.Subresults(ctx)
+			for _, subresult := range subresults {
+				subresultName, err := subresult.Name(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to get check result success: %w", err)
+					return fmt.Errorf("failed to get subresult name: %w", err)
 				}
-				name, err := result.Name(ctx)
+				subresultSuccess, err := subresult.Success(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to get check result name: %w", err)
+					return fmt.Errorf("failed to get subresult success: %w", err)
 				}
-				var subcheckSuffix string
-				if len(results) > 1 {
-					subcheckSuffix = " " + strcase.ToKebab(name)
-				}
-				if success {
-					cmd.Println(termenv.String("PASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
+				subcheckSuffix := " " + strcase.ToKebab(subresultName)
+				if subresultSuccess {
+					cmd.Println(termenv.String("\tPASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
 				} else {
-					cmd.Println(termenv.String("FAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
+					cmd.Println(termenv.String("\tFAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
 				}
+				cmd.Println(output)
 			}
 			return nil
 		},
@@ -269,40 +272,9 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 		subcmd.Flags().String(strcase.ToKebab(flagName), "", flagDescription)
 		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
-	returnCmds := []*cobra.Command{subcmd}
-	subChecks, err := envCheck.Subchecks(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get subchecks: %w", err)
-	}
-	if len(subChecks) == 0 {
-		// TODO: utter kludge
-		subcmd.Annotations["leaf"] = "true"
-	}
-	for _, subCheck := range subChecks {
-		subCheck := subCheck
-		cmds, err := addCheck(ctx, &subCheck, c)
-		if err != nil {
-			return nil, fmt.Errorf("failed to add subcheck: %w", err)
-		}
-		returnCmds = append(returnCmds, cmds...)
-	}
 
 	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		cmd.Printf("\nCommand %s - %s\n", cmdName, description)
-
-		cmd.Printf("\nAvailable Subcommands:\n")
-		maxNameLen := 0
-		for _, subcmd := range returnCmds[1:] {
-			nameLen := len(getCommandName(subcmd, ""))
-			if nameLen > maxNameLen {
-				maxNameLen = nameLen
-			}
-		}
-		// we want to ensure the doc strings line up so they are readable
-		spacing := strings.Repeat(" ", maxNameLen+2)
-		for _, subcmd := range returnCmds[1:] {
-			cmd.Printf("  %s%s%s\n", getCommandName(subcmd, ""), spacing[len(getCommandName(subcmd, "")):], subcmd.Short)
-		}
 
 		fmt.Printf("\nFlags:\n")
 		maxFlagLen := 0
@@ -322,5 +294,5 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 		}
 	})
 
-	return returnCmds, nil
+	return subcmd, nil
 }

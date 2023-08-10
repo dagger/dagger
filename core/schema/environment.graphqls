@@ -8,6 +8,9 @@ extend type Query {
   "Load a environment check from ID."
   environmentCheck(id: EnvironmentCheckID): EnvironmentCheck!
 
+  "Create a new environment check result."
+  environmentCheckResult(success: Boolean!, output: String!): EnvironmentCheckResult!
+
   "Load a environment shell from ID."
   environmentShell(id: EnvironmentShellID): EnvironmentShell!
 
@@ -233,12 +236,6 @@ type EnvironmentCheck {
   "A unique identifier for this check."
   id: EnvironmentCheckID!
 
-  "TODO"
-  subchecks: [EnvironmentCheck!]
-
-  "TODO"
-  withSubcheck(id: EnvironmentCheckID!): EnvironmentCheck!
-
   "The name of the check."
   name: String!
 
@@ -261,7 +258,13 @@ type EnvironmentCheck {
   setStringFlag(name: String!, value: String!): EnvironmentCheck!
 
   "TODO"
-  result: [EnvironmentCheckResult!]
+  subchecks: [EnvironmentCheck!]
+
+  "TODO"
+  withSubcheck(id: EnvironmentCheckID!): EnvironmentCheck!
+
+  "TODO"
+  result: EnvironmentCheckResult!
 }
 
 "A flag accepted by a environment check."
@@ -275,8 +278,8 @@ type EnvironmentCheckFlag {
 
 "TODO"
 type EnvironmentCheckResult {
+  name: String!
   success: Boolean!
   output: String!
-  name: String!
+  subresults: [EnvironmentCheckResult!]
 }
-

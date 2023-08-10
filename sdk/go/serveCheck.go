@@ -1,7 +1,6 @@
 package dagger
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	goast "go/ast"
@@ -9,7 +8,6 @@ import (
 	"go/token"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -91,36 +89,13 @@ func (r *Environment) WithCheck_(in any) *Environment {
 			return false
 
 		case *goast.GenDecl:
-			/* TODO:
-			 */
 		default:
 		}
 		return true
 	})
 
 	check := defaultContext.Client().EnvironmentCheck()
-	if fn.returns[0].typ == reflect.TypeOf((*EnvironmentCheck)(nil)) {
-		// this returns a check, so call it now to register it
-		// TODO: support args on these too
-		ret, err := fn.call(context.Background(), nil, map[string]any{})
-		if err != nil {
-			writeErrorf(fmt.Errorf("call: %w", err))
-		}
-		var ok bool
-		check, ok = ret.(*EnvironmentCheck)
-		if !ok {
-			writeErrorf(fmt.Errorf("expected *EnvironmentCheck, got %T", ret))
-		}
-		/* TODO:?
-		// force eval
-		_, err = check.ID(context.Background())
-		if err != nil {
-			writeErrorf(err)
-		}
-		*/
-	} else {
-		resolvers[lowerCamelCase(fn.name)] = fn
-	}
+	resolvers[lowerCamelCase(fn.name)] = fn
 
 	if !getSchema {
 		return r
@@ -147,6 +122,7 @@ func (r *Environment) WithCheck_(in any) *Environment {
 	return r.WithCheck(check)
 }
 
+/* TODO: still needed?
 func (r *EnvironmentCheck) WithSubcheck_(in any) *EnvironmentCheck {
 	// TODO: dedupe huge chunks of code
 	flag.Parse()
@@ -223,8 +199,6 @@ func (r *EnvironmentCheck) WithSubcheck_(in any) *EnvironmentCheck {
 			return false
 
 		case *goast.GenDecl:
-			/* TODO:
-			 */
 		default:
 		}
 		return true
@@ -243,13 +217,6 @@ func (r *EnvironmentCheck) WithSubcheck_(in any) *EnvironmentCheck {
 		if !ok {
 			writeErrorf(fmt.Errorf("expected *EnvironmentCheck, got %T", ret))
 		}
-		/* TODO:?
-		// force eval
-		_, err = check.ID(context.Background())
-		if err != nil {
-			writeErrorf(err)
-		}
-		*/
 	} else {
 		resolvers[lowerCamelCase(fn.name)] = fn
 	}
@@ -278,3 +245,4 @@ func (r *EnvironmentCheck) WithSubcheck_(in any) *EnvironmentCheck {
 	}
 	return r.WithSubcheck(check)
 }
+*/

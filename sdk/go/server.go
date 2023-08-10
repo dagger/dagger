@@ -344,6 +344,22 @@ func convertResult(ctx context.Context, result any) (any, error) {
 		return id, nil
 	}
 
+	// TODO: hack, could give CheckResult an ID? Or maybe just need to support "data-only" object fields or something
+	if checkRes, ok := result.(*EnvironmentCheckResult); ok {
+		success, err := checkRes.Success(ctx)
+		if err != nil {
+			return nil, err
+		}
+		output, err := checkRes.Output(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"success": success,
+			"output":  output,
+		}, nil
+	}
+
 	switch typ := reflect.TypeOf(result).Kind(); typ {
 	case reflect.Pointer:
 		return convertResult(ctx, reflect.ValueOf(result).Elem().Interface())

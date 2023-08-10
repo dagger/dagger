@@ -1627,69 +1627,6 @@ class Container(Type):
         return cb(self)
 
 
-class Dagger(Type):
-    @typecheck
-    def cli(self) -> "Directory":
-        """Build the Dagger CLI"""
-        _args: list[Arg] = []
-        _ctx = self._select("cli", _args)
-        return Directory(_ctx)
-
-    @typecheck
-    def dev_shell(self) -> Container:
-        _args: list[Arg] = []
-        _ctx = self._select("devShell", _args)
-        return Container(_ctx)
-
-    @typecheck
-    def engine_lint(self) -> "EnvironmentCheck":
-        """Lint the Dagger engine code"""
-        _args: list[Arg] = []
-        _ctx = self._select("engineLint", _args)
-        return EnvironmentCheck(_ctx)
-
-    @typecheck
-    def lint(self) -> "EnvironmentCheck":
-        """Lint everything (engine, sdks, etc)"""
-        _args: list[Arg] = []
-        _ctx = self._select("lint", _args)
-        return EnvironmentCheck(_ctx)
-
-    @typecheck
-    def nodejs_lint(self) -> "EnvironmentCheck":
-        """Lint the Nodejs SDK"""
-        _args: list[Arg] = []
-        _ctx = self._select("nodejsLint", _args)
-        return EnvironmentCheck(_ctx)
-
-    @typecheck
-    def python_lint(self) -> "EnvironmentCheck":
-        """Lint the Dagger Python SDK"""
-        _args: list[Arg] = []
-        _ctx = self._select("pythonLint", _args)
-        return EnvironmentCheck(_ctx)
-
-
-class Daggergo(Type):
-    @typecheck
-    def go_lint(self) -> "EnvironmentCheck":
-        """Lint the Dagger Go SDK
-        TODO: once namespacing is in place, can just name this "Lint"
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("goLint", _args)
-        return EnvironmentCheck(_ctx)
-
-
-class Daggerpython(Type):
-    @typecheck
-    def py_lint(self) -> "EnvironmentCheck":
-        """Lint the Python SDK"""
-        _args: list[Arg] = []
-        _ctx = self._select("py_lint", _args)
-        return EnvironmentCheck(_ctx)
-
-
 class Directory(Type):
     """A directory."""
 
@@ -2432,16 +2369,11 @@ class EnvironmentCheck(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def result(self) -> list["EnvironmentCheckResult"]:
+    def result(self) -> "EnvironmentCheckResult":
         """TODO"""
         _args: list[Arg] = []
         _ctx = self._select("result", _args)
-        _ctx = EnvironmentCheckResult(_ctx)._select_multiple(
-            _name="name",
-            _output="output",
-            _success="success",
-        )
-        return await _ctx.execute(list[EnvironmentCheckResult])
+        return EnvironmentCheckResult(_ctx)
 
     @typecheck
     def set_string_flag(self, name: str, value: str) -> "EnvironmentCheck":
@@ -2632,6 +2564,17 @@ class EnvironmentCheckResult(Type):
         _args: list[Arg] = []
         _ctx = self._select("output", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    async def subresults(self) -> list["EnvironmentCheckResult"]:
+        _args: list[Arg] = []
+        _ctx = self._select("subresults", _args)
+        _ctx = EnvironmentCheckResult(_ctx)._select_multiple(
+            _name="name",
+            _output="output",
+            _success="success",
+        )
+        return await _ctx.execute(list[EnvironmentCheckResult])
 
     @typecheck
     async def success(self) -> bool:
@@ -4027,24 +3970,6 @@ class Client(Root):
         return Container(_ctx)
 
     @typecheck
-    def dagger(self) -> Dagger:
-        _args: list[Arg] = []
-        _ctx = self._select("dagger", _args)
-        return Dagger(_ctx)
-
-    @typecheck
-    def daggergo(self) -> Daggergo:
-        _args: list[Arg] = []
-        _ctx = self._select("daggergo", _args)
-        return Daggergo(_ctx)
-
-    @typecheck
-    def daggerpython(self) -> Daggerpython:
-        _args: list[Arg] = []
-        _ctx = self._select("daggerpython", _args)
-        return Daggerpython(_ctx)
-
-    @typecheck
     async def default_platform(self) -> Platform:
         """The default platform of the builder.
 
@@ -4104,6 +4029,18 @@ class Client(Root):
         ]
         _ctx = self._select("environmentCheck", _args)
         return EnvironmentCheck(_ctx)
+
+    @typecheck
+    def environment_check_result(
+        self, success: bool, output: str
+    ) -> EnvironmentCheckResult:
+        """Create a new environment check result."""
+        _args = [
+            Arg("success", success),
+            Arg("output", output),
+        ]
+        _ctx = self._select("environmentCheckResult", _args)
+        return EnvironmentCheckResult(_ctx)
 
     @typecheck
     def environment_command(
@@ -4412,13 +4349,11 @@ apko = _client.apko
 cache_volume = _client.cache_volume
 check_version_compatibility = _client.check_version_compatibility
 container = _client.container
-dagger = _client.dagger
-daggergo = _client.daggergo
-daggerpython = _client.daggerpython
 default_platform = _client.default_platform
 directory = _client.directory
 environment = _client.environment
 environment_check = _client.environment_check
+environment_check_result = _client.environment_check_result
 environment_command = _client.environment_command
 environment_function = _client.environment_function
 environment_shell = _client.environment_shell
@@ -4447,9 +4382,6 @@ __all__ = [
     "Client",
     "Container",
     "ContainerID",
-    "Dagger",
-    "Daggergo",
-    "Daggerpython",
     "Directory",
     "DirectoryID",
     "EnvVariable",
@@ -4491,13 +4423,11 @@ __all__ = [
     "check_version_compatibility",
     "client",
     "container",
-    "dagger",
-    "daggergo",
-    "daggerpython",
     "default_platform",
     "directory",
     "environment",
     "environment_check",
+    "environment_check_result",
     "environment_command",
     "environment_function",
     "environment_shell",

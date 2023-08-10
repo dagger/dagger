@@ -2198,170 +2198,6 @@ export class Container extends BaseClient {
   }
 }
 
-export class Dagger extends BaseClient {
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(parent?: {
-    queryTree?: QueryTree[]
-    host?: string
-    sessionToken?: string
-  }) {
-    super(parent)
-  }
-
-  /**
-   * Build the Dagger CLI
-   */
-  cli(): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "cli",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-  devShell(): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "devShell",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Lint the Dagger engine code
-   */
-  engineLint(): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "engineLint",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Lint everything (engine, sdks, etc)
-   */
-  lint(): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "lint",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Lint the Nodejs SDK
-   */
-  nodejsLint(): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "nodejsLint",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Lint the Dagger Python SDK
-   */
-  pythonLint(): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pythonLint",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-}
-
-export class Daggergo extends BaseClient {
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(parent?: {
-    queryTree?: QueryTree[]
-    host?: string
-    sessionToken?: string
-  }) {
-    super(parent)
-  }
-
-  /**
-   * Lint the Dagger Go SDK
-   * TODO: once namespacing is in place, can just name this "Lint"
-   */
-  goLint(): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "goLint",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-}
-
-export class Daggerpython extends BaseClient {
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(parent?: {
-    queryTree?: QueryTree[]
-    host?: string
-    sessionToken?: string
-  }) {
-    super(parent)
-  }
-
-  /**
-   * Lint the Python SDK
-   */
-  py_lint(): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "py_lint",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-}
-
 /**
  * A directory.
  */
@@ -3267,39 +3103,17 @@ export class EnvironmentCheck extends BaseClient {
   /**
    * TODO
    */
-  async result(): Promise<EnvironmentCheckResult[]> {
-    type result = {
-      name: string
-      output: string
-      success: boolean
-    }
-
-    const response: Awaited<result[]> = await computeQuery(
-      [
+  result(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
         ...this._queryTree,
         {
           operation: "result",
         },
-        {
-          operation: "name output success",
-        },
       ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new EnvironmentCheckResult(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.name,
-          r.output,
-          r.success
-        )
-    )
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -3558,6 +3372,40 @@ export class EnvironmentCheckResult extends BaseClient {
     )
 
     return response
+  }
+  async subresults(): Promise<EnvironmentCheckResult[]> {
+    type subresults = {
+      name: string
+      output: string
+      success: boolean
+    }
+
+    const response: Awaited<subresults[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "subresults",
+        },
+        {
+          operation: "name output success",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCheckResult(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.output,
+          r.success
+        )
+    )
   }
   async success(): Promise<boolean> {
     if (this._success) {
@@ -5255,42 +5103,6 @@ export class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  dagger(): Dagger {
-    return new Dagger({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "dagger",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-  daggergo(): Daggergo {
-    return new Daggergo({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "daggergo",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-  daggerpython(): Daggerpython {
-    return new Daggerpython({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "daggerpython",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
 
   /**
    * The default platform of the builder.
@@ -5353,6 +5165,26 @@ export class Client extends BaseClient {
         {
           operation: "environmentCheck",
           args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Create a new environment check result.
+   */
+  environmentCheckResult(
+    success: boolean,
+    output: string
+  ): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environmentCheckResult",
+          args: { success, output },
         },
       ],
       host: this.clientHost,

@@ -10,6 +10,7 @@ func main() {
 	DaggerClient().Environment().
 		WithCommand_(PublishAll).
 		WithCheck_(IntegTest).
+		WithCheck_(UnitTest).
 		WithShell_(DevShell).
 		Serve()
 }
@@ -31,15 +32,28 @@ func PublishAll(ctx dagger.Context, version string) (string, error) {
 	return "", nil
 }
 
-func IntegTest(ctx dagger.Context) error {
+func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
+	// TODO: sugar to make this less annoying
+	return DaggerClient().EnvironmentCheck().
+		WithSubcheck(DaggerClient().Democlient().UnitTest()).
+		WithSubcheck(DaggerClient().Demoserver().UnitTest()).
+		Result(), nil
+}
+
+func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	// TODO: clientApp := Dagger().Democlient().Build()
 	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
 
-	_, err := clientApp.
+	// TODO: need combined stdout/stderr really badly now
+	stdout, err := clientApp.
 		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
 		WithExec([]string{"curl", "http://server:8081/hello"}).
-		Sync(ctx)
-	return err
+		Stdout(ctx)
+	// TODO: this is all boilerplatey, sugar to support other return types will fix
+	if err != nil {
+		return DaggerClient().EnvironmentCheckResult(false, err.Error()), nil
+	}
+	return DaggerClient().EnvironmentCheckResult(true, stdout), nil
 }
 
 func DevShell(ctx dagger.Context) (*dagger.Container, error) {

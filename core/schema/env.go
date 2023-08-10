@@ -3,17 +3,19 @@ package schema
 import (
 	"archive/tar"
 	"bytes"
-	"errors"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
 	"github.com/moby/buildkit/util/bklog"
@@ -55,15 +57,16 @@ func (s *environmentSchema) Resolvers() Resolvers {
 		"EnvironmentShellID":    environmentShellIDResolver,
 		"EnvironmentFunctionID": environmentFunctionIDResolver,
 		"Query": ObjectResolver{
-			"environment":         ToResolver(s.environment),
-			"environmentCommand":  ToResolver(s.environmentCommand),
-			"environmentCheck":    ToResolver(s.environmentCheck),
-			"environmentShell":    ToResolver(s.environmentShell),
-			"environmentFunction": ToResolver(s.environmentFunction),
+			"environment":            ToResolver(s.environment),
+			"environmentCommand":     ToResolver(s.environmentCommand),
+			"environmentCheck":       ToResolver(s.environmentCheck),
+			"environmentCheckResult": ToResolver(s.environmentCheckResult),
+			"environmentShell":       ToResolver(s.environmentShell),
+			"environmentFunction":    ToResolver(s.environmentFunction),
 			// TODO:
 			"loadUniverse": ToResolver(s.loadUniverse),
 		},
-		"Environment": ObjectResolver{
+		"Environment": ToIDableObjectResolver(core.EnvironmentID.ToEnvironment, ObjectResolver{
 			"id":            ToResolver(s.environmentID),
 			"load":          ToResolver(s.load),
 			"name":          ToResolver(s.environmentName),
@@ -73,15 +76,15 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withShell":     ToResolver(s.withShell),
 			"withExtension": ToResolver(s.withExtension),
 			"withFunction":  ToResolver(s.withFunction),
-		},
-		"EnvironmentFunction": ObjectResolver{
+		}),
+		"EnvironmentFunction": ToIDableObjectResolver(core.EnvironmentFunctionID.ToEnvironmentFunction, ObjectResolver{
 			"id":              ToResolver(s.functionID),
 			"withName":        ToResolver(s.withFunctionName),
 			"withDescription": ToResolver(s.withFunctionDescription),
 			"withArg":         ToResolver(s.withFunctionArg),
 			"withResultType":  ToResolver(s.withFunctionResultType),
-		},
-		"EnvironmentCommand": ObjectResolver{
+		}),
+		"EnvironmentCommand": ToIDableObjectResolver(core.EnvironmentCommandID.ToEnvironmentCommand, ObjectResolver{
 			"id":              ToResolver(s.commandID),
 			"withName":        ToResolver(s.withCommandName),
 			"withDescription": ToResolver(s.withCommandDescription),
@@ -89,25 +92,24 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withResultType":  ToResolver(s.withCommandResultType),
 			"setStringFlag":   ToResolver(s.setCommandStringFlag),
 			"invoke":          ToResolver(s.invokeCommand),
-		},
-		"EnvironmentCheck": ObjectResolver{
+		}),
+		"EnvironmentCheck": ToIDableObjectResolver(core.EnvironmentCheckID.ToEnvironmentCheck, ObjectResolver{
 			"id":              ToResolver(s.checkID),
-			"subchecks":       ToResolver(s.subchecks),
-			"withSubcheck":    ToResolver(s.withSubcheck),
 			"withName":        ToResolver(s.withCheckName),
 			"withDescription": ToResolver(s.withCheckDescription),
 			"withFlag":        ToResolver(s.withCheckFlag),
 			"setStringFlag":   ToResolver(s.setCheckStringFlag),
+			"withSubcheck":    ToResolver(s.withSubcheck),
 			"result":          ToResolver(s.checkResult),
-		},
-		"EnvironmentShell": ObjectResolver{
+		}),
+		"EnvironmentShell": ToIDableObjectResolver(core.EnvironmentShellID.ToEnvironmentShell, ObjectResolver{
 			"id":              ToResolver(s.shellID),
 			"withName":        ToResolver(s.withShellName),
 			"withDescription": ToResolver(s.withShellDescription),
 			"withFlag":        ToResolver(s.withShellFlag),
 			"setStringFlag":   ToResolver(s.setShellStringFlag),
 			"endpoint":        ToResolver(s.shellEndpoint),
-		},
+		}),
 	}
 }
 
@@ -166,12 +168,12 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	}
 
 	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-		env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load environment: %w", err)
 		}
 
-		executableSchema, err := s.envToExecutableSchema(ctx, env, fieldResolver)
+		executableSchema, err := s.envToExecutableSchema(ctx, env, rootDir.Pipeline)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
 		}
@@ -182,7 +184,7 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	})
 }
 
-func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.Environment, fieldResolver core.Resolver) (ExecutableSchema, error) {
+func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.Environment, pipeline pipeline.Path) (ExecutableSchema, error) {
 	doc, err := parser.ParseSchema(&ast.Source{Input: env.Schema})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse environment schema: %w: %s", err, env.Schema)
@@ -199,10 +201,59 @@ func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.E
 	objResolver := ObjectResolver{}
 	for _, field := range def.Fields {
 		field := field
+		// TODO: ugly spaghetti, for checks the resolver in the environment is for just the result field, not
+		// the whole check object. That's fine but need some less convoluted code implementing this pattern
+		if field.Type.Name() == "EnvironmentCheck" {
+			var check *core.EnvironmentCheck
+			for _, candidateCheck := range env.Checks {
+				if candidateCheck.Name == field.Name {
+					check = candidateCheck
+					break
+				}
+			}
+			if check == nil {
+				return nil, fmt.Errorf("failed to find check %q in environment", field.Name)
+			}
+
+			// TODO:
+			bklog.G(ctx).Debugf("ADDING RESOLVER FOR CHECK %s", field.Name)
+
+			objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
+				argBytes, err := json.Marshal(args)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal args: %w", err)
+				}
+				argMap := map[string]any{}
+				if err := json.Unmarshal(argBytes, &argMap); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal args: %w", err)
+				}
+				for argName, argVal := range argMap {
+					argValStr, ok := argVal.(string)
+					if !ok {
+						return nil, fmt.Errorf("expected check arg %s to be a string, got %T", argName, argVal)
+					}
+					check, err = check.SetStringFlag(argName, argValStr)
+					if err != nil {
+						return nil, fmt.Errorf("failed to set check arg %s: %w", argName, err)
+					}
+				}
+				// TODO:
+				bklog.G(ctx).Debugf("CHECK RESOLVER %s %s %+v", field.Name, ctx.ResolveParams.Info.Path.AsArray(), check)
+				return check, nil
+			})
+			continue
+		}
+
+		fieldResolver, err := env.FieldResolver(ctx, s.bk, s.progSockPath, pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get field resolver for %s: %w", field.Name, err)
+		}
 		objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
 			res, err := fieldResolver(ctx, parent, args)
-			// don't check err yet, convert output may do some handling of that
-			res, err = convertOutput(res, err, field.Type, s.MergedSchemas)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
+			}
+			res, err = convertOutput(res, field.Type, s.MergedSchemas)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
 			}
@@ -223,35 +274,9 @@ func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.E
 	}), nil
 }
 
-func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *MergedSchemas) (any, error) {
+func convertOutput(rawOutput any, schemaOutputType *ast.Type, s *MergedSchemas) (any, error) {
 	if schemaOutputType.Elem != nil {
 		schemaOutputType = schemaOutputType.Elem
-	}
-
-	// TODO: avoid hardcoding type names amap
-	if schemaOutputType.Name() == "EnvironmentCheck" {
-		checkRes := &core.EnvironmentCheckResult{}
-		if resErr != nil {
-			checkRes.Success = false
-			// TODO: forcing users to include all relevent error output in the error/exception is probably annoying
-			execErr := new(buildkit.ExecError)
-			if errors.As(resErr, &execErr) {
-				// TODO: stdout and then stderr is weird, need interleaved stream
-				checkRes.Output = strings.Join([]string{execErr.Stdout, execErr.Stderr}, "\n")
-			} else {
-				return nil, fmt.Errorf("failed to execute check: %w", resErr)
-			}
-			return checkRes, nil
-		}
-		checkRes.Success = true
-		output, ok := rawOutput.(string)
-		if ok {
-			checkRes.Output = output
-		}
-		return checkRes, nil
-	}
-	if resErr != nil {
-		return nil, resErr
 	}
 
 	// see if the output type needs to be converted from an id to a dagger object (container, directory, etc)
@@ -265,7 +290,7 @@ func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *M
 		}
 
 		// ID-able dagger objects are serialized as their ID string across the wire
-		// between the session and environment container.
+		// between the server and environment container.
 		outputStr, ok := rawOutput.(string)
 		if !ok {
 			return nil, fmt.Errorf("expected id string output for %s, got %T", objectName, rawOutput)
@@ -329,11 +354,19 @@ type withFunctionArgs struct {
 }
 
 func (s *environmentSchema) withFunction(ctx *core.Context, parent *core.Environment, args withFunctionArgs) (*core.Environment, error) {
-	cmd, err := args.ID.ToEnvironmentFunction()
+	// TODO:
+	defer func() {
+		if err := recover(); err != nil {
+			bklog.G(ctx).Errorf("panic in withFunction: %v %s", err, string(debug.Stack()))
+			panic(err)
+		}
+	}()
+
+	fn, err := args.ID.ToEnvironmentFunction()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithFunction(ctx, cmd)
+	return parent.WithFunction(ctx, fn)
 }
 
 type withExtensionArgs struct {
@@ -360,6 +393,18 @@ type environmentCheckArgs struct {
 
 func (s *environmentSchema) environmentCheck(ctx *core.Context, parent *core.Query, args environmentCheckArgs) (*core.EnvironmentCheck, error) {
 	return core.NewEnvironmentCheck(args.ID)
+}
+
+type environmentCheckResultArgs struct {
+	Success bool
+	Output  string
+}
+
+func (s *environmentSchema) environmentCheckResult(ctx *core.Context, parent *core.Query, args environmentCheckResultArgs) (*core.EnvironmentCheckResult, error) {
+	return &core.EnvironmentCheckResult{
+		Success: args.Success,
+		Output:  args.Output,
+	}, nil
 }
 
 type environmentShellArgs struct {
@@ -428,45 +473,14 @@ func (s *environmentSchema) setCommandStringFlag(ctx *core.Context, parent *core
 }
 
 func (s *environmentSchema) invokeCommand(ctx *core.Context, cmd *core.EnvironmentCommand, _ any) (map[string]any, error) {
-	// find the object resolver for the command's environment
-	var resolver Resolver
-	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == cmd.ParentObjectName {
-			resolver = possibleResolver
-		}
-	}
-	if resolver == nil {
-		return nil, fmt.Errorf("no resolver for %s", cmd.ParentObjectName)
-	}
-	objResolver, ok := resolver.(ObjectResolver)
-	if !ok {
-		return nil, fmt.Errorf("resolver for %s is not an object resolver", cmd.ParentObjectName)
-	}
-	var fieldResolver graphql.FieldResolveFn
-	for fieldName, possibleFieldResolver := range objResolver {
-		if fieldName == cmd.Name {
-			fieldResolver = possibleFieldResolver
-		}
-	}
-	if fieldResolver == nil {
-		return nil, fmt.Errorf("no field resolver for %s.%s", cmd.ParentObjectName, cmd.Name)
-	}
-
-	// setup the inputs and invoke it
-	resolveParams := graphql.ResolveParams{
-		Context: ctx,
-		Source:  struct{}{}, // TODO: could support data fields too
-		Args:    map[string]any{},
-		Info: graphql.ResolveInfo{
-			FieldName:  cmd.Name,
-			ParentType: s.MergedSchemas.Schema().Type(cmd.ParentObjectName),
-			// TODO: we don't currently use any of the other resolve info fields, but that could change
-		},
+	fieldResolver, resolveParams, err := s.getEnvFieldResolver(ctx, cmd.EnvironmentName, cmd.Name)
+	if err != nil {
+		return nil, err
 	}
 	for _, flag := range cmd.Flags {
 		resolveParams.Args[flag.Name] = flag.SetValue
 	}
-	res, err := fieldResolver(resolveParams)
+	res, err := fieldResolver(*resolveParams)
 	if err != nil {
 		return nil, err
 	}
@@ -480,31 +494,6 @@ func (s *environmentSchema) invokeCommand(ctx *core.Context, cmd *core.Environme
 
 func (s *environmentSchema) checkID(ctx *core.Context, parent *core.EnvironmentCheck, args any) (core.EnvironmentCheckID, error) {
 	return parent.ID()
-}
-
-func (s *environmentSchema) subchecks(ctx *core.Context, parent *core.EnvironmentCheck, args any) ([]*core.EnvironmentCheck, error) {
-	var subchecks []*core.EnvironmentCheck
-	for _, subcheckID := range parent.Subchecks {
-		subcheck, err := core.NewEnvironmentCheck(subcheckID)
-		if err != nil {
-			return nil, err
-		}
-		subchecks = append(subchecks, subcheck)
-	}
-	return subchecks, nil
-}
-
-type withSubcheckArgs struct {
-	ID core.EnvironmentCheckID
-}
-
-func (s *environmentSchema) withSubcheck(ctx *core.Context, parent *core.EnvironmentCheck, args withSubcheckArgs) (*core.EnvironmentCheck, error) {
-	subcheck, err := core.NewEnvironmentCheck(args.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	return parent.WithSubcheck(subcheck)
 }
 
 type withCheckNameArgs struct {
@@ -544,100 +533,116 @@ func (s *environmentSchema) setCheckStringFlag(ctx *core.Context, parent *core.E
 	return parent.SetStringFlag(args.Name, args.Value)
 }
 
-func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) ([]*core.EnvironmentCheckResult, error) {
-	if len(check.Subchecks) > 0 {
-		// run them in parallel instead
-		var eg errgroup.Group
-		results := make([]*core.EnvironmentCheckResult, len(check.Subchecks))
-		for i, subcheckID := range check.Subchecks {
-			i := i
-			subcheck, err := core.NewEnvironmentCheck(subcheckID)
-			if err != nil {
-				return nil, err
-			}
-			eg.Go(func() error {
-				res, err := s.runCheck(ctx, subcheck)
-				if err != nil {
-					return err
-				}
-				results[i] = res
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return nil, err
-		}
-		return results, nil
-	}
-
-	/* TODO: codegen clients currently request every field when list of objects are returned, so we need to avoid doing expensive work
-	// here, right? Or if not then simplify this
-	// Or maybe graphql-go lets you return structs with methods that match the field names?
-	checkID, err := check.ID()
-	if err != nil {
-		return nil, err
-	}
-	return []*core.EnvironmentCheckResult{{ParentCheck: checkID}}, nil
-	*/
-
-	res, err := s.runCheck(ctx, check)
-	if err != nil {
-		return nil, err
-	}
-	return []*core.EnvironmentCheckResult{res}, nil
+type withSubcheckArgs struct {
+	ID core.EnvironmentCheckID
 }
 
-// private helper, not in schema
-func (s *environmentSchema) runCheck(ctx *core.Context, check *core.EnvironmentCheck) (*core.EnvironmentCheckResult, error) {
-	// find the object resolver for the check's environment
-	var resolver Resolver
-	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == check.ParentObjectName {
-			resolver = possibleResolver
+func (s *environmentSchema) withSubcheck(ctx *core.Context, parent *core.EnvironmentCheck, args withSubcheckArgs) (*core.EnvironmentCheck, error) {
+	return parent.WithSubcheck(args.ID), nil
+}
+
+func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (*core.EnvironmentCheckResult, error) {
+	// if there's no subchecks, resolve the result directly
+	if len(check.Subchecks) == 0 {
+		// TODO:
+		bklog.G(ctx).Debugf("CHECK RESULT RESOLVER %s %+v %+v", check.Name, ctx.ResolveParams.Info.Path.AsArray(), check)
+
+		// resolve the result directly
+		// TODO: more strands of spaghetti
+		env, err := s.loadedEnvCache.GetOrInitialize(check.EnvironmentName, func() (*core.Environment, error) {
+			return nil, fmt.Errorf("environment %s not found", check.EnvironmentName)
+		})
+		if err != nil {
+			return nil, err
 		}
-	}
-	if resolver == nil {
-		return nil, fmt.Errorf("no resolver for %q", check.ParentObjectName)
-	}
-	objResolver, ok := resolver.(ObjectResolver)
-	if !ok {
-		return nil, fmt.Errorf("resolver for %s is not an object resolver", check.ParentObjectName)
-	}
-	var fieldResolver graphql.FieldResolveFn
-	for fieldName, possibleFieldResolver := range objResolver {
-		if fieldName == check.Name {
-			fieldResolver = possibleFieldResolver
+		fieldResolver, err := env.FieldResolver(ctx, s.bk, s.progSockPath, nil) // TODO: set pipline to something
+		if err != nil {
+			return nil, err
 		}
-	}
-	if fieldResolver == nil {
-		return nil, fmt.Errorf("no field resolver for %s.%s", check.ParentObjectName, check.Name)
+		envObjName := strings.ToUpper(env.Config.Name[:1]) + env.Config.Name[1:]
+		resolveParams := graphql.ResolveParams{
+			Context: ctx,
+			Source:  struct{}{},
+			Args:    map[string]any{},
+			Info: graphql.ResolveInfo{
+				FieldName:  check.Name,
+				ParentType: s.MergedSchemas.Schema().Type(envObjName),
+			},
+		}
+		for _, flag := range check.Flags {
+			resolveParams.Args[flag.Name] = flag.SetValue
+		}
+		res, err := fieldResolver(&core.Context{
+			Context:       ctx,
+			ResolveParams: resolveParams,
+			Vertex:        ctx.Vertex,
+		}, resolveParams.Source, resolveParams.Args)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving check %s.%s: %w", check.EnvironmentName, check.Name, err)
+		}
+
+		// TODO: ugly
+
+		var checkRes core.EnvironmentCheckResult
+		switch v := res.(type) {
+		case string:
+			// if the sdk returned a string, that means success and the output is the string
+			checkRes.Success = true
+			checkRes.Output = v
+		default:
+			// otherwise assume it is a json serialized CheckResult object
+			// TODO: more efficient if it works? err := mapstructure.Decode(rawOutput, &res)
+			bs, err := json.Marshal(res)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal environment check result: %w", err)
+			}
+			if err := json.Unmarshal(bs, &checkRes); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal environment check result %s: %w", string(bs), err)
+			}
+		}
+
+		checkRes.Name = check.Name
+
+		// TODO:
+		bklog.G(ctx).Debugf("CHECK RESULT RESOLVER RETURNED %s %+v %+v", check.Name, res, checkRes)
+		return &checkRes, nil
 	}
 
-	// setup the inputs and invoke it
-	resolveParams := graphql.ResolveParams{
-		Context: ctx,
-		Source:  struct{}{}, // TODO: could support data fields too
-		Args:    map[string]any{},
-		Info: graphql.ResolveInfo{
-			FieldName:  check.Name,
-			ParentType: s.MergedSchemas.Schema().Type(check.ParentObjectName),
-			// TODO: we don't currently use any of the other resolve info fields, but that could change
-		},
+	// otherwise, resolve each subcheck and construct the result from that
+
+	// TODO:
+	bklog.G(ctx).Debugf("CHECK SUBRESULT RESOLVER %s %+v", check.Name, check)
+
+	// TODO: guard against infinite recursion
+	checkRes := &core.EnvironmentCheckResult{
+		Name:       check.Name,
+		Subresults: make([]*core.EnvironmentCheckResult, len(check.Subchecks)),
+		Success:    true,
+		// TODO: could combine output in theory, but not sure what the format would be.
+		// For now, output can just be collected from subresults
 	}
-	for _, flag := range check.Flags {
-		resolveParams.Args[flag.Name] = flag.SetValue
+	var eg errgroup.Group
+	for i, subcheckID := range check.Subchecks {
+		i, subcheckID := i, subcheckID
+		eg.Go(func() error {
+			subcheck, err := subcheckID.ToEnvironmentCheck()
+			if err != nil {
+				return err
+			}
+			subresult, err := s.checkResult(ctx, subcheck, nil)
+			if err != nil {
+				return err
+			}
+			checkRes.Subresults[i] = subresult
+			if !subresult.Success {
+				checkRes.Success = false
+			}
+			return nil
+		})
 	}
-	res, err := fieldResolver(resolveParams)
-	if err != nil {
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
-	// all the result type handling is done in convertOutput above
-	checkRes, ok := res.(*core.EnvironmentCheckResult)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type %T from check resolver", res)
-	}
-	checkRes.Name = check.Name
 	return checkRes, nil
 }
 
@@ -683,45 +688,14 @@ func (s *environmentSchema) setShellStringFlag(ctx *core.Context, parent *core.E
 }
 
 func (s *environmentSchema) shellEndpoint(ctx *core.Context, shell *core.EnvironmentShell, args any) (string, error) {
-	// find the object resolver for the shell's environment
-	var resolver Resolver
-	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == shell.ParentObjectName {
-			resolver = possibleResolver
-		}
-	}
-	if resolver == nil {
-		return "", fmt.Errorf("no resolver for %s", shell.ParentObjectName)
-	}
-	objResolver, ok := resolver.(ObjectResolver)
-	if !ok {
-		return "", fmt.Errorf("resolver for %s is not an object resolver", shell.ParentObjectName)
-	}
-	var fieldResolver graphql.FieldResolveFn
-	for fieldName, possibleFieldResolver := range objResolver {
-		if fieldName == shell.Name {
-			fieldResolver = possibleFieldResolver
-		}
-	}
-	if fieldResolver == nil {
-		return "", fmt.Errorf("no field resolver for %s.%s", shell.ParentObjectName, shell.Name)
-	}
-
-	// setup the inputs and invoke it
-	resolveParams := graphql.ResolveParams{
-		Context: ctx,
-		Source:  struct{}{}, // TODO: could support data fields too
-		Args:    map[string]any{},
-		Info: graphql.ResolveInfo{
-			FieldName:  shell.Name,
-			ParentType: s.MergedSchemas.Schema().Type(shell.ParentObjectName),
-			// TODO: we don't currently use any of the other resolve info fields, but that could change
-		},
+	fieldResolver, resolveParams, err := s.getEnvFieldResolver(ctx, shell.EnvironmentName, shell.Name)
+	if err != nil {
+		return "", err
 	}
 	for _, flag := range shell.Flags {
 		resolveParams.Args[flag.Name] = flag.SetValue
 	}
-	res, err := fieldResolver(resolveParams)
+	res, err := fieldResolver(*resolveParams)
 	if err != nil {
 		return "", fmt.Errorf("error resolving shell container: %w", err)
 	}
@@ -823,11 +797,11 @@ func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, 
 			// since load universe is hardcoded in the engine client to be called before Connect returns. Once that's fixed,
 			// keep in mind
 			_, err = s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-				env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
+				env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
 				if err != nil {
 					return nil, fmt.Errorf("failed to load environment: %w", err)
 				}
-				executableSchema, err := s.envToExecutableSchema(ctx, env, fieldResolver)
+				executableSchema, err := s.envToExecutableSchema(ctx, env, nil)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
 				}
@@ -896,4 +870,43 @@ type withFunctionResultTypeArgs struct {
 
 func (s *environmentSchema) withFunctionResultType(ctx *core.Context, parent *core.EnvironmentFunction, args withFunctionResultTypeArgs) (*core.EnvironmentFunction, error) {
 	return parent.WithResultType(args.Name), nil
+}
+
+func (s *environmentSchema) getEnvFieldResolver(ctx context.Context, envName, fieldName string) (graphql.FieldResolveFn, *graphql.ResolveParams, error) {
+	// TODO: don't hardcode
+	envObjName := strings.ToUpper(envName[:1]) + envName[1:]
+
+	var resolver Resolver
+	for objectName, possibleResolver := range s.resolvers() {
+		if objectName == envObjName {
+			resolver = possibleResolver
+		}
+	}
+	if resolver == nil {
+		return nil, nil, fmt.Errorf("no resolver for %s", envObjName)
+	}
+	objResolver, ok := resolver.(ObjectResolver)
+	if !ok {
+		return nil, nil, fmt.Errorf("resolver for %s is not an object resolver", envObjName)
+	}
+	var fieldResolver graphql.FieldResolveFn
+	for possibleFieldName, possibleFieldResolver := range objResolver {
+		if possibleFieldName == fieldName {
+			fieldResolver = possibleFieldResolver
+		}
+	}
+	if fieldResolver == nil {
+		return nil, nil, fmt.Errorf("no field resolver for %s.%s", envObjName, fieldName)
+	}
+
+	return fieldResolver, &graphql.ResolveParams{
+		Context: ctx,
+		Source:  struct{}{}, // TODO: could support data fields too
+		Args:    map[string]any{},
+		Info: graphql.ResolveInfo{
+			FieldName:  fieldName,
+			ParentType: s.MergedSchemas.Schema().Type(envObjName),
+			// TODO: we don't currently use any of the other resolve info fields, but that could change
+		},
+	}, nil
 }
