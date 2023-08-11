@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -235,37 +237,35 @@ func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.E
 					break
 				}
 			}
-			if check == nil {
-				return nil, fmt.Errorf("failed to find check %q in environment", field.Name)
-			}
-
-			// TODO:
-			bklog.G(ctx).Debugf("ADDING RESOLVER FOR CHECK %s", field.Name)
-
-			objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
-				argBytes, err := json.Marshal(args)
-				if err != nil {
-					return nil, fmt.Errorf("failed to marshal args: %w", err)
-				}
-				argMap := map[string]any{}
-				if err := json.Unmarshal(argBytes, &argMap); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal args: %w", err)
-				}
-				for argName, argVal := range argMap {
-					argValStr, ok := argVal.(string)
-					if !ok {
-						return nil, fmt.Errorf("expected check arg %s to be a string, got %T", argName, argVal)
-					}
-					check, err = check.SetStringFlag(argName, argValStr)
-					if err != nil {
-						return nil, fmt.Errorf("failed to set check arg %s: %w", argName, err)
-					}
-				}
+			if check != nil { // could just be a Function
 				// TODO:
-				bklog.G(ctx).Debugf("CHECK RESOLVER %s %s %+v", field.Name, ctx.ResolveParams.Info.Path.AsArray(), check)
-				return check, nil
-			})
-			continue
+				bklog.G(ctx).Debugf("ADDING RESOLVER FOR CHECK %s", field.Name)
+
+				objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
+					argBytes, err := json.Marshal(args)
+					if err != nil {
+						return nil, fmt.Errorf("failed to marshal args: %w", err)
+					}
+					argMap := map[string]any{}
+					if err := json.Unmarshal(argBytes, &argMap); err != nil {
+						return nil, fmt.Errorf("failed to unmarshal args: %w", err)
+					}
+					for argName, argVal := range argMap {
+						argValStr, ok := argVal.(string)
+						if !ok {
+							return nil, fmt.Errorf("expected check arg %s to be a string, got %T", argName, argVal)
+						}
+						check, err = check.SetStringFlag(argName, argValStr)
+						if err != nil {
+							return nil, fmt.Errorf("failed to set check arg %s: %w", argName, err)
+						}
+					}
+					// TODO:
+					bklog.G(ctx).Debugf("CHECK RESOLVER %s %s %+v", field.Name, ctx.ResolveParams.Info.Path.AsArray(), check)
+					return check, nil
+				})
+				continue
+			}
 		}
 
 		fieldResolver, err := env.FieldResolver(ctx, s.bk, s.progSockPath, pipeline)
@@ -621,6 +621,39 @@ func (s *environmentSchema) withCheckContainer(ctx *core.Context, parent *core.E
 }
 
 func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (*core.EnvironmentCheckResult, error) {
+	recorder := progrock.RecorderFromContext(ctx)
+
+	dig, err := check.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	vtxName := check.Name
+
+	if vtxName == "" {
+		// TODO
+		vtxName = fmt.Sprintf("unnamed check: %s", dig)
+	}
+
+	if check.EnvironmentName != "" {
+		recorder = recorder.WithGroup(check.EnvironmentName,
+			progrock.WithGroupID(dig.String()+">"+check.EnvironmentName))
+	}
+
+	if len(check.Subchecks) > 0 {
+	} else {
+		vtx := recorder.Vertex(dig+":result", vtxName, progrock.Focused())
+		defer vtx.Complete()
+		ctx.Vertex = vtx // NB: nothing uses this atm, just seems appropriate
+	}
+
+	if check.Name != "" {
+		// initialize subgroup _after_ vertex above so that it only shows up if any
+		// further vertices are sent (e.g. Container eval)
+		recorder = recorder.WithGroup(check.Name, progrock.WithGroupID(dig.String()))
+		ctx.Context = progrock.RecorderToContext(ctx.Context, recorder)
+	}
+
 	// if there's no subchecks, resolve the result directly
 	if len(check.Subchecks) == 0 {
 		// TODO:
@@ -671,6 +704,7 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 		for _, flag := range check.Flags {
 			resolveParams.Args[flag.Name] = flag.SetValue
 		}
+
 		res, err := fieldResolver(&core.Context{
 			Context:       ctx,
 			ResolveParams: resolveParams,
@@ -680,16 +714,37 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 			return nil, fmt.Errorf("error resolving check %s.%s: %w", check.EnvironmentName, check.Name, err)
 		}
 
+		log.Println("!!! TASTES LIKE CHECKIN")
 		// TODO: ugly
 
 		var checkRes core.EnvironmentCheckResult
 		switch v := res.(type) {
 		case string:
-			// if the sdk returned a string, that means success and the output is the string
-			checkRes.Success = true
-			checkRes.Output = v
-		default:
-			// otherwise assume it is a json serialized CheckResult object
+			log.Println("!!! ITS STRING", v)
+
+			// TODO(vito): would prob be better to just make everything IDable and
+			// have it return something like {"type":"Foo","id":"eyJ..."}
+			subcheck, err := core.EnvironmentCheckID(v).ToEnvironmentCheck()
+			if err != nil {
+				// if the sdk returned a string, that means success and the output is
+				// the string
+				checkRes.Success = true
+				checkRes.Output = v
+			} else {
+				// assume it's an EnvironmentCheck...
+
+				// NB: run with ctx that places us in the current group!
+				res, err := s.checkResult(ctx, subcheck, nil)
+				if err != nil {
+					return nil, fmt.Errorf("get result of returned check: %w", err)
+				}
+
+				checkRes = *res
+			}
+		case map[string]any:
+			log.Println("!!! ITS MAP[STRING]ANY")
+
+			// otherwise assume it is a json serialized Check or CheckResult object
 			// TODO: more efficient if it works? err := mapstructure.Decode(rawOutput, &res)
 			bs, err := json.Marshal(res)
 			if err != nil {
@@ -698,6 +753,8 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 			if err := json.Unmarshal(bs, &checkRes); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal environment check result %s: %w", string(bs), err)
 			}
+		default:
+			panic(fmt.Sprintf("EHH? %T", res))
 		}
 
 		checkRes.Name = check.EnvironmentName + "." + check.Name
@@ -728,6 +785,11 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 			if err != nil {
 				return err
 			}
+			// subDig, err := subcheck.Digest()
+			// if err != nil {
+			// 	return err
+			// }
+			// vtx.Output(subDig)
 			subresult, err := s.checkResult(ctx, subcheck, nil)
 			if err != nil {
 				return err

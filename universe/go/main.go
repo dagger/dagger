@@ -93,7 +93,7 @@ func Test(
 	base *dagger.Container,
 	src *dagger.Directory,
 	opts GoTestOpts,
-) (*dagger.EnvironmentCheckResult, error) {
+) (*dagger.EnvironmentCheck, error) {
 	withCode := base.
 		With(GlobalCache(ctx)).
 		WithMountedDirectory("/src", src).
@@ -154,7 +154,9 @@ func Test(
 
 	goTest = append(goTest, opts.TestFlags...)
 
-	checks := ctx.Client().EnvironmentCheck()
+	checks := ctx.Client().EnvironmentCheck().
+		// TODO: set a nice description
+		WithName("GoTest")
 
 	for pkg, tests := range pkgTests {
 		for _, name := range tests {
@@ -173,7 +175,7 @@ func Test(
 		}
 	}
 
-	return checks.Result(), nil
+	return checks, nil
 }
 
 type GotestsumOpts struct {

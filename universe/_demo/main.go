@@ -32,12 +32,11 @@ func PublishAll(ctx dagger.Context, version string) (string, error) {
 }
 
 // TODO: func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
-func FooTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
+func FooTest(ctx dagger.Context) *dagger.EnvironmentCheck {
 	// TODO: sugar to make this less annoying
 	return DaggerClient().EnvironmentCheck().
 		WithSubcheck(DaggerClient().Democlient().UnitTest()).
-		WithSubcheck(DaggerClient().Demoserver().UnitTest()).
-		Result(), nil
+		WithSubcheck(DaggerClient().Demoserver().UnitTest())
 }
 
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {

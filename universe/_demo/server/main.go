@@ -34,7 +34,7 @@ func Binary(ctx dagger.Context) (*dagger.File, error) {
 	return binary(ctx), nil
 }
 
-func UnitTest(ctx dagger.Context) *dagger.EnvironmentCheckResult {
+func UnitTest(ctx dagger.Context) *dagger.EnvironmentCheck {
 	return dagger.DefaultClient().Go().Test(
 		buildBase(ctx),
 		dagger.DefaultClient().Host().Directory("."),

@@ -4082,7 +4082,7 @@ type GoTestOpts struct {
 	TestFlags []string
 }
 
-func (r *Go) Test(base *Container, src *Directory, opts ...GoTestOpts) *EnvironmentCheckResult {
+func (r *Go) Test(base *Container, src *Directory, opts ...GoTestOpts) *EnvironmentCheck {
 	q := r.Q.Select("test")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `packages` optional argument
@@ -4105,7 +4105,7 @@ func (r *Go) Test(base *Container, src *Directory, opts ...GoTestOpts) *Environm
 	q = q.Arg("base", base)
 	q = q.Arg("src", src)
 
-	return &EnvironmentCheckResult{
+	return &EnvironmentCheck{
 		Q: q,
 		C: r.C,
 	}

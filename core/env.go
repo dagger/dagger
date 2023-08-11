@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
@@ -704,6 +705,10 @@ func NewEnvironmentCheck(id EnvironmentCheckID) (*EnvironmentCheck, error) {
 
 func (check *EnvironmentCheck) ID() (EnvironmentCheckID, error) {
 	return resourceid.Encode[EnvironmentCheckID](check)
+}
+
+func (check *EnvironmentCheck) Digest() (digest.Digest, error) {
+	return stableDigest(check)
 }
 
 func (check EnvironmentCheck) Clone() *EnvironmentCheck {

@@ -152,6 +152,26 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 			return fmt.Errorf("failed to execute subcmd: %w", err)
 		}
 		return nil
+		envName, err := loadedEnv.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get env name: %w", err)
+		}
+
+		allChecks := c.EnvironmentCheck().
+			WithName(envName)
+
+		for _, check := range envChecks {
+			allChecks = allChecks.WithSubcheck(&check)
+		}
+
+		result := allChecks.Result()
+		success, err := result.Success(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get check result success: %w", err)
+		}
+		if !success {
+			return fmt.Errorf("checks failed")
+		}
 	}
 
 	subCmd.SetArgs(restOfArgs)

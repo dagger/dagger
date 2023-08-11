@@ -4348,7 +4348,7 @@ class Go(Type):
         race: Optional[bool] = None,
         verbose: Optional[bool] = None,
         test_flags: Optional[Sequence[Optional[str]]] = None,
-    ) -> EnvironmentCheckResult:
+    ) -> EnvironmentCheck:
         _args = [
             Arg("base", base),
             Arg("src", src),
@@ -4358,7 +4358,7 @@ class Go(Type):
             Arg("testFlags", test_flags, None),
         ]
         _ctx = self._select("test", _args)
-        return EnvironmentCheckResult(_ctx)
+        return EnvironmentCheck(_ctx)
 
 
 class Host(Type):

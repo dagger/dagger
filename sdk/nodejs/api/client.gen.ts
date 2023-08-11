@@ -5694,12 +5694,8 @@ export class Go extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  test(
-    base: Container,
-    src: Directory,
-    opts?: GoTestOpts
-  ): EnvironmentCheckResult {
-    return new EnvironmentCheckResult({
+  test(base: Container, src: Directory, opts?: GoTestOpts): EnvironmentCheck {
+    return new EnvironmentCheck({
       queryTree: [
         ...this._queryTree,
         {
