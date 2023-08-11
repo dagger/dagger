@@ -25,3 +25,15 @@ async def unit_test() -> str:
         .stdout()
     )
 
+@env.function
+async def build() -> dagger.Container:
+    """ TODO: this should be an artifact, but function works for now """
+    base = await dagger.apko().wolfi(["python-3.11", "py3.11-pip"])
+    entrypoint = await (
+        base
+        .with_exec(["pip", "install", "shiv"])
+        .with_mounted_directory("/src", dagger.host().directory("."))
+        .with_exec(["shiv", "-e", "src.client.main:main", "-o", "/entrypoint", "/src/universe/_demo/client", "--root", "/tmp/.shiv"])
+        .file("/entrypoint")
+    )
+    return await base.with_file("/entrypoint", entrypoint).with_entrypoint(["/entrypoint"])

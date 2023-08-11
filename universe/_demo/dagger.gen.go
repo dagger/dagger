@@ -25,6 +25,15 @@ type Democlient struct {
 	publish *string
 }
 
+func (r *Democlient) Build() *Container {
+	q := r.Q.Select("build")
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
 func (r *Democlient) Publish(ctx context.Context, version string) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
