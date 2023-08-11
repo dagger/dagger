@@ -39,6 +39,8 @@ class Inputs:
 
 
 class Environment:
+    """Builder for a `dagger.Environment`."""
+
     function = FunctionResolver.to_decorator()
     check = CheckResolver.to_decorator()
     command = CommandResolver.to_decorator()

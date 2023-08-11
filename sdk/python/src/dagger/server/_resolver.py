@@ -13,7 +13,6 @@ from typing import (
     Generic,
     Protocol,
     TypeAlias,
-    TypedDict,
     TypeVar,
     get_args,
     get_origin,
@@ -29,7 +28,7 @@ from gql.utils import to_camel_case
 
 from ._arguments import Argument, Parameter
 from ._converter import to_graphql_representation
-from ._exceptions import FatalError, SchemaValidationError
+from ._exceptions import FatalError
 from ._utils import asyncify, await_maybe
 
 if TYPE_CHECKING:
@@ -226,41 +225,53 @@ class Resolver(Generic[T]):
         """Call the wrapped function."""
         logger.debug("Calling resolver '%s' with arguments: %s", self.name, args)
 
-        # Convert argument names from GraphQL to Python
-        renamed_args = {}
-        for name, value in args.items():
-            if name not in self.parameters:
-                msg = f"Unknown argument '{name}' for resolver '{self.name}'"
-                raise SchemaValidationError(msg)
-            renamed_args[self.parameters[name].python_name] = value
-        logger.debug("Renamed arguments to match function signature: %s", renamed_args)
-
-        # Create a TypedDict to convert values to the correct types.
-        typed_args: dict[str, type] = {
-            p.signature.name: p.signature.annotation
-            for p in self.parameters.values()
-        }
-        Args = TypedDict("Args", typed_args)
-
-        logger.debug("Converting arguments with types: %s", typed_args)
-        try:
-            kwargs = converter.structure(renamed_args, Args)
-        except cattrs.BaseValidationError as e:
-            errors = cattrs.transform_error(e, path=self.wrapped_func.__qualname__)
-            for error in errors:
-                logger.error("Invalid arguments: %s", str(error))  # noqa: TRY400
-            msg = "Invalid arguments: " + "; ".join(str(error) for error in errors)
-            raise FatalError(msg) from e
+        kwargs = await self.convert_input(converter, args)
+        logger.debug("Converted arguments: %s", kwargs)
 
         # Call the wrapped function in a separate method to make it easier to override.
         result = await self(**kwargs)
 
         # Convert the result to a JSON string.
-        return await asyncify(partial(converter.dumps, ensure_ascii=False), result)
+        return await self.convert_output(converter, result)
+
+    async def convert_input(self, converter: JsonConverter, raw_args: dict[str, Any]):
+        path = self.wrapped_func.__qualname__
+        kwargs: dict[str, Any] = {}
+
+        # Collect all errors before raising an exception.
+        errors = set()
+
+        for gql_name, value in raw_args.items():
+            name = gql_name
+
+            if name not in self.parameters:
+                errors.add(("Unknown argument '%s' in '%s'", name, self.name))
+
+            param = self.parameters[gql_name]
+            name = param.python_name
+            type_ = param.signature.annotation
+
+            try:
+                kwargs[name] = await asyncify(converter.structure, value, type_)
+            except cattrs.BaseValidationError as e:
+                error_msgs = cattrs.transform_error(e, path=path)
+                errors.add(("Invalid argument: %s", "; ".join(error_msgs)))
+
+        if errors:
+            for msg, args in errors:
+                logger.error(msg, *args)
+
+            msg = f"Invalid arguments for {path}"
+            raise FatalError(msg)
+
+        return kwargs
 
     async def __call__(self, **kwargs):
         # TODO: reserve __call__ for invoking resolvers within the same environment
         return await await_maybe(self.wrapped_func(**kwargs))
+
+    async def convert_output(self, converter: JsonConverter, result: Any) -> str:
+        return await asyncify(partial(converter.dumps, result, ensure_ascii=False))
 
 
 @dataclass
