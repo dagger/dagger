@@ -2405,6 +2405,13 @@ class Environment(Type):
         return await _ctx.execute(str)
 
     @typecheck
+    def runtime(self) -> Container:
+        """TODO: the runtime container for the environment"""
+        _args: list[Arg] = []
+        _ctx = self._select("runtime", _args)
+        return Container(_ctx)
+
+    @typecheck
     def shell(self, name: str) -> "EnvironmentShell":
         """TODO"""
         _args = [

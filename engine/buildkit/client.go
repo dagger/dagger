@@ -254,7 +254,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 		i, m := i, m
 		eg.Go(func() error {
 			ref, ok := m.Ref.(*ref)
-			if !ok {
+			if !ok && m.Ref != nil {
 				return fmt.Errorf("unexpected ref type: %T", m.Ref)
 			}
 			var workerRef *bkworker.WorkerRef

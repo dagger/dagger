@@ -365,7 +365,7 @@ func (container *Container) mounts(ctx context.Context, bk *buildkit.Client) ([]
 				ID: mnt.CacheID,
 			}
 
-			switch CacheSharingMode(mnt.CacheSharingMode) {
+			switch CacheSharingMode(strings.ToUpper(mnt.CacheSharingMode)) {
 			case CacheSharingModeShared:
 				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
 			case CacheSharingModePrivate:

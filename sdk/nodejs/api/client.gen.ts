@@ -3232,6 +3232,22 @@ export class Environment extends BaseClient {
   }
 
   /**
+   * TODO: the runtime container for the environment
+   */
+  runtime(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "runtime",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * TODO
    */
   shell(name: string): EnvironmentShell {

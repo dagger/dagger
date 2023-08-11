@@ -99,6 +99,9 @@ type Environment {
   artifact(name: String!): EnvironmentArtifact
   artifacts: [EnvironmentArtifact!]
   withArtifact(id: EnvironmentArtifactID!): Environment!
+
+  "TODO: the runtime container for the environment"
+  runtime: Container!
 }
 
 type EnvironmentArtifact {

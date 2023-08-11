@@ -56,6 +56,16 @@ func RunShell(
 	cmd *cobra.Command,
 	dynamicCmdArgs []string,
 ) error {
+	if len(dynamicCmdArgs) == 0 {
+		// open a shell to the environment itself
+		// TODO: not sure if this behavior is confusing, but it's definitely helpful for debugging atm
+		shellEndpoint, err := env.Runtime().ShellEndpoint(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get shell endpoint: %w", err)
+		}
+		return attachToShell(ctx, engineClient, shellEndpoint)
+	}
+
 	envShells, err := env.Shells(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get environment shells: %w", err)

@@ -69,6 +69,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"environmentShell":       ToResolver(s.environmentShell),
 			"environmentFunction":    ToResolver(s.environmentFunction),
 			"currentEnvironment":     ToResolver(s.currentEnvironment),
+			"runtime":                ToResolver(s.runtime),
 			// TODO:
 			"loadUniverse": ToResolver(s.loadUniverse),
 		},
@@ -487,6 +488,10 @@ func (s *environmentSchema) currentEnvironment(ctx *core.Context, parent *core.Q
 	return s.loadedEnvCache.GetOrInitialize(clientMetadata.EnvironmentName, func() (*core.Environment, error) {
 		return nil, fmt.Errorf("no such environment %s", clientMetadata.EnvironmentName)
 	})
+}
+
+func (s *environmentSchema) runtime(ctx *core.Context, env *core.Environment, args any) (*core.Container, error) {
+	return env.Runtime, nil
 }
 
 func (s *environmentSchema) commandID(ctx *core.Context, parent *core.EnvironmentCommand, args any) (core.EnvironmentCommandID, error) {

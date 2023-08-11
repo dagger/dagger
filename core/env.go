@@ -141,6 +141,8 @@ type Environment struct {
 	Schema string `json:"schema"`
 	// The environment's platform
 	Platform specs.Platform `json:"platform,omitempty"`
+	// The container the environment executes in
+	Runtime *Container `json:"runtime,omitempty"`
 	// TODO:
 	Commands  []*EnvironmentCommand  `json:"commands,omitempty"`
 	Checks    []*EnvironmentCheck    `json:"checks,omitempty"`
@@ -165,6 +167,9 @@ func (env *Environment) Clone() *Environment {
 	cp := *env
 	if env.Directory != nil {
 		cp.Directory = env.Directory.Clone()
+	}
+	if env.Runtime != nil {
+		cp.Runtime = env.Runtime.Clone()
 	}
 	if env.Config != nil {
 		env.Config = &environmentconfig.Config{
@@ -243,11 +248,11 @@ func LoadEnvironment(
 	clientMetadata.EnvironmentName = cfg.Name
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
-	ctr, err := runtime(ctx, bk, progSock, pipeline, platform, cfg.SDK, rootDir, configPath)
+	envRuntime, err := runtime(ctx, bk, progSock, pipeline, platform, cfg.SDK, rootDir, configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime container for schema: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, platform), "")
+	ctr, err := envRuntime.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, platform), "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount output directory: %w", err)
 	}
@@ -277,6 +282,7 @@ func LoadEnvironment(
 	env.ConfigPath = configPath
 	env.Config = cfg
 	env.Platform = platform
+	env.Runtime = envRuntime
 	env.Schema, err = env.buildSchema()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build schema: %w", err)

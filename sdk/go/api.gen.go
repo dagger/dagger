@@ -2177,6 +2177,16 @@ func (r *Environment) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
+// TODO: the runtime container for the environment
+func (r *Environment) Runtime() *Container {
+	q := r.Q.Select("runtime")
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // TODO
 func (r *Environment) Shell(name string) *EnvironmentShell {
 	q := r.Q.Select("shell")
