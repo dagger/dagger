@@ -1,0 +1,6 @@
+kind: Added
+body: Include details during Dagger Engine loading
+time: 2023-08-11T20:37:49.563085+02:00
+custom:
+  Author: TomChv
+  PR: "5436"
