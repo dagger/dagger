@@ -4,7 +4,7 @@ import typing
 import anyio
 from typing_extensions import Self
 
-syncify = anyio.to_thread.run_sync
+asyncify = anyio.to_thread.run_sync
 
 
 class ResourceManager(contextlib.AbstractAsyncContextManager):
@@ -47,7 +47,7 @@ class SyncResource(contextlib.AbstractAsyncContextManager[T], typing.Generic[T])
         self.sync_cm = cm
 
     async def __aenter__(self) -> T:
-        return await syncify(self.sync_cm.__enter__)
+        return await asyncify(self.sync_cm.__enter__)
 
     async def __aexit__(self, *exc_details) -> None:
-        await syncify(self.sync_cm.__exit__, *exc_details)
+        await asyncify(self.sync_cm.__exit__, *exc_details)

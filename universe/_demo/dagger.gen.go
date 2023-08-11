@@ -25,11 +25,12 @@ type Democlient struct {
 	publish *string
 }
 
-func (r *Democlient) Publish(ctx context.Context) (string, error) {
+func (r *Democlient) Publish(ctx context.Context, version string) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
 	}
 	q := r.Q.Select("publish")
+	q = q.Arg("version", version)
 
 	var response string
 

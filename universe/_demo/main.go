@@ -22,13 +22,12 @@ func PublishAll(ctx dagger.Context, version string) (string, error) {
 		return "", fmt.Errorf("failed to publish go server: %w", err)
 	}
 
-	/*
-		// if that worked, publish the client app
-		err := Dagger().MyPythonApp().Publish(ctx, version)
-		if err != nil {
-			return fmt.Errorf("failed to publish python app: %w", err)
-		}
-	*/
+	// if that worked, publish the client app
+	_, err = DaggerClient().Democlient().Publish(ctx, version)
+	if err != nil {
+		return "", fmt.Errorf("failed to publish python app: %w", err)
+	}
+
 	return "", nil
 }
 

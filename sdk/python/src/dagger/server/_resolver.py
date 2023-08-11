@@ -1,54 +1,48 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
-from functools import cached_property
+from dataclasses import dataclass, field
+from functools import cached_property, partial
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     ClassVar,
     Generic,
     Protocol,
     TypeAlias,
+    TypedDict,
     TypeVar,
+    get_args,
     get_origin,
     get_type_hints,
     overload,
     runtime_checkable,
 )
 
+import cattrs
 from beartype.door import TypeHint
+from cattrs.preconf.json import JsonConverter
 from gql.utils import to_camel_case
-from typing_extensions import Self
 
-from ._utils import await_maybe
+from ._arguments import Argument, Parameter
+from ._converter import to_graphql_representation
+from ._exceptions import FatalError, SchemaValidationError
+from ._utils import asyncify, await_maybe
 
 if TYPE_CHECKING:
     import dagger
 
     from ._environment import Environment
 
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
 ResolverFunc: TypeAlias = Callable[..., Coroutine[Any, Any, T] | T]
 DecoratedResolverFunc: TypeAlias = Callable[[ResolverFunc[T]], ResolverFunc[T]]
-
-
-BUILTINS = {
-    str: "String",
-    int: "Int",
-    float: "Float",
-    bool: "Boolean",
-}
-
-
-@runtime_checkable
-class GraphQLNamed(Protocol):
-    @classmethod
-    def graphql_name(cls) -> str:
-        ...
 
 
 @runtime_checkable
@@ -76,6 +70,14 @@ class ResultKind(Protocol):
         ...
 
 
+@runtime_checkable
+class FlagKind(Protocol):
+    """Type of environment resource that has flags."""
+
+    def with_flag(self, name: str, *, description: str | None = None) -> Kind:
+        ...
+
+
 @dataclass(slots=True)
 class Resolver(Generic[T]):
     """Base class for wrapping user-defined functions."""
@@ -83,7 +85,8 @@ class Resolver(Generic[T]):
     allowed_return_type: ClassVar[type]
     wrapped_func: ResolverFunc[T]
     name: str
-    description: str | None
+    description: str | None = None
+    graphql_name: str = field(init=False)
 
     @classmethod
     def from_callable(
@@ -93,17 +96,21 @@ class Resolver(Generic[T]):
         description: str | None = None,
     ):
         """Create a resolver instance from a user-defined function."""
+        # TODO: validate that the function is a callable
+
         name = name or func.__name__
         description = description or inspect.getdoc(func)
-        return cls(func, name, description).validate()
 
-    def validate(self) -> Self:
+        return cls(func, name, description)
+
+    def __post_init__(self):
         if self.allowed_return_hint and not self.allowed_return_hint.is_bearable(
             self.return_type
         ):
             msg = f"Invalid return type for resolver '{self.name}': {self.return_type}"
             raise TypeError(msg)
-        return self
+
+        self.graphql_name = to_camel_case(self.name)
 
     @cached_property
     def allowed_return_hint(self):
@@ -120,11 +127,6 @@ class Resolver(Generic[T]):
         """Return a descriptor to create a method decorator."""
         return ResolverDecorator[T](cls)
 
-    @property
-    def graphql_name(self) -> str:
-        """Return the name of the resolver as it should appear in the schema."""
-        return to_camel_case(self.name)
-
     @cached_property
     def signature(self):
         """Return the signature of the wrapped function."""
@@ -135,17 +137,67 @@ class Resolver(Generic[T]):
         """Return the resolved return type of the wrapped function."""
         return self._type_hints.get("return")
 
-    @property
+    @cached_property
     def parameters(self):
         """Return the parameter annotations of the wrapped function."""
-        return {k: v for k, v in self._type_hints.items() if k != "return"}
+        mapping: dict[str, Parameter] = {}
+
+        for key, value in self.signature.parameters.items():
+            name = key
+            param = value
+            description: str | None = None
+
+            if param.kind is inspect.Parameter.POSITIONAL_ONLY:
+                msg = "Positional-only parameters are not supported"
+                raise TypeError(msg)
+
+            if param.default is not param.empty:
+                logger.warning("Default values are not supported yet")
+
+            try:
+                # Use type_hints instead of param.annotation to get
+                # resolved forward references.
+                annotation = self._type_hints[name]
+            except KeyError:
+                logger.warning("Missing type annotation for parameter '%s'", name)
+                annotation = Any
+
+            if get_origin(annotation) is Annotated:
+                args = get_args(annotation)
+
+                # Convenience to replace Annotated[T, "description"] argument
+                # type hints with Annotated[T, argument(description="description")].
+                match args:
+                    case (arg_type, arg_meta) if isinstance(arg_meta, str):
+                        description = arg_meta
+                        meta = Argument(description=description)
+                        annotation = Annotated[arg_type, meta]
+
+                # Extract properties from Argument
+                match args:
+                    case (arg_type, arg_meta) if isinstance(arg_meta, Argument):
+                        name = arg_meta.name or name
+                        description = arg_meta.description
+
+            parameter = Parameter(
+                name=name,
+                signature=param.replace(annotation=annotation),
+                description=description,
+            )
+
+            mapping[parameter.graphql_name] = parameter
+
+        return mapping
 
     @cached_property
     def _type_hints(self):
         return get_type_hints(self.wrapped_func, include_extras=True)
 
     def register(self, env: dagger.Environment) -> dagger.Environment:
-        """Add a new resource to current environment."""
+        """Add a new resource to current environment.
+
+        Meant to be overidden by subclasses.
+        """
         return env
 
     def configure_kind(self, kind: K) -> K:
@@ -153,16 +205,62 @@ class Resolver(Generic[T]):
         kind = kind.with_name(self.graphql_name)
         if self.description:
             kind = kind.with_description(self.description)
+
+        if isinstance(kind, FlagKind):
+            for name, param in self.parameters.items():
+                kind = kind.with_flag(name, description=param.description)
+
         if isinstance(kind, ResultKind) and self.return_type:
-            if self.return_type in BUILTINS:
-                kind = kind.with_result_type(BUILTINS[self.return_type])
-            elif isinstance(self.return_type, GraphQLNamed):
-                kind = kind.with_result_type(self.return_type.graphql_name())
+            if result_type := to_graphql_representation(self.return_type):
+                kind = kind.with_result_type(result_type)
+            else:
+                msg = (
+                    f"Invalid return type for resolver '{self.name}': "
+                    f"{self.return_type}"
+                )
+                raise TypeError(msg)
+
         return kind
 
-    async def call(self, *args, **kwargs):
+    async def call(self, converter: JsonConverter, args: dict[str, Any]) -> str:
         """Call the wrapped function."""
-        return await await_maybe(self.wrapped_func(*args, **kwargs))
+        logger.debug("Calling resolver '%s' with arguments: %s", self.name, args)
+
+        # Convert argument names from GraphQL to Python
+        renamed_args = {}
+        for name, value in args.items():
+            if name not in self.parameters:
+                msg = f"Unknown argument '{name}' for resolver '{self.name}'"
+                raise SchemaValidationError(msg)
+            renamed_args[self.parameters[name].python_name] = value
+        logger.debug("Renamed arguments to match function signature: %s", renamed_args)
+
+        # Create a TypedDict to convert values to the correct types.
+        typed_args: dict[str, type] = {
+            p.signature.name: p.signature.annotation
+            for p in self.parameters.values()
+        }
+        Args = TypedDict("Args", typed_args)
+
+        logger.debug("Converting arguments with types: %s", typed_args)
+        try:
+            kwargs = converter.structure(renamed_args, Args)
+        except cattrs.BaseValidationError as e:
+            errors = cattrs.transform_error(e, path=self.wrapped_func.__qualname__)
+            for error in errors:
+                logger.error("Invalid arguments: %s", str(error))  # noqa: TRY400
+            msg = "Invalid arguments: " + "; ".join(str(error) for error in errors)
+            raise FatalError(msg) from e
+
+        # Call the wrapped function in a separate method to make it easier to override.
+        result = await self(**kwargs)
+
+        # Convert the result to a JSON string.
+        return await asyncify(partial(converter.dumps, ensure_ascii=False), result)
+
+    async def __call__(self, **kwargs):
+        # TODO: reserve __call__ for invoking resolvers within the same environment
+        return await await_maybe(self.wrapped_func(**kwargs))
 
 
 @dataclass
@@ -197,8 +295,11 @@ class ResolverDecorator(Generic[T]):
         description: str | None = None,
     ) -> ResolverFunc[T] | DecoratedResolverFunc[T]:
         def wrapper(func: ResolverFunc[T]) -> ResolverFunc[T]:
-            r = self.resolver_class.from_callable(func, name, description)
-            self.instance._resolvers[r.graphql_name] = r  # noqa: SLF001
+            try:
+                r = self.resolver_class.from_callable(func, name, description)
+                self.instance._resolvers[r.graphql_name] = r  # noqa: SLF001
+            except TypeError:
+                logger.exception("Failed to add resolver '%s'", func)
             return func
 
         return wrapper(func) if func else wrapper

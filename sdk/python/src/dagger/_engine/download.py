@@ -27,7 +27,7 @@ DEFAULT_CLI_HOST = "dl.dagger.io"
 
 logger = logging.getLogger(__name__)
 
-syncify = anyio.to_thread.run_sync
+asyncify = anyio.to_thread.run_sync
 
 
 class Platform(typing.NamedTuple):
@@ -162,7 +162,7 @@ class Downloader:
 
     async def get(self) -> str:
         # TODO: Convert download to async.
-        return await syncify(self.get_sync)
+        return await asyncify(self.get_sync)
 
     def get_sync(self) -> str:
         """Download CLI to cache and return its path."""

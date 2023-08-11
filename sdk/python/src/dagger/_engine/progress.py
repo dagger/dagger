@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.status import Status
 from typing_extensions import Self
 
-syncify = anyio.to_thread.run_sync
+asyncify = anyio.to_thread.run_sync
 
 
 @dataclass(slots=True)
@@ -16,11 +16,11 @@ class Progress:
 
     async def start(self, status: str) -> None:
         self.status = Status(status, console=self.console)
-        await syncify(self.status.start)
+        await asyncify(self.status.start)
 
     async def stop(self) -> None:
         if self.status:
-            await syncify(self.status.stop)
+            await asyncify(self.status.stop)
             self.status = None
 
     async def __aenter__(self) -> Self:
@@ -31,7 +31,7 @@ class Progress:
 
     async def update(self, message: str) -> None:
         if self.status:
-            await syncify(self.status.update, message)
+            await asyncify(self.status.update, message)
 
     def update_sync(self, message: str) -> None:
         if self.status:

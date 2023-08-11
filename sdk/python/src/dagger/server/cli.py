@@ -7,7 +7,7 @@ from typing import cast
 from rich.console import Console
 
 from ._environment import Environment
-from ._exceptions import FatalError
+from ._exceptions import FatalError, SchemaValidationError
 
 errors = Console(stderr=True)
 
@@ -17,7 +17,7 @@ def app():
     try:
         env = get_environment()
         env()
-    except FatalError as e:
+    except (FatalError, SchemaValidationError) as e:
         errors.print(e)
         sys.exit(1)
 
