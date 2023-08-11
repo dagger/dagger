@@ -81,12 +81,18 @@ class Environment:
 
     async def _register(self):
         env = dagger.environment()
+        has_errors = False
 
         for r in self._resolvers.values():
             try:
                 env = r.register(env)
             except TypeError:  # noqa: PERF203
+                has_errors = True
                 logger.exception("Failed to register resolver %s", r.name)
+
+        if has_errors:
+            msg = "Failed to register all resolvers"
+            raise FatalError(msg)
 
         envid = await env.id()
         logger.debug("EnvironmentID = %s", envid)

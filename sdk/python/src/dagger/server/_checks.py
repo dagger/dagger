@@ -10,7 +10,7 @@ CheckReturnType: TypeAlias = str | dagger.EnvironmentCheckResult
 
 
 class CheckResolver(Resolver[CheckReturnType]):
-    allowed_return_type: type[CheckReturnType]
+    allowed_return_type: CheckReturnType
 
     @override
     def register(self, env: dagger.Environment) -> dagger.Environment:

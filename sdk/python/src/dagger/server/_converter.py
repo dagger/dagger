@@ -2,18 +2,17 @@ import logging
 from typing import (
     Annotated,
     NotRequired,
-    Protocol,
     TypedDict,
+    cast,
     get_args,
     get_origin,
-    runtime_checkable,
 )
 
 import anyio
 from anyio.abc import TaskGroup
 from cattrs.preconf.json import make_converter as make_json_converter
 
-from ._utils import asyncify, syncify
+from ._utils import syncify
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +23,6 @@ BUILTINS = {
     float: "Float",
     bool: "Boolean",
 }
-
-
-@runtime_checkable
-class GraphQLNamed(Protocol):
-    @classmethod
-    def graphql_name(cls) -> str:
-        ...
 
 
 class CheckResult(TypedDict):
@@ -55,7 +47,7 @@ def make_converter():
 
     def dagger_type_unstructure(obj):
         """Get id from dagger object."""
-        return asyncify(obj.id)
+        return syncify(obj.id)
 
     conv.register_structure_hook_func(
         is_id_type_subclass,
@@ -99,11 +91,42 @@ def make_converter():
     return conv
 
 
-def to_graphql_representation(obj) -> str:
-    """Convert object to GraphQL type as a string."""
-    if get_origin(obj) is Annotated:
+# TODO: dedupe
+def to_graphql_input_representation(type_) -> str:
+    if get_origin(type_) is Annotated:
         # Only support the first argument when annotated.
-        obj, *_ = get_args(obj)
-    if obj in BUILTINS:
-        return BUILTINS[obj]
-    return obj.graphql_name() if isinstance(obj, GraphQLNamed) else ""
+        type_, *_ = get_args(type_)
+
+    if type_ in BUILTINS:
+        return BUILTINS[type_]
+
+    from dagger.client.base import Scalar, Type
+
+    if issubclass(type_, Type) and hasattr(type_, "_id_type"):
+        return cast(type[Scalar], type_._id_type()).__name__  # noqa: SLF001
+
+    logger.warning(
+        "Could not convert output type  %s to GraphQL representation.", type_
+    )
+    # TODO: raise error instead?
+    return ""
+
+
+def to_graphql_output_representation(type_) -> str:
+    """Convert result type to GraphQL type as a string."""
+    if get_origin(type_) is Annotated:
+        # Only support the first argument when annotated.
+        type_, *_ = get_args(type_)
+
+    if type_ in BUILTINS:
+        return BUILTINS[type_]
+
+    from dagger.client.base import Type
+
+    if issubclass(type_, Type):
+        return type_._graphql_name()  # noqa: SLF001
+
+    logger.warning(
+        "Could not convert output type  %s to GraphQL representation.", type_
+    )
+    return ""

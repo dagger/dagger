@@ -10,7 +10,7 @@ CommandReturnType: TypeAlias = str | dagger.Container | dagger.Directory
 
 
 class CommandResolver(Resolver[CommandReturnType]):
-    allowed_return_type: type[CommandReturnType]
+    allowed_return_type: CommandReturnType
 
     @override
     def register(self, env: dagger.Environment) -> dagger.Environment:

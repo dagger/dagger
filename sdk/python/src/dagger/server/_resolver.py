@@ -27,7 +27,7 @@ from cattrs.preconf.json import JsonConverter
 from gql.utils import to_camel_case
 
 from ._arguments import Argument, Parameter
-from ._converter import to_graphql_representation
+from ._converter import to_graphql_output_representation
 from ._exceptions import FatalError
 from ._utils import asyncify, await_maybe
 
@@ -103,23 +103,25 @@ class Resolver(Generic[T]):
         return cls(func, name, description)
 
     def __post_init__(self):
-        if self.allowed_return_hint and not self.allowed_return_hint.is_bearable(
-            self.return_type
-        ):
-            msg = f"Invalid return type for resolver '{self.name}': {self.return_type}"
-            raise TypeError(msg)
-
         self.graphql_name = to_camel_case(self.name)
 
-    @cached_property
-    def allowed_return_hint(self):
+        # Validate the return type of the wrapped function.
         annotated = get_type_hints(type(self)).get("allowed_return_type")
 
-        if get_origin(annotated) is ClassVar:
-            return TypeHint(type)
+        # Try single type.
+        if self.return_type is annotated:
+            return
 
-        # TODO: use beartype validators instead
-        return TypeHint(annotated)
+        # Try unions.
+        for type_ in get_args(annotated):
+            if self.return_type is type_:
+                return
+
+        msg = (
+            f"Invalid return type for resolver '{self.name}': {self.return_type}. "
+            f"Expected {annotated}."
+        )
+        raise TypeError(msg)
 
     @classmethod
     def to_decorator(cls) -> ResolverDecorator[T]:
@@ -210,11 +212,11 @@ class Resolver(Generic[T]):
                 kind = kind.with_flag(name, description=param.description)
 
         if isinstance(kind, ResultKind) and self.return_type:
-            if result_type := to_graphql_representation(self.return_type):
+            if result_type := to_graphql_output_representation(self.return_type):
                 kind = kind.with_result_type(result_type)
             else:
                 msg = (
-                    f"Invalid return type for resolver '{self.name}': "
+                    f"Can't register invalid result type for resolver '{self.name}': "
                     f"{self.return_type}"
                 )
                 raise TypeError(msg)
@@ -310,7 +312,7 @@ class ResolverDecorator(Generic[T]):
                 r = self.resolver_class.from_callable(func, name, description)
                 self.instance._resolvers[r.graphql_name] = r  # noqa: SLF001
             except TypeError:
-                logger.exception("Failed to add resolver '%s'", func)
+                logger.exception("Failed to add resolver '%s'", func.__name__)
             return func
 
         return wrapper(func) if func else wrapper

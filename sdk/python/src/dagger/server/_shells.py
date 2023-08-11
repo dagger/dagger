@@ -10,7 +10,7 @@ ShellReturnType: TypeAlias = str
 
 
 class ShellResolver(Resolver[ShellReturnType]):
-    allowed_return_type: type[ShellReturnType]
+    allowed_return_type: ShellReturnType
 
     @override
     def register(self, env: dagger.Environment) -> dagger.Environment:
