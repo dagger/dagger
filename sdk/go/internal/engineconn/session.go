@@ -11,11 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/tools/go/packages"
 )
 
 type cliSessionConn struct {
@@ -45,26 +44,21 @@ func (c *cliSessionConn) Close() error {
 }
 
 func getSDKVersion() string {
-	cfg := &packages.Config{Mode: packages.NeedModule}
-	pkgs, err := packages.Load(cfg, "dagger.io/dagger")
-	if err != nil {
-		return "n/a"
+	version := "n/a"
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
 	}
 
-	// TODO: handle a different workdir
-	// This happens when we change the workdir, which is typical for mage, i.e.
-	// `-w ../..`. There may be no go.mod, or the go.mod at that level does not
-	// have a dager.io/dagger package. We want to come back and address this.
-	module := pkgs[0].Module
-	if module == nil {
-		return "n/a"
+	for _, dep := range info.Deps {
+		if dep.Path == "dagger.io/dagger" {
+			version = dep.Version
+			if version[0] == 'v' {
+				version = version[1:]
+			}
+			break
+		}
 	}
-
-	version := module.Version
-	if len(version) > 0 && version[0] == 'v' {
-		version = version[1:]
-	}
-
 	return version
 }
 
