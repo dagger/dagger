@@ -18,7 +18,7 @@ flowchart TD
     docs["📒 Documentation"]
     playground["🛝 Playground"]
     repo -.-> docs & playground
-    
+
     subgraph Dagger
         engine("🚙 Engine")
         cli("🚗 CLI &nbsp;")
@@ -375,7 +375,7 @@ gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
 ```console
 cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push origin sdk/elixir/${NODEJS_SDK_VERSION}
+git push origin sdk/elixir/${ELIXIR_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Elixir SDK`
@@ -466,7 +466,7 @@ The [Dagger Playground](https://play.dagger.cloud) is set to automatically
 update once there's a new release of the Dagger Engine. In order to verify
 which Dagger version the Playground is using, check the `x-dagger-engine` HTTP
 header with the deployed Dagger Engine version is returned for each playground
-query: 
+query:
 
 ![image](https://user-images.githubusercontent.com/1578458/226123191-fae0dff4-018d-4e62-bac3-73e54e87938a.png)
 
