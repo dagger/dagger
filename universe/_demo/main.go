@@ -41,13 +41,12 @@ func FooTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 }
 
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
-	// TODO: clientApp := Dagger().Democlient().Build()
-	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
+	clientApp := DaggerClient().Democlient().Build()
 
 	// TODO: need combined stdout/stderr really badly now
 	stdout, err := clientApp.
 		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
-		WithExec([]string{"curl", "http://server:8081/hello"}).
+		WithExec(nil).
 		Stdout(ctx)
 	// TODO: this is all boilerplatey, sugar to support other return types will fix
 	if err != nil {
