@@ -67,4 +67,23 @@ conda install dagger-io
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+:::note
+The Dagger Elixir SDK requires Elixir version 1.14 or later with Erlang/OTP version 23 or later. Using Erlang/OTP 25 is recommended.
+:::
+
+To install the Dagger Elixir SDK, adding a dependency into `deps` function in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:dagger, "~> 0.8"}
+  ]
+end
+```
+
+After added, run `mix deps.get` to fetch dependencies from [Hex](https://hex.pm).
+
+</TabItem>
 </Tabs>
