@@ -20,7 +20,12 @@ async def main():
                 [
                     "/bin/sh",
                     "-c",
-                    "tailscaled --tun=userspace-networking --socks5-server=0.0.0.0:1055 --outbound-http-proxy-listen=0.0.0.0:1055 & tailscale up --authkey $TAILSCALE_AUTHKEY &",
+                    (
+                        "tailscaled --tun=userspace-networking"
+                        " --socks5-server=0.0.0.0:1055"
+                        " --outbound-http-proxy-listen=0.0.0.0:1055 & tailscale up"
+                        " --authkey $TAILSCALE_AUTHKEY &"
+                    ),
                 ]
             )
             .with_exposed_port(1055)
