@@ -502,6 +502,12 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
+export type EnvironmentArtifactWithFlagOpts = {
+  description?: string
+}
+
+export type EnvironmentArtifactID = string & { __EnvironmentArtifactID: never }
+
 export type EnvironmentCheckWithFlagOpts = {
   description?: string
 }
@@ -672,6 +678,10 @@ export type ClientEnvironmentOpts = {
   id?: EnvironmentID
 }
 
+export type ClientEnvironmentArtifactOpts = {
+  id?: EnvironmentArtifactID
+}
+
 export type ClientEnvironmentCheckOpts = {
   id?: EnvironmentCheckID
 }
@@ -829,11 +839,13 @@ export class Container extends BaseClient {
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
+  private readonly _sbom?: string = undefined
   private readonly _shellEndpoint?: string = undefined
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
   private readonly _sync?: ContainerID = undefined
   private readonly _user?: string = undefined
+  private readonly _version?: string = undefined
   private readonly _workdir?: string = undefined
 
   /**
@@ -850,11 +862,13 @@ export class Container extends BaseClient {
     _label?: string,
     _platform?: Platform,
     _publish?: string,
+    _sbom?: string,
     _shellEndpoint?: string,
     _stderr?: string,
     _stdout?: string,
     _sync?: ContainerID,
     _user?: string,
+    _version?: string,
     _workdir?: string
   ) {
     super(parent)
@@ -868,11 +882,13 @@ export class Container extends BaseClient {
     this._label = _label
     this._platform = _platform
     this._publish = _publish
+    this._sbom = _sbom
     this._shellEndpoint = _shellEndpoint
     this._stderr = _stderr
     this._stdout = _stdout
     this._sync = _sync
     this._user = _user
+    this._version = _version
     this._workdir = _workdir
   }
 
@@ -1422,6 +1438,23 @@ export class Container extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+  async sbom(): Promise<string> {
+    if (this._sbom) {
+      return this._sbom
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sbom",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
 
   /**
    * TODO
@@ -1522,6 +1555,23 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "user",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+  async version(): Promise<string> {
+    if (this._version) {
+      return this._version
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "version",
         },
       ],
       this.client
@@ -2046,6 +2096,19 @@ export class Container extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+  withVersion(version: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withVersion",
+          args: { version },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
   /**
    * Retrieves this container with a different working directory.
@@ -2392,7 +2455,9 @@ export class Daggerpython extends BaseClient {
 export class Directory extends BaseClient {
   private readonly _export?: boolean = undefined
   private readonly _id?: DirectoryID = undefined
+  private readonly _sbom?: string = undefined
   private readonly _sync?: DirectoryID = undefined
+  private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -2401,13 +2466,17 @@ export class Directory extends BaseClient {
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _export?: boolean,
     _id?: DirectoryID,
-    _sync?: DirectoryID
+    _sbom?: string,
+    _sync?: DirectoryID,
+    _version?: string
   ) {
     super(parent)
 
     this._export = _export
     this._id = _id
+    this._sbom = _sbom
     this._sync = _sync
+    this._version = _version
   }
 
   /**
@@ -2552,6 +2621,38 @@ export class Directory extends BaseClient {
 
     return response
   }
+  async labels(): Promise<Label[]> {
+    type labels = {
+      name: string
+      value: string
+    }
+
+    const response: Awaited<labels[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "labels",
+        },
+        {
+          operation: "name value",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new Label(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.value
+        )
+    )
+  }
 
   /**
    * Creates a named sub-pipeline
@@ -2572,6 +2673,23 @@ export class Directory extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+  async sbom(): Promise<string> {
+    if (this._sbom) {
+      return this._sbom
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sbom",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
 
   /**
    * Force evaluation in the engine.
@@ -2588,6 +2706,27 @@ export class Directory extends BaseClient {
     )
 
     return this
+  }
+
+  /**
+   * TODO
+   */
+  async version(): Promise<string> {
+    if (this._version) {
+      return this._version
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "version",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -2634,6 +2773,19 @@ export class Directory extends BaseClient {
         {
           operation: "withFile",
           args: { path, source, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withLabel(name: string, value: string): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withLabel",
+          args: { name, value },
         },
       ],
       host: this.clientHost,
@@ -2704,6 +2856,19 @@ export class Directory extends BaseClient {
         {
           operation: "withTimestamps",
           args: { timestamp },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withVersion(version: string): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withVersion",
+          args: { version },
         },
       ],
       host: this.clientHost,
@@ -2840,6 +3005,59 @@ export class Environment extends BaseClient {
 
     this._id = _id
     this._name = _name
+  }
+  artifact(name: string): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "artifact",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  async artifacts(): Promise<EnvironmentArtifact[]> {
+    type artifacts = {
+      description: string
+      export: boolean
+      id: EnvironmentArtifactID
+      name: string
+      sbom: string
+      version: string
+    }
+
+    const response: Awaited<artifacts[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "artifacts",
+        },
+        {
+          operation: "description export id name sbom version",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentArtifact(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.export,
+          r.id,
+          r.name,
+          r.sbom,
+          r.version
+        )
+    )
   }
 
   /**
@@ -3069,6 +3287,19 @@ export class Environment extends BaseClient {
         )
     )
   }
+  withArtifact(id: EnvironmentArtifact): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withArtifact",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
   /**
    * TODO
@@ -3162,6 +3393,408 @@ export class Environment extends BaseClient {
    */
   with(arg: (param: Environment) => Environment) {
     return arg(this)
+  }
+}
+
+export class EnvironmentArtifact extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _export?: boolean = undefined
+  private readonly _id?: EnvironmentArtifactID = undefined
+  private readonly _name?: string = undefined
+  private readonly _sbom?: string = undefined
+  private readonly _version?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _export?: boolean,
+    _id?: EnvironmentArtifactID,
+    _name?: string,
+    _sbom?: string,
+    _version?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._export = _export
+    this._id = _id
+    this._name = _name
+    this._sbom = _sbom
+    this._version = _version
+  }
+
+  /**
+   * TODO
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  async export(path: string): Promise<boolean> {
+    if (this._export) {
+      return this._export
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "export",
+          args: { path },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Flags accepted by this artifact.
+   */
+  async flags(): Promise<EnvironmentArtifactFlag[]> {
+    type flags = {
+      description: string
+      name: string
+    }
+
+    const response: Awaited<flags[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "flags",
+        },
+        {
+          operation: "description name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentArtifactFlag(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.name
+        )
+    )
+  }
+  async id(): Promise<EnvironmentArtifactID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnvironmentArtifactID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  async labels(): Promise<Label[]> {
+    type labels = {
+      name: string
+      value: string
+    }
+
+    const response: Awaited<labels[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "labels",
+        },
+        {
+          operation: "name value",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new Label(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.value
+        )
+    )
+  }
+
+  /**
+   * TODO
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  async sbom(): Promise<string> {
+    if (this._sbom) {
+      return this._sbom
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sbom",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  setStringFlag(name: string, value: string): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setStringFlag",
+          args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  async version(): Promise<string> {
+    if (this._version) {
+      return this._version
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "version",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO: this doesn't feel right, has to be a better way w/ unions or interfaces
+   */
+  withContainer(container: Container): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withContainer",
+          args: { container },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withDescription(description: string): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withDirectory(directory: Directory): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDirectory",
+          args: { directory },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withFile(file: File): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFile",
+          args: { file },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withFlag(
+    name: string,
+    opts?: EnvironmentArtifactWithFlagOpts
+  ): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFlag",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withName(name: string): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current EnvironmentArtifact.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: EnvironmentArtifact) => EnvironmentArtifact) {
+    return arg(this)
+  }
+}
+
+export class EnvironmentArtifactFlag extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * Documentation for what this flag sets.
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the flag.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 }
 
@@ -4641,8 +5274,10 @@ export class File extends BaseClient {
   private readonly _contents?: string = undefined
   private readonly _export?: boolean = undefined
   private readonly _id?: FileID = undefined
+  private readonly _sbom?: string = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
+  private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4652,16 +5287,20 @@ export class File extends BaseClient {
     _contents?: string,
     _export?: boolean,
     _id?: FileID,
+    _sbom?: string,
     _size?: number,
-    _sync?: FileID
+    _sync?: FileID,
+    _version?: string
   ) {
     super(parent)
 
     this._contents = _contents
     this._export = _export
     this._id = _id
+    this._sbom = _sbom
     this._size = _size
     this._sync = _sync
+    this._version = _version
   }
 
   /**
@@ -4730,6 +5369,55 @@ export class File extends BaseClient {
 
     return response
   }
+  async labels(): Promise<Label[]> {
+    type labels = {
+      name: string
+      value: string
+    }
+
+    const response: Awaited<labels[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "labels",
+        },
+        {
+          operation: "name value",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new Label(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.value
+        )
+    )
+  }
+  async sbom(): Promise<string> {
+    if (this._sbom) {
+      return this._sbom
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sbom",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
 
   /**
    * Gets the size of the file, in bytes.
@@ -4770,6 +5458,40 @@ export class File extends BaseClient {
   }
 
   /**
+   * TODO
+   */
+  async version(): Promise<string> {
+    if (this._version) {
+      return this._version
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "version",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+  withLabel(name: string, value: string): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withLabel",
+          args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this file with its created/modified timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
    *
@@ -4782,6 +5504,19 @@ export class File extends BaseClient {
         {
           operation: "withTimestamps",
           args: { timestamp },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withVersion(version: string): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withVersion",
+          args: { version },
         },
       ],
       host: this.clientHost,
@@ -5494,6 +6229,21 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "environment",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  environmentArtifact(
+    opts?: ClientEnvironmentArtifactOpts
+  ): EnvironmentArtifact {
+    return new EnvironmentArtifact({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environmentArtifact",
           args: { ...opts },
         },
       ],

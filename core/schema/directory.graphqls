@@ -213,4 +213,11 @@ type Directory {
     """
     timestamp: Int!
   ): Directory!
+
+  "TODO"
+  version: String
+  withVersion(version: String!): Directory!
+  labels: [Label!]!
+  withLabel(name: String! value: String!): Directory!
+  sbom: String
 }

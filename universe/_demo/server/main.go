@@ -10,7 +10,9 @@ func main() {
 	dagger.DefaultClient().Environment().
 		WithCheck_(UnitTest).
 		WithCommand_(Publish).
-		WithFunction_(Container). // TODO: should be an artifact
+		WithArtifact_(Image).
+		WithArtifact_(Binary).
+		WithFunction_(Container).
 		Serve()
 }
 
@@ -26,6 +28,10 @@ func binary(ctx dagger.Context) *dagger.File {
 			Packages: []string{"./universe/_demo/server/cmd/server"},
 		},
 	).File("server")
+}
+
+func Binary(ctx dagger.Context) (*dagger.File, error) {
+	return binary(ctx), nil
 }
 
 func UnitTest(ctx dagger.Context) *dagger.EnvironmentCheckResult {
@@ -49,9 +55,15 @@ func Publish(ctx dagger.Context, version string) (string, error) {
 	return "", nil
 }
 
-func Container(ctx dagger.Context) (*dagger.Container, error) {
+func Image(ctx dagger.Context) (*dagger.Container, error) {
 	return dagger.DefaultClient().Apko().Wolfi(nil).
 		WithMountedFile("/usr/bin/server", binary(ctx)).
 		WithExposedPort(8081).
-		WithExec([]string{"/usr/bin/server"}), nil
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: []string{"/usr/bin/server"},
+		}), nil
+}
+
+func Container(ctx dagger.Context) (*dagger.Container, error) {
+	return Image(ctx)
 }

@@ -78,6 +78,9 @@ type Container struct {
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
 	Focused bool `json:"focused"`
+
+	// TODO: for artifacts, not sure if good idea yet
+	Version string `json:"version,omitempty"`
 }
 
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
@@ -142,7 +145,6 @@ func (id ContainerID) ToContainer() (*Container, error) {
 	if err := resourceid.Decode(&container, id); err != nil {
 		return nil, err
 	}
-
 	return &container, nil
 }
 

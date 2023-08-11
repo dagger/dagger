@@ -61,6 +61,6 @@ func DevShell(ctx dagger.Context) (*dagger.Container, error) {
 	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
 
 	return clientApp.
-		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
+		WithServiceBinding("server", DaggerClient().Demoserver().Container().WithExec(nil)).
 		WithEntrypoint([]string{"sh"}), nil
 }

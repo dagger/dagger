@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	goast "go/ast"
@@ -13,7 +14,7 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
-func (r *Environment) WithShell_(in any) *Environment {
+func (r *Environment) WithArtifact_(in any) *Environment {
 	flag.Parse()
 
 	// TODO: dedupe huge chunks of code
@@ -89,21 +90,13 @@ func (r *Environment) WithShell_(in any) *Environment {
 			return false
 
 		case *goast.GenDecl:
-			/* TODO:
-			 */
 		default:
 		}
 		return true
 	})
 
-	shell := defaultContext.Client().EnvironmentShell()
-	resolvers[lowerCamelCase(fn.name)] = fn
-
-	if !getSchema {
-		return r
-	}
-
-	shell = shell.
+	artifact := defaultContext.Client().EnvironmentArtifact()
+	artifact = artifact.
 		WithName(strcase.ToLowerCamel(fn.name)).
 		WithDescription(fn.doc)
 
@@ -117,9 +110,32 @@ func (r *Environment) WithShell_(in any) *Environment {
 		if param.typ == daggerContextT {
 			continue
 		}
-		shell = shell.WithFlag(param.name, EnvironmentShellWithFlagOpts{
+		artifact = artifact.WithFlag(param.name, EnvironmentArtifactWithFlagOpts{
 			Description: "TODO",
 		})
 	}
-	return r.WithShell(shell)
+
+	fn.resultConverter = func(ctx context.Context, result any) (any, error) {
+		containerType := reflect.TypeOf((*Container)(nil))
+		directoryType := reflect.TypeOf((*Directory)(nil))
+		fileType := reflect.TypeOf((*File)(nil))
+		returntype := fn.returns[0].typ
+		switch {
+		case returntype == containerType:
+			artifact = artifact.WithContainer(result.(*Container))
+		case returntype == directoryType:
+			artifact = artifact.WithDirectory(result.(*Directory))
+		case returntype == fileType:
+			artifact = artifact.WithFile(result.(*File))
+		default:
+			return nil, fmt.Errorf("unsupported return type %v", returntype)
+		}
+		return artifact.ID(ctx)
+	}
+
+	resolvers[lowerCamelCase(fn.name)] = fn
+	if !getSchema {
+		return r
+	}
+	return r.WithArtifact(artifact)
 }

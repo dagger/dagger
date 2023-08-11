@@ -28,6 +28,7 @@ var CustomScalar = map[string]string{
 	"EnvironmentID":         "Environment",
 	"EnvironmentCommandID":  "EnvironmentCommand",
 	"EnvironmentCheckID":    "EnvironmentCheck",
+	"EnvironmentArtifactID": "EnvironmentArtifact",
 	"EnvironmentShellID":    "EnvironmentShell",
 	"EnvironmentFunctionID": "EnvironmentFunction",
 }

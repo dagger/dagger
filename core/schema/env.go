@@ -46,6 +46,8 @@ var environmentCommandIDResolver = stringResolver(core.EnvironmentCommandID(""))
 
 var environmentCheckIDResolver = stringResolver(core.EnvironmentCheckID(""))
 
+var environmentArtifactIDResolver = stringResolver(core.EnvironmentArtifactID(""))
+
 var environmentShellIDResolver = stringResolver(core.EnvironmentShellID(""))
 
 var environmentFunctionIDResolver = stringResolver(core.EnvironmentFunctionID(""))
@@ -55,6 +57,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 		"EnvironmentID":         environmentIDResolver,
 		"EnvironmentCommandID":  environmentCommandIDResolver,
 		"EnvironmentCheckID":    environmentCheckIDResolver,
+		"EnvironmentArtifactID": environmentArtifactIDResolver,
 		"EnvironmentShellID":    environmentShellIDResolver,
 		"EnvironmentFunctionID": environmentFunctionIDResolver,
 		"Query": ObjectResolver{
@@ -62,6 +65,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"environmentCommand":     ToResolver(s.environmentCommand),
 			"environmentCheck":       ToResolver(s.environmentCheck),
 			"environmentCheckResult": ToResolver(s.environmentCheckResult),
+			"environmentArtifact":    ToResolver(s.environmentArtifact),
 			"environmentShell":       ToResolver(s.environmentShell),
 			"environmentFunction":    ToResolver(s.environmentFunction),
 			"currentEnvironment":     ToResolver(s.currentEnvironment),
@@ -73,8 +77,10 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"load":          ToResolver(s.load),
 			"name":          ToResolver(s.environmentName),
 			"command":       ToResolver(s.command),
+			"artifact":      ToResolver(s.artifact),
 			"withCommand":   ToResolver(s.withCommand),
 			"withCheck":     ToResolver(s.withCheck),
+			"withArtifact":  ToResolver(s.withArtifact),
 			"withShell":     ToResolver(s.withShell),
 			"withExtension": ToResolver(s.withExtension),
 			"withFunction":  ToResolver(s.withFunction),
@@ -104,6 +110,20 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withSubcheck":    ToResolver(s.withSubcheck),
 			"withContainer":   ToResolver(s.withCheckContainer),
 			"result":          ToResolver(s.checkResult),
+		}),
+		"EnvironmentArtifact": ToIDableObjectResolver(core.EnvironmentArtifactID.ToEnvironmentArtifact, ObjectResolver{
+			"id":              ToResolver(s.artifactID),
+			"withName":        ToResolver(s.withArtifactName),
+			"withDescription": ToResolver(s.withArtifactDescription),
+			"withFlag":        ToResolver(s.withArtifactFlag),
+			"setStringFlag":   ToResolver(s.setArtifactStringFlag),
+			"version":         ToResolver(s.artifactVersion),
+			"labels":          ToResolver(s.artifactLabels),
+			"sbom":            ToResolver(s.artifactSBOM),
+			"export":          ToResolver(s.artifactExport),
+			"withContainer":   ToResolver(s.withArtifactContainer),
+			"withDirectory":   ToResolver(s.withArtifactDirectory),
+			"withFile":        ToResolver(s.withArtifactFile),
 		}),
 		"EnvironmentShell": ToIDableObjectResolver(core.EnvironmentShellID.ToEnvironmentShell, ObjectResolver{
 			"id":              ToResolver(s.shellID),
@@ -316,6 +336,19 @@ func (s *environmentSchema) command(ctx *core.Context, parent *core.Environment,
 	return nil, fmt.Errorf("no such command %s", args.Name)
 }
 
+type artifactArgs struct {
+	Name string
+}
+
+func (s *environmentSchema) artifact(ctx *core.Context, parent *core.Environment, args artifactArgs) (*core.EnvironmentArtifact, error) {
+	for _, artifact := range parent.Artifacts {
+		if artifact.Name == args.Name {
+			return artifact, nil
+		}
+	}
+	return nil, fmt.Errorf("no such artifact %s", args.Name)
+}
+
 type withCommandArgs struct {
 	ID core.EnvironmentCommandID
 }
@@ -338,6 +371,18 @@ func (s *environmentSchema) withCheck(ctx *core.Context, parent *core.Environmen
 		return nil, err
 	}
 	return parent.WithCheck(ctx, cmd)
+}
+
+type withArtifactArgs struct {
+	ID core.EnvironmentArtifactID
+}
+
+func (s *environmentSchema) withArtifact(ctx *core.Context, parent *core.Environment, args withArtifactArgs) (*core.Environment, error) {
+	cmd, err := args.ID.ToEnvironmentArtifact()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithArtifact(ctx, cmd)
 }
 
 type withShellArgs struct {
@@ -408,6 +453,14 @@ func (s *environmentSchema) environmentCheckResult(ctx *core.Context, parent *co
 		Success: args.Success,
 		Output:  args.Output,
 	}, nil
+}
+
+type environmentArtifactArgs struct {
+	ID core.EnvironmentArtifactID
+}
+
+func (s *environmentSchema) environmentArtifact(ctx *core.Context, parent *core.Query, args environmentArtifactArgs) (*core.EnvironmentArtifact, error) {
+	return core.NewEnvironmentArtifact(args.ID)
 }
 
 type environmentShellArgs struct {
@@ -685,6 +738,151 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 		return nil, err
 	}
 	return checkRes, nil
+}
+
+func (s *environmentSchema) artifactID(ctx *core.Context, parent *core.EnvironmentArtifact, args any) (core.EnvironmentArtifactID, error) {
+	return parent.ID()
+}
+
+type withArtifactNameArgs struct {
+	Name string
+}
+
+func (s *environmentSchema) withArtifactName(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactNameArgs) (*core.EnvironmentArtifact, error) {
+	return parent.WithName(args.Name), nil
+}
+
+type withArtifactDescriptionArgs struct {
+	Description string
+}
+
+func (s *environmentSchema) withArtifactDescription(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactDescriptionArgs) (*core.EnvironmentArtifact, error) {
+	return parent.WithDescription(args.Description), nil
+}
+
+type withArtifactFlagArgs struct {
+	Name        string
+	Description string
+}
+
+func (s *environmentSchema) withArtifactFlag(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactFlagArgs) (*core.EnvironmentArtifact, error) {
+	return parent.WithFlag(core.EnvironmentArtifactFlag{
+		Name:        args.Name,
+		Description: args.Description,
+	}), nil
+}
+
+type setArtifactStringFlagArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *environmentSchema) setArtifactStringFlag(ctx *core.Context, parent *core.EnvironmentArtifact, args setArtifactStringFlagArgs) (*core.EnvironmentArtifact, error) {
+	return parent.SetStringFlag(args.Name, args.Value)
+}
+
+func (s *environmentSchema) resolveArtifact(ctx *core.Context, base *core.EnvironmentArtifact) (*core.EnvironmentArtifact, error) {
+	base = base.Clone()
+	fieldResolver, resolveParams, err := s.getEnvFieldResolver(ctx, base.EnvironmentName, base.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, flag := range base.Flags {
+		resolveParams.Args[flag.Name] = flag.SetValue
+	}
+	res, err := fieldResolver(*resolveParams)
+	if err != nil {
+		return nil, err
+	}
+	artifact, ok := res.(*core.EnvironmentArtifact)
+	if !ok {
+		return nil, fmt.Errorf("expected environment artifact, got %T", res)
+	}
+	base.Container = artifact.Container
+	base.Directory = artifact.Directory
+	base.File = artifact.File
+	return base, nil
+}
+
+func (s *environmentSchema) artifactVersion(ctx *core.Context, artifact *core.EnvironmentArtifact, args any) (string, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return "", err
+	}
+	return artifact.Version()
+}
+
+func (s *environmentSchema) artifactLabels(ctx *core.Context, artifact *core.EnvironmentArtifact, args any) ([]Label, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return nil, err
+	}
+
+	kvs, err := artifact.Labels()
+	if err != nil {
+		return nil, err
+	}
+
+	labels := make([]Label, 0, len(kvs))
+	for name, value := range kvs {
+		label := Label{
+			Name:  name,
+			Value: value,
+		}
+
+		labels = append(labels, label)
+	}
+
+	return labels, nil
+}
+
+func (s *environmentSchema) artifactSBOM(ctx *core.Context, artifact *core.EnvironmentArtifact, args any) (string, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return "", err
+	}
+
+	return artifact.SBOM()
+}
+
+type artifactExportArgs struct {
+	Path string
+}
+
+func (s *environmentSchema) artifactExport(ctx *core.Context, artifact *core.EnvironmentArtifact, args artifactExportArgs) (any, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return false, err
+	}
+	err = artifact.Export(ctx, s.bk, args.Path)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+type withArtifactContainerArgs struct {
+	Container core.ContainerID
+}
+
+func (s *environmentSchema) withArtifactContainer(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactContainerArgs) (*core.EnvironmentArtifact, error) {
+	return parent.WithContainer(args.Container), nil
+}
+
+type withArtifactDirectoryArgs struct {
+	Directory core.DirectoryID
+}
+
+func (s *environmentSchema) withArtifactDirectory(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactDirectoryArgs) (*core.EnvironmentArtifact, error) {
+	return parent.WithDirectory(args.Directory), nil
+}
+
+type withArtifactFileArgs struct {
+	File core.FileID
+}
+
+func (s *environmentSchema) withArtifactFile(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactFileArgs) (*core.EnvironmentArtifact, error) {
+	return parent.WithFile(args.File), nil
 }
 
 func (s *environmentSchema) shellID(ctx *core.Context, parent *core.EnvironmentShell, args any) (core.EnvironmentShellID, error) {

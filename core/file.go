@@ -28,6 +28,10 @@ type File struct {
 
 	// Services necessary to provision the file.
 	Services ServiceBindings `json:"services,omitempty"`
+
+	// TODO: for artifacts
+	Version string            `json:"version,omitempty"`
+	Labels  map[string]string `json:"labels,omitempty"`
 }
 
 func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *File {
@@ -79,10 +83,13 @@ func (id FileID) Digest() (digest.Digest, error) {
 
 func (id FileID) ToFile() (*File, error) {
 	var file File
+	if id == "" {
+		return &file, nil
+	}
+
 	if err := resourceid.Decode(&file, id); err != nil {
 		return nil, err
 	}
-
 	return &file, nil
 }
 

@@ -47,4 +47,11 @@ type File {
     """
     timestamp: Int!
   ): File!
+
+  "TODO"
+  version: String
+  withVersion(version: String!): File!
+  labels: [Label!]!
+  withLabel(name: String! value: String!): File!
+  sbom: String
 }

@@ -17,6 +17,8 @@ extend type Query {
   "Load a environment function from ID."
   environmentFunction(id: EnvironmentFunctionID): EnvironmentFunction!
 
+  environmentArtifact(id: EnvironmentArtifactID): EnvironmentArtifact!
+
   "TODO"
   extensions: Extensions!
 
@@ -47,6 +49,8 @@ scalar EnvironmentShellID
 
 "A unique environment function identifier."
 scalar EnvironmentFunctionID
+
+scalar EnvironmentArtifactID
 
 "A collection of Dagger resources that can be queried and invoked."
 type Environment {
@@ -91,6 +95,56 @@ type Environment {
 
   "TODO"
   withFunction(id: EnvironmentFunctionID!): Environment!
+
+  artifact(name: String!): EnvironmentArtifact
+  artifacts: [EnvironmentArtifact!]
+  withArtifact(id: EnvironmentArtifactID!): Environment!
+}
+
+type EnvironmentArtifact {
+  id: EnvironmentArtifactID!
+
+  "TODO"
+	name: String!
+  withName(name: String!): EnvironmentArtifact!
+
+  "TODO"
+	description: String
+  withDescription(description: String!): EnvironmentArtifact!
+
+  "TODO"
+	version: String
+
+  "TODO"
+  labels: [Label!]!
+
+  "TODO"
+	sbom: String
+
+  "Flags accepted by this artifact."
+  flags: [EnvironmentArtifactFlag!]
+
+  "TODO"
+  withFlag(name: String!, description: String): EnvironmentArtifact!
+
+  "TODO"
+  setStringFlag(name: String!, value: String!): EnvironmentArtifact!
+
+  "TODO"
+  export(path: String!): Boolean!
+
+  "TODO: this doesn't feel right, has to be a better way w/ unions or interfaces"
+  withContainer(container: ContainerID!): EnvironmentArtifact!
+  withDirectory(directory: DirectoryID!): EnvironmentArtifact!
+  withFile(file: FileID!): EnvironmentArtifact!
+}
+
+type EnvironmentArtifactFlag {
+  "The name of the flag."
+  name: String!
+
+  "Documentation for what this flag sets."
+  description: String
 }
 
 "TODO"

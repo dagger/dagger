@@ -79,6 +79,23 @@ func (id EnvironmentCheckID) ToEnvironmentCheck() (*EnvironmentCheck, error) {
 	return &environmentCheck, nil
 }
 
+type EnvironmentArtifactID string
+
+func (id EnvironmentArtifactID) String() string {
+	return string(id)
+}
+
+func (id EnvironmentArtifactID) ToEnvironmentArtifact() (*EnvironmentArtifact, error) {
+	var environmentArtifact EnvironmentArtifact
+	if id == "" {
+		return &environmentArtifact, nil
+	}
+	if err := resourceid.Decode(&environmentArtifact, id); err != nil {
+		return nil, err
+	}
+	return &environmentArtifact, nil
+}
+
 type EnvironmentShellID string
 
 func (id EnvironmentShellID) String() string {
@@ -127,6 +144,7 @@ type Environment struct {
 	// TODO:
 	Commands  []*EnvironmentCommand  `json:"commands,omitempty"`
 	Checks    []*EnvironmentCheck    `json:"checks,omitempty"`
+	Artifacts []*EnvironmentArtifact `json:"artifacts,omitempty"`
 	Shells    []*EnvironmentShell    `json:"shells,omitempty"`
 	Functions []*EnvironmentFunction `json:"functions,omitempty"`
 }
@@ -148,11 +166,30 @@ func (env *Environment) Clone() *Environment {
 	if env.Directory != nil {
 		cp.Directory = env.Directory.Clone()
 	}
+	if env.Config != nil {
+		env.Config = &environmentconfig.Config{
+			Root:         env.Config.Root,
+			Name:         env.Config.Name,
+			SDK:          env.Config.SDK,
+			Include:      cloneSlice(env.Config.Include),
+			Exclude:      cloneSlice(env.Config.Exclude),
+			Dependencies: cloneSlice(env.Config.Dependencies),
+		}
+	}
 	for i, cmd := range env.Commands {
 		cp.Commands[i] = cmd.Clone()
 	}
 	for i, check := range env.Checks {
 		cp.Checks[i] = check.Clone()
+	}
+	for i, artifact := range env.Artifacts {
+		cp.Artifacts[i] = artifact.Clone()
+	}
+	for i, shell := range env.Shells {
+		cp.Shells[i] = shell.Clone()
+	}
+	for i, functions := range env.Functions {
+		cp.Functions[i] = functions.Clone()
 	}
 	return &cp
 }
@@ -368,6 +405,30 @@ func (env *Environment) buildSchema() (string, error) {
 		obj.Fields = append(obj.Fields, fieldDef)
 	}
 
+	// artifacts
+	for _, artifact := range env.Artifacts {
+		artifact.EnvironmentName = env.Config.Name
+		fieldDef := &ast.FieldDefinition{
+			Name:        artifact.Name,
+			Description: artifact.Description,
+			Type: &ast.Type{
+				NamedType: "EnvironmentArtifact",
+				NonNull:   true,
+			},
+		}
+		for _, flag := range artifact.Flags {
+			fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+				Name: flag.Name,
+				// Type is always string for the moment
+				Type: &ast.Type{
+					NamedType: "String",
+					NonNull:   true,
+				},
+			})
+		}
+		obj.Fields = append(obj.Fields, fieldDef)
+	}
+
 	// shells
 	for _, shell := range env.Shells {
 		shell.EnvironmentName = env.Config.Name
@@ -464,6 +525,15 @@ func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) 
 		check.EnvironmentName = env.Config.Name
 	}
 	env.Checks = append(env.Checks, check)
+	return env, nil
+}
+
+func (env *Environment) WithArtifact(ctx context.Context, artifact *EnvironmentArtifact) (*Environment, error) {
+	env = env.Clone()
+	if artifact.EnvironmentName == "" && env.Config != nil {
+		artifact.EnvironmentName = env.Config.Name
+	}
+	env.Artifacts = append(env.Artifacts, artifact)
 	return env, nil
 }
 
@@ -676,6 +746,165 @@ func (check *EnvironmentCheck) SetStringFlag(name, value string) (*EnvironmentCh
 		}
 	}
 	return nil, fmt.Errorf("no flag named %q", name)
+}
+
+type EnvironmentArtifact struct {
+	Name            string                    `json:"name"`
+	Flags           []EnvironmentArtifactFlag `json:"flags"`
+	Description     string                    `json:"description"`
+	EnvironmentName string                    `json:"environmentName"`
+	// only one of these should be set
+	Container ContainerID `json:"container"`
+	Directory DirectoryID `json:"directory"`
+	File      FileID      `json:"file"`
+}
+
+type EnvironmentArtifactFlag struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SetValue    string `json:"setValue"`
+}
+
+func NewEnvironmentArtifact(id EnvironmentArtifactID) (*EnvironmentArtifact, error) {
+	artifact, err := id.ToEnvironmentArtifact()
+	if err != nil {
+		return nil, err
+	}
+	return artifact, nil
+}
+
+func (artifact *EnvironmentArtifact) ID() (EnvironmentArtifactID, error) {
+	return resourceid.Encode[EnvironmentArtifactID](artifact)
+}
+
+func (artifact EnvironmentArtifact) Clone() *EnvironmentArtifact {
+	cp := artifact
+	cp.Flags = cloneSlice(artifact.Flags)
+	return &cp
+}
+
+func (artifact *EnvironmentArtifact) WithName(name string) *EnvironmentArtifact {
+	artifact = artifact.Clone()
+	artifact.Name = name
+	return artifact
+}
+
+func (artifact *EnvironmentArtifact) WithFlag(flag EnvironmentArtifactFlag) *EnvironmentArtifact {
+	artifact = artifact.Clone()
+	artifact.Flags = append(artifact.Flags, flag)
+	return artifact
+}
+
+func (artifact *EnvironmentArtifact) WithDescription(description string) *EnvironmentArtifact {
+	artifact = artifact.Clone()
+	artifact.Description = description
+	return artifact
+}
+
+func (artifact *EnvironmentArtifact) SetStringFlag(name, value string) (*EnvironmentArtifact, error) {
+	artifact = artifact.Clone()
+	for i, flag := range artifact.Flags {
+		if flag.Name == name {
+			artifact.Flags[i].SetValue = value
+			return artifact, nil
+		}
+	}
+	return nil, fmt.Errorf("no flag named %q", name)
+}
+
+func (artifact *EnvironmentArtifact) WithContainer(container ContainerID) *EnvironmentArtifact {
+	artifact = artifact.Clone()
+	artifact.Container = container
+	return artifact
+}
+
+func (artifact *EnvironmentArtifact) WithDirectory(directory DirectoryID) *EnvironmentArtifact {
+	artifact = artifact.Clone()
+	artifact.Directory = directory
+	return artifact
+}
+
+func (artifact *EnvironmentArtifact) WithFile(file FileID) *EnvironmentArtifact {
+	artifact = artifact.Clone()
+	artifact.File = file
+	return artifact
+}
+
+func (artifact *EnvironmentArtifact) Version() (string, error) {
+	switch {
+	case artifact.Container != "":
+		ctr, err := artifact.Container.ToContainer()
+		if err != nil {
+			return "", err
+		}
+		return ctr.Version, nil
+	case artifact.Directory != "":
+		dir, err := artifact.Directory.ToDirectory()
+		if err != nil {
+			return "", err
+		}
+		return dir.Version, nil
+	case artifact.File != "":
+		file, err := artifact.File.ToFile()
+		if err != nil {
+			return "", err
+		}
+		return file.Version, nil
+	}
+	return "", nil
+}
+
+func (artifact *EnvironmentArtifact) Labels() (map[string]string, error) {
+	switch {
+	case artifact.Container != "":
+		ctr, err := artifact.Container.ToContainer()
+		if err != nil {
+			return nil, err
+		}
+		return ctr.Config.Labels, nil
+	case artifact.Directory != "":
+		dir, err := artifact.Directory.ToDirectory()
+		if err != nil {
+			return nil, err
+		}
+		return dir.Labels, nil
+	case artifact.File != "":
+		file, err := artifact.File.ToFile()
+		if err != nil {
+			return nil, err
+		}
+		return file.Labels, nil
+	}
+	return nil, nil
+}
+
+func (artifact *EnvironmentArtifact) SBOM() (string, error) {
+	// TODO: dummy implementation
+	return "", nil
+}
+
+func (artifact *EnvironmentArtifact) Export(ctx *Context, bk *buildkit.Client, path string) error {
+	switch {
+	case artifact.Container != "":
+		ctr, err := artifact.Container.ToContainer()
+		if err != nil {
+			return err
+		}
+		return ctr.Export(ctx, bk, path, nil, "", "")
+	case artifact.Directory != "":
+		dir, err := artifact.Directory.ToDirectory()
+		if err != nil {
+			return err
+		}
+		return dir.Export(ctx, bk, nil, path)
+	case artifact.File != "":
+		file, err := artifact.File.ToFile()
+		if err != nil {
+			return err
+		}
+		return file.Export(ctx, bk, nil, path, true)
+	}
+	return fmt.Errorf("no artifact specified")
 }
 
 type EnvironmentShell struct {

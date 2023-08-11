@@ -101,6 +101,8 @@ func (s *containerSchema) Resolvers() Resolvers {
 			"withFocus":            ToResolver(s.withFocus),
 			"withoutFocus":         ToResolver(s.withoutFocus),
 			"shellEndpoint":        ToResolver(s.shellEndpoint),
+			"withVersion":          ToResolver(s.withVersion),
+			"sbom":                 ToResolver(s.sbom),
 		}),
 	}
 }
@@ -859,4 +861,19 @@ func (s *containerSchema) shellEndpoint(ctx *core.Context, parent *core.Containe
 
 	s.MuxEndpoint(path.Join("/", endpoint), handler)
 	return "ws://dagger/" + endpoint, nil
+}
+
+type containerWithVersionArgs struct {
+	Version string
+}
+
+func (s *containerSchema) withVersion(ctx *core.Context, parent *core.Container, args containerWithVersionArgs) (*core.Container, error) {
+	parent = parent.Clone()
+	parent.Version = args.Version
+	return parent, nil
+}
+
+func (s *containerSchema) sbom(ctx *core.Context, parent *core.Container, args any) (string, error) {
+	// TODO: dummy implementation for now
+	return "", nil
 }

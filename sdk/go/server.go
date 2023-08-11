@@ -115,7 +115,10 @@ func (r *Environment) Serve() {
 		result = make(map[string]any)
 	}
 
-	result, err = convertResult(ctx, result)
+	if fn.resultConverter == nil {
+		fn.resultConverter = convertResult
+	}
+	result, err = fn.resultConverter(ctx, result)
 	if err != nil {
 		writeErrorf(err)
 	}
@@ -160,8 +163,9 @@ type goFunc struct {
 	val     reflect.Value
 	// TODO:
 	// receiver *goStruct // only set for methods
-	hasReceiver bool
-	doc         string
+	hasReceiver     bool
+	doc             string
+	resultConverter func(context.Context, any) (any, error)
 }
 
 type goParam struct {

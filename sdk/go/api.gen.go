@@ -18,6 +18,8 @@ type ContainerID string
 // A content-addressed directory identifier.
 type DirectoryID string
 
+type EnvironmentArtifactID string
+
 // A unique environment check identifier.
 type EnvironmentCheckID string
 
@@ -143,11 +145,13 @@ type Container struct {
 	label         *string
 	platform      *Platform
 	publish       *string
+	sbom          *string
 	shellEndpoint *string
 	stderr        *string
 	stdout        *string
 	sync          *ContainerID
 	user          *string
+	version       *string
 	workdir       *string
 }
 type WithContainerFunc func(r *Container) *Container
@@ -673,6 +677,18 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
+func (r *Container) Sbom(ctx context.Context) (string, error) {
+	if r.sbom != nil {
+		return *r.sbom, nil
+	}
+	q := r.Q.Select("sbom")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
 // TODO
 func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
 	if r.shellEndpoint != nil {
@@ -731,6 +747,18 @@ func (r *Container) User(ctx context.Context) (string, error) {
 		return *r.user, nil
 	}
 	q := r.Q.Select("user")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+func (r *Container) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.Q.Select("version")
 
 	var response string
 
@@ -1265,6 +1293,16 @@ func (r *Container) WithUser(name string) *Container {
 	}
 }
 
+func (r *Container) WithVersion(version string) *Container {
+	q := r.Q.Select("withVersion")
+	q = q.Arg("version", version)
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // Retrieves this container with a different working directory.
 func (r *Container) WithWorkdir(path string) *Container {
 	q := r.Q.Select("withWorkdir")
@@ -1477,9 +1515,11 @@ type Directory struct {
 	Q *querybuilder.Selection
 	C graphql.Client
 
-	export *bool
-	id     *DirectoryID
-	sync   *DirectoryID
+	export  *bool
+	id      *DirectoryID
+	sbom    *string
+	sync    *DirectoryID
+	version *string
 }
 type WithDirectoryFunc func(r *Directory) *Directory
 
@@ -1641,6 +1681,37 @@ func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+func (r *Directory) Labels(ctx context.Context) ([]Label, error) {
+	q := r.Q.Select("labels")
+
+	q = q.Select("name value")
+
+	type labels struct {
+		Name  string
+		Value string
+	}
+
+	convert := func(fields []labels) []Label {
+		out := []Label{}
+
+		for i := range fields {
+			out = append(out, Label{name: &fields[i].Name, value: &fields[i].Value})
+		}
+
+		return out
+	}
+	var response []labels
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.C)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
 	// Pipeline description.
@@ -1670,11 +1741,36 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 	}
 }
 
+func (r *Directory) Sbom(ctx context.Context) (string, error) {
+	if r.sbom != nil {
+		return *r.sbom, nil
+	}
+	q := r.Q.Select("sbom")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.Q.Select("sync")
 
 	return r, q.Execute(ctx, r.C)
+}
+
+// TODO
+func (r *Directory) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.Q.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
 }
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
@@ -1726,6 +1822,17 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Directory{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Directory) WithLabel(name string, value string) *Directory {
+	q := r.Q.Select("withLabel")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
 
 	return &Directory{
 		Q: q,
@@ -1788,6 +1895,16 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.Q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
+
+	return &Directory{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Directory) WithVersion(version string) *Directory {
+	q := r.Q.Select("withVersion")
+	q = q.Arg("version", version)
 
 	return &Directory{
 		Q: q,
@@ -1867,6 +1984,51 @@ type WithEnvironmentFunc func(r *Environment) *Environment
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *Environment) With(f WithEnvironmentFunc) *Environment {
 	return f(r)
+}
+
+func (r *Environment) Artifact(name string) *EnvironmentArtifact {
+	q := r.Q.Select("artifact")
+	q = q.Arg("name", name)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Environment) Artifacts(ctx context.Context) ([]EnvironmentArtifact, error) {
+	q := r.Q.Select("artifacts")
+
+	q = q.Select("description export id name sbom version")
+
+	type artifacts struct {
+		Description string
+		Export      bool
+		Id          EnvironmentArtifactID
+		Name        string
+		Sbom        string
+		Version     string
+	}
+
+	convert := func(fields []artifacts) []EnvironmentArtifact {
+		out := []EnvironmentArtifact{}
+
+		for i := range fields {
+			out = append(out, EnvironmentArtifact{description: &fields[i].Description, export: &fields[i].Export, id: &fields[i].Id, name: &fields[i].Name, sbom: &fields[i].Sbom, version: &fields[i].Version})
+		}
+
+		return out
+	}
+	var response []artifacts
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.C)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // TODO
@@ -2060,6 +2222,16 @@ func (r *Environment) Shells(ctx context.Context) ([]EnvironmentShell, error) {
 	return convert(response), nil
 }
 
+func (r *Environment) WithArtifact(id *EnvironmentArtifact) *Environment {
+	q := r.Q.Select("withArtifact")
+	q = q.Arg("id", id)
+
+	return &Environment{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // TODO
 func (r *Environment) WithCheck(id *EnvironmentCheck) *Environment {
 	q := r.Q.Select("withCheck")
@@ -2114,6 +2286,306 @@ func (r *Environment) WithShell(id *EnvironmentShell) *Environment {
 		Q: q,
 		C: r.C,
 	}
+}
+
+type EnvironmentArtifact struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+
+	description *string
+	export      *bool
+	id          *EnvironmentArtifactID
+	name        *string
+	sbom        *string
+	version     *string
+}
+type WithEnvironmentArtifactFunc func(r *EnvironmentArtifact) *EnvironmentArtifact
+
+// With calls the provided function with current EnvironmentArtifact.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvironmentArtifact) With(f WithEnvironmentArtifactFunc) *EnvironmentArtifact {
+	return f(r)
+}
+
+// TODO
+func (r *EnvironmentArtifact) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.Q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// TODO
+func (r *EnvironmentArtifact) Export(ctx context.Context, path string) (bool, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
+	q := r.Q.Select("export")
+	q = q.Arg("path", path)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// Flags accepted by this artifact.
+func (r *EnvironmentArtifact) Flags(ctx context.Context) ([]EnvironmentArtifactFlag, error) {
+	q := r.Q.Select("flags")
+
+	q = q.Select("description name")
+
+	type flags struct {
+		Description string
+		Name        string
+	}
+
+	convert := func(fields []flags) []EnvironmentArtifactFlag {
+		out := []EnvironmentArtifactFlag{}
+
+		for i := range fields {
+			out = append(out, EnvironmentArtifactFlag{description: &fields[i].Description, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []flags
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.C)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+func (r *EnvironmentArtifact) ID(ctx context.Context) (EnvironmentArtifactID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.Q.Select("id")
+
+	var response EnvironmentArtifactID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvironmentArtifact) XXX_GraphQLType() string {
+	return "EnvironmentArtifact"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvironmentArtifact) XXX_GraphQLIDType() string {
+	return "EnvironmentArtifactID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvironmentArtifact) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// TODO
+func (r *EnvironmentArtifact) Labels(ctx context.Context) ([]Label, error) {
+	q := r.Q.Select("labels")
+
+	q = q.Select("name value")
+
+	type labels struct {
+		Name  string
+		Value string
+	}
+
+	convert := func(fields []labels) []Label {
+		out := []Label{}
+
+		for i := range fields {
+			out = append(out, Label{name: &fields[i].Name, value: &fields[i].Value})
+		}
+
+		return out
+	}
+	var response []labels
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.C)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// TODO
+func (r *EnvironmentArtifact) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.Q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// TODO
+func (r *EnvironmentArtifact) Sbom(ctx context.Context) (string, error) {
+	if r.sbom != nil {
+		return *r.sbom, nil
+	}
+	q := r.Q.Select("sbom")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// TODO
+func (r *EnvironmentArtifact) SetStringFlag(name string, value string) *EnvironmentArtifact {
+	q := r.Q.Select("setStringFlag")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// TODO
+func (r *EnvironmentArtifact) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.Q.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// TODO: this doesn't feel right, has to be a better way w/ unions or interfaces
+func (r *EnvironmentArtifact) WithContainer(container *Container) *EnvironmentArtifact {
+	q := r.Q.Select("withContainer")
+	q = q.Arg("container", container)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentArtifact) WithDescription(description string) *EnvironmentArtifact {
+	q := r.Q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentArtifact) WithDirectory(directory *Directory) *EnvironmentArtifact {
+	q := r.Q.Select("withDirectory")
+	q = q.Arg("directory", directory)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentArtifact) WithFile(file *File) *EnvironmentArtifact {
+	q := r.Q.Select("withFile")
+	q = q.Arg("file", file)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// EnvironmentArtifactWithFlagOpts contains options for EnvironmentArtifact.WithFlag
+type EnvironmentArtifactWithFlagOpts struct {
+	Description string
+}
+
+// TODO
+func (r *EnvironmentArtifact) WithFlag(name string, opts ...EnvironmentArtifactWithFlagOpts) *EnvironmentArtifact {
+	q := r.Q.Select("withFlag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentArtifact) WithName(name string) *EnvironmentArtifact {
+	q := r.Q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+type EnvironmentArtifactFlag struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+
+	description *string
+	name        *string
+}
+
+// Documentation for what this flag sets.
+func (r *EnvironmentArtifactFlag) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.Q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// The name of the flag.
+func (r *EnvironmentArtifactFlag) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.Q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
 }
 
 // TODO
@@ -3184,8 +3656,10 @@ type File struct {
 	contents *string
 	export   *bool
 	id       *FileID
+	sbom     *string
 	size     *int
 	sync     *FileID
+	version  *string
 }
 type WithFileFunc func(r *File) *File
 
@@ -3268,6 +3742,49 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+func (r *File) Labels(ctx context.Context) ([]Label, error) {
+	q := r.Q.Select("labels")
+
+	q = q.Select("name value")
+
+	type labels struct {
+		Name  string
+		Value string
+	}
+
+	convert := func(fields []labels) []Label {
+		out := []Label{}
+
+		for i := range fields {
+			out = append(out, Label{name: &fields[i].Name, value: &fields[i].Value})
+		}
+
+		return out
+	}
+	var response []labels
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.C)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+func (r *File) Sbom(ctx context.Context) (string, error) {
+	if r.sbom != nil {
+		return *r.sbom, nil
+	}
+	q := r.Q.Select("sbom")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
 // Gets the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
@@ -3288,10 +3805,44 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 	return r, q.Execute(ctx, r.C)
 }
 
+// TODO
+func (r *File) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.Q.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+func (r *File) WithLabel(name string, value string) *File {
+	q := r.Q.Select("withLabel")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &File{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // Retrieves this file with its created/modified timestamps set to the given time.
 func (r *File) WithTimestamps(timestamp int) *File {
 	q := r.Q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
+
+	return &File{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *File) WithVersion(version string) *File {
+	q := r.Q.Select("withVersion")
+	q = q.Arg("version", version)
 
 	return &File{
 		Q: q,
@@ -3915,6 +4466,26 @@ func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
 	}
 
 	return &Environment{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// EnvironmentArtifactOpts contains options for Client.EnvironmentArtifact
+type EnvironmentArtifactOpts struct {
+	ID EnvironmentArtifactID
+}
+
+func (r *Client) EnvironmentArtifact(opts ...EnvironmentArtifactOpts) *EnvironmentArtifact {
+	q := r.Q.Select("environmentArtifact")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &EnvironmentArtifact{
 		Q: q,
 		C: r.C,
 	}

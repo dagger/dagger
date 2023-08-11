@@ -31,6 +31,10 @@ type Directory struct {
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings `json:"services,omitempty"`
+
+	// TODO: for artifacts, not sure if good idea yet
+	Version string            `json:"version,omitempty"`
+	Labels  map[string]string `json:"labels,omitempty"`
 }
 
 func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *Directory {
@@ -66,6 +70,7 @@ func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneMap(cp.Services)
+	cp.Labels = cloneMap(cp.Labels)
 	return &cp
 }
 
@@ -99,7 +104,6 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 	if err := resourceid.Decode(&dir, id); err != nil {
 		return nil, err
 	}
-
 	return &dir, nil
 }
 

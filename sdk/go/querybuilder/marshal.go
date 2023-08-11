@@ -43,6 +43,7 @@ var (
 		"EnvironmentID":         {},
 		"EnvironmentCommandID":  {},
 		"EnvironmentCheckID":    {},
+		"EnvironmentArtifactID": {},
 		"EnvironmentShellID":    {},
 		"EnvironmentFunctionID": {},
 	}

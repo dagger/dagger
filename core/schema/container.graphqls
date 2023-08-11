@@ -783,6 +783,9 @@ type Container {
 
   "TODO"
   shellEndpoint: String!
+  version: String
+  withVersion(version: String!): Container!
+  sbom: String
 }
 
 "A simple key value object that represents an environment variable."

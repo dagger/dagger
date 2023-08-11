@@ -23,6 +23,10 @@ class DirectoryID(Scalar):
     """A content-addressed directory identifier."""
 
 
+class EnvironmentArtifactID(Scalar):
+    ...
+
+
 class EnvironmentCheckID(Scalar):
     """A unique environment check identifier."""
 
@@ -766,6 +770,26 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
+    async def sbom(self) -> Optional[str]:
+        """Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sbom", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
     async def shell_endpoint(self) -> str:
         """TODO
 
@@ -879,6 +903,26 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def version(self) -> Optional[str]:
+        """Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
         return await _ctx.execute(Optional[str])
 
     @typecheck
@@ -1465,6 +1509,14 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def with_version(self, version: str) -> "Container":
+        _args = [
+            Arg("version", version),
+        ]
+        _ctx = self._select("withVersion", _args)
+        return Container(_ctx)
+
+    @typecheck
     def with_workdir(self, path: str) -> "Container":
         """Retrieves this container with a different working directory.
 
@@ -1872,6 +1924,16 @@ class Directory(Type):
         return "directory"
 
     @typecheck
+    async def labels(self) -> list["Label"]:
+        _args: list[Arg] = []
+        _ctx = self._select("labels", _args)
+        _ctx = Label(_ctx)._select_multiple(
+            _name="name",
+            _value="value",
+        )
+        return await _ctx.execute(list[Label])
+
+    @typecheck
     def pipeline(
         self,
         name: str,
@@ -1899,6 +1961,26 @@ class Directory(Type):
         return Directory(_ctx)
 
     @typecheck
+    async def sbom(self) -> Optional[str]:
+        """Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sbom", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
     async def sync(self) -> "Directory":
         """Force evaluation in the engine.
 
@@ -1917,6 +1999,28 @@ class Directory(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    @typecheck
+    async def version(self) -> Optional[str]:
+        """TODO
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(Optional[str])
 
     @typecheck
     def with_directory(
@@ -1978,6 +2082,15 @@ class Directory(Type):
             Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withFile", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def with_label(self, name: str, value: str) -> "Directory":
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withLabel", _args)
         return Directory(_ctx)
 
     @typecheck
@@ -2048,6 +2161,14 @@ class Directory(Type):
             Arg("timestamp", timestamp),
         ]
         _ctx = self._select("withTimestamps", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def with_version(self, version: str) -> "Directory":
+        _args = [
+            Arg("version", version),
+        ]
+        _ctx = self._select("withVersion", _args)
         return Directory(_ctx)
 
     @typecheck
@@ -2152,6 +2273,27 @@ class EnvVariable(Type):
 class Environment(Type):
     """A collection of Dagger resources that can be queried and
     invoked."""
+
+    @typecheck
+    def artifact(self, name: str) -> "EnvironmentArtifact":
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("artifact", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    async def artifacts(self) -> list["EnvironmentArtifact"]:
+        _args: list[Arg] = []
+        _ctx = self._select("artifacts", _args)
+        _ctx = EnvironmentArtifact(_ctx)._select_multiple(
+            _description="description",
+            _export="export",
+            _name="name",
+            _sbom="sbom",
+            _version="version",
+        )
+        return await _ctx.execute(list[EnvironmentArtifact])
 
     @typecheck
     def check(self, name: str) -> "EnvironmentCheck":
@@ -2284,6 +2426,14 @@ class Environment(Type):
         return await _ctx.execute(list[EnvironmentShell])
 
     @typecheck
+    def with_artifact(self, id: "EnvironmentArtifact") -> "Environment":
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("withArtifact", _args)
+        return Environment(_ctx)
+
+    @typecheck
     def with_check(self, id: "EnvironmentCheck") -> "Environment":
         """TODO"""
         _args = [
@@ -2335,6 +2485,324 @@ class Environment(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+class EnvironmentArtifact(Type):
+    __slots__ = (
+        "_description",
+        "_export",
+        "_name",
+        "_sbom",
+        "_version",
+    )
+
+    _description: Optional[str]
+    _export: Optional[bool]
+    _name: Optional[str]
+    _sbom: Optional[str]
+    _version: Optional[str]
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """TODO
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def export(self, path: str) -> bool:
+        """TODO
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_export"):
+            return self._export
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
+    async def flags(self) -> list["EnvironmentArtifactFlag"]:
+        """Flags accepted by this artifact."""
+        _args: list[Arg] = []
+        _ctx = self._select("flags", _args)
+        _ctx = EnvironmentArtifactFlag(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[EnvironmentArtifactFlag])
+
+    @typecheck
+    async def id(self) -> EnvironmentArtifactID:
+        """Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnvironmentArtifactID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return EnvironmentArtifactID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "environmentArtifact"
+
+    @typecheck
+    async def labels(self) -> list["Label"]:
+        """TODO"""
+        _args: list[Arg] = []
+        _ctx = self._select("labels", _args)
+        _ctx = Label(_ctx)._select_multiple(
+            _name="name",
+            _value="value",
+        )
+        return await _ctx.execute(list[Label])
+
+    @typecheck
+    async def name(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def sbom(self) -> Optional[str]:
+        """TODO
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_sbom"):
+            return self._sbom
+        _args: list[Arg] = []
+        _ctx = self._select("sbom", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    def set_string_flag(self, name: str, value: str) -> "EnvironmentArtifact":
+        """TODO"""
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("setStringFlag", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    async def version(self) -> Optional[str]:
+        """TODO
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_version"):
+            return self._version
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    def with_container(self, container: Container) -> "EnvironmentArtifact":
+        """TODO: this doesn't feel right, has to be a better way w/ unions or
+        interfaces
+        """
+        _args = [
+            Arg("container", container),
+        ]
+        _ctx = self._select("withContainer", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    def with_description(self, description: str) -> "EnvironmentArtifact":
+        _args = [
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDescription", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    def with_directory(self, directory: Directory) -> "EnvironmentArtifact":
+        _args = [
+            Arg("directory", directory),
+        ]
+        _ctx = self._select("withDirectory", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    def with_file(self, file: "File") -> "EnvironmentArtifact":
+        _args = [
+            Arg("file", file),
+        ]
+        _ctx = self._select("withFile", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    def with_flag(
+        self,
+        name: str,
+        *,
+        description: Optional[str] = None,
+    ) -> "EnvironmentArtifact":
+        """TODO"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withFlag", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
+    def with_name(self, name: str) -> "EnvironmentArtifact":
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return EnvironmentArtifact(_ctx)
+
+    def with_(
+        self, cb: Callable[["EnvironmentArtifact"], "EnvironmentArtifact"]
+    ) -> "EnvironmentArtifact":
+        """Call the provided callable with current EnvironmentArtifact.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+class EnvironmentArtifactFlag(Type):
+    __slots__ = (
+        "_description",
+        "_name",
+    )
+
+    _description: Optional[str]
+    _name: Optional[str]
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """Documentation for what this flag sets.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the flag.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
 
 class EnvironmentCheck(Type):
@@ -3577,6 +4045,36 @@ class File(Type):
         return "file"
 
     @typecheck
+    async def labels(self) -> list["Label"]:
+        _args: list[Arg] = []
+        _ctx = self._select("labels", _args)
+        _ctx = Label(_ctx)._select_multiple(
+            _name="name",
+            _value="value",
+        )
+        return await _ctx.execute(list[Label])
+
+    @typecheck
+    async def sbom(self) -> Optional[str]:
+        """Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sbom", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
     async def size(self) -> int:
         """Gets the size of the file, in bytes.
 
@@ -3619,6 +4117,37 @@ class File(Type):
         return self.sync().__await__()
 
     @typecheck
+    async def version(self) -> Optional[str]:
+        """TODO
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    def with_label(self, name: str, value: str) -> "File":
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withLabel", _args)
+        return File(_ctx)
+
+    @typecheck
     def with_timestamps(self, timestamp: int) -> "File":
         """Retrieves this file with its created/modified timestamps set to the
         given time.
@@ -3633,6 +4162,14 @@ class File(Type):
             Arg("timestamp", timestamp),
         ]
         _ctx = self._select("withTimestamps", _args)
+        return File(_ctx)
+
+    @typecheck
+    def with_version(self, version: str) -> "File":
+        _args = [
+            Arg("version", version),
+        ]
+        _ctx = self._select("withVersion", _args)
         return File(_ctx)
 
     def with_(self, cb: Callable[["File"], "File"]) -> "File":
@@ -4230,6 +4767,18 @@ class Client(Root):
         return Environment(_ctx)
 
     @typecheck
+    def environment_artifact(
+        self,
+        *,
+        id: Optional[EnvironmentArtifactID] = None,
+    ) -> EnvironmentArtifact:
+        _args = [
+            Arg("id", id, None),
+        ]
+        _ctx = self._select("environmentArtifact", _args)
+        return EnvironmentArtifact(_ctx)
+
+    @typecheck
     def environment_check(
         self,
         *,
@@ -4574,6 +5123,7 @@ daggerpython = _client.daggerpython
 default_platform = _client.default_platform
 directory = _client.directory
 environment = _client.environment
+environment_artifact = _client.environment_artifact
 environment_check = _client.environment_check
 environment_check_result = _client.environment_check_result
 environment_command = _client.environment_command
@@ -4612,6 +5162,9 @@ __all__ = [
     "DirectoryID",
     "EnvVariable",
     "Environment",
+    "EnvironmentArtifact",
+    "EnvironmentArtifactFlag",
+    "EnvironmentArtifactID",
     "EnvironmentCheck",
     "EnvironmentCheckFlag",
     "EnvironmentCheckID",
@@ -4657,6 +5210,7 @@ __all__ = [
     "default_platform",
     "directory",
     "environment",
+    "environment_artifact",
     "environment_check",
     "environment_check_result",
     "environment_command",

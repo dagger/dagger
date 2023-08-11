@@ -54,10 +54,28 @@ type Demoserver struct {
 	publish *string
 }
 
+func (r *Demoserver) Binary() *EnvironmentArtifact {
+	q := r.Q.Select("binary")
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
 func (r *Demoserver) Container() *Container {
 	q := r.Q.Select("container")
 
 	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Demoserver) Image() *EnvironmentArtifact {
+	q := r.Q.Select("image")
+
+	return &EnvironmentArtifact{
 		Q: q,
 		C: r.C,
 	}

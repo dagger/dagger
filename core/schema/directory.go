@@ -50,6 +50,10 @@ func (s *directorySchema) Resolvers() Resolvers {
 			"diff":             ToResolver(s.diff),
 			"export":           ToResolver(s.export),
 			"dockerBuild":      ToResolver(s.dockerBuild),
+			"withVersion":      ToResolver(s.withVersion),
+			"labels":           ToResolver(s.labels),
+			"withLabel":        ToResolver(s.withLabel),
+			"sbom":             ToResolver(s.sbom),
 		}),
 	}
 }
@@ -241,4 +245,47 @@ func (s *directorySchema) dockerBuild(ctx *core.Context, parent *core.Directory,
 		s.bk,
 		s.buildCache,
 	)
+}
+
+type directoryWithVersionArgs struct {
+	Version string
+}
+
+func (s *directorySchema) withVersion(ctx *core.Context, parent *core.Directory, args directoryWithVersionArgs) (*core.Directory, error) {
+	parent = parent.Clone()
+	parent.Version = args.Version
+	return parent, nil
+}
+
+func (s *directorySchema) labels(ctx *core.Context, parent *core.Directory, args any) ([]Label, error) {
+	labels := make([]Label, 0, len(parent.Labels))
+	for name, value := range parent.Labels {
+		label := Label{
+			Name:  name,
+			Value: value,
+		}
+
+		labels = append(labels, label)
+	}
+
+	return labels, nil
+}
+
+type directoryWithLabelArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *directorySchema) withLabel(ctx *core.Context, parent *core.Directory, args directoryWithLabelArgs) (*core.Directory, error) {
+	parent = parent.Clone()
+	if parent.Labels == nil {
+		parent.Labels = make(map[string]string)
+	}
+	parent.Labels[args.Name] = args.Value
+	return parent, nil
+}
+
+func (s *directorySchema) sbom(ctx *core.Context, parent *core.Directory, args any) (string, error) {
+	// TODO:dummy implementation
+	return "", nil
 }
