@@ -1,5 +1,5 @@
 ---
-slug: /sdk/elixir/043817/install
+slug: /043817/install
 ---
 
 # Installation

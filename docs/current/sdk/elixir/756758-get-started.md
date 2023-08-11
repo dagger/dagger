@@ -1,3 +1,3 @@
 ---
-slug: /sdk/elixir/756758/get-started
+slug: /756758/get-started
 ---
