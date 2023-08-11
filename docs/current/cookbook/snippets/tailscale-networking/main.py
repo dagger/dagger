@@ -4,10 +4,10 @@ import anyio
 
 import dagger
 
+
 async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-
         # create Tailscale authentication key as secret
         auth_key_secret = client.set_secret("tailscaleAuthkey", "TS-KEY")
 
@@ -16,7 +16,13 @@ async def main():
             client.container()
             .from_("tailscale/tailscale:stable")
             .with_secret_variable(name="TAILSCALE_AUTHKEY", secret=auth_key_secret)
-            .with_exec(["/bin/sh", "-c", "tailscaled --tun=userspace-networking --socks5-server=0.0.0.0:1055 --outbound-http-proxy-listen=0.0.0.0:1055 & tailscale up --authkey $TAILSCALE_AUTHKEY &"])
+            .with_exec(
+                [
+                    "/bin/sh",
+                    "-c",
+                    "tailscaled --tun=userspace-networking --socks5-server=0.0.0.0:1055 --outbound-http-proxy-listen=0.0.0.0:1055 & tailscale up --authkey $TAILSCALE_AUTHKEY &",
+                ]
+            )
             .with_exposed_port(1055)
         )
 
@@ -31,5 +37,6 @@ async def main():
             .sync()
         )
         print(out)
+
 
 anyio.run(main)
