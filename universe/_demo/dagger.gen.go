@@ -18,14 +18,14 @@ type daggerClient struct {
 	*Client
 }
 
-type Democlient struct {
+type DemoClient struct {
 	Q *querybuilder.Selection
 	C graphql.Client
 
 	publish *string
 }
 
-func (r *Democlient) Build() *Container {
+func (r *DemoClient) Build() *Container {
 	q := r.Q.Select("build")
 
 	return &Container{
@@ -34,7 +34,7 @@ func (r *Democlient) Build() *Container {
 	}
 }
 
-func (r *Democlient) Publish(ctx context.Context, version string) (string, error) {
+func (r *DemoClient) Publish(ctx context.Context, version string) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
 	}
@@ -47,7 +47,7 @@ func (r *Democlient) Publish(ctx context.Context, version string) (string, error
 	return response, q.Execute(ctx, r.C)
 }
 
-func (r *Democlient) UnitTest() *EnvironmentCheck {
+func (r *DemoClient) UnitTest() *EnvironmentCheck {
 	q := r.Q.Select("unitTest")
 
 	return &EnvironmentCheck{
@@ -56,14 +56,14 @@ func (r *Democlient) UnitTest() *EnvironmentCheck {
 	}
 }
 
-type Demoserver struct {
+type DemoServer struct {
 	Q *querybuilder.Selection
 	C graphql.Client
 
 	publish *string
 }
 
-func (r *Demoserver) Binary() *EnvironmentArtifact {
+func (r *DemoServer) Binary() *EnvironmentArtifact {
 	q := r.Q.Select("binary")
 
 	return &EnvironmentArtifact{
@@ -72,7 +72,7 @@ func (r *Demoserver) Binary() *EnvironmentArtifact {
 	}
 }
 
-func (r *Demoserver) Container() *Container {
+func (r *DemoServer) Container() *Container {
 	q := r.Q.Select("container")
 
 	return &Container{
@@ -81,7 +81,7 @@ func (r *Demoserver) Container() *Container {
 	}
 }
 
-func (r *Demoserver) Image() *EnvironmentArtifact {
+func (r *DemoServer) Image() *EnvironmentArtifact {
 	q := r.Q.Select("image")
 
 	return &EnvironmentArtifact{
@@ -90,7 +90,7 @@ func (r *Demoserver) Image() *EnvironmentArtifact {
 	}
 }
 
-func (r *Demoserver) Publish(ctx context.Context, version string) (string, error) {
+func (r *DemoServer) Publish(ctx context.Context, version string) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
 	}
@@ -103,7 +103,7 @@ func (r *Demoserver) Publish(ctx context.Context, version string) (string, error
 	return response, q.Execute(ctx, r.C)
 }
 
-func (r *Demoserver) UnitTest() *EnvironmentCheck {
+func (r *DemoServer) UnitTest() *EnvironmentCheck {
 	q := r.Q.Select("unitTest")
 
 	return &EnvironmentCheck{
@@ -112,19 +112,19 @@ func (r *Demoserver) UnitTest() *EnvironmentCheck {
 	}
 }
 
-func (r *daggerClient) Democlient() *Democlient {
-	q := r.Q.Select("democlient")
+func (r *daggerClient) DemoClient() *DemoClient {
+	q := r.Q.Select("demoClient")
 
-	return &Democlient{
+	return &DemoClient{
 		Q: q,
 		C: r.C,
 	}
 }
 
-func (r *daggerClient) Demoserver() *Demoserver {
-	q := r.Q.Select("demoserver")
+func (r *daggerClient) DemoServer() *DemoServer {
+	q := r.Q.Select("demoServer")
 
-	return &Demoserver{
+	return &DemoServer{
 		Q: q,
 		C: r.C,
 	}
