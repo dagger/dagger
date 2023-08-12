@@ -67,7 +67,7 @@ func (Java) Test(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mvn", "clean", "verify"}).
+		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
 	if err != nil {
 		return err
@@ -101,7 +101,7 @@ func (Java) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mvn", "clean", "package", "-Pjavadoc"}).
+		WithExec([]string{"mvn", "clean", "package", "-Pjavadoc", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
 
 	return err

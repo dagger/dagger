@@ -99,8 +99,8 @@
                 <configuration>
                     <injections>
                         <injection>
-                            <value>${daggerengine.version}</value>
-                            <pointCut>io.dagger.client.engineconn.Provisioning.getCLIVersion</pointCut>
+                            <value>${project.version}</value>
+                            <pointCut>io.dagger.client.engineconn.Provisioning.getSDKVersion</pointCut>
                         </injection>
                     </injections>
                 </configuration>

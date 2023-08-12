@@ -105,6 +105,30 @@ Then select the sample to run:
 Select sample:
 ```
 
+## Customizing the code generation
+
+It is possible to change the dagger version targeted by the SDK by setting the maven property `daggerengine.version`.
+
+```shell
+# Build the SDK for Dagger 0.8.1
+./mvnw package -Ddaggerengine.version=0.8.1
+```
+
+By setting the variable to the special `local` value, it is possible to query a dagger CLI to generate the API schema.
+It is also possible to specify the Dagger CLI binary to use to generate the schema...
+
+Either by setting the `_EXPERIMENTAL_DAGGER_CLI_BIN` environment variable
+```shell
+# Build the SDK for a specific Dagger CLI
+_EXPERIMENTAL_DAGGER_CLI_BIN=/path/to/dagger ./mvnw package -Ddaggerengine.version=local
+```
+
+or by setting the maven property `dagger.bin`
+```shell
+# Build the SDK for a specific Dagger CLI
+./mvnw package -Ddaggerengine.version=local -Ddagger.bin=/path/to/dagger
+```
+
 ## Test without building
 
 For those who would like to test without having to build the SDK:

@@ -27,7 +27,7 @@ public class Schema {
     }
   }
 
-  public static Schema initialize(InputStream in) throws IOException {
+  public static Schema initialize(InputStream in, String version) throws IOException {
     JsonbBuilder builder = JsonbBuilder.newBuilder();
     String str = new String(in.readAllBytes(), StandardCharsets.UTF_8);
     // System.out.println(str);
@@ -38,9 +38,12 @@ public class Schema {
             type.getFields().stream().forEach(field -> field.setParentObject(type));
           }
         });
+    schema.version = version;
     return schema;
     // Json.createReader(schema.getJsonObject("__schema").)
   }
+
+  private String version;
 
   private QueryType queryType;
 
@@ -60,6 +63,10 @@ public class Schema {
 
   public void setTypes(List<Type> types) {
     this.types = types.stream().sorted(comparing(Type::getName)).toList();
+  }
+
+  public String getVersion() {
+    return version;
   }
 
   public Type query() {
@@ -89,6 +96,8 @@ public class Schema {
         .forEach(visitor::visitObject);
 
     filteredTypes.stream().filter(t -> t.getKind() == TypeKind.ENUM).forEach(visitor::visitEnum);
+
+    visitor.visitVersion(version);
   }
 
   @Override

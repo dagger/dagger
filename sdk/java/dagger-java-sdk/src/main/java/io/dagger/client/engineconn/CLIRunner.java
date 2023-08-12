@@ -69,7 +69,7 @@ class CLIRunner implements Runnable {
                 "--label",
                 "dagger.io/sdk.name:java",
                 "--label",
-                "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
+                "dagger.io/sdk.version:" + Provisioning.getSDKVersion())
             .withAllowedExitCodes(137);
     LOG.debug("Opening session: {}", process.toString());
     executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));

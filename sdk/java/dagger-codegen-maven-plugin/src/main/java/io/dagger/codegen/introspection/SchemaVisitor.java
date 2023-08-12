@@ -9,4 +9,6 @@ public interface SchemaVisitor {
   void visitInput(Type type);
 
   void visitEnum(Type type);
+
+  void visitVersion(String version);
 }

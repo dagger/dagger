@@ -1,16 +1,14 @@
 package io.dagger.codegen;
 
 import com.ongres.process.FluentProcess;
-import io.dagger.codegen.introspection.CodegenVisitor;
-import io.dagger.codegen.introspection.Schema;
-import io.dagger.codegen.introspection.SchemaVisitor;
-import io.dagger.codegen.introspection.Type;
+import io.dagger.codegen.introspection.*;
 import java.io.*;
-import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -41,25 +39,23 @@ public class DaggerCodegenMojo extends AbstractMojo {
   @Parameter(property = "dagger.version", required = true)
   protected String version;
 
-  @Parameter(property = "dagger.introspectionQueryURL")
-  protected String introspectionQueryURL;
-
-  @Parameter(property = "dagger.introspectionQueryPath")
-  protected String introspectionQueryPath;
-
-  @Parameter(property = "dagger.regenerateSchema", defaultValue = "false")
-  protected boolean online;
-
   /** Specify output directory where the Java files are generated. */
   @Parameter(defaultValue = "${project.build.directory}/generated-sources/dagger")
   private File outputDirectory;
+
+  private static boolean isStandardVersionFormat(String input) {
+    String pattern = "v\\d+\\.\\d+\\.\\d+"; // Le motif regex pour le format attendu
+    Pattern regex = Pattern.compile(pattern);
+    Matcher matcher = regex.matcher(input);
+    return matcher.matches();
+  }
 
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
     outputEncoding = validateEncoding(outputEncoding);
 
     // Ensure that the output directory path is all intact so that
-    // ANTLR can just write into it.
+    // we can just write into it.
     //
     File outputDir = getOutputDirectory();
 
@@ -71,13 +67,13 @@ public class DaggerCodegenMojo extends AbstractMojo {
 
     Path dest = outputDir.toPath();
     try (InputStream in = daggerSchema()) {
-      Schema schema = Schema.initialize(in);
+      Schema schema = Schema.initialize(in, version);
       SchemaVisitor codegen = new CodegenVisitor(schema, dest, Charset.forName(outputEncoding));
       schema.visit(
           new SchemaVisitor() {
             @Override
             public void visitScalar(Type type) {
-              getLog().info(String.format("Generating scala %s", type.getName()));
+              getLog().info(String.format("Generating scalar %s", type.getName()));
               codegen.visitScalar(type);
             }
 
@@ -97,6 +93,12 @@ public class DaggerCodegenMojo extends AbstractMojo {
             public void visitEnum(Type type) {
               getLog().info(String.format("Generating enum %s", type.getName()));
               codegen.visitEnum(type);
+            }
+
+            @Override
+            public void visitVersion(String version) {
+              getLog().info(String.format("Generating interface Version"));
+              codegen.visitVersion(version);
             }
           });
     } catch (IOException ioe) {
@@ -121,6 +123,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
   }
 
   private InputStream queryForSchema(InputStream introspectionQuery) {
+    getLog().info("Querying local dagger CLI for schema");
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     FluentProcess.start(bin, "query")
         .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
@@ -129,38 +132,31 @@ public class DaggerCodegenMojo extends AbstractMojo {
     return new ByteArrayInputStream(out.toByteArray());
   }
 
+  private String getCLIVersion() {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    String output =
+        FluentProcess.start(bin, "version").withTimeout(Duration.of(60, ChronoUnit.SECONDS)).get();
+    String version = output.split("\\s")[1];
+    return isStandardVersionFormat(version) ? version.substring(1) : version;
+  }
+
   private InputStream daggerSchema()
       throws IOException, InterruptedException, MojoFailureException {
-    if (!online) {
+    if ("local".equalsIgnoreCase(version)) {
+      version = getCLIVersion();
+      return queryForSchema(
+          getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"));
+    } else {
       InputStream in =
           getClass()
               .getClassLoader()
               .getResourceAsStream(String.format("schemas/schema-v%s.json", version));
       if (in == null) {
-        in =
-            queryForSchema(
-                getClass()
-                    .getClassLoader()
-                    .getResourceAsStream("introspection/introspection.graphql"));
+        throw new MojoFailureException(
+            String.format("GraphQL schema for version %s not found", version));
       }
       return in;
     }
-    InputStream in;
-    if (introspectionQueryPath != null) {
-      return new FileInputStream(introspectionQueryPath);
-    } else if (introspectionQueryURL == null) {
-      in =
-          new URL(
-                  String.format(
-                      "https://raw.githubusercontent.com/dagger/dagger/v%s/codegen/introspection/introspection.graphql",
-                      version))
-              .openStream();
-    } else if (introspectionQueryURL != null) {
-      in = new URL(introspectionQueryURL).openStream();
-    } else {
-      throw new MojoFailureException("Could not locate, download or generate GraphQL schema");
-    }
-    return queryForSchema(in);
   }
 
   public File getOutputDirectory() {
