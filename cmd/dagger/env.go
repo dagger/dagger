@@ -41,6 +41,7 @@ func init() {
 	listenCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	queryCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	codegenCmd.PersistentFlags().AddFlagSet(environmentFlags)
+	artifactCmd.PersistentFlags().AddFlagSet(environmentFlags)
 
 	environmentInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK to use for the environment")
 	environmentInitCmd.MarkFlagRequired("sdk")
