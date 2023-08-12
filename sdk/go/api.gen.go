@@ -23,6 +23,8 @@ type EnvironmentArtifactID string
 // A unique environment check identifier.
 type EnvironmentCheckID string
 
+type EnvironmentCheckResultID string
+
 // A unique environment command identifier.
 type EnvironmentCommandID string
 
@@ -2852,9 +2854,49 @@ type EnvironmentCheckResult struct {
 	Q *querybuilder.Selection
 	C graphql.Client
 
+	id      *EnvironmentCheckResultID
 	name    *string
 	output  *string
 	success *bool
+}
+type WithEnvironmentCheckResultFunc func(r *EnvironmentCheckResult) *EnvironmentCheckResult
+
+// With calls the provided function with current EnvironmentCheckResult.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvironmentCheckResult) With(f WithEnvironmentCheckResultFunc) *EnvironmentCheckResult {
+	return f(r)
+}
+
+func (r *EnvironmentCheckResult) ID(ctx context.Context) (EnvironmentCheckResultID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.Q.Select("id")
+
+	var response EnvironmentCheckResultID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvironmentCheckResult) XXX_GraphQLType() string {
+	return "EnvironmentCheckResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvironmentCheckResult) XXX_GraphQLIDType() string {
+	return "EnvironmentCheckResultID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvironmentCheckResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
 
 func (r *EnvironmentCheckResult) Name(ctx context.Context) (string, error) {
@@ -2884,9 +2926,10 @@ func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
 func (r *EnvironmentCheckResult) Subresults(ctx context.Context) ([]EnvironmentCheckResult, error) {
 	q := r.Q.Select("subresults")
 
-	q = q.Select("name output success")
+	q = q.Select("id name output success")
 
 	type subresults struct {
+		Id      EnvironmentCheckResultID
 		Name    string
 		Output  string
 		Success bool
@@ -2896,7 +2939,7 @@ func (r *EnvironmentCheckResult) Subresults(ctx context.Context) ([]EnvironmentC
 		out := []EnvironmentCheckResult{}
 
 		for i := range fields {
-			out = append(out, EnvironmentCheckResult{name: &fields[i].Name, output: &fields[i].Output, success: &fields[i].Success})
+			out = append(out, EnvironmentCheckResult{id: &fields[i].Id, name: &fields[i].Name, output: &fields[i].Output, success: &fields[i].Success})
 		}
 
 		return out
@@ -2923,6 +2966,46 @@ func (r *EnvironmentCheckResult) Success(ctx context.Context) (bool, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
+}
+
+func (r *EnvironmentCheckResult) WithName(name string) *EnvironmentCheckResult {
+	q := r.Q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &EnvironmentCheckResult{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentCheckResult) WithOutput(output string) *EnvironmentCheckResult {
+	q := r.Q.Select("withOutput")
+	q = q.Arg("output", output)
+
+	return &EnvironmentCheckResult{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentCheckResult) WithSubresult(result *EnvironmentCheckResult) *EnvironmentCheckResult {
+	q := r.Q.Select("withSubresult")
+	q = q.Arg("result", result)
+
+	return &EnvironmentCheckResult{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *EnvironmentCheckResult) WithSuccess(success bool) *EnvironmentCheckResult {
+	q := r.Q.Select("withSuccess")
+	q = q.Arg("success", success)
+
+	return &EnvironmentCheckResult{
+		Q: q,
+		C: r.C,
+	}
 }
 
 // A command defined in a environment that can be invoked from the CLI.
@@ -4507,11 +4590,20 @@ func (r *Client) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentChec
 	}
 }
 
+// EnvironmentCheckResultOpts contains options for Client.EnvironmentCheckResult
+type EnvironmentCheckResultOpts struct {
+	ID EnvironmentCheckResultID
+}
+
 // Create a new environment check result.
-func (r *Client) EnvironmentCheckResult(success bool, output string) *EnvironmentCheckResult {
+func (r *Client) EnvironmentCheckResult(opts ...EnvironmentCheckResultOpts) *EnvironmentCheckResult {
 	q := r.Q.Select("environmentCheckResult")
-	q = q.Arg("success", success)
-	q = q.Arg("output", output)
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
 
 	return &EnvironmentCheckResult{
 		Q: q,

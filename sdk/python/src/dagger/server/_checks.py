@@ -24,8 +24,8 @@ class CheckResolver(Resolver[CheckReturnType]):
         if self.return_type is str:
             try:
                 result = await super().__call__(**kwargs)
-                return dagger.environment_check_result(True, str(result))
+                return dagger.environment_check_result().with_success(True).with_output(result)
             except dagger.QueryError as e:
-                return dagger.environment_check_result(False, str(e))
+                return dagger.environment_check_result().with_success(False).with_output(str(e))
 
         return await super().__call__(**kwargs)

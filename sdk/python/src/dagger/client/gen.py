@@ -31,6 +31,10 @@ class EnvironmentCheckID(Scalar):
     """A unique environment check identifier."""
 
 
+class EnvironmentCheckResultID(Scalar):
+    ...
+
+
 class EnvironmentCommandID(Scalar):
     """A unique environment command identifier."""
 
@@ -3077,6 +3081,31 @@ class EnvironmentCheckResult(Type):
     _success: Optional[bool]
 
     @typecheck
+    async def id(self) -> EnvironmentCheckResultID:
+        """Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnvironmentCheckResultID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return EnvironmentCheckResultID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "environmentCheckResult"
+
+    @typecheck
     async def name(self) -> str:
         """Returns
         -------
@@ -3150,6 +3179,49 @@ class EnvironmentCheckResult(Type):
         _args: list[Arg] = []
         _ctx = self._select("success", _args)
         return await _ctx.execute(bool)
+
+    @typecheck
+    def with_name(self, name: str) -> "EnvironmentCheckResult":
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    @typecheck
+    def with_output(self, output: str) -> "EnvironmentCheckResult":
+        _args = [
+            Arg("output", output),
+        ]
+        _ctx = self._select("withOutput", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    @typecheck
+    def with_subresult(
+        self, result: "EnvironmentCheckResult"
+    ) -> "EnvironmentCheckResult":
+        _args = [
+            Arg("result", result),
+        ]
+        _ctx = self._select("withSubresult", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    @typecheck
+    def with_success(self, success: bool) -> "EnvironmentCheckResult":
+        _args = [
+            Arg("success", success),
+        ]
+        _ctx = self._select("withSuccess", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    def with_(
+        self, cb: Callable[["EnvironmentCheckResult"], "EnvironmentCheckResult"]
+    ) -> "EnvironmentCheckResult":
+        """Call the provided callable with current EnvironmentCheckResult.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 class EnvironmentCommand(Type):
@@ -4800,12 +4872,13 @@ class Client(Root):
 
     @typecheck
     def environment_check_result(
-        self, success: bool, output: str
+        self,
+        *,
+        id: Optional[EnvironmentCheckResultID] = None,
     ) -> EnvironmentCheckResult:
         """Create a new environment check result."""
         _args = [
-            Arg("success", success),
-            Arg("output", output),
+            Arg("id", id, None),
         ]
         _ctx = self._select("environmentCheckResult", _args)
         return EnvironmentCheckResult(_ctx)
@@ -5176,6 +5249,7 @@ __all__ = [
     "EnvironmentCheckFlag",
     "EnvironmentCheckID",
     "EnvironmentCheckResult",
+    "EnvironmentCheckResultID",
     "EnvironmentCommand",
     "EnvironmentCommandFlag",
     "EnvironmentCommandID",

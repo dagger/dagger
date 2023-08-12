@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vito/progrock"
@@ -29,7 +29,8 @@ import (
 
 type environmentSchema struct {
 	*MergedSchemas
-	loadedEnvCache *core.CacheMap[string, *core.Environment] // env name -> env
+	loadedEnvCache   *core.CacheMap[string, *core.Environment]                   // env name -> env
+	checkResultCache *core.CacheMap[digest.Digest, *core.EnvironmentCheckResult] // env name -> env
 }
 
 var _ ExecutableSchema = &environmentSchema{}
@@ -48,6 +49,8 @@ var environmentCommandIDResolver = stringResolver(core.EnvironmentCommandID(""))
 
 var environmentCheckIDResolver = stringResolver(core.EnvironmentCheckID(""))
 
+var environmentCheckResultIDResolver = stringResolver(core.EnvironmentCheckResultID(""))
+
 var environmentArtifactIDResolver = stringResolver(core.EnvironmentArtifactID(""))
 
 var environmentShellIDResolver = stringResolver(core.EnvironmentShellID(""))
@@ -56,12 +59,13 @@ var environmentFunctionIDResolver = stringResolver(core.EnvironmentFunctionID(""
 
 func (s *environmentSchema) Resolvers() Resolvers {
 	return Resolvers{
-		"EnvironmentID":         environmentIDResolver,
-		"EnvironmentCommandID":  environmentCommandIDResolver,
-		"EnvironmentCheckID":    environmentCheckIDResolver,
-		"EnvironmentArtifactID": environmentArtifactIDResolver,
-		"EnvironmentShellID":    environmentShellIDResolver,
-		"EnvironmentFunctionID": environmentFunctionIDResolver,
+		"EnvironmentID":            environmentIDResolver,
+		"EnvironmentCommandID":     environmentCommandIDResolver,
+		"EnvironmentCheckID":       environmentCheckIDResolver,
+		"EnvironmentCheckResultID": environmentCheckResultIDResolver,
+		"EnvironmentArtifactID":    environmentArtifactIDResolver,
+		"EnvironmentShellID":       environmentShellIDResolver,
+		"EnvironmentFunctionID":    environmentFunctionIDResolver,
 		"Query": ObjectResolver{
 			"environment":            ToResolver(s.environment),
 			"environmentCommand":     ToResolver(s.environmentCommand),
@@ -113,6 +117,13 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withSubcheck":    ToResolver(s.withSubcheck),
 			"withContainer":   ToResolver(s.withCheckContainer),
 			"result":          ToResolver(s.checkResult),
+		}),
+		"EnvironmentCheckResult": ToIDableObjectResolver(core.EnvironmentCheckID.ToEnvironmentCheck, ObjectResolver{
+			"id":            ToResolver(s.resultID),
+			"withName":      ToResolver(s.withResultName),
+			"withSuccess":   ToResolver(s.withResultSuccess),
+			"withOutput":    ToResolver(s.withResultOutput),
+			"withSubresult": ToResolver(s.withResultSubresult),
 		}),
 		"EnvironmentArtifact": ToIDableObjectResolver(core.EnvironmentArtifactID.ToEnvironmentArtifact, ObjectResolver{
 			"id":              ToResolver(s.artifactID),
@@ -620,13 +631,22 @@ func (s *environmentSchema) withCheckContainer(ctx *core.Context, parent *core.E
 	return parent.WithContainer(args.ID), nil
 }
 
-func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (*core.EnvironmentCheckResult, error) {
-	recorder := progrock.RecorderFromContext(ctx)
-
+func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (rres *core.EnvironmentCheckResult, rerr error) {
 	dig, err := check.Digest()
 	if err != nil {
 		return nil, err
 	}
+
+	// TODO(vito): more evidence of the need for a global query cache. we want to
+	// relay output to the Progrock vertex, but this resolver is called multiple
+	// times, leading to duplicate output
+	return s.checkResultCache.GetOrInitialize(dig, func() (*core.EnvironmentCheckResult, error) {
+		return s.checkResultInner(ctx, dig, check)
+	})
+}
+
+func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Digest, check *core.EnvironmentCheck) (rres *core.EnvironmentCheckResult, rerr error) {
+	recorder := ctx.Recorder()
 
 	vtxName := check.Name
 
@@ -637,13 +657,26 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 
 	if check.EnvironmentName != "" {
 		recorder = recorder.WithGroup(check.EnvironmentName,
-			progrock.WithGroupID(dig.String()+">"+check.EnvironmentName))
+			progrock.WithGroupID(dig.String()+":"+check.EnvironmentName))
 	}
 
-	if len(check.Subchecks) > 0 {
-	} else {
+	if len(check.Subchecks) == 0 {
 		vtx := recorder.Vertex(dig+":result", vtxName, progrock.Focused())
-		defer vtx.Complete()
+
+		defer func() {
+			if rerr != nil {
+				fmt.Fprintln(vtx.Stderr(), rerr.Error())
+				vtx.Done(rerr)
+			} else if rres != nil {
+				fmt.Fprint(vtx.Stdout(), rres.Output)
+				if rres.Success {
+					vtx.Complete()
+				} else {
+					vtx.Done(fmt.Errorf("failed"))
+				}
+			}
+		}()
+
 		ctx.Vertex = vtx // NB: nothing uses this atm, just seems appropriate
 	}
 
@@ -651,7 +684,7 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 		// initialize subgroup _after_ vertex above so that it only shows up if any
 		// further vertices are sent (e.g. Container eval)
 		recorder = recorder.WithGroup(check.Name, progrock.WithGroupID(dig.String()))
-		ctx.Context = progrock.RecorderToContext(ctx.Context, recorder)
+		ctx = ctx.WithRecorder(recorder)
 	}
 
 	// if there's no subchecks, resolve the result directly
@@ -714,47 +747,29 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 			return nil, fmt.Errorf("error resolving check %s.%s: %w", check.EnvironmentName, check.Name, err)
 		}
 
-		log.Println("!!! TASTES LIKE CHECKIN")
 		// TODO: ugly
 
 		var checkRes core.EnvironmentCheckResult
 		switch v := res.(type) {
 		case string:
-			log.Println("!!! ITS STRING", v)
-
-			// TODO(vito): would prob be better to just make everything IDable and
-			// have it return something like {"type":"Foo","id":"eyJ..."}
-			subcheck, err := core.EnvironmentCheckID(v).ToEnvironmentCheck()
-			if err != nil {
-				// if the sdk returned a string, that means success and the output is
-				// the string
-				checkRes.Success = true
-				checkRes.Output = v
-			} else {
-				// assume it's an EnvironmentCheck...
-
+			if subCheck, err := core.EnvironmentCheckID(v).ToEnvironmentCheck(); err == nil {
 				// NB: run with ctx that places us in the current group!
-				res, err := s.checkResult(ctx, subcheck, nil)
+				res, err := s.checkResult(ctx, subCheck, nil)
 				if err != nil {
 					return nil, fmt.Errorf("get result of returned check: %w", err)
 				}
 
 				checkRes = *res
-			}
-		case map[string]any:
-			log.Println("!!! ITS MAP[STRING]ANY")
-
-			// otherwise assume it is a json serialized Check or CheckResult object
-			// TODO: more efficient if it works? err := mapstructure.Decode(rawOutput, &res)
-			bs, err := json.Marshal(res)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal environment check result: %w", err)
-			}
-			if err := json.Unmarshal(bs, &checkRes); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal environment check result %s: %w", string(bs), err)
+			} else if res, err := core.EnvironmentCheckResultID(v).ToEnvironmentCheckResult(); err == nil {
+				checkRes = *res
+			} else {
+				// if the sdk returned a regular string, that means success and the
+				// output is the string
+				checkRes.Success = true
+				checkRes.Output = v
 			}
 		default:
-			panic(fmt.Sprintf("EHH? %T", res))
+			return nil, fmt.Errorf("check %s.%s returned unexpected type %T", check.EnvironmentName, check.Name, res)
 		}
 
 		checkRes.Name = check.EnvironmentName + "." + check.Name
@@ -805,6 +820,54 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 		return nil, err
 	}
 	return checkRes, nil
+}
+
+func (s *environmentSchema) resultID(ctx *core.Context, result *core.EnvironmentCheckResult, _ any) (core.EnvironmentCheckResultID, error) {
+	return result.ID()
+}
+
+func (s *environmentSchema) withResultName(
+	ctx *core.Context,
+	result *core.EnvironmentCheckResult,
+	args struct{ Name string },
+) (*core.EnvironmentCheckResult, error) {
+	result = result.Clone()
+	result.Name = args.Name
+	return result, nil
+}
+
+func (s *environmentSchema) withResultSuccess(
+	ctx *core.Context,
+	result *core.EnvironmentCheckResult,
+	args struct{ Success bool },
+) (*core.EnvironmentCheckResult, error) {
+	result = result.Clone()
+	result.Success = args.Success
+	return result, nil
+}
+
+func (s *environmentSchema) withResultOutput(
+	ctx *core.Context,
+	result *core.EnvironmentCheckResult,
+	args struct{ Output string },
+) (*core.EnvironmentCheckResult, error) {
+	result = result.Clone()
+	result.Output = args.Output
+	return result, nil
+}
+
+func (s *environmentSchema) withResultSubresult(
+	ctx *core.Context,
+	result *core.EnvironmentCheckResult,
+	args struct{ Result core.EnvironmentCheckResultID },
+) (*core.EnvironmentCheckResult, error) {
+	result = result.Clone()
+	res, err := args.Result.ToEnvironmentCheckResult()
+	if err != nil {
+		return nil, err
+	}
+	result.Subresults = append(result.Subresults, res)
+	return result, nil
 }
 
 func (s *environmentSchema) artifactID(ctx *core.Context, parent *core.EnvironmentArtifact, args any) (core.EnvironmentArtifactID, error) {

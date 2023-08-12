@@ -9,7 +9,7 @@ extend type Query {
   environmentCheck(id: EnvironmentCheckID): EnvironmentCheck!
 
   "Create a new environment check result."
-  environmentCheckResult(success: Boolean!, output: String!): EnvironmentCheckResult!
+  environmentCheckResult(id: EnvironmentCheckResultID): EnvironmentCheckResult!
 
   "Load a environment shell from ID."
   environmentShell(id: EnvironmentShellID): EnvironmentShell!
@@ -339,10 +339,21 @@ type EnvironmentCheckFlag {
   description: String
 }
 
+scalar EnvironmentCheckResultID
+
 "TODO"
 type EnvironmentCheckResult {
+  id: EnvironmentCheckResultID!
+
   name: String!
+  withName(name: String!): EnvironmentCheckResult!
+
   success: Boolean!
+  withSuccess(success: Boolean!): EnvironmentCheckResult!
+
   output: String!
+  withOutput(output: String!): EnvironmentCheckResult!
+
   subresults: [EnvironmentCheckResult!]
+  withSubresult(result: EnvironmentCheckResultID!): EnvironmentCheckResult!
 }

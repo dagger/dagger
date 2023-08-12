@@ -517,6 +517,10 @@ export type EnvironmentCheckWithFlagOpts = {
  */
 export type EnvironmentCheckID = string & { __EnvironmentCheckID: never }
 
+export type EnvironmentCheckResultID = string & {
+  __EnvironmentCheckResultID: never
+}
+
 export type EnvironmentCommandWithFlagOpts = {
   description?: string
 }
@@ -684,6 +688,10 @@ export type ClientEnvironmentArtifactOpts = {
 
 export type ClientEnvironmentCheckOpts = {
   id?: EnvironmentCheckID
+}
+
+export type ClientEnvironmentCheckResultOpts = {
+  id?: EnvironmentCheckResultID
 }
 
 export type ClientEnvironmentCommandOpts = {
@@ -4144,6 +4152,7 @@ export class EnvironmentCheckFlag extends BaseClient {
  * TODO
  */
 export class EnvironmentCheckResult extends BaseClient {
+  private readonly _id?: EnvironmentCheckResultID = undefined
   private readonly _name?: string = undefined
   private readonly _output?: string = undefined
   private readonly _success?: boolean = undefined
@@ -4153,15 +4162,34 @@ export class EnvironmentCheckResult extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: EnvironmentCheckResultID,
     _name?: string,
     _output?: string,
     _success?: boolean
   ) {
     super(parent)
 
+    this._id = _id
     this._name = _name
     this._output = _output
     this._success = _success
+  }
+  async id(): Promise<EnvironmentCheckResultID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnvironmentCheckResultID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
   async name(): Promise<string> {
     if (this._name) {
@@ -4199,6 +4227,7 @@ export class EnvironmentCheckResult extends BaseClient {
   }
   async subresults(): Promise<EnvironmentCheckResult[]> {
     type subresults = {
+      id: EnvironmentCheckResultID
       name: string
       output: string
       success: boolean
@@ -4211,7 +4240,7 @@ export class EnvironmentCheckResult extends BaseClient {
           operation: "subresults",
         },
         {
-          operation: "name output success",
+          operation: "id name output success",
         },
       ],
       this.client
@@ -4225,6 +4254,7 @@ export class EnvironmentCheckResult extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
+          r.id,
           r.name,
           r.output,
           r.success
@@ -4247,6 +4277,67 @@ export class EnvironmentCheckResult extends BaseClient {
     )
 
     return response
+  }
+  withName(name: string): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withOutput(output: string): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withOutput",
+          args: { output },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withSubresult(result: EnvironmentCheckResult): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withSubresult",
+          args: { result },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withSuccess(success: boolean): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withSuccess",
+          args: { success },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current EnvironmentCheckResult.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: EnvironmentCheckResult) => EnvironmentCheckResult) {
+    return arg(this)
   }
 }
 
@@ -6255,15 +6346,14 @@ export class Client extends BaseClient {
    * Create a new environment check result.
    */
   environmentCheckResult(
-    success: boolean,
-    output: string
+    opts?: ClientEnvironmentCheckResultOpts
   ): EnvironmentCheckResult {
     return new EnvironmentCheckResult({
       queryTree: [
         ...this._queryTree,
         {
           operation: "environmentCheckResult",
-          args: { success, output },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,

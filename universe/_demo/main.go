@@ -49,9 +49,9 @@ func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 		Stdout(ctx)
 	// TODO: this is all boilerplatey, sugar to support other return types will fix
 	if err != nil {
-		return DaggerClient().EnvironmentCheckResult(false, err.Error()), nil
+		return DaggerClient().EnvironmentCheckResult().WithOutput(err.Error()), nil
 	}
-	return DaggerClient().EnvironmentCheckResult(true, stdout), nil
+	return DaggerClient().EnvironmentCheckResult().WithSuccess(true).WithOutput(stdout), nil
 }
 
 func DevShell(ctx dagger.Context) (*dagger.Container, error) {

@@ -19,18 +19,19 @@ var QueryStructClientName = "Client"
 // TODO: This may done it dynamically later instead of a static
 // map.
 var CustomScalar = map[string]string{
-	"ContainerID":           "Container",
-	"FileID":                "File",
-	"DirectoryID":           "Directory",
-	"SecretID":              "Secret",
-	"SocketID":              "Socket",
-	"CacheID":               "CacheVolume",
-	"EnvironmentID":         "Environment",
-	"EnvironmentCommandID":  "EnvironmentCommand",
-	"EnvironmentCheckID":    "EnvironmentCheck",
-	"EnvironmentArtifactID": "EnvironmentArtifact",
-	"EnvironmentShellID":    "EnvironmentShell",
-	"EnvironmentFunctionID": "EnvironmentFunction",
+	"ContainerID":              "Container",
+	"FileID":                   "File",
+	"DirectoryID":              "Directory",
+	"SecretID":                 "Secret",
+	"SocketID":                 "Socket",
+	"CacheID":                  "CacheVolume",
+	"EnvironmentID":            "Environment",
+	"EnvironmentCommandID":     "EnvironmentCommand",
+	"EnvironmentCheckID":       "EnvironmentCheck",
+	"EnvironmentCheckResultID": "EnvironmentCheckResult",
+	"EnvironmentArtifactID":    "EnvironmentArtifact",
+	"EnvironmentShellID":       "EnvironmentShell",
+	"EnvironmentFunctionID":    "EnvironmentFunction",
 }
 
 // FormatTypeFuncs is an interface to format any GraphQL type.

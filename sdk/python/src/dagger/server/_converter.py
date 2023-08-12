@@ -59,35 +59,6 @@ def make_converter():
         dagger_type_unstructure,
     )
 
-    async def check_result_unstructure(result: dagger.EnvironmentCheckResult):
-        """Serialize a dagger.EnvironmentCheckResult recursively."""
-        data: CheckResult = {"success": False, "output": ""}
-
-        async def _update_attr(key: str):
-            data[key] = await getattr(result, key)()
-
-        async def _add_subresult(subresult: dagger.EnvironmentCheckResult):
-            if "subresults" not in data:
-                data["subresults"] = []
-            data["subresults"].append(await check_result_unstructure(subresult))
-
-        async def _get_subresults(tg: TaskGroup):
-            for subresult in await result.subresults():
-                tg.start_soon(_add_subresult, subresult)
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(_update_attr, "name")
-            tg.start_soon(_update_attr, "success")
-            tg.start_soon(_update_attr, "output")
-            tg.start_soon(_get_subresults, tg)
-
-        return data
-
-    conv.register_unstructure_hook(
-        dagger.EnvironmentCheckResult,
-        lambda r: syncify(check_result_unstructure, r),
-    )
-
     return conv
 
 

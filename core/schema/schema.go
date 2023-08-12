@@ -17,6 +17,7 @@ import (
 	tools "github.com/dagger/graphql-go-tools"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -61,7 +62,11 @@ func New(ctx context.Context, params InitializeArgs) (*MergedSchemas, error) {
 		&cacheSchema{merged},
 		&secretSchema{merged},
 		&hostSchema{merged, host},
-		&environmentSchema{merged, core.NewCacheMap[string, *core.Environment]()},
+		&environmentSchema{
+			merged,
+			core.NewCacheMap[string, *core.Environment](),
+			core.NewCacheMap[digest.Digest, *core.EnvironmentCheckResult](),
+		},
 		&httpSchema{merged},
 		&platformSchema{merged},
 		&socketSchema{merged, host},

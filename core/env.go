@@ -80,6 +80,23 @@ func (id EnvironmentCheckID) ToEnvironmentCheck() (*EnvironmentCheck, error) {
 	return &environmentCheck, nil
 }
 
+type EnvironmentCheckResultID string
+
+func (id EnvironmentCheckResultID) String() string {
+	return string(id)
+}
+
+func (id EnvironmentCheckResultID) ToEnvironmentCheckResult() (*EnvironmentCheckResult, error) {
+	var environmentCheckResult EnvironmentCheckResult
+	if id == "" {
+		return &environmentCheckResult, nil
+	}
+	if err := resourceid.Decode(&environmentCheckResult, id); err != nil {
+		return nil, err
+	}
+	return &environmentCheckResult, nil
+}
+
 type EnvironmentArtifactID string
 
 func (id EnvironmentArtifactID) String() string {
@@ -693,6 +710,16 @@ type EnvironmentCheckResult struct {
 	Output     string                    `json:"output"`
 	Name       string                    `json:"name"`
 	Subresults []*EnvironmentCheckResult `json:"subresults"`
+}
+
+func (result *EnvironmentCheckResult) ID() (EnvironmentCheckResultID, error) {
+	return resourceid.Encode[EnvironmentCheckResultID](result)
+}
+
+func (result *EnvironmentCheckResult) Clone() *EnvironmentCheckResult {
+	cp := *result
+	cp.Subresults = cloneSlice(result.Subresults)
+	return &cp
 }
 
 func NewEnvironmentCheck(id EnvironmentCheckID) (*EnvironmentCheck, error) {

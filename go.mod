@@ -79,7 +79,7 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
-	github.com/vito/progrock v0.9.0
+	github.com/vito/progrock v0.9.1-0.20230812061004-d9f4c73af44b
 	github.com/vito/vt100 v0.1.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.10.0
@@ -223,7 +223,7 @@ require (
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/containerd/cgroups v1.1.0 // indirect
-	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
+	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81
 	github.com/containerd/continuity v0.4.1
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/nydus-snapshotter v0.8.2 // indirect
