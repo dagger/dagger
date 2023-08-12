@@ -63,7 +63,7 @@ class Environment:
         register: Annotated[
             bool,
             typer.Option("-schema", help="Save environment and exit"),
-        ] = False,  # noqa: FBT002
+        ] = False,
     ):
         try:
             anyio.run(self._run, self._register if register else self._serve)

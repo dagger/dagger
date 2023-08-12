@@ -141,9 +141,6 @@ pretty = true
 show_column_numbers = true
 warn_no_return = false
 warn_unused_ignores = true
-# plugins = [
-#     "strawberry.ext.mypy_plugin",
-# ]
 
 [tool.black]
 include = '\.pyi?$'
@@ -162,6 +159,8 @@ ignore = [
     "ARG002",
     # Black can handle trailing commas automatically.
     "COM812",
+    # Can't control using a library with boolean arguments.
+    "FBT",
     # TODO: prefix everything internal with an underscore and document
     # what's left (public).
     "D1",
