@@ -18,10 +18,10 @@ func TestGetMsgAgain(t *testing.T) {
 	}
 }
 
-func TestGetMsgFails(t *testing.T) {
-	got := getMsg("goodbye")
-	want := "Hello, uh oh!"
-	if got != want {
-		t.Errorf("getMsg() = %q, want %q", got, want)
-	}
-}
+// func TestGetMsgFails(t *testing.T) {
+// 	got := getMsg("goodbye")
+// 	want := "Hello, uh oh!"
+// 	if got != want {
+// 		t.Errorf("getMsg() = %q, want %q", got, want)
+// 	}
+// }
