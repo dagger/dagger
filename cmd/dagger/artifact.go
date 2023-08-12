@@ -53,7 +53,7 @@ func ListArtifacts(ctx context.Context, _ *client.Client, c *dagger.Client, load
 
 	envArtifacts, err := loadedEnv.Artifacts(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get environment commands: %w", err)
+		return fmt.Errorf("failed to get environment artifacts: %w", err)
 	}
 
 	tw := tabwriter.NewWriter(vtx.Stdout(), 0, 0, 2, ' ', 0)
@@ -64,7 +64,6 @@ func ListArtifacts(ctx context.Context, _ *client.Client, c *dagger.Client, load
 
 	var printArtifact func(*dagger.EnvironmentArtifact) error
 	printArtifact = func(artifact *dagger.EnvironmentArtifact) error {
-
 		name, err := artifact.Name(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get artifact name: %w", err)

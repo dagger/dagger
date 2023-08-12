@@ -1999,22 +1999,17 @@ func (r *Environment) Artifact(name string) *EnvironmentArtifact {
 func (r *Environment) Artifacts(ctx context.Context) ([]EnvironmentArtifact, error) {
 	q := r.Q.Select("artifacts")
 
-	q = q.Select("description export id name sbom version")
+	q = q.Select("id")
 
 	type artifacts struct {
-		Description string
-		Export      bool
-		Id          EnvironmentArtifactID
-		Name        string
-		Sbom        string
-		Version     string
+		Id EnvironmentArtifactID
 	}
 
 	convert := func(fields []artifacts) []EnvironmentArtifact {
 		out := []EnvironmentArtifact{}
 
 		for i := range fields {
-			out = append(out, EnvironmentArtifact{description: &fields[i].Description, export: &fields[i].Export, id: &fields[i].Id, name: &fields[i].Name, sbom: &fields[i].Sbom, version: &fields[i].Version})
+			out = append(out, EnvironmentArtifact{id: &fields[i].Id})
 		}
 
 		return out
@@ -2046,19 +2041,17 @@ func (r *Environment) Check(name string) *EnvironmentCheck {
 func (r *Environment) Checks(ctx context.Context) ([]EnvironmentCheck, error) {
 	q := r.Q.Select("checks")
 
-	q = q.Select("description id name")
+	q = q.Select("id")
 
 	type checks struct {
-		Description string
-		Id          EnvironmentCheckID
-		Name        string
+		Id EnvironmentCheckID
 	}
 
 	convert := func(fields []checks) []EnvironmentCheck {
 		out := []EnvironmentCheck{}
 
 		for i := range fields {
-			out = append(out, EnvironmentCheck{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+			out = append(out, EnvironmentCheck{id: &fields[i].Id})
 		}
 
 		return out
@@ -2090,20 +2083,17 @@ func (r *Environment) Command(name string) *EnvironmentCommand {
 func (r *Environment) Commands(ctx context.Context) ([]EnvironmentCommand, error) {
 	q := r.Q.Select("commands")
 
-	q = q.Select("description id name resultType")
+	q = q.Select("id")
 
 	type commands struct {
-		Description string
-		Id          EnvironmentCommandID
-		Name        string
-		ResultType  string
+		Id EnvironmentCommandID
 	}
 
 	convert := func(fields []commands) []EnvironmentCommand {
 		out := []EnvironmentCommand{}
 
 		for i := range fields {
-			out = append(out, EnvironmentCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
+			out = append(out, EnvironmentCommand{id: &fields[i].Id})
 		}
 
 		return out
@@ -2202,20 +2192,17 @@ func (r *Environment) Shell(name string) *EnvironmentShell {
 func (r *Environment) Shells(ctx context.Context) ([]EnvironmentShell, error) {
 	q := r.Q.Select("shells")
 
-	q = q.Select("description endpoint id name")
+	q = q.Select("id")
 
 	type shells struct {
-		Description string
-		Endpoint    string
-		Id          EnvironmentShellID
-		Name        string
+		Id EnvironmentShellID
 	}
 
 	convert := func(fields []shells) []EnvironmentShell {
 		out := []EnvironmentShell{}
 
 		for i := range fields {
-			out = append(out, EnvironmentShell{description: &fields[i].Description, endpoint: &fields[i].Endpoint, id: &fields[i].Id, name: &fields[i].Name})
+			out = append(out, EnvironmentShell{id: &fields[i].Id})
 		}
 
 		return out
@@ -2732,19 +2719,17 @@ func (r *EnvironmentCheck) SetStringFlag(name string, value string) *Environment
 func (r *EnvironmentCheck) Subchecks(ctx context.Context) ([]EnvironmentCheck, error) {
 	q := r.Q.Select("subchecks")
 
-	q = q.Select("description id name")
+	q = q.Select("id")
 
 	type subchecks struct {
-		Description string
-		Id          EnvironmentCheckID
-		Name        string
+		Id EnvironmentCheckID
 	}
 
 	convert := func(fields []subchecks) []EnvironmentCheck {
 		out := []EnvironmentCheck{}
 
 		for i := range fields {
-			out = append(out, EnvironmentCheck{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+			out = append(out, EnvironmentCheck{id: &fields[i].Id})
 		}
 
 		return out

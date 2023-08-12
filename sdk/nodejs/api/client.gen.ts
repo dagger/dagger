@@ -3021,12 +3021,7 @@ export class Environment extends BaseClient {
   }
   async artifacts(): Promise<EnvironmentArtifact[]> {
     type artifacts = {
-      description: string
-      export: boolean
       id: EnvironmentArtifactID
-      name: string
-      sbom: string
-      version: string
     }
 
     const response: Awaited<artifacts[]> = await computeQuery(
@@ -3036,7 +3031,7 @@ export class Environment extends BaseClient {
           operation: "artifacts",
         },
         {
-          operation: "description export id name sbom version",
+          operation: "id",
         },
       ],
       this.client
@@ -3050,12 +3045,7 @@ export class Environment extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.export,
-          r.id,
-          r.name,
-          r.sbom,
-          r.version
+          r.id
         )
     )
   }
@@ -3082,9 +3072,7 @@ export class Environment extends BaseClient {
    */
   async checks(): Promise<EnvironmentCheck[]> {
     type checks = {
-      description: string
       id: EnvironmentCheckID
-      name: string
     }
 
     const response: Awaited<checks[]> = await computeQuery(
@@ -3094,7 +3082,7 @@ export class Environment extends BaseClient {
           operation: "checks",
         },
         {
-          operation: "description id name",
+          operation: "id",
         },
       ],
       this.client
@@ -3108,9 +3096,7 @@ export class Environment extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.id,
-          r.name
+          r.id
         )
     )
   }
@@ -3137,10 +3123,7 @@ export class Environment extends BaseClient {
    */
   async commands(): Promise<EnvironmentCommand[]> {
     type commands = {
-      description: string
       id: EnvironmentCommandID
-      name: string
-      resultType: string
     }
 
     const response: Awaited<commands[]> = await computeQuery(
@@ -3150,7 +3133,7 @@ export class Environment extends BaseClient {
           operation: "commands",
         },
         {
-          operation: "description id name resultType",
+          operation: "id",
         },
       ],
       this.client
@@ -3164,10 +3147,7 @@ export class Environment extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.id,
-          r.name,
-          r.resultType
+          r.id
         )
     )
   }
@@ -3269,10 +3249,7 @@ export class Environment extends BaseClient {
    */
   async shells(): Promise<EnvironmentShell[]> {
     type shells = {
-      description: string
-      endpoint: string
       id: EnvironmentShellID
-      name: string
     }
 
     const response: Awaited<shells[]> = await computeQuery(
@@ -3282,7 +3259,7 @@ export class Environment extends BaseClient {
           operation: "shells",
         },
         {
-          operation: "description endpoint id name",
+          operation: "id",
         },
       ],
       this.client
@@ -3296,10 +3273,7 @@ export class Environment extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.endpoint,
-          r.id,
-          r.name
+          r.id
         )
     )
   }
@@ -3975,9 +3949,7 @@ export class EnvironmentCheck extends BaseClient {
    */
   async subchecks(): Promise<EnvironmentCheck[]> {
     type subchecks = {
-      description: string
       id: EnvironmentCheckID
-      name: string
     }
 
     const response: Awaited<subchecks[]> = await computeQuery(
@@ -3987,7 +3959,7 @@ export class EnvironmentCheck extends BaseClient {
           operation: "subchecks",
         },
         {
-          operation: "description id name",
+          operation: "id",
         },
       ],
       this.client
@@ -4001,9 +3973,7 @@ export class EnvironmentCheck extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.id,
-          r.name
+          r.id
         )
     )
   }
