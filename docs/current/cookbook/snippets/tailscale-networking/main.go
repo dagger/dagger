@@ -17,8 +17,17 @@ func main() {
 	}
 	defer client.Close()
 
+	tailscaleAuthKey := os.Getenv("TAILSCALE_AUTHKEY")
+	if tailscaleAuthKey == "" {
+		panic("TAILSCALE_AUTHKEY env var must be set")
+	}
 	// set secret
-	authKeySecret := client.SetSecret("tailscaleAuthkey", "TS-KEY")
+	authKeySecret := client.SetSecret("tailscaleAuthKey", tailscaleAuthKey)
+
+	tailscaleServiceURL := os.Getenv("TAILSCALE_SERVICE_URL")
+	if tailscaleServiceURL == "" {
+		panic("TAILSCALE_SERVICE_URL env var must be set")
+	}
 
 	// create Tailscale service container
 	tailscale := client.Container().
@@ -33,7 +42,7 @@ func main() {
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("tailscale", tailscale).
 		WithEnvVariable("ALL_PROXY", "socks5://tailscale:1055/").
-		WithExec([]string{"curl", "https://TS-NETWORK-URL"}).
+		WithExec([]string{"curl", "--silent", "--verbose", tailscaleServiceURL}).
 		Sync(ctx)
 	if err != nil {
 		panic(err)
