@@ -697,7 +697,7 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 			if err != nil {
 				return nil, err
 			}
-			err = ctr.Evaluate(ctx, s.bk)
+			output, err := ctr.Stdout(ctx, s.bk, s.progSockPath) // TODO(vito): combined output
 			if err != nil {
 				return &core.EnvironmentCheckResult{
 					Name:    check.EnvironmentName + "." + check.Name,
@@ -708,7 +708,7 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 			return &core.EnvironmentCheckResult{
 				Name:    check.EnvironmentName + "." + check.Name,
 				Success: true,
-				// TODO: get stdout/stderr, set to output
+				Output:  output,
 			}, nil
 		}
 
