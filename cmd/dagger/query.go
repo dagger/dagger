@@ -30,7 +30,7 @@ dagger query <<EOF
 {
   container {
     from(address:"hello-world") {
-      exec(args:["/hello"]) {
+      withExec(args:["/hello"]) {
         stdout
       }
     }
