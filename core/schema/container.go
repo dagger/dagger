@@ -219,11 +219,11 @@ func (s *containerSchema) withDefaultExec(ctx *core.Context, parent *core.Contai
 }
 
 func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stdout")
+	return parent.Stdout(ctx, s.bk, s.progSockPath)
 }
 
 func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stderr")
+	return parent.Stderr(ctx, s.bk, s.progSockPath)
 }
 
 type containerWithEntrypointArgs struct {

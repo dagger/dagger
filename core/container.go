@@ -1390,6 +1390,14 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 	}
 }
 
+func (container *Container) Stdout(ctx context.Context, bk *buildkit.Client, progSock string) (string, error) {
+	return container.MetaFileContents(ctx, bk, progSock, "stdout")
+}
+
+func (container *Container) Stderr(ctx context.Context, bk *buildkit.Client, progSock string) (string, error) {
+	return container.MetaFileContents(ctx, bk, progSock, "stderr")
+}
+
 func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.Client, progSock string, filePath string) (string, error) {
 	if container.Meta == nil {
 		ctr, err := container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
