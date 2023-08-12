@@ -22,7 +22,6 @@ from typing import (
 )
 
 import cattrs
-from beartype.door import TypeHint
 from cattrs.preconf.json import JsonConverter
 from gql.utils import to_camel_case
 

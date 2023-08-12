@@ -13,6 +13,7 @@ from rich.console import Console
 import dagger
 from dagger.log import configure_logging
 
+from ._artifacts import ArtifactResolver
 from ._checks import CheckResolver
 from ._commands import CommandResolver
 from ._converter import make_converter
@@ -41,9 +42,10 @@ class Inputs:
 class Environment:
     """Builder for a `dagger.Environment`."""
 
-    function = FunctionResolver.to_decorator()
+    artifact = ArtifactResolver.to_decorator()
     check = CheckResolver.to_decorator()
     command = CommandResolver.to_decorator()
+    function = FunctionResolver.to_decorator()
     shell = ShellResolver.to_decorator()
 
     # TODO: default debug to False before release.
