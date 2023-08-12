@@ -56,8 +56,7 @@ func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 }
 
 func DevShell(ctx dagger.Context) (*dagger.Container, error) {
-	// TODO: clientApp := Dagger().Democlient().Build()
-	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
+	clientApp := DaggerClient().Democlient().Build()
 
 	return clientApp.
 		WithServiceBinding("server", DaggerClient().Demoserver().Container().WithExec(nil)).
