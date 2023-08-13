@@ -58,6 +58,6 @@ func DevShell(ctx dagger.Context) (*dagger.Container, error) {
 	clientApp := DaggerClient().DemoClient().Build()
 
 	return clientApp.
-		WithServiceBinding("server", DaggerClient().DemoServer().Container().WithExec(nil)).
+		WithServiceBinding("server", DaggerClient().DemoServer().Container()).
 		WithEntrypoint([]string{"sh"}), nil
 }

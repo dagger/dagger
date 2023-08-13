@@ -30,8 +30,8 @@ func binary(ctx dagger.Context) *dagger.File {
 	).File("server")
 }
 
-func Binary(ctx dagger.Context) (*dagger.File, error) {
-	return binary(ctx), nil
+func Binary(ctx dagger.Context) *dagger.File {
+	return binary(ctx)
 }
 
 func UnitTest(ctx dagger.Context) *dagger.EnvironmentCheck {
@@ -55,15 +55,15 @@ func Publish(ctx dagger.Context, version string) (string, error) {
 	return "", nil
 }
 
-func Image(ctx dagger.Context) (*dagger.Container, error) {
+func Image(ctx dagger.Context) *dagger.Container {
 	return dagger.DefaultClient().Apko().Wolfi(nil).
 		WithMountedFile("/usr/bin/server", binary(ctx)).
 		WithExposedPort(8081).
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
 			Args: []string{"/usr/bin/server"},
-		}), nil
+		})
 }
 
-func Container(ctx dagger.Context) (*dagger.Container, error) {
+func Container(ctx dagger.Context) *dagger.Container {
 	return Image(ctx)
 }
