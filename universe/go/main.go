@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"dagger.io/dagger"
@@ -155,24 +156,24 @@ func Test(
 	goTest = append(goTest, opts.TestFlags...)
 
 	checks := ctx.Client().EnvironmentCheck().
-		// TODO: set a nice description
-		WithName("GoTest")
+		WithDescription(strings.Join(append(goTest, opts.Packages...), " "))
 
+	testfulPkgs := []string{}
 	for pkg, tests := range pkgTests {
-		for _, name := range tests {
-			// TODO: including pkg would be ideal, but wreaks havok once handled as a gql field name...
-			// Maybe add a description field to CheckResult?
-			// checkName := path.Join(pkg, name)
-			checkName := name
-
-			onlyTest := append(goTest, "-run", "^"+name+"$", pkg)
-
-			checks = checks.WithSubcheck(
-				ctx.Client().EnvironmentCheck().
-					WithName(checkName).
-					WithContainer(withCode.WithFocus().WithExec(onlyTest).WithoutFocus()),
-			)
+		if len(tests) == 0 {
+			continue
 		}
+		testfulPkgs = append(testfulPkgs, pkg)
+	}
+	sort.Strings(testfulPkgs)
+
+	for _, pkg := range testfulPkgs {
+		testPkg := append(goTest, pkg)
+		checks = checks.WithSubcheck(
+			ctx.Client().EnvironmentCheck().
+				WithDescription(pkg).
+				WithContainer(withCode.WithExec(testPkg)),
+		)
 	}
 
 	return checks, nil
