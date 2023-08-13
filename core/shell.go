@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -48,7 +47,7 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string) 
 		defer ws.Close()
 
 		// TODO:
-		bklog.G(context.TODO()).Debugf("SHELL HANDLER FOR %s HAS BEEN UPGRADED", endpoint)
+		bklog.G(r.Context()).Debugf("SHELL HANDLER FOR %s HAS BEEN UPGRADED", endpoint)
 
 		if err := container.runShell(r.Context(), ws, bk, progSock, clientMetadata); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
@@ -266,15 +265,12 @@ func (container *Container) runShell(
 			message = append(message, []byte(fmt.Sprintf("%d", exitCode))...)
 			err := conn.WriteMessage(websocket.BinaryMessage, message)
 			if err != nil {
-				// FIXME: send error message
-				panic(err)
+				return fmt.Errorf("write exit: %w", err)
 			}
 			err = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			if err != nil {
-				// FIXME: send error message
-				panic(err)
+				return fmt.Errorf("write close: %w", err)
 			}
-			time.Sleep(3 * time.Second) // TODO: I forget if I copy-pasted this or added it, check if load-bearing
 			conn.Close()
 			return err
 		})
