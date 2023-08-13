@@ -91,6 +91,8 @@ func RunShell(
 	// we want to ensure they are parsed separately. For some reason, this flag
 	// does that ¯\_(ツ)_/¯
 	cmd.Root().TraverseChildren = true
+	// TODO(vito): workaround for above breaking when used with -e flag
+	cmd.Root().SetArgs(append([]string{"shell"}, dynamicCmdArgs...))
 
 	if subShell.Name() == cmd.Name() {
 		cmd.Println(subShell.UsageString())
@@ -100,7 +102,7 @@ func RunShell(
 	err = subShell.Execute()
 	if err != nil {
 		cmd.PrintErrln("Error:", err.Error())
-		return fmt.Errorf("failed to execute subcmd: %w", err)
+		return fmt.Errorf("failed to execute shell subcmd: %w", err)
 	}
 	return nil
 }
