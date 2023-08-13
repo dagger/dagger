@@ -2926,20 +2926,17 @@ func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
 func (r *EnvironmentCheckResult) Subresults(ctx context.Context) ([]EnvironmentCheckResult, error) {
 	q := r.Q.Select("subresults")
 
-	q = q.Select("id name output success")
+	q = q.Select("id")
 
 	type subresults struct {
-		Id      EnvironmentCheckResultID
-		Name    string
-		Output  string
-		Success bool
+		Id EnvironmentCheckResultID
 	}
 
 	convert := func(fields []subresults) []EnvironmentCheckResult {
 		out := []EnvironmentCheckResult{}
 
 		for i := range fields {
-			out = append(out, EnvironmentCheckResult{id: &fields[i].Id, name: &fields[i].Name, output: &fields[i].Output, success: &fields[i].Success})
+			out = append(out, EnvironmentCheckResult{id: &fields[i].Id})
 		}
 
 		return out
@@ -4075,6 +4072,16 @@ func (r *Go) Generate(base *Container, src *Directory) *Directory {
 	q = q.Arg("src", src)
 
 	return &Directory{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Go) GoBin(ctr *Container) *Container {
+	q := r.Q.Select("goBin")
+	q = q.Arg("ctr", ctr)
+
+	return &Container{
 		Q: q,
 		C: r.C,
 	}

@@ -4228,9 +4228,6 @@ export class EnvironmentCheckResult extends BaseClient {
   async subresults(): Promise<EnvironmentCheckResult[]> {
     type subresults = {
       id: EnvironmentCheckResultID
-      name: string
-      output: string
-      success: boolean
     }
 
     const response: Awaited<subresults[]> = await computeQuery(
@@ -4240,7 +4237,7 @@ export class EnvironmentCheckResult extends BaseClient {
           operation: "subresults",
         },
         {
-          operation: "id name output success",
+          operation: "id",
         },
       ],
       this.client
@@ -4254,10 +4251,7 @@ export class EnvironmentCheckResult extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.id,
-          r.name,
-          r.output,
-          r.success
+          r.id
         )
     )
   }
@@ -5745,6 +5739,19 @@ export class Go extends BaseClient {
         {
           operation: "generate",
           args: { base, src },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  goBin(ctr: Container): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "goBin",
+          args: { ctr },
         },
       ],
       host: this.clientHost,

@@ -4369,6 +4369,14 @@ class Go(Type):
         return Directory(_ctx)
 
     @typecheck
+    def go_bin(self, ctr: Container) -> Container:
+        _args = [
+            Arg("ctr", ctr),
+        ]
+        _ctx = self._select("goBin", _args)
+        return Container(_ctx)
+
+    @typecheck
     def golang_cilint(
         self,
         base: Container,

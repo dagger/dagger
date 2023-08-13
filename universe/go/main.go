@@ -17,6 +17,7 @@ func main() {
 		WithFunction_(Generate).
 		WithFunction_(Gotestsum).
 		WithFunction_(GolangCILint).
+		WithFunction_(GoBin).
 		Serve()
 }
 
@@ -262,4 +263,11 @@ func GolangCILint(
 		WithFocus().
 		WithExec(cmd).
 		WithoutFocus()
+}
+
+func GoBin(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithEnvVariable("GOBIN", "/go/bin").
+		WithEnvVariable("PATH", "$GOBIN:$PATH", dagger.ContainerWithEnvVariableOpts{
+			Expand: true,
+		})
 }
