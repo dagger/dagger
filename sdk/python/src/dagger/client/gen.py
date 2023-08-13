@@ -4330,6 +4330,15 @@ class GitRepository(Type):
 
 class Go(Type):
     @typecheck
+    def bin_path(self, ctr: Container) -> Container:
+        """BinPath sets $GOBIN to /go/bin and prepends it to $PATH."""
+        _args = [
+            Arg("ctr", ctr),
+        ]
+        _ctx = self._select("binPath", _args)
+        return Container(_ctx)
+
+    @typecheck
     def build(
         self,
         base: Container,
@@ -4369,11 +4378,17 @@ class Go(Type):
         return Directory(_ctx)
 
     @typecheck
-    def go_bin(self, ctr: Container) -> Container:
+    def global_cache(self, ctr: Container) -> Container:
+        """GlobalCache sets $GOMODCACHE to /go/pkg/mod and $GOCACHE to /go/build-
+        cache
+        and mounts cache volumes to both.
+
+        The cache volumes are named "go-mod" and "go-build" respectively.
+        """
         _args = [
             Arg("ctr", ctr),
         ]
-        _ctx = self._select("goBin", _args)
+        _ctx = self._select("globalCache", _args)
         return Container(_ctx)
 
     @typecheck

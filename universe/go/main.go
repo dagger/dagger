@@ -10,14 +10,17 @@ import (
 	"dagger.io/dagger"
 )
 
+var dag = dagger.DefaultClient()
+
 func main() {
-	dagger.DefaultClient().Environment().
+	dag.Environment().
 		WithFunction_(Build).
 		WithFunction_(Test).
 		WithFunction_(Generate).
 		WithFunction_(Gotestsum).
 		WithFunction_(GolangCILint).
-		WithFunction_(GoBin).
+		WithFunction_(BinPath).
+		WithFunction_(GlobalCache).
 		Serve()
 }
 
@@ -34,10 +37,15 @@ type GoBuildOpts struct {
 	BuildFlags []string `doc:"Arbitrary flags to pass along to go build."`
 }
 
-func Build(ctx dagger.Context, base *dagger.Container, src *dagger.Directory, opts GoBuildOpts) *dagger.Directory {
+func Build(
+	ctx dagger.Context,
+	base *dagger.Container,
+	src *dagger.Directory,
+	opts GoBuildOpts,
+) *dagger.Directory {
 	ctr := base.
-		With(GlobalCache(ctx)).
-		WithDirectory("/out", ctx.Client().Directory()).
+		With(GlobalCache).
+		WithDirectory("/out", dag.Directory()).
 		With(Cd("/src", src))
 
 	if opts.Static {
@@ -75,9 +83,7 @@ func Build(ctx dagger.Context, base *dagger.Container, src *dagger.Directory, op
 		Directory("/out")
 
 	if opts.Subdir != "" {
-		out = ctx.Client().
-			Directory().
-			WithDirectory(opts.Subdir, out)
+		out = dag.Directory().WithDirectory(opts.Subdir, out)
 	}
 
 	return out
@@ -97,7 +103,7 @@ func Test(
 	opts GoTestOpts,
 ) (*dagger.EnvironmentCheck, error) {
 	withCode := base.
-		With(GlobalCache(ctx)).
+		With(GlobalCache).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src")
 
@@ -156,7 +162,7 @@ func Test(
 
 	goTest = append(goTest, opts.TestFlags...)
 
-	checks := ctx.Client().EnvironmentCheck().
+	checks := dag.EnvironmentCheck().
 		WithDescription(strings.Join(append(goTest, opts.Packages...), " "))
 
 	testfulPkgs := []string{}
@@ -171,7 +177,7 @@ func Test(
 	for _, pkg := range testfulPkgs {
 		testPkg := append(goTest, pkg)
 		checks = checks.WithSubcheck(
-			ctx.Client().EnvironmentCheck().
+			dag.EnvironmentCheck().
 				WithDescription(pkg).
 				WithContainer(withCode.WithExec(testPkg)),
 		)
@@ -216,7 +222,7 @@ func Gotestsum(
 		cmd = append(cmd, goTestFlags...)
 	}
 	return base.
-		With(GlobalCache(ctx)).
+		With(GlobalCache).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
 		WithFocus().
@@ -230,7 +236,7 @@ func Generate(
 	src *dagger.Directory,
 ) *dagger.Directory {
 	return base.
-		With(GlobalCache(ctx)).
+		With(GlobalCache).
 		With(Cd("/src", src)).
 		WithFocus().
 		WithExec([]string{"go", "generate", "./..."}).
@@ -257,17 +263,10 @@ func GolangCILint(
 		cmd = append(cmd, fmt.Sprintf("--timeout=%ds", opts.Timeout))
 	}
 	return base.
-		With(GlobalCache(ctx)).
+		With(GlobalCache).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
 		WithFocus().
 		WithExec(cmd).
 		WithoutFocus()
-}
-
-func GoBin(ctr *dagger.Container) *dagger.Container {
-	return ctr.WithEnvVariable("GOBIN", "/go/bin").
-		WithEnvVariable("PATH", "$GOBIN:$PATH", dagger.ContainerWithEnvVariableOpts{
-			Expand: true,
-		})
 }

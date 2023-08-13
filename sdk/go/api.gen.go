@@ -4002,6 +4002,17 @@ type Go struct {
 	C graphql.Client
 }
 
+// BinPath sets $GOBIN to /go/bin and prepends it to $PATH.
+func (r *Go) BinPath(ctr *Container) *Container {
+	q := r.Q.Select("binPath")
+	q = q.Arg("ctr", ctr)
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // GoBuildOpts contains options for Go.Build
 type GoBuildOpts struct {
 	Packages []string
@@ -4077,8 +4088,12 @@ func (r *Go) Generate(base *Container, src *Directory) *Directory {
 	}
 }
 
-func (r *Go) GoBin(ctr *Container) *Container {
-	q := r.Q.Select("goBin")
+// GlobalCache sets $GOMODCACHE to /go/pkg/mod and $GOCACHE to /go/build-cache
+// and mounts cache volumes to both.
+//
+// The cache volumes are named "go-mod" and "go-build" respectively.
+func (r *Go) GlobalCache(ctr *Container) *Container {
+	q := r.Q.Select("globalCache")
 	q = q.Arg("ctr", ctr)
 
 	return &Container{

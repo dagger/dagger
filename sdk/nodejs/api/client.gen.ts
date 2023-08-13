@@ -5719,6 +5719,23 @@ export class Go extends BaseClient {
   }) {
     super(parent)
   }
+
+  /**
+   * BinPath sets $GOBIN to /go/bin and prepends it to $PATH.
+   */
+  binPath(ctr: Container): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "binPath",
+          args: { ctr },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
   build(base: Container, src: Directory, opts?: GoBuildOpts): Directory {
     return new Directory({
       queryTree: [
@@ -5745,12 +5762,19 @@ export class Go extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  goBin(ctr: Container): Container {
+
+  /**
+   * GlobalCache sets $GOMODCACHE to /go/pkg/mod and $GOCACHE to /go/build-cache
+   * and mounts cache volumes to both.
+   *
+   * The cache volumes are named "go-mod" and "go-build" respectively.
+   */
+  globalCache(ctr: Container): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "goBin",
+          operation: "globalCache",
           args: { ctr },
         },
       ],
