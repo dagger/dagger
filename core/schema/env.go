@@ -648,8 +648,12 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Digest, check *core.EnvironmentCheck) (rres *core.EnvironmentCheckResult, rerr error) {
 	recorder := ctx.Recorder()
 
-	vtxName := check.Name
+	name := check.Name
+	if name == "" {
+		name = check.Description
+	}
 
+	vtxName := name
 	if vtxName == "" {
 		// TODO
 		vtxName = fmt.Sprintf("unnamed check: %s", dig)
@@ -680,10 +684,10 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 		ctx.Vertex = vtx // NB: nothing uses this atm, just seems appropriate
 	}
 
-	if check.Name != "" {
+	if name != "" {
 		// initialize subgroup _after_ vertex above so that it only shows up if any
 		// further vertices are sent (e.g. Container eval)
-		recorder = recorder.WithGroup(check.Name, progrock.WithGroupID(dig.String()))
+		recorder = recorder.WithGroup(name, progrock.WithGroupID(dig.String()))
 		ctx = ctx.WithRecorder(recorder)
 	}
 
