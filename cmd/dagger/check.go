@@ -10,11 +10,9 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
-	"golang.org/x/sync/errgroup"
 )
 
 var checkCmd = &cobra.Command{
@@ -110,21 +108,6 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 }
 
 func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
-	envChecks, err := loadedEnv.Checks(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get environment commands: %w", err)
-	}
-
-	var subCmds []*cobra.Command
-	for _, envCheck := range envChecks {
-		envCheck := envCheck
-		subCmd, err := addCheck(ctx, &envCheck, c)
-		if err != nil {
-			return fmt.Errorf("failed to add cmd: %w", err)
-		}
-		subCmds = append(subCmds, subCmd)
-	}
-
 	subCmd, restOfArgs, err := cmd.Find(dynamicCmdArgs)
 	if err != nil {
 		return fmt.Errorf("failed to find: %w", err)
@@ -139,27 +122,14 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 	cmd.Root().TraverseChildren = true
 
 	if subCmd.Name() == cmd.Name() {
+		envChecks, err := loadedEnv.Checks(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get environment commands: %w", err)
+		}
+
 		// default to running all checks
 		// TODO: this case also gets triggered if you try to run a check that doesn't exist, fix
-		var eg errgroup.Group
-		for _, subCmd := range subCmds {
-			subCmd := subCmd
-			subCmd.SetArgs(restOfArgs)
-			eg.Go(subCmd.Execute)
-		}
-		err := eg.Wait()
-		if err != nil {
-			return fmt.Errorf("failed to execute subcmd: %w", err)
-		}
-		return nil
-		envName, err := loadedEnv.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get env name: %w", err)
-		}
-
-		allChecks := c.EnvironmentCheck().
-			WithName(envName)
-
+		allChecks := c.EnvironmentCheck()
 		for _, check := range envChecks {
 			allChecks = allChecks.WithSubcheck(&check)
 		}
@@ -172,6 +142,7 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		if !success {
 			return fmt.Errorf("checks failed")
 		}
+		return nil
 	}
 
 	subCmd.SetArgs(restOfArgs)
@@ -184,8 +155,6 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 }
 
 func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.Client) (*cobra.Command, error) {
-	rec := progrock.RecorderFromContext(ctx)
-
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	envCheckID, err := envCheck.ID(ctx)
@@ -214,16 +183,6 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 		Short:       description,
 		Annotations: map[string]string{},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			vtx := rec.Vertex(
-				digest.Digest("check-"+envCheckName),
-				"check "+envCheckName,
-				progrock.Focused(),
-			)
-			defer func() { vtx.Done(err) }()
-
-			cmd.SetOut(vtx.Stdout())
-			cmd.SetErr(vtx.Stderr())
-
 			for _, flagName := range commandAnnotations(cmd.Annotations).getCommandSpecificFlags() {
 				// skip help flag
 				// TODO: doc that users can't name an args help
@@ -242,45 +201,8 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 			if err != nil {
 				return fmt.Errorf("failed to get check result success: %w", err)
 			}
-			name, err := result.Name(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get check result name: %w", err)
-			}
-			output, err := result.Output(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get check result output: %w", err)
-			}
-			envName, checkResultName, _ := strings.Cut(name, ".")
-			subcheckSuffix := " " + envName + " " + strcase.ToKebab(checkResultName)
-			if success {
-				cmd.Println(termenv.String("PASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
-			} else {
-				cmd.Println(termenv.String("FAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
-			}
-			if strings.TrimSpace(output) != "" {
-				cmd.Println(output)
-			}
-			// TODO: handle arbitrary levels of nested results
-			subresults, err := result.Subresults(ctx)
-			for _, subresult := range subresults {
-				subresultName, err := subresult.Name(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get subresult name: %w", err)
-				}
-				subresultSuccess, err := subresult.Success(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get subresult success: %w", err)
-				}
-				envName, subresultName, _ := strings.Cut(subresultName, ".")
-				subcheckSuffix := " " + envName + " " + strcase.ToKebab(subresultName)
-				if subresultSuccess {
-					cmd.Println(termenv.String("\tPASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
-				} else {
-					cmd.Println(termenv.String("\tFAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
-				}
-				if strings.TrimSpace(output) != "" {
-					cmd.Println(output)
-				}
+			if !success {
+				return fmt.Errorf("checks failed")
 			}
 			return nil
 		},
