@@ -79,7 +79,7 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
-	github.com/vito/progrock v0.9.1-0.20230813040115-4e8da79439f3
+	github.com/vito/progrock v0.9.1-0.20230813172300-4bf2ecf5e3f6
 	github.com/vito/vt100 v0.1.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.10.0
