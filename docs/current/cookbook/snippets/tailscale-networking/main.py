@@ -6,10 +6,18 @@ import dagger
 
 
 async def main():
+    # check for required variables in host environment
+    for var in ["TAILSCALE_AUTHKEY", "TAILSCALE_SERVICE_URL"]:
+        if var not in os.environ:
+            msg = f'"{var}" environment variable must be set'
+            raise OSError(msg)
+
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # create Tailscale authentication key as secret
-        auth_key_secret = client.set_secret("tailscaleAuthkey", "TS-KEY")
+        auth_key_secret = client.set_secret("tailscaleAuthkey", os.environ["TAILSCALE_AUTHKEY"])
+
+        tailscale_service_url = os.environ["TAILSCALE_SERVICE_URL"]
 
         # create Tailscale service container
         tailscale = (
@@ -38,7 +46,7 @@ async def main():
             .with_exec(["apk", "add", "curl"])
             .with_service_binding("tailscale", tailscale)
             .with_env_variable("ALL_PROXY", "socks5://tailscale:1055/")
-            .with_exec(["curl", "https://TS-NETWORK-URL"])
+            .with_exec(["curl", "--silent", "--verbose", tailscaleServiceURL])
             .sync()
         )
         print(out)

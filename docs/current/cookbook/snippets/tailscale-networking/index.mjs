@@ -1,10 +1,21 @@
 import { connect } from "@dagger.io/dagger"
 
+// check for required variables in host environment
+const vars = ["TAILSCALE_AUTHKEY", "TAILSCALE_SERVICE_URL"]
+vars.forEach((v) => {
+  if (!process.env[v]) {
+    console.log(`${v} variable must be set`)
+    process.exit()
+  }
+})
+
 // create Dagger client
 connect(
   async (client) => {
     // create Tailscale authentication key as secret
-    const authKeySecret = client.setSecret("tailscaleAuthkey", "TS-KEY")
+    const authKeySecret = client.setSecret("tailscaleAuthkey", process.env.TAILSCALE_AUTHKEY)
+
+    const tailscaleServiceURL = process.env.TAILSCALE_SERVICE_URL
 
     // create Tailscale service container
     const tailscale = client
@@ -25,7 +36,7 @@ connect(
       .withExec(["apk", "add", "curl"])
       .withServiceBinding("tailscale", tailscale)
       .withEnvVariable("ALL_PROXY", "socks5://tailscale:1055/")
-      .withExec(["curl", "https://TS-NETWORK-URL"])
+      .withExec(["curl", "--silent", "--verbose", tailscaleServiceURL])
       .sync()
 
     console.log(out)

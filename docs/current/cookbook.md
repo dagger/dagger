@@ -937,7 +937,9 @@ The following code listing shows how to connect to a Docker Engine on the host m
 
 ### Tailscale
 
-The following code listing shows how to have a container running in a Dagger pipeline access a Tailscale network using Tailscale's [userspace networking](https://tailscale.com/kb/1112/userspace-networking/). You will need to set the `TAILSCALE_AUTHKEY` environment variable to a [Tailscale authentication key](https://tailscale.com/kb/1085/auth-keys/) & `TAILSCALE_SERVICE_URL` environment variable to a URL accessibly only on the Tailscale network.
+The following code listing shows how to have a container running in a Dagger pipeline access a Tailscale network using Tailscale's [userspace networking](https://tailscale.com/kb/1112/userspace-networking/).
+
+Set the `TAILSCALE_AUTHKEY` host environment variable to a [Tailscale authentication key](https://tailscale.com/kb/1085/auth-keys/) and the `TAILSCALE_SERVICE_URL` host environment variable to a URL accessibly only on the Tailscale network.
 
 <Tabs groupId="language">
 <TabItem value="Go">
