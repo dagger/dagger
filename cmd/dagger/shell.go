@@ -6,14 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
-	"syscall"
 
 	"dagger.io/dagger"
-	"github.com/containerd/console"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
 	"github.com/iancoleman/strcase"
@@ -33,10 +29,6 @@ var shellCmd = &cobra.Command{
 	DisableFlagParsing: true,
 	Hidden:             true, // for now, remove once we're ready for primetime
 	RunE:               loadEnvCmdWrapper(RunShell),
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// TODO: would be nice to see progress somehow, but also need to control terminal ourselves
-		progress = "plain"
-	},
 }
 
 var (
@@ -94,14 +86,16 @@ func RunShell(
 	// TODO(vito): workaround for above breaking when used with -e flag
 	cmd.Root().SetArgs(append([]string{"shell"}, dynamicCmdArgs...))
 
+	rec := progrock.RecorderFromContext(ctx)
+
 	if subShell.Name() == cmd.Name() {
 		cmd.Println(subShell.UsageString())
 		return fmt.Errorf("entrypoint not found or not set")
 	}
-	cmd.Printf("Running command %q...\n", subShell.Name())
+	rec.Debug("running command", progrock.Labelf("command", subShell.Name()))
 	err = subShell.Execute()
 	if err != nil {
-		cmd.PrintErrln("Error:", err.Error())
+		rec.Error("failed to execute command", progrock.ErrorLabel(err))
 		return fmt.Errorf("failed to execute shell subcmd: %w", err)
 	}
 	return nil
@@ -141,7 +135,6 @@ func addShell(ctx context.Context, envShell *dagger.EnvironmentShell, c *dagger.
 			vtx := rec.Vertex(
 				digest.Digest("shell-"+envShellName),
 				"shell "+envShellName,
-				progrock.Focused(),
 			)
 			defer func() { vtx.Done(err) }()
 
@@ -221,6 +214,8 @@ func addShell(ctx context.Context, envShell *dagger.EnvironmentShell, c *dagger.
 }
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) error {
+	rec := progrock.RecorderFromContext(ctx)
+
 	// TODO:
 	// fmt.Fprintf(os.Stderr, "shell endpoint: %s\n", shellEndpoint)
 
@@ -239,57 +234,23 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	// TODO:
 	// fmt.Fprintf(os.Stderr, "WE ARE SO CONNECTED\n")
 
-	// Handle terminal sizing
-	current := console.Current()
-	sendTermSize := func() error {
-		var (
-			width  = 80
-			height = 120
-		)
-		size, err := current.Size()
-		if err == nil {
-			width, height = int(size.Width), int(size.Height)
-		}
-		message := append([]byte{}, resizePrefix...)
-		message = append(message, []byte(fmt.Sprintf("%d;%d", width, height))...)
-		return wsconn.WriteMessage(websocket.BinaryMessage, message)
-	}
-	// Send the current terminal size right away (initial sizing)
-	err = sendTermSize()
-	if err != nil {
-		return fmt.Errorf("failed to send terminal size: %w", err)
-	}
-	// Send updates as terminal gets resized
-	sigWinch := make(chan os.Signal, 1)
-	defer close(sigWinch)
-	signal.Notify(sigWinch, syscall.SIGWINCH)
-	go func() {
-		for range sigWinch {
-			err := sendTermSize()
-			if err != nil {
-				// TODO:
-				fmt.Fprintf(os.Stderr, "failed to send terminal size: %v\n", err)
-			}
-		}
-	}()
+	vtx := rec.Vertex("shell", "shell",
+		progrock.Focused(),
+		progrock.Zoomed(func(w, h int) error {
+			message := append([]byte{}, resizePrefix...)
+			message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
+			return wsconn.WriteMessage(websocket.BinaryMessage, message)
+		}))
 
 	origState, err := term.GetState(int(os.Stdin.Fd()))
 	if err != nil {
 		return fmt.Errorf("failed to get stdin state: %w", err)
 	}
 	defer term.Restore(int(os.Stdin.Fd()), origState)
-	// TODO: delaying until we actually get data from the tty is a brittle
-	// attempt to fix overlapping the time progress output is still being
-	// flushed with time the terminal is in a raw state (which messes
-	// plain progress up). Need better solution.
-	makeRawOnce := sync.Once{}
-	makeRaw := func() {
-		makeRawOnce.Do(func() {
-			_, err := term.MakeRaw(int(os.Stdin.Fd()))
-			if err != nil {
-				panic(fmt.Sprintf("failed to set stdin to raw mode: %v", err))
-			}
-		})
+
+	_, err = term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		panic(fmt.Sprintf("failed to set stdin to raw mode: %v", err))
 	}
 
 	// Handle incoming messages
@@ -304,12 +265,11 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				errCh <- fmt.Errorf("read: %w", err)
 				return
 			}
-			makeRaw()
 			switch {
 			case bytes.HasPrefix(buff, stdoutPrefix):
-				os.Stdout.Write(bytes.TrimPrefix(buff, stdoutPrefix))
+				vtx.Stdout().Write(bytes.TrimPrefix(buff, stdoutPrefix))
 			case bytes.HasPrefix(buff, stderrPrefix):
-				os.Stderr.Write(bytes.TrimPrefix(buff, stderrPrefix))
+				vtx.Stderr().Write(bytes.TrimPrefix(buff, stderrPrefix))
 			case bytes.HasPrefix(buff, exitPrefix):
 				code, err := strconv.Atoi(string(bytes.TrimPrefix(buff, exitPrefix)))
 				if err == nil {
@@ -329,7 +289,6 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				fmt.Fprintf(os.Stderr, "read: %v\n", err)
 				continue
 			}
-			makeRaw()
 			message := append([]byte{}, stdinPrefix...)
 			message = append(message, b[:n]...)
 			err = wsconn.WriteMessage(websocket.BinaryMessage, message)
