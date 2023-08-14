@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -72,7 +73,10 @@ func (m ClientMetadata) ToGRPCMD() metadata.MD {
 	if err != nil {
 		panic(err)
 	}
-	return metadata.Pairs(clientMetadataMetaKey, string(b))
+	return metadata.Pairs(
+		clientMetadataMetaKey,
+		base64.StdEncoding.EncodeToString(b),
+	)
 }
 
 func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
@@ -99,7 +103,11 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 	if len(vals) != 1 {
 		return nil, fmt.Errorf("expected exactly one %s value, got %d", clientMetadataMetaKey, len(vals))
 	}
-	if err := json.Unmarshal([]byte(vals[0]), clientMetadata); err != nil {
+	jsonPayload, err := base64.StdEncoding.DecodeString(vals[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to base64-decode %s: %v", clientMetadataMetaKey, err)
+	}
+	if err := json.Unmarshal(jsonPayload, clientMetadata); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal %s: %v", clientMetadataMetaKey, err)
 	}
 	return clientMetadata, nil
