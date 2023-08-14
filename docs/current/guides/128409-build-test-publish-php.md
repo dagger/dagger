@@ -479,7 +479,7 @@ This command:
 
 - initializes a new Dagger Engine session;
 - sets the `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` environment variables;
-- executes the PHP pipeline script in that session and displays live progress.
+- executes the PHP pipeline script in that session.
 
 The pipeline script, in turn, initializes a new `DaggerPipeline` object, whose constructor:
 
