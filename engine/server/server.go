@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -271,27 +272,57 @@ type withDeadlineConn struct {
 	conn          net.Conn
 	readDeadline  time.Time
 	readers       []func()
-	readersL      sync.Mutex
+	readBuf       *bytes.Buffer
+	readEOF       bool
+	readCond      *sync.Cond
 	writeDeadline time.Time
 	writers       []func()
 	writersL      sync.Mutex
 }
 
 func newLogicalDeadlineConn(inner net.Conn) net.Conn {
-	return &withDeadlineConn{
-		conn: inner,
+	c := &withDeadlineConn{
+		conn:     inner,
+		readBuf:  new(bytes.Buffer),
+		readCond: sync.NewCond(new(sync.Mutex)),
 	}
+
+	go func() {
+		for {
+			buf := make([]byte, 32*1024)
+			n, err := inner.Read(buf)
+			if err != nil {
+				c.readCond.L.Lock()
+				c.readEOF = true
+				c.readCond.L.Unlock()
+				c.readCond.Broadcast()
+				return
+			}
+
+			c.readCond.L.Lock()
+			c.readBuf.Write(buf[0:n])
+			c.readCond.Broadcast()
+			c.readCond.L.Unlock()
+		}
+	}()
+
+	return c
 }
 
 func (c *withDeadlineConn) Read(b []byte) (n int, err error) {
-	c.readersL.Lock()
+	c.readCond.L.Lock()
+
+	if c.readEOF {
+		c.readCond.L.Unlock()
+		return 0, io.EOF
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	if !c.readDeadline.IsZero() {
 		if time.Now().After(c.readDeadline) {
-			c.readersL.Unlock()
+			c.readCond.L.Unlock()
 			// return early without calling inner Read
 			return 0, os.ErrDeadlineExceeded
 		}
@@ -306,22 +337,41 @@ func (c *withDeadlineConn) Read(b []byte) (n int, err error) {
 		}()
 	}
 
-	// Start a goroutine for the actual Read operation
-	read := make(chan int, 1)
-	go func() {
-		n, err = c.conn.Read(b)
-		read <- 0
-	}()
-
 	// Keep track of the reader so a future SetReadDeadline can interrupt it.
 	c.readers = append(c.readers, cancel)
 
-	c.readersL.Unlock()
+	c.readCond.L.Unlock()
+
+	// Start a goroutine for the actual Read operation
+	read := make(chan struct{})
+	var rN int
+	var rerr error
+	go func() {
+		defer close(read)
+
+		c.readCond.L.Lock()
+		defer c.readCond.L.Unlock()
+
+		for ctx.Err() == nil {
+			if c.readEOF {
+				rerr = io.EOF
+				break
+			}
+
+			n, _ := c.readBuf.Read(b) // ignore EOF here
+			if n > 0 {
+				rN = n
+				break
+			}
+
+			c.readCond.Wait()
+		}
+	}()
 
 	// Wait for either Read to complete or the timeout
 	select {
 	case <-read:
-		return n, err
+		return rN, rerr
 	case <-ctx.Done():
 		return 0, os.ErrDeadlineExceeded
 	}
@@ -335,8 +385,8 @@ func (c *withDeadlineConn) Write(b []byte) (n int, err error) {
 
 	if !c.writeDeadline.IsZero() {
 		if time.Now().After(c.writeDeadline) {
-			c.readersL.Unlock()
-			// return early without calling inner Read
+			c.writersL.Unlock()
+			// return early without calling inner Write
 			return 0, os.ErrDeadlineExceeded
 		}
 
@@ -350,16 +400,16 @@ func (c *withDeadlineConn) Write(b []byte) (n int, err error) {
 		}()
 	}
 
+	// Keep track of the writer so a future SetWriteDeadline can interrupt it.
+	c.writers = append(c.writers, cancel)
+	c.writersL.Unlock()
+
 	// Start a goroutine for the actual Write operation
 	write := make(chan int, 1)
 	go func() {
 		n, err = c.conn.Write(b)
 		write <- 0
 	}()
-
-	// Keep track of the writer so a future SetWriteDeadline can interrupt it.
-	c.writers = append(c.writers, cancel)
-	c.writersL.Unlock()
 
 	// Wait for either Write to complete or the timeout
 	select {
@@ -390,12 +440,12 @@ func (c *withDeadlineConn) SetDeadline(t time.Time) error {
 }
 
 func (c *withDeadlineConn) SetReadDeadline(t time.Time) error {
-	c.readersL.Lock()
+	c.readCond.L.Lock()
 	c.readDeadline = t
 	readers := c.readers
-	c.readersL.Unlock()
+	c.readCond.L.Unlock()
 
-	if len(readers) > 0 {
+	if len(readers) > 0 && !t.IsZero() {
 		go func() {
 			dt := time.Until(c.readDeadline)
 			if dt > 0 {
@@ -417,7 +467,7 @@ func (c *withDeadlineConn) SetWriteDeadline(t time.Time) error {
 	writers := c.writers
 	c.writersL.Unlock()
 
-	if len(writers) > 0 {
+	if len(writers) > 0 && !t.IsZero() {
 		go func() {
 			dt := time.Until(c.writeDeadline)
 			if dt > 0 {
