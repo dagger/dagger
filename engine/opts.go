@@ -69,14 +69,7 @@ func (m ClientMetadata) ClientIDs() []string {
 }
 
 func (m ClientMetadata) ToGRPCMD() metadata.MD {
-	b, err := json.Marshal(m)
-	if err != nil {
-		panic(err)
-	}
-	return metadata.Pairs(
-		clientMetadataMetaKey,
-		base64.StdEncoding.EncodeToString(b),
-	)
+	return encodeMeta(clientMetadataMetaKey, m)
 }
 
 func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
@@ -91,24 +84,13 @@ func ContextWithClientMetadata(ctx context.Context, clientMetadata *ClientMetada
 }
 
 func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
-	clientMetadata := &ClientMetadata{}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, fmt.Errorf("failed to get metadata from context")
 	}
-	vals, ok := md[clientMetadataMetaKey]
-	if !ok {
-		return nil, fmt.Errorf("failed to get %s from metadata", clientMetadataMetaKey)
-	}
-	if len(vals) != 1 {
-		return nil, fmt.Errorf("expected exactly one %s value, got %d", clientMetadataMetaKey, len(vals))
-	}
-	jsonPayload, err := base64.StdEncoding.DecodeString(vals[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to base64-decode %s: %v", clientMetadataMetaKey, err)
-	}
-	if err := json.Unmarshal(jsonPayload, clientMetadata); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %s: %v", clientMetadataMetaKey, err)
+	clientMetadata := &ClientMetadata{}
+	if err := decodeMeta(md, clientMetadataMetaKey, clientMetadata); err != nil {
+		return nil, err
 	}
 	return clientMetadata, nil
 }
@@ -124,15 +106,9 @@ type LocalImportOpts struct {
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
-	b, err := json.Marshal(o)
-	if err != nil {
-		panic(err)
-	}
 	// set both the dagger metadata and the ones used by buildkit
-	md := metadata.Pairs(
-		localImportOptsMetaKey, string(b),
-		localDirImportDirNameMetaKey, o.Path,
-	)
+	md := encodeMeta(localImportOptsMetaKey, o)
+	md[localDirImportDirNameMetaKey] = []string{o.Path}
 	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
 	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
 	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
@@ -159,14 +135,10 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 	md := metadata.Join(incomingMD, outgoingMD)
 
 	opts := &LocalImportOpts{}
-	vals, ok := md[localImportOptsMetaKey]
+	_, ok := md[localImportOptsMetaKey]
 	if ok {
-		// we have the dagger set metadata, so we can just unmarshal it
-		if len(vals) != 1 {
-			return nil, fmt.Errorf("expected exactly one %s value, got %d", localImportOptsMetaKey, len(vals))
-		}
-		if err := json.Unmarshal([]byte(vals[0]), opts); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %s: %v", localImportOptsMetaKey, err)
+		if err := decodeMeta(md, localImportOptsMetaKey, opts); err != nil {
+			return nil, err
 		}
 		return opts, nil
 	}
@@ -192,11 +164,7 @@ type LocalExportOpts struct {
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {
-	b, err := json.Marshal(o)
-	if err != nil {
-		panic(err)
-	}
-	return metadata.Pairs(localExportOptsMetaKey, string(b))
+	return encodeMeta(localExportOptsMetaKey, o)
 }
 
 func (o LocalExportOpts) AppendToOutgoingContext(ctx context.Context) context.Context {
@@ -219,15 +187,8 @@ func LocalExportOptsFromContext(ctx context.Context) (*LocalExportOpts, error) {
 	md := metadata.Join(incomingMD, outgoingMD)
 
 	opts := &LocalExportOpts{}
-	vals, ok := md[localExportOptsMetaKey]
-	if !ok {
-		return nil, fmt.Errorf("failed to get %s from metadata", localExportOptsMetaKey)
-	}
-	if len(vals) != 1 {
-		return nil, fmt.Errorf("expected exactly one %s value, got %d", localExportOptsMetaKey, len(vals))
-	}
-	if err := json.Unmarshal([]byte(vals[0]), opts); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %s: %v", localExportOptsMetaKey, err)
+	if err := decodeMeta(md, localExportOptsMetaKey, opts); err != nil {
+		return nil, err
 	}
 	return opts, nil
 }
@@ -250,4 +211,30 @@ func contextWithMD(ctx context.Context, mds ...metadata.MD) context.Context {
 	ctx = metadata.NewIncomingContext(ctx, incomingMD)
 	ctx = metadata.NewOutgoingContext(ctx, outgoingMD)
 	return ctx
+}
+
+func encodeMeta(key string, v interface{}) metadata.MD {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return metadata.Pairs(key, base64.StdEncoding.EncodeToString(b))
+}
+
+func decodeMeta(md metadata.MD, key string, dest interface{}) error {
+	vals, ok := md[key]
+	if !ok {
+		return fmt.Errorf("failed to get %s from metadata", key)
+	}
+	if len(vals) != 1 {
+		return fmt.Errorf("expected exactly one %s value, got %d", key, len(vals))
+	}
+	jsonPayload, err := base64.StdEncoding.DecodeString(vals[0])
+	if err != nil {
+		return fmt.Errorf("failed to base64-decode %s: %v", key, err)
+	}
+	if err := json.Unmarshal(jsonPayload, dest); err != nil {
+		return fmt.Errorf("failed to JSON-unmarshal %s: %v", key, err)
+	}
+	return nil
 }
