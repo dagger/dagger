@@ -8,12 +8,14 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/content"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
+
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type containerSchema struct {

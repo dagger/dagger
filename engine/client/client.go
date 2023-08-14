@@ -19,9 +19,6 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -36,6 +33,10 @@ import (
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const OCIStoreName = "dagger-oci"
@@ -153,9 +154,17 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
+	initGroup := progrock.RecorderFromContext(ctx).WithGroup("init", progrock.Weak())
+
+	loader := initGroup.Vertex("starting-engine", "connect")
+	defer func() {
+		loader.Done(rerr)
+	}()
+
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
+
 	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
@@ -172,16 +181,20 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
+	engineTask := loader.Task("starting engine")
 	bkClient, err := newBuildkitClient(ctx, remote, c.UserAgent)
+	engineTask.Done(err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
+
 	c.bkClient = bkClient
 	defer func() {
 		if rerr != nil {
 			c.bkClient.Close()
 		}
 	}()
+
 	if c.EngineNameCallback != nil {
 		info, err := c.bkClient.Info(ctx)
 		if err != nil {
@@ -196,6 +209,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("get hostname: %w", err)
 	}
 	c.hostname = hostname
+
+	sessionTask := loader.Task("starting session")
 
 	sharedKey := c.ServerID // share a session across servers
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
@@ -277,6 +292,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		defer cancel()
 		return c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 	}, backoff.WithContext(bo, connectRetryCtx))
+
+	sessionTask.Done(err)
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
