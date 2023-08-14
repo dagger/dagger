@@ -38,6 +38,7 @@ func Binary(ctx dagger.Context) *dagger.File {
 		buildBase(ctx),
 		dagger.DefaultClient().Host().Directory("."),
 		dagger.GoBuildOpts{
+			Static:   true,
 			Packages: []string{"./universe/_demo/server/cmd/server"},
 		},
 	).File("server")

@@ -12,7 +12,7 @@ func main() {
 		WithCommand_(PublishAll).
 		WithCheck_(UnitTest).
 		WithShell_(DevShell).
-		// WithCheck_(IntegTest).
+		WithCheck_(IntegTest).
 		Serve()
 }
 
@@ -46,11 +46,9 @@ func DevShell(ctx dagger.Context) (*dagger.Container, error) {
 		WithEntrypoint([]string{"sh"}), nil
 }
 
-/*
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	clientApp := DaggerClient().DemoClient().Build()
 
-	// TODO: need combined stdout/stderr really badly now
 	stdout, err := clientApp.
 		WithServiceBinding("server", DaggerClient().DemoServer().Container()).
 		WithExec(nil).
@@ -60,4 +58,3 @@ func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	}
 	return DaggerClient().EnvironmentCheckResult().WithSuccess(true).WithOutput(stdout), nil
 }
-*/

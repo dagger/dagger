@@ -1,38 +1,32 @@
-Demo Flow:
-1. Server team
-   1. Show server cmd code + tests
-   2. Run `dagger checks`
-     1. oops, one failed
-     2. fix the code
-     3. re-run `dagger checks`, it passes now
-   3. Run `dagger artifact list`
-     1. run `dagger artifact export --output /tmp/server binary`, show server bin
-     2. (if time to implement) run `dagger artifacts publish server-image`
-   4. Show env code
-     1. Base image is from "universe", explain how those are built into the codegen using "WithFunction"
-     2. Checks are also implemented by just calling out to universe
-     3. Artifacts, same
-2. Client team
-   1. Show client cmd code + tests
-   2. Run `dagger checks`
-   3. Run `dagger do publish`, does a fake publish to pypi
-     1. example where artifacts doesn't cover functionality yet, `do` is a fallback
-   4. Show env code
-     1. decorator approach
-     2. Base image is once again from universe, emphasize that you are calling out to a go env from a python env
-3. Platform engineer
-   1. Run `dagger checks`, show all the checks we saw individually running at once now
-     1. NOTE: `integ-test` should NOT be there yet!
-   2. Run `dagger artifacts`, show all artifacts collected together
-   3. Run `dagger shell dev`
-     1. client is in there
-     2. run `ps aux`, no server running
-     3. but then run `client http://server:8081/hello` but it doesn't work! There's a mismatch between url path, not caught by unit tests
-   4. Show env code
-     1. Show dev shell, server running as service dependency, cobbling together server + client artifacts thanks to custom codegen
-     2. Fix the code in the client or server
-     3. Show `dagger shell dev` again, with working command now
-     4. Now show example of adding new integ-test that tests the command you were running in the dev shell
-     5. Show `dagger checks integ-test` now passing
-4. Misc (not fit into above yet)
-   1. `dagger codegen`, can show adding a new api to an env and then getting the updated bindings
+# CLI Experience
+1. Show server code+tests, client code+tests
+1. Run `dagger checks`
+   1. oops, one failed in the go unit tests
+   1. fix the code
+   1. re-run `dagger checks`, it passes now
+1. Run `dagger artifact list`
+   1. run `dagger artifact export --output /tmp/server binary`, show server bin
+1. Run `dagger do --help`
+   1. Run `dagger do publish --version v1.2.3`
+1. Run `dagger shell dev`
+   1. run `./client`
+   1. oops, it didn't work!
+   1. fix the python code
+   1. run `dagger shell dev` again, this time `./client` works!
+1. Now we want to add an integration test that covers this, how would we go about that?
+   1. First, let's go through how all the env entrypoints are defined
+
+# Scripting Experience
+1. Show server + client env code
+   1. Base images are derived from universe envs.
+      1. Those envs are callable from both SDKs despite the env itself being written in Go
+      1. Explain `Functions` and their purpose
+   1. Server env also implements all its checks+artifacts using Go env
+      1. Python will have equivalent too, once we added that to universe
+1. Show combined CI env code
+   1. We have generated bindings for all the entrypoints in both the server+client env code
+      1. mention `dagger codegen` and dependencies in `dagger.json`, just a rough prototype of the DX for now
+   1. Show how the checks/artifacts/shells/etc. are defined
+   1. Now we want to add an integ test for that problem we hit earlier
+      1. Just uncomment the integ test code, explain what it's doing
+      1. Run `dagger checks` again, show the new integ test running and passing
