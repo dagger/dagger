@@ -20,7 +20,8 @@ func buildBase(ctx dagger.Context) *dagger.Container {
 	return dagger.DefaultClient().Apko().Wolfi([]string{"go-1.20"})
 }
 
-func binary(ctx dagger.Context) *dagger.File {
+// The server's binary as a file.
+func Binary(ctx dagger.Context) *dagger.File {
 	return dagger.DefaultClient().Go().Build(
 		buildBase(ctx),
 		dagger.DefaultClient().Host().Directory("."),
@@ -28,10 +29,6 @@ func binary(ctx dagger.Context) *dagger.File {
 			Packages: []string{"./universe/_demo/server/cmd/server"},
 		},
 	).File("server")
-}
-
-func Binary(ctx dagger.Context) *dagger.File {
-	return binary(ctx)
 }
 
 func UnitTest(ctx dagger.Context) *dagger.EnvironmentCheck {
@@ -55,9 +52,10 @@ func Publish(ctx dagger.Context, version string) (string, error) {
 	return "", nil
 }
 
+// The server container image.
 func Image(ctx dagger.Context) *dagger.Container {
 	return dagger.DefaultClient().Apko().Wolfi(nil).
-		WithMountedFile("/usr/bin/server", binary(ctx)).
+		WithMountedFile("/usr/bin/server", Binary(ctx)).
 		WithExposedPort(8081).
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
 			Args: []string{"/usr/bin/server"},

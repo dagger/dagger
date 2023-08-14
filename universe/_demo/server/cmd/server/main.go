@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,11 @@ func main() {
 	httpSrv.ListenAndServe()
 }
 
-func getMsg(sayHelloTo string) string {
-	return fmt.Sprintf("Hello, %s!", sayHelloTo)
+func getMsg(remoteAddr string) (string, error) {
+	ip, port, ok := strings.Cut(remoteAddr, ":")
+	if !ok {
+		return "", fmt.Errorf("invalid remote address: %s", remoteAddr)
+	}
+
+	return fmt.Sprintf("Hello, %s from port %s!", ip, port), nil
 }
