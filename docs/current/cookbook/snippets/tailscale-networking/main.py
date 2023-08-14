@@ -1,5 +1,5 @@
 import sys
-
+import os
 import anyio
 
 import dagger
@@ -15,7 +15,9 @@ async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # create Tailscale authentication key as secret
-        auth_key_secret = client.set_secret("tailscaleAuthkey", os.environ["TAILSCALE_AUTHKEY"])
+        auth_key_secret = client.set_secret(
+            "tailscaleAuthkey", os.environ["TAILSCALE_AUTHKEY"]
+        )
 
         tailscale_service_url = os.environ["TAILSCALE_SERVICE_URL"]
 
@@ -46,7 +48,7 @@ async def main():
             .with_exec(["apk", "add", "curl"])
             .with_service_binding("tailscale", tailscale)
             .with_env_variable("ALL_PROXY", "socks5://tailscale:1055/")
-            .with_exec(["curl", "--silent", "--verbose", tailscaleServiceURL])
+            .with_exec(["curl", "--silent", "--verbose", tailscale_service_url])
             .sync()
         )
         print(out)
