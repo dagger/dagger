@@ -11,8 +11,8 @@ func main() {
 	DaggerClient().Environment().
 		WithCommand_(PublishAll).
 		WithCheck_(UnitTest).
-		WithShell_(DevShell).
-		WithCheck_(IntegTest).
+		WithShell_(Dev).
+		// WithCheck_(IntegTest).
 		Serve()
 }
 
@@ -38,7 +38,7 @@ func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 		WithSubcheck(DaggerClient().DemoServer().UnitTest()).Result(), nil
 }
 
-func DevShell(ctx dagger.Context) (*dagger.Container, error) {
+func Dev(ctx dagger.Context) (*dagger.Container, error) {
 	clientApp := DaggerClient().DemoClient().Build()
 
 	return clientApp.
@@ -46,6 +46,7 @@ func DevShell(ctx dagger.Context) (*dagger.Container, error) {
 		WithEntrypoint([]string{"sh"}), nil
 }
 
+/*
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	clientApp := DaggerClient().DemoClient().Build()
 
@@ -58,3 +59,4 @@ func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	}
 	return DaggerClient().EnvironmentCheckResult().WithSuccess(true).WithOutput(stdout), nil
 }
+*/

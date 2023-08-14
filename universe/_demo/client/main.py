@@ -6,6 +6,14 @@ from dagger.server import Environment
 env = Environment()
 
 
+def base_image() -> dagger.Container:
+    return (
+        dagger.apko().wolfi(["python-3.11", "py3.11-pip"])
+        .with_mounted_directory("/src", dagger.host().directory("."))
+        .with_workdir("/src/universe/_demo/client")
+        .with_exec(["pip", "install", "pytest", "shiv", "."])
+    )
+
 @env.command
 async def publish(version: Annotated[str, "The version to publish."]) -> str:
     """Publish the client"""
@@ -19,21 +27,17 @@ async def publish(version: Annotated[str, "The version to publish."]) -> str:
 async def unit_test() -> str:
     """Run unit tests"""
     return await (
-        dagger.container()
-        .from_("python:3.11.1-alpine")
-        .with_exec(["python", "-V"])
+        base_image()
+        .with_exec(["pytest", "-v"])
         .stdout()
     )
 
 @env.function
 async def build() -> dagger.Container:
     """ TODO: this should be an artifact, but function works for now """
-    base = await dagger.apko().wolfi(["python-3.11", "py3.11-pip"])
-    entrypoint = await (
-        base
-        .with_exec(["pip", "install", "shiv"])
-        .with_mounted_directory("/src", dagger.host().directory("."))
-        .with_exec(["shiv", "-e", "src.client.main:main", "-o", "/entrypoint", "/src/universe/_demo/client", "--root", "/tmp/.shiv"])
-        .file("/entrypoint")
+    client_app = (
+        base_image()
+        .with_exec(["shiv", "-e", "src.client.main:main", "-o", "/client", "/src/universe/_demo/client", "--root", "/tmp/.shiv"])
+        .file("/client")
     )
-    return await base.with_file("/client", entrypoint).with_entrypoint(["/client"])
+    return base_image().with_file("/client", client_app).with_entrypoint(["/client"])
