@@ -13,7 +13,10 @@ vars.forEach((v) => {
 connect(
   async (client) => {
     // create Tailscale authentication key as secret
-    const authKeySecret = client.setSecret("tailscaleAuthkey", process.env.TAILSCALE_AUTHKEY)
+    const authKeySecret = client.setSecret(
+      "tailscaleAuthkey",
+      process.env.TAILSCALE_AUTHKEY
+    )
 
     const tailscaleServiceURL = process.env.TAILSCALE_SERVICE_URL
 
