@@ -66,9 +66,6 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 		return rec
 	}
 
-	// drop the "root" pipeline; it's already initialized by Progrock
-	g = g[1:]
-
 	for _, p := range g {
 		var labels []*progrock.Label
 

@@ -51,7 +51,7 @@ func NewDaggerServer(
 	serverID string,
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
-	pipelineLabels []pipeline.Label,
+	rootLabels []pipeline.Label,
 ) (*DaggerServer, error) {
 	srv := &DaggerServer{
 		serverID: serverID,
@@ -77,9 +77,8 @@ func NewDaggerServer(
 	}
 	srv.progCleanup = progCleanup
 
-	pipeline.SetRootLabels(pipelineLabels)
 	progrockLabels := []*progrock.Label{}
-	for _, label := range pipelineLabels {
+	for _, label := range rootLabels {
 		progrockLabels = append(progrockLabels, &progrock.Label{
 			Name:  label.Name,
 			Value: label.Value,

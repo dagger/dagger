@@ -9,6 +9,7 @@ import (
 
 type Context struct {
 	context.Context
+
 	ResolveParams graphql.ResolveParams
 
 	// Vertex is a recorder for sending logs to the request's vertex in the
