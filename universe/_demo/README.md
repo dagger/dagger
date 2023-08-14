@@ -5,8 +5,8 @@ Demo Flow:
      1. oops, one failed
      2. fix the code
      3. re-run `dagger checks`, it passes now
-   3. Run `dagger artifacts`
-     1. run `dagger artifacts export server-binary`, show server bin
+   3. Run `dagger artifact list`
+     1. run `dagger artifact export --output /tmp/server binary`, show server bin
      2. (if time to implement) run `dagger artifacts publish server-image`
    4. Show env code
      1. Base image is from "universe", explain how those are built into the codegen using "WithFunction"

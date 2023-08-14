@@ -36,4 +36,4 @@ async def build() -> dagger.Container:
         .with_exec(["shiv", "-e", "src.client.main:main", "-o", "/entrypoint", "/src/universe/_demo/client", "--root", "/tmp/.shiv"])
         .file("/entrypoint")
     )
-    return await base.with_file("/entrypoint", entrypoint).with_entrypoint(["/entrypoint"])
+    return await base.with_file("/client", entrypoint).with_entrypoint(["/client"])

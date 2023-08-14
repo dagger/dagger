@@ -10,7 +10,11 @@ import (
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
-		respMsg := fmt.Sprintf("Hello, %s!", r.RemoteAddr)
+		respMsg, err := getMsg(r.RemoteAddr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		fmt.Fprintln(w, respMsg)
 	})
 
