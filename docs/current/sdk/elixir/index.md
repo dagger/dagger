@@ -12,7 +12,7 @@ The Dagger Elixir SDK contains everything you need to develop CI/CD pipelines in
 
 This SDK contains:
 
-* A Elixir package: https://hex.pm/packages/dagger
+* A Elixir package: [dagger][hex-pm-dagger]
 * This documentation
 
 ## Who is it for?
@@ -73,3 +73,4 @@ To learn more, [install the Elixir SDK][install] and [start using it][get-starte
 [install]: ./043817-install.md
 [get-started]: ./756758-get-started.md
 [dag]: https://en.wikipedia.org/wiki/Directed_acyclic_graph
+[hex-pm-dagger]: https://hex.pm/packages/dagger
