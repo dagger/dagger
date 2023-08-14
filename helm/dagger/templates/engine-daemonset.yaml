@@ -1,5 +1,5 @@
----
 {{- if .Values.magicache.enabled }}
+---
 apiVersion: v1
 kind: Secret
 metadata:
@@ -8,6 +8,16 @@ metadata:
 data:
   _EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN: {{ required "A magicache token is required" .Values.magicache.token | b64enc | quote }}
 {{- end }}
+{{- if .Values.engine.config }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dagger.fullname" . }}-engine-config
+  namespace: {{ .Release.Namespace }}
+data:
+  engine.toml: |{{- .Values.engine.config | nindent 4 }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -15,15 +25,15 @@ metadata:
   name: {{ include "dagger.fullname" . }}-engine
   namespace: {{ .Release.Namespace }}
   labels:
-    k8s-app: dagger-engine
+    k8s-app: {{ include "dagger.fullname" . }}-engine
 spec:
   selector:
     matchLabels:
-      name: dagger-engine
+      name: {{ include "dagger.fullname" . }}-engine
   template:
     metadata:
       labels:
-        name: dagger-engine
+        name: {{ include "dagger.fullname" . }}-engine
     spec:
       {{- with .Values.engine.tolerations }}
       tolerations:
@@ -77,6 +87,11 @@ spec:
               mountPath: /var/run/buildkit
             - name: shared-bin
               mountPath: /shared-bin
+            {{- if .Values.engine.config }}
+            - name: dagger-engine-config
+              mountPath: /etc/dagger/engine.toml
+              subPath: engine.toml
+            {{- end }}
       terminationGracePeriodSeconds: 300
       volumes:
         - name: shared-bin
@@ -87,3 +102,11 @@ spec:
         - name: varrundagger
           hostPath:
             path: /var/run/dagger
+        {{- if .Values.engine.config }}
+        - name: dagger-engine-config
+          configMap:
+            name: {{ include "dagger.fullname" . }}-engine-config
+            items:
+              - key: engine.toml
+                path: engine.toml
+        {{- end }}
