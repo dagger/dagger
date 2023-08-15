@@ -20,6 +20,10 @@ var Version string
 func init() {
 	if Version == "" {
 		Version = DevelopmentVersion
+
+		if v := engineVersion(); v != "" {
+			Version = v
+		}
 	}
 	// normalize Version to semver
 	if semver.IsValid("v" + Version) {
@@ -69,5 +73,19 @@ func vcsRevision() string {
 		}
 	}
 
+	return ""
+}
+
+// who use dagger engine as dep
+// could use engine version from build info
+func engineVersion() string {
+	bi, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, dep := range bi.Deps {
+			if dep.Path == "github.com/dagger/dagger" {
+				return dep.Version
+			}
+		}
+	}
 	return ""
 }
