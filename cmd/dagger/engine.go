@@ -74,7 +74,14 @@ func withEngineAndTUI(
 			return inlineTUI(ctx, params, fn)
 		}
 
-		params.ProgrockWriter = console.NewWriter(os.Stderr, console.ShowInternal(debug))
+		opts := []console.WriterOpt{
+			console.ShowInternal(debug),
+		}
+		if debug {
+			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+		}
+
+		params.ProgrockWriter = console.NewWriter(os.Stderr, opts...)
 
 		params.EngineNameCallback = func(name string) {
 			fmt.Fprintln(os.Stderr, "Connected to engine", name)
@@ -150,6 +157,9 @@ func inlineTUI(
 	tape := progrock.NewTape()
 	tape.ShowInternal(debug)
 	tape.Focus(focus)
+	if debug {
+		tape.MessageLevel(progrock.MessageLevel_DEBUG)
+	}
 
 	progW, engineErr := progrockTee(tape)
 	if engineErr != nil {
