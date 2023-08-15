@@ -21,7 +21,7 @@ async def publish(version: Annotated[str, "The version to publish."]) -> str:
         print("OH NO! Publishing the client failed!")
         raise RuntimeError("Publishing failed")
 
-    return f"Published version {version}"
+    return f"Published client version {version}"
 
 @env.check
 async def unit_test() -> str:
@@ -40,5 +40,5 @@ async def client_image() -> dagger.Container:
         .with_exec(["shiv", "-e", "src.client.main:main", "-o", "/client", "/src/universe/_demo/client", "--root", "/tmp/.shiv"])
         .file("/client")
     )
-    return base_image().with_file("/client", client_app).with_entrypoint(["/client"])
+    return base_image().with_file("/usr/bin/client", client_app).with_entrypoint(["/usr/bin/client"])
 

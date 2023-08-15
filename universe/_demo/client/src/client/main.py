@@ -10,5 +10,5 @@ def main():
 
 def get_response_msg(response_body, response_status):
     if response_status != 200:
-        raise RuntimeError("Failed to say hello to server")
+        raise RuntimeError(f"Failed to say hello to server: {response_body}")
     return f"Server says: {response_body}"

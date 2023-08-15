@@ -9,9 +9,9 @@ import (
 func main() {
 	dagger.DefaultClient().Environment().
 		WithCheck_(UnitTest).
-		WithCommand_(Publish).
 		WithArtifact_(ServerImage).
 		WithArtifact_(Binary).
+		WithCommand_(Publish).
 		Serve()
 }
 
@@ -56,11 +56,8 @@ func ServerImage(ctx dagger.Context) *dagger.Container {
 // Publish the server container image.
 func Publish(ctx dagger.Context, version string) (string, error) {
 	if version == "fail" {
-		fmt.Println("OH NO! Publishing failed!")
-		return "", fmt.Errorf("publish failed")
+		return "OH NO! Publishing failed!", fmt.Errorf("publish failed")
 	}
 
-	// TODO: call go releaser from universe?
-	fmt.Println("Publishing version", version)
-	return "", nil
+	return "Published server version " + version, nil
 }

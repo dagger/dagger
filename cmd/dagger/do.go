@@ -80,10 +80,8 @@ var doCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get environment commands: %w", err)
 			}
-			helpVtx := rec.Vertex("cmd-help", "help", progrock.Focused())
-			defer func() { helpVtx.Done(rerr) }()
 			for _, envCmd := range envCmds {
-				subCmds, err := addCmd(ctx, nil, loadedEnv, envCmd, c, engineClient, helpVtx)
+				subCmds, err := addCmd(ctx, nil, loadedEnv, envCmd, c, engineClient, rec)
 				if err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
@@ -119,7 +117,7 @@ var doCmd = &cobra.Command{
 }
 
 // nolint:gocyclo
-func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environment, envCmd dagger.EnvironmentCommand, c *dagger.Client, r *client.Client, helpVtx *progrock.VertexRecorder) ([]*cobra.Command, error) {
+func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environment, envCmd dagger.EnvironmentCommand, c *dagger.Client, r *client.Client, rec *progrock.Recorder) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	envCmdID, err := envCmd.ID(ctx)
@@ -310,7 +308,9 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environm
 				}
 			}
 			// TODO: better to print this after session closes so there's less overlap with progress output
-			cmd.Println(res)
+			cmdVtx := rec.Vertex("cmd", cmd.Name(), progrock.Focused())
+			defer func() { cmdVtx.Done(nil) }()
+			fmt.Fprintln(cmdVtx.Stdout(), res)
 			return nil
 		},
 	}
@@ -333,7 +333,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environm
 	}
 	returnCmds := []*cobra.Command{subcmd}
 	for _, subEnvCmd := range envSubcommands {
-		subCmds, err := addCmd(ctx, cmdStack, env, subEnvCmd, c, r, helpVtx)
+		subCmds, err := addCmd(ctx, cmdStack, env, subEnvCmd, c, r, rec)
 		if err != nil {
 			return nil, err
 		}
@@ -341,6 +341,8 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environm
 	}
 
 	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		helpVtx := rec.Vertex("cmd-help", "help", progrock.Focused())
+		defer func() { helpVtx.Done(nil) }()
 		fmt.Fprintf(helpVtx.Stderr(), "\nCommand %s - %s\n", cmdName, description)
 
 		if len(returnCmds) > 1 {
