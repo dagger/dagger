@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -761,6 +762,10 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 		for _, flag := range check.Flags {
 			resolveParams.Args[flag.Name] = flag.SetValue
 		}
+		// TODO: hack to invalidate cache so that we always run the resolver,
+		// actual fix should be to change progress printing for results such that
+		// it's printed recursively and only once
+		resolveParams.Args["_cachebust"] = identity.NewID()
 
 		res, err := fieldResolver(&core.Context{
 			Context:       ctx,

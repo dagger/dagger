@@ -246,7 +246,7 @@ class Resolver(Generic[T]):
             name = gql_name
 
             if name not in self.parameters:
-                errors.add(("Unknown argument '%s' in '%s'", name, self.name))
+                continue
 
             param = self.parameters[gql_name]
             name = param.python_name
