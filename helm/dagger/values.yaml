@@ -3,11 +3,11 @@ fullnameOverride: ""
 
 engine:
   # Set engine.config if you needa custom Dagger Engine config file
-  config: |
-    debug = true
-    insecure-entitlements = ["security.insecure"]
-    [registry."registry:5000"]
-      http = true
+  # config: |
+  #   debug = true
+  #   insecure-entitlements = ["security.insecure"]
+  #   [registry."registry:5000"]
+  #     http = true
   image:
     repository: registry.dagger.io/engine
     # tag: v0.6.5
