@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"github.com/moby/buildkit/identity"
+	"github.com/vito/progrock"
 	"io/fs"
 	"path"
 	"path/filepath"
@@ -10,9 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -20,6 +19,10 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // Directory is a content-addressed directory.
@@ -595,6 +598,15 @@ func (dir *Directory) Export(
 	} else {
 		defPB = dir.LLB
 	}
+
+	rec := progrock.RecorderFromContext(ctx)
+
+	vtx := rec.Vertex(
+		digest.Digest(identity.NewID()),
+		strings.Join([]string{"export directory", dir.Dir, "to host", destPath},
+			" "),
+	)
+	defer vtx.Done(rerr)
 
 	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
 		return nil, bk.LocalDirExport(ctx, defPB, destPath)
