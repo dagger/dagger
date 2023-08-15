@@ -2,13 +2,21 @@ import { connect } from "@dagger.io/dagger"
 
 connect(
   async (client) => {
-    // set build context
-    const contextDir = client.host().directory("/workspace/project")
+    // get build context directory
+    const contextDir = client.host().directory("/projects/myapp")
+
+    // get Dockerfile in different filesystem location
+    const dockerfilePath = "/data/myapp/custom.Dockerfile"
+    const dockerfile = client.host().file(dockerfilePath)
+
+    // add Dockerfile to build context directory
+    const workspace = contextDir.withFile("custom.Dockerfile", dockerfile)
 
     // build using Dockerfile
     // publish the resulting container to a registry
-    const imageRef = await contextDir
-      .dockerBuild({dockerfile: "custom.Dockerfile"})
+    const imageRef = await client
+      .container()
+      .build(workspace, {dockerfile:"custom.Dockerfile"})
       .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000))
     console.log(`Published image to: ${imageRef}`)
   },

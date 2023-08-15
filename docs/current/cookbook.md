@@ -345,7 +345,7 @@ The following code listing builds a single image for different CPU architectures
 
 ### Build image from Dockerfile
 
-The following code listing builds an image using an existing Dockerfile in the current working directory on the host.
+The following code listing builds an image from a Dockerfile in the current working directory on the host.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -368,7 +368,11 @@ The following code listing builds an image using an existing Dockerfile in the c
 </TabItem>
 </Tabs>
 
-The following code listing builds an image using an existing Dockerfile with a custom filename and location on the host.
+[Learn more](./quickstart/429462-build-dockerfile.mdx)
+
+### Build image from Dockerfile using different build context
+
+The following code listing builds an image from a Dockerfile using a build context directory in a different location on the host filesystem.
 
 <Tabs groupId="language">
 <TabItem value="Go">
