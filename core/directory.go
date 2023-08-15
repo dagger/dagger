@@ -465,7 +465,7 @@ func mergeStates(input mergeStateInput) llb.State {
 			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
 		)))
 	}
-	return llb.Merge(mergeStates)
+	return llb.Merge(mergeStates, llb.WithCustomName(buildkit.InternalPrefix+"merge"))
 }
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
