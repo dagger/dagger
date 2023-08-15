@@ -108,3 +108,36 @@ func TestPipeline(t *testing.T) {
 		require.Contains(t, logs.String(), "service "+hostname)
 	})
 }
+
+func TestInternalVertexes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
+
+	t.Run("merge pipeline", func(t *testing.T) {
+		t.Parallel()
+
+		var logs safeBuffer
+		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
+		require.NoError(t, err)
+		defer c.Close()
+
+		dirA := c.Directory().WithNewFile("/foo", "foo")
+		dirB := c.Directory().WithNewFile("/bar", "bar")
+
+		_, err = c.
+			Container().
+			From(alpineImage).
+			WithDirectory("/foo", dirA).
+			WithDirectory("/bar", dirB).
+			WithExec([]string{"echo", cacheBuster}).
+			Sync(ctx)
+
+		require.NoError(t, err)
+
+		require.NoError(t, c.Close()) // close + flush logs
+		require.NotContains(t, logs.String(), "merge")
+	})
+}
