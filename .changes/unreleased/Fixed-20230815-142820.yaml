@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix Engine connection hang when UTF8 characters present in labels
+time: 2023-08-15T14:28:20.654314+01:00
+custom:
+  Author: vito
+  PR: "5628"
