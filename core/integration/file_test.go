@@ -212,6 +212,16 @@ func TestFileExport(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, fileSizeBytes, stat.Size())
 	})
+
+	t.Run("file permissions are retained", func(t *testing.T) {
+		_, err := c.Directory().WithNewFile("/file", "#!/bin/sh\necho hello", dagger.DirectoryWithNewFileOpts{
+			Permissions: 0744,
+		}).File("/file").Export(ctx, "some-executable-file")
+		require.NoError(t, err)
+		stat, err := os.Stat(filepath.Join(wd, "some-executable-file"))
+		require.NoError(t, err)
+		require.EqualValues(t, 0744, stat.Mode().Perm())
+	})
 }
 
 func TestFileWithTimestamps(t *testing.T) {
