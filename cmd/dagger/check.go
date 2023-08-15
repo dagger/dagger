@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -11,7 +10,6 @@ import (
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
 )
 
@@ -131,6 +129,7 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		// TODO: this case also gets triggered if you try to run a check that doesn't exist, fix
 		allChecks := c.EnvironmentCheck()
 		for _, check := range envChecks {
+			check := check
 			allChecks = allChecks.WithSubcheck(&check)
 		}
 
@@ -152,95 +151,4 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 	}
 
 	return nil
-}
-
-func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.Client) (*cobra.Command, error) {
-	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
-	// internally be doing this so it's not needed explicitly
-	envCheckID, err := envCheck.ID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get check id: %w", err)
-	}
-	envCheck = c.EnvironmentCheck(dagger.EnvironmentCheckOpts{ID: envCheckID})
-
-	envCheckName, err := envCheck.Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get check name: %w", err)
-	}
-	description, err := envCheck.Description(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get check description: %w", err)
-	}
-
-	envCheckFlags, err := envCheck.Flags(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get check flags: %w", err)
-	}
-
-	cmdName := getCommandName(nil, envCheckName)
-	subcmd := &cobra.Command{
-		Use:         cmdName,
-		Short:       description,
-		Annotations: map[string]string{},
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			for _, flagName := range commandAnnotations(cmd.Annotations).getCommandSpecificFlags() {
-				// skip help flag
-				// TODO: doc that users can't name an args help
-				if flagName == "help" {
-					continue
-				}
-				flagVal, err := cmd.Flags().GetString(strcase.ToKebab(flagName))
-				if err != nil {
-					return fmt.Errorf("failed to get flag %q: %w", flagName, err)
-				}
-				envCheck = envCheck.SetStringFlag(flagName, flagVal)
-			}
-
-			result := envCheck.Result()
-			success, err := result.Success(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get check result success: %w", err)
-			}
-			if !success {
-				return fmt.Errorf("checks failed")
-			}
-			return nil
-		},
-	}
-
-	for _, flag := range envCheckFlags {
-		flagName, err := flag.Name(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get flag name: %w", err)
-		}
-		flagDescription, err := flag.Description(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get flag description: %w", err)
-		}
-		subcmd.Flags().String(strcase.ToKebab(flagName), "", flagDescription)
-		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
-	}
-
-	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		cmd.Printf("\nCommand %s - %s\n", cmdName, description)
-
-		fmt.Printf("\nFlags:\n")
-		maxFlagLen := 0
-		var flags []*pflag.Flag
-		cmd.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) {
-			if flag.Name == "help" {
-				return
-			}
-			flags = append(flags, flag)
-			if len(flag.Name) > maxFlagLen {
-				maxFlagLen = len(flag.Name)
-			}
-		})
-		flagSpacing := strings.Repeat(" ", maxFlagLen+2)
-		for _, flag := range flags {
-			cmd.Printf("  --%s%s%s\n", flag.Name, flagSpacing[len(flag.Name):], flag.Usage)
-		}
-	})
-
-	return subcmd, nil
 }

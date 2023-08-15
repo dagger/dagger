@@ -80,8 +80,10 @@ var doCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get environment commands: %w", err)
 			}
+			helpVtx := rec.Vertex("cmd-help", "help", progrock.Focused())
+			defer func() { helpVtx.Done(rerr) }()
 			for _, envCmd := range envCmds {
-				subCmds, err := addCmd(ctx, nil, loadedEnv, envCmd, c, engineClient)
+				subCmds, err := addCmd(ctx, nil, loadedEnv, envCmd, c, engineClient, helpVtx)
 				if err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
@@ -105,7 +107,7 @@ var doCmd = &cobra.Command{
 				cmd.Println(subCmd.UsageString())
 				return fmt.Errorf("entrypoint not found or not set")
 			}
-			cmd.Printf("Running command %q...\n", subCmd.Name())
+			fmt.Fprintf(vtx.Stderr(), "Running command %q...\n", subCmd.Name())
 			err = subCmd.Execute()
 			if err != nil {
 				cmd.PrintErrln("Error:", err.Error())
@@ -117,7 +119,7 @@ var doCmd = &cobra.Command{
 }
 
 // nolint:gocyclo
-func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environment, envCmd dagger.EnvironmentCommand, c *dagger.Client, r *client.Client) ([]*cobra.Command, error) {
+func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environment, envCmd dagger.EnvironmentCommand, c *dagger.Client, r *client.Client, helpVtx *progrock.VertexRecorder) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	envCmdID, err := envCmd.ID(ctx)
@@ -331,7 +333,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environm
 	}
 	returnCmds := []*cobra.Command{subcmd}
 	for _, subEnvCmd := range envSubcommands {
-		subCmds, err := addCmd(ctx, cmdStack, env, subEnvCmd, c, r)
+		subCmds, err := addCmd(ctx, cmdStack, env, subEnvCmd, c, r, helpVtx)
 		if err != nil {
 			return nil, err
 		}
@@ -339,23 +341,24 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environm
 	}
 
 	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		cmd.Printf("\nCommand %s - %s\n", cmdName, description)
+		fmt.Fprintf(helpVtx.Stderr(), "\nCommand %s - %s\n", cmdName, description)
 
-		cmd.Printf("\nAvailable Subcommands:\n")
-		maxNameLen := 0
-		for _, subcmd := range returnCmds[1:] {
-			nameLen := len(getCommandName(subcmd, ""))
-			if nameLen > maxNameLen {
-				maxNameLen = nameLen
+		if len(returnCmds) > 1 {
+			fmt.Fprintf(helpVtx.Stderr(), "\nAvailable Subcommands:\n")
+			maxNameLen := 0
+			for _, subcmd := range returnCmds[1:] {
+				nameLen := len(getCommandName(subcmd, ""))
+				if nameLen > maxNameLen {
+					maxNameLen = nameLen
+				}
+			}
+			// we want to ensure the doc strings line up so they are readable
+			spacing := strings.Repeat(" ", maxNameLen+2)
+			for _, subcmd := range returnCmds[1:] {
+				fmt.Fprintf(helpVtx.Stderr(), "  %s%s%s\n", getCommandName(subcmd, ""), spacing[len(getCommandName(subcmd, "")):], subcmd.Short)
 			}
 		}
-		// we want to ensure the doc strings line up so they are readable
-		spacing := strings.Repeat(" ", maxNameLen+2)
-		for _, subcmd := range returnCmds[1:] {
-			cmd.Printf("  %s%s%s\n", getCommandName(subcmd, ""), spacing[len(getCommandName(subcmd, "")):], subcmd.Short)
-		}
 
-		fmt.Printf("\nFlags:\n")
 		maxFlagLen := 0
 		var flags []*pflag.Flag
 		cmd.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) {
@@ -367,9 +370,12 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environm
 				maxFlagLen = len(flag.Name)
 			}
 		})
-		flagSpacing := strings.Repeat(" ", maxFlagLen+2)
-		for _, flag := range flags {
-			cmd.Printf("  --%s%s%s\n", flag.Name, flagSpacing[len(flag.Name):], flag.Usage)
+		if len(flags) > 0 {
+			fmt.Fprintf(helpVtx.Stderr(), "\nFlags:\n")
+			flagSpacing := strings.Repeat(" ", maxFlagLen+2)
+			for _, flag := range flags {
+				fmt.Fprintf(helpVtx.Stderr(), "  --%s%s%s\n", flag.Name, flagSpacing[len(flag.Name):], flag.Usage)
+			}
 		}
 	})
 

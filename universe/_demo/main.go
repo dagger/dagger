@@ -11,6 +11,9 @@ func main() {
 	DaggerClient().Environment().
 		WithCommand_(PublishAll).
 		WithCheck_(UnitTest).
+		WithArtifact(DaggerClient().DemoServer().Binary()).
+		WithArtifact(DaggerClient().DemoServer().Image()).
+		// TODO: WithArtifact(DaggerClient().DemoClient().Image()).
 		WithShell_(Dev).
 		// WithCheck_(IntegTest).
 		Serve()
@@ -39,7 +42,7 @@ func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 }
 
 func Dev(ctx dagger.Context) (*dagger.Container, error) {
-	clientApp := DaggerClient().DemoClient().Build()
+	clientApp := DaggerClient().DemoClient().Image()
 
 	return clientApp.
 		WithServiceBinding("server", DaggerClient().DemoServer().Container()).
@@ -48,7 +51,7 @@ func Dev(ctx dagger.Context) (*dagger.Container, error) {
 
 /*
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
-	clientApp := DaggerClient().DemoClient().Build()
+	clientApp := DaggerClient().DemoClient().Image()
 
 	stdout, err := clientApp.
 		WithServiceBinding("server", DaggerClient().DemoServer().Container()).

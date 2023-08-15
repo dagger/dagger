@@ -33,7 +33,7 @@ async def unit_test() -> str:
     )
 
 @env.function
-async def build() -> dagger.Container:
+async def image() -> dagger.Container:
     """ TODO: this should be an artifact, but function works for now """
     client_app = (
         base_image()

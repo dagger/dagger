@@ -25,8 +25,8 @@ type DemoClient struct {
 	publish *string
 }
 
-func (r *DemoClient) Build() *Container {
-	q := r.Q.Select("build")
+func (r *DemoClient) Image() *Container {
+	q := r.Q.Select("image")
 
 	return &Container{
 		Q: q,
