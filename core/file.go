@@ -3,8 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
-	"github.com/moby/buildkit/identity"
-	"github.com/vito/progrock"
+
 	"io"
 	"path"
 	"strings"
@@ -12,10 +11,12 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
