@@ -345,7 +345,7 @@ The following code listing builds a single image for different CPU architectures
 
 ### Build image from Dockerfile
 
-The following code listing builds an image using an existing Dockerfile.
+The following code listing builds an image using an existing Dockerfile in the current working directory on the host.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -363,6 +363,29 @@ The following code listing builds an image using an existing Dockerfile.
 <TabItem value="Python">
 
 ```python file=./quickstart/snippets/build-dockerfile/main.py
+```
+
+</TabItem>
+</Tabs>
+
+The following code listing builds an image using an existing Dockerfile with a custom filename and location on the host.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/build-dockerfile/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/build-dockerfile/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/build-dockerfile/main.py
 ```
 
 </TabItem>
