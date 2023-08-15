@@ -10,16 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // Directory is a content-addressed directory.
@@ -595,6 +598,14 @@ func (dir *Directory) Export(
 	} else {
 		defPB = dir.LLB
 	}
+
+	rec := progrock.RecorderFromContext(ctx)
+
+	vtx := rec.Vertex(
+		digest.Digest(identity.NewID()),
+		fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath),
+	)
+	defer vtx.Done(rerr)
 
 	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
 		return nil, bk.LocalDirExport(ctx, defPB, destPath)

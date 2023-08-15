@@ -3,20 +3,24 @@ package core
 import (
 	"context"
 	"fmt"
+
 	"io"
 	"path"
 	"time"
+
+	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
 // File is a content-addressed file.
@@ -229,6 +233,15 @@ func (file *File) Export(
 	if err != nil {
 		return err
 	}
+
+	rec := progrock.RecorderFromContext(ctx)
+
+	vtx := rec.Vertex(
+		digest.Digest(identity.NewID()),
+		fmt.Sprintf("export file %s to host %s", file.File, dest),
+	)
+	defer vtx.Done(err)
+
 	_, err = WithServices(ctx, bk, file.Services, func() (any, error) {
 		err = bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
 		return nil, err
