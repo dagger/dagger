@@ -18,8 +18,8 @@ import (
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
 	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
-	rustDockerStable     = "rust:1.70.0-bookworm"
-	rustDockerNightly    = "rustlang/rust:nightly-slim"
+	// https://hub.docker.com/_/rust
+	rustDockerStable = "rust:1.71-bookworm"
 )
 
 var _ SDK = Rust{}
@@ -204,24 +204,15 @@ func (r Rust) Test(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, version := range []string{
-		rustDockerStable, rustDockerNightly,
-	} {
-		version := version
-		eg.Go(func() error {
-			_, err = r.rustBase(egctx, c.Pipeline(version), version).
-				WithServiceBinding("dagger-engine", devEngine).
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-				WithExec([]string{"cargo", "test", "--release", "--all"}).
-				Sync(ctx)
-			return err
-		})
-	}
-
-	return eg.Wait()
+	_, err = r.rustBase(ctx, c.Pipeline(rustDockerStable), rustDockerStable).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"rustc", "--version"}).
+		WithExec([]string{"cargo", "test", "--release", "--all"}).
+		Sync(ctx)
+	return err
 }
 
 func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagger.Container {
