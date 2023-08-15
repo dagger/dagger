@@ -637,7 +637,7 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	if err := os.MkdirAll(destParentDir, 0700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
 	}
-	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
 	if err != nil {
 		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
 	}

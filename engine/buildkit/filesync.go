@@ -224,6 +224,10 @@ func (c *Client) LocalFileExport(
 		return fmt.Errorf("failed to open file: %s", err)
 	}
 	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %s", err)
+	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -236,6 +240,7 @@ func (c *Client) LocalFileExport(
 		IsFileStream:       true,
 		FileOriginalName:   filepath.Base(filePath),
 		AllowParentDirPath: allowParentDirPath,
+		FileMode:           stat.Mode().Perm(),
 	}.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
