@@ -10,9 +10,8 @@ func main() {
 	dagger.DefaultClient().Environment().
 		WithCheck_(UnitTest).
 		WithCommand_(Publish).
-		WithArtifact_(Image).
+		WithArtifact_(ServerImage).
 		WithArtifact_(Binary).
-		WithFunction_(Container).
 		Serve()
 }
 
@@ -45,7 +44,7 @@ func Binary(ctx dagger.Context) *dagger.File {
 }
 
 // The server container image.
-func Image(ctx dagger.Context) *dagger.Container {
+func ServerImage(ctx dagger.Context) *dagger.Container {
 	return dagger.DefaultClient().Apko().Wolfi(nil).
 		WithMountedFile("/usr/bin/server", Binary(ctx)).
 		WithExposedPort(8081).
@@ -64,8 +63,4 @@ func Publish(ctx dagger.Context, version string) (string, error) {
 	// TODO: call go releaser from universe?
 	fmt.Println("Publishing version", version)
 	return "", nil
-}
-
-func Container(ctx dagger.Context) *dagger.Container {
-	return Image(ctx)
 }

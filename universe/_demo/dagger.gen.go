@@ -25,8 +25,17 @@ type DemoClient struct {
 	publish *string
 }
 
-func (r *DemoClient) Image() *Container {
-	q := r.Q.Select("image")
+func (r *DemoClient) ClientImage() *EnvironmentArtifact {
+	q := r.Q.Select("clientImage")
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *DemoClient) Container() *Container {
+	q := r.Q.Select("container")
 
 	return &Container{
 		Q: q,
@@ -81,15 +90,6 @@ func (r *DemoServer) Container() *Container {
 	}
 }
 
-func (r *DemoServer) Image() *EnvironmentArtifact {
-	q := r.Q.Select("image")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
 func (r *DemoServer) Publish(ctx context.Context, version string) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
@@ -101,6 +101,15 @@ func (r *DemoServer) Publish(ctx context.Context, version string) (string, error
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
+}
+
+func (r *DemoServer) ServerImage() *EnvironmentArtifact {
+	q := r.Q.Select("serverImage")
+
+	return &EnvironmentArtifact{
+		Q: q,
+		C: r.C,
+	}
 }
 
 func (r *DemoServer) UnitTest() *EnvironmentCheck {

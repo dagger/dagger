@@ -2514,6 +2514,12 @@ class EnvironmentArtifact(Type):
     _version: Optional[str]
 
     @typecheck
+    def container(self) -> Container:
+        _args: list[Arg] = []
+        _ctx = self._select("container", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def description(self) -> Optional[str]:
         """TODO
 
@@ -2538,6 +2544,12 @@ class EnvironmentArtifact(Type):
         return await _ctx.execute(Optional[str])
 
     @typecheck
+    def directory(self) -> Directory:
+        _args: list[Arg] = []
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    @typecheck
     async def export(self, path: str) -> bool:
         """TODO
 
@@ -2560,6 +2572,12 @@ class EnvironmentArtifact(Type):
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
+
+    @typecheck
+    def file(self) -> "File":
+        _args: list[Arg] = []
+        _ctx = self._select("file", _args)
+        return File(_ctx)
 
     @typecheck
     async def flags(self) -> list["EnvironmentArtifactFlag"]:

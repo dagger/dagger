@@ -138,8 +138,11 @@ type EnvironmentArtifact {
 
   "TODO: this doesn't feel right, has to be a better way w/ unions or interfaces"
   withContainer(container: ContainerID!): EnvironmentArtifact!
+  container: Container!
   withDirectory(directory: DirectoryID!): EnvironmentArtifact!
+  directory: Directory!
   withFile(file: FileID!): EnvironmentArtifact!
+  file: File!
 }
 
 type EnvironmentArtifactFlag {

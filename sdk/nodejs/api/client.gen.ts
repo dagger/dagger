@@ -3423,6 +3423,18 @@ export class EnvironmentArtifact extends BaseClient {
     this._sbom = _sbom
     this._version = _version
   }
+  container(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "container",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
   /**
    * TODO
@@ -3443,6 +3455,18 @@ export class EnvironmentArtifact extends BaseClient {
     )
 
     return response
+  }
+  directory(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "directory",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -3465,6 +3489,18 @@ export class EnvironmentArtifact extends BaseClient {
     )
 
     return response
+  }
+  file(): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "file",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**

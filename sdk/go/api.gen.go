@@ -2307,6 +2307,15 @@ func (r *EnvironmentArtifact) With(f WithEnvironmentArtifactFunc) *EnvironmentAr
 	return f(r)
 }
 
+func (r *EnvironmentArtifact) Container() *Container {
+	q := r.Q.Select("container")
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // TODO
 func (r *EnvironmentArtifact) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -2318,6 +2327,15 @@ func (r *EnvironmentArtifact) Description(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
+}
+
+func (r *EnvironmentArtifact) Directory() *Directory {
+	q := r.Q.Select("directory")
+
+	return &Directory{
+		Q: q,
+		C: r.C,
+	}
 }
 
 // TODO
@@ -2332,6 +2350,15 @@ func (r *EnvironmentArtifact) Export(ctx context.Context, path string) (bool, er
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
+}
+
+func (r *EnvironmentArtifact) File() *File {
+	q := r.Q.Select("file")
+
+	return &File{
+		Q: q,
+		C: r.C,
+	}
 }
 
 // Flags accepted by this artifact.

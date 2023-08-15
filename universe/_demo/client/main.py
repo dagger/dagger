@@ -32,12 +32,13 @@ async def unit_test() -> str:
         .stdout()
     )
 
-@env.function
-async def image() -> dagger.Container:
-    """ TODO: this should be an artifact, but function works for now """
+@env.artifact
+async def client_image() -> dagger.Container:
+    """The client app and its dependencies packaged up into a container"""
     client_app = (
         base_image()
         .with_exec(["shiv", "-e", "src.client.main:main", "-o", "/client", "/src/universe/_demo/client", "--root", "/tmp/.shiv"])
         .file("/client")
     )
     return base_image().with_file("/client", client_app).with_entrypoint(["/client"])
+

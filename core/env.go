@@ -377,7 +377,9 @@ func (env *Environment) buildSchema() (string, error) {
 
 	// commands
 	for _, cmd := range env.Commands {
-		cmd.EnvironmentName = env.Config.Name
+		if cmd.EnvironmentName == "" {
+			cmd.EnvironmentName = env.Config.Name
+		}
 		if cmd.ResultType == "" {
 			// TODO: this should be allowed, return type can be Void in this case
 			return "", fmt.Errorf("command %q has no result type", cmd.Name)
@@ -405,7 +407,9 @@ func (env *Environment) buildSchema() (string, error) {
 
 	// checks
 	for _, check := range env.Checks {
-		check.EnvironmentName = env.Config.Name
+		if check.EnvironmentName == "" {
+			check.EnvironmentName = env.Config.Name
+		}
 		fieldDef := &ast.FieldDefinition{
 			Name:        check.Name,
 			Description: check.Description,
@@ -431,7 +435,9 @@ func (env *Environment) buildSchema() (string, error) {
 
 	// artifacts
 	for _, artifact := range env.Artifacts {
-		artifact.EnvironmentName = env.Config.Name
+		if artifact.EnvironmentName == "" {
+			artifact.EnvironmentName = env.Config.Name
+		}
 		fieldDef := &ast.FieldDefinition{
 			Name:        artifact.Name,
 			Description: artifact.Description,
@@ -455,7 +461,9 @@ func (env *Environment) buildSchema() (string, error) {
 
 	// shells
 	for _, shell := range env.Shells {
-		shell.EnvironmentName = env.Config.Name
+		if shell.EnvironmentName == "" {
+			shell.EnvironmentName = env.Config.Name
+		}
 		fieldDef := &ast.FieldDefinition{
 			Name:        shell.Name,
 			Description: shell.Description,
@@ -480,7 +488,9 @@ func (env *Environment) buildSchema() (string, error) {
 
 	// functions
 	for _, function := range env.Functions {
-		function.EnvironmentName = env.Config.Name
+		if function.EnvironmentName == "" {
+			function.EnvironmentName = env.Config.Name
+		}
 		fieldDef := &ast.FieldDefinition{
 			Name:        function.Name,
 			Description: function.Description,

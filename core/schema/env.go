@@ -136,8 +136,11 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"sbom":            ToResolver(s.artifactSBOM),
 			"export":          ToResolver(s.artifactExport),
 			"withContainer":   ToResolver(s.withArtifactContainer),
+			"container":       ToResolver(s.artifactContainer),
 			"withDirectory":   ToResolver(s.withArtifactDirectory),
+			"directory":       ToResolver(s.artifactDirectory),
 			"withFile":        ToResolver(s.withArtifactFile),
+			"file":            ToResolver(s.artifactFile),
 		}),
 		"EnvironmentShell": ToIDableObjectResolver(core.EnvironmentShellID.ToEnvironmentShell, ObjectResolver{
 			"id":              ToResolver(s.shellID),
@@ -288,7 +291,7 @@ func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.E
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
 			}
-			res, err = convertOutput(res, field.Type, s.MergedSchemas)
+			res, err = convertOutput(res, field.Type, s.MergedSchemas, env)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
 			}
@@ -309,7 +312,7 @@ func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.E
 	}), nil
 }
 
-func convertOutput(rawOutput any, schemaOutputType *ast.Type, s *MergedSchemas) (any, error) {
+func convertOutput(rawOutput any, schemaOutputType *ast.Type, s *MergedSchemas, env *core.Environment) (any, error) {
 	if schemaOutputType.Elem != nil {
 		schemaOutputType = schemaOutputType.Elem
 	}
@@ -330,7 +333,20 @@ func convertOutput(rawOutput any, schemaOutputType *ast.Type, s *MergedSchemas) 
 		if !ok {
 			return nil, fmt.Errorf("expected id string output for %s, got %T", objectName, rawOutput)
 		}
-		return resolver.FromID(outputStr)
+		obj, err := resolver.FromID(outputStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert output to %s: %w", objectName, err)
+		}
+		// TODO: sigh...
+		if schemaOutputType.Name() == "EnvironmentArtifact" {
+			artifact, ok := obj.(*core.EnvironmentArtifact)
+			if !ok {
+				return nil, fmt.Errorf("expected artifact output for %s, got %T", objectName, obj)
+			}
+			artifact.EnvironmentName = env.Config.Name
+			return artifact, nil
+		}
+		return obj, nil
 	}
 	return rawOutput, nil
 }
@@ -390,11 +406,15 @@ type withArtifactArgs struct {
 }
 
 func (s *environmentSchema) withArtifact(ctx *core.Context, parent *core.Environment, args withArtifactArgs) (*core.Environment, error) {
-	cmd, err := args.ID.ToEnvironmentArtifact()
+	artifact, err := args.ID.ToEnvironmentArtifact()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithArtifact(ctx, cmd)
+
+	// TODO:
+	bklog.G(ctx).Debugf("WITH ARTIFACT %s %s %+v", ctx.ResolveParams.Info.Path.AsArray(), artifact.Name, artifact)
+
+	return parent.WithArtifact(ctx, artifact)
 }
 
 type withShellArgs struct {
@@ -917,6 +937,10 @@ func (s *environmentSchema) setArtifactStringFlag(ctx *core.Context, parent *cor
 
 func (s *environmentSchema) resolveArtifact(ctx *core.Context, base *core.EnvironmentArtifact) (*core.EnvironmentArtifact, error) {
 	base = base.Clone()
+
+	// TODO:
+	bklog.G(ctx).Debugf("RESOLVING ARTIFACT %s.%s", base.EnvironmentName, base.Name)
+
 	fieldResolver, resolveParams, err := s.getEnvFieldResolver(ctx, base.EnvironmentName, base.Name)
 	if err != nil {
 		return nil, err
@@ -1003,6 +1027,17 @@ func (s *environmentSchema) withArtifactContainer(ctx *core.Context, parent *cor
 	return parent.WithContainer(args.Container), nil
 }
 
+func (s *environmentSchema) artifactContainer(ctx *core.Context, artifact *core.EnvironmentArtifact, args any) (*core.Container, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return nil, err
+	}
+	if artifact.Container == "" {
+		return nil, fmt.Errorf("artifact %s is not a container", artifact.Name)
+	}
+	return artifact.Container.ToContainer()
+}
+
 type withArtifactDirectoryArgs struct {
 	Directory core.DirectoryID
 }
@@ -1011,12 +1046,34 @@ func (s *environmentSchema) withArtifactDirectory(ctx *core.Context, parent *cor
 	return parent.WithDirectory(args.Directory), nil
 }
 
+func (s *environmentSchema) artifactDirectory(ctx *core.Context, artifact *core.EnvironmentArtifact, args any) (*core.Directory, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return nil, err
+	}
+	if artifact.Directory == "" {
+		return nil, fmt.Errorf("artifact %s is not a directory", artifact.Name)
+	}
+	return artifact.Directory.ToDirectory()
+}
+
 type withArtifactFileArgs struct {
 	File core.FileID
 }
 
 func (s *environmentSchema) withArtifactFile(ctx *core.Context, parent *core.EnvironmentArtifact, args withArtifactFileArgs) (*core.EnvironmentArtifact, error) {
 	return parent.WithFile(args.File), nil
+}
+
+func (s *environmentSchema) artifactFile(ctx *core.Context, artifact *core.EnvironmentArtifact, args any) (*core.File, error) {
+	artifact, err := s.resolveArtifact(ctx, artifact)
+	if err != nil {
+		return nil, err
+	}
+	if artifact.File == "" {
+		return nil, fmt.Errorf("artifact %s is not a file", artifact.Name)
+	}
+	return artifact.File.ToFile()
 }
 
 func (s *environmentSchema) shellID(ctx *core.Context, parent *core.EnvironmentShell, args any) (core.EnvironmentShellID, error) {

@@ -12,10 +12,10 @@ func main() {
 		WithCommand_(PublishAll).
 		WithCheck_(UnitTest).
 		WithArtifact(DaggerClient().DemoServer().Binary()).
-		WithArtifact(DaggerClient().DemoServer().Image()).
-		// TODO: WithArtifact(DaggerClient().DemoClient().Image()).
+		WithArtifact(DaggerClient().DemoServer().ServerImage()).
+		WithArtifact(DaggerClient().DemoClient().ClientImage()).
 		WithShell_(Dev).
-		// WithCheck_(IntegTest).
+		WithCheck_(IntegTest).
 		Serve()
 }
 
@@ -42,19 +42,18 @@ func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 }
 
 func Dev(ctx dagger.Context) (*dagger.Container, error) {
-	clientApp := DaggerClient().DemoClient().Image()
+	clientApp := DaggerClient().DemoClient().ClientImage().Container()
 
 	return clientApp.
-		WithServiceBinding("server", DaggerClient().DemoServer().Container()).
+		WithServiceBinding("server", DaggerClient().DemoServer().ServerImage().Container()).
 		WithEntrypoint([]string{"sh"}), nil
 }
 
-/*
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
-	clientApp := DaggerClient().DemoClient().Image()
+	clientApp := DaggerClient().DemoClient().ClientImage().Container()
 
 	stdout, err := clientApp.
-		WithServiceBinding("server", DaggerClient().DemoServer().Container()).
+		WithServiceBinding("server", DaggerClient().DemoServer().ServerImage().Container()).
 		WithExec(nil).
 		Stdout(ctx)
 	if err != nil {
@@ -62,4 +61,3 @@ func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	}
 	return DaggerClient().EnvironmentCheckResult().WithSuccess(true).WithOutput(stdout), nil
 }
-*/

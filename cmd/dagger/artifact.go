@@ -97,13 +97,12 @@ func ListArtifacts(ctx context.Context, _ *client.Client, c *dagger.Client, load
 
 func ExportArtifact(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
-	vtx := rec.Vertex("cmd-export-artifact", "export artifact", progrock.Focused())
+	artifactName := dynamicCmdArgs[0]
+	vtx := rec.Vertex("cmd-export-artifact", "export "+artifactName, progrock.Focused())
 	defer func() { vtx.Done(err) }()
 
-	// TODO: ?
-	artifactName := dynamicCmdArgs[0]
 	cmd.Println("Exporting artifact", artifactName)
 
-	_, err = loadedEnv.Artifact(artifactName).Export(ctx, outputPath)
+	_, err = loadedEnv.Artifact(strcase.ToLowerCamel(artifactName)).Export(ctx, outputPath)
 	return err
 }
