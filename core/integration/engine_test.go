@@ -228,7 +228,8 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN", "test").
 		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "test@example.com"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
+		// make sure we handle non-ASCII usernames
+		WithExec([]string{"git", "config", "--global", "user.name", "Tiësto User"}).
 		WithExec([]string{"git", "init"}). // init a git repo to test git labels
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init test repo"}).

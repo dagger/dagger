@@ -7,17 +7,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/google/go-github/v50/github"
 	"github.com/sirupsen/logrus"
-)
-
-var (
-	setOnce       sync.Once
-	setDoneCh     = make(chan struct{})
-	defaultLabels []Label
 )
 
 type Label struct {
@@ -26,25 +19,6 @@ type Label struct {
 }
 
 type Labels []Label
-
-// RootLabels returns default labels for Pipelines.
-//
-// `SetRootLabels` *must* be called before invoking this function.
-// `RootLabels` will wait until `SetRootLabels` has completed.
-func RootLabels() []Label {
-	<-setDoneCh
-	return defaultLabels
-}
-
-// SetRootLabels sets the default Pipeline labels one time, unblocking RootLabels.
-// TODO: this doesn't need to be async anymore, can just be passed to schema or through
-// query context now
-func SetRootLabels(labels []Label) {
-	setOnce.Do(func() {
-		defer close(setDoneCh)
-		defaultLabels = labels
-	})
-}
 
 func EngineLabel(engineName string) Label {
 	return Label{

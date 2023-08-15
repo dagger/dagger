@@ -49,7 +49,7 @@ func (s *querySchema) pipeline(ctx *core.Context, parent *core.Query, args pipel
 	if parent == nil {
 		parent = &core.Query{}
 	}
-	parent.Context.Pipeline = parent.Context.Pipeline.Add(pipeline.Pipeline{
+	parent.Pipeline = parent.Pipeline.Add(pipeline.Pipeline{
 		Name:        args.Name,
 		Description: args.Description,
 		Labels:      args.Labels,

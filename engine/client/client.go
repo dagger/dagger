@@ -290,7 +290,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	err = backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(connectRetryCtx, bo.NextBackOff())
 		defer cancel()
-		return c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		if innerErr != nil {
+			recorder.Debug("Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+		}
+		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))
 
 	sessionTask.Done(err)

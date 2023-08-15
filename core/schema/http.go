@@ -40,8 +40,6 @@ type httpArgs struct {
 }
 
 func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) (*core.File, error) {
-	pipeline := parent.PipelinePath()
-
 	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags
 	// and http checksums using an id based on this name, so setting it to the URL maximizes our chances
 	// of following more optimized cache codepaths.
@@ -78,5 +76,5 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 		st = llb.HTTP(args.URL, opts...)
 	}
 
-	return core.NewFileSt(ctx, st, filename, pipeline, s.platform, svcs)
+	return core.NewFileSt(ctx, st, filename, parent.PipelinePath(), s.platform, svcs)
 }
