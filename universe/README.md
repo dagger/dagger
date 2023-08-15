@@ -1,5 +1,10 @@
 # Playing With Zenith
-When running any `dagger commands`, you will need to either prefix commands with `./hack/dev ./bin/dagger` or use a direnv-like setup that accomplishes the same. TODO: put a direnv setup under `./hack`?
+When running any `dagger commands`, you will need to either prefix commands with `./hack/dev ./bin/dagger` or use a direnv-like setup that accomplishes the same.
+
+If setting env vars manually rather than running wrapped w/ `./hack/dev`, you should set:
+* `_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev`
+* `$PATH=$(pwd)/bin:$PATH`
+  * This assumes `$(pwd)` points to the root of the dagger repo, replace it with the actual root if that's not the case
 
 ## Adding to universe
 * Put a directory under `universe/` with a `dagger.json` (can be handwritten or created with `dagger environment init`)
