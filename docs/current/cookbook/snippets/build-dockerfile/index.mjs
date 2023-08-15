@@ -16,7 +16,7 @@ connect(
     // publish the resulting container to a registry
     const imageRef = await client
       .container()
-      .build(workspace, {dockerfile: "custom.Dockerfile"})
+      .build(workspace, { dockerfile: "custom.Dockerfile" })
       .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000))
     console.log(`Published image to: ${imageRef}`)
   },
