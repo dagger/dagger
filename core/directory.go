@@ -603,8 +603,7 @@ func (dir *Directory) Export(
 
 	vtx := rec.Vertex(
 		digest.Digest(identity.NewID()),
-		strings.Join([]string{"export directory", dir.Dir, "to host", destPath},
-			" "),
+		fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath),
 	)
 	defer vtx.Done(rerr)
 

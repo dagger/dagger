@@ -6,7 +6,6 @@ import (
 
 	"io"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/moby/buildkit/client/llb"
@@ -239,8 +238,7 @@ func (file *File) Export(
 
 	vtx := rec.Vertex(
 		digest.Digest(identity.NewID()),
-		strings.Join([]string{"export file", file.File, "to host", dest},
-			" "),
+		fmt.Sprintf("export file %s to host %s", file.File, dest),
 	)
 	defer vtx.Done(err)
 
