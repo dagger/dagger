@@ -4,7 +4,7 @@ import http.client
 def main():
     host = "server:8081"
     conn = http.client.HTTPConnection(host)
-    conn.request("GET", "/hello", headers={"Host": host})
+    conn.request("GET", "/hey", headers={"Host": host})
     response = conn.getresponse()
     print(get_response_msg(response.read().decode(), response.status))
 

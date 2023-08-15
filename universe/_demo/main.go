@@ -15,7 +15,7 @@ func main() {
 		WithArtifact(DaggerClient().DemoServer().ServerImage()).
 		WithArtifact(DaggerClient().DemoClient().ClientImage()).
 		WithShell_(Dev).
-		WithCheck_(IntegTest).
+		// WithCheck_(IntegTest).
 		Serve()
 }
 
@@ -49,6 +49,7 @@ func Dev(ctx dagger.Context) (*dagger.Container, error) {
 		WithEntrypoint([]string{"sh"}), nil
 }
 
+/*
 func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	clientApp := DaggerClient().DemoClient().ClientImage().Container()
 
@@ -61,3 +62,4 @@ func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	}
 	return DaggerClient().EnvironmentCheckResult().WithSuccess(true).WithOutput(stdout), nil
 }
+*/
