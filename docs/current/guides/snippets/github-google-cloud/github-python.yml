@@ -35,5 +35,8 @@ jobs:
         name: Install
         run: pip install dagger-io google-cloud-run
       -
+        name: Install Dagger CLI
+        run: cd /usr/local && curl -L https://dl.dagger.io/dagger/install.sh | sh
+      -
         name: Release and deploy with Dagger
-        run: python ci/main.py
+        run: dagger run python ci/main.py
