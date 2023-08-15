@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -176,11 +177,12 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 }
 
 type LocalExportOpts struct {
-	DestClientID       string `json:"dest_client_id"`
-	Path               string `json:"path"`
-	IsFileStream       bool   `json:"is_file_stream"`
-	FileOriginalName   string `json:"file_original_name"`
-	AllowParentDirPath bool   `json:"allow_parent_dir_path"`
+	DestClientID       string      `json:"dest_client_id"`
+	Path               string      `json:"path"`
+	IsFileStream       bool        `json:"is_file_stream"`
+	FileOriginalName   string      `json:"file_original_name"`
+	AllowParentDirPath bool        `json:"allow_parent_dir_path"`
+	FileMode           os.FileMode `json:"file_mode"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {
