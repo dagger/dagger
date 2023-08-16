@@ -1,3 +1,4 @@
+use crate::functions::*;
 use convert_case::{Case, Casing};
 use dagger_sdk::core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
@@ -5,10 +6,6 @@ use genco::quote;
 use genco::tokens::quoted;
 use itertools::Itertools;
 
-use crate::functions::{
-    type_field_has_optional, type_ref_is_enum, type_ref_is_list, type_ref_is_list_of_objects,
-    type_ref_is_object, type_ref_is_optional, type_ref_is_scalar, CommonFunctions, Scalar,
-};
 use crate::utility::OptionExt;
 
 use super::templates::object_tmpl::render_optional_field_args;
@@ -164,6 +161,18 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                         }
                     }
 
+                    if type_ref_is_id(&s.input_value.type_) {
+                        return Some(quote!{
+                            query = query.arg_lazy(
+                                $(quoted(name)),
+                                Box::new(move || {
+                                    let $(&n) = $(&n).clone();
+                                    Box::pin(async move { $(&n).id().await.unwrap().quote() })
+                                }),
+                            );
+                        })
+                    }
+
                     Some(quote! {
                         query = query.arg($(quoted(name)), $(n));
                     })
@@ -301,6 +310,8 @@ fn format_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
+
+                    let t = t.trim_end_matches("Id").replace("Cache", "CacheVolume");
                     let n = format_struct_name(&s.input_value.name);
 
                     if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
@@ -376,6 +387,7 @@ fn format_required_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
+                    let t = t.trim_end_matches("Id").replace("Cache", "CacheVolume");
                     let n = format_struct_name(&s.input_value.name);
 
                     Some(quote! {

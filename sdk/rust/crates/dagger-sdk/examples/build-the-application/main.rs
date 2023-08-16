@@ -15,7 +15,7 @@ async fn main() -> eyre::Result<()> {
     let source = client
         .container()
         .from("node:16")
-        .with_mounted_directory("/src", host_source_dir.id().await?);
+        .with_mounted_directory("/src", host_source_dir);
 
     let runner = source
         .with_workdir("/src")

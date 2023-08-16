@@ -12,7 +12,7 @@ async fn main() -> eyre::Result<()> {
 
     let ref_ = client
         .container()
-        .build(context_dir.id().await?)
+        .build(context_dir)
         .publish(format!("ttl.sh/hello-dagger-sdk-{}:1h", rng.gen::<u64>()))
         .await?;
 
