@@ -1,19 +1,14 @@
 name: Elixir SDK
 
 on:
-  # ⏸ TEMPORARILY SUSPENDED: https://github.com/dagger/dagger/pull/5628#issuecomment-1679378257
-  # Tests started failing intermittently since the previous PR, it's blocking the release.
-  # push:
-  #   branches: ["main"]
-  # pull_request:
-  #   types:
-  #     - opened
-  #     - synchronize
-  #     - reopened
-  #     - ready_for_review
-  # Enable manual trigger for easy debugging
-  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
-  workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
 
 permissions:
   contents: read
