@@ -8,15 +8,18 @@ import {
   NotAwaitedRequestError,
   ExecError,
 } from "../common/errors/index.js"
-import { isEnum, QueryTree } from "./client.gen.js"
+import { Metadata, QueryTree } from "./client.gen.js"
 
 /**
  * Format argument into GraphQL query format.
  */
 function buildArgs(args: any): string {
+  const metadata: Metadata = args.__metadata || {}
+
   // Remove unwanted quotes
-  const formatValue = (value: string) => {
-    if (isEnum(value as never)) {
+  const formatValue = (key: string, value: string) => {
+    // Special treatment for enumeration, they must be inserted without quotes
+    if (metadata[key]?.is_enum) {
       return JSON.stringify(value).replace(/['"]+/g, "")
     }
 
@@ -34,8 +37,13 @@ function buildArgs(args: any): string {
 
   const formattedArgs = Object.entries(args).reduce(
     (acc: any, [key, value]) => {
+      // Ignore internal metadata key
+      if (key === "__metadata") {
+        return acc
+      }
+
       if (value !== undefined && value !== null) {
-        acc.push(`${key}: ${formatValue(value as string)}`)
+        acc.push(`${key}: ${formatValue(key, value as string)}`)
       }
 
       return acc
