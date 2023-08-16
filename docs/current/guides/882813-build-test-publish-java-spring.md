@@ -160,27 +160,27 @@ Once credentials are configured, test the Dagger pipeline by running the command
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>
 </Tabs>
 
-Dagger performs the operations defined in the pipeline script, logging each operation to the console. At the end of the process, the built container is published on Docker Hub and a message similar to the one below appears in the console output:
+The `dagger run` command executes the script in a Dagger session and displays live progress. At the end of the process, the built container is published on Docker Hub and a message similar to the one below appears in the console output:
 
 ```shell
 Image published at: docker.io/.../myapp@sha256:...

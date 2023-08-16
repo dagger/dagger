@@ -52,7 +52,7 @@ Attempt to run the CI tool:
 <TabItem value="Go">
 
 ```shell
-➜  go run .
+➜  dagger run go run .
 panic: input:1: git.branch.tree.file.contents failed to load cache key: failed to fetch remote
 exit status 128
 ```
@@ -61,7 +61,7 @@ exit status 128
 <TabItem value="Node.js (TypeScript)">
 
 ```shell
-➜  node --loader ts-node/esm clone.ts
+➜  dagger run node --loader ts-node/esm clone.ts
 {'message': 'failed to load cache key: failed to fetch remote https://xxxxx@private-repository.git: exit status 128', 'locations': [{'line': 6, 'column': 11}], 'path': ['git', 'branch', 'tree', 'file', 'contents']}
 ```
 
@@ -69,7 +69,7 @@ exit status 128
 <TabItem value="Python">
 
 ```shell
-➜  python clone.py
+➜  dagger run python clone.py
 {'message': 'failed to load cache key: failed to fetch remote https://xxxxx@private-repository.git: exit status 128', 'locations': [{'line': 6, 'column': 11}], 'path': ['git', 'branch', 'tree', 'file', 'contents']}
 ```
 

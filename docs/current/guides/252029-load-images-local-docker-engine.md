@@ -22,6 +22,7 @@ This tutorial assumes that:
 
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md) or [Node.js](../sdk/nodejs/835948-install.md) SDK.
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Approach 1: Use an exported tarball
@@ -161,27 +162,27 @@ This approach involves publishing the container image to a local registry, and t
   <TabItem value="Go">
 
   ```shell
-  go run ci/main.go
+  dagger run go run ci/main.go
   ```
 
   </TabItem>
   <TabItem value="Node.js">
 
   ```shell
-  node ci/index.mjs
+  dagger run node ci/index.mjs
   ```
 
   </TabItem>
   <TabItem value="Python">
 
   ```shell
-  python ci/main.py
+  dagger run python ci/main.py
   ```
 
   </TabItem>
   </Tabs>
 
-  Dagger performs the operations defined in the pipeline script, logging each operation to the console. At the end of the process, the built container is pushed to the local registry and a message similar to the one below appears in the console output:
+  The `dagger run` command executes the script in a Dagger session and displays live progress. At the end of the process, the built container is pushed to the local registry and a message similar to the one below appears in the console output:
 
   ```shell
   Published at: 127.0.0.1:5000/my-nginx:1.0@sha256:c59a...

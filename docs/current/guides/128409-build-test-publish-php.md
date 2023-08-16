@@ -468,11 +468,11 @@ export REGISTRY_PASSWORD=PASSWORD
 Run the pipeline as below:
 
 ```shell
-dagger run php ci/dagger.php
+dagger --silent run php ci/dagger.php
 ```
 
 :::tip
-For more detailed logs, add the `--debug` command to the `dagger run` command. [Learn more about the Dagger CLI](../cli/index.md).
+For more detailed logs, remove the `--silent` option and add the `--debug` option to the `dagger run` command. [Learn more about the Dagger CLI](../cli/index.md).
 :::
 
 This command:
