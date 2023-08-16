@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/environmentconfig"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -48,15 +49,17 @@ func init() {
 	environmentInitCmd.PersistentFlags().StringVar(&environmentName, "name", "", "Name of the new environment")
 	environmentInitCmd.MarkFlagRequired("name")
 	environmentInitCmd.PersistentFlags().StringVarP(&environmentRoot, "root", "", "", "Root directory that should be loaded for the full environment context. Defaults to the parent directory containing dagger.json.")
+	// also include codegen flags since codegen will run on environment init
 
 	environmentCmd.AddCommand(environmentInitCmd)
 }
 
 var environmentCmd = &cobra.Command{
-	Use:    "environment",
-	Short:  "Manage dagger environments",
-	Long:   "Manage dagger environments. By default, print the configuration of the specified environment in json format.",
-	Hidden: true, // for now, remove once we're ready for primetime
+	Use:     "environment",
+	Aliases: []string{"env"},
+	Short:   "Manage dagger environments",
+	Long:    "Manage dagger environments. By default, print the configuration of the specified environment in json format.",
+	Hidden:  true, // for now, remove once we're ready for primetime
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		env, err := getEnvironmentFlagConfig()
@@ -101,7 +104,9 @@ var environmentInitCmd = &cobra.Command{
 	Use:    "init",
 	Short:  "Initialize a new dagger environment in a local directory.",
 	Hidden: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (rerr error) {
+		ctx := cmd.Context()
+
 		env, err := getEnvironmentFlagConfig()
 		if err != nil {
 			return fmt.Errorf("failed to get environment: %w", err)
@@ -113,27 +118,68 @@ var environmentInitCmd = &cobra.Command{
 		if _, err := os.Stat(env.local.path); err == nil {
 			return fmt.Errorf("environment init config path already exists: %s", env.local.path)
 		}
-		switch environmentconfig.SDK(sdk) {
-		case environmentconfig.SDKGo, environmentconfig.SDKPython:
-		default:
-			return fmt.Errorf("unsupported environment SDK: %s", sdk)
-		}
 		cfg := &environmentconfig.Config{
 			Name: environmentName,
 			SDK:  environmentconfig.SDK(sdk),
 			Root: environmentRoot,
 		}
+
+		runCodegenFunc := func() error {
+			return nil
+		}
+		switch environmentconfig.SDK(sdk) {
+		case environmentconfig.SDKGo:
+			engineClient, ctx, err := client.Connect(ctx, client.Params{
+				RunnerHost: engine.RunnerHost(),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to connect to engine: %w", err)
+			}
+			runCodegenFunc = func() error {
+				return RunCodegen(ctx, engineClient, nil, cfg, nil, cmd, nil)
+			}
+		case environmentconfig.SDKPython:
+		default:
+			return fmt.Errorf("unsupported environment SDK: %s", sdk)
+		}
+
 		cfgBytes, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal environment config: %w", err)
 		}
-		if err := os.MkdirAll(filepath.Dir(env.local.path), 0755); err != nil {
-			return fmt.Errorf("failed to create environment config directory: %w", err)
+		parentDir := filepath.Dir(env.local.path)
+		_, parentDirStatErr := os.Stat(parentDir)
+		switch {
+		case parentDirStatErr == nil:
+			// already exists, nothing to do
+		case os.IsNotExist(parentDirStatErr):
+			// make the parent dir, but if something goes wrong, clean it up in the defer
+			if err := os.MkdirAll(parentDir, 0755); err != nil {
+				return fmt.Errorf("failed to create environment config directory: %w", err)
+			}
+			defer func() {
+				if rerr != nil {
+					os.RemoveAll(parentDir)
+				}
+			}()
+		default:
+			return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
 		}
+
 		// nolint:gosec
 		if err := os.WriteFile(env.local.path, cfgBytes, 0644); err != nil {
 			return fmt.Errorf("failed to write environment config: %w", err)
 		}
+		defer func() {
+			if rerr != nil {
+				os.RemoveAll(env.local.path)
+			}
+		}()
+
+		if err := runCodegenFunc(); err != nil {
+			return fmt.Errorf("failed to run codegen: %w", err)
+		}
+
 		return nil
 	},
 }

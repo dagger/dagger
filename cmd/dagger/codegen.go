@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/environmentconfig"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // TODO: converge client-gen binary to this one too
@@ -26,27 +27,35 @@ var codegenCmd = &cobra.Command{
 	RunE: loadEnvDepsCmdWrapper(RunCodegen),
 }
 
+var (
+	codegenFlags  = pflag.NewFlagSet("codegen", pflag.ContinueOnError)
+	codegenOutput string
+	codegenPkg    string
+)
+
 func init() {
-	codegenCmd.Flags().StringP("output", "o", "", "output file")
-	codegenCmd.Flags().String("package", "", "package name")
+	codegenFlags.StringVarP(&codegenOutput, "output", "o", "", "output file")
+	codegenFlags.StringVar(&codegenPkg, "package", "", "package name")
+
+	codegenCmd.Flags().AddFlagSet(codegenFlags)
 }
 
 func RunCodegen(
 	ctx context.Context,
 	engineClient *client.Client,
-	c *dagger.Client,
+	_ *dagger.Client,
 	envCfg *environmentconfig.Config,
 	depEnvs []*dagger.Environment,
 	cmd *cobra.Command,
 	_ []string,
-) error {
+) (rerr error) {
 	if workdir != "" {
 		if err := os.Chdir(workdir); err != nil {
 			return err
 		}
 	}
 
-	pkg, err := getPackage(cmd, envCfg.SDK)
+	pkg, err := getPackage(envCfg.SDK)
 	if err != nil {
 		return err
 	}
@@ -65,7 +74,7 @@ func RunCodegen(
 		return err
 	}
 
-	output, err := getOutput(cmd, envCfg.SDK)
+	output, err := getOutput(envCfg.SDK)
 	if err != nil {
 		return err
 	}
@@ -73,58 +82,76 @@ func RunCodegen(
 	if output == "" || output == "-" {
 		cmd.Println(string(generated))
 	} else {
-		if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
-			return err
+		parentDir := filepath.Dir(output)
+		_, parentDirStatErr := os.Stat(parentDir)
+		switch {
+		case parentDirStatErr == nil:
+			// already exists, nothing to do
+		case os.IsNotExist(parentDirStatErr):
+			// make the parent dir, but if something goes wrong, clean it up in the defer
+			if err := os.MkdirAll(parentDir, 0755); err != nil {
+				return fmt.Errorf("failed to create parent directory: %w", err)
+			}
+			defer func() {
+				if rerr != nil {
+					os.RemoveAll(parentDir)
+				}
+			}()
+		default:
+			return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
 		}
+
 		if err := os.WriteFile(output, generated, 0o600); err != nil {
 			return err
 		}
+		defer func() {
+			if rerr != nil {
+				os.Remove(output)
+			}
+		}()
 
 		gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
-		if err := os.WriteFile(path.Join(filepath.Dir(output), ".gitattributes"), []byte(gitAttributes), 0o600); err != nil {
+		gitAttributesPath := path.Join(filepath.Dir(output), ".gitattributes")
+		if err := os.WriteFile(gitAttributesPath, []byte(gitAttributes), 0o600); err != nil {
 			return err
 		}
+		defer func() {
+			if rerr != nil {
+				os.Remove(gitAttributesPath)
+			}
+		}()
 	}
 
 	return nil
 }
 
-func getOutput(cmd *cobra.Command, sdk environmentconfig.SDK) (string, error) {
-	output, err := cmd.Flags().GetString("output")
-	if err != nil {
-		return "", err
-	}
-	if output != "" {
-		return output, nil
+func getOutput(sdk environmentconfig.SDK) (string, error) {
+	if codegenOutput != "" {
+		return codegenOutput, nil
 	}
 
 	// TODO:
 	if sdk != environmentconfig.SDKGo {
-		return output, nil
+		return codegenOutput, nil
 	}
 	envCfg, err := getEnvironmentFlagConfig()
 	if err != nil {
 		return "", err
 	}
 	if envCfg.local == nil {
-		return output, nil
+		return codegenOutput, nil
 	}
 	return filepath.Join(filepath.Dir(envCfg.local.path), "dagger.gen.go"), nil
 }
 
-func getPackage(cmd *cobra.Command, sdk environmentconfig.SDK) (string, error) {
-	pkg, err := cmd.Flags().GetString("package")
-	if err != nil {
-		return "", err
-	}
-
+func getPackage(sdk environmentconfig.SDK) (string, error) {
 	// If a package name was provided as a flag, use it
-	if pkg != "" {
-		return pkg, nil
+	if codegenPkg != "" {
+		return codegenPkg, nil
 	}
 
 	// Come up with a default package name
-	output, err := getOutput(cmd, sdk)
+	output, err := getOutput(sdk)
 	if err != nil {
 		return "", err
 	}
