@@ -1,5 +1,5 @@
 kind: Fixed
-body: 'fix: fix connect always timeout'
+body: 'fix connect always timeout'
 time: 2023-08-16T23:58:38.705088+07:00
 custom:
   Author: wingyplus
