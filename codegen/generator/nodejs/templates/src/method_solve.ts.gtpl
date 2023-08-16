@@ -50,6 +50,17 @@
     {{- $promiseRetType = printf "%s[]" (.Name | ToLowerCase) }}
     {{- end }}
 
+	{{- $enums := GetEnumValues .Args }}
+	{{- if gt (len $enums) 0 }}
+	const metadata: Metadata = {
+	    {{- range $v := $enums }}
+	    {{ $v.Name -}}: { is_enum: true },
+	    {{- end }}
+	}
+{{ "" -}}
+
+	{{- end }}
+
 	{{- if .TypeRef }}
     {{ if not $convertID }}const response: Awaited<{{ $promiseRetType }}> = {{ end }}await computeQuery(
       [
@@ -66,7 +77,7 @@
 
       		{{- with $optionals }}
       			{{- if $required }}, {{ end }}
-				{{- "" }}...opts
+				{{- "" }}...opts{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
 			{{- end }}
 {{- "" }} },
 		{{- end }}

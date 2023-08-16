@@ -19,18 +19,19 @@ export type QueryTree = {
   args?: Record<string, unknown>
 }
 
+/**
+ * @hidden
+ */
+export type Metadata = {
+  [key: string]: {
+    is_enum?: boolean
+  }
+}
+
 interface ClientConfig {
   queryTree?: QueryTree[]
   host?: string
   sessionToken?: string
-}
-
-export function isEnum(value: never): boolean {
-    const enums = [{{ ListOfEnum }}]
-
-    return enums
-      .map((e) => Object.values(e).includes(value))
-      .includes(true)
 }
 
 class BaseClient {

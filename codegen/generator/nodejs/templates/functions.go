@@ -41,23 +41,9 @@ var (
 		"ToLowerCase":         commonFunc.ToLowerCase,
 		"ToUpperCase":         commonFunc.ToUpperCase,
 		"ToSingleType":        toSingleType,
-		"ListOfEnum":          listOfEnum,
+		"GetEnumValues":       getEnumValues,
 	}
 )
-
-func listOfEnum() string {
-	schema := generator.GetSchema()
-
-	var result []string
-
-	for _, t := range schema.Types {
-		if t.Kind == introspection.TypeKindEnum && !strings.HasPrefix(t.Name, "__") {
-			result = append(result, t.Name)
-		}
-	}
-
-	return strings.Join(result, ", ")
-}
 
 // pascalCase change a type name into pascalCase
 func pascalCase(name string) string {
@@ -152,6 +138,18 @@ func splitRequiredOptionalArgs(values introspection.InputValues) (required intro
 		return values[:i], values[i:]
 	}
 	return values, nil
+}
+
+func getEnumValues(values introspection.InputValues) introspection.InputValues {
+	enums := introspection.InputValues{}
+
+	for _, v := range values {
+		if v.TypeRef != nil && v.TypeRef.Kind == introspection.TypeKindEnum {
+			enums = append(enums, v)
+		}
+	}
+
+	return enums
 }
 
 func getRequiredArgs(values introspection.InputValues) introspection.InputValues {

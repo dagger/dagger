@@ -14,21 +14,19 @@ export type QueryTree = {
   args?: Record<string, unknown>
 }
 
+/**
+ * @hidden
+ */
+export type Metadata = {
+  [key: string]: {
+    is_enum?: boolean
+  }
+}
+
 interface ClientConfig {
   queryTree?: QueryTree[]
   host?: string
   sessionToken?: string
-}
-
-export function isEnum(value: never): boolean {
-  const enums = [
-    CacheSharingMode,
-    ImageLayerCompression,
-    ImageMediaTypes,
-    NetworkProtocol,
-  ]
-
-  return enums.map((e) => Object.values(e).includes(value)).includes(true)
 }
 
 class BaseClient {
@@ -962,12 +960,17 @@ export class Container extends BaseClient {
       return this._export
     }
 
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "export",
-          args: { path, ...opts },
+          args: { path, ...opts, __metadata: metadata },
         },
       ],
       this.client
@@ -1287,12 +1290,17 @@ export class Container extends BaseClient {
       return this._publish
     }
 
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "publish",
-          args: { address, ...opts },
+          args: { address, ...opts, __metadata: metadata },
         },
       ],
       this.client
@@ -1542,12 +1550,16 @@ export class Container extends BaseClient {
     port: number,
     opts?: ContainerWithExposedPortOpts
   ): Container {
+    const metadata: Metadata = {
+      protocol: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExposedPort",
-          args: { port, ...opts },
+          args: { port, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
@@ -1643,12 +1655,16 @@ export class Container extends BaseClient {
     cache: CacheVolume,
     opts?: ContainerWithMountedCacheOpts
   ): Container {
+    const metadata: Metadata = {
+      sharing: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withMountedCache",
-          args: { path, cache, ...opts },
+          args: { path, cache, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
@@ -1967,12 +1983,16 @@ export class Container extends BaseClient {
     port: number,
     opts?: ContainerWithoutExposedPortOpts
   ): Container {
+    const metadata: Metadata = {
+      protocol: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withoutExposedPort",
-          args: { port, ...opts },
+          args: { port, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
