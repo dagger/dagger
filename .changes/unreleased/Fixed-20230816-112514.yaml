@@ -1,0 +1,6 @@
+kind: Fixed
+body: default container tar export permissions to 0600
+time: 2023-08-16T11:25:14.290513813-07:00
+custom:
+  Author: sipsma
+  PR: "5649"
