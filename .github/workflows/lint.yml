@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   engine:
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
