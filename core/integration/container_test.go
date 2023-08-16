@@ -2606,6 +2606,11 @@ func TestContainerExport(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok)
 
+		stat, err := os.Stat(imagePath)
+		require.NoError(t, err)
+		require.NotZero(t, stat.Size())
+		require.EqualValues(t, 0o600, stat.Mode().Perm())
+
 		entries := tarEntries(t, imagePath)
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
@@ -2632,6 +2637,11 @@ func TestContainerExport(t *testing.T) {
 		ok, err := ctr.Export(ctx, "./image.tar")
 		require.NoError(t, err)
 		require.True(t, ok)
+
+		stat, err := os.Stat(filepath.Join(wd, "image.tar"))
+		require.NoError(t, err)
+		require.NotZero(t, stat.Size())
+		require.EqualValues(t, 0o600, stat.Mode().Perm())
 
 		entries := tarEntries(t, filepath.Join(wd, "image.tar"))
 		require.Contains(t, entries, "oci-layout")
