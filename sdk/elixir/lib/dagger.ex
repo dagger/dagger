@@ -15,12 +15,18 @@ defmodule Dagger do
   #{NimbleOptions.docs(Dagger.Internal.Client.connect_schema())}
   """
   def connect(opts \\ []) do
-    with {:ok, client} <- Dagger.Internal.Client.connect(opts) do
-      {:ok,
-       %Dagger.Client{
-         client: client,
-         selection: Dagger.QueryBuilder.Selection.query()
-       }}
+    with {:ok, graphql_client} <- Dagger.Internal.Client.connect(opts) do
+      client = %Dagger.Client{
+        client: graphql_client,
+        selection: Dagger.QueryBuilder.Selection.query()
+      }
+
+      case Dagger.Client.check_version_compatibility(client, Dagger.EngineConn.engine_version()) do
+        {:error, reason} -> IO.warn("failed to check version compatibility: #{inspect(reason)}")
+        _ -> nil
+      end
+
+      {:ok, client}
     end
   end
 
