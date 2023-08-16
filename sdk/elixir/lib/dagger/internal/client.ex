@@ -37,7 +37,7 @@ defmodule Dagger.Internal.Client do
       connect_timeout: [
         type: :timeout,
         doc: "Sets timeout when connect to the engine.",
-        default: :timer.seconds(30)
+        default: :timer.seconds(10)
       ],
       query_timeout: [
         type: :timeout,
