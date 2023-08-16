@@ -1,7 +1,11 @@
 # Playing With Zenith
-When running any `dagger commands`, you will need to either prefix commands with `./hack/dev ./bin/dagger` or use a direnv-like setup that accomplishes the same.
+In order to run dagger with Zenith functionality, you will need to build a Dagger CLI off this branch and build a Dagger Engine off this branch.
 
-If setting env vars manually rather than running wrapped w/ `./hack/dev`, you should set:
+Our existing command for doing this is `./hack/dev`. That script will:
+1. Build the Dagger CLI and export it to `./bin/dagger`
+1. Build the Dagger Engine and run it in your local docker installation in a container named `dagger-engine.dev`
+
+In order to ensure you are using the dev CLI+Engine; it's suggested to set these environment variables:
 * `_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev`
 * `$PATH=$(pwd)/bin:$PATH`
   * This assumes `$(pwd)` points to the root of the dagger repo, replace it with the actual root if that's not the case
