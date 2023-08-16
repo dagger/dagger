@@ -1,0 +1,31 @@
+name: Elixir SDK
+
+on:
+  # ⏸ TEMPORARILY SUSPENDED: https://github.com/dagger/dagger/pull/5628#issuecomment-1679378257
+  # Tests started failing intermittently since the previous PR, it's blocking the release.
+  # push:
+  #   branches: ["main"]
+  # pull_request:
+  #   types:
+  #     - opened
+  #     - synchronize
+  #     - reopened
+  #     - ready_for_review
+  # Enable manual trigger for easy debugging
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/_hack_make.yml
+    with:
+      mage-targets: sdk:elixir:lint
+
+  test:
+    uses: ./.github/workflows/_hack_make.yml
+    with:
+      mage-targets: sdk:elixir:test
