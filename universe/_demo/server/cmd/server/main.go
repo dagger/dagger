@@ -33,5 +33,5 @@ func getMsg(remoteAddr string) (string, error) {
 		return "", fmt.Errorf("invalid remote address: %s", remoteAddr)
 	}
 
-	return fmt.Sprintf("Hello, %s fomr port %s!", ip, port), nil
+	return fmt.Sprintf("Hello, %s form port %s!", ip, port), nil // BUG
 }

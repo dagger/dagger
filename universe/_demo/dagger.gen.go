@@ -34,15 +34,6 @@ func (r *DemoClient) ClientImage() *EnvironmentArtifact {
 	}
 }
 
-func (r *DemoClient) Container() *Container {
-	q := r.Q.Select("container")
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
 func (r *DemoClient) Publish(ctx context.Context, version string) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
@@ -76,15 +67,6 @@ func (r *DemoServer) Binary() *EnvironmentArtifact {
 	q := r.Q.Select("binary")
 
 	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *DemoServer) Container() *Container {
-	q := r.Q.Select("container")
-
-	return &Container{
 		Q: q,
 		C: r.C,
 	}
