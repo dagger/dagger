@@ -3,7 +3,7 @@
 set -euo pipefail
 
 TOKEN=${TOKEN:?"TOKEN env var not set"}
-FILE=${1:?usage: create_embed_qs.sh <filename.\{js,mjs,py,go\}>}
+FILE=${1:?usage: create_embed_qs.sh <filename.\{js,mjs,py,go,exs\}>}
 
 
 content=$(cat $FILE)
@@ -117,6 +117,34 @@ query='
   }
 }'
 lang='javascript'
+	;;
+	"exs") echo 2 or 3
+query='
+{
+  container {
+    from(address: "hexpm/elixir:1.15.4-erlang-25.3.2.5-alpine-3.18.2") {
+      withExec(args: ["sh", "-c", "apk add git"]) {
+        withExec(
+          args: ["sh", "-c", "git clone --depth=1 https://github.com/dagger/hello-dagger /usr/src/app/hello-dagger"]
+        ) {
+          withWorkdir(path: "/usr/src/app/hello-dagger") {
+            withExec(args: ["sh", "-c", "mkdir ci"]) {
+              withNewFile(
+                contents: """'"$content"'""",
+                path: "ci/main.exs"
+              ) {
+                withExec(args: ["elixir", "ci/main.exs"], experimentalPrivilegedNesting: true) {
+                  stdout
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+lang='elixir'
 	;;
 	*) echo "Unsupported file extension: ["$ext"] " && exit 1
 	;;
