@@ -2648,105 +2648,6 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
-type DemoClient struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-
-	publish *string
-}
-
-// The client app and its dependencies packaged up into a container
-func (r *DemoClient) ClientImage() *EnvironmentArtifact {
-
-	q := r.Q.Select("clientImage")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Publish the client
-func (r *DemoClient) Publish(ctx context.Context, version string) (string, error) {
-
-	if r.publish != nil {
-		return *r.publish, nil
-	}
-	q := r.Q.Select("publish")
-	q = q.Arg("version", version)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.C)
-}
-
-// Run unit tests
-func (r *DemoClient) UnitTest() *EnvironmentCheck {
-
-	q := r.Q.Select("unitTest")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type DemoServer struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-
-	publish *string
-}
-
-// The server's binary as a file.
-func (r *DemoServer) Binary() *EnvironmentArtifact {
-
-	q := r.Q.Select("binary")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Publish the server container image.
-func (r *DemoServer) Publish(ctx context.Context, version string) (string, error) {
-
-	if r.publish != nil {
-		return *r.publish, nil
-	}
-	q := r.Q.Select("publish")
-	q = q.Arg("version", version)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.C)
-}
-
-// The server container image.
-func (r *DemoServer) ServerImage() *EnvironmentArtifact {
-
-	q := r.Q.Select("serverImage")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Unit tests for the server.
-func (r *DemoServer) UnitTest() *EnvironmentCheck {
-
-	q := r.Q.Select("unitTest")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // A directory.
 type Directory struct {
 	Q *querybuilder.Selection
@@ -5931,26 +5832,6 @@ func (r *DAG) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
-}
-
-func (r *DAG) DemoClient() *DemoClient {
-
-	q := r.Q.Select("demoClient")
-
-	return &DemoClient{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *DAG) DemoServer() *DemoServer {
-
-	q := r.Q.Select("demoServer")
-
-	return &DemoServer{
-		Q: q,
-		C: r.C,
-	}
 }
 
 // DirectoryOpts contains options for DAG.Directory

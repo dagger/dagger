@@ -10,10 +10,6 @@ var (
 	headerSource string
 	Header       *template.Template
 
-	//go:embed src/environment_header.go.tmpl
-	environmentHeaderSource string
-	EnvironmentHeader       *template.Template
-
 	//go:embed src/scalar.go.tmpl
 	scalarSource string
 	Scalar       *template.Template
@@ -26,49 +22,44 @@ var (
 	objectSource string
 	Object       *template.Template
 
-	//go:embed src/environment_object.go.tmpl
-	environmentObjectSource string
-	EnvironmentObject       *template.Template
-
 	//go:embed src/enum.go.tmpl
 	enumSource string
 	Enum       *template.Template
+
+	//go:embed src/environment.go.tmpl
+	environmentSource string
+	Environment       *template.Template
 )
 
 func init() {
 	var err error
 
-	Header, err = template.New("header").Funcs(funcMap).Parse(headerSource)
+	Header, err = template.New("header").Funcs(FuncMap).Parse(headerSource)
 	if err != nil {
 		panic(err)
 	}
 
-	EnvironmentHeader, err = template.New("environment_header").Funcs(funcMap).Parse(environmentHeaderSource)
+	Scalar, err = template.New("scalar").Funcs(FuncMap).Parse(scalarSource)
 	if err != nil {
 		panic(err)
 	}
 
-	Scalar, err = template.New("scalar").Funcs(funcMap).Parse(scalarSource)
+	Input, err = template.New("input").Funcs(FuncMap).Parse(inputSource)
 	if err != nil {
 		panic(err)
 	}
 
-	Input, err = template.New("input").Funcs(funcMap).Parse(inputSource)
+	Object, err = template.New("object").Funcs(FuncMap).Parse(objectSource)
 	if err != nil {
 		panic(err)
 	}
 
-	Object, err = template.New("object").Funcs(funcMap).Parse(objectSource)
+	Enum, err = template.New("enum").Funcs(FuncMap).Parse(enumSource)
 	if err != nil {
 		panic(err)
 	}
 
-	EnvironmentObject, err = template.New("environment_object").Funcs(funcMap).Parse(environmentObjectSource)
-	if err != nil {
-		panic(err)
-	}
-
-	Enum, err = template.New("enum").Funcs(funcMap).Parse(enumSource)
+	Environment, err = template.New("environment").Funcs(FuncMap).Parse(environmentSource)
 	if err != nil {
 		panic(err)
 	}

@@ -18,6 +18,7 @@ type GoGenerator struct {
 
 func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema) ([]byte, error) {
 	generator.SetSchema(schema)
+	isForEnv := g.Config.EnvironmentName != ""
 
 	headerData := struct {
 		Package string
@@ -27,40 +28,25 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		Schema:  schema,
 	}
 
-	envNames := map[string]struct{}{}
-	if len(g.Config.Environments) > 0 {
-		// TODO:
-		generator.QueryStructClientName = "daggerClient"
+	var render []string
 
-		for _, env := range g.Config.Environments {
-			name, err := env.Name(ctx)
-			if err != nil {
-				return nil, err
-			}
-			envNames[name] = struct{}{}
+	var header bytes.Buffer
+	if isForEnv {
+		// TODO: ...
+		templates.EvilGlobalVarToTriggerEnvSpecificCodegen = true
+		templates.EvilGlobalVarWithEnvironmentName = g.Config.EnvironmentName
+		if err := templates.Environment.Execute(&header, headerData); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := templates.Header.Execute(&header, headerData); err != nil {
+			return nil, err
 		}
 	}
-
-	headerTmpl := templates.Header
-	if len(g.Config.Environments) > 0 {
-		headerTmpl = templates.EnvironmentHeader
-	}
-	var header bytes.Buffer
-	if err := headerTmpl.Execute(&header, headerData); err != nil {
-		return nil, err
-	}
-
-	render := []string{
-		header.String(),
-	}
+	render = append(render, header.String())
 
 	err := schema.Visit(introspection.VisitHandlers{
 		Scalar: func(t *introspection.Type) error {
-			// TODO:
-			if len(g.Config.Environments) > 0 {
-				return nil
-			}
-
 			var out bytes.Buffer
 			if err := templates.Scalar.Execute(&out, t); err != nil {
 				return err
@@ -70,26 +56,23 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		},
 		Object: func(t *introspection.Type) error {
 			objectTmpl := templates.Object
-			if len(g.Config.Environments) > 0 {
-				objectTmpl = templates.EnvironmentObject
 
-				// TODO: hacks on hacks
-				if t.Name == "Query" {
-					// only include fields for the environments being codegen'd
-					newFields := make([]*introspection.Field, 0, 1)
-					for _, f := range t.Fields {
-						if _, ok := envNames[f.Name]; ok {
-							newFields = append(newFields, f)
-						}
-					}
-					t.Fields = newFields
-				} else {
-					// otherwise only include object for the environment
-					_, ok := envNames[strings.ToLower(t.Name[:1])+t.Name[1:]]
-					if !ok {
-						return nil
+			// don't create methods on query for the env itself,
+			// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
+			if g.Config.EnvironmentName != "" && t.Name == generator.QueryStructName {
+				var newFields []*introspection.Field
+				for _, f := range t.Fields {
+					if f.Name != g.Config.EnvironmentName {
+						newFields = append(newFields, f)
 					}
 				}
+				t.Fields = newFields
+			}
+
+			objectName := strings.ToLower(t.Name[:1]) + t.Name[1:]
+			if g.Config.EnvironmentName == objectName {
+				// don't generate self bindings, it's too confusing for now
+				return nil
 			}
 
 			var out bytes.Buffer
@@ -100,11 +83,6 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			return nil
 		},
 		Enum: func(t *introspection.Type) error {
-			// TODO:
-			if len(g.Config.Environments) > 0 {
-				return nil
-			}
-
 			var out bytes.Buffer
 			if err := templates.Enum.Execute(&out, t); err != nil {
 				return err
@@ -113,11 +91,6 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			return nil
 		},
 		Input: func(t *introspection.Type) error {
-			// TODO:
-			if len(g.Config.Environments) > 0 {
-				return nil
-			}
-
 			var out bytes.Buffer
 			if err := templates.Input.Execute(&out, t); err != nil {
 				return err

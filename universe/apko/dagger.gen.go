@@ -1232,33 +1232,6 @@ type PipelineLabel struct {
 	Value string `json:"value"`
 }
 
-type Apko struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-func (r *Apko) Alpine(packages []string) *Container {
-
-	q := r.Q.Select("alpine")
-	q = q.Arg("packages", packages)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Apko) Wolfi(packages []string) *Container {
-
-	q := r.Q.Select("wolfi")
-	q = q.Arg("packages", packages)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	Q *querybuilder.Selection
@@ -2646,105 +2619,6 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
-}
-
-type DemoClient struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-
-	publish *string
-}
-
-// The client app and its dependencies packaged up into a container
-func (r *DemoClient) ClientImage() *EnvironmentArtifact {
-
-	q := r.Q.Select("clientImage")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Publish the client
-func (r *DemoClient) Publish(ctx context.Context, version string) (string, error) {
-
-	if r.publish != nil {
-		return *r.publish, nil
-	}
-	q := r.Q.Select("publish")
-	q = q.Arg("version", version)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.C)
-}
-
-// Run unit tests
-func (r *DemoClient) UnitTest() *EnvironmentCheck {
-
-	q := r.Q.Select("unitTest")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type DemoServer struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-
-	publish *string
-}
-
-// The server's binary as a file.
-func (r *DemoServer) Binary() *EnvironmentArtifact {
-
-	q := r.Q.Select("binary")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Publish the server container image.
-func (r *DemoServer) Publish(ctx context.Context, version string) (string, error) {
-
-	if r.publish != nil {
-		return *r.publish, nil
-	}
-	q := r.Q.Select("publish")
-	q = q.Arg("version", version)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.C)
-}
-
-// The server container image.
-func (r *DemoServer) ServerImage() *EnvironmentArtifact {
-
-	q := r.Q.Select("serverImage")
-
-	return &EnvironmentArtifact{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Unit tests for the server.
-func (r *DemoServer) UnitTest() *EnvironmentCheck {
-
-	q := r.Q.Select("unitTest")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
 }
 
 // A directory.
@@ -5845,16 +5719,6 @@ func (r *DAG) With(f WithDAGFunc) *DAG {
 	return f(r)
 }
 
-func (r *DAG) Apko() *Apko {
-
-	q := r.Q.Select("apko")
-
-	return &Apko{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // Constructs a cache volume for a given cache key.
 func (r *DAG) CacheVolume(key string) *CacheVolume {
 
@@ -5931,26 +5795,6 @@ func (r *DAG) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.C)
-}
-
-func (r *DAG) DemoClient() *DemoClient {
-
-	q := r.Q.Select("demoClient")
-
-	return &DemoClient{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *DAG) DemoServer() *DemoServer {
-
-	q := r.Q.Select("demoServer")
-
-	return &DemoServer{
-		Q: q,
-		C: r.C,
-	}
 }
 
 // DirectoryOpts contains options for DAG.Directory

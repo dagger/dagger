@@ -17,7 +17,10 @@ import (
 // Client is the Dagger Engine Client
 type Client struct {
 	conn engineconn.EngineConn
+	*DAG
+}
 
+type DAG struct {
 	// TODO: making public for codegen from envs outside universe, but not ideal,
 	// maybe expose this but w/ a scarier XXX prefix?
 	C graphql.Client
@@ -77,9 +80,11 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	c := &Client{
-		C:    gql,
 		conn: conn,
-		Q:    querybuilder.Query(),
+		DAG: &DAG{
+			C: gql,
+			Q: querybuilder.Query(),
+		},
 	}
 
 	// Call version compatibility.

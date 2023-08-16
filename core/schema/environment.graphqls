@@ -73,9 +73,6 @@ type Environment {
   withCommand(id: EnvironmentCommandID!): Environment!
 
   "TODO"
-  withExtension(id: EnvironmentID!, namespace: String!): Environment!
-
-  "TODO"
   withCheck(id: EnvironmentCheckID!): Environment!
 
   "TODO"

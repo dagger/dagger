@@ -69,31 +69,6 @@ type PipelineLabel struct {
 	Value string `json:"value"`
 }
 
-type Apko struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-func (r *Apko) Alpine(packages []string) *Container {
-	q := r.Q.Select("alpine")
-	q = q.Arg("packages", packages)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Apko) Wolfi(packages []string) *Container {
-	q := r.Q.Select("wolfi")
-	q = q.Arg("packages", packages)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	Q *querybuilder.Selection
@@ -103,6 +78,7 @@ type CacheVolume struct {
 }
 
 func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -183,6 +159,7 @@ type ContainerBuildOpts struct {
 
 // Initializes this container from a Dockerfile build.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
+
 	q := r.Q.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerfile` optional argument
@@ -212,6 +189,7 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 
 // Retrieves default arguments for future commands.
 func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
+
 	q := r.Q.Select("defaultArgs")
 
 	var response []string
@@ -224,6 +202,7 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 //
 // Mounts are included.
 func (r *Container) Directory(path string) *Directory {
+
 	q := r.Q.Select("directory")
 	q = q.Arg("path", path)
 
@@ -249,6 +228,7 @@ type ContainerEndpointOpts struct {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
+
 	if r.endpoint != nil {
 		return *r.endpoint, nil
 	}
@@ -272,6 +252,7 @@ func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts)
 
 // Retrieves entrypoint to be prepended to the arguments of all commands.
 func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
+
 	q := r.Q.Select("entrypoint")
 
 	var response []string
@@ -282,6 +263,7 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 
 // Retrieves the value of the specified environment variable.
 func (r *Container) EnvVariable(ctx context.Context, name string) (string, error) {
+
 	if r.envVariable != nil {
 		return *r.envVariable, nil
 	}
@@ -296,6 +278,7 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 
 // Retrieves the list of environment variables passed to commands.
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
+
 	q := r.Q.Select("envVariables")
 
 	q = q.Select("name value")
@@ -348,6 +331,7 @@ type ContainerExportOpts struct {
 // Return true on success.
 // It can also publishes platform variants.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
+
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -381,6 +365,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
+
 	q := r.Q.Select("exposedPorts")
 
 	q = q.Select("description port protocol")
@@ -416,6 +401,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 //
 // Mounts are included.
 func (r *Container) File(path string) *File {
+
 	q := r.Q.Select("file")
 	q = q.Arg("path", path)
 
@@ -427,6 +413,7 @@ func (r *Container) File(path string) *File {
 
 // Initializes this container from a pulled base image.
 func (r *Container) From(address string) *Container {
+
 	q := r.Q.Select("from")
 	q = q.Arg("address", address)
 
@@ -440,6 +427,7 @@ func (r *Container) From(address string) *Container {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Hostname(ctx context.Context) (string, error) {
+
 	if r.hostname != nil {
 		return *r.hostname, nil
 	}
@@ -453,6 +441,7 @@ func (r *Container) Hostname(ctx context.Context) (string, error) {
 
 // A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -485,6 +474,7 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
 func (r *Container) ImageRef(ctx context.Context) (string, error) {
+
 	if r.imageRef != nil {
 		return *r.imageRef, nil
 	}
@@ -508,6 +498,7 @@ type ContainerImportOpts struct {
 // NOTE: this involves unpacking the tarball to an OCI store on the host at
 // $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
 func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
+
 	q := r.Q.Select("import")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `tag` optional argument
@@ -525,6 +516,7 @@ func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container
 
 // Retrieves the value of the specified label.
 func (r *Container) Label(ctx context.Context, name string) (string, error) {
+
 	if r.label != nil {
 		return *r.label, nil
 	}
@@ -539,6 +531,7 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 
 // Retrieves the list of labels passed to container.
 func (r *Container) Labels(ctx context.Context) ([]Label, error) {
+
 	q := r.Q.Select("labels")
 
 	q = q.Select("name value")
@@ -571,6 +564,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
+
 	q := r.Q.Select("mounts")
 
 	var response []string
@@ -589,6 +583,7 @@ type ContainerPipelineOpts struct {
 
 // Creates a named sub-pipeline
 func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
+
 	q := r.Q.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -610,6 +605,7 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 
 // The platform this container executes and publishes as.
 func (r *Container) Platform(ctx context.Context) (Platform, error) {
+
 	if r.platform != nil {
 		return *r.platform, nil
 	}
@@ -643,6 +639,7 @@ type ContainerPublishOpts struct {
 // Publish returns a fully qualified ref.
 // It can also publish platform variants.
 func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
+
 	if r.publish != nil {
 		return *r.publish, nil
 	}
@@ -671,6 +668,7 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 
 // Retrieves this container's root filesystem. Mounts are not included.
 func (r *Container) Rootfs() *Directory {
+
 	q := r.Q.Select("rootfs")
 
 	return &Directory{
@@ -680,6 +678,7 @@ func (r *Container) Rootfs() *Directory {
 }
 
 func (r *Container) Sbom(ctx context.Context) (string, error) {
+
 	if r.sbom != nil {
 		return *r.sbom, nil
 	}
@@ -693,6 +692,7 @@ func (r *Container) Sbom(ctx context.Context) (string, error) {
 
 // TODO
 func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
+
 	if r.shellEndpoint != nil {
 		return *r.shellEndpoint, nil
 	}
@@ -708,6 +708,7 @@ func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
 //
 // Will execute default command if none is set, or error if there's no default.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
+
 	if r.stderr != nil {
 		return *r.stderr, nil
 	}
@@ -723,6 +724,7 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 //
 // Will execute default command if none is set, or error if there's no default.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
+
 	if r.stdout != nil {
 		return *r.stdout, nil
 	}
@@ -738,6 +740,7 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 //
 // It doesn't run the default command if no exec has been set.
 func (r *Container) Sync(ctx context.Context) (*Container, error) {
+
 	q := r.Q.Select("sync")
 
 	return r, q.Execute(ctx, r.C)
@@ -745,6 +748,7 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 
 // Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
+
 	if r.user != nil {
 		return *r.user, nil
 	}
@@ -757,6 +761,7 @@ func (r *Container) User(ctx context.Context) (string, error) {
 }
 
 func (r *Container) Version(ctx context.Context) (string, error) {
+
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -776,6 +781,7 @@ type ContainerWithDefaultArgsOpts struct {
 
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
+
 	q := r.Q.Select("withDefaultArgs")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `args` optional argument
@@ -806,6 +812,7 @@ type ContainerWithDirectoryOpts struct {
 
 // Retrieves this container plus a directory written at the given path.
 func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
+
 	q := r.Q.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -832,6 +839,7 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 
 // Retrieves this container but with a different command entrypoint.
 func (r *Container) WithEntrypoint(args []string) *Container {
+
 	q := r.Q.Select("withEntrypoint")
 	q = q.Arg("args", args)
 
@@ -850,6 +858,7 @@ type ContainerWithEnvVariableOpts struct {
 
 // Retrieves this container plus the given environment variable.
 func (r *Container) WithEnvVariable(name string, value string, opts ...ContainerWithEnvVariableOpts) *Container {
+
 	q := r.Q.Select("withEnvVariable")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `expand` optional argument
@@ -890,6 +899,7 @@ type ContainerWithExecOpts struct {
 
 // Retrieves this container after executing the specified command inside it.
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
+
 	q := r.Q.Select("withExec")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `skipEntrypoint` optional argument
@@ -941,6 +951,7 @@ type ContainerWithExposedPortOpts struct {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
+
 	q := r.Q.Select("withExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `protocol` optional argument
@@ -976,6 +987,7 @@ type ContainerWithFileOpts struct {
 
 // Retrieves this container plus the contents of the given file copied to the given path.
 func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
+
 	q := r.Q.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -999,6 +1011,7 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 // Indicate that subsequent operations should be featured more prominently in
 // the UI.
 func (r *Container) WithFocus() *Container {
+
 	q := r.Q.Select("withFocus")
 
 	return &Container{
@@ -1009,6 +1022,7 @@ func (r *Container) WithFocus() *Container {
 
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
+
 	q := r.Q.Select("withLabel")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -1039,6 +1053,7 @@ type ContainerWithMountedCacheOpts struct {
 
 // Retrieves this container plus a cache volume mounted at the given path.
 func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
+
 	q := r.Q.Select("withMountedCache")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -1075,6 +1090,7 @@ type ContainerWithMountedDirectoryOpts struct {
 
 // Retrieves this container plus a directory mounted at the given path.
 func (r *Container) WithMountedDirectory(path string, source *Directory, opts ...ContainerWithMountedDirectoryOpts) *Container {
+
 	q := r.Q.Select("withMountedDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1103,6 +1119,7 @@ type ContainerWithMountedFileOpts struct {
 
 // Retrieves this container plus a file mounted at the given path.
 func (r *Container) WithMountedFile(path string, source *File, opts ...ContainerWithMountedFileOpts) *Container {
+
 	q := r.Q.Select("withMountedFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1131,6 +1148,7 @@ type ContainerWithMountedSecretOpts struct {
 
 // Retrieves this container plus a secret mounted into a file at the given path.
 func (r *Container) WithMountedSecret(path string, source *Secret, opts ...ContainerWithMountedSecretOpts) *Container {
+
 	q := r.Q.Select("withMountedSecret")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1149,6 +1167,7 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 
 // Retrieves this container plus a temporary directory mounted at the given path.
 func (r *Container) WithMountedTemp(path string) *Container {
+
 	q := r.Q.Select("withMountedTemp")
 	q = q.Arg("path", path)
 
@@ -1176,6 +1195,7 @@ type ContainerWithNewFileOpts struct {
 
 // Retrieves this container plus a new file written at the given path.
 func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
+
 	q := r.Q.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `contents` optional argument
@@ -1201,6 +1221,7 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 
 // Retrieves this container with a registry authentication for a given address.
 func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
+
 	q := r.Q.Select("withRegistryAuth")
 	q = q.Arg("address", address)
 	q = q.Arg("username", username)
@@ -1214,6 +1235,7 @@ func (r *Container) WithRegistryAuth(address string, username string, secret *Se
 
 // Initializes this container from this DirectoryID.
 func (r *Container) WithRootfs(directory *Directory) *Container {
+
 	q := r.Q.Select("withRootfs")
 	q = q.Arg("directory", directory)
 
@@ -1225,6 +1247,7 @@ func (r *Container) WithRootfs(directory *Directory) *Container {
 
 // Retrieves this container plus an env variable containing the given secret.
 func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
+
 	q := r.Q.Select("withSecretVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
@@ -1246,6 +1269,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+
 	q := r.Q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
@@ -1268,6 +1292,7 @@ type ContainerWithUnixSocketOpts struct {
 
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket, opts ...ContainerWithUnixSocketOpts) *Container {
+
 	q := r.Q.Select("withUnixSocket")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1286,6 +1311,7 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 
 // Retrieves this container with a different command user.
 func (r *Container) WithUser(name string) *Container {
+
 	q := r.Q.Select("withUser")
 	q = q.Arg("name", name)
 
@@ -1296,6 +1322,7 @@ func (r *Container) WithUser(name string) *Container {
 }
 
 func (r *Container) WithVersion(version string) *Container {
+
 	q := r.Q.Select("withVersion")
 	q = q.Arg("version", version)
 
@@ -1307,6 +1334,7 @@ func (r *Container) WithVersion(version string) *Container {
 
 // Retrieves this container with a different working directory.
 func (r *Container) WithWorkdir(path string) *Container {
+
 	q := r.Q.Select("withWorkdir")
 	q = q.Arg("path", path)
 
@@ -1318,6 +1346,7 @@ func (r *Container) WithWorkdir(path string) *Container {
 
 // Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
+
 	q := r.Q.Select("withoutEnvVariable")
 	q = q.Arg("name", name)
 
@@ -1337,6 +1366,7 @@ type ContainerWithoutExposedPortOpts struct {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
+
 	q := r.Q.Select("withoutExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `protocol` optional argument
@@ -1357,6 +1387,7 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 //
 // This is the initial state of all containers.
 func (r *Container) WithoutFocus() *Container {
+
 	q := r.Q.Select("withoutFocus")
 
 	return &Container{
@@ -1367,6 +1398,7 @@ func (r *Container) WithoutFocus() *Container {
 
 // Retrieves this container minus the given environment label.
 func (r *Container) WithoutLabel(name string) *Container {
+
 	q := r.Q.Select("withoutLabel")
 	q = q.Arg("name", name)
 
@@ -1378,6 +1410,7 @@ func (r *Container) WithoutLabel(name string) *Container {
 
 // Retrieves this container after unmounting everything at the given path.
 func (r *Container) WithoutMount(path string) *Container {
+
 	q := r.Q.Select("withoutMount")
 	q = q.Arg("path", path)
 
@@ -1389,6 +1422,7 @@ func (r *Container) WithoutMount(path string) *Container {
 
 // Retrieves this container without the registry authentication of a given address.
 func (r *Container) WithoutRegistryAuth(address string) *Container {
+
 	q := r.Q.Select("withoutRegistryAuth")
 	q = q.Arg("address", address)
 
@@ -1400,6 +1434,7 @@ func (r *Container) WithoutRegistryAuth(address string) *Container {
 
 // Retrieves this container with a previously added Unix socket removed.
 func (r *Container) WithoutUnixSocket(path string) *Container {
+
 	q := r.Q.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
 
@@ -1411,100 +1446,11 @@ func (r *Container) WithoutUnixSocket(path string) *Container {
 
 // Retrieves the working directory for all commands.
 func (r *Container) Workdir(ctx context.Context) (string, error) {
+
 	if r.workdir != nil {
 		return *r.workdir, nil
 	}
 	q := r.Q.Select("workdir")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.C)
-}
-
-type Dagger struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-// Build the Dagger CLI
-func (r *Dagger) Cli() *Directory {
-	q := r.Q.Select("cli")
-
-	return &Directory{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Dagger) DevShell() *Container {
-	q := r.Q.Select("devShell")
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Lint the Dagger engine code
-func (r *Dagger) EngineLint() *EnvironmentCheck {
-	q := r.Q.Select("engineLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Lint the Nodejs SDK
-func (r *Dagger) NodejsLint() *EnvironmentCheck {
-	q := r.Q.Select("nodejsLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type Daggergo struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-// Lint the Dagger Go SDK
-// TODO: once namespacing is in place, can just name this "Lint"
-func (r *Daggergo) GoLint() *EnvironmentCheck {
-	q := r.Q.Select("goLint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type Daggerpython struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-
-	publish *string
-}
-
-// Lint the Python SDK
-func (r *Daggerpython) Lint() *EnvironmentCheck {
-	q := r.Q.Select("lint")
-
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// Publish the client.
-func (r *Daggerpython) Publish(ctx context.Context) (string, error) {
-	if r.publish != nil {
-		return *r.publish, nil
-	}
-	q := r.Q.Select("publish")
 
 	var response string
 
@@ -1534,6 +1480,7 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 // Gets the difference between this directory and an another directory.
 func (r *Directory) Diff(other *Directory) *Directory {
+
 	q := r.Q.Select("diff")
 	q = q.Arg("other", other)
 
@@ -1545,6 +1492,7 @@ func (r *Directory) Diff(other *Directory) *Directory {
 
 // Retrieves a directory at the given path.
 func (r *Directory) Directory(path string) *Directory {
+
 	q := r.Q.Select("directory")
 	q = q.Arg("path", path)
 
@@ -1574,6 +1522,7 @@ type DirectoryDockerBuildOpts struct {
 
 // Builds a new Docker container from this directory.
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
+
 	q := r.Q.Select("dockerBuild")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerfile` optional argument
@@ -1612,6 +1561,7 @@ type DirectoryEntriesOpts struct {
 
 // Returns a list of files and directories at the given path.
 func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
+
 	q := r.Q.Select("entries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `path` optional argument
@@ -1628,6 +1578,7 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 
 // Writes the contents of the directory to a path on the host.
 func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
+
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -1642,6 +1593,7 @@ func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
 
 // Retrieves a file at the given path.
 func (r *Directory) File(path string) *File {
+
 	q := r.Q.Select("file")
 	q = q.Arg("path", path)
 
@@ -1653,6 +1605,7 @@ func (r *Directory) File(path string) *File {
 
 // The content-addressed identifier of the directory.
 func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -1684,6 +1637,7 @@ func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Directory) Labels(ctx context.Context) ([]Label, error) {
+
 	q := r.Q.Select("labels")
 
 	q = q.Select("name value")
@@ -1724,6 +1678,7 @@ type DirectoryPipelineOpts struct {
 
 // Creates a named sub-pipeline
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
+
 	q := r.Q.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -1744,6 +1699,7 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 }
 
 func (r *Directory) Sbom(ctx context.Context) (string, error) {
+
 	if r.sbom != nil {
 		return *r.sbom, nil
 	}
@@ -1757,6 +1713,7 @@ func (r *Directory) Sbom(ctx context.Context) (string, error) {
 
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
+
 	q := r.Q.Select("sync")
 
 	return r, q.Execute(ctx, r.C)
@@ -1764,6 +1721,7 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 
 // TODO
 func (r *Directory) Version(ctx context.Context) (string, error) {
+
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -1785,6 +1743,7 @@ type DirectoryWithDirectoryOpts struct {
 
 // Retrieves this directory plus a directory written at the given path.
 func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
+
 	q := r.Q.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -1815,6 +1774,7 @@ type DirectoryWithFileOpts struct {
 
 // Retrieves this directory plus the contents of the given file copied to the given path.
 func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
+
 	q := r.Q.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -1832,6 +1792,7 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 }
 
 func (r *Directory) WithLabel(name string, value string) *Directory {
+
 	q := r.Q.Select("withLabel")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -1852,6 +1813,7 @@ type DirectoryWithNewDirectoryOpts struct {
 
 // Retrieves this directory plus a new directory created at the given path.
 func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
+
 	q := r.Q.Select("withNewDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -1877,6 +1839,7 @@ type DirectoryWithNewFileOpts struct {
 
 // Retrieves this directory plus a new file written at the given path.
 func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
+
 	q := r.Q.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -1895,6 +1858,7 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 
 // Retrieves this directory with all file/dir timestamps set to the given time.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
+
 	q := r.Q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
 
@@ -1905,6 +1869,7 @@ func (r *Directory) WithTimestamps(timestamp int) *Directory {
 }
 
 func (r *Directory) WithVersion(version string) *Directory {
+
 	q := r.Q.Select("withVersion")
 	q = q.Arg("version", version)
 
@@ -1916,6 +1881,7 @@ func (r *Directory) WithVersion(version string) *Directory {
 
 // Retrieves this directory with the directory at the given path removed.
 func (r *Directory) WithoutDirectory(path string) *Directory {
+
 	q := r.Q.Select("withoutDirectory")
 	q = q.Arg("path", path)
 
@@ -1927,6 +1893,7 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 
 // Retrieves this directory with the file at the given path removed.
 func (r *Directory) WithoutFile(path string) *Directory {
+
 	q := r.Q.Select("withoutFile")
 	q = q.Arg("path", path)
 
@@ -1947,6 +1914,7 @@ type EnvVariable struct {
 
 // The environment variable name.
 func (r *EnvVariable) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -1960,6 +1928,7 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 
 // The environment variable value.
 func (r *EnvVariable) Value(ctx context.Context) (string, error) {
+
 	if r.value != nil {
 		return *r.value, nil
 	}
@@ -1989,6 +1958,7 @@ func (r *Environment) With(f WithEnvironmentFunc) *Environment {
 }
 
 func (r *Environment) Artifact(name string) *EnvironmentArtifact {
+
 	q := r.Q.Select("artifact")
 	q = q.Arg("name", name)
 
@@ -1999,6 +1969,7 @@ func (r *Environment) Artifact(name string) *EnvironmentArtifact {
 }
 
 func (r *Environment) Artifacts(ctx context.Context) ([]EnvironmentArtifact, error) {
+
 	q := r.Q.Select("artifacts")
 
 	q = q.Select("id")
@@ -2030,6 +2001,7 @@ func (r *Environment) Artifacts(ctx context.Context) ([]EnvironmentArtifact, err
 
 // TODO
 func (r *Environment) Check(name string) *EnvironmentCheck {
+
 	q := r.Q.Select("check")
 	q = q.Arg("name", name)
 
@@ -2041,6 +2013,7 @@ func (r *Environment) Check(name string) *EnvironmentCheck {
 
 // TODO
 func (r *Environment) Checks(ctx context.Context) ([]EnvironmentCheck, error) {
+
 	q := r.Q.Select("checks")
 
 	q = q.Select("id")
@@ -2072,6 +2045,7 @@ func (r *Environment) Checks(ctx context.Context) ([]EnvironmentCheck, error) {
 
 // TODO
 func (r *Environment) Command(name string) *EnvironmentCommand {
+
 	q := r.Q.Select("command")
 	q = q.Arg("name", name)
 
@@ -2083,6 +2057,7 @@ func (r *Environment) Command(name string) *EnvironmentCommand {
 
 // Commands provided by this environment
 func (r *Environment) Commands(ctx context.Context) ([]EnvironmentCommand, error) {
+
 	q := r.Q.Select("commands")
 
 	q = q.Select("id")
@@ -2114,6 +2089,7 @@ func (r *Environment) Commands(ctx context.Context) ([]EnvironmentCommand, error
 
 // A unique identifier for this environment.
 func (r *Environment) ID(ctx context.Context) (EnvironmentID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2146,6 +2122,7 @@ func (r *Environment) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // Initialize this environment from the given directory and config path
 func (r *Environment) Load(source *Directory, configPath string) *Environment {
+
 	q := r.Q.Select("load")
 	q = q.Arg("source", source)
 	q = q.Arg("configPath", configPath)
@@ -2158,6 +2135,7 @@ func (r *Environment) Load(source *Directory, configPath string) *Environment {
 
 // Name of the environment
 func (r *Environment) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2171,6 +2149,7 @@ func (r *Environment) Name(ctx context.Context) (string, error) {
 
 // TODO: the runtime container for the environment
 func (r *Environment) Runtime() *Container {
+
 	q := r.Q.Select("runtime")
 
 	return &Container{
@@ -2181,6 +2160,7 @@ func (r *Environment) Runtime() *Container {
 
 // TODO
 func (r *Environment) Shell(name string) *EnvironmentShell {
+
 	q := r.Q.Select("shell")
 	q = q.Arg("name", name)
 
@@ -2192,6 +2172,7 @@ func (r *Environment) Shell(name string) *EnvironmentShell {
 
 // TODO
 func (r *Environment) Shells(ctx context.Context) ([]EnvironmentShell, error) {
+
 	q := r.Q.Select("shells")
 
 	q = q.Select("id")
@@ -2222,6 +2203,7 @@ func (r *Environment) Shells(ctx context.Context) ([]EnvironmentShell, error) {
 }
 
 func (r *Environment) WithArtifact(id *EnvironmentArtifact) *Environment {
+
 	q := r.Q.Select("withArtifact")
 	q = q.Arg("id", id)
 
@@ -2233,6 +2215,7 @@ func (r *Environment) WithArtifact(id *EnvironmentArtifact) *Environment {
 
 // TODO
 func (r *Environment) WithCheck(id *EnvironmentCheck) *Environment {
+
 	q := r.Q.Select("withCheck")
 	q = q.Arg("id", id)
 
@@ -2244,6 +2227,7 @@ func (r *Environment) WithCheck(id *EnvironmentCheck) *Environment {
 
 // TODO
 func (r *Environment) WithCommand(id *EnvironmentCommand) *Environment {
+
 	q := r.Q.Select("withCommand")
 	q = q.Arg("id", id)
 
@@ -2255,6 +2239,7 @@ func (r *Environment) WithCommand(id *EnvironmentCommand) *Environment {
 
 // TODO
 func (r *Environment) WithExtension(id *Environment, namespace string) *Environment {
+
 	q := r.Q.Select("withExtension")
 	q = q.Arg("id", id)
 	q = q.Arg("namespace", namespace)
@@ -2267,6 +2252,7 @@ func (r *Environment) WithExtension(id *Environment, namespace string) *Environm
 
 // TODO
 func (r *Environment) WithFunction(id *EnvironmentFunction) *Environment {
+
 	q := r.Q.Select("withFunction")
 	q = q.Arg("id", id)
 
@@ -2278,6 +2264,7 @@ func (r *Environment) WithFunction(id *EnvironmentFunction) *Environment {
 
 // TODO
 func (r *Environment) WithShell(id *EnvironmentShell) *Environment {
+
 	q := r.Q.Select("withShell")
 	q = q.Arg("id", id)
 
@@ -2308,6 +2295,7 @@ func (r *EnvironmentArtifact) With(f WithEnvironmentArtifactFunc) *EnvironmentAr
 }
 
 func (r *EnvironmentArtifact) Container() *Container {
+
 	q := r.Q.Select("container")
 
 	return &Container{
@@ -2318,6 +2306,7 @@ func (r *EnvironmentArtifact) Container() *Container {
 
 // TODO
 func (r *EnvironmentArtifact) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -2330,6 +2319,7 @@ func (r *EnvironmentArtifact) Description(ctx context.Context) (string, error) {
 }
 
 func (r *EnvironmentArtifact) Directory() *Directory {
+
 	q := r.Q.Select("directory")
 
 	return &Directory{
@@ -2340,6 +2330,7 @@ func (r *EnvironmentArtifact) Directory() *Directory {
 
 // TODO
 func (r *EnvironmentArtifact) Export(ctx context.Context, path string) (bool, error) {
+
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -2353,6 +2344,7 @@ func (r *EnvironmentArtifact) Export(ctx context.Context, path string) (bool, er
 }
 
 func (r *EnvironmentArtifact) File() *File {
+
 	q := r.Q.Select("file")
 
 	return &File{
@@ -2363,6 +2355,7 @@ func (r *EnvironmentArtifact) File() *File {
 
 // Flags accepted by this artifact.
 func (r *EnvironmentArtifact) Flags(ctx context.Context) ([]EnvironmentArtifactFlag, error) {
+
 	q := r.Q.Select("flags")
 
 	q = q.Select("description name")
@@ -2394,6 +2387,7 @@ func (r *EnvironmentArtifact) Flags(ctx context.Context) ([]EnvironmentArtifactF
 }
 
 func (r *EnvironmentArtifact) ID(ctx context.Context) (EnvironmentArtifactID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2426,6 +2420,7 @@ func (r *EnvironmentArtifact) XXX_GraphQLID(ctx context.Context) (string, error)
 
 // TODO
 func (r *EnvironmentArtifact) Labels(ctx context.Context) ([]Label, error) {
+
 	q := r.Q.Select("labels")
 
 	q = q.Select("name value")
@@ -2458,6 +2453,7 @@ func (r *EnvironmentArtifact) Labels(ctx context.Context) ([]Label, error) {
 
 // TODO
 func (r *EnvironmentArtifact) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2471,6 +2467,7 @@ func (r *EnvironmentArtifact) Name(ctx context.Context) (string, error) {
 
 // TODO
 func (r *EnvironmentArtifact) Sbom(ctx context.Context) (string, error) {
+
 	if r.sbom != nil {
 		return *r.sbom, nil
 	}
@@ -2484,6 +2481,7 @@ func (r *EnvironmentArtifact) Sbom(ctx context.Context) (string, error) {
 
 // TODO
 func (r *EnvironmentArtifact) SetStringFlag(name string, value string) *EnvironmentArtifact {
+
 	q := r.Q.Select("setStringFlag")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -2496,6 +2494,7 @@ func (r *EnvironmentArtifact) SetStringFlag(name string, value string) *Environm
 
 // TODO
 func (r *EnvironmentArtifact) Version(ctx context.Context) (string, error) {
+
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -2509,6 +2508,7 @@ func (r *EnvironmentArtifact) Version(ctx context.Context) (string, error) {
 
 // TODO: this doesn't feel right, has to be a better way w/ unions or interfaces
 func (r *EnvironmentArtifact) WithContainer(container *Container) *EnvironmentArtifact {
+
 	q := r.Q.Select("withContainer")
 	q = q.Arg("container", container)
 
@@ -2519,6 +2519,7 @@ func (r *EnvironmentArtifact) WithContainer(container *Container) *EnvironmentAr
 }
 
 func (r *EnvironmentArtifact) WithDescription(description string) *EnvironmentArtifact {
+
 	q := r.Q.Select("withDescription")
 	q = q.Arg("description", description)
 
@@ -2529,6 +2530,7 @@ func (r *EnvironmentArtifact) WithDescription(description string) *EnvironmentAr
 }
 
 func (r *EnvironmentArtifact) WithDirectory(directory *Directory) *EnvironmentArtifact {
+
 	q := r.Q.Select("withDirectory")
 	q = q.Arg("directory", directory)
 
@@ -2539,6 +2541,7 @@ func (r *EnvironmentArtifact) WithDirectory(directory *Directory) *EnvironmentAr
 }
 
 func (r *EnvironmentArtifact) WithFile(file *File) *EnvironmentArtifact {
+
 	q := r.Q.Select("withFile")
 	q = q.Arg("file", file)
 
@@ -2555,6 +2558,7 @@ type EnvironmentArtifactWithFlagOpts struct {
 
 // TODO
 func (r *EnvironmentArtifact) WithFlag(name string, opts ...EnvironmentArtifactWithFlagOpts) *EnvironmentArtifact {
+
 	q := r.Q.Select("withFlag")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -2571,6 +2575,7 @@ func (r *EnvironmentArtifact) WithFlag(name string, opts ...EnvironmentArtifactW
 }
 
 func (r *EnvironmentArtifact) WithName(name string) *EnvironmentArtifact {
+
 	q := r.Q.Select("withName")
 	q = q.Arg("name", name)
 
@@ -2590,6 +2595,7 @@ type EnvironmentArtifactFlag struct {
 
 // Documentation for what this flag sets.
 func (r *EnvironmentArtifactFlag) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -2603,6 +2609,7 @@ func (r *EnvironmentArtifactFlag) Description(ctx context.Context) (string, erro
 
 // The name of the flag.
 func (r *EnvironmentArtifactFlag) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2634,6 +2641,7 @@ func (r *EnvironmentCheck) With(f WithEnvironmentCheckFunc) *EnvironmentCheck {
 
 // Documentation for what this check checks.
 func (r *EnvironmentCheck) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -2647,6 +2655,7 @@ func (r *EnvironmentCheck) Description(ctx context.Context) (string, error) {
 
 // Flags accepted by this check.
 func (r *EnvironmentCheck) Flags(ctx context.Context) ([]EnvironmentCheckFlag, error) {
+
 	q := r.Q.Select("flags")
 
 	q = q.Select("description name")
@@ -2679,6 +2688,7 @@ func (r *EnvironmentCheck) Flags(ctx context.Context) ([]EnvironmentCheckFlag, e
 
 // A unique identifier for this check.
 func (r *EnvironmentCheck) ID(ctx context.Context) (EnvironmentCheckID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2711,6 +2721,7 @@ func (r *EnvironmentCheck) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // The name of the check.
 func (r *EnvironmentCheck) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2724,6 +2735,7 @@ func (r *EnvironmentCheck) Name(ctx context.Context) (string, error) {
 
 // TODO
 func (r *EnvironmentCheck) Result() *EnvironmentCheckResult {
+
 	q := r.Q.Select("result")
 
 	return &EnvironmentCheckResult{
@@ -2734,6 +2746,7 @@ func (r *EnvironmentCheck) Result() *EnvironmentCheckResult {
 
 // TODO
 func (r *EnvironmentCheck) SetStringFlag(name string, value string) *EnvironmentCheck {
+
 	q := r.Q.Select("setStringFlag")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -2746,6 +2759,7 @@ func (r *EnvironmentCheck) SetStringFlag(name string, value string) *Environment
 
 // TODO
 func (r *EnvironmentCheck) Subchecks(ctx context.Context) ([]EnvironmentCheck, error) {
+
 	q := r.Q.Select("subchecks")
 
 	q = q.Select("id")
@@ -2777,6 +2791,7 @@ func (r *EnvironmentCheck) Subchecks(ctx context.Context) ([]EnvironmentCheck, e
 
 // TODO
 func (r *EnvironmentCheck) WithContainer(id *Container) *EnvironmentCheck {
+
 	q := r.Q.Select("withContainer")
 	q = q.Arg("id", id)
 
@@ -2788,6 +2803,7 @@ func (r *EnvironmentCheck) WithContainer(id *Container) *EnvironmentCheck {
 
 // TODO
 func (r *EnvironmentCheck) WithDescription(description string) *EnvironmentCheck {
+
 	q := r.Q.Select("withDescription")
 	q = q.Arg("description", description)
 
@@ -2804,6 +2820,7 @@ type EnvironmentCheckWithFlagOpts struct {
 
 // TODO
 func (r *EnvironmentCheck) WithFlag(name string, opts ...EnvironmentCheckWithFlagOpts) *EnvironmentCheck {
+
 	q := r.Q.Select("withFlag")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -2821,6 +2838,7 @@ func (r *EnvironmentCheck) WithFlag(name string, opts ...EnvironmentCheckWithFla
 
 // TODO
 func (r *EnvironmentCheck) WithName(name string) *EnvironmentCheck {
+
 	q := r.Q.Select("withName")
 	q = q.Arg("name", name)
 
@@ -2832,6 +2850,7 @@ func (r *EnvironmentCheck) WithName(name string) *EnvironmentCheck {
 
 // TODO
 func (r *EnvironmentCheck) WithSubcheck(id *EnvironmentCheck) *EnvironmentCheck {
+
 	q := r.Q.Select("withSubcheck")
 	q = q.Arg("id", id)
 
@@ -2852,6 +2871,7 @@ type EnvironmentCheckFlag struct {
 
 // Documentation for what this flag sets.
 func (r *EnvironmentCheckFlag) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -2865,6 +2885,7 @@ func (r *EnvironmentCheckFlag) Description(ctx context.Context) (string, error) 
 
 // The name of the flag.
 func (r *EnvironmentCheckFlag) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2896,6 +2917,7 @@ func (r *EnvironmentCheckResult) With(f WithEnvironmentCheckResultFunc) *Environ
 }
 
 func (r *EnvironmentCheckResult) ID(ctx context.Context) (EnvironmentCheckResultID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2927,6 +2949,7 @@ func (r *EnvironmentCheckResult) XXX_GraphQLID(ctx context.Context) (string, err
 }
 
 func (r *EnvironmentCheckResult) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2939,6 +2962,7 @@ func (r *EnvironmentCheckResult) Name(ctx context.Context) (string, error) {
 }
 
 func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
+
 	if r.output != nil {
 		return *r.output, nil
 	}
@@ -2951,6 +2975,7 @@ func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
 }
 
 func (r *EnvironmentCheckResult) Subresults(ctx context.Context) ([]EnvironmentCheckResult, error) {
+
 	q := r.Q.Select("subresults")
 
 	q = q.Select("id")
@@ -2981,6 +3006,7 @@ func (r *EnvironmentCheckResult) Subresults(ctx context.Context) ([]EnvironmentC
 }
 
 func (r *EnvironmentCheckResult) Success(ctx context.Context) (bool, error) {
+
 	if r.success != nil {
 		return *r.success, nil
 	}
@@ -2993,6 +3019,7 @@ func (r *EnvironmentCheckResult) Success(ctx context.Context) (bool, error) {
 }
 
 func (r *EnvironmentCheckResult) WithName(name string) *EnvironmentCheckResult {
+
 	q := r.Q.Select("withName")
 	q = q.Arg("name", name)
 
@@ -3003,6 +3030,7 @@ func (r *EnvironmentCheckResult) WithName(name string) *EnvironmentCheckResult {
 }
 
 func (r *EnvironmentCheckResult) WithOutput(output string) *EnvironmentCheckResult {
+
 	q := r.Q.Select("withOutput")
 	q = q.Arg("output", output)
 
@@ -3013,6 +3041,7 @@ func (r *EnvironmentCheckResult) WithOutput(output string) *EnvironmentCheckResu
 }
 
 func (r *EnvironmentCheckResult) WithSubresult(result *EnvironmentCheckResult) *EnvironmentCheckResult {
+
 	q := r.Q.Select("withSubresult")
 	q = q.Arg("result", result)
 
@@ -3023,6 +3052,7 @@ func (r *EnvironmentCheckResult) WithSubresult(result *EnvironmentCheckResult) *
 }
 
 func (r *EnvironmentCheckResult) WithSuccess(success bool) *EnvironmentCheckResult {
+
 	q := r.Q.Select("withSuccess")
 	q = q.Arg("success", success)
 
@@ -3053,6 +3083,7 @@ func (r *EnvironmentCommand) With(f WithEnvironmentCommandFunc) *EnvironmentComm
 
 // Documentation for what this command does.
 func (r *EnvironmentCommand) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -3066,6 +3097,7 @@ func (r *EnvironmentCommand) Description(ctx context.Context) (string, error) {
 
 // Flags accepted by this command.
 func (r *EnvironmentCommand) Flags(ctx context.Context) ([]EnvironmentCommandFlag, error) {
+
 	q := r.Q.Select("flags")
 
 	q = q.Select("description name")
@@ -3098,6 +3130,7 @@ func (r *EnvironmentCommand) Flags(ctx context.Context) ([]EnvironmentCommandFla
 
 // A unique identifier for this command.
 func (r *EnvironmentCommand) ID(ctx context.Context) (EnvironmentCommandID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -3130,6 +3163,7 @@ func (r *EnvironmentCommand) XXX_GraphQLID(ctx context.Context) (string, error) 
 
 // TODO
 func (r *EnvironmentCommand) Invoke() *InvokeCommandResult {
+
 	q := r.Q.Select("invoke")
 
 	return &InvokeCommandResult{
@@ -3140,6 +3174,7 @@ func (r *EnvironmentCommand) Invoke() *InvokeCommandResult {
 
 // The name of the command.
 func (r *EnvironmentCommand) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3153,6 +3188,7 @@ func (r *EnvironmentCommand) Name(ctx context.Context) (string, error) {
 
 // The name of the type returned by this command.
 func (r *EnvironmentCommand) ResultType(ctx context.Context) (string, error) {
+
 	if r.resultType != nil {
 		return *r.resultType, nil
 	}
@@ -3166,6 +3202,7 @@ func (r *EnvironmentCommand) ResultType(ctx context.Context) (string, error) {
 
 // TODO, can we make an input that's like map[string]any?
 func (r *EnvironmentCommand) SetStringFlag(name string, value string) *EnvironmentCommand {
+
 	q := r.Q.Select("setStringFlag")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -3178,6 +3215,7 @@ func (r *EnvironmentCommand) SetStringFlag(name string, value string) *Environme
 
 // TODO
 func (r *EnvironmentCommand) WithDescription(description string) *EnvironmentCommand {
+
 	q := r.Q.Select("withDescription")
 	q = q.Arg("description", description)
 
@@ -3194,6 +3232,7 @@ type EnvironmentCommandWithFlagOpts struct {
 
 // TODO
 func (r *EnvironmentCommand) WithFlag(name string, opts ...EnvironmentCommandWithFlagOpts) *EnvironmentCommand {
+
 	q := r.Q.Select("withFlag")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -3211,6 +3250,7 @@ func (r *EnvironmentCommand) WithFlag(name string, opts ...EnvironmentCommandWit
 
 // TODO
 func (r *EnvironmentCommand) WithName(name string) *EnvironmentCommand {
+
 	q := r.Q.Select("withName")
 	q = q.Arg("name", name)
 
@@ -3222,6 +3262,7 @@ func (r *EnvironmentCommand) WithName(name string) *EnvironmentCommand {
 
 // TODO
 func (r *EnvironmentCommand) WithResultType(name string) *EnvironmentCommand {
+
 	q := r.Q.Select("withResultType")
 	q = q.Arg("name", name)
 
@@ -3242,6 +3283,7 @@ type EnvironmentCommandFlag struct {
 
 // Documentation for what this flag sets.
 func (r *EnvironmentCommandFlag) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -3255,6 +3297,7 @@ func (r *EnvironmentCommandFlag) Description(ctx context.Context) (string, error
 
 // The name of the flag.
 func (r *EnvironmentCommandFlag) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3287,6 +3330,7 @@ func (r *EnvironmentFunction) With(f WithEnvironmentFunctionFunc) *EnvironmentFu
 
 // TODO
 func (r *EnvironmentFunction) Args(ctx context.Context) ([]EnvironmentFunctionArg, error) {
+
 	q := r.Q.Select("args")
 
 	q = q.Select("argType description isList name")
@@ -3321,6 +3365,7 @@ func (r *EnvironmentFunction) Args(ctx context.Context) ([]EnvironmentFunctionAr
 
 // TODO
 func (r *EnvironmentFunction) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -3334,6 +3379,7 @@ func (r *EnvironmentFunction) Description(ctx context.Context) (string, error) {
 
 // A unique identifier for this function.
 func (r *EnvironmentFunction) ID(ctx context.Context) (EnvironmentFunctionID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -3366,6 +3412,7 @@ func (r *EnvironmentFunction) XXX_GraphQLID(ctx context.Context) (string, error)
 
 // The name of the function.
 func (r *EnvironmentFunction) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3379,6 +3426,7 @@ func (r *EnvironmentFunction) Name(ctx context.Context) (string, error) {
 
 // The name of the type returned by this function.
 func (r *EnvironmentFunction) ResultType(ctx context.Context) (string, error) {
+
 	if r.resultType != nil {
 		return *r.resultType, nil
 	}
@@ -3399,6 +3447,7 @@ type EnvironmentFunctionWithArgOpts struct {
 
 // TODO
 func (r *EnvironmentFunction) WithArg(name string, argType string, isList bool, opts ...EnvironmentFunctionWithArgOpts) *EnvironmentFunction {
+
 	q := r.Q.Select("withArg")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `isOptional` optional argument
@@ -3422,6 +3471,7 @@ func (r *EnvironmentFunction) WithArg(name string, argType string, isList bool, 
 
 // TODO
 func (r *EnvironmentFunction) WithDescription(description string) *EnvironmentFunction {
+
 	q := r.Q.Select("withDescription")
 	q = q.Arg("description", description)
 
@@ -3433,6 +3483,7 @@ func (r *EnvironmentFunction) WithDescription(description string) *EnvironmentFu
 
 // TODO
 func (r *EnvironmentFunction) WithName(name string) *EnvironmentFunction {
+
 	q := r.Q.Select("withName")
 	q = q.Arg("name", name)
 
@@ -3444,6 +3495,7 @@ func (r *EnvironmentFunction) WithName(name string) *EnvironmentFunction {
 
 // TODO
 func (r *EnvironmentFunction) WithResultType(name string) *EnvironmentFunction {
+
 	q := r.Q.Select("withResultType")
 	q = q.Arg("name", name)
 
@@ -3466,6 +3518,7 @@ type EnvironmentFunctionArg struct {
 
 // TODO, should be enum
 func (r *EnvironmentFunctionArg) ArgType(ctx context.Context) (string, error) {
+
 	if r.argType != nil {
 		return *r.argType, nil
 	}
@@ -3479,6 +3532,7 @@ func (r *EnvironmentFunctionArg) ArgType(ctx context.Context) (string, error) {
 
 // Documentation for what this arg sets.
 func (r *EnvironmentFunctionArg) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -3492,6 +3546,7 @@ func (r *EnvironmentFunctionArg) Description(ctx context.Context) (string, error
 
 // TODO
 func (r *EnvironmentFunctionArg) IsList(ctx context.Context) (bool, error) {
+
 	if r.isList != nil {
 		return *r.isList, nil
 	}
@@ -3505,6 +3560,7 @@ func (r *EnvironmentFunctionArg) IsList(ctx context.Context) (bool, error) {
 
 // The name of the arg.
 func (r *EnvironmentFunctionArg) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3537,6 +3593,7 @@ func (r *EnvironmentShell) With(f WithEnvironmentShellFunc) *EnvironmentShell {
 
 // Documentation for what this shell shells. TODO: fix
 func (r *EnvironmentShell) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -3550,6 +3607,7 @@ func (r *EnvironmentShell) Description(ctx context.Context) (string, error) {
 
 // TODO
 func (r *EnvironmentShell) Endpoint(ctx context.Context) (string, error) {
+
 	if r.endpoint != nil {
 		return *r.endpoint, nil
 	}
@@ -3563,6 +3621,7 @@ func (r *EnvironmentShell) Endpoint(ctx context.Context) (string, error) {
 
 // Flags accepted by this shell.
 func (r *EnvironmentShell) Flags(ctx context.Context) ([]EnvironmentShellFlag, error) {
+
 	q := r.Q.Select("flags")
 
 	q = q.Select("description name")
@@ -3595,6 +3654,7 @@ func (r *EnvironmentShell) Flags(ctx context.Context) ([]EnvironmentShellFlag, e
 
 // A unique identifier for this shell.
 func (r *EnvironmentShell) ID(ctx context.Context) (EnvironmentShellID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -3627,6 +3687,7 @@ func (r *EnvironmentShell) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // The name of the shell.
 func (r *EnvironmentShell) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3640,6 +3701,7 @@ func (r *EnvironmentShell) Name(ctx context.Context) (string, error) {
 
 // TODO
 func (r *EnvironmentShell) SetStringFlag(name string, value string) *EnvironmentShell {
+
 	q := r.Q.Select("setStringFlag")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -3652,6 +3714,7 @@ func (r *EnvironmentShell) SetStringFlag(name string, value string) *Environment
 
 // TODO
 func (r *EnvironmentShell) WithDescription(description string) *EnvironmentShell {
+
 	q := r.Q.Select("withDescription")
 	q = q.Arg("description", description)
 
@@ -3668,6 +3731,7 @@ type EnvironmentShellWithFlagOpts struct {
 
 // TODO
 func (r *EnvironmentShell) WithFlag(name string, opts ...EnvironmentShellWithFlagOpts) *EnvironmentShell {
+
 	q := r.Q.Select("withFlag")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -3685,6 +3749,7 @@ func (r *EnvironmentShell) WithFlag(name string, opts ...EnvironmentShellWithFla
 
 // TODO
 func (r *EnvironmentShell) WithName(name string) *EnvironmentShell {
+
 	q := r.Q.Select("withName")
 	q = q.Arg("name", name)
 
@@ -3705,6 +3770,7 @@ type EnvironmentShellFlag struct {
 
 // Documentation for what this flag sets.
 func (r *EnvironmentShellFlag) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -3718,6 +3784,7 @@ func (r *EnvironmentShellFlag) Description(ctx context.Context) (string, error) 
 
 // The name of the flag.
 func (r *EnvironmentShellFlag) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3739,6 +3806,7 @@ type Extensions struct {
 
 // TODO: needed?
 func (r *Extensions) Dummy(ctx context.Context) (bool, error) {
+
 	if r.dummy != nil {
 		return *r.dummy, nil
 	}
@@ -3774,6 +3842,7 @@ func (r *File) With(f WithFileFunc) *File {
 
 // Retrieves the contents of the file.
 func (r *File) Contents(ctx context.Context) (string, error) {
+
 	if r.contents != nil {
 		return *r.contents, nil
 	}
@@ -3794,6 +3863,7 @@ type FileExportOpts struct {
 
 // Writes the file to a file path on the host.
 func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (bool, error) {
+
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -3814,6 +3884,7 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 
 // Retrieves the content-addressed identifier of the file.
 func (r *File) ID(ctx context.Context) (FileID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -3845,6 +3916,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *File) Labels(ctx context.Context) ([]Label, error) {
+
 	q := r.Q.Select("labels")
 
 	q = q.Select("name value")
@@ -3876,6 +3948,7 @@ func (r *File) Labels(ctx context.Context) ([]Label, error) {
 }
 
 func (r *File) Sbom(ctx context.Context) (string, error) {
+
 	if r.sbom != nil {
 		return *r.sbom, nil
 	}
@@ -3889,6 +3962,7 @@ func (r *File) Sbom(ctx context.Context) (string, error) {
 
 // Gets the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
+
 	if r.size != nil {
 		return *r.size, nil
 	}
@@ -3902,6 +3976,7 @@ func (r *File) Size(ctx context.Context) (int, error) {
 
 // Force evaluation in the engine.
 func (r *File) Sync(ctx context.Context) (*File, error) {
+
 	q := r.Q.Select("sync")
 
 	return r, q.Execute(ctx, r.C)
@@ -3909,6 +3984,7 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 
 // TODO
 func (r *File) Version(ctx context.Context) (string, error) {
+
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -3921,6 +3997,7 @@ func (r *File) Version(ctx context.Context) (string, error) {
 }
 
 func (r *File) WithLabel(name string, value string) *File {
+
 	q := r.Q.Select("withLabel")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
@@ -3933,6 +4010,7 @@ func (r *File) WithLabel(name string, value string) *File {
 
 // Retrieves this file with its created/modified timestamps set to the given time.
 func (r *File) WithTimestamps(timestamp int) *File {
+
 	q := r.Q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
 
@@ -3943,6 +4021,7 @@ func (r *File) WithTimestamps(timestamp int) *File {
 }
 
 func (r *File) WithVersion(version string) *File {
+
 	q := r.Q.Select("withVersion")
 	q = q.Arg("version", version)
 
@@ -3967,6 +4046,7 @@ type GitRefTreeOpts struct {
 
 // The filesystem tree at this ref.
 func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
+
 	q := r.Q.Select("tree")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sshKnownHosts` optional argument
@@ -3993,6 +4073,7 @@ type GitRepository struct {
 
 // Returns details on one branch.
 func (r *GitRepository) Branch(name string) *GitRef {
+
 	q := r.Q.Select("branch")
 	q = q.Arg("name", name)
 
@@ -4004,6 +4085,7 @@ func (r *GitRepository) Branch(name string) *GitRef {
 
 // Returns details on one commit.
 func (r *GitRepository) Commit(id string) *GitRef {
+
 	q := r.Q.Select("commit")
 	q = q.Arg("id", id)
 
@@ -4015,229 +4097,11 @@ func (r *GitRepository) Commit(id string) *GitRef {
 
 // Returns details on one tag.
 func (r *GitRepository) Tag(name string) *GitRef {
+
 	q := r.Q.Select("tag")
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		Q: q,
-		C: r.C,
-	}
-}
-
-type Go struct {
-	Q *querybuilder.Selection
-	C graphql.Client
-}
-
-// BinPath sets $GOBIN to /go/bin and prepends it to $PATH.
-func (r *Go) BinPath(ctr *Container) *Container {
-	q := r.Q.Select("binPath")
-	q = q.Arg("ctr", ctr)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// GoBuildOpts contains options for Go.Build
-type GoBuildOpts struct {
-	Packages []string
-
-	Subdir string
-
-	Xdefs []string
-
-	Static bool
-
-	Race bool
-
-	Goos string
-
-	Goarch string
-
-	BuildFlags []string
-}
-
-func (r *Go) Build(base *Container, src *Directory, opts ...GoBuildOpts) *Directory {
-	q := r.Q.Select("build")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `packages` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Packages) {
-			q = q.Arg("packages", opts[i].Packages)
-		}
-		// `subdir` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Subdir) {
-			q = q.Arg("subdir", opts[i].Subdir)
-		}
-		// `xdefs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Xdefs) {
-			q = q.Arg("xdefs", opts[i].Xdefs)
-		}
-		// `static` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Static) {
-			q = q.Arg("static", opts[i].Static)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `goos` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Goos) {
-			q = q.Arg("goos", opts[i].Goos)
-		}
-		// `goarch` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Goarch) {
-			q = q.Arg("goarch", opts[i].Goarch)
-		}
-		// `buildFlags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildFlags) {
-			q = q.Arg("buildFlags", opts[i].BuildFlags)
-		}
-	}
-	q = q.Arg("base", base)
-	q = q.Arg("src", src)
-
-	return &Directory{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Go) Generate(base *Container, src *Directory) *Directory {
-	q := r.Q.Select("generate")
-	q = q.Arg("base", base)
-	q = q.Arg("src", src)
-
-	return &Directory{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// GlobalCache sets $GOMODCACHE to /go/pkg/mod and $GOCACHE to /go/build-cache
-// and mounts cache volumes to both.
-//
-// The cache volumes are named "go-mod" and "go-build" respectively.
-func (r *Go) GlobalCache(ctr *Container) *Container {
-	q := r.Q.Select("globalCache")
-	q = q.Arg("ctr", ctr)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// GoGolangCilintOpts contains options for Go.GolangCilint
-type GoGolangCilintOpts struct {
-	Verbose bool
-
-	Timeout int
-}
-
-func (r *Go) GolangCilint(base *Container, src *Directory, opts ...GoGolangCilintOpts) *Container {
-	q := r.Q.Select("golangCilint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `verbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Verbose) {
-			q = q.Arg("verbose", opts[i].Verbose)
-		}
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-	}
-	q = q.Arg("base", base)
-	q = q.Arg("src", src)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// GoGotestsumOpts contains options for Go.Gotestsum
-type GoGotestsumOpts struct {
-	Packages []string
-
-	Format string
-
-	Race bool
-
-	GoTestFlags []string
-
-	GotestsumFlags []string
-}
-
-func (r *Go) Gotestsum(base *Container, src *Directory, opts ...GoGotestsumOpts) *Container {
-	q := r.Q.Select("gotestsum")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `packages` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Packages) {
-			q = q.Arg("packages", opts[i].Packages)
-		}
-		// `format` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Format) {
-			q = q.Arg("format", opts[i].Format)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `goTestFlags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GoTestFlags) {
-			q = q.Arg("goTestFlags", opts[i].GoTestFlags)
-		}
-		// `gotestsumFlags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].GotestsumFlags) {
-			q = q.Arg("gotestsumFlags", opts[i].GotestsumFlags)
-		}
-	}
-	q = q.Arg("base", base)
-	q = q.Arg("src", src)
-
-	return &Container{
-		Q: q,
-		C: r.C,
-	}
-}
-
-// GoTestOpts contains options for Go.Test
-type GoTestOpts struct {
-	Packages []string
-
-	Race bool
-
-	Verbose bool
-
-	TestFlags []string
-}
-
-func (r *Go) Test(base *Container, src *Directory, opts ...GoTestOpts) *EnvironmentCheck {
-	q := r.Q.Select("test")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `packages` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Packages) {
-			q = q.Arg("packages", opts[i].Packages)
-		}
-		// `race` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Race) {
-			q = q.Arg("race", opts[i].Race)
-		}
-		// `verbose` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Verbose) {
-			q = q.Arg("verbose", opts[i].Verbose)
-		}
-		// `testFlags` optional argument
-		if !querybuilder.IsZeroValue(opts[i].TestFlags) {
-			q = q.Arg("testFlags", opts[i].TestFlags)
-		}
-	}
-	q = q.Arg("base", base)
-	q = q.Arg("src", src)
-
-	return &EnvironmentCheck{
 		Q: q,
 		C: r.C,
 	}
@@ -4259,6 +4123,7 @@ type HostDirectoryOpts struct {
 
 // Accesses a directory on the host.
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
+
 	q := r.Q.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -4280,6 +4145,7 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 
 // Accesses a file on the host.
 func (r *Host) File(path string) *File {
+
 	q := r.Q.Select("file")
 	q = q.Arg("path", path)
 
@@ -4292,6 +4158,7 @@ func (r *Host) File(path string) *File {
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 // The file is limited to a size of 512000 bytes.
 func (r *Host) SetSecretFile(name string, path string) *Secret {
+
 	q := r.Q.Select("setSecretFile")
 	q = q.Arg("name", name)
 	q = q.Arg("path", path)
@@ -4304,6 +4171,7 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 
 // Accesses a Unix socket on the host.
 func (r *Host) UnixSocket(path string) *Socket {
+
 	q := r.Q.Select("unixSocket")
 	q = q.Arg("path", path)
 
@@ -4323,6 +4191,7 @@ type InvokeCommandResult struct {
 
 // TODO
 func (r *InvokeCommandResult) Directory() *Directory {
+
 	q := r.Q.Select("directory")
 
 	return &Directory{
@@ -4333,6 +4202,7 @@ func (r *InvokeCommandResult) Directory() *Directory {
 
 // TODO
 func (r *InvokeCommandResult) File() *File {
+
 	q := r.Q.Select("file")
 
 	return &File{
@@ -4343,6 +4213,7 @@ func (r *InvokeCommandResult) File() *File {
 
 // TODO
 func (r *InvokeCommandResult) String(ctx context.Context) (string, error) {
+
 	if r.string != nil {
 		return *r.string, nil
 	}
@@ -4365,6 +4236,7 @@ type Label struct {
 
 // The label name.
 func (r *Label) Name(ctx context.Context) (string, error) {
+
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -4378,6 +4250,7 @@ func (r *Label) Name(ctx context.Context) (string, error) {
 
 // The label value.
 func (r *Label) Value(ctx context.Context) (string, error) {
+
 	if r.value != nil {
 		return *r.value, nil
 	}
@@ -4401,6 +4274,7 @@ type Port struct {
 
 // The port description.
 func (r *Port) Description(ctx context.Context) (string, error) {
+
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -4414,6 +4288,7 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 
 // The port number.
 func (r *Port) Port(ctx context.Context) (int, error) {
+
 	if r.port != nil {
 		return *r.port, nil
 	}
@@ -4427,6 +4302,7 @@ func (r *Port) Port(ctx context.Context) (int, error) {
 
 // The transport layer network protocol.
 func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
+
 	if r.protocol != nil {
 		return *r.protocol, nil
 	}
@@ -4438,26 +4314,18 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
-type WithClientFunc func(r *Client) *Client
+type WithDAGFunc func(r *DAG) *DAG
 
-// With calls the provided function with current Client.
+// With calls the provided function with current DAG.
 //
 // This is useful for reusability and readability by not breaking the calling chain.
-func (r *Client) With(f WithClientFunc) *Client {
+func (r *DAG) With(f WithDAGFunc) *DAG {
 	return f(r)
 }
 
-func (r *Client) Apko() *Apko {
-	q := r.Q.Select("apko")
-
-	return &Apko{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string) *CacheVolume {
+func (r *DAG) CacheVolume(key string) *CacheVolume {
+
 	q := r.Q.Select("cacheVolume")
 	q = q.Arg("key", key)
 
@@ -4468,7 +4336,8 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 }
 
 // Checks if the current Dagger Engine is compatible with an SDK's required version.
-func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
+func (r *DAG) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
+
 	q := r.Q.Select("checkVersionCompatibility")
 	q = q.Arg("version", version)
 
@@ -4478,7 +4347,7 @@ func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) 
 	return response, q.Execute(ctx, r.C)
 }
 
-// ContainerOpts contains options for Client.Container
+// ContainerOpts contains options for DAG.Container
 type ContainerOpts struct {
 	ID ContainerID
 
@@ -4490,7 +4359,8 @@ type ContainerOpts struct {
 // Null ID returns an empty container (scratch).
 // Optional platform argument initializes new containers to execute and publish as that platform.
 // Platform defaults to that of the builder's host.
-func (r *Client) Container(opts ...ContainerOpts) *Container {
+func (r *DAG) Container(opts ...ContainerOpts) *Container {
+
 	q := r.Q.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4510,7 +4380,8 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 }
 
 // Return the current environment being executed in.
-func (r *Client) CurrentEnvironment() *Environment {
+func (r *DAG) CurrentEnvironment() *Environment {
+
 	q := r.Q.Select("currentEnvironment")
 
 	return &Environment{
@@ -4519,35 +4390,9 @@ func (r *Client) CurrentEnvironment() *Environment {
 	}
 }
 
-func (r *Client) Dagger() *Dagger {
-	q := r.Q.Select("dagger")
-
-	return &Dagger{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Client) Daggergo() *Daggergo {
-	q := r.Q.Select("daggergo")
-
-	return &Daggergo{
-		Q: q,
-		C: r.C,
-	}
-}
-
-func (r *Client) Daggerpython() *Daggerpython {
-	q := r.Q.Select("daggerpython")
-
-	return &Daggerpython{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // The default platform of the builder.
-func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
+func (r *DAG) DefaultPlatform(ctx context.Context) (Platform, error) {
+
 	q := r.Q.Select("defaultPlatform")
 
 	var response Platform
@@ -4556,13 +4401,14 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
-// DirectoryOpts contains options for Client.Directory
+// DirectoryOpts contains options for DAG.Directory
 type DirectoryOpts struct {
 	ID DirectoryID
 }
 
 // Load a directory by ID. No argument produces an empty directory.
-func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
+func (r *DAG) Directory(opts ...DirectoryOpts) *Directory {
+
 	q := r.Q.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4577,13 +4423,14 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	}
 }
 
-// EnvironmentOpts contains options for Client.Environment
+// EnvironmentOpts contains options for DAG.Environment
 type EnvironmentOpts struct {
 	ID EnvironmentID
 }
 
 // Load a environment from ID.
-func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
+func (r *DAG) Environment(opts ...EnvironmentOpts) *Environment {
+
 	q := r.Q.Select("environment")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4598,12 +4445,13 @@ func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
 	}
 }
 
-// EnvironmentArtifactOpts contains options for Client.EnvironmentArtifact
+// EnvironmentArtifactOpts contains options for DAG.EnvironmentArtifact
 type EnvironmentArtifactOpts struct {
 	ID EnvironmentArtifactID
 }
 
-func (r *Client) EnvironmentArtifact(opts ...EnvironmentArtifactOpts) *EnvironmentArtifact {
+func (r *DAG) EnvironmentArtifact(opts ...EnvironmentArtifactOpts) *EnvironmentArtifact {
+
 	q := r.Q.Select("environmentArtifact")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4618,13 +4466,14 @@ func (r *Client) EnvironmentArtifact(opts ...EnvironmentArtifactOpts) *Environme
 	}
 }
 
-// EnvironmentCheckOpts contains options for Client.EnvironmentCheck
+// EnvironmentCheckOpts contains options for DAG.EnvironmentCheck
 type EnvironmentCheckOpts struct {
 	ID EnvironmentCheckID
 }
 
 // Load a environment check from ID.
-func (r *Client) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentCheck {
+func (r *DAG) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentCheck {
+
 	q := r.Q.Select("environmentCheck")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4639,13 +4488,14 @@ func (r *Client) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentChec
 	}
 }
 
-// EnvironmentCheckResultOpts contains options for Client.EnvironmentCheckResult
+// EnvironmentCheckResultOpts contains options for DAG.EnvironmentCheckResult
 type EnvironmentCheckResultOpts struct {
 	ID EnvironmentCheckResultID
 }
 
 // Create a new environment check result.
-func (r *Client) EnvironmentCheckResult(opts ...EnvironmentCheckResultOpts) *EnvironmentCheckResult {
+func (r *DAG) EnvironmentCheckResult(opts ...EnvironmentCheckResultOpts) *EnvironmentCheckResult {
+
 	q := r.Q.Select("environmentCheckResult")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4660,13 +4510,14 @@ func (r *Client) EnvironmentCheckResult(opts ...EnvironmentCheckResultOpts) *Env
 	}
 }
 
-// EnvironmentCommandOpts contains options for Client.EnvironmentCommand
+// EnvironmentCommandOpts contains options for DAG.EnvironmentCommand
 type EnvironmentCommandOpts struct {
 	ID EnvironmentCommandID
 }
 
 // Load a environment command from ID.
-func (r *Client) EnvironmentCommand(opts ...EnvironmentCommandOpts) *EnvironmentCommand {
+func (r *DAG) EnvironmentCommand(opts ...EnvironmentCommandOpts) *EnvironmentCommand {
+
 	q := r.Q.Select("environmentCommand")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4681,13 +4532,14 @@ func (r *Client) EnvironmentCommand(opts ...EnvironmentCommandOpts) *Environment
 	}
 }
 
-// EnvironmentFunctionOpts contains options for Client.EnvironmentFunction
+// EnvironmentFunctionOpts contains options for DAG.EnvironmentFunction
 type EnvironmentFunctionOpts struct {
 	ID EnvironmentFunctionID
 }
 
 // Load a environment function from ID.
-func (r *Client) EnvironmentFunction(opts ...EnvironmentFunctionOpts) *EnvironmentFunction {
+func (r *DAG) EnvironmentFunction(opts ...EnvironmentFunctionOpts) *EnvironmentFunction {
+
 	q := r.Q.Select("environmentFunction")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4702,13 +4554,14 @@ func (r *Client) EnvironmentFunction(opts ...EnvironmentFunctionOpts) *Environme
 	}
 }
 
-// EnvironmentShellOpts contains options for Client.EnvironmentShell
+// EnvironmentShellOpts contains options for DAG.EnvironmentShell
 type EnvironmentShellOpts struct {
 	ID EnvironmentShellID
 }
 
 // Load a environment shell from ID.
-func (r *Client) EnvironmentShell(opts ...EnvironmentShellOpts) *EnvironmentShell {
+func (r *DAG) EnvironmentShell(opts ...EnvironmentShellOpts) *EnvironmentShell {
+
 	q := r.Q.Select("environmentShell")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4724,7 +4577,8 @@ func (r *Client) EnvironmentShell(opts ...EnvironmentShellOpts) *EnvironmentShel
 }
 
 // TODO
-func (r *Client) Extensions() *Extensions {
+func (r *DAG) Extensions() *Extensions {
+
 	q := r.Q.Select("extensions")
 
 	return &Extensions{
@@ -4734,7 +4588,8 @@ func (r *Client) Extensions() *Extensions {
 }
 
 // Loads a file by ID.
-func (r *Client) File(id FileID) *File {
+func (r *DAG) File(id FileID) *File {
+
 	q := r.Q.Select("file")
 	q = q.Arg("id", id)
 
@@ -4744,7 +4599,7 @@ func (r *Client) File(id FileID) *File {
 	}
 }
 
-// GitOpts contains options for Client.Git
+// GitOpts contains options for DAG.Git
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
@@ -4753,7 +4608,8 @@ type GitOpts struct {
 }
 
 // Queries a git repository.
-func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
+func (r *DAG) Git(url string, opts ...GitOpts) *GitRepository {
+
 	q := r.Q.Select("git")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepGitDir` optional argument
@@ -4773,17 +4629,9 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 }
 
-func (r *Client) Go() *Go {
-	q := r.Q.Select("go")
-
-	return &Go{
-		Q: q,
-		C: r.C,
-	}
-}
-
 // Queries the host environment.
-func (r *Client) Host() *Host {
+func (r *DAG) Host() *Host {
+
 	q := r.Q.Select("host")
 
 	return &Host{
@@ -4792,14 +4640,15 @@ func (r *Client) Host() *Host {
 	}
 }
 
-// HTTPOpts contains options for Client.HTTP
+// HTTPOpts contains options for DAG.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
 	ExperimentalServiceHost *Container
 }
 
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
+func (r *DAG) HTTP(url string, opts ...HTTPOpts) *File {
+
 	q := r.Q.Select("http")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `experimentalServiceHost` optional argument
@@ -4816,7 +4665,8 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 }
 
 // TODO: temp hack, should make each env load lazily (with some cache backend too)
-func (r *Client) LoadUniverse(ctx context.Context) (bool, error) {
+func (r *DAG) LoadUniverse(ctx context.Context) (bool, error) {
+
 	q := r.Q.Select("loadUniverse")
 
 	var response bool
@@ -4825,7 +4675,7 @@ func (r *Client) LoadUniverse(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
-// PipelineOpts contains options for Client.Pipeline
+// PipelineOpts contains options for DAG.Pipeline
 type PipelineOpts struct {
 	// Pipeline description.
 	Description string
@@ -4834,7 +4684,8 @@ type PipelineOpts struct {
 }
 
 // Creates a named sub-pipeline.
-func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
+func (r *DAG) Pipeline(name string, opts ...PipelineOpts) *DAG {
+
 	q := r.Q.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
@@ -4848,14 +4699,15 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 	q = q.Arg("name", name)
 
-	return &Client{
+	return &DAG{
 		Q: q,
 		C: r.C,
 	}
 }
 
 // Loads a secret from its ID.
-func (r *Client) Secret(id SecretID) *Secret {
+func (r *DAG) Secret(id SecretID) *Secret {
+
 	q := r.Q.Select("secret")
 	q = q.Arg("id", id)
 
@@ -4867,7 +4719,8 @@ func (r *Client) Secret(id SecretID) *Secret {
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 // The plaintext value is limited to a size of 128000 bytes.
-func (r *Client) SetSecret(name string, plaintext string) *Secret {
+func (r *DAG) SetSecret(name string, plaintext string) *Secret {
+
 	q := r.Q.Select("setSecret")
 	q = q.Arg("name", name)
 	q = q.Arg("plaintext", plaintext)
@@ -4878,13 +4731,14 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	}
 }
 
-// SocketOpts contains options for Client.Socket
+// SocketOpts contains options for DAG.Socket
 type SocketOpts struct {
 	ID SocketID
 }
 
 // Loads a socket by its ID.
-func (r *Client) Socket(opts ...SocketOpts) *Socket {
+func (r *DAG) Socket(opts ...SocketOpts) *Socket {
+
 	q := r.Q.Select("socket")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
@@ -4910,6 +4764,7 @@ type Secret struct {
 
 // The identifier for this secret.
 func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -4942,6 +4797,7 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // The value of this secret.
 func (r *Secret) Plaintext(ctx context.Context) (string, error) {
+
 	if r.plaintext != nil {
 		return *r.plaintext, nil
 	}
@@ -4962,6 +4818,7 @@ type Socket struct {
 
 // The content-addressed identifier of the socket.
 func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+
 	if r.id != nil {
 		return *r.id, nil
 	}

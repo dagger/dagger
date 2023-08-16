@@ -2,25 +2,22 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
-
-	"dagger.io/dagger"
 )
-
-var dag = dagger.DefaultClient()
 
 func main() {
 	dag.Environment().
-		WithFunction_(Build).
-		WithFunction_(Test).
-		WithFunction_(Generate).
-		WithFunction_(Gotestsum).
-		WithFunction_(GolangCILint).
-		WithFunction_(BinPath).
-		WithFunction_(GlobalCache).
+		WithFunction(Build).
+		WithFunction(Test).
+		WithFunction(Generate).
+		WithFunction(Gotestsum).
+		WithFunction(GolangCILint).
+		WithFunction(BinPath).
+		WithFunction(GlobalCache).
 		Serve()
 }
 
@@ -38,11 +35,11 @@ type GoBuildOpts struct {
 }
 
 func Build(
-	ctx dagger.Context,
-	base *dagger.Container,
-	src *dagger.Directory,
+	ctx context.Context,
+	base *Container,
+	src *Directory,
 	opts GoBuildOpts,
-) *dagger.Directory {
+) *Directory {
 	ctr := base.
 		With(GlobalCache).
 		WithDirectory("/out", dag.Directory()).
@@ -97,11 +94,11 @@ type GoTestOpts struct {
 }
 
 func Test(
-	ctx dagger.Context,
-	base *dagger.Container,
-	src *dagger.Directory,
+	ctx context.Context,
+	base *Container,
+	src *Directory,
 	opts GoTestOpts,
-) (*dagger.EnvironmentCheck, error) {
+) (*EnvironmentCheck, error) {
 	withCode := base.
 		With(GlobalCache).
 		WithMountedDirectory("/src", src).
@@ -195,11 +192,11 @@ type GotestsumOpts struct {
 }
 
 func Gotestsum(
-	ctx dagger.Context,
-	base *dagger.Container,
-	src *dagger.Directory,
+	ctx context.Context,
+	base *Container,
+	src *Directory,
 	opts GotestsumOpts,
-) *dagger.Container {
+) *Container {
 	if opts.Format == "" {
 		opts.Format = "testname"
 	}
@@ -231,10 +228,10 @@ func Gotestsum(
 }
 
 func Generate(
-	ctx dagger.Context,
-	base *dagger.Container,
-	src *dagger.Directory,
-) *dagger.Directory {
+	ctx context.Context,
+	base *Container,
+	src *Directory,
+) *Directory {
 	return base.
 		With(GlobalCache).
 		With(Cd("/src", src)).
@@ -250,11 +247,11 @@ type GolangCILintOpts struct {
 }
 
 func GolangCILint(
-	ctx dagger.Context,
-	base *dagger.Container,
-	src *dagger.Directory,
+	ctx context.Context,
+	base *Container,
+	src *Directory,
 	opts GolangCILintOpts,
-) *dagger.Container {
+) *Container {
 	cmd := []string{"golangci-lint", "run"}
 	if opts.Verbose {
 		cmd = append(cmd, "--verbose")

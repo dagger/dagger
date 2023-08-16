@@ -15,26 +15,27 @@ import (
 
 var (
 	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
-	funcMap    = template.FuncMap{
-		"Comment":                 comment,
-		"FormatDeprecation":       formatDeprecation,
-		"FormatReturnType":        commonFunc.FormatReturnType,
-		"FormatInputType":         commonFunc.FormatInputType,
-		"FormatOutputType":        commonFunc.FormatOutputType,
-		"FormatName":              formatName,
-		"FormatEnum":              formatEnum,
-		"SortEnumFields":          sortEnumFields,
-		"FieldOptionsStructName":  fieldOptionsStructName,
-		"FieldFunction":           fieldFunction,
-		"IsEnum":                  isEnum,
-		"GetArrayField":           commonFunc.GetArrayField,
-		"IsListOfObject":          commonFunc.IsListOfObject,
-		"ToLowerCase":             commonFunc.ToLowerCase,
-		"ToUpperCase":             commonFunc.ToUpperCase,
-		"FormatArrayField":        formatArrayField,
-		"FormatArrayToSingleType": formatArrayToSingleType,
-		"ConvertID":               commonFunc.ConvertID,
-		"IsSelfChainable":         commonFunc.IsSelfChainable,
+	FuncMap    = template.FuncMap{
+		"Comment":                       comment,
+		"FormatDeprecation":             formatDeprecation,
+		"FormatReturnType":              commonFunc.FormatReturnType,
+		"FormatInputType":               commonFunc.FormatInputType,
+		"FormatOutputType":              commonFunc.FormatOutputType,
+		"FormatName":                    formatName,
+		"FormatEnum":                    formatEnum,
+		"SortEnumFields":                sortEnumFields,
+		"FieldOptionsStructName":        fieldOptionsStructName,
+		"FieldFunction":                 fieldFunction,
+		"IsEnum":                        isEnum,
+		"GetArrayField":                 commonFunc.GetArrayField,
+		"IsListOfObject":                commonFunc.IsListOfObject,
+		"ToLowerCase":                   commonFunc.ToLowerCase,
+		"ToUpperCase":                   commonFunc.ToUpperCase,
+		"FormatArrayField":              formatArrayField,
+		"FormatArrayToSingleType":       formatArrayToSingleType,
+		"ConvertID":                     commonFunc.ConvertID,
+		"IsSelfChainable":               commonFunc.IsSelfChainable,
+		"EnvironmentWithMethodPreamble": environmentWithMethodPreamble,
 	}
 )
 
@@ -126,9 +127,21 @@ func fieldOptionsStructName(f introspection.Field) string {
 	return formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
 }
 
+// TODO:...
+var EvilGlobalVarToTriggerEnvSpecificCodegen bool
+var EvilGlobalVarWithEnvironmentName string
+
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
 func fieldFunction(f introspection.Field) string {
+	// don't create methods on query for the env itself,
+	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
+	if envName := EvilGlobalVarWithEnvironmentName; envName != "" {
+		if f.ParentObject.Name == generator.QueryStructName && f.Name == envName {
+			return ""
+		}
+	}
+
 	structName := formatName(f.ParentObject.Name)
 	signature := fmt.Sprintf(`func (r *%s) %s`,
 		structName, formatName(f.Name))
@@ -147,10 +160,13 @@ func fieldFunction(f introspection.Field) string {
 		// scalar (DirectoryID) rather than an object (*Directory).
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, commonFunc.FormatOutputType(arg.TypeRef)))
+		} else if EvilGlobalVarToTriggerEnvSpecificCodegen && formatName(f.ParentObject.Name) == "Environment" && arg.Name == "id" {
+			args = append(args, fmt.Sprintf("%s any", arg.Name))
 		} else {
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, commonFunc.FormatInputType(arg.TypeRef)))
 		}
 	}
+
 	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
 	if f.Args.HasOptionals() {
 		args = append(
@@ -169,4 +185,15 @@ func fieldFunction(f introspection.Field) string {
 	signature += " " + retType
 
 	return signature
+}
+
+func environmentWithMethodPreamble(f introspection.Field) string {
+	if !EvilGlobalVarToTriggerEnvSpecificCodegen || f.ParentObject.Name != "Environment" || !strings.HasPrefix(f.Name, "with") {
+		return ""
+	}
+	return fmt.Sprintf(`res := %s(r, id)
+if res != nil {
+	return res
+}
+`, formatName(f.Name))
 }

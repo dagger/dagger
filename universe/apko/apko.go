@@ -1,16 +1,16 @@
 package main
 
 import (
+	"context"
 	"runtime"
 
-	"dagger.io/dagger"
 	"gopkg.in/yaml.v3"
 )
 
 func main() {
-	dagger.DefaultContext().Client().Environment().
-		WithFunction_(Alpine).
-		WithFunction_(Wolfi).
+	dag.Environment().
+		WithFunction(Alpine).
+		WithFunction(Wolfi).
 		Serve()
 }
 
@@ -24,7 +24,7 @@ var baseConfig = cfg{
 	"archs": []string{runtime.GOARCH},
 }
 
-func Alpine(ctx dagger.Context, packages []string) *dagger.Container {
+func Alpine(ctx context.Context, packages []string) *Container {
 	ic := baseConfig
 	ic["contents"] = cfg{
 		"repositories": []string{
@@ -35,7 +35,7 @@ func Alpine(ctx dagger.Context, packages []string) *dagger.Container {
 	return apko(ctx, ic)
 }
 
-func Wolfi(ctx dagger.Context, packages []string) *dagger.Container {
+func Wolfi(ctx context.Context, packages []string) *Container {
 	ic := baseConfig
 	ic["contents"] = cfg{
 		"repositories": []string{
@@ -49,9 +49,7 @@ func Wolfi(ctx dagger.Context, packages []string) *dagger.Container {
 	return apko(ctx, ic)
 }
 
-func apko(ctx dagger.Context, ic any) *dagger.Container {
-	dag := ctx.Client()
-
+func apko(ctx context.Context, ic any) *Container {
 	config, err := yaml.Marshal(ic)
 	if err != nil {
 		panic(err)

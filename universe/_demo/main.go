@@ -1,27 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
-
-	"dagger.io/dagger"
 )
-
-var dag = DaggerClient()
 
 func main() {
 	dag.Environment().
-		WithCommand_(PublishAll).
-		WithCheck_(UnitTest).
+		WithCommand(PublishAll).
+		WithCheck(UnitTest).
 		WithArtifact(dag.DemoServer().Binary()).
 		WithArtifact(dag.DemoServer().ServerImage()).
 		WithArtifact(dag.DemoClient().ClientImage()).
-		WithShell_(Dev).
-		// WithCheck_(IntegTest).
+		WithShell(Dev).
+		// WithCheck(IntegTest).
 		Serve()
 }
 
-func PublishAll(ctx dagger.Context, version string) (string, error) {
+func PublishAll(ctx context.Context, version string) (string, error) {
 	// First, publish the server
 	serverOutput, err := dag.DemoServer().Publish(ctx, version)
 	if err != nil {
@@ -37,13 +34,13 @@ func PublishAll(ctx dagger.Context, version string) (string, error) {
 	return strings.Join([]string{serverOutput, clientOutput}, "\n"), nil
 }
 
-func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
+func UnitTest(ctx context.Context) (*EnvironmentCheckResult, error) {
 	return dag.EnvironmentCheck().
 		WithSubcheck(dag.DemoClient().UnitTest()).
 		WithSubcheck(dag.DemoServer().UnitTest()).Result(), nil
 }
 
-func Dev(ctx dagger.Context) (*dagger.Container, error) {
+func Dev(ctx context.Context) (*Container, error) {
 	clientApp := dag.DemoClient().ClientImage().Container()
 
 	return clientApp.
@@ -52,7 +49,7 @@ func Dev(ctx dagger.Context) (*dagger.Container, error) {
 }
 
 /*
-func IntegTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
+func IntegTest(ctx context.Context) (*EnvironmentCheckResult, error) {
 	clientApp := dag.DemoClient().ClientImage().Container()
 
 	stdout, err := clientApp.

@@ -66,9 +66,10 @@ func RunCodegen(
 	}
 
 	generated, err := generate(ctx, introspectionSchema, generator.Config{
-		Package:      pkg,
-		Lang:         generator.SDKLang(envCfg.SDK),
-		Environments: depEnvs,
+		Package:                pkg,
+		Lang:                   generator.SDKLang(envCfg.SDK),
+		EnvironmentName:        envCfg.Name,
+		DependencyEnvironments: depEnvs,
 	})
 	if err != nil {
 		return err

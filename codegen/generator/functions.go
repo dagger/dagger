@@ -8,12 +8,9 @@ import (
 )
 
 const (
-	QueryStructName = "Query"
-	// TODO: QueryStructClientName = "Client"
+	QueryStructName       = "Query"
+	QueryStructClientName = "DAG"
 )
-
-// TODO: extreme hack to enable changing name from Client->daggerClient for env codegen
-var QueryStructClientName = "Client"
 
 // CustomScalar registers custom Dagger type.
 // TODO: This may done it dynamically later instead of a static

@@ -28,7 +28,8 @@ type Config struct {
 	// Not used for the SDKLangNodeJS.
 	Package string
 	// TODO:
-	Environments []*dagger.Environment
+	EnvironmentName        string
+	DependencyEnvironments []*dagger.Environment
 }
 
 type Generator interface {
@@ -64,14 +65,4 @@ func Introspect(ctx context.Context, engineClient *client.Client) (*introspectio
 	}
 
 	return introspectionResp.Schema, nil
-}
-
-// IntrospectAndGenerate generate the Dagger API
-func IntrospectAndGenerate(ctx context.Context, generator Generator) ([]byte, error) {
-	schema, err := Introspect(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return generator.Generate(ctx, schema)
 }
