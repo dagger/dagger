@@ -35,14 +35,23 @@ defmodule Dagger.Session do
   defp wait_for_session(port, engine_conn_pid, logger) do
     receive do
       {^port, {:data, log_line}} ->
-        case Jason.decode(log_line) do
+        logger.(log_line)
+
+        result =
+          String.split(log_line, "\n", trim: true)
+          |> Enum.map(&Jason.decode/1)
+          |> Enum.find(fn
+            {:ok, _} -> true
+            {:error, _} -> false
+          end)
+
+        case result do
+          nil ->
+            wait_for_session(port, engine_conn_pid, logger)
+
           {:ok, session} ->
             send(engine_conn_pid, {self(), session})
             :ok
-
-          {:error, _} ->
-            logger.(log_line)
-            wait_for_session(port, engine_conn_pid, logger)
         end
 
       :quit ->
