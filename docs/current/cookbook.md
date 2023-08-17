@@ -888,19 +888,19 @@ The following code listing demonstrates how to add multiple environment variable
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/environment-variables/main.go
+```go file=./guides/snippets/custom-callbacks/environment-variables/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./cookbook/snippets/environment-variables/index.ts
+```javascript file=./guides/snippets/custom-callbacks/environment-variables/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/environment-variables/main.py
+```python file=./guides/snippets/custom-callbacks/environment-variables/main.py
 ```
 
 </TabItem>
