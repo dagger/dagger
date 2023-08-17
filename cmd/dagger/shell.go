@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
+	"github.com/vito/vt100"
 	"golang.org/x/term"
 )
 
@@ -234,12 +236,21 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	// TODO:
 	// fmt.Fprintf(os.Stderr, "WE ARE SO CONNECTED\n")
 
+	shellStdinR, shellStdinW := io.Pipe()
+	go io.Copy(shellStdinW, os.Stdin)
+
 	vtx := rec.Vertex("shell", "shell",
 		progrock.Focused(),
-		progrock.Zoomed(func(w, h int) error {
-			message := append([]byte{}, resizePrefix...)
-			message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
-			return wsconn.WriteMessage(websocket.BinaryMessage, message)
+		progrock.Zoomed(func(v *vt100.VT100) {
+			v.OnResize(func(h, w int) {
+				message := append([]byte{}, resizePrefix...)
+				message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
+				// best effort
+				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
+			})
+			v.ForwardRequests = os.Stdin
+			v.ForwardResponses = shellStdinW
+			v.CursorVisible = true
 		}))
 
 	origState, err := term.GetState(int(os.Stdin.Fd()))
@@ -284,7 +295,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 		for {
 			b := make([]byte, 512)
 
-			n, err := os.Stdin.Read(b)
+			n, err := shellStdinR.Read(b)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "read: %v\n", err)
 				continue

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -22,14 +21,9 @@ type Vterm struct {
 	Height int
 }
 
-var debugVterm = os.Getenv("_DEBUG_VTERM") != ""
-
 func NewVterm(width int) *Vterm {
 	vt := vt100.NewVT100(1, width)
 	vt.AutoResizeY = true
-	if debugVterm {
-		vt.DebugLogs = os.Stderr
-	}
 	return &Vterm{
 		vt:      vt,
 		viewBuf: new(bytes.Buffer),
