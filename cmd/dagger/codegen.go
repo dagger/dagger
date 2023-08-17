@@ -35,7 +35,7 @@ var (
 
 func init() {
 	codegenFlags.StringVarP(&codegenOutput, "output", "o", "", "output file")
-	codegenFlags.StringVar(&codegenPkg, "package", "", "package name")
+	codegenFlags.StringVar(&codegenPkg, "package", "main", "package name")
 
 	codegenCmd.Flags().AddFlagSet(codegenFlags)
 }

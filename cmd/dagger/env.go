@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"dagger.io/dagger"
@@ -104,7 +105,7 @@ var environmentInitCmd = &cobra.Command{
 	Use:    "init",
 	Short:  "Initialize a new dagger environment in a local directory.",
 	Hidden: true,
-	RunE: func(cmd *cobra.Command, args []string) (rerr error) {
+	RunE: func(cmd *cobra.Command, _ []string) (rerr error) {
 		ctx := cmd.Context()
 
 		env, err := getEnvironmentFlagConfig()
@@ -124,64 +125,175 @@ var environmentInitCmd = &cobra.Command{
 			Root: environmentRoot,
 		}
 
-		runCodegenFunc := func() error {
-			return nil
+		return updateEnvironmentConfig(ctx, env.local.path, cfg, cmd, nil)
+	},
+}
+
+var environmentExtendCmd = &cobra.Command{
+	Use:    "extend",
+	Short:  "Extend a dagger environment with access to the entrypoints of another environment",
+	Hidden: true,
+	RunE: loadEnvCmdWrapper(func(
+		ctx context.Context,
+		engineClient *client.Client,
+		c *dagger.Client,
+		_ *dagger.Environment,
+		cmd *cobra.Command,
+		extraArgs []string,
+	) error {
+		envFlagCfg, err := getEnvironmentFlagConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get environment: %w", err)
 		}
-		switch environmentconfig.SDK(sdk) {
-		case environmentconfig.SDKGo:
-			engineClient, ctx, err := client.Connect(ctx, client.Params{
+		if envFlagCfg.git != nil {
+			return fmt.Errorf("environment init is not supported for git environments")
+		}
+		envCfg, err := envFlagCfg.config(ctx, c)
+		if err != nil {
+			return fmt.Errorf("failed to get environment config: %w", err)
+		}
+
+		depSet := make(map[string]struct{})
+		for _, dep := range envCfg.Dependencies {
+			depSet[dep] = struct{}{}
+		}
+		for _, newDep := range extraArgs {
+			envFlagCfg, err := getEnvironmentFlagConfigFromURI(newDep)
+			if err != nil {
+				return fmt.Errorf("failed to get environment: %w", err)
+			}
+			envCfg, err := envFlagCfg.config(ctx, c)
+			if err != nil {
+				return fmt.Errorf("failed to get environment config: %w", err)
+			}
+			depSet[envCfg.Name] = struct{}{}
+		}
+
+		envCfg.Dependencies = nil
+		for dep := range depSet {
+			envCfg.Dependencies = append(envCfg.Dependencies, dep)
+		}
+		sort.Strings(envCfg.Dependencies)
+
+		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, engineClient)
+	}),
+}
+
+var environmentSyncCmd = &cobra.Command{
+	Use:    "sync",
+	Short:  "Synchronize a dagger environment with the latest version of its extensions",
+	Hidden: true,
+	RunE: loadEnvCmdWrapper(func(
+		ctx context.Context,
+		engineClient *client.Client,
+		c *dagger.Client,
+		_ *dagger.Environment,
+		cmd *cobra.Command,
+		_ []string,
+	) error {
+		envFlagCfg, err := getEnvironmentFlagConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get environment: %w", err)
+		}
+		if envFlagCfg.git != nil {
+			return fmt.Errorf("environment init is not supported for git environments")
+		}
+		envCfg, err := envFlagCfg.config(ctx, c)
+		if err != nil {
+			return fmt.Errorf("failed to get environment config: %w", err)
+		}
+		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, engineClient)
+	}),
+}
+
+func updateEnvironmentConfig(
+	ctx context.Context,
+	path string,
+	newEnvCfg *environmentconfig.Config,
+	cmd *cobra.Command,
+	engineClient *client.Client,
+) (rerr error) {
+	runCodegenFunc := func() error {
+		return nil
+	}
+	switch environmentconfig.SDK(newEnvCfg.SDK) {
+	case environmentconfig.SDKGo:
+		if engineClient == nil {
+			var err error
+			engineClient, ctx, err = client.Connect(ctx, client.Params{
 				RunnerHost: engine.RunnerHost(),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to connect to engine: %w", err)
 			}
-			runCodegenFunc = func() error {
-				return RunCodegen(ctx, engineClient, nil, cfg, nil, cmd, nil)
-			}
-		case environmentconfig.SDKPython:
-		default:
-			return fmt.Errorf("unsupported environment SDK: %s", sdk)
 		}
+		runCodegenFunc = func() error {
+			return RunCodegen(ctx, engineClient, nil, newEnvCfg, nil, cmd, nil)
+		}
+	case environmentconfig.SDKPython:
+	default:
+		return fmt.Errorf("unsupported environment SDK: %s", sdk)
+	}
 
-		cfgBytes, err := json.MarshalIndent(cfg, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal environment config: %w", err)
-		}
-		parentDir := filepath.Dir(env.local.path)
-		_, parentDirStatErr := os.Stat(parentDir)
-		switch {
-		case parentDirStatErr == nil:
-			// already exists, nothing to do
-		case os.IsNotExist(parentDirStatErr):
-			// make the parent dir, but if something goes wrong, clean it up in the defer
-			if err := os.MkdirAll(parentDir, 0755); err != nil {
-				return fmt.Errorf("failed to create environment config directory: %w", err)
-			}
-			defer func() {
-				if rerr != nil {
-					os.RemoveAll(parentDir)
-				}
-			}()
-		default:
-			return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
-		}
-
-		// nolint:gosec
-		if err := os.WriteFile(env.local.path, cfgBytes, 0644); err != nil {
-			return fmt.Errorf("failed to write environment config: %w", err)
+	cfgBytes, err := json.MarshalIndent(newEnvCfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal environment config: %w", err)
+	}
+	parentDir := filepath.Dir(path)
+	_, parentDirStatErr := os.Stat(parentDir)
+	switch {
+	case parentDirStatErr == nil:
+		// already exists, nothing to do
+	case os.IsNotExist(parentDirStatErr):
+		// make the parent dir, but if something goes wrong, clean it up in the defer
+		if err := os.MkdirAll(parentDir, 0755); err != nil {
+			return fmt.Errorf("failed to create environment config directory: %w", err)
 		}
 		defer func() {
 			if rerr != nil {
-				os.RemoveAll(env.local.path)
+				os.RemoveAll(parentDir)
 			}
 		}()
+	default:
+		return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
+	}
 
-		if err := runCodegenFunc(); err != nil {
-			return fmt.Errorf("failed to run codegen: %w", err)
+	var cfgFileMode os.FileMode = 0644
+	originalContents, configFileReadErr := os.ReadFile(path)
+	switch {
+	case configFileReadErr == nil:
+		// attempt to restore the original file if it already existed and something goes wrong
+		stat, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("failed to stat environment config: %w", err)
 		}
+		cfgFileMode = stat.Mode()
+		defer func() {
+			if rerr != nil {
+				os.WriteFile(path, originalContents, cfgFileMode)
+			}
+		}()
+	case os.IsNotExist(configFileReadErr):
+		// remove it if it didn't exist already and something goes wrong
+		defer func() {
+			if rerr != nil {
+				os.RemoveAll(path)
+			}
+		}()
+	default:
+		return fmt.Errorf("failed to read environment config: %w", configFileReadErr)
+	}
 
-		return nil
-	},
+	// nolint:gosec
+	if err := os.WriteFile(path, append(cfgBytes, '\n'), cfgFileMode); err != nil {
+		return fmt.Errorf("failed to write environment config: %w", err)
+	}
+
+	if err := runCodegenFunc(); err != nil {
+		return fmt.Errorf("failed to run codegen: %w", err)
+	}
+
+	return nil
 }
 
 func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
@@ -192,7 +304,10 @@ func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
 			environmentURI = v
 		}
 	}
+	return getEnvironmentFlagConfigFromURI(environmentURI)
+}
 
+func getEnvironmentFlagConfigFromURI(environmentURI string) (*environmentFlagConfig, error) {
 	url, err := url.Parse(environmentURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config path: %w", err)
