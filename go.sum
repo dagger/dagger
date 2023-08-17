@@ -1425,10 +1425,14 @@ github.com/vito/progrock v0.9.1-0.20230817151606-d4c6d4167acd h1:uYk9Te2RV1/SVka
 github.com/vito/progrock v0.9.1-0.20230817151606-d4c6d4167acd/go.mod h1:gcdRbXM2uW4izLGdFiSq1a6McWhLubL4TwmEwQYblgc=
 github.com/vito/progrock v0.9.1-0.20230817230933-3501dda7d03e h1:TF0qZU7iPxBH1yDJVRK15IqogqVqPVTTri+3NMUqvuA=
 github.com/vito/progrock v0.9.1-0.20230817230933-3501dda7d03e/go.mod h1:HqJjg/hW6BgtNebG4khKkyDJxYoT8aKjx23ZR1al5v0=
+github.com/vito/progrock v0.9.1-0.20230817231744-2092fe84e56f h1:rgFDfKJ/y7+IbbQf8v5Kv9TA+mDH1e6l9/FDIqzYrsU=
+github.com/vito/progrock v0.9.1-0.20230817231744-2092fe84e56f/go.mod h1:LnoCqGxDY94IiDBRNx3cAACeQXpHIBERSPIWgMGhW1w=
 github.com/vito/vt100 v0.1.3-0.20230817144220-c812425d8eae h1:3YZUxC+ZLJH6qctfeoPN6oHVP09seobZtsTEP90ikz4=
 github.com/vito/vt100 v0.1.3-0.20230817144220-c812425d8eae/go.mod h1:ytK5/43vb2mKuLTXO+zriCv0lEt5RICwtixszOKV8N8=
 github.com/vito/vt100 v0.1.3-0.20230817230830-b31bf511d945 h1:mBjXR0FCyZ7V8WCwbWZaBX8f9iAlI2HUIL4HHywI2jo=
 github.com/vito/vt100 v0.1.3-0.20230817230830-b31bf511d945/go.mod h1:ytK5/43vb2mKuLTXO+zriCv0lEt5RICwtixszOKV8N8=
+github.com/vito/vt100 v0.1.3-0.20230817231617-967867b9de1f h1:lF73hLDcnHKfghxSiYTz1t69eiuM2482mxqraOjCnXE=
+github.com/vito/vt100 v0.1.3-0.20230817231617-967867b9de1f/go.mod h1:ytK5/43vb2mKuLTXO+zriCv0lEt5RICwtixszOKV8N8=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 h1:qZcnPZbiX8gGs3VmipVc3ft29vPYBZzlox/04Von6+k=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63/go.mod h1:KoQ+3z63GUJzQ7AhU0AWQNU+LPda2EwL/cx1PlbDzVQ=
