@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+/*
+* CI Platform Environment
+ */
+
 func main() {
 	dag.Environment().
 		WithCommand(PublishAll).
