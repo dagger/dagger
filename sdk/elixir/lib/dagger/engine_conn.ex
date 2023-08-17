@@ -16,7 +16,8 @@ defmodule Dagger.EngineConn do
       _otherwise ->
         case from_local_cli(opts) do
           {:ok, conn} -> {:ok, conn}
-          _otherwise -> from_remote_cli(opts)
+          {:error, :no_executable} -> from_remote_cli(opts)
+          otherwise -> otherwise
         end
     end
   end
