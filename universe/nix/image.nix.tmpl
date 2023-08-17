@@ -1,5 +1,5 @@
 let
-  pkgs = import {{.FlakeRef}} {};
+  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/{{.FlakeRef}}.zip") {};
   fhs = (pkgs.callPackage <nixpkgs/pkgs/build-support/build-fhs-userenv/env.nix> {}) {
     name = "container-fhs";
     targetPkgs = pkgs: with pkgs; [
