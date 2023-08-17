@@ -24,6 +24,7 @@ func main() {
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 	defer httpSrv.Close()
+	fmt.Println("Listening on :8081")
 	httpSrv.ListenAndServe()
 }
 

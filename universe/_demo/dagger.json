@@ -2,6 +2,19 @@
   "root": "../..",
   "name": "demo",
   "sdk": "go",
-  "dependencies": ["./server", "./client"],
-  "exclude": [".git/", "bin/", "docs/", "universe/universe.tar", "sdk/cue", "sdk/dotnet", "sdk/elixer", "sdk/nodejs", "sdk/rust"]
+  "exclude": [
+    ".git/",
+    "bin/",
+    "docs/",
+    "universe/universe.tar",
+    "sdk/cue",
+    "sdk/dotnet",
+    "sdk/elixer",
+    "sdk/nodejs",
+    "sdk/rust"
+  ],
+  "dependencies": [
+    "./server",
+    "./client"
+  ]
 }
