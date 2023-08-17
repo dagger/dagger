@@ -9,6 +9,8 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+  # Enable manual trigger for easier debugging
+  workflow_dispatch:
 
 permissions:
   contents: read

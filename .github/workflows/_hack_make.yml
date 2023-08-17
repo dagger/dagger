@@ -4,16 +4,20 @@ on:
   workflow_call:
     inputs:
       mage-targets:
-        description: 'The mage target(s) to execute'
+        description: "The mage target(s) to execute"
         type: string
         required: true
+      dev-engine:
+        description: "Whether to run against a dev Engine"
+        type: boolean
+        default: false
+        required: false
 
 jobs:
-  # Use a free runner when
+  # Use a free GitHub Actions runner when
   # NOT running in the dagger/dagger repo 
-  # & NOT a PR
   github-free-runner:
-    if: ${{ github.repository != 'dagger/dagger' && github.base_ref == '' }}
+    if: ${{ github.repository != 'dagger/dagger' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -21,23 +25,26 @@ jobs:
         with:
           go-version: "1.20"
           cache-dependency-path: "internal/mage/go.sum"
-      - run: ./hack/make ${{ inputs.mage-targets }}
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          if [ "${{ inputs.dev-engine }}" != "false" ]
+          then
+            ./hack/dev
+            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+          fi
+          ./hack/make ${{ inputs.mage-targets }}
         env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
+      - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
+        run: sudo dmesg
 
-  # Use a paid runner when
-  # NOT running in the dagger/dagger repo 
-  # & this is PR
+  # Use a larger (paid) GitHub runner when
+  # running the dagger/dagger repo (including PRs)
   github-paid-runner:
-    if: ${{ github.repository != 'dagger/dagger' && github.base_ref != '' }}
+    if: ${{ github.repository == 'dagger/dagger' }}
     runs-on: ubuntu-22.04-16c-64g-600gb
     steps:
       - uses: actions/checkout@v3
@@ -45,38 +52,41 @@ jobs:
         with:
           go-version: "1.20"
           cache-dependency-path: "internal/mage/go.sum"
-      - run: ./hack/make ${{ inputs.mage-targets }}
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          if [ "${{ inputs.dev-engine }}" != "false" ]
+          then
+            ./hack/dev
+            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+          fi
+          ./hack/make ${{ inputs.mage-targets }}
         env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
+      - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
+        run: sudo dmesg
 
-  # Use our own Dagger runner when
-  # running in the dagger/dagger repo
+  # Also use our own Dagger runner when
+  # running in the dagger/dagger repo (including PRs)
+  # CONTINUE ON ERROR until we figure out why multiple runners are trying to use the same Dagger Engine
   dagger-runner:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: dagger-runner-4c-16g
+    runs-on: dagger-runner-16c-64g
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
           go-version: "1.20"
           cache-dependency-path: "internal/mage/go.sum"
-      - run: ./hack/make ${{ inputs.mage-targets }}
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          ./hack/make ${{ inputs.mage-targets }}
         env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
+      - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
-
+        run: sudo dmesg
