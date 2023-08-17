@@ -17,6 +17,7 @@ import TabItem from "@theme/TabItem";
 All Dagger SDKs support adding callbacks to the pipeline invocation chain. Using a callback enables greater code reusability and modularity, and also avoids "breaking the chain" when constructing a Dagger pipeline.
 
 This guide explains the basics of creating and using custom callbacks in a Dagger pipeline. You will learn how to:
+
 - Create a custom callback
 - Chain the callback into a Dagger pipeline
 
@@ -100,7 +101,6 @@ Here's another example, this one demonstrating how to add multiple environment v
 
 </TabItem>
 </Tabs>
-
 
 ## Conclusion
 
