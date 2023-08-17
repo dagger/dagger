@@ -12,17 +12,17 @@ connect(
     // read secret from host variable
     const secret = client.setSecret("gh-secret", process.env["GH_SECRET"])
 
-    // use secret in container environment
-    const out = await client
-      .container()
-      .from("alpine:3.17")
-      .withSecretVariable("GITHUB_API_TOKEN", secret)
-      .withExec(["apk", "add", "curl"])
-      .withExec([
-        "sh",
-        "-c",
-        `curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_API_TOKEN"`,
-      ])
+    // set context directory for Dockerfile build
+    const contextDir = client.host().directory(".")
+
+    // build using Dockerfile
+    // specify secrets for Dockerfile build
+    // secrets will be mounted at /run/secrets/[secret-name]
+    const out = await contextDir
+      .dockerBuild({
+        dockerfile: 'Dockerfile',
+        secrets: [secret],
+      })
       .stdout()
 
     // print result

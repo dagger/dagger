@@ -7,6 +7,10 @@ import dagger
 
 
 async def main():
+    if "GH_SECRET" not in os.environ:
+        msg = "GH_SECRET environment variable must be set"
+        raise OSError(msg)
+
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # read secret from host variable
         secret = client.set_secret("gh-secret", os.environ["GH_SECRET"])
