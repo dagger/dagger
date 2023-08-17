@@ -2,14 +2,12 @@ import { connect, Client, Container } from "@dagger.io/dagger"
 
 connect(
   async (client: Client) => {
-    let ctr = client.container()
-        .from("alpine")
+    let ctr = client.container().from("alpine")
 
     // breaks the chain!
     ctr = addMounts(ctr, client)
 
-    const out = await ctr.withExec(["ls"])
-        .stdout()
+    const out = await ctr.withExec(["ls"]).stdout()
     console.log(out)
   },
   { LogOutput: process.stderr }

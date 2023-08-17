@@ -16,6 +16,6 @@ connect(
 function mounts(client: Client) {
   return (ctr: Container): Container =>
     ctr
-    .withMountedDirectory("/foo", client.host().directory("/tmp/foo"))
-    .withMountedDirectory("/bar", client.host().directory("/tmp/bar"))
+      .withMountedDirectory("/foo", client.host().directory("/tmp/foo"))
+      .withMountedDirectory("/bar", client.host().directory("/tmp/bar"))
 }
