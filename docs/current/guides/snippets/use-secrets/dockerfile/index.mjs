@@ -20,7 +20,7 @@ connect(
     // secrets will be mounted at /run/secrets/[secret-name]
     const out = await contextDir
       .dockerBuild({
-        dockerfile: 'Dockerfile',
+        dockerfile: "Dockerfile",
         secrets: [secret],
       })
       .stdout()
