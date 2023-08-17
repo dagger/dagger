@@ -87,6 +87,25 @@ jobs:
         env:
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
-      - name: "ALWAYS print kernel logs - especialy useful on failure"
-        if: always()
-        run: sudo dmesg
+
+  # These are highly experimental Dagger on K8s runners
+  # running in the dagger/dagger repo (including PRs)
+  # CONTINUE ON ERROR since we do not care whether these succeed or fail
+  experimental-dagger-on-k8s-runner:
+    if: ${{ github.repository == 'dagger/dagger' || github.repository == 'gerhard/dagger' }}
+    runs-on:
+      - k8s
+      - gerhard.io
+      - dagger-08x
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.20"
+          cache-dependency-path: "internal/mage/go.sum"
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          ./hack/make ${{ inputs.mage-targets }}
+        env:
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
