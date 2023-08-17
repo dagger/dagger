@@ -14,7 +14,7 @@ const engineDefaultShimBin = "/usr/local/bin/dagger-shim"
 // stack.
 const servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 
-func setDaggerDefaults(cfg *config.Config, cniConfigPath string) error {
+func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 	if cfg.Root == "" {
 		cfg.Root = engineDefaultStateDir
 	}
@@ -23,11 +23,18 @@ func setDaggerDefaults(cfg *config.Config, cniConfigPath string) error {
 		cfg.Workers.OCI.Binary = engineDefaultShimBin
 	}
 
-	if cniConfigPath != "" {
-		setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, cniConfigPath)
+	if cfg.DNS == nil {
+		cfg.DNS = &config.DNSConfig{}
+	}
+
+	// set dnsmasq as the default nameserver
+	cfg.DNS.Nameservers = []string{netConf.Bridge.String()}
+
+	if netConf.CNIConfigPath != "" {
+		setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, netConf.CNIConfigPath)
 
 		// we don't use containerd, but make it match anyway
-		setNetworkDefaults(&cfg.Workers.Containerd.NetworkConfig, cniConfigPath)
+		setNetworkDefaults(&cfg.Workers.Containerd.NetworkConfig, netConf.CNIConfigPath)
 	}
 
 	return nil

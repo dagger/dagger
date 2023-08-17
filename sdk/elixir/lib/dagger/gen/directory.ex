@@ -3,6 +3,7 @@ defmodule Dagger.Directory do
   @moduledoc "A directory."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  @derive Dagger.Sync
   defstruct [:selection, :client]
 
   (
@@ -22,7 +23,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves a directory at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory to retrieve (e.g., \"/src\")."
-    @spec directory(t(), String.t()) :: Dagger.Directory.t()
+    @spec directory(t(), Dagger.String.t()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "directory")
       selection = arg(selection, "path", path)
@@ -77,7 +78,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Returns a list of files and directories at the given path.\n\n\n\n## Optional Arguments\n\n* `path` - Location of the directory to look at (e.g., \"/src\")."
-    @spec entries(t(), keyword()) :: [String.t()]
+    @spec entries(t(), keyword()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
     def entries(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "entries")
 
@@ -94,7 +95,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Writes the contents of the directory to a path on the host.\n\n## Required Arguments\n\n* `path` - Location of the copied directory (e.g., \"logs/\")."
-    @spec export(t(), String.t()) :: boolean()
+    @spec export(t(), Dagger.String.t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
     def export(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "export")
       selection = arg(selection, "path", path)
@@ -104,7 +105,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\")."
-    @spec file(t(), String.t()) :: Dagger.File.t()
+    @spec file(t(), Dagger.String.t()) :: Dagger.File.t()
     def file(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "file")
       selection = arg(selection, "path", path)
@@ -114,7 +115,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "The content-addressed identifier of the directory."
-    @spec id(t()) :: Dagger.Directory.t()
+    @spec id(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
     def id(%__MODULE__{} = directory) do
       selection = select(directory.selection, "id")
       execute(selection, directory.client)
@@ -123,7 +124,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Creates a named sub-pipeline\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
-    @spec pipeline(t(), String.t(), keyword()) :: Dagger.Directory.t()
+    @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def pipeline(%__MODULE__{} = directory, name, optional_args \\ []) do
       selection = select(directory.selection, "pipeline")
       selection = arg(selection, "name", name)
@@ -147,8 +148,18 @@ defmodule Dagger.Directory do
   )
 
   (
+    @doc "Force evaluation in the engine."
+    @spec sync(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+    def sync(%__MODULE__{} = directory) do
+      selection = select(directory.selection, "sync")
+      execute(selection, directory.client)
+    end
+  )
+
+  (
     @doc "Retrieves this directory plus a directory written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"/src/\").\n* `directory` - Identifier of the directory to copy.\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
-    @spec with_directory(t(), String.t(), Dagger.Directory.t(), keyword()) :: Dagger.Directory.t()
+    @spec with_directory(t(), Dagger.String.t(), Dagger.Directory.t(), keyword()) ::
+            Dagger.Directory.t()
     def with_directory(%__MODULE__{} = directory, path, directory, optional_args \\ []) do
       selection = select(directory.selection, "withDirectory")
       selection = arg(selection, "path", path)
@@ -178,7 +189,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644."
-    @spec with_file(t(), String.t(), Dagger.File.t(), keyword()) :: Dagger.Directory.t()
+    @spec with_file(t(), Dagger.String.t(), Dagger.File.t(), keyword()) :: Dagger.Directory.t()
     def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
       selection = select(directory.selection, "withFile")
       selection = arg(selection, "path", path)
@@ -201,7 +212,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory plus a new directory created at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory created (e.g., \"/logs\").\n\n## Optional Arguments\n\n* `permissions` - Permission granted to the created directory (e.g., 0777).\n\nDefault: 0755."
-    @spec with_new_directory(t(), String.t(), keyword()) :: Dagger.Directory.t()
+    @spec with_new_directory(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def with_new_directory(%__MODULE__{} = directory, path, optional_args \\ []) do
       selection = select(directory.selection, "withNewDirectory")
       selection = arg(selection, "path", path)
@@ -219,7 +230,8 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory plus a new file written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written file (e.g., \"/file.txt\").\n* `contents` - Content of the written file (e.g., \"Hello world!\").\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644."
-    @spec with_new_file(t(), String.t(), String.t(), keyword()) :: Dagger.Directory.t()
+    @spec with_new_file(t(), Dagger.String.t(), Dagger.String.t(), keyword()) ::
+            Dagger.Directory.t()
     def with_new_file(%__MODULE__{} = directory, path, contents, optional_args \\ []) do
       selection = select(directory.selection, "withNewFile")
       selection = arg(selection, "path", path)
@@ -238,7 +250,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory with all file/dir timestamps set to the given time.\n\n## Required Arguments\n\n* `timestamp` - Timestamp to set dir/files in.\n\nFormatted in seconds following Unix epoch (e.g., 1672531199)."
-    @spec with_timestamps(t(), integer()) :: Dagger.Directory.t()
+    @spec with_timestamps(t(), Dagger.Int.t()) :: Dagger.Directory.t()
     def with_timestamps(%__MODULE__{} = directory, timestamp) do
       selection = select(directory.selection, "withTimestamps")
       selection = arg(selection, "timestamp", timestamp)
@@ -248,7 +260,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory with the directory at the given path removed.\n\n## Required Arguments\n\n* `path` - Location of the directory to remove (e.g., \".github/\")."
-    @spec without_directory(t(), String.t()) :: Dagger.Directory.t()
+    @spec without_directory(t(), Dagger.String.t()) :: Dagger.Directory.t()
     def without_directory(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "withoutDirectory")
       selection = arg(selection, "path", path)
@@ -258,7 +270,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory with the file at the given path removed.\n\n## Required Arguments\n\n* `path` - Location of the file to remove (e.g., \"/file.txt\")."
-    @spec without_file(t(), String.t()) :: Dagger.Directory.t()
+    @spec without_file(t(), Dagger.String.t()) :: Dagger.Directory.t()
     def without_file(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "withoutFile")
       selection = arg(selection, "path", path)

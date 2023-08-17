@@ -19,15 +19,17 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -71,7 +73,7 @@ func TestContainerFrom(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
                     file(path: "/etc/alpine-release") {
                         contents
                     }
@@ -79,7 +81,7 @@ func TestContainerFrom(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.File.Contents, "3.16.2\n")
+	require.Equal(t, res.Container.From.File.Contents, "3.18.2\n")
 }
 
 func TestContainerBuild(t *testing.T) {
@@ -242,7 +244,7 @@ CMD cat /secret
 
 	t.Run("just build, don't execute", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("Dockerfile", "FROM alpine:3.16.2\nCMD false")
+			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nCMD false")
 
 		_, err = c.Container().Build(src).Sync(ctx)
 		require.NoError(t, err)
@@ -254,7 +256,7 @@ CMD cat /secret
 
 	t.Run("just build, short-circuit", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("Dockerfile", "FROM alpine:3.16.2\nRUN false")
+			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nRUN false")
 
 		_, err = c.Container().Build(src).Sync(ctx)
 		require.NotEmpty(t, err)
@@ -269,7 +271,7 @@ func TestContainerWithRootFS(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	alpine316 := c.Container().From("alpine:3.16.2")
+	alpine316 := c.Container().From(alpineImage)
 
 	alpine316ReleaseStr, err := alpine316.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
@@ -284,7 +286,7 @@ func TestContainerWithRootFS(t *testing.T) {
 
 	require.NoError(t, err)
 
-	alpine315 := c.Container().From("alpine:3.15.6")
+	alpine315 := c.Container().From(alpineImage)
 
 	varVal := "testing123"
 
@@ -303,7 +305,7 @@ func TestContainerWithRootFS(t *testing.T) {
 	releaseStr, err := alpine315ReplacedFS.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, "3.16.2\n", releaseStr)
+	require.Equal(t, "3.18.2\n", releaseStr)
 }
 
 //go:embed testdata/hello.go
@@ -340,7 +342,7 @@ func TestContainerExecSync(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withExec(args: ["false"]) {
 						sync
 					}
@@ -348,62 +350,6 @@ func TestContainerExecSync(t *testing.T) {
 			}
 		}`, nil, nil)
 	require.Contains(t, err.Error(), `process "false" did not complete successfully`)
-}
-
-func TestContainerExecExitCode(t *testing.T) {
-	t.Parallel()
-
-	res := struct {
-		Container struct {
-			From struct {
-				WithExec struct {
-					ExitCode *int
-				}
-			}
-		}
-	}{}
-
-	err := testutil.Query(
-		`{
-			container {
-				from(address: "alpine:3.16.2") {
-					withExec(args: ["true"]) {
-						exitCode
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.NotNil(t, res.Container.From.WithExec.ExitCode)
-	require.Equal(t, 0, *res.Container.From.WithExec.ExitCode)
-
-	/*
-		It's not currently possible to get a nonzero exit code back because
-		Buildkit raises an error.
-
-		We could perhaps have the shim mask the exit status and always exit 0, but
-		we would have to be careful not to let that happen in a big chained LLB
-		since it would prevent short-circuiting.
-
-		We could only do it when the user requests the exitCode, but then we would
-		actually need to run the command _again_ since we'd need some way to tell
-		the shim what to do.
-
-		Hmm...
-
-		err = testutil.Query(
-			`{
-				container {
-					from(address: "alpine:3.16.2") {
-						withExec(args: ["false"]) {
-							exitCode
-						}
-					}
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
-		require.Equal(t, res.Container.From.WithExec.ExitCode, 1)
-	*/
 }
 
 func TestContainerExecStdoutStderr(t *testing.T) {
@@ -423,7 +369,7 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withExec(args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"]) {
 						stdout
 						stderr
@@ -452,7 +398,7 @@ func TestContainerExecStdin(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withExec(args: ["cat"], stdin: "hello") {
 						stdout
 					}
@@ -481,7 +427,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withExec(
 						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
 						redirectStdout: "out",
@@ -505,7 +451,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	execWithMount := c.Container().From("alpine:3.16.2").
+	execWithMount := c.Container().From(alpineImage).
 		WithMountedDirectory("/mnt", c.Directory()).
 		WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "/mnt/out",
@@ -520,12 +466,12 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, "goodbye\n", stderr)
 
 	_, err = execWithMount.Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stdout: no such file or directory")
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", stdout)
 
 	_, err = execWithMount.Stderr(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stderr: no such file or directory")
+	require.NoError(t, err)
+	require.Equal(t, "goodbye\n", stderr)
 }
 
 func TestContainerExecWithWorkdir(t *testing.T) {
@@ -546,7 +492,7 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withWorkdir(path: "/usr") {
 						withExec(args: ["pwd"]) {
 							stdout
@@ -581,7 +527,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		err := testutil.Query(
 			`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					user
 					withUser(name: "daemon") {
 						user
@@ -602,7 +548,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		err := testutil.Query(
 			`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					user
 					withUser(name: "daemon:floppy") {
 						user
@@ -623,7 +569,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		err := testutil.Query(
 			`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					user
 					withUser(name: "2") {
 						user
@@ -644,7 +590,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		err := testutil.Query(
 			`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					user
 					withUser(name: "2:11") {
 						user
@@ -668,7 +614,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	base := c.Container().From("alpine:3.16.2")
+	base := c.Container().From(alpineImage)
 	before, err := base.Entrypoint(ctx)
 	require.NoError(t, err)
 	require.Empty(t, before)
@@ -733,7 +679,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					entrypoint
 					defaultArgs
 					withDefaultArgs {
@@ -807,7 +753,7 @@ func TestContainerExecWithEnvVariable(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withEnvVariable(name: "FOO", value: "bar") {
 						withExec(args: ["env"]) {
 							stdout
@@ -982,7 +928,7 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 
 	t.Run("add env var without expansion", func(t *testing.T) {
 		out, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithEnvVariable("FOO", "foo:$PATH").
 			WithExec([]string{"printenv", "FOO"}).
 			Stdout(ctx)
@@ -993,7 +939,7 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 
 	t.Run("add env var with expansion", func(t *testing.T) {
 		out, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithEnvVariable("USER_PATH", "/opt").
 			WithEnvVariable(
 				"PATH",
@@ -1020,7 +966,7 @@ func TestContainerLabel(t *testing.T) {
 	defer c.Close()
 
 	t.Run("container with new label", func(t *testing.T) {
-		label, err := c.Container().From("alpine:3.16.2").WithLabel("FOO", "BAR").Label(ctx, "FOO")
+		label, err := c.Container().From(alpineImage).WithLabel("FOO", "BAR").Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "BAR")
@@ -1223,7 +1169,7 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						withExec(args: ["cat", "/mnt/some-file"]) {
 							stdout
@@ -1290,7 +1236,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						withExec(args: ["sh", "-c", "echo >> /mnt/sub-file; echo -n more-content >> /mnt/sub-file"]) {
 							withExec(args: ["cat", "/mnt/sub-file"]) {
@@ -1357,7 +1303,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						withExec(args: ["cat", "/mnt/some-file"]) {
 							# original content
@@ -1446,7 +1392,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: FileID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedFile(path: "/mnt/file", source: $id) {
 						withExec(args: ["cat", "/mnt/file"]) {
 							stdout
@@ -1482,7 +1428,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 
 	query := `query Test($cache: CacheID!, $rand: String!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "` + alpineImage + `") {
 					withEnvVariable(name: "RAND", value: $rand) {
 						withMountedCache(path: "/mnt/cache", cache: $cache) {
 							withExec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/file; cat /mnt/cache/file"]) {
@@ -1556,7 +1502,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 
 	query := `query Test($cache: CacheID!, $rand: String!, $init: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "` + alpineImage + `") {
 					withEnvVariable(name: "RAND", value: $rand) {
 						withMountedCache(path: "/mnt/cache", cache: $cache, source: $init) {
 							withExec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"]) {
@@ -1604,7 +1550,7 @@ func TestContainerWithMountedTemp(t *testing.T) {
 
 	err := testutil.Query(`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						withExec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
 							stdout
@@ -1629,7 +1575,7 @@ func TestContainerWithDirectory(t *testing.T) {
 		Directory("some-dir")
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithDirectory("with-dir", dir)
 
@@ -1648,7 +1594,7 @@ func TestContainerWithDirectory(t *testing.T) {
 		WithNewFile("mounted-file", "mounted-content")
 
 	ctr = c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithMountedDirectory("mnt/mount", mount).
 		WithDirectory("mnt/mount/dst/with-dir", dir)
@@ -1665,7 +1611,7 @@ func TestContainerWithDirectory(t *testing.T) {
 	// Test with a relative mount
 	mnt := c.Directory().WithNewDirectory("/a/b/c")
 	ctr = c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithMountedDirectory("/mnt", mnt)
 	dir = c.Directory().
 		WithNewDirectory("/foo").
@@ -1688,7 +1634,7 @@ func TestContainerWithFile(t *testing.T) {
 		File("some-file")
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithFile("target-file", file)
 
@@ -1710,7 +1656,7 @@ func TestContainerWithNewFile(t *testing.T) {
 	defer c.Close()
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithWorkdir("/workdir").
 		WithNewFile("some-file", dagger.ContainerWithNewFileOpts{
 			Contents: "some-content",
@@ -1780,7 +1726,7 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withDirectory(path: "/mnt/dir", directory: "") {
 						withMountedTemp(path: "/mnt/tmp") {
 							mounts
@@ -1822,7 +1768,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	upper := c.Directory().WithNewFile("some-file", "upper-content")
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithMountedDirectory("/mnt/dir", lower)
 
 	t.Run("initial content is lower", func(t *testing.T) {
@@ -1926,7 +1872,7 @@ func TestContainerDirectory(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						withMountedDirectory(path: "/mnt/dir/overlap", source: $id) {
 							withExec(args: ["sh", "-c", "echo hello >> /mnt/dir/overlap/another-file"]) {
@@ -1959,7 +1905,7 @@ func TestContainerDirectory(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						withExec(args: ["cat", "/mnt/dir/another-file"]) {
 							stdout
@@ -2005,7 +1951,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/some-file") {
 							id
@@ -2022,7 +1968,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						directory(path: "/mnt/dir/bogus") {
 							id
@@ -2039,7 +1985,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	err = testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						directory(path: "/mnt/tmp/bogus") {
 							id
@@ -2055,7 +2001,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	err = testutil.Query(
 		`query Test($cache: CacheID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
 						directory(path: "/mnt/cache/bogus") {
 							id
@@ -2113,7 +2059,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						withExec(args: ["sh", "-c", "echo more-content >> /mnt/dir/sub-dir/sub-file"]) {
 							directory(path: "/mnt/dir/sub-dir") {
@@ -2144,7 +2090,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						withExec(args: ["cat", "/mnt/dir/sub-file"]) {
 							stdout
@@ -2183,7 +2129,7 @@ func TestContainerFile(t *testing.T) {
 	err := testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						withMountedDirectory(path: "/mnt/dir/overlap", source: $id) {
 							withExec(args: ["sh", "-c", "echo -n appended >> /mnt/dir/overlap/some-file"]) {
@@ -2216,7 +2162,7 @@ func TestContainerFile(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: FileID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedFile(path: "/mnt/file", source: $id) {
 						withExec(args: ["cat", "/mnt/file"]) {
 							stdout
@@ -2240,7 +2186,7 @@ func TestContainerFileErrors(t *testing.T) {
 	err := testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						file(path: "/mnt/dir/bogus") {
 							id
@@ -2257,7 +2203,7 @@ func TestContainerFileErrors(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						file(path: "/mnt/dir") {
 							id
@@ -2274,7 +2220,7 @@ func TestContainerFileErrors(t *testing.T) {
 	err = testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
 						file(path: "/mnt/tmp/bogus") {
 							id
@@ -2290,7 +2236,7 @@ func TestContainerFileErrors(t *testing.T) {
 	err = testutil.Query(
 		`query Test($cache: CacheID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
 						file(path: "/mnt/cache/bogus") {
 							id
@@ -2304,11 +2250,10 @@ func TestContainerFileErrors(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
 
-	secretID := newSecret(t, "some-secret")
 	err = testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						file(path: "/sekret") {
 							contents
@@ -2316,8 +2261,8 @@ func TestContainerFileErrors(t *testing.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"secret": secretID,
+		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+			"secret": "some-secret",
 		}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "sekret: no such file or directory")
@@ -2338,7 +2283,7 @@ func TestContainerFSDirectory(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					directory(path: "/etc") {
 						id
 					}
@@ -2363,7 +2308,7 @@ func TestContainerFSDirectory(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/etc", source: $id) {
 						withExec(args: ["cat", "/mnt/etc/alpine-release"]) {
 							stdout
@@ -2376,7 +2321,7 @@ func TestContainerFSDirectory(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "3.16.2\n", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
+	require.Equal(t, "3.18.2\n", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
 }
 
 func TestContainerRelativePaths(t *testing.T) {
@@ -2435,7 +2380,7 @@ func TestContainerRelativePaths(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!, $cache: CacheID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withExec(args: ["mkdir", "-p", "/mnt/sub"]) {
 						withWorkdir(path: "/mnt") {
 							withWorkdir(path: "sub") {
@@ -2490,7 +2435,7 @@ func TestContainerRelativePaths(t *testing.T) {
 	err = testutil.Query(
 		`query Test($id: DirectoryID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						withExec(args: ["ls", "/mnt/dir"]) {
 							stdout
@@ -2572,17 +2517,24 @@ func TestContainerPublish(t *testing.T) {
 	defer c.Close()
 
 	testRef := registryRef("container-publish")
-	pushedRef, err := c.Container().
-		From("alpine:3.16.2").
-		Publish(ctx, testRef)
+
+	entrypoint := []string{"echo", "im-a-entrypoint"}
+	ctr := c.Container().From(alpineImage).
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+		WithEntrypoint(entrypoint)
+	pushedRef, err := ctr.Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 
-	contents, err := c.Container().
-		From(pushedRef).Rootfs().File("/etc/alpine-release").Contents(ctx)
+	pulledCtr := c.Container().From(pushedRef)
+	contents, err := pulledCtr.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "3.16.2\n")
+	require.Equal(t, contents, "3.18.2\n")
+
+	output, err := pulledCtr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "im-a-entrypoint\n", output)
 }
 
 func TestExecFromScratch(t *testing.T) {
@@ -2617,7 +2569,7 @@ func TestContainerMultipleMounts(t *testing.T) {
 	two := c.Host().Directory(dir).File("two")
 	three := c.Host().Directory(dir).File("three")
 
-	build := c.Container().From("alpine:3.16.2").
+	build := c.Container().From(alpineImage).
 		WithMountedFile("/example/one", one).
 		WithMountedFile("/example/two", two).
 		WithMountedFile("/example/three", three)
@@ -2639,11 +2591,13 @@ func TestContainerExport(t *testing.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
-	ctr := c.Container().From("alpine:3.16.2")
+	entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
+	ctr := c.Container().From(alpineImage).
+		WithEntrypoint(entrypoint)
 
 	t.Run("to absolute dir", func(t *testing.T) {
 		imagePath := filepath.Join(dest, "image.tar")
@@ -2652,19 +2606,42 @@ func TestContainerExport(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok)
 
+		stat, err := os.Stat(imagePath)
+		require.NoError(t, err)
+		require.NotZero(t, stat.Size())
+		require.EqualValues(t, 0o600, stat.Mode().Perm())
+
 		entries := tarEntries(t, imagePath)
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 
-		// a single-platform image can include a manifest.json, making it
+		// a single-platform image includes a manifest.json, making it
 		// compatible with docker load
 		require.Contains(t, entries, "manifest.json")
+
+		dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
+		// NOTE: this is what buildkit integ tests do, use a one-off struct rather than actual defined type
+		var dockerManifest []struct {
+			Config string
+		}
+		require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
+		require.Len(t, dockerManifest, 1)
+		configPath := dockerManifest[0].Config
+		configBytes := readTarFile(t, imagePath, configPath)
+		var img ocispecs.Image
+		require.NoError(t, json.Unmarshal(configBytes, &img))
+		require.Equal(t, entrypoint, img.Config.Entrypoint)
 	})
 
 	t.Run("to workdir", func(t *testing.T) {
 		ok, err := ctr.Export(ctx, "./image.tar")
 		require.NoError(t, err)
 		require.True(t, ok)
+
+		stat, err := os.Stat(filepath.Join(wd, "image.tar"))
+		require.NoError(t, err)
+		require.NotZero(t, stat.Size())
+		require.EqualValues(t, 0o600, stat.Mode().Perm())
 
 		entries := tarEntries(t, filepath.Join(wd, "image.tar"))
 		require.Contains(t, entries, "oci-layout")
@@ -2695,24 +2672,54 @@ func TestContainerImport(t *testing.T) {
 
 	ctx := context.Background()
 
-	dest := t.TempDir()
-
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
+	pf, err := c.DefaultPlatform(ctx)
+	require.NoError(t, err)
 
-	imagePath := filepath.Join(dest, "image.tar")
+	platform, err := platforms.Parse(string(pf))
+	require.NoError(t, err)
+
+	config := map[string]any{
+		"contents": map[string]any{
+			"keyring": []string{
+				"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
+			},
+			"repositories": []string{
+				"https://packages.wolfi.dev/os",
+			},
+			"packages": []string{
+				"wolfi-base",
+			},
+		},
+		"cmd": "/bin/sh -l",
+		"environment": map[string]string{
+			"FOO": "bar",
+		},
+		"archs": []string{
+			platform.Architecture,
+		},
+	}
+
+	cfgYaml, err := yaml.Marshal(config)
+	require.NoError(t, err)
+
+	apko := c.Container().
+		From("cgr.dev/chainguard/apko:latest").
+		WithNewFile("config.yml", dagger.ContainerWithNewFileOpts{
+			Contents: string(cfgYaml),
+		})
 
 	t.Run("OCI", func(t *testing.T) {
-		ctr := c.Container().
-			From("alpine:3.16.2").
-			WithEnvVariable("FOO", "bar")
+		imageFile := apko.
+			WithExec([]string{
+				"build",
+				"config.yml", "latest", "output.tar",
+			}).
+			File("output.tar")
 
-		ok, err := ctr.Export(ctx, imagePath)
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
+		imported := c.Container().Import(imageFile)
 
 		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -2720,19 +2727,19 @@ func TestContainerImport(t *testing.T) {
 	})
 
 	t.Run("Docker", func(t *testing.T) {
-		ref := name.MustParseReference("alpine:3.16.2")
+		imageFile := apko.
+			WithExec([]string{
+				"build",
+				"--use-docker-mediatypes",
+				"config.yml", "latest", "output.tar",
+			}).
+			File("output.tar")
 
-		img, err := remote.Image(ref)
+		imported := c.Container().Import(imageFile)
+
+		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
-
-		err = tarball.WriteToFile(imagePath, ref, img)
-		require.NoError(t, err)
-
-		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
-
-		out, err := imported.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "3.16.2\n", out)
+		require.Equal(t, "bar\n", out)
 	})
 }
 
@@ -2745,11 +2752,12 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	defer c.Close()
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
-	for platform := range platformToUname {
+	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16.2").
-			WithExec([]string{"uname", "-m"})
-
+			From(alpineImage).
+			WithExec([]string{"uname", "-m"}).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+			WithEntrypoint([]string{"echo", uname})
 		variants = append(variants, ctr)
 	}
 
@@ -2763,10 +2771,75 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 	entries := tarEntries(t, dest)
 	require.Contains(t, entries, "oci-layout")
-	require.Contains(t, entries, "index.json")
-
 	// multi-platform images don't contain a manifest.json
 	require.NotContains(t, entries, "manifest.json")
+
+	indexBytes := readTarFile(t, dest, "index.json")
+	var index ocispecs.Index
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+	// index is nested (search "nested index" in spec here):
+	// https://github.com/opencontainers/image-spec/blob/main/image-index.md
+	nestedIndexDigest := index.Manifests[0].Digest
+	indexBytes = readTarFile(t, dest, "blobs/sha256/"+nestedIndexDigest.Encoded())
+	index = ocispecs.Index{}
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+
+	// make sure all the platforms we expected are there
+	exportedPlatforms := make(map[string]struct{})
+	for _, desc := range index.Manifests {
+		require.NotNil(t, desc.Platform)
+		platformStr := platforms.Format(*desc.Platform)
+		exportedPlatforms[platformStr] = struct{}{}
+
+		manifestDigest := desc.Digest
+		manifestBytes := readTarFile(t, dest, "blobs/sha256/"+manifestDigest.Encoded())
+		var manifest ocispecs.Manifest
+		require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
+		configDigest := manifest.Config.Digest
+		configBytes := readTarFile(t, dest, "blobs/sha256/"+configDigest.Encoded())
+		var config ocispecs.Image
+		require.NoError(t, json.Unmarshal(configBytes, &config))
+		require.Equal(t, []string{"echo", platformToUname[dagger.Platform(platformStr)]}, config.Config.Entrypoint)
+	}
+	for platform := range platformToUname {
+		delete(exportedPlatforms, string(platform))
+	}
+	require.Empty(t, exportedPlatforms)
+}
+
+// Multiplatform publish is also tested in more complicated scenarios in platform_test.go
+func TestContainerMultiPlatformPublish(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	variants := make([]*dagger.Container, 0, len(platformToUname))
+	for platform, uname := range platformToUname {
+		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From(alpineImage).
+			WithExec([]string{"uname", "-m"}).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+			WithEntrypoint([]string{"echo", uname})
+		variants = append(variants, ctr)
+	}
+
+	testRef := registryRef("container-multiplatform-publish")
+
+	publishedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+		PlatformVariants: variants,
+	})
+	require.NoError(t, err)
+
+	for platform, uname := range platformToUname {
+		output, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From(publishedRef).
+			WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, uname+"\n", output)
+	}
 }
 
 func TestContainerMultiPlatformImport(t *testing.T) {
@@ -2780,7 +2853,7 @@ func TestContainerMultiPlatformImport(t *testing.T) {
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16.2")
+			From(alpineImage)
 
 		variants = append(variants, ctr)
 	}
@@ -2817,7 +2890,7 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 		WithNewDirectory("/top/sub-dir/sub-file").
 		Directory("/top") // <-- the important part!
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithMountedDirectory("/mnt", mnt)
 
 	dir := c.Directory().
@@ -2929,7 +3002,7 @@ func TestContainerExecError(t *testing.T) {
 
 	t.Run("includes output of failed exec in error", func(t *testing.T) {
 		_, err = c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 			)}).
@@ -2944,7 +3017,7 @@ func TestContainerExecError(t *testing.T) {
 
 	t.Run("includes output of failed exec in error when redirects are enabled", func(t *testing.T) {
 		_, err = c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithExec(
 				[]string{"sh", "-c", fmt.Sprintf(
 					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
@@ -2967,23 +3040,23 @@ func TestContainerExecError(t *testing.T) {
 		// fill a byte buffer with a string that is slightly over the size of the max output
 		// size, then base64 encode it
 		var stdoutBuf bytes.Buffer
-		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
+		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
 			stdoutBuf.WriteByte('a')
 		}
 		stdoutStr := stdoutBuf.String()
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
+		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
 			stderrBuf.WriteByte('b')
 		}
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(core.TruncationMessage, 50)
+		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, 50)
 
 		_, err = c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithDirectory("/", c.Directory().
 				WithNewFile("encout", encodedOutMsg).
 				WithNewFile("encerr", encodedErrMsg),
@@ -2994,8 +3067,8 @@ func TestContainerExecError(t *testing.T) {
 		var exErr *dagger.ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.Equal(t, truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes], exErr.Stdout)
-		require.Equal(t, truncMsg+stderrStr[:core.MaxExecErrorOutputBytes], exErr.Stderr)
+		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stderr)
 	})
 }
 
@@ -3010,42 +3083,23 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	defer c.Close()
 
 	testRef := privateRegistryRef("container-with-registry-auth")
-	container := c.Container().From("alpine:3.16.2")
+	container := c.Container().From(alpineImage)
 
 	// Push without credentials should fail
 	_, err = container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	t.Run("legacy secret API", func(t *testing.T) {
-		pushedRef, err := container.
-			WithRegistryAuth(
-				privateRegistryHost,
-				"john",
-				//nolint:staticcheck // SA1019 We want to test this API while we support it.
-				c.Container().
-					WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
-					File("secret.txt").
-					Secret(),
-			).
-			Publish(ctx, testRef)
+	pushedRef, err := container.
+		WithRegistryAuth(
+			privateRegistryHost,
+			"john",
+			c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+		).
+		Publish(ctx, testRef)
 
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-	})
-	t.Run("new secret API", func(t *testing.T) {
-		pushedRef, err := container.
-			WithRegistryAuth(
-				privateRegistryHost,
-				"john",
-				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
-			).
-			Publish(ctx, testRef)
-
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-	})
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
 }
 
 func TestContainerImageRef(t *testing.T) {
@@ -3063,13 +3117,13 @@ func TestContainerImageRef(t *testing.T) {
 		err := testutil.Query(
 			`{
 				container {
-					from(address: "alpine:3.16.2") {
+					from(address: "`+alpineImage+`") {
 						imageRef
 					}
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
-		require.Contains(t, res.Container.From.ImageRef, "docker.io/library/alpine:3.16.2@sha256:")
+		require.Contains(t, res.Container.From.ImageRef, "docker.io/library/alpine:3.18.2@sha256:")
 	})
 
 	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {
@@ -3128,7 +3182,7 @@ func TestContainerImageRef(t *testing.T) {
 			Directory("some-dir")
 
 		ctr := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithWorkdir("/workdir").
 			WithDirectory("with-dir", dir)
 
@@ -3168,7 +3222,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	defer cancel()
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
-	// is trickier since the full list of caps is host dependent.
+	// is trickier since the full list of caps is host dependent based on the kernel version.
 	privilegedCaps := []string{
 		"cap_sys_admin",
 		"cap_net_admin",
@@ -3180,7 +3234,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	}
 
 	for _, capSet := range []string{"CapPrm", "CapEff", "CapBnd"} {
-		out, err := c.Container().From("alpine:3.16.2").
+		out, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "libcap"}).
 			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}).
 			Stdout(ctx)
@@ -3191,7 +3245,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	}
 
 	for _, capSet := range []string{"CapPrm", "CapEff", "CapBnd", "CapInh", "CapAmb"} {
-		out, err := c.Container().From("alpine:3.16.2").
+		out, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "libcap"}).
 			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}, dagger.ContainerWithExecOpts{
 				InsecureRootCapabilities: true,
@@ -3252,24 +3306,20 @@ func TestContainerNoExec(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	code, err := c.Container().From("alpine:3.16.2").ExitCode(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 0, code)
-
-	stdout, err := c.Container().From("alpine:3.16.2").Stdout(ctx)
+	stdout, err := c.Container().From(alpineImage).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", stdout)
 
-	stderr, err := c.Container().From("alpine:3.16.2").Stderr(ctx)
+	stderr, err := c.Container().From(alpineImage).Stderr(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", stderr)
 
 	_, err = c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
 			Args: nil,
 		}).
-		ExitCode(ctx)
+		Stdout(ctx)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no command has been set")
@@ -3297,7 +3347,7 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 	t.Run("file from subdirectory", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
@@ -3335,7 +3385,7 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 	t.Run("subdirectory", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
@@ -3353,14 +3403,14 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 	t.Run("permissions", func(t *testing.T) {
 		dir := c.Directory().
 			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
-				Permissions: 0745,
+				Permissions: 0o745,
 			}).
 			WithNewFile("perms/foo", "whee", dagger.DirectoryWithNewFileOpts{
-				Permissions: 0645,
+				Permissions: 0o645,
 			}).
 			Directory("perms")
 
-		ctr := c.Container().From("alpine:3.16.2").
+		ctr := c.Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
@@ -3401,7 +3451,7 @@ func TestContainerWithFileOwner(t *testing.T) {
 	t.Run("file from subdirectory", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
@@ -3439,7 +3489,7 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 	t.Run("subdirectory", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
@@ -3479,7 +3529,7 @@ func TestContainerWithMountedCacheOwner(t *testing.T) {
 	})
 
 	t.Run("permissions (empty)", func(t *testing.T) {
-		ctr := c.Container().From("alpine:3.16.2").
+		ctr := c.Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
@@ -3496,14 +3546,14 @@ func TestContainerWithMountedCacheOwner(t *testing.T) {
 	t.Run("permissions (source)", func(t *testing.T) {
 		dir := c.Directory().
 			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
-				Permissions: 0745,
+				Permissions: 0o745,
 			}).
 			WithNewFile("perms/foo", "whee", dagger.DirectoryWithNewFileOpts{
-				Permissions: 0645,
+				Permissions: 0o645,
 			}).
 			Directory("perms")
 
-		ctr := c.Container().From("alpine:3.16.2").
+		ctr := c.Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
@@ -3565,7 +3615,7 @@ func testOwnership(
 ) {
 	t.Parallel()
 
-	ctr := c.Container().From("alpine:3.16.2").
+	ctr := c.Container().From(alpineImage).
 		WithExec([]string{"adduser", "-D", "inherituser"}).
 		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
@@ -3686,7 +3736,7 @@ func TestContainerForceCompression(t *testing.T) {
 
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := c.Container().
-				From("alpine:3.16.2").
+				From(alpineImage).
 				Publish(ctx, ref, dagger.ContainerPublishOpts{
 					ForcedCompression: tc.compression,
 				})
@@ -3709,7 +3759,7 @@ func TestContainerForceCompression(t *testing.T) {
 
 			tarPath := filepath.Join(t.TempDir(), "export.tar")
 			_, err = c.Container().
-				From("alpine:3.16.2").
+				From(alpineImage).
 				Export(ctx, tarPath, dagger.ContainerExportOpts{
 					ForcedCompression: tc.compression,
 				})
@@ -3818,7 +3868,7 @@ func TestContainerBuildMergesWithParent(t *testing.T) {
 
 	// Create a builder container
 	builderCtr := c.Directory().WithNewFile("Dockerfile",
-		`FROM alpine:3.16.2
+		`FROM `+alpineImage+`
 ENV FOO=BAR
 LABEL "com.example.test-should-replace"="foo"
 EXPOSE 8080
@@ -3976,7 +4026,7 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 					t.Parallel()
 					tmpdir := t.TempDir()
 					tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s-%s.tar", dockerVersion, mediaType, compression))
-					_, err := c.Container().From("alpine:3.16.2").
+					_, err := c.Container().From(alpineImage).
 						// we need a unique image, otherwise docker load skips it after the first tar load
 						WithExec([]string{"sh", "-c", "echo '" + string(compression) + string(mediaType) + "' > /foo"}).
 						Export(ctx, tmpfile, dagger.ContainerExportOpts{

@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,11 +18,14 @@ const (
 	elixirSDKPath            = "sdk/elixir"
 	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
 	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/engine_conn.ex"
+)
 
-	// https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
-	elixirVersion = "1.14.5"
-	otpVersion    = "25.3"
-	debianVersion = "20230227"
+// https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
+var elixirVersions = []string{"1.14.5", "1.15.4"}
+
+const (
+	otpVersion    = "25.3.2.4"
+	debianVersion = "20230612"
 )
 
 var _ SDK = Elixir{}
@@ -49,7 +53,7 @@ func (Elixir) Lint(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	_, err = elixirBase(c).
+	_, err = elixirBase(c, elixirVersions[1]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -84,15 +88,17 @@ func (Elixir) Test(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	_, err = elixirBase(c).
-		WithServiceBinding("dagger-engine", devEngine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mix", "test"}).
-		Sync(ctx)
-	if err != nil {
-		return err
+	for _, elixirVersion := range elixirVersions {
+		_, err := elixirBase(c.Pipeline(elixirVersion), elixirVersion).
+			WithServiceBinding("dagger-engine", devEngine).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+			WithExec([]string{"mix", "test"}).
+			Sync(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -118,7 +124,7 @@ func (Elixir) Generate(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	generated := elixirBase(c).
+	generated := elixirBase(c, elixirVersions[1]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -150,37 +156,38 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	defer c.Close()
 
 	var (
-		version     = strings.TrimPrefix(tag, "sdk/elixir/v")
-		versionFile = "sdk/elixir/VERSION"
-		hexAPIKey   = os.Getenv("HEX_API_KEY")
-		dryRun      = os.Getenv("HEX_DRY_RUN")
+		version   = strings.TrimPrefix(tag, "sdk/elixir/v")
+		mixFile   = "sdk/elixir/mix.exs"
+		hexAPIKey = os.Getenv("HEX_API_KEY")
+		dryRun    = os.Getenv("HEX_DRY_RUN")
 	)
 
 	if hexAPIKey == "" {
 		return errors.New("HEX_API_KEY environment variable must be set")
 	}
 
-	if err := os.WriteFile(versionFile, []byte(version), 0o600); err != nil {
+	mixExs, err := os.ReadFile(mixFile)
+	if err != nil {
 		return err
 	}
-	defer func() {
-		// Ensure to not make version file dirty.
-		os.WriteFile(versionFile, []byte("0.0.0\n"), 0o600)
-	}()
+	newMixExs := bytes.Replace(mixExs, []byte(`@version "0.0.0"`), []byte(`@version "`+version+`"`), 1)
+	err = os.WriteFile(mixFile, newMixExs, 0o600)
+	if err != nil {
+		return err
+	}
 
 	args := []string{"mix", "hex.publish", "--yes"}
 	if dryRun != "" {
 		args = append(args, "--dry-run")
 	}
 
-	// TODO: copy LICENSE?
-
 	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
 
-	_, err = elixirBase(c).
+	_, err = elixirBase(c, elixirVersions[1]).
 		WithEnvVariable("HEX_API_KEY", hexAPIKey).
 		WithExec(args).
 		Sync(ctx)
+
 	return err
 }
 
@@ -201,8 +208,9 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 	return os.WriteFile(elixirSDKVersionFilePath, newContents, 0o600)
 }
 
-func elixirBase(c *dagger.Client) *dagger.Container {
+func elixirBase(c *dagger.Client, elixirVersion string) *dagger.Container {
 	const appDir = "sdk/elixir"
+
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
 	mountPath := fmt.Sprintf("/%s", appDir)

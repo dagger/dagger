@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/mitchellh/go-homedir"
 )
 
 const (
@@ -39,8 +40,11 @@ func FromLocalCLI(ctx context.Context, cfg *Config) (EngineConn, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-
-	binPath, err := exec.LookPath(binPath)
+	binPath, err := homedir.Expand(binPath)
+	if err != nil {
+		return nil, false, err
+	}
+	binPath, err = exec.LookPath(binPath)
 	if err != nil {
 		return nil, false, err
 	}
@@ -65,6 +69,10 @@ func FromDownloadedCLI(ctx context.Context, cfg *Config) (EngineConn, error) {
 	binPath := filepath.Join(cacheDir, binName)
 
 	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		if cfg.LogOutput != nil {
+			fmt.Fprintf(cfg.LogOutput, "Downloading CLI... ")
+		}
+
 		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+binName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create temp file: %w", err)
@@ -98,6 +106,10 @@ func FromDownloadedCLI(ctx context.Context, cfg *Config) (EngineConn, error) {
 
 		if err := os.Rename(tmpbin.Name(), binPath); err != nil {
 			return nil, fmt.Errorf("failed to rename %q to %q: %w", tmpbin.Name(), binPath, err)
+		}
+
+		if cfg.LogOutput != nil {
+			fmt.Fprintln(cfg.LogOutput, "OK!")
 		}
 
 		// cleanup any old CLI binaries

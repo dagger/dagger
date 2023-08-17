@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,8 +22,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/network"
 	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vito/progrock"
@@ -172,97 +174,6 @@ func shim() int {
 		cmd.Stdin = nil
 	}
 
-	stdoutRedirect, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
-	if found {
-		stdoutPath = stdoutRedirect
-	}
-
-	stderrRedirect, found := internalEnv("_DAGGER_REDIRECT_STDERR")
-	if found {
-		stderrPath = stderrRedirect
-	}
-
-	if _, found := internalEnv(core.DebugFailedExecEnv); found {
-		// if we are being requested to just obtain the output of a previously failed exec,
-		// do that and exit
-		stdoutFile, err := os.Open(stdoutPath)
-		if err == nil {
-			stdoutFileSize, err := stdoutFile.Seek(0, io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			seekFromEnd := stdoutFileSize
-			if seekFromEnd > core.MaxExecErrorOutputBytes {
-				// copy the last MaxExecErrorOutputBytes bytes only
-				seekFromEnd = core.MaxExecErrorOutputBytes
-
-				// prepend a notice when truncating
-				_, err = io.WriteString(os.Stdout, fmt.Sprintf(
-					core.TruncationMessage,
-					stdoutFileSize-seekFromEnd,
-				))
-				if err != nil {
-					panic(err)
-				}
-			}
-			_, err = stdoutFile.Seek(-int64(seekFromEnd), io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			_, err = io.Copy(os.Stdout, stdoutFile)
-			if err != nil {
-				panic(err)
-			}
-		} else if !os.IsNotExist(err) {
-			panic(err)
-		}
-
-		stderrFile, err := os.Open(stderrPath)
-		if err == nil {
-			stderrFileSize, err := stderrFile.Seek(0, io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			seekFromEnd := stderrFileSize
-			if seekFromEnd > core.MaxExecErrorOutputBytes {
-				// copy the last MaxExecErrorOutputBytes bytes only
-				seekFromEnd = core.MaxExecErrorOutputBytes
-
-				// prepend a notice when truncating
-				_, err = io.WriteString(os.Stderr, fmt.Sprintf(
-					core.TruncationMessage,
-					stderrFileSize-seekFromEnd,
-				))
-				if err != nil {
-					panic(err)
-				}
-			}
-			_, err = stderrFile.Seek(-int64(seekFromEnd), io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			_, err = io.Copy(os.Stderr, stderrFile)
-			if err != nil {
-				panic(err)
-			}
-		} else if !os.IsNotExist(err) {
-			panic(err)
-		}
-
-		code, err := os.ReadFile(exitCodePath)
-		if os.IsNotExist(err) {
-			return -1
-		}
-		if err != nil {
-			panic(err)
-		}
-		exitCode, err := strconv.Atoi(string(code))
-		if err != nil {
-			panic(err)
-		}
-		return exitCode
-	}
-
 	var secretsToScrub core.SecretToScrubInfo
 
 	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
@@ -281,15 +192,35 @@ func shim() int {
 		panic(err)
 	}
 	defer stdoutFile.Close()
+	stdoutRedirect := io.Discard
+	stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
+	if found {
+		stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
+		if err != nil {
+			panic(err)
+		}
+		defer stdoutRedirectFile.Close()
+		stdoutRedirect = stdoutRedirectFile
+	}
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stderrFile.Close()
+	stderrRedirect := io.Discard
+	stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
+	if found {
+		stderrRedirectFile, err := os.Create(stderrRedirectPath)
+		if err != nil {
+			panic(err)
+		}
+		defer stderrRedirectFile.Close()
+		stderrRedirect = stderrRedirectFile
+	}
 
-	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
-	errWriter := io.MultiWriter(stderrFile, os.Stderr)
+	outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
+	errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
 
 	if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 		cmd.Stdout = outWriter
@@ -417,10 +348,54 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
+	execMetadata := new(core.ContainerExecUncachedMetadata)
+	for i, env := range spec.Process.Env {
+		found, err := execMetadata.FromEnv(env)
+		if err != nil {
+			fmt.Printf("Error parsing env: %v\n", err)
+			return 1
+		}
+		if found {
+			// remove the ftp_proxy env var from being set in the container
+			spec.Process.Env = append(spec.Process.Env[:i], spec.Process.Env[i+1:]...)
+			break
+		}
+	}
+
+	var searchDomains []string
+	for _, parentClientID := range execMetadata.ParentClientIDs {
+		searchDomains = append(searchDomains, network.ClientDomain(parentClientID))
+	}
+	if len(searchDomains) > 0 {
+		spec.Process.Env = append(spec.Process.Env, "_DAGGER_PARENT_CLIENT_IDS="+strings.Join(execMetadata.ParentClientIDs, " "))
+	}
+
 	var hostsFilePath string
-	for _, mnt := range spec.Mounts {
-		if mnt.Destination == "/etc/hosts" {
+	for i, mnt := range spec.Mounts {
+		switch mnt.Destination {
+		case "/etc/hosts":
 			hostsFilePath = mnt.Source
+		case "/etc/resolv.conf":
+			if len(searchDomains) == 0 {
+				break
+			}
+
+			newResolvPath := filepath.Join(bundleDir, "resolv.conf")
+
+			newResolv, err := os.Create(newResolvPath)
+			if err != nil {
+				panic(err)
+			}
+
+			if err := replaceSearch(newResolv, mnt.Source, searchDomains); err != nil {
+				panic(err)
+			}
+
+			if err := newResolv.Close(); err != nil {
+				panic(err)
+			}
+
+			spec.Mounts[i].Source = newResolvPath
 		}
 	}
 
@@ -430,6 +405,12 @@ func setupBundle() int {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
 			// keep the env var; we use it at runtime
 			keepEnv = append(keepEnv, env)
+			// provide the server id to connect back to
+			if execMetadata.ServerID == "" {
+				fmt.Fprintln(os.Stderr, "missing server id")
+				return 1
+			}
+			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -438,11 +419,23 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
+			// also need the progsock path for forwarding progress
+			if execMetadata.ProgSockPath == "" {
+				fmt.Fprintln(os.Stderr, "missing progsock path")
+				return 1
+			}
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: "/.progrock.sock",
+				Type:        "bind",
+				Options:     []string{"rbind"},
+				Source:      execMetadata.ProgSockPath,
+			})
+		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 
-			if err := appendHostAlias(hostsFilePath, env); err != nil {
+			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return 1
 			}
@@ -513,15 +506,32 @@ func setupBundle() int {
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
 
-func appendHostAlias(hostsFilePath string, env string) error {
+func appendHostAlias(hostsFilePath string, env string, searchDomains []string) error {
 	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
 	if !ok {
 		return fmt.Errorf("malformed host alias: %s", env)
 	}
 
-	ips, err := net.LookupIP(target)
-	if err != nil {
-		return err
+	var ips []net.IP
+	var errs error
+	for _, domain := range append([]string{""}, searchDomains...) {
+		qualified := target
+
+		if domain != "" {
+			qualified += "." + domain
+		}
+
+		var err error
+		ips, err = net.LookupIP(qualified)
+		if err == nil {
+			errs = nil // ignore prior failures
+			break
+		}
+
+		errs = errors.Join(errs, err)
+	}
+	if errs != nil {
+		return errs
 	}
 
 	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
@@ -530,7 +540,7 @@ func appendHostAlias(hostsFilePath string, env string) error {
 	}
 
 	for _, ip := range ips {
-		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
+		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, alias); err != nil {
 			return err
 		}
 	}
@@ -587,45 +597,76 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if engineErr != nil {
 		return fmt.Errorf("error listening on session socket: %w", engineErr)
 	}
+	sessionPort := l.Addr().(*net.TCPAddr).Port
 
-	engineConf := engine.Config{
-		SessionToken: sessionToken.String(),
-		RunnerHost:   "unix:///.runner.sock",
+	serverID, ok := internalEnv("_DAGGER_SERVER_ID")
+	if !ok {
+		return fmt.Errorf("missing _DAGGER_SERVER_ID")
+	}
+	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
+	sessParams := client.Params{
+		ServerID:        serverID,
+		SecretToken:     sessionToken.String(),
+		RunnerHost:      "unix:///.runner.sock",
+		ParentClientIDs: strings.Fields(parentClientIDsVal),
 	}
 
-	if _, err := os.Stat("/.progrock.sock"); err == nil {
-		progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
-		if err != nil {
-			return fmt.Errorf("error connecting to progrock: %w", err)
-		}
-
-		engineConf.ProgrockWriter = progW
+	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
+	if err != nil {
+		return fmt.Errorf("error connecting to progrock: %w", err)
 	}
+	sessParams.ProgrockWriter = progW
 
-	// pass dagger session along to command
-	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(l.Addr().(*net.TCPAddr).Port))
+	sess, ctx, err := client.Connect(ctx, sessParams)
+	if err != nil {
+		return fmt.Errorf("error connecting to engine: %w", err)
+	}
+	defer sess.Close()
+
+	go http.Serve(l, sess) //nolint:gosec
+
+	// pass dagger session along to any SDKs that run in the container
+	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(sessionPort))
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+	pipeWg.Wait()
+	err = cmd.Wait()
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
-	var cmdErr error
-	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-		go http.Serve(l, r) //nolint:gosec
-		cmdErr = cmd.Start()
-		if cmdErr != nil {
-			return cmdErr
-		}
-		pipeWg.Wait()
-		cmdErr = cmd.Wait()
-		if cmdErr != nil {
-			return cmdErr
-		}
+func replaceSearch(dst io.Writer, resolv string, searchDomains []string) error {
+	src, err := os.Open(resolv)
+	if err != nil {
 		return nil
-	})
-	if cmdErr != nil {
-		// propagate inner error with higher priority
-		return cmdErr
 	}
-	if engineErr != nil {
-		return fmt.Errorf("engine: %w", engineErr)
+	defer src.Close()
+
+	srcScan := bufio.NewScanner(src)
+
+	var replaced bool
+	for srcScan.Scan() {
+		if !strings.HasPrefix(srcScan.Text(), "search") {
+			fmt.Fprintln(dst, srcScan.Text())
+			continue
+		}
+
+		oldDomains := strings.Fields(srcScan.Text())[1:]
+
+		newDomains := append([]string{}, searchDomains...)
+		newDomains = append(newDomains, oldDomains...)
+		fmt.Fprintln(dst, "search", strings.Join(newDomains, " "))
+		replaced = true
 	}
+
+	if !replaced {
+		fmt.Fprintln(dst, "search", strings.Join(searchDomains, " "))
+	}
+
 	return nil
 }

@@ -2,35 +2,18 @@ package core
 
 import (
 	"context"
-	"fmt"
-	"os"
+	"errors"
+	"sync"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/moby/buildkit/session/secrets"
 )
 
 // Secret is a content-addressed secret.
 type Secret struct {
 	// Name specifies the arbitrary name/id of the secret.
 	Name string `json:"name,omitempty"`
-
-	// FromFile specifies the FileID it is based off.
-	//
-	// Deprecated: this shouldn't be used as it can leak secrets in the cache.
-	// Use the setSecret API instead.
-	FromFile FileID `json:"file,omitempty"`
-
-	// FromHostEnv specifies the FileID it is based off.
-	//
-	// Deprecated: use the setSecret API instead.
-	FromHostEnv string `json:"host_env,omitempty"`
-}
-
-func NewSecretFromFile(fileID FileID) *Secret {
-	return &Secret{FromFile: fileID}
-}
-
-func NewSecretFromHostEnv(name string) *Secret {
-	return &Secret{FromHostEnv: name}
 }
 
 // SecretID is an opaque value representing a content-addressed secret.
@@ -44,7 +27,7 @@ func NewDynamicSecret(name string) *Secret {
 
 func (id SecretID) ToSecret() (*Secret, error) {
 	var secret Secret
-	if err := decodeID(&secret, id); err != nil {
+	if err := resourceid.Decode(&secret, id); err != nil {
 		return nil, err
 	}
 
@@ -59,25 +42,68 @@ func (secret *Secret) Clone() *Secret {
 }
 
 func (secret *Secret) ID() (SecretID, error) {
-	return encodeID[SecretID](secret)
+	return resourceid.Encode[SecretID](secret)
 }
 
-func (secret *Secret) IsOldFormat() bool {
-	return secret.FromFile != "" || secret.FromHostEnv != ""
+// ErrNotFound indicates a secret can not be found.
+var ErrNotFound = errors.New("secret not found")
+
+func NewSecretStore() *SecretStore {
+	return &SecretStore{
+		secrets: map[string][]byte{},
+	}
 }
 
-func (secret *Secret) LegacyPlaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	if secret.FromFile != "" {
-		file, err := secret.FromFile.ToFile()
-		if err != nil {
-			return nil, err
-		}
-		return file.Contents(ctx, gw)
+var _ secrets.SecretStore = &SecretStore{}
+
+type SecretStore struct {
+	mu      sync.Mutex
+	secrets map[string][]byte
+	bk      *buildkit.Client
+}
+
+func (store *SecretStore) SetBuildkitClient(bk *buildkit.Client) {
+	store.bk = bk
+}
+
+// AddSecret adds the secret identified by user defined name with its plaintext
+// value to the secret store.
+func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []byte) (SecretID, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	secret := NewDynamicSecret(name)
+
+	// add the plaintext to the map
+	store.secrets[secret.Name] = plaintext
+
+	return secret.ID()
+}
+
+// GetSecret returns the plaintext secret value.
+//
+// Its argument may either be the user defined name originally specified within
+// a SecretID, or a full SecretID value.
+//
+// A user defined name will be received when secrets are used in a Dockerfile
+// build.
+//
+// In all other cases, a SecretID is expected.
+func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	var name string
+	if secret, err := SecretID(idOrName).ToSecret(); err == nil {
+		name = secret.Name
+	} else {
+		name = idOrName
 	}
 
-	if secret.FromHostEnv != "" {
-		return []byte(os.Getenv(secret.FromHostEnv)), nil
+	plaintext, ok := store.secrets[name]
+	if !ok {
+		return nil, ErrNotFound
 	}
 
-	return nil, fmt.Errorf("plaintext: empty secret?")
+	return plaintext, nil
 }

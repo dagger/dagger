@@ -11,9 +11,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
-	internalengine "github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tui"
-	"github.com/dagger/dagger/router"
 	"github.com/mattn/go-isatty"
 	"github.com/vito/progrock"
 	"github.com/vito/progrock/console"
@@ -49,46 +48,56 @@ var focus bool
 
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
+type runClientCallback func(context.Context, *client.Client) error
+
 func withEngineAndTUI(
 	ctx context.Context,
-	engineConf engine.Config,
-	fn engine.StartCallback,
+	params client.Params,
+	fn runClientCallback,
 ) error {
-	if engineConf.Workdir == "" {
-		engineConf.Workdir = workdir
+	if params.RunnerHost == "" {
+		params.RunnerHost = engine.RunnerHost()
 	}
 
-	if engineConf.RunnerHost == "" {
-		engineConf.RunnerHost = internalengine.RunnerHost()
-	}
+	params.DisableHostRW = disableHostRW
 
-	engineConf.DisableHostRW = disableHostRW
-
-	if engineConf.JournalFile == "" {
-		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
+	if params.JournalFile == "" {
+		params.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
 	if !silent {
 		if progress == "auto" && autoTTY || progress == "tty" {
 			if interactive {
-				return interactiveTUI(ctx, engineConf, fn)
+				return interactiveTUI(ctx, params, fn)
 			}
 
-			return inlineTUI(ctx, engineConf, fn)
+			return inlineTUI(ctx, params, fn)
 		}
 
-		engineConf.ProgrockWriter = console.NewWriter(os.Stderr, console.ShowInternal(debug))
+		opts := []console.WriterOpt{
+			console.ShowInternal(debug),
+		}
+		if debug {
+			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+		}
 
-		engineConf.EngineNameCallback = func(name string) {
+		params.ProgrockWriter = console.NewWriter(os.Stderr, opts...)
+
+		params.EngineNameCallback = func(name string) {
 			fmt.Fprintln(os.Stderr, "Connected to engine", name)
 		}
 
-		engineConf.CloudURLCallback = func(cloudURL string) {
+		params.CloudURLCallback = func(cloudURL string) {
 			fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
 		}
 	}
 
-	return engine.Start(ctx, engineConf, fn)
+	engineClient, ctx, err := client.Connect(ctx, params)
+	if err != nil {
+		return err
+	}
+	defer engineClient.Close()
+	return fn(ctx, engineClient)
 }
 
 func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
@@ -106,8 +115,8 @@ func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
 
 func interactiveTUI(
 	ctx context.Context,
-	engineConf engine.Config,
-	fn engine.StartCallback,
+	params client.Params,
+	fn runClientCallback,
 ) error {
 	progR, progW := progrock.Pipe()
 	progW, err := progrockTee(progW)
@@ -115,7 +124,7 @@ func interactiveTUI(
 		return err
 	}
 
-	engineConf.ProgrockWriter = progW
+	params.ProgrockWriter = progW
 
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()
@@ -128,37 +137,36 @@ func interactiveTUI(
 		tuiDone <- err
 	}()
 
-	var cbErr error
-	engineErr := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-		cbErr = fn(ctx, api)
-		return cbErr
-	})
-
-	tuiErr := <-tuiDone
-
-	if cbErr != nil {
-		// avoid unnecessary error wrapping
-		return cbErr
+	sess, ctx, err := client.Connect(ctx, params)
+	if err != nil {
+		tuiErr := <-tuiDone
+		return errors.Join(tuiErr, err)
 	}
+	defer sess.Close()
 
-	return errors.Join(tuiErr, engineErr)
+	err = fn(ctx, sess)
+	tuiErr := <-tuiDone
+	return errors.Join(tuiErr, err)
 }
 
 func inlineTUI(
 	ctx context.Context,
-	engineConf engine.Config,
-	fn engine.StartCallback,
+	params client.Params,
+	fn runClientCallback,
 ) error {
 	tape := progrock.NewTape()
 	tape.ShowInternal(debug)
 	tape.Focus(focus)
+	if debug {
+		tape.MessageLevel(progrock.MessageLevel_DEBUG)
+	}
 
 	progW, engineErr := progrockTee(tape)
 	if engineErr != nil {
 		return engineErr
 	}
 
-	engineConf.ProgrockWriter = progW
+	params.ProgrockWriter = progW
 
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()
@@ -166,7 +174,7 @@ func inlineTUI(
 	program, stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
 	defer stop()
 
-	engineConf.CloudURLCallback = func(cloudURL string) {
+	params.CloudURLCallback = func(cloudURL string) {
 		program.Send(progrock.StatusInfoMsg{
 			Name:  "Cloud URL",
 			Value: cloudURL,
@@ -174,7 +182,7 @@ func inlineTUI(
 		})
 	}
 
-	engineConf.EngineNameCallback = func(name string) {
+	params.EngineNameCallback = func(name string) {
 		program.Send(progrock.StatusInfoMsg{
 			Name:  "Engine",
 			Value: name,
@@ -182,28 +190,19 @@ func inlineTUI(
 		})
 	}
 
-	var cbErr error
-	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-		before := time.Now()
-
-		cbErr = fn(ctx, api)
-
-		program.Send(progrock.StatusInfoMsg{
-			Name:  "Duration",
-			Value: time.Since(before).Truncate(time.Millisecond).String(),
-			Order: 3,
-		})
-
-		return cbErr
-	})
-
-	if cbErr != nil {
-		return cbErr
-	} else if engineErr != nil {
-		return engineErr
+	sess, ctx, err := client.Connect(ctx, params)
+	if err != nil {
+		return err
 	}
-
-	return nil
+	defer sess.Close()
+	before := time.Now()
+	err = fn(ctx, sess)
+	program.Send(progrock.StatusInfoMsg{
+		Name:  "Duration",
+		Value: time.Since(before).Truncate(time.Millisecond).String(),
+		Order: 3,
+	})
+	return err
 }
 
 func newProgrockWriter(dest string) (progrock.Writer, error) {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const alpineImage = "alpine:3.18.2"
+
 func devEngineContainer(c *dagger.Client) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that was set up by
 	// internal/mage/engine.go:test or by ./hack/dev. This is used to spin up additional dev engines.
@@ -22,11 +25,8 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 	} else {
 		tarPath = "./bin/engine.tar"
 	}
-	parentDir := filepath.Dir(tarPath)
-	tarFileName := filepath.Base(tarPath)
-	devEngineTar := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{tarFileName}}).File(tarFileName)
+	devEngineTar := c.Host().File(tarPath)
 	return c.Container().Import(devEngineTar).
-		WithEnvVariable("GOTRACEBACK", "all"). // if something goes wrong, dump all the goroutines
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 }
 
@@ -38,7 +38,7 @@ func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, 
 	if err != nil {
 		return nil, err
 	}
-	return c.Container().From("alpine:3.17").
+	return c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
@@ -64,7 +64,7 @@ kill -TERM $engine_pid
 wait $engine_pid
 exit $?
 `,
-			Permissions: 0700,
+			Permissions: 0o700,
 		}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
@@ -80,18 +80,18 @@ func TestClientWaitsForEngine(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	devEngine := devEngineContainer(c).WithoutExposedPort(1234, dagger.ContainerWithoutExposedPortOpts{Protocol: dagger.Tcp})
+	devEngine := devEngineContainer(c)
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
 
 	require.NoError(t, err)
 	before, after, found := strings.Cut(entrypoint, "set -e")
 	require.True(t, found, "missing set -e in entrypoint")
-	entrypoint = before + "set -e \n" + "sleep 30\n" + after
+	entrypoint = before + "set -e \n" + "sleep 15\n" + "echo my hostname is $(hostname)\n" + after
 
 	devEngine = devEngine.
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents:    entrypoint,
-			Permissions: 0700,
+			Permissions: 0o700,
 		}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
@@ -102,10 +102,9 @@ func TestClientWaitsForEngine(t *testing.T) {
 	require.NoError(t, err)
 	_, err = clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`}). // arbitrary valid query
-		WithExec([]string{"time", "dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).Sync(ctx)
+			Contents: `{ defaultPlatform }`,
+		}). // arbitrary valid query
+		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).Sync(ctx)
 
 	require.NoError(t, err)
 }
@@ -117,6 +116,7 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	engineName := "my-special-engine"
 	devEngine := devEngineContainer(c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
@@ -126,9 +126,124 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 
 	out, err := clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`}). // arbitrary valid query
+			Contents: `{ defaultPlatform }`,
+		}). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "Connected to engine "+engineName)
+}
+
+func TestDaggerRun(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	devEngine := devEngineContainer(c).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		})
+
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
+	require.NoError(t, err)
+
+	runCommand := `
+	jq -n '{query:"{container{from(address: \"alpine:3.18.2\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+	dagger run sh -c 'curl -s \
+		-u $DAGGER_SESSION_TOKEN: \
+		-H "content-type:application/json" \
+		-d @- \
+		http://127.0.0.1:$DAGGER_SESSION_PORT/query'`
+
+	clientCtr = clientCtr.
+		WithExec([]string{"apk", "add", "jq", "curl"}).
+		WithExec([]string{"sh", "-c", runCommand})
+
+	stdout, err := clientCtr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "3.18.2")
+
+	stderr, err := clientCtr.Stderr(ctx)
+	require.NoError(t, err)
+	// verify we got some progress output
+	require.Contains(t, stderr, "resolve image config for")
+}
+
+func TestClientSendsLabelsInTelemetry(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	devEngine := devEngineContainer(c).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
+		WithExec([]string{
+			"--addr", "tcp://0.0.0.0:1234",
+			"--network-cidr", "10.89.0.0/16", // avoid conflicts with other tests
+			"--network-name", "daglabels",
+		}, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		})
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{
+			"core/integration/testdata/telemetry/",
+			"core/integration/testdata/basic-container/",
+			"sdk/go/",
+			"go.mod",
+			"go.sum",
+		},
+	})
+
+	eventsVol := c.CacheVolume("dagger-dev-engine-events-" + identity.NewID())
+
+	withCode := c.Container().
+		From("golang:1.20.6-alpine").
+		WithExec([]string{"apk", "add", "git"}).
+		With(goCache(c)).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src")
+
+	fakeCloud := withCode.
+		WithMountedCache("/events", eventsVol).
+		WithExec([]string{
+			"go", "run", "./core/integration/testdata/telemetry/",
+		}).
+		WithExposedPort(8080)
+
+	eventsID := identity.NewID()
+
+	daggerCli := daggerCliFile(t, c)
+
+	_, err = withCode.
+		WithServiceBinding("dev-engine", devEngine).
+		WithMountedFile("/bin/dagger", daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
+		WithServiceBinding("cloud", fakeCloud).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN", "test").
+		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@example.com"}).
+		// make sure we handle non-ASCII usernames
+		WithExec([]string{"git", "config", "--global", "user.name", "Tiësto User"}).
+		WithExec([]string{"git", "init"}). // init a git repo to test git labels
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init test repo"}).
+		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+
+	receivedEvents, err := withCode.
+		WithMountedCache("/events", eventsVol).
+		WithExec([]string{
+			"cat", fmt.Sprintf("/events/%s.json", eventsID),
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, receivedEvents, "dagger.io/git.title")
+	require.Contains(t, receivedEvents, "init test repo")
 }

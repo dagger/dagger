@@ -27,7 +27,7 @@ Dagger SDKs are currently available for Go, Node.js and Python, but you can use 
 
 This guide assumes that:
 
-- You have a basic understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/648215-quickstart-introduction.mdx).
+- You have a basic understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/index.mdx).
 - You have a basic understanding of GitHub Actions. If not, [learn about GitHub Actions](https://docs.github.com/en/actions).
 - You have Docker installed and running in your development environment. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
@@ -160,27 +160,27 @@ Once credentials are configured, test the Dagger pipeline by running the command
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>
 </Tabs>
 
-Dagger performs the operations defined in the pipeline script, logging each operation to the console. At the end of the process, the built container is published on Docker Hub and a message similar to the one below appears in the console output:
+The `dagger run` command executes the script in a Dagger session and displays live progress. At the end of the process, the built container is published on Docker Hub and a message similar to the one below appears in the console output:
 
 ```shell
 Image published at: docker.io/.../myapp@sha256:...

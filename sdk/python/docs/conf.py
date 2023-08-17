@@ -14,6 +14,7 @@ author = "Dagger"
 
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.autodoc.typehints",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
@@ -25,7 +26,9 @@ locale_dirs = []
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 pygments_style = "sphinx"
+autodoc_default_options = {"members": True, "show-inheritance": True}
+autodoc_mock_imports = ["_typeshed"]
 
 html_theme = "sphinx_rtd_theme"
 
-intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
+intersphinx_mapping = {"python": ("https://docs.python.org/3/", None)}

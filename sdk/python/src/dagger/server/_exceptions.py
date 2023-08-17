@@ -1,6 +1,6 @@
 import inspect
 
-from dagger.exceptions import DaggerError
+from dagger import DaggerError
 
 
 class ServerError(DaggerError):

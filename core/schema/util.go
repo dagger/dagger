@@ -3,16 +3,12 @@ package schema
 import (
 	"fmt"
 
-	"github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/router"
 	"github.com/dagger/graphql/language/ast"
 )
 
-var ErrServicesDisabled = fmt.Errorf("services are disabled; unset %s to enable", engine.ServicesDNSEnvName)
-
 // stringResolver is used to generate a scalar resolver for a stringable type.
-func stringResolver[T ~string](sample T) router.ScalarResolver {
-	return router.ScalarResolver{
+func stringResolver[T ~string](sample T) ScalarResolver {
+	return ScalarResolver{
 		Serialize: func(value any) any {
 			switch v := value.(type) {
 			case string, T:

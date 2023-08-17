@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fallback to stable cli when cannot find local cli binary
+time: 2023-08-17T22:10:54.35385+07:00
+custom:
+  Author: wingyplus
+  PR: "5654"

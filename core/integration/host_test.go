@@ -2,11 +2,16 @@ package core
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +29,7 @@ func TestHostWorkdir(t *testing.T) {
 
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -37,7 +42,7 @@ func TestHostWorkdir(t *testing.T) {
 		require.NoError(t, err)
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -67,7 +72,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -81,7 +86,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -95,7 +100,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -110,7 +115,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -125,7 +130,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -171,6 +176,47 @@ func TestHostDirectoryRelative(t *testing.T) {
 	})
 }
 
+func TestHostSetSecretFile(t *testing.T) {
+	t.Parallel()
+
+	// Generate 512000 random bytes (non UTF-8)
+	// This is our current limit: secrets break at 512001 bytes
+	data := make([]byte, 512000)
+	_, err := rand.Read(data)
+	if err != nil {
+		panic(err)
+	}
+
+	// Compute the MD5 hash of the data
+	hash := md5.Sum(data)
+	hashStr := hex.EncodeToString(hash[:])
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte(data), 0600))
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run("non utf8 binary data is properly set as secret", func(t *testing.T) {
+		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
+
+		output, err := c.Container().From("alpine:3.17").
+			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithMountedSecret("/mysecret", secret).
+			WithExec([]string{"md5sum", "/mysecret"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+
+		// Extract the MD5 hash from the command output
+		hashStrCmd := strings.Split(string(output), " ")[0]
+
+		require.Equal(t, hashStr, hashStrCmd)
+	})
+}
+
 func TestHostDirectoryAbsolute(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -179,7 +225,7 @@ func TestHostDirectoryAbsolute(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0600))
 
 	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -262,31 +308,4 @@ func TestHostFile(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hello world", content)
 	})
-}
-
-func TestHostVariable(t *testing.T) {
-	t.Parallel()
-
-	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
-
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
-
-	secret := c.Host().EnvVariable("HELLO_TEST")
-
-	varValue, err := secret.Value(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello", varValue)
-
-	env, err := c.Container().
-		From("alpine:3.16.2").
-		//nolint:staticcheck // SA1019 We want to test this API while we support it.
-		WithSecretVariable("SECRET", secret.Secret()).
-		WithExec([]string{"env"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-
-	require.Contains(t, env, "SECRET=***")
 }

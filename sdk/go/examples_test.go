@@ -221,34 +221,3 @@ func ExampleHost_Directory() {
 
 	// Output: true
 }
-
-// func ExampleHost_EnvVariable() {
-// 	ctx := context.Background()
-// 	client, err := dagger.Connect(ctx)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer client.Close()
-
-// 	os.Setenv("SEKRIT", "hunter2")
-
-// 	secretID, err := client.Host().EnvVariable("SEKRIT").Secret().ID(ctx)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-
-// 	alpine := client.Container().From("alpine:3.16.2")
-// 	leaked, err := alpine.
-// 		WithSecretVariable("PASSWORD", secretID).
-// 		Exec(dagger.ContainerExecOpts{
-// 			Args: []string{"sh", "-c", "echo $PASSWORD"},
-// 		}).
-// 		Stdout(ctx)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-
-// 	fmt.Println(leaked)
-
-// 	// Output: hunter2
-// }

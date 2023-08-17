@@ -28,7 +28,17 @@
 
 	{{- /* Write return type. */ -}}
 	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType  }} {
-	
+
+	{{- $enums := GetEnumValues .Args }}
+	{{- if gt (len $enums) 0 }}
+	const metadata: Metadata = {
+	    {{- range $v := $enums }}
+	    {{ $v.Name -}}: { is_enum: true },
+	    {{- end }}
+	}
+{{ "" -}}
+	{{- end }}
+
 	{{- if .TypeRef }}
     return new {{ .TypeRef | FormatOutputType }}({
       queryTree: [
@@ -45,7 +55,7 @@
 
       		{{- with $optionals }}
       			{{- if $required }}, {{ end -}}
-        ...opts
+        ...opts{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
 			{{- end -}}
 {{""}} },
 		{{- end }}

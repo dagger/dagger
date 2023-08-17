@@ -14,7 +14,25 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Printf("listening on %s", conn.LocalAddr())
+	log.Printf("UDP listening on %s", conn.LocalAddr())
+
+	tcpL, err := net.Listen("tcp", ":4322")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer tcpL.Close()
+
+	log.Printf("TCP listening on %s (for health check)", tcpL.Addr())
+
+	go func() {
+		for {
+			c, err := tcpL.Accept()
+			if err != nil {
+				break
+			}
+			c.Close()
+		}
+	}()
 
 	b := make([]byte, 1024)
 

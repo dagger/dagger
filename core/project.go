@@ -7,11 +7,10 @@ import (
 	"path"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/router"
-	"github.com/dagger/graphql"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/core/projectconfig"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 )
@@ -26,13 +25,6 @@ const (
 	outputFile      = "/dagger.json"
 )
 
-type ProjectSDK string
-
-const (
-	ProjectSDKGo     ProjectSDK = "go"
-	ProjectSDKPython ProjectSDK = "python"
-)
-
 type ProjectID string
 
 func (id ProjectID) String() string {
@@ -44,7 +36,7 @@ func (id ProjectID) ToProject() (*Project, error) {
 	if id == "" {
 		return &project, nil
 	}
-	if err := decodeID(&project, id); err != nil {
+	if err := resourceid.Decode(&project, id); err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -61,7 +53,7 @@ func (id ProjectCommandID) ToProjectCommand() (*ProjectCommand, error) {
 	if id == "" {
 		return &projectCommand, nil
 	}
-	if err := decodeID(&projectCommand, id); err != nil {
+	if err := resourceid.Decode(&projectCommand, id); err != nil {
 		return nil, err
 	}
 	return &projectCommand, nil
@@ -73,17 +65,11 @@ type Project struct {
 	// Path to the project's config file relative to the root directory
 	ConfigPath string `json:"configPath"`
 	// The parsed project config
-	Config ProjectConfig `json:"config"`
+	Config projectconfig.Config `json:"config"`
 	// The graphql schema for the project
 	Schema string `json:"schema"`
 	// The project's platform
 	Platform specs.Platform `json:"platform,omitempty"`
-}
-
-type ProjectConfig struct {
-	Root string `json:"root"`
-	Name string `json:"name"`
-	SDK  string `json:"sdk,omitempty"`
 }
 
 func NewProject(id ProjectID, platform specs.Platform) (*Project, error) {
@@ -96,7 +82,7 @@ func NewProject(id ProjectID, platform specs.Platform) (*Project, error) {
 }
 
 func (p *Project) ID() (ProjectID, error) {
-	return encodeID[ProjectID](p)
+	return resourceid.Encode[ProjectID](p)
 }
 
 func (p *Project) Clone() *Project {
@@ -107,42 +93,44 @@ func (p *Project) Clone() *Project {
 	return &cp
 }
 
-func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, pipeline pipeline.Path, source *Directory, configPath string) (*Project, error) {
+type Resolver func(ctx *Context, parent any, args any) (any, error)
+
+func (p *Project) Load(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	pipeline pipeline.Path,
+	source *Directory,
+	configPath string,
+) (*Project, Resolver, error) {
 	p = p.Clone()
 	p.Directory = source
 
 	configPath = p.normalizeConfigPath(configPath)
 	p.ConfigPath = configPath
 
-	configFile, err := source.File(ctx, gw, p.ConfigPath)
+	configFile, err := source.File(ctx, bk, p.ConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load project config at path %q: %w", configPath, err)
+		return nil, nil, fmt.Errorf("failed to load project config at path %q: %w", configPath, err)
 	}
-	cfgBytes, err := configFile.Contents(ctx, gw)
+	cfgBytes, err := configFile.Contents(ctx, bk)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read project config at path %q: %w", configPath, err)
+		return nil, nil, fmt.Errorf("failed to read project config at path %q: %w", configPath, err)
 	}
 	if err := json.Unmarshal(cfgBytes, &p.Config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal project config: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal project config: %w", err)
 	}
 
-	p.Schema, err = p.getSchema(ctx, gw, progSock, pipeline, r)
+	p.Schema, err = p.getSchema(ctx, bk, progSock, pipeline)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema: %w", err)
+		return nil, nil, fmt.Errorf("failed to get schema: %w", err)
 	}
 
-	resolvers, err := p.getResolvers(ctx, gw, r, progSock, pipeline)
+	resolver, err := p.getResolver(ctx, bk, progSock, pipeline)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get resolvers: %w", err)
+		return nil, nil, fmt.Errorf("failed to get resolvers: %w", err)
 	}
-	if err := r.Add(router.StaticSchema(router.StaticSchemaParams{
-		Name:      p.Config.Name,
-		Schema:    p.Schema,
-		Resolvers: resolvers,
-	})); err != nil {
-		return nil, fmt.Errorf("failed to install project schema: %w", err)
-	}
-	return p, nil
+	return p, resolver, nil
 }
 
 func (p *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
@@ -220,86 +208,50 @@ func (p *Project) schemaToCommand(field *ast.FieldDefinition, schemaTypes map[st
 	return &cmd, nil
 }
 
-func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path, r *router.Router) (string, error) {
-	ctr, err := p.runtime(ctx, gw, progSock, pipeline)
+func (p *Project) getSchema(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (string, error) {
+	ctr, err := p.runtime(ctx, bk, progSock, pipeline)
 	if err != nil {
 		return "", fmt.Errorf("failed to get runtime container for schema: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, gw, outputMountPath, NewScratchDirectory(pipeline, p.Platform), "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, p.Platform), "")
 	if err != nil {
 		return "", fmt.Errorf("failed to mount output directory: %w", err)
 	}
-	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+	ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
 		Args: []string{"-schema"},
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to exec schema command: %w", err)
 	}
-	schemaFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, schemaPath))
+	schemaFile, err := ctr.File(ctx, bk, path.Join(outputMountPath, schemaPath))
 	if err != nil {
 		return "", fmt.Errorf("failed to get schema file: %w", err)
 	}
-	newSchema, err := schemaFile.Contents(ctx, gw)
+	newSchema, err := schemaFile.Contents(ctx, bk)
 	if err != nil {
 		return "", fmt.Errorf("failed to read schema file: %w", err)
-	}
-
-	// validate it against the existing schema early
-	currentSchema := r.MergedSchemas()
-	_, err = gqlparser.LoadSchema(
-		&ast.Source{Input: currentSchema, BuiltIn: true},
-		&ast.Source{Input: string(newSchema)},
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse schema: %w", err)
 	}
 	return string(newSchema), nil
 }
 
-func (p *Project) runtime(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path) (*Container, error) {
-	switch ProjectSDK(p.Config.SDK) {
-	case ProjectSDKGo:
-		return p.goRuntime(ctx, gw, progSock, pipeline)
-	case ProjectSDKPython:
-		return p.pythonRuntime(ctx, gw, progSock, pipeline)
+func (p *Project) runtime(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (*Container, error) {
+	switch projectconfig.SDK(p.Config.SDK) {
+	case projectconfig.SDKGo:
+		return p.goRuntime(ctx, bk, progSock, pipeline)
+	case projectconfig.SDKPython:
+		return p.pythonRuntime(ctx, bk, progSock, pipeline)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)
 	}
 }
 
-func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, pipeline pipeline.Path) (router.Resolvers, error) {
-	resolvers := make(router.Resolvers)
-	if p.Config.SDK == "" {
-		return nil, fmt.Errorf("sdk not set")
-	}
-
-	doc, err := parser.ParseSchema(&ast.Source{Input: p.Schema})
-	if err != nil {
-		return nil, err
-	}
-	for _, def := range append(doc.Definitions, doc.Extensions...) {
-		if def.Kind != ast.Object {
-			continue
-		}
-		objResolver := router.ObjectResolver{}
-		resolvers[def.Name] = objResolver
-		for _, field := range def.Fields {
-			objResolver[field.Name], err = p.getResolver(ctx, gw, r, progSock, pipeline, field.Type)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return resolvers, nil
-}
-
-func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, pipeline pipeline.Path, outputType *ast.Type) (graphql.FieldResolveFn, error) {
-	ctr, err := p.runtime(ctx, gw, progSock, pipeline)
+func (p *Project) getResolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
+	ctr, err := p.runtime(ctx, bk, progSock, pipeline)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime container for resolver: %w", err)
 	}
 
-	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
+	return func(ctx *Context, parent any, args any) (any, error) {
 		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveParams.Info.ParentType.Name(), ctx.ResolveParams.Info.FieldName)
 
 		inputMap := map[string]any{
@@ -311,28 +263,28 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Rou
 		if err != nil {
 			return nil, err
 		}
-		ctr, err = ctr.WithNewFile(ctx, gw, path.Join(inputMountPath, inputFile), inputBytes, 0644, "")
+		ctr, err = ctr.WithNewFile(ctx, bk, path.Join(inputMountPath, inputFile), inputBytes, 0644, "")
 		if err != nil {
 			return "", fmt.Errorf("failed to mount resolver input file: %w", err)
 		}
 
-		ctr, err = ctr.WithMountedDirectory(ctx, gw, outputMountPath, NewScratchDirectory(nil, p.Platform), "")
+		ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(nil, p.Platform), "")
 		if err != nil {
 			return "", fmt.Errorf("failed to mount resolver output directory: %w", err)
 		}
 
-		ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+		ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 		if err != nil {
 			return "", fmt.Errorf("failed to exec resolver: %w", err)
 		}
 
-		outputFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, outputFile))
+		outputFile, err := ctr.File(ctx, bk, path.Join(outputMountPath, outputFile))
 		if err != nil {
 			return "", fmt.Errorf("failed to get resolver output file: %w", err)
 		}
-		outputBytes, err := outputFile.Contents(ctx, gw)
+		outputBytes, err := outputFile.Contents(ctx, bk)
 		if err != nil {
 			return "", fmt.Errorf("failed to read resolver output file: %w", err)
 		}
@@ -340,33 +292,8 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Rou
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 		}
-		return convertOutput(output, outputType, r)
-	}), nil
-}
-
-func convertOutput(output any, outputType *ast.Type, r *router.Router) (any, error) {
-	if outputType.Elem != nil {
-		outputType = outputType.Elem
-	}
-
-	for objectName, resolver := range r.Resolvers() {
-		if objectName != outputType.Name() {
-			continue
-		}
-		resolver, ok := resolver.(router.IDableObjectResolver)
-		if !ok {
-			continue
-		}
-
-		// ID-able dagger objects are serialized as their ID string across the wire
-		// between the session and project container.
-		outputStr, ok := output.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected id string output for %s", objectName)
-		}
-		return resolver.FromID(outputStr)
-	}
-	return output, nil
+		return output, nil
+	}, nil
 }
 
 type ProjectCommand struct {
@@ -391,5 +318,5 @@ func NewProjectCommand(id ProjectCommandID) (*ProjectCommand, error) {
 }
 
 func (p *ProjectCommand) ID() (ProjectCommandID, error) {
-	return encodeID[ProjectCommandID](p)
+	return resourceid.Encode[ProjectCommandID](p)
 }

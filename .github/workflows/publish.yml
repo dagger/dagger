@@ -13,7 +13,7 @@ on:
       - ready_for_review
     paths:
       - sdk/go/internal/engineconn/version.gen.go
-      - sdk/python/src/dagger/engine/_version.py
+      - sdk/python/src/dagger/_engine/_version.py
       - sdk/nodejs/provisioning/default.ts
       - sdk/rust/src/crates/dagger-sdk/src/core/mod.rs
 

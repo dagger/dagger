@@ -36,6 +36,12 @@ var (
 		"Subtract":            subtract,
 		"ConvertID":           commonFunc.ConvertID,
 		"IsSelfChainable":     commonFunc.IsSelfChainable,
+		"IsListOfObject":      commonFunc.IsListOfObject,
+		"GetArrayField":       commonFunc.GetArrayField,
+		"ToLowerCase":         commonFunc.ToLowerCase,
+		"ToUpperCase":         commonFunc.ToUpperCase,
+		"ToSingleType":        toSingleType,
+		"GetEnumValues":       getEnumValues,
 	}
 )
 
@@ -134,6 +140,18 @@ func splitRequiredOptionalArgs(values introspection.InputValues) (required intro
 	return values, nil
 }
 
+func getEnumValues(values introspection.InputValues) introspection.InputValues {
+	enums := introspection.InputValues{}
+
+	for _, v := range values {
+		if v.TypeRef != nil && v.TypeRef.Kind == introspection.TypeKindEnum {
+			enums = append(enums, v)
+		}
+	}
+
+	return enums
+}
+
 func getRequiredArgs(values introspection.InputValues) introspection.InputValues {
 	required, _ := splitRequiredOptionalArgs(values)
 	return required
@@ -166,4 +184,8 @@ func argsHaveDescription(values introspection.InputValues) bool {
 	}
 
 	return false
+}
+
+func toSingleType(value string) string {
+	return value[:len(value)-2]
 }

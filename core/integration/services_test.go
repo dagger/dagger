@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
@@ -34,64 +33,83 @@ import (
 func TestServiceHostnamesAreStable(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
+	hostname := func(ctx context.Context, c *dagger.Client) string {
+		www := c.Directory().WithNewFile("index.html", "Hello, world!")
 
-	c, ctx := connect(t)
-	defer c.Close()
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory("/srv/www", www).
+			WithWorkdir("/srv/www").
+			// NB: chain a few things to make the container a bit more complicated.
+			//
+			// for example, ContainerIDs aren't totally deterministic as WithExec adds
+			// some randomization to how LLB gets marshalled.
+			WithExec([]string{"echo", "first"}).
+			WithExec([]string{"echo", "second"}).
+			WithExec([]string{"echo", "third"}).
+			WithEnvVariable("FOO", "123").
+			WithEnvVariable("BAR", "456").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"})
 
-	www := c.Directory().WithNewFile("index.html", "Hello, world!")
-
-	srv := c.Container().
-		From("python").
-		WithMountedDirectory("/srv/www", www).
-		WithWorkdir("/srv/www").
-		// NB: chain a few things to make the container a bit more complicated.
-		//
-		// for example, ContainerIDs aren't totally deterministic as WithExec adds
-		// some randomization to how LLB gets marshalled.
-		WithExec([]string{"echo", "first"}).
-		WithExec([]string{"echo", "second"}).
-		WithExec([]string{"echo", "third"}).
-		WithEnvVariable("FOO", "123").
-		WithEnvVariable("BAR", "456").
-		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"})
-
-	hosts := map[string]int{}
-
-	for i := 0; i < 10; i++ {
 		hostname, err := srv.Hostname(ctx)
 		require.NoError(t, err)
-		hosts[hostname]++
+
+		return hostname
 	}
 
-	require.Len(t, hosts, 1)
+	t.Run("hostnames are different for different services", func(t *testing.T) {
+		c, ctx := connect(t)
+		defer c.Close()
+
+		srv1 := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"})
+
+		srv2 := c.Container().
+			From("python").
+			WithExposedPort(8001).
+			WithExec([]string{"python", "-m", "http.server", "8081"})
+
+		hn1, err := srv1.Hostname(ctx)
+		require.NoError(t, err)
+		hn2, err := srv2.Hostname(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, hn1, hn2)
+	})
+
+	t.Run("hostnames are stable within a session", func(t *testing.T) {
+		c, ctx := connect(t)
+		defer c.Close()
+
+		hosts := map[string]int{}
+		for i := 0; i < 10; i++ {
+			hosts[hostname(ctx, c)]++
+		}
+
+		require.Len(t, hosts, 1)
+	})
+
+	t.Run("hostnames are stable across sessions", func(t *testing.T) {
+		hosts := map[string]int{}
+
+		for i := 0; i < 5; i++ {
+			c, ctx := connect(t)
+			hosts[hostname(ctx, c)]++
+			c.Close()
+		}
+
+		require.Len(t, hosts, 1)
+	})
 }
 
 func TestContainerHostnameEndpoint(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
-
-	t.Run("hostname is independent of exposed ports", func(t *testing.T) {
-		a, err := c.Container().
-			From("python").
-			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
-			Hostname(ctx)
-		require.NoError(t, err)
-
-		b, err := c.Container().
-			From("python").
-			WithExec([]string{"python", "-m", "http.server"}).
-			Hostname(ctx)
-		require.NoError(t, err)
-
-		require.Equal(t, a, b)
-	})
 
 	t.Run("hostname is same as endpoint", func(t *testing.T) {
 		srv := c.Container().
@@ -156,8 +174,6 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 
 func TestContainerPortLifecycle(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -280,8 +296,6 @@ func TestContainerPortLifecycle(t *testing.T) {
 func TestContainerPortOCIConfig(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -343,44 +357,59 @@ func TestContainerPortOCIConfig(t *testing.T) {
 func TestContainerExecServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
+	t.Run("happy path", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+		defer c.Close()
 
-	c, ctx := connect(t)
-	defer c.Close()
+		srv, url := httpService(ctx, t, c, "Hello, world!")
 
-	srv, url := httpService(ctx, t, c, "Hello, world!")
+		hostname, err := srv.Hostname(ctx)
+		require.NoError(t, err)
 
-	hostname, err := srv.Hostname(ctx)
-	require.NoError(t, err)
+		client := c.Container().
+			From(alpineImage).
+			WithServiceBinding("www", srv).
+			WithExec([]string{"apk", "add", "curl"}).
+			WithExec([]string{"curl", "-v", url})
 
-	client := c.Container().
-		From("alpine:3.16.2").
-		WithServiceBinding("www", srv).
-		WithExec([]string{"apk", "add", "curl"}).
-		WithExec([]string{"curl", "-v", url})
+		_, err = client.Sync(ctx)
+		require.NoError(t, err)
 
-	_, err = client.Sync(ctx)
-	require.NoError(t, err)
+		stdout, err := client.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", stdout)
 
-	stdout, err := client.Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "Hello, world!", stdout)
+		stderr, err := client.Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stderr, "Host: "+hostname+":8000")
+	})
 
-	stderr, err := client.Stderr(ctx)
-	require.NoError(t, err)
-	require.Contains(t, stderr, "Host: "+hostname+":8000")
+	t.Run("not an exec", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+		defer c.Close()
+
+		srv, _ := httpService(ctx, t, c, "Hello, world!")
+		srv = srv.WithNewFile("/foo")
+
+		_, err := c.Container().
+			From(alpineImage).
+			WithServiceBinding("www", srv).
+			WithExec([]string{"true"}).
+			Sync(ctx)
+		require.ErrorContains(t, err, "service container must be result of withExec")
+	})
 }
 
 func TestContainerExecServicesError(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
 	srv := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExposedPort(8080).
 		WithExec([]string{"sh", "-c", "echo nope; exit 42"})
 
@@ -388,7 +417,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.NoError(t, err)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
 
@@ -400,13 +429,11 @@ func TestContainerExecServicesError(t *testing.T) {
 func TestContainerServiceNoExec(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
 	srv := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExposedPort(8080).
 		// using error to compare hostname after WithServiceBinding
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
@@ -417,7 +444,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 	require.NoError(t, err)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
 
@@ -432,8 +459,6 @@ var udpSrc string
 func TestContainerExecUDPServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -444,10 +469,13 @@ func TestContainerExecUDPServices(t *testing.T) {
 		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
 			Protocol: dagger.Udp,
 		}).
+		// use TCP :4322 for health-check to avoid test flakiness, since UDP dial
+		// health-checks aren't really a thing
+		WithExposedPort(4322).
 		WithExec([]string{"go", "run", "/src/main.go"})
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "socat"}).
 		WithServiceBinding("echo", srv).
 		WithExec([]string{"socat", "-", "udp:echo:4321"}, dagger.ContainerWithExecOpts{
@@ -465,15 +493,13 @@ func TestContainerExecUDPServices(t *testing.T) {
 func TestContainerExecServiceAlias(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
 	srv, _ := httpService(ctx, t, c, "Hello, world!")
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("hello", srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", "http://hello:8000"})
@@ -496,8 +522,6 @@ var pipeSrc string
 func TestContainerExecServicesDeduping(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -509,7 +533,7 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 		WithExec([]string{"go", "run", "/src/main.go"})
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("www", srv).
 		WithEnvVariable("CACHEBUST", identity.NewID())
@@ -533,8 +557,6 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 
 func TestContainerExecServicesChained(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -562,7 +584,7 @@ func TestContainerExecServicesChained(t *testing.T) {
 	}
 
 	fileContent, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8000"}).
 		WithExec([]string{"cat", "index.html"}).
@@ -571,91 +593,121 @@ func TestContainerExecServicesChained(t *testing.T) {
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
-func TestContainerBuildService(t *testing.T) {
-	t.Parallel()
+// NB: currently maxes out around 8-9 due to 256 character limit on DNS
+// search domain config
+//
+// 4 is the effective limit in GitHub actions, since a) after bootstrapping
+// on 0.8 the outer Dagger adds domains of its own, and b) GitHub adds a
+// quite long (52-char) domain to begin with
+const nestingLimit = 4
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
+func TestContainerExecServicesNestedExec(t *testing.T) {
+	t.Parallel()
 
 	c, ctx := connect(t)
 	defer c.Close()
 
-	t.Run("building with service dependency", func(t *testing.T) {
-		content := identity.NewID()
-		srv, httpURL := httpService(ctx, t, c, content)
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
 
-		src := c.Directory().
-			WithNewFile("Dockerfile",
-				`FROM alpine:3.16.2
-WORKDIR /src
-RUN wget `+httpURL+`
-CMD cat index.html
-`)
-
-		fileContent, err := c.Container().
-			WithServiceBinding("www", srv).
-			Build(src).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, content, fileContent)
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
-	t.Run("building a directory that depends on a service (Container.Build)", func(t *testing.T) {
-		content := identity.NewID()
-		srv, httpURL := httpService(ctx, t, c, content)
+	content := identity.NewID()
+	srv, svcURL := httpService(ctx, t, c, content)
 
-		src := c.Directory().
-			WithNewFile("Dockerfile",
-				`FROM alpine:3.16.2
-WORKDIR /src
-RUN wget `+httpURL+`
-CMD cat index.html
-`)
+	fileContent, err := c.Container().
+		From("golang:1.20.6-alpine").
+		With(goCache(c)).
+		WithServiceBinding("www", srv).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithExec([]string{
+			"go", "run", "./core/integration/testdata/nested/",
+			"exec", strconv.Itoa(nestingLimit), svcURL,
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
+}
 
-		gitDaemon, repoURL := gitService(ctx, t, c, src)
+func TestContainerExecServicesNestedHTTP(t *testing.T) {
+	t.Parallel()
 
-		gitDir := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			Branch("main").
-			Tree()
+	c, ctx := connect(t)
+	defer c.Close()
 
-		fileContent, err := c.Container().
-			WithServiceBinding("www", srv).
-			Build(gitDir).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, content, fileContent)
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
-	t.Run("building a directory that depends on a service (Directory.DockerBuild)", func(t *testing.T) {
-		content := identity.NewID()
-		srv, httpURL := httpService(ctx, t, c, content)
+	content := identity.NewID()
+	srv, svcURL := httpService(ctx, t, c, content)
 
-		src := c.Directory().
-			WithNewFile("Dockerfile",
-				`FROM alpine:3.16.2
-WORKDIR /src
-RUN wget `+httpURL+`
-CMD cat index.html
-`)
+	fileContent, err := c.Container().
+		From("golang:1.20.6-alpine").
+		WithServiceBinding("www", srv).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithEnvVariable("GOCACHE", "/go/build-cache").
+		WithExec([]string{
+			"go", "run", "./core/integration/testdata/nested/",
+			"http", strconv.Itoa(nestingLimit), svcURL,
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
+}
 
-		gitDaemon, repoURL := gitService(ctx, t, c, src)
+func TestContainerExecServicesNestedGit(t *testing.T) {
+	t.Parallel()
 
-		gitDir := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			Branch("main").
-			Tree()
+	c, ctx := connect(t)
+	defer c.Close()
 
-		fileContent, err := gitDir.
-			DockerBuild().
-			WithServiceBinding("www", srv).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, content, fileContent)
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
 	})
+
+	content := identity.NewID()
+	srv, svcURL := gitService(ctx, t, c, c.Directory().WithNewFile("/index.html", content))
+
+	fileContent, err := c.Container().
+		From("golang:1.20.6-alpine").
+		WithServiceBinding("www", srv).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithEnvVariable("GOCACHE", "/go/build-cache").
+		WithExec([]string{
+			"go", "run", "./core/integration/testdata/nested/",
+			"git", strconv.Itoa(nestingLimit), svcURL,
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
 }
 
 func TestContainerExportServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -664,7 +716,7 @@ func TestContainerExportServices(t *testing.T) {
 	srv, httpURL := httpService(ctx, t, c, content)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", httpURL})
 
@@ -677,8 +729,6 @@ func TestContainerExportServices(t *testing.T) {
 func TestContainerMultiPlatformExportServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -687,7 +737,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 		srv, url := httpService(ctx, t, c, string(platform))
 
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithServiceBinding("www", srv).
 			WithExec([]string{"wget", url}).
 			WithExec([]string{"uname", "-m"})
@@ -706,8 +756,6 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 func TestServicesContainerPublish(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -716,7 +764,7 @@ func TestServicesContainerPublish(t *testing.T) {
 
 	testRef := registryRef("services-container-publish")
 	pushedRef, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", url}).
 		Publish(ctx, testRef)
@@ -733,8 +781,6 @@ func TestServicesContainerPublish(t *testing.T) {
 func TestContainerRootFSServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -742,7 +788,7 @@ func TestContainerRootFSServices(t *testing.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	fileContent, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url}).
@@ -757,8 +803,6 @@ func TestContainerRootFSServices(t *testing.T) {
 func TestContainerWithRootFSServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -768,7 +812,7 @@ func TestContainerWithRootFSServices(t *testing.T) {
 	gitDaemon, repoURL := gitService(ctx, t, c,
 		// this little maneuver commits the entire rootfs into a git repo
 		c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithServiceBinding("www", srv).
 			WithWorkdir("/sub/out").
 			WithExec([]string{"wget", url}).
@@ -793,8 +837,6 @@ func TestContainerWithRootFSServices(t *testing.T) {
 func TestContainerDirectoryServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -802,7 +844,7 @@ func TestContainerDirectoryServices(t *testing.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	wget := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url})
@@ -841,8 +883,6 @@ func TestContainerDirectoryServices(t *testing.T) {
 func TestContainerFileServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -850,7 +890,7 @@ func TestContainerFileServices(t *testing.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
@@ -862,8 +902,6 @@ func TestContainerFileServices(t *testing.T) {
 
 func TestContainerWithServiceFileDirectory(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -881,7 +919,7 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 
 	t.Run("mounting", func(t *testing.T) {
 		useBoth := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/mnt/repo", gitDir).
 			WithMountedFile("/mnt/index.html", httpFile)
 
@@ -896,7 +934,7 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 
 	t.Run("copying", func(t *testing.T) {
 		useBoth := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithDirectory("/mnt/repo", gitDir).
 			WithFile("/mnt/index.html", httpFile)
 
@@ -912,8 +950,6 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 
 func TestDirectoryServiceEntries(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -932,8 +968,6 @@ func TestDirectoryServiceEntries(t *testing.T) {
 
 func TestDirectoryServiceSync(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	t.Run("triggers error", func(t *testing.T) {
 		t.Parallel()
@@ -973,8 +1007,6 @@ func TestDirectoryServiceSync(t *testing.T) {
 func TestDirectoryServiceTimestamp(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -987,7 +1019,7 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 		Tree().
 		WithTimestamps(int(ts.Unix()))
 
-	stdout, err := c.Container().From("alpine:3.16.2").
+	stdout, err := c.Container().From(alpineImage).
 		WithDirectory("/repo", stamped).
 		WithExec([]string{"stat", "/repo/README.md"}).
 		Stdout(ctx)
@@ -997,8 +1029,6 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 
 func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -1025,8 +1055,6 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 func TestDirectoryServiceExport(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1051,8 +1079,6 @@ func TestDirectoryServiceExport(t *testing.T) {
 func TestFileServiceContents(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1071,8 +1097,6 @@ func TestFileServiceContents(t *testing.T) {
 
 func TestFileServiceSync(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	t.Run("triggers error", func(t *testing.T) {
 		t.Parallel()
@@ -1114,8 +1138,6 @@ func TestFileServiceSync(t *testing.T) {
 func TestFileServiceExport(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1142,8 +1164,6 @@ func TestFileServiceExport(t *testing.T) {
 func TestFileServiceTimestamp(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1155,48 +1175,12 @@ func TestFileServiceTimestamp(t *testing.T) {
 	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ExperimentalServiceHost: httpSrv}).
 		WithTimestamps(int(ts.Unix()))
 
-	stdout, err := c.Container().From("alpine:3.16.2").
+	stdout, err := c.Container().From(alpineImage).
 		WithFile("/index.html", stamped).
 		WithExec([]string{"stat", "/index.html"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stdout, "1991-06-03")
-}
-
-func TestFileServiceSecret(t *testing.T) {
-	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
-	c, ctx := connect(t)
-	defer c.Close()
-
-	content := identity.NewID()
-
-	httpSrv, httpURL := httpService(ctx, t, c, content)
-
-	//nolint:staticcheck // SA1019 We want to test this API while we support it.
-	secret := c.HTTP(httpURL, dagger.HTTPOpts{
-		ExperimentalServiceHost: httpSrv,
-	}).Secret()
-
-	t.Run("secret env", func(t *testing.T) {
-		_, err := c.Container().
-			From("alpine:3.16.2").
-			WithSecretVariable("SEKRIT", secret).
-			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$SEKRIT" = "%s"`, content)}).
-			Sync(ctx)
-		require.NoError(t, err)
-	})
-
-	t.Run("secret mount", func(t *testing.T) {
-		_, err := c.Container().
-			From("alpine:3.16.2").
-			WithMountedSecret("/sekrit", secret).
-			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$(cat /sekrit)" = "%s"`, content)}).
-			Sync(ctx)
-		require.NoError(t, err)
-	})
 }
 
 func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Container, string) {
@@ -1225,7 +1209,7 @@ func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *da
 
 	const gitPort = 9418
 	gitDaemon := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/repo", content).
 		WithMountedFile("/root/start.sh",
@@ -1244,7 +1228,7 @@ mkdir srv
 cd repo
 	git init
 	git branch -m main
-	git add *
+	git add * || true
 	git commit -m "init"
 cd ..
 

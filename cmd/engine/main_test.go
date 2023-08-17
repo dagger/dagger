@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/session"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
 )
@@ -50,7 +49,7 @@ func TestEngineNameLabel(t *testing.T) {
 	app := cli.NewApp()
 	app.Flags = append(app.Flags, appFlags...)
 
-	t.Run("default", func(t *testing.T) {
+	t.Run("default to hostname", func(t *testing.T) {
 		enableRunc := true
 		cfg := &config.Config{}
 		cfg.Root = t.TempDir()
@@ -61,27 +60,11 @@ func TestEngineNameLabel(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			sessionManager, err := session.NewManager()
-			if err != nil {
-				return err
-			}
-
-			wc, err := newWorkerController(c, workerInitializerOpt{
-				config:         cfg,
-				sessionManager: sessionManager,
-			})
-			if err != nil {
-				return err
-			}
-			w, err := wc.GetDefault()
-			if err != nil {
-				return err
-			}
 			hostname, err := os.Hostname()
 			if err != nil {
 				return err
 			}
-			require.Equal(t, hostname, w.Labels()["engineName"])
+			require.Equal(t, hostname, engineName)
 			return nil
 		}
 

@@ -3,11 +3,12 @@ defmodule Dagger.File do
   @moduledoc "A file."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  @derive Dagger.Sync
   defstruct [:selection, :client]
 
   (
     @doc "Retrieves the contents of the file."
-    @spec contents(t()) :: String.t()
+    @spec contents(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def contents(%__MODULE__{} = file) do
       selection = select(file.selection, "contents")
       execute(selection, file.client)
@@ -16,7 +17,8 @@ defmodule Dagger.File do
 
   (
     @doc "Writes the file to a file path on the host.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"output.txt\").\n\n## Optional Arguments\n\n* `allow_parent_dir_path` - If allowParentDirPath is true, the path argument can be a directory path, in which case\nthe file will be created in that directory."
-    @spec export(t(), String.t(), keyword()) :: boolean()
+    @spec export(t(), Dagger.String.t(), keyword()) ::
+            {:ok, Dagger.Boolean.t()} | {:error, term()}
     def export(%__MODULE__{} = file, path, optional_args \\ []) do
       selection = select(file.selection, "export")
       selection = arg(selection, "path", path)
@@ -34,7 +36,7 @@ defmodule Dagger.File do
 
   (
     @doc "Retrieves the content-addressed identifier of the file."
-    @spec id(t()) :: Dagger.File.t()
+    @spec id(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
     def id(%__MODULE__{} = file) do
       selection = select(file.selection, "id")
       execute(selection, file.client)
@@ -42,18 +44,8 @@ defmodule Dagger.File do
   )
 
   (
-    @doc "Retrieves a secret referencing the contents of this file."
-    @deprecated "insecure, leaves secret in cache. Superseded by `setSecret`"
-    @spec secret(t()) :: Dagger.Secret.t()
-    def secret(%__MODULE__{} = file) do
-      selection = select(file.selection, "secret")
-      %Dagger.Secret{selection: selection, client: file.client}
-    end
-  )
-
-  (
     @doc "Gets the size of the file, in bytes."
-    @spec size(t()) :: integer()
+    @spec size(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
     def size(%__MODULE__{} = file) do
       selection = select(file.selection, "size")
       execute(selection, file.client)
@@ -61,8 +53,17 @@ defmodule Dagger.File do
   )
 
   (
+    @doc "Force evaluation in the engine."
+    @spec sync(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
+    def sync(%__MODULE__{} = file) do
+      selection = select(file.selection, "sync")
+      execute(selection, file.client)
+    end
+  )
+
+  (
     @doc "Retrieves this file with its created/modified timestamps set to the given time.\n\n## Required Arguments\n\n* `timestamp` - Timestamp to set dir/files in.\n\nFormatted in seconds following Unix epoch (e.g., 1672531199)."
-    @spec with_timestamps(t(), integer()) :: Dagger.File.t()
+    @spec with_timestamps(t(), Dagger.Int.t()) :: Dagger.File.t()
     def with_timestamps(%__MODULE__{} = file, timestamp) do
       selection = select(file.selection, "withTimestamps")
       selection = arg(selection, "timestamp", timestamp)

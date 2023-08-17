@@ -10,16 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/router"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // Directory is a content-addressed directory.
@@ -78,10 +81,14 @@ func (id DirectoryID) String() string {
 
 // DirectoryID is digestible so that smaller hashes can be displayed in
 // --debug vertex names.
-var _ router.Digestible = DirectoryID("")
+var _ Digestible = DirectoryID("")
 
 func (id DirectoryID) Digest() (digest.Digest, error) {
-	return digest.FromString(id.String()), nil
+	dir, err := id.ToDirectory()
+	if err != nil {
+		return "", err
+	}
+	return dir.Digest()
 }
 
 // ToDirectory converts the ID into a real Directory.
@@ -92,7 +99,7 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 		return &dir, nil
 	}
 
-	if err := decodeID(&dir, id); err != nil {
+	if err := resourceid.Decode(&dir, id); err != nil {
 		return nil, err
 	}
 
@@ -101,10 +108,10 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 
 // ID marshals the directory into a content-addressed ID.
 func (dir *Directory) ID() (DirectoryID, error) {
-	return encodeID[DirectoryID](dir)
+	return resourceid.Encode[DirectoryID](dir)
 }
 
-var _ router.Pipelineable = (*Directory)(nil)
+var _ pipeline.Pipelineable = (*Directory)(nil)
 
 func (dir *Directory) PipelinePath() pipeline.Path {
 	// TODO(vito): test
@@ -113,15 +120,11 @@ func (dir *Directory) PipelinePath() pipeline.Path {
 
 // Directory is digestible so that it can be recorded as an output of the
 // --debug vertex that created it.
-var _ router.Digestible = (*Directory)(nil)
+var _ Digestible = (*Directory)(nil)
 
 // Digest returns the directory's content hash.
 func (dir *Directory) Digest() (digest.Digest, error) {
-	id, err := dir.ID()
-	if err != nil {
-		return "", err
-	}
-	return id.Digest()
+	return stableDigest(dir)
 }
 
 func (dir *Directory) State() (llb.State, error) {
@@ -169,12 +172,12 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Evaluate(ctx context.Context, gw bkgw.Client) error {
+func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client) error {
 	if dir.LLB == nil {
 		return nil
 	}
-	_, err := WithServices(ctx, gw, dir.Services, func() (*bkgw.Result, error) {
-		return gw.Solve(ctx, bkgw.SolveRequest{
+	_, err := WithServices(ctx, bk, dir.Services, func() (*buildkit.Result, error) {
+		return bk.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: dir.LLB,
 		})
@@ -182,11 +185,11 @@ func (dir *Directory) Evaluate(ctx context.Context, gw bkgw.Client) error {
 	return err
 }
 
-func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, gw, dir.Services, func() (*fstypes.Stat, error) {
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+	return WithServices(ctx, bk, dir.Services, func() (*fstypes.Stat, error) {
+		res, err := bk.Solve(ctx, bkgw.SolveRequest{
 			Definition: dir.LLB,
 		})
 		if err != nil {
@@ -216,11 +219,11 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	})
 }
 
-func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, gw, dir.Services, func() ([]string, error) {
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+	return WithServices(ctx, bk, dir.Services, func() ([]string, error) {
+		res, err := bk.Solve(ctx, bkgw.SolveRequest{
 			Definition: dir.LLB,
 		})
 		if err != nil {
@@ -295,13 +298,13 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	return dir, nil
 }
 
-func (dir *Directory) Directory(ctx context.Context, gw bkgw.Client, subdir string) (*Directory, error) {
+func (dir *Directory) Directory(ctx context.Context, bk *buildkit.Client, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 	dir.Dir = path.Join(dir.Dir, subdir)
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, gw, ".")
+	info, err := dir.Stat(ctx, bk, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +316,7 @@ func (dir *Directory) Directory(ctx context.Context, gw bkgw.Client, subdir stri
 	return dir, nil
 }
 
-func (dir *Directory) File(ctx context.Context, gw bkgw.Client, file string) (*File, error) {
+func (dir *Directory) File(ctx context.Context, bk *buildkit.Client, file string) (*File, error) {
 	err := validateFileName(file)
 	if err != nil {
 		return nil, err
@@ -321,7 +324,7 @@ func (dir *Directory) File(ctx context.Context, gw bkgw.Client, file string) (*F
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := dir.Stat(ctx, gw, file)
+	info, err := dir.Stat(ctx, bk, file)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +468,7 @@ func mergeStates(input mergeStateInput) llb.State {
 			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
 		)))
 	}
-	return llb.Merge(mergeStates)
+	return llb.Merge(mergeStates, llb.WithCustomName(buildkit.InternalPrefix+"merge"))
 }
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
@@ -573,49 +576,41 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 
 func (dir *Directory) Export(
 	ctx context.Context,
+	bk *buildkit.Client,
 	host *Host,
-	dest string,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
-) error {
-	dest, err := host.NormalizeDest(dest)
-	if err != nil {
-		return err
+	destPath string,
+) (rerr error) {
+	var defPB *pb.Definition
+	if dir.Dir != "" {
+		src, err := dir.State()
+		if err != nil {
+			return err
+		}
+		src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
+			CopyDirContentsOnly: true,
+		}))
+
+		def, err := src.Marshal(ctx, llb.Platform(dir.Platform))
+		if err != nil {
+			return err
+		}
+		defPB = def.ToPB()
+	} else {
+		defPB = dir.LLB
 	}
 
-	return host.Export(ctx, bkclient.ExportEntry{
-		Type:      bkclient.ExporterLocal,
-		OutputDir: dest,
-	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return WithServices(ctx, gw, dir.Services, func() (*bkgw.Result, error) {
-			src, err := dir.State()
-			if err != nil {
-				return nil, err
-			}
+	rec := progrock.RecorderFromContext(ctx)
 
-			var defPB *pb.Definition
-			if dir.Dir != "" {
-				src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
-					CopyDirContentsOnly: true,
-				}))
+	vtx := rec.Vertex(
+		digest.Digest(identity.NewID()),
+		fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath),
+	)
+	defer vtx.Done(rerr)
 
-				def, err := src.Marshal(ctx, llb.Platform(dir.Platform))
-				if err != nil {
-					return nil, err
-				}
-
-				defPB = def.ToPB()
-			} else {
-				defPB = dir.LLB
-			}
-
-			return gw.Solve(ctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: defPB,
-			})
-		})
+	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
+		return nil, bk.LocalDirExport(ctx, defPB, destPath)
 	})
+	return err
 }
 
 // Root removes any relative path from the directory.

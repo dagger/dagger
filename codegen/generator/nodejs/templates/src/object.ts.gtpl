@@ -16,7 +16,37 @@
 {{""}}
 
 			{{- /* Write object name. */ -}}
-export {{- if eq .Name "Query" }} default{{ end }} class {{ .Name | FormatName }} extends BaseClient {
+export class {{ .Name | FormatName }} extends BaseClient {
+            {{- /* Write private temporary field */ -}}
+            {{ range $field := .Fields }}
+                {{- if $field.TypeRef.IsScalar }}
+  private readonly _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }} = undefined
+                {{- end }}
+        	{{- end }}
+
+        	{{- /* Create constructor for temporary field */ -}}
+{{ "" }}
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+   constructor(
+    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+            {{- range $i, $field := .Fields }}
+               {{- if $field.TypeRef.IsScalar }}
+     _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},
+               {{- end }}
+            {{- end }}
+   ) {
+     super(parent)
+{{ "" }}
+            {{- range $i, $field := .Fields }}
+               {{- if $field.TypeRef.IsScalar }}
+     this._{{ $field.Name }} = _{{ $field.Name }}
+               {{- end }}
+            {{- end }}
+   }
+
 			{{- /* Write methods. */ -}}
 			{{- "" }}{{ range $field := .Fields }}
 				{{- if Solve . }}

@@ -8,11 +8,11 @@ from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, overrid
 from cattrs.preconf.json import make_converter
 from strawberry.type import has_object_definition
 
-from dagger.api.base import (
-    Type as BaseType,
-)
-from dagger.api.base import (
+from dagger.client._guards import (
     is_id_type_subclass,
+)
+from dagger.client.base import (
+    Type as BaseType,
 )
 
 from ._context import Context

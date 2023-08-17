@@ -14,7 +14,9 @@ async def main():
             client.container(platform=dagger.Platform("linux/amd64"))
             .from_("nginx:1.23-alpine")
             .with_new_file(
-                "/usr/share/nginx/html/index.html", "Hello from Dagger!", 0o400
+                "/usr/share/nginx/html/index.html",
+                contents="Hello from Dagger!",
+                permissions=0o400,
             )
         )
 

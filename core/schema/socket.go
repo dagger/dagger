@@ -2,16 +2,16 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/core/socket"
 )
 
 type socketSchema struct {
-	*baseSchema
+	*MergedSchemas
 
 	host *core.Host
 }
 
-var _ router.ExecutableSchema = &socketSchema{}
+var _ ExecutableSchema = &socketSchema{}
 
 func (s *socketSchema) Name() string {
 	return "socket"
@@ -21,33 +21,33 @@ func (s *socketSchema) Schema() string {
 	return Socket
 }
 
-var socketIDResolver = stringResolver(core.SocketID(""))
+var socketIDResolver = stringResolver(socket.ID(""))
 
-func (s *socketSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
+func (s *socketSchema) Resolvers() Resolvers {
+	return Resolvers{
 		"SocketID": socketIDResolver,
-		"Query": router.ObjectResolver{
-			"socket": router.ToResolver(s.socket),
+		"Query": ObjectResolver{
+			"socket": ToResolver(s.socket),
 		},
-		"Socket": router.ObjectResolver{
-			"id": router.ToResolver(s.id),
+		"Socket": ObjectResolver{
+			"id": ToResolver(s.id),
 		},
 	}
 }
 
-func (s *socketSchema) Dependencies() []router.ExecutableSchema {
+func (s *socketSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *socketSchema) id(ctx *router.Context, parent *core.Socket, args any) (core.SocketID, error) {
+func (s *socketSchema) id(ctx *core.Context, parent *socket.Socket, args any) (socket.ID, error) {
 	return parent.ID()
 }
 
 type socketArgs struct {
-	ID core.SocketID
+	ID socket.ID
 }
 
 // nolint: unparam
-func (s *socketSchema) socket(_ *router.Context, _ any, args socketArgs) (*core.Socket, error) {
+func (s *socketSchema) socket(_ *core.Context, _ any, args socketArgs) (*socket.Socket, error) {
 	return args.ID.ToSocket()
 }

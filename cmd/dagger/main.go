@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/pprof"
 	"runtime/trace"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/tracing"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -76,8 +76,11 @@ var rootCmd = &cobra.Command{
 			}
 		}
 		var err error
-		workdir, err = engine.NormalizeWorkdir(workdir)
+		workdir, err = NormalizeWorkdir(workdir)
 		if err != nil {
+			return err
+		}
+		if err := os.Chdir(workdir); err != nil {
 			return err
 		}
 		return nil
@@ -95,4 +98,24 @@ func main() {
 		os.Exit(1)
 	}
 	closer.Close()
+}
+
+func NormalizeWorkdir(workdir string) (string, error) {
+	if workdir == "" {
+		workdir = os.Getenv("DAGGER_WORKDIR")
+	}
+
+	if workdir == "" {
+		var err error
+		workdir, err = os.Getwd()
+		if err != nil {
+			return "", err
+		}
+	}
+	workdir, err := filepath.Abs(workdir)
+	if err != nil {
+		return "", err
+	}
+
+	return workdir, nil
 }

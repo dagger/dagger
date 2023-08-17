@@ -18,7 +18,7 @@ module.exports = {
     },
     {
       type: "doc",
-      id: "current/quickstart/quickstart-introduction",
+      id: "current/quickstart/index",
       label: "Quickstart",
     },
     {
@@ -154,8 +154,8 @@ module.exports = {
     },
     {
       type: "link",
-      label: "Releases 🔗",
-      href: "https://github.com/dagger/dagger/releases",
+      label: "Changelog 🔗",
+      href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
   ],
   quickstart: [
@@ -170,18 +170,18 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
-        "current/quickstart/quickstart-introduction",
-        "current/quickstart/quickstart-basics",
-        "current/quickstart/quickstart-setup",
-        "current/quickstart/quickstart-sdk",
-        "current/quickstart/quickstart-hello",
-        "current/quickstart/quickstart-test",
-        "current/quickstart/quickstart-build",
-        "current/quickstart/quickstart-publish",
-        "current/quickstart/quickstart-build-multi",
-        "current/quickstart/quickstart-caching",
-        "current/quickstart/quickstart-build-dockerfile",
-        "current/quickstart/quickstart-conclusion",
+        "current/quickstart/index",
+        "current/quickstart/basics",
+        "current/quickstart/setup",
+        "current/quickstart/sdk",
+        "current/quickstart/hello",
+        "current/quickstart/test",
+        "current/quickstart/build",
+        "current/quickstart/publish",
+        "current/quickstart/build-multi",
+        "current/quickstart/caching",
+        "current/quickstart/build-dockerfile",
+        "current/quickstart/conclusion",
       ]
     }
   ],

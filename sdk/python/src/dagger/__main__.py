@@ -1,5 +1,5 @@
 import sys
 
-from .cli import app
+from ._codegen.cli import main
 
-sys.exit(app(prog_name="dagger-py"))
+sys.exit(main())

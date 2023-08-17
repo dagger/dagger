@@ -5,7 +5,7 @@ defmodule Dagger.EngineConn do
 
   defstruct [:port, :token, :session_pid]
 
-  @dagger_cli_version "0.6.2"
+  @dagger_cli_version "0.8.3"
 
   @doc false
   def get(opts) do
@@ -16,7 +16,8 @@ defmodule Dagger.EngineConn do
       _otherwise ->
         case from_local_cli(opts) do
           {:ok, conn} -> {:ok, conn}
-          _otherwise -> from_remote_cli(opts)
+          {:error, :no_executable} -> from_remote_cli(opts)
+          otherwise -> otherwise
         end
     end
   end
@@ -36,6 +37,7 @@ defmodule Dagger.EngineConn do
   @doc false
   def from_local_cli(opts) do
     with {:ok, bin} <- System.fetch_env("_EXPERIMENTAL_DAGGER_CLI_BIN"),
+         bin = Path.expand(bin),
          bin_path when is_binary(bin_path) <- System.find_executable(bin) do
       start_cli_session(bin_path, opts)
     else
@@ -84,4 +86,6 @@ defmodule Dagger.EngineConn do
   def disconnect(%__MODULE__{session_pid: pid}) do
     Dagger.Session.stop(pid)
   end
+
+  def engine_version(), do: @dagger_cli_version
 end

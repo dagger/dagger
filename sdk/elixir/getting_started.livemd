@@ -42,9 +42,8 @@ After execute the code below, the library will printing out log from Dagger sess
 
 ```elixir
 client
-|> Dagger.Query.container()
+|> Dagger.Client.container()
 |> Dagger.Container.from("hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
 |> Dagger.Container.with_exec(["elixir", "--version"])
 |> Dagger.Container.stdout()
-|> IO.puts()
 ```

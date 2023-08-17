@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 	"text/template"
 
 	"dagger.io/dagger"
@@ -15,7 +16,7 @@ import (
 const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
-	alpineVersion = "3.17"
+	alpineVersion = "3.18"
 	runcVersion   = "v1.1.5"
 	cniVersion    = "v1.2.0"
 	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
@@ -167,7 +168,7 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 		cacheVolumeName = "dagger-dev-engine-state"
 	}
 
-	devEngine := devEngineContainer(c, runtime.GOARCH, engineOpts...)
+	devEngine := devEngineContainer(c, runtime.GOARCH, "", engineOpts...)
 
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume(cacheVolumeName)).
@@ -180,11 +181,11 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 }
 
 // DevEngineContainer returns a container that runs a dev engine
-func DevEngineContainer(c *dagger.Client, arches []string, opts ...DevEngineOpts) []*dagger.Container {
-	return devEngineContainers(c, arches, opts...)
+func DevEngineContainer(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	return devEngineContainers(c, arches, version, opts...)
 }
 
-func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *dagger.Container {
+func devEngineContainer(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
 		panic(err)
@@ -207,7 +208,7 @@ func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *d
 		}).
 		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
-		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
+		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -222,10 +223,10 @@ func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *d
 		WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
 
-func devEngineContainers(c *dagger.Client, arches []string, opts ...DevEngineOpts) []*dagger.Container {
+func devEngineContainers(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		platformVariants = append(platformVariants, devEngineContainer(c, arch, opts...))
+		platformVariants = append(platformVariants, devEngineContainer(c, arch, version, opts...))
 	}
 
 	return platformVariants
@@ -301,16 +302,22 @@ func shimBin(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/" + shimBinName)
 }
 
-func engineBin(c *dagger.Client, arch string) *dagger.File {
+func engineBin(c *dagger.Client, arch string, version string) *dagger.File {
+	buildArgs := []string{
+		"go", "build",
+		"-o", "./bin/" + engineBinName,
+		"-ldflags",
+	}
+	ldflags := []string{"-s", "-w"}
+	if version != "" {
+		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+version)
+	}
+	buildArgs = append(buildArgs, strings.Join(ldflags, " "))
+	buildArgs = append(buildArgs, "/app/cmd/engine")
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
-		WithExec([]string{
-			"go", "build",
-			"-o", "./bin/" + engineBinName,
-			"-ldflags", "-s -w",
-			"/app/cmd/engine",
-		}).
+		WithExec(buildArgs).
 		File("./bin/" + engineBinName)
 }
 

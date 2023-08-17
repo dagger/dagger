@@ -2,12 +2,9 @@ package core
 
 import (
 	"bytes"
-	"context"
 	_ "embed"
 	"io"
 	"testing"
-
-	"dagger.io/dagger"
 
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
@@ -16,12 +13,10 @@ import (
 func TestSecretEnvFromFile(t *testing.T) {
 	t.Parallel()
 
-	secretID := newSecret(t, "some-content")
-
 	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withSecretVariable(name: "SECRET", secret: $secret) {
 						withExec(args: ["sh", "-c", "test \"$SECRET\" = \"some-content\""]) {
 							sync
@@ -29,8 +24,8 @@ func TestSecretEnvFromFile(t *testing.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"secret": secretID,
+		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+			"secret": "some-content",
 		}})
 	require.NoError(t, err)
 }
@@ -38,12 +33,10 @@ func TestSecretEnvFromFile(t *testing.T) {
 func TestSecretMountFromFile(t *testing.T) {
 	t.Parallel()
 
-	secretID := newSecret(t, "some-content")
-
 	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withExec(args: ["sh", "-c", "test \"$(cat /sekret)\" = \"some-content\""]) {
 							sync
@@ -51,8 +44,8 @@ func TestSecretMountFromFile(t *testing.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"secret": secretID,
+		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+			"secret": "some-content",
 		}})
 	require.NoError(t, err)
 }
@@ -60,7 +53,7 @@ func TestSecretMountFromFile(t *testing.T) {
 func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	t.Parallel()
 
-	secretID := newSecret(t, "some-secret")
+	plaintext := "some-secret"
 	fileID := newFile(t, "some-file", "some-content")
 
 	var res struct {
@@ -80,7 +73,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	err := testutil.Query(
 		`query Test($secret: SecretID!, $file: FileID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withMountedFile(path: "/sekret", source: $file) {
 							withExec(args: ["sh", "-c", "test \"$(cat /sekret)\" = \"some-secret\""]) {
@@ -93,29 +86,20 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 					}
 				}
 			}
-		}`, &res, &testutil.QueryOptions{Variables: map[string]any{
-			"secret": secretID,
-			"file":   fileID,
-		}})
+		}`, &res, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"file": fileID,
+			},
+			Secrets: map[string]string{
+				"secret": plaintext,
+			},
+		},
+	)
 	require.NoError(t, err)
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }
 
-func TestSecretPlaintext(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
-
-	//nolint:staticcheck // SA1019 We want to test this API while we support it.
-	plaintext, err := c.Directory().
-		WithNewFile("TOP_SECRET", "hi").File("TOP_SECRET").Secret().Plaintext(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hi", plaintext)
-}
-
-func TestNewSecret(t *testing.T) {
+func TestSecretSet(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -124,14 +108,18 @@ func TestNewSecret(t *testing.T) {
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	_, err := c.Container().From("alpine:3.16.2").
+	_, err := c.Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).
 		Sync(ctx)
 	require.NoError(t, err)
+
+	plaintext, err := s.Plaintext(ctx)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, plaintext)
 }
 
-func TestWhitespaceSecretScrubbed(t *testing.T) {
+func TestSecretWhitespaceScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -140,7 +128,7 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	stdout, err := c.Container().From("alpine:3.16.2").
+	stdout, err := c.Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\n\""}).
 		WithExec([]string{"sh", "-c", "echo -n \"$AWS_KEY\""}).
@@ -149,7 +137,7 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 	require.Equal(t, "***", stdout)
 }
 
-func TestBigSecretScrubbed(t *testing.T) {
+func TestSecretBigScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -159,7 +147,7 @@ func TestBigSecretScrubbed(t *testing.T) {
 
 	s := c.SetSecret("key", string(secretValue))
 
-	sec := c.Container().From("alpine:3.16.2").
+	sec := c.Container().From(alpineImage).
 		WithSecretVariable("KEY", s).
 		WithExec([]string{"sh", "-c", "echo  -n \"$KEY\""})
 

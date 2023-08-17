@@ -86,13 +86,12 @@ The `build()` function is the main workhorse here, so let's step through it in d
 
 - It uses the Dagger client's `CacheVolume()` method to initialize a new cache volume.
 - It uses the client's `Git()` method to query the Git repository for the example application. This method returns a `GitRepository` object.
-- It uses the `GitRepository` object's `Commit()` method to obtain a reference to the repository tree at a specific commit and then uses the resulting `GitRef` object's `Tree()` and `Directory()` methods to retrieve the filesystem tree and source code directory root.
+- It uses the `GitRepository` object's `Commit()` method to obtain a reference to the repository tree at a specific commit and then uses the resulting `GitRef` object's `Tree()` method to retrieve the filesystem tree and source code directory root.
 - It uses the client's `Container().From()` method to initialize a new container from a Node.js base image. The `From()` method returns a new `Container` object with the result.
 - It uses the `Container.WithDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container and the `Container.WithMountedCache()` method to mount the cache volume at the `/src/node_modules/` mount point in the container.
 - It uses the `Container.WithWorkdir()` method to set the working directory to the `/src` mount point.
 - It uses the `Container.WithExec()` method to define the `npm install` command. When executed, this command downloads and installs dependencies in the `node_modules/` directory. Since this directory is defined as a cache volume, its contents will persist even after the pipeline terminates and can be reused on the next pipeline run.
 - It chains additional `WithExec()` method calls to run tests and build the application. The build result is stored in the `./build` directory in the container and a reference to this directory is saved in the `buildDir` variable.
-- It creates a file containing the AWS ECR password and stores a reference to it as a secret using the `Secret()` method.
 - It uses the `Container.WithDirectory()` method to initialize a new `nginx` container and transfer the filesystem state saved in the `buildDir` variable (the built application) to the container at the path `/usr/share/nginx/html`. The result is a container image with the built application in the NGINX webserver root directory.
 - It then uses the `WithRegistryAuth()` and `Publish()` methods to publish the final container image to AWS ECR.
 

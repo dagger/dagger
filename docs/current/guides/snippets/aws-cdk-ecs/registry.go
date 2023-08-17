@@ -19,12 +19,12 @@ func initRegistry(ctx context.Context, client *dagger.Client, awsClient *AWSClie
 		panic(err)
 	}
 
-	repoUri := outputs["RepositoryUri"]
+	repoURI := outputs["RepositoryUri"]
 
 	username, password, err := awsClient.GetECRUsernamePassword(ctx)
 	if err != nil {
 		panic(err)
 	}
 
-	return &RegistryInfo{repoUri, username, password}
+	return &RegistryInfo{repoURI, username, password}
 }

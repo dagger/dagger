@@ -11,7 +11,7 @@ date: "2023-04-17"
 
 ## Introduction
 
-Dagger SDKs are currently available for [Go](../sdk/go/440319-index.md), [Node.js](../sdk/nodejs/722802-index.md) and [Python](../sdk/python/459708-index.md) and make it easy to develop CI/CD pipelines in those languages. However, even if you're using a different language, you can still use Dagger via the [Dagger GraphQL API](../api/990050-index.md). The Dagger GraphQL API is a unified interface for programming the Dagger Engine that can be accessed and used by any standards-compliant GraphQL client.
+Dagger SDKs are currently available for [Go](../sdk/go/), [Node.js](../sdk/nodejs/) and [Python](../sdk/python/) and make it easy to develop CI/CD pipelines in those languages. However, even if you're using a different language, you can still use Dagger via the [Dagger GraphQL API](../api/). The Dagger GraphQL API is a unified interface for programming the Dagger Engine that can be accessed and used by any standards-compliant GraphQL client.
 
 This tutorial demonstrates the above by using PHP with a PHP-based GraphQL client to continuously build, test and publish a Laravel Web application using Dagger. You will learn how to:
 
@@ -31,7 +31,7 @@ GraphQL has a [large and growing list of client implementations](https://graphql
 
 This tutorial assumes that:
 
-- You have a basic understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/648215-quickstart-introduction.mdx).
+- You have a basic understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/index.mdx).
 - You have a PHP development environment with PHP 8.2.x and the Composer package manager installed. If not, [install PHP](https://www.php.net/downloads.php) and [install Composer](https://getcomposer.org/doc/00-intro.md).
 - You have Docker installed and running in your development environment. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
@@ -468,11 +468,11 @@ export REGISTRY_PASSWORD=PASSWORD
 Run the pipeline as below:
 
 ```shell
-dagger run php ci/dagger.php
+dagger --silent run php ci/dagger.php
 ```
 
 :::tip
-For more detailed logs, add the `--debug` command to the `dagger run` command. [Learn more about the Dagger CLI](../cli/698277-index.md).
+For more detailed logs, remove the `--silent` option and add the `--debug` option to the `dagger run` command. [Learn more about the Dagger CLI](../cli/index.md).
 :::
 
 This command:

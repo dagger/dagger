@@ -1,10 +1,11 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,8 +28,6 @@ func TestHTTP(t *testing.T) {
 }
 
 func TestHTTPService(t *testing.T) {
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -41,4 +40,30 @@ func TestHTTPService(t *testing.T) {
 	}).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "Hello, world!")
+}
+
+func TestHTTPServiceStableDigest(t *testing.T) {
+	t.Parallel()
+
+	content := identity.NewID()
+	hostname := func(ctx context.Context, c *dagger.Client) string {
+		svc, url := httpService(ctx, t, c, content)
+
+		hn, err := c.Container().
+			From(alpineImage).
+			WithMountedFile("/index.html", c.HTTP(url, dagger.HTTPOpts{
+				ExperimentalServiceHost: svc,
+			})).
+			Hostname(ctx)
+		require.NoError(t, err)
+		return hn
+	}
+
+	c1, ctx1 := connect(t)
+	defer c1.Close()
+
+	c2, ctx2 := connect(t)
+	defer c2.Close()
+
+	require.Equal(t, hostname(ctx1, c1), hostname(ctx2, c2))
 }

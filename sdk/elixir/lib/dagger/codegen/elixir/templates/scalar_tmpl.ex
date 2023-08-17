@@ -3,38 +3,21 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
 
   alias Dagger.Codegen.Elixir.Module, as: Mod
 
-  @required_mods %{
-    "CacheID" => "CacheVolume",
-    "ContainerID" => "Container",
-    "DirectoryID" => "Directory",
-    "FileID" => "File",
-    "ProjectCommandID" => "ProjectCommand",
-    "ProjectID" => "Project",
-    "SecretID" => "Secret",
-    "SocketID" => "Socket"
-  }
-
-  @support_gen_fun Map.keys(@required_mods)
-
-  def render(%{"name" => name, "description" => desc, "private" => %{mod_name: mod_name}})
-      when name in @support_gen_fun do
-    quote do
-      defmodule unquote(mod_name) do
-        @moduledoc unquote(desc)
-
-        @type t() :: String.t()
-      end
-    end
-  end
-
   def render(%{"name" => name, "description" => desc}) do
-    mod_name = Module.concat([Dagger, Mod.format_name(name)])
+    mod_name = name |> Mod.from_name()
+    type = name_to_type(name)
 
     quote do
       defmodule unquote(mod_name) do
         @moduledoc unquote(desc)
-        @type t() :: String.t()
+        @type t() :: unquote(type)
       end
     end
   end
+
+  defp name_to_type("Int"), do: quote(do: integer())
+  defp name_to_type("Float"), do: quote(do: float())
+  defp name_to_type("Boolean"), do: quote(do: boolean())
+  defp name_to_type("DateTime"), do: quote(do: DateTime.t())
+  defp name_to_type(_), do: quote(do: String.t())
 end

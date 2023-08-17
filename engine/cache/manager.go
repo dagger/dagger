@@ -343,8 +343,8 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	if err := checkResponse(resp); err != nil {
+		return err
 	}
 	return nil
 }
@@ -388,8 +388,8 @@ func (m *manager) Import(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	importedCache := solver.NewCacheManager(ctx, m.ID(), keyStore, resultStore)
-	newInner := solver.NewCombinedCacheManager([]solver.CacheManager{importedCache}, m.localCache)
+	importedCache := solver.NewCacheManager(ctx, m.ID()+"-import", keyStore, resultStore)
+	newInner := solver.NewCombinedCacheManager([]solver.CacheManager{m.localCache, importedCache}, m.localCache)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()

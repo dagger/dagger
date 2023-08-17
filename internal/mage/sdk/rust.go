@@ -18,8 +18,8 @@ import (
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
 	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
-	rustDockerStable     = "rust:1.70.0-bookworm"
-	rustDockerNightly    = "rustlang/rust:nightly-slim"
+	// https://hub.docker.com/_/rust
+	rustDockerStable = "rust:1.71-bookworm"
 )
 
 var _ SDK = Rust{}
@@ -147,15 +147,13 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 	c = c.Pipeline("sdk").Pipeline("rust").Pipeline("publish")
 
 	var (
-		version  = strings.TrimPrefix(tag, "sdk/rust/v")
-		token, _ = util.WithSetHostVar(ctx, c.Host(), "CARGO_REGISTRY_TOKEN").
-				Secret().
-				Plaintext(ctx)
-		dry_run = os.Getenv("CARGO_PUBLISH_DRYRUN")
+		version = strings.TrimPrefix(tag, "sdk/rust/v")
+		token   = os.Getenv("CARGO_REGISTRY_TOKEN")
+		dryRun  = os.Getenv("CARGO_PUBLISH_DRYRUN")
 		crate   = "dagger-sdk"
 	)
 
-	if token == "" && dry_run == "false" {
+	if token == "" && dryRun == "false" {
 		return errors.New("CARGO_TOKEN environment variable must be set")
 	}
 
@@ -171,7 +169,7 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 		"cargo", "publish", "-p", crate, "-v", "--all-features",
 	}
 
-	if dry_run == "false" {
+	if dryRun == "false" {
 		base = base.
 			WithEnvVariable("CARGO_REGISTRY_TOKEN", token).
 			WithExec(args)
@@ -206,24 +204,15 @@ func (r Rust) Test(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	eg, egctx := errgroup.WithContext(ctx)
-	for _, version := range []string{
-		rustDockerStable, rustDockerNightly,
-	} {
-		version := version
-		eg.Go(func() error {
-			_, err = r.rustBase(egctx, c.Pipeline(version), version).
-				WithServiceBinding("dagger-engine", devEngine).
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-				WithExec([]string{"cargo", "test", "--release", "--all"}).
-				Sync(ctx)
-			return err
-		})
-	}
-
-	return eg.Wait()
+	_, err = r.rustBase(ctx, c.Pipeline(rustDockerStable), rustDockerStable).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"rustc", "--version"}).
+		WithExec([]string{"cargo", "test", "--release", "--all"}).
+		Sync(ctx)
+	return err
 }
 
 func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagger.Container {

@@ -7,13 +7,15 @@ import {
   GraphQLRequestError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
-import Client, {
-  connect,
+import {
+  Client,
   ClientContainerOpts,
+  connect,
   Container,
   Directory,
+  NetworkProtocol,
 } from "../../index.js"
-import { queryFlatten, buildQuery } from "../utils.js"
+import { buildQuery, queryFlatten } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
@@ -367,5 +369,58 @@ describe("NodeJS SDK api", function () {
       },
       { LogOutput: process.stderr }
     )
+  })
+
+  it("Handle enumeration", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const ports = await client
+        .container()
+        .from("alpine:3.16.2")
+        .withExposedPort(8000, {
+          protocol: NetworkProtocol.Udp,
+        })
+        .exposedPorts()
+
+      assert.strictEqual(await ports[0].protocol(), NetworkProtocol.Udp)
+    })
+  })
+
+  it("Handle list of objects", async function () {
+    this.timeout(60000)
+
+    await connect(
+      async (client) => {
+        const ctr = await client
+          .container()
+          .from("alpine:3.16.2")
+          .withEnvVariable("FOO", "BAR")
+          .withEnvVariable("BAR", "BOOL")
+
+        const envs = await ctr.envVariables()
+
+        assert.strictEqual(await envs[1].name(), "FOO")
+        assert.strictEqual(await envs[1].value(), "BAR")
+
+        assert.strictEqual(await envs[2].name(), "BAR")
+        assert.strictEqual(await envs[2].value(), "BOOL")
+      },
+      { LogOutput: process.stderr }
+    )
+  })
+
+  it("Check conflict with enum", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const env = await client
+        .container()
+        .from("alpine:3.16.2")
+        .withEnvVariable("FOO", "TCP")
+        .envVariable("FOO")
+
+      assert.strictEqual(env, "TCP")
+    })
   })
 })

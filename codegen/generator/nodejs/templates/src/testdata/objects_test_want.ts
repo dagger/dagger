@@ -3,7 +3,24 @@
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
+  private readonly _id?: CacheID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+   constructor(
+    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+     _id?: CacheID,
+   ) {
+     super(parent)
+
+     this._id = _id
+   }
   async id(): Promise<CacheID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<CacheID> = await computeQuery(
       [
         ...this._queryTree,
@@ -14,6 +31,7 @@ export class CacheVolume extends BaseClient {
       this.client
     )
 
+    
     return response
   }
 }
@@ -22,6 +40,16 @@ export class CacheVolume extends BaseClient {
  * Information about the host execution environment
  */
 export class Host extends BaseClient {
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+   constructor(
+    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+   ) {
+     super(parent)
+
+   }
 
   /**
    * Access a directory on the host

@@ -20,33 +20,33 @@ func build(ctx context.Context, client *dagger.Client, registry *RegistryInfo) (
 	// Read the source code from a remote git repository
 	sourceDir := client.Git("https://github.com/dagger/hello-dagger.git").
 		Commit("5343dfee12cfc59013a51886388a7cacee3f16b9").
-		Tree().
-		Directory(".")
+		Tree()
 
 	source := client.Container().
 		From("node:16").
 		WithDirectory("/src", sourceDir).
 		WithMountedCache("/src/node_modules", nodeCache)
 
-	runner := source.WithWorkdir("/src").
+	runner := source.
+		WithWorkdir("/src").
 		WithExec([]string{"npm", "install"})
 
-	test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
+	test := runner.
+		WithExec([]string{"npm", "test", "--", "--watchAll=false"})
 
-	buildDir := test.WithExec([]string{"npm", "run", "build"}).
+	buildDir := test.
+		WithExec([]string{"npm", "run", "build"}).
 		Directory("./build")
-
-	// This is a workaround until there is a better way to create a secret from the API
-	registrySecret := client.Container().WithNewFile("/secret", dagger.ContainerWithNewFileOpts{
-		Contents:    registry.password,
-		Permissions: 0o400,
-	}).File("/secret").Secret()
 
 	// Explicitly build for "linux/amd64" to match the target (container on Fargate)
 	return client.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).
 		From("nginx").
 		WithDirectory("/usr/share/nginx/html", buildDir).
-		WithRegistryAuth("125635003186.dkr.ecr.us-west-1.amazonaws.com", registry.username, registrySecret).
+		WithRegistryAuth(
+			"125635003186.dkr.ecr.us-west-1.amazonaws.com",
+			registry.username,
+			client.SetSecret("registryPassword", registry.password),
+		).
 		Publish(ctx, registry.uri)
 }
 

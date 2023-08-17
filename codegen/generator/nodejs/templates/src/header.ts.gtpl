@@ -19,6 +19,15 @@ export type QueryTree = {
   args?: Record<string, unknown>
 }
 
+/**
+ * @hidden
+ */
+export type Metadata = {
+  [key: string]: {
+    is_enum?: boolean
+  }
+}
+
 interface ClientConfig {
   queryTree?: QueryTree[]
   host?: string

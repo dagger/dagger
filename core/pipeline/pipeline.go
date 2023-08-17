@@ -14,6 +14,11 @@ type Pipeline struct {
 	Weak        bool    `json:"weak,omitempty"`
 }
 
+// Pipelineable is any object which can return a pipeline.Path.
+type Pipelineable interface {
+	PipelinePath() Path
+}
+
 type Path []*Pipeline
 
 func (g Path) Copy() Path {
@@ -60,9 +65,6 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 	if len(g) == 0 {
 		return rec
 	}
-
-	// drop the "root" pipeline; it's already initialized by Progrock
-	g = g[1:]
 
 	for _, p := range g {
 		var labels []*progrock.Label

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func TestEmptyDirectory(t *testing.T) {
 			directory {
 				entries
 			}
-		}`, &res, nil)
+		}`, &res, nil, dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.Entries)
 }
@@ -223,9 +224,9 @@ func TestDirectoryWithDirectory(t *testing.T) {
 
 	t.Run("respects permissions", func(t *testing.T) {
 		dir := c.Directory().
-			WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0444}).
-			WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0444}).
-			WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0444})
+			WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
+			WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o444}).
+			WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0o444})
 		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
@@ -385,7 +386,7 @@ func TestDirectoryWithFile(t *testing.T) {
 			WithNewFile(
 				"file-with-permissions",
 				"this should have rwxrwxrwx permissions",
-				dagger.DirectoryWithNewFileOpts{Permissions: 0777})
+				dagger.DirectoryWithNewFileOpts{Permissions: 0o777})
 
 		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
 
@@ -414,7 +415,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
 	dir := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"sh", "-c", `
 		  mkdir output
 			touch output/some-file
@@ -426,7 +427,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 
 	t.Run("changes file and directory timestamps recursively", func(t *testing.T) {
 		ls, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/dir", dir).
 			WithEnvVariable("RANDOM", identity.NewID()).
 			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
@@ -439,7 +440,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 
 	t.Run("results in stable tar archiving", func(t *testing.T) {
 		content, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/dir", dir).
 			WithEnvVariable("RANDOM", identity.NewID()).
 			// NB: there's a gotcha here: we need to tar * and not . because the
@@ -594,11 +595,11 @@ func TestDirectoryExport(t *testing.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
-	dir := c.Container().From("alpine:3.16.2").Directory("/etc/profile.d")
+	dir := c.Container().From(alpineImage).Directory("/etc/profile.d")
 
 	t.Run("to absolute dir", func(t *testing.T) {
 		ok, err := dir.Export(ctx, dest)
@@ -607,7 +608,7 @@ func TestDirectoryExport(t *testing.T) {
 
 		entries, err := ls(dest)
 		require.NoError(t, err)
-		require.Equal(t, []string{"README", "color_prompt.sh.disabled", "locale.sh"}, entries)
+		require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
 	})
 
 	t.Run("to workdir", func(t *testing.T) {
@@ -617,7 +618,7 @@ func TestDirectoryExport(t *testing.T) {
 
 		entries, err := ls(wd)
 		require.NoError(t, err)
-		require.Equal(t, []string{"README", "color_prompt.sh.disabled", "locale.sh"}, entries)
+		require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
 	})
 
 	t.Run("to outer dir", func(t *testing.T) {
@@ -845,13 +846,14 @@ func TestDirectoryDirectMerge(t *testing.T) {
 
 	getDirAndInodes := func(t *testing.T, fileNames ...string) (*dagger.Directory, []string) {
 		t.Helper()
-		ctr := c.Container().From("alpine:3.16.2").
+		ctr := c.Container().From(alpineImage).
 			WithMountedDirectory("/src", c.Directory()).
 			WithWorkdir("/src")
 
 		var inodes []string
 		for _, fileName := range fileNames {
-			ctr = ctr.WithExec([]string{"sh", "-e", "-x", "-c",
+			ctr = ctr.WithExec([]string{
+				"sh", "-e", "-x", "-c",
 				"touch " + fileName + " && stat -c '%i' " + fileName,
 			})
 			out, err := ctr.Stdout(ctx)
@@ -879,7 +881,7 @@ func TestDirectoryDirectMerge(t *testing.T) {
 		mergeDir = mergeDir.WithDirectory("/", newDir)
 	}
 
-	ctr := c.Container().From("alpine:3.16.2").
+	ctr := c.Container().From(alpineImage).
 		WithMountedDirectory("/mnt", mergeDir).
 		WithWorkdir("/mnt")
 
@@ -932,7 +934,7 @@ func TestDirectorySync(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such file or directory")
 
-		_, err = c.Container().From("alpine:3.16.2").Directory("/bar").Sync(ctx)
+		_, err = c.Container().From(alpineImage).Directory("/bar").Sync(ctx)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such file or directory")
 	})

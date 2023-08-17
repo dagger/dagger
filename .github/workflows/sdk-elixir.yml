@@ -1,0 +1,26 @@
+name: Elixir SDK
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/_hack_make.yml
+    with:
+      mage-targets: sdk:elixir:lint
+
+  test:
+    uses: ./.github/workflows/_hack_make.yml
+    with:
+      mage-targets: sdk:elixir:test

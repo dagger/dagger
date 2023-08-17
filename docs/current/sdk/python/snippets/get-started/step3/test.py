@@ -20,7 +20,7 @@ async def test():
             # set current working directory for next commands
             .with_workdir("/src")
             # install test dependencies
-            .with_exec(["pip", "install", "-e", ".[test]"])
+            .with_exec(["pip", "install", "-r", "requirements.txt"])
             # run tests
             .with_exec(["pytest", "tests"])
         )

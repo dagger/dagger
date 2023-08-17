@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -66,13 +66,12 @@ func TestGit(t *testing.T) {
 
 func TestGitSSHAuthSock(t *testing.T) {
 	t.Parallel()
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
 
 	gitSSH := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "openssh"})
 
 	hostKeyGen := gitSSH.
@@ -191,4 +190,31 @@ func TestGitKeepGitDir(t *testing.T) {
 		ent, _ := dir.Entries(ctx)
 		require.NotContains(t, ent, ".git")
 	})
+}
+
+func TestGitServiceStableDigest(t *testing.T) {
+	t.Parallel()
+
+	content := identity.NewID()
+	hostname := func(ctx context.Context, c *dagger.Client) string {
+		svc, url := gitService(ctx, t, c,
+			c.Directory().WithNewFile("content", content))
+
+		hn, err := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/repo", c.Git(url, dagger.GitOpts{
+				ExperimentalServiceHost: svc,
+			}).Branch("main").Tree()).
+			Hostname(ctx)
+		require.NoError(t, err)
+		return hn
+	}
+
+	c1, ctx1 := connect(t)
+	defer c1.Close()
+
+	c2, ctx2 := connect(t)
+	defer c2.Close()
+
+	require.Equal(t, hostname(ctx1, c1), hostname(ctx2, c2))
 }

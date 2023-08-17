@@ -3,12 +3,15 @@ package dagger
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
+
+	"github.com/Khan/genqlient/graphql"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/internal/engineconn"
 	"dagger.io/dagger/internal/querybuilder"
-	"github.com/Khan/genqlient/graphql"
-	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 // Client is the Dagger Engine Client
@@ -71,11 +74,19 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	}
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
-	return &Client{
+	c := &Client{
 		c:    gql,
 		conn: conn,
 		q:    querybuilder.Query(),
-	}, nil
+	}
+
+	// Call version compatibility.
+	// If versions are not compatible, a warning will be displayed.
+	if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to check version compatibility:", err)
+	}
+
+	return c, nil
 }
 
 // Close the engine connection

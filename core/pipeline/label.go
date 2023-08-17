@@ -1,22 +1,16 @@
 package pipeline
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/google/go-github/v50/github"
 	"github.com/sirupsen/logrus"
-)
-
-var (
-	loadOnce      sync.Once
-	loadDoneCh    = make(chan struct{})
-	defaultLabels []Label
 )
 
 type Label struct {
@@ -26,28 +20,15 @@ type Label struct {
 
 type Labels []Label
 
-// RootLabels returns default labels for Pipelines.
-//
-// `LoadRootLabels` *must* be called before invoking this function.
-// `RootLabels` will wait until `LoadRootLabels` has completed.
-func RootLabels() []Label {
-	<-loadDoneCh
-	return defaultLabels
-}
-
-// LoadRootLabels loads default Pipeline labels from a workdir.
-func LoadRootLabels(workdir string, engineName string) {
-	loadOnce.Do(func() {
-		defer close(loadDoneCh)
-		defaultLabels = loadRootLabels(workdir, engineName)
-	})
-}
-
-func loadRootLabels(workdir, engineName string) []Label {
-	labels := []Label{{
+func EngineLabel(engineName string) Label {
+	return Label{
 		Name:  "dagger.io/engine",
 		Value: engineName,
-	}}
+	}
+}
+
+func LoadVCSLabels(workdir string) []Label {
+	labels := []Label{}
 
 	if gitLabels, err := LoadGitLabels(workdir); err == nil {
 		labels = append(labels, gitLabels...)
@@ -76,19 +57,24 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
+	labels := []Label{}
+
 	origin, err := repo.Remote("origin")
-	if err != nil {
-		return nil, err
-	}
+	if err == nil {
+		urls := origin.Config().URLs
+		if len(urls) == 0 {
+			return []Label{}, nil
+		}
 
-	urls := origin.Config().URLs
-	if len(urls) == 0 {
-		return []Label{}, nil
-	}
+		endpoint, err := parseGitURL(urls[0])
+		if err != nil {
+			return nil, err
+		}
 
-	endpoint, err := parseGitURL(urls[0])
-	if err != nil {
-		return nil, err
+		labels = append(labels, Label{
+			Name:  "dagger.io/git.remote",
+			Value: endpoint,
+		})
 	}
 
 	head, err := repo.Head()
@@ -103,36 +89,32 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 
 	title, _, _ := strings.Cut(commit.Message, "\n")
 
-	labels := []Label{
-		{
-			Name:  "dagger.io/git.remote",
-			Value: endpoint,
-		},
-		{
+	labels = append(labels,
+		Label{
 			Name:  "dagger.io/git.ref",
 			Value: head.Hash().String(),
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.author.name",
 			Value: commit.Author.Name,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.author.email",
 			Value: commit.Author.Email,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.committer.name",
 			Value: commit.Committer.Name,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.committer.email",
 			Value: commit.Committer.Email,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.title",
 			Value: title, // first line from commit message
 		},
-	}
+	)
 
 	if head.Name().IsTag() {
 		labels = append(labels, Label{
@@ -318,8 +300,11 @@ func (labels *Labels) AppendAnonymousGitLabels(workdir string) *Labels {
 	}
 
 	for _, gitLabel := range gitLabels {
-		if gitLabel.Name == "dagger.io/git.author.email" || gitLabel.Name == "dagger.io/git.remote" {
-			labels.Add(gitLabel.Name, fmt.Sprintf("%x", base64.StdEncoding.EncodeToString([]byte(gitLabel.Value))))
+		if gitLabel.Name == "dagger.io/git.author.email" {
+			labels.Add(gitLabel.Name, fmt.Sprintf("%x", sha256.Sum256([]byte(gitLabel.Value))))
+		}
+		if gitLabel.Name == "dagger.io/git.remote" {
+			labels.Add(gitLabel.Name, base64.StdEncoding.EncodeToString([]byte(gitLabel.Value)))
 		}
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/docker/cli/cli/config/configfile"
 	"github.com/moby/buildkit/session/auth"
 	"github.com/stretchr/testify/require"
 )
@@ -116,8 +115,7 @@ func TestParseAuthAddress(t *testing.T) {
 func TestRegistryAuthProvider(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	cfg := configfile.ConfigFile{}
-	registry := NewRegistryAuthProvider(&cfg)
+	registry := NewRegistryAuthProvider()
 
 	t.Run("add and retrieve credentials", func(t *testing.T) {
 		err := registry.AddCredential(testRegistryAddress, testRegistryUser, testRegistrySecret)

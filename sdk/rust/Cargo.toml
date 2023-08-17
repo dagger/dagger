@@ -4,6 +4,7 @@ members = [
   "crates/dagger-sdk",
   "crates/dagger-bootstrap",
 ]
+resolver = "2"
 
 [workspace.dependencies]
 dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }

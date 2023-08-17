@@ -1,4 +1,4 @@
-import Client, { connect, Container } from "@dagger.io/dagger"
+import { connect, Client, Container } from "@dagger.io/dagger"
 
 // create Dagger client
 connect(
