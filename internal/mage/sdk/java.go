@@ -15,7 +15,8 @@ import (
 const (
 	javaSDKPath = "sdk/java"
 	javaSDKVersionPomPath = javaSDKPath + "/pom.xml"
-
+    javaSchemasDirPath = javaSDKPath + "/dagger-codegen-maven-plugin/src/main/resources/schemas"
+	javaGeneratedSchemaPath = "target/generated-schema/schema.json"
 	javaVersion = "17"
 	mavenVersion = "3.9"
 )
@@ -96,13 +97,33 @@ func (Java) Generate(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	_, err = javaBase(c).
+	generatedSchema, err := javaBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mvn", "clean", "package", "-Pjavadoc", "-Ddaggerengine.version=local"}).
-		Sync(ctx)
+		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
+		WithExec([]string{"mvn", "-N", "dagger-codegen:generateSchema"}).
+		File(javaGeneratedSchemaPath).
+        Contents(ctx)
+
+    if err != nil {
+        return err
+    }
+
+    engineVersion, err := javaBase(c).
+        WithServiceBinding("dagger-engine", devEngine).
+        WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+        WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+        WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+        WithExec([]string{"mvn", "help:evaluate", "-q", "-DforceStdout", "-Dexpression=daggerengine.version"}).
+        Stdout(ctx)
+
+    if err != nil {
+        return err
+    }
+
+	return os.WriteFile(javaSchemasDirPath + fmt.Sprintf("/schema-%s.json", engineVersion), []byte(generatedSchema), 0o600)
 
 	return err
 }

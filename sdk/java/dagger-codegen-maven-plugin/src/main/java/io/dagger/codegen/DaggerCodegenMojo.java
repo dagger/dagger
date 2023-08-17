@@ -7,8 +7,6 @@ import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -43,13 +41,6 @@ public class DaggerCodegenMojo extends AbstractMojo {
   @Parameter(defaultValue = "${project.build.directory}/generated-sources/dagger")
   private File outputDirectory;
 
-  private static boolean isStandardVersionFormat(String input) {
-    String pattern = "v\\d+\\.\\d+\\.\\d+"; // Le motif regex pour le format attendu
-    Pattern regex = Pattern.compile(pattern);
-    Matcher matcher = regex.matcher(input);
-    return matcher.matches();
-  }
-
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
     outputEncoding = validateEncoding(outputEncoding);
@@ -63,7 +54,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
       outputDir.mkdirs();
     }
 
-    setCLIBinary();
+    this.bin = DaggerCLIUtils.getBinary(this.bin);
 
     Path dest = outputDir.toPath();
     try (InputStream in = daggerSchema()) {
@@ -113,17 +104,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
     }
   }
 
-  private void setCLIBinary() {
-    if (this.bin == null) {
-      this.bin = System.getenv("_EXPERIMENTAL_DAGGER_CLI_BIN");
-      if (this.bin == null) {
-        this.bin = "dagger";
-      }
-    }
-  }
-
   private InputStream queryForSchema(InputStream introspectionQuery) {
-    getLog().info("Querying local dagger CLI for schema");
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     FluentProcess.start(bin, "query")
         .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
@@ -132,25 +113,19 @@ public class DaggerCodegenMojo extends AbstractMojo {
     return new ByteArrayInputStream(out.toByteArray());
   }
 
-  private String getCLIVersion() {
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    String output =
-        FluentProcess.start(bin, "version").withTimeout(Duration.of(60, ChronoUnit.SECONDS)).get();
-    String version = output.split("\\s")[1];
-    return isStandardVersionFormat(version) ? version.substring(1) : version;
-  }
-
   private InputStream daggerSchema()
       throws IOException, InterruptedException, MojoFailureException {
     if ("local".equalsIgnoreCase(version)) {
-      version = getCLIVersion();
-      return queryForSchema(
-          getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"));
+      this.version = DaggerCLIUtils.getVersion(this.bin);
+      getLog().info("Querying local dagger CLI for schema");
+      return DaggerCLIUtils.query(
+          getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
+          this.bin);
     } else {
       InputStream in =
           getClass()
               .getClassLoader()
-              .getResourceAsStream(String.format("schemas/schema-v%s.json", version));
+              .getResourceAsStream(String.format("schemas/schema-%s.json", version));
       if (in == null) {
         throw new MojoFailureException(
             String.format("GraphQL schema for version %s not found", version));
