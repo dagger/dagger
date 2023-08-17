@@ -53,6 +53,8 @@ func init() {
 	// also include codegen flags since codegen will run on environment init
 
 	environmentCmd.AddCommand(environmentInitCmd)
+	environmentCmd.AddCommand(environmentExtendCmd)
+	environmentCmd.AddCommand(environmentSyncCmd)
 }
 
 var environmentCmd = &cobra.Command{
