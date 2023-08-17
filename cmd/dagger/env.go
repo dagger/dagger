@@ -135,14 +135,8 @@ var environmentExtendCmd = &cobra.Command{
 	Use:    "extend",
 	Short:  "Extend a dagger environment with access to the entrypoints of another environment",
 	Hidden: true,
-	RunE: loadEnvCmdWrapper(func(
-		ctx context.Context,
-		engineClient *client.Client,
-		c *dagger.Client,
-		_ *dagger.Environment,
-		cmd *cobra.Command,
-		extraArgs []string,
-	) error {
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
 		envFlagCfg, err := getEnvironmentFlagConfig()
 		if err != nil {
 			return fmt.Errorf("failed to get environment: %w", err)
@@ -150,7 +144,7 @@ var environmentExtendCmd = &cobra.Command{
 		if envFlagCfg.git != nil {
 			return fmt.Errorf("environment init is not supported for git environments")
 		}
-		envCfg, err := envFlagCfg.config(ctx, c)
+		envCfg, err := envFlagCfg.config(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("failed to get environment config: %w", err)
 		}
@@ -160,15 +154,15 @@ var environmentExtendCmd = &cobra.Command{
 			depSet[dep] = struct{}{}
 		}
 		for _, newDep := range extraArgs {
-			envFlagCfg, err := getEnvironmentFlagConfigFromURI(newDep)
+			depEnvFlagCfg, err := getEnvironmentFlagConfigFromURI(newDep)
 			if err != nil {
 				return fmt.Errorf("failed to get environment: %w", err)
 			}
-			envCfg, err := envFlagCfg.config(ctx, c)
+			depPath, err := filepath.Rel(filepath.Dir(envFlagCfg.local.path), filepath.Dir(depEnvFlagCfg.local.path))
 			if err != nil {
-				return fmt.Errorf("failed to get environment config: %w", err)
+				return fmt.Errorf("failed to get relative path for dependency: %w", err)
 			}
-			depSet[envCfg.Name] = struct{}{}
+			depSet[depPath] = struct{}{}
 		}
 
 		envCfg.Dependencies = nil
@@ -177,22 +171,16 @@ var environmentExtendCmd = &cobra.Command{
 		}
 		sort.Strings(envCfg.Dependencies)
 
-		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, engineClient)
-	}),
+		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, nil)
+	},
 }
 
 var environmentSyncCmd = &cobra.Command{
 	Use:    "sync",
 	Short:  "Synchronize a dagger environment with the latest version of its extensions",
 	Hidden: true,
-	RunE: loadEnvCmdWrapper(func(
-		ctx context.Context,
-		engineClient *client.Client,
-		c *dagger.Client,
-		_ *dagger.Environment,
-		cmd *cobra.Command,
-		_ []string,
-	) error {
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
 		envFlagCfg, err := getEnvironmentFlagConfig()
 		if err != nil {
 			return fmt.Errorf("failed to get environment: %w", err)
@@ -200,12 +188,12 @@ var environmentSyncCmd = &cobra.Command{
 		if envFlagCfg.git != nil {
 			return fmt.Errorf("environment init is not supported for git environments")
 		}
-		envCfg, err := envFlagCfg.config(ctx, c)
+		envCfg, err := envFlagCfg.config(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("failed to get environment config: %w", err)
 		}
-		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, engineClient)
-	}),
+		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, nil)
+	},
 }
 
 func updateEnvironmentConfig(
@@ -220,17 +208,26 @@ func updateEnvironmentConfig(
 	}
 	switch environmentconfig.SDK(newEnvCfg.SDK) {
 	case environmentconfig.SDKGo:
-		if engineClient == nil {
-			var err error
-			engineClient, ctx, err = client.Connect(ctx, client.Params{
-				RunnerHost: engine.RunnerHost(),
-			})
+		runCodegenFunc = func() error {
+			if engineClient == nil {
+				var err error
+				engineClient, ctx, err = client.Connect(ctx, client.Params{
+					RunnerHost: engine.RunnerHost(),
+				})
+				if err != nil {
+					return fmt.Errorf("failed to connect to engine: %w", err)
+				}
+			}
+			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
 			if err != nil {
 				return fmt.Errorf("failed to connect to engine: %w", err)
 			}
-		}
-		runCodegenFunc = func() error {
-			return RunCodegen(ctx, engineClient, nil, newEnvCfg, nil, cmd, nil)
+			envFlagCfg := &environmentFlagConfig{local: &localEnvironment{path: path}}
+			deps, err := envFlagCfg.loadDeps(ctx, c)
+			if err != nil {
+				return fmt.Errorf("failed to load dependencies: %w", err)
+			}
+			return RunCodegen(ctx, engineClient, nil, newEnvCfg, deps, cmd, nil)
 		}
 	case environmentconfig.SDKPython:
 	default:
@@ -482,6 +479,9 @@ type gitEnvironment struct {
 }
 
 func (p gitEnvironment) config(ctx context.Context, c *dagger.Client) (*environmentconfig.Config, error) {
+	if c == nil {
+		return nil, fmt.Errorf("cannot load git environment config with nil dagger client")
+	}
 	configStr, err := c.Git(p.repo).Branch(p.ref).Tree().File(p.subpath).Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read git config file: %w", err)
