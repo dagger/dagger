@@ -779,8 +779,7 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 		// TODO: ugly
 
 		var checkRes core.EnvironmentCheckResult
-		switch v := res.(type) {
-		case string:
+		if v, ok := res.(string); ok {
 			if subCheck, err := core.EnvironmentCheckID(v).ToEnvironmentCheck(); err == nil {
 				// NB: run with ctx that places us in the current group!
 				res, err := s.checkResult(ctx, subCheck, nil)
@@ -797,8 +796,15 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 				checkRes.Success = true
 				checkRes.Output = v
 			}
-		default:
-			return nil, fmt.Errorf("check %s.%s returned unexpected type %T", check.EnvironmentName, check.Name, res)
+		} else {
+			// assume the act of the check running without failing is enough to
+			// constitute success
+			//
+			// this would be typical of environment tests that just use the env code
+			// as their test
+			//
+			// TODO(vito): reconsider? i'm just too lazy to construct a result tbh
+			checkRes.Success = true
 		}
 
 		checkRes.Name = check.EnvironmentName + "." + check.Name
