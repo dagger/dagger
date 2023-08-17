@@ -20,6 +20,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
@@ -155,11 +156,20 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		WithField("server_id", opts.ServerID))
 	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Trace("handling session call")
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Debugf("session call done")
+		if rerr != nil {
+			bklog.G(ctx).WithError(rerr).Errorf("session call failed")
+		} else {
+			bklog.G(ctx).Debugf("session call done")
+		}
 	}()
 
 	conn, closeCh, hijackmd := grpchijack.Hijack(stream)
-	defer conn.Close()
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: this blocks if opts.RegisterClient and an error happens
+	// TODO: ? defer conn.Close()
 	go func() {
 		<-closeCh
 		cancel()
@@ -204,6 +214,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			e.serverMu.Unlock()
 			return err
 		}
+		bklog.G(ctx).Debugf("connected new server session")
 
 		secretStore := core.NewSecretStore()
 		authProvider := auth.NewRegistryAuthProvider()
@@ -221,6 +232,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			})
 		}
 
+		// using a new random ID rather than server ID to squash any nefarious attempts to set
+		// a server id that has e.g. ../../.. or similar in it
+		progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", identity.NewID())
+
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
 			Worker:                e.worker,
 			SessionManager:        e.SessionManager,
@@ -230,6 +245,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			AuthProvider:          authProvider,
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
 			UpstreamCacheImports:  cacheImporterCfgs,
+			ProgSockPath:          progSockPath,
 			MainClientCaller:      caller,
 		})
 		if err != nil {
@@ -237,6 +253,8 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			return err
 		}
 		secretStore.SetBuildkitClient(bkClient)
+
+		bklog.G(ctx).Debugf("initialized new server buildkit client")
 
 		labels := opts.Labels
 		labels = append(labels, pipeline.EngineLabel(e.EngineName))
@@ -249,9 +267,11 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		}
 		e.servers[opts.ServerID] = srv
 
+		bklog.G(ctx).Debugf("initialized new server")
+
 		// delete the server after the initial client who created it exits
 		defer func() {
-			bklog.G(ctx).Trace("removing server")
+			bklog.G(ctx).Debug("removing server")
 			e.serverMu.Lock()
 			srv.Close()
 			delete(e.servers, opts.ServerID)
@@ -263,7 +283,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			bklog.G(ctx).Trace("closed buildkit client")
 
 			time.AfterFunc(time.Second, e.throttledGC)
-			bklog.G(ctx).Trace("server removed")
+			bklog.G(ctx).Debug("server removed")
 		}()
 	}
 

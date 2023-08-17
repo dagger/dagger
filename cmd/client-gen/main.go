@@ -54,7 +54,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	introspectionSchema, err := generator.Introspect(ctx)
+	introspectionSchema, err := generator.Introspect(ctx, nil)
 	if err != nil {
 		return err
 	}

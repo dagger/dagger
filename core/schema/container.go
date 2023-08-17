@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -115,7 +116,13 @@ type containerArgs struct {
 	Platform *specs.Platform
 }
 
-func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (*core.Container, error) {
+func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
+	defer func() {
+		if err := recover(); err != nil {
+			rerr = fmt.Errorf("SHIT %v %s", err, string(debug.Stack()))
+		}
+	}()
+
 	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
 		if args.ID != "" {
@@ -132,7 +139,7 @@ func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args 
 }
 
 func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any) (core.ContainerID, error) {
-	err := parent.Evaluate(ctx, s.bk)
+	_, err := parent.Evaluate(ctx, s.bk)
 	if err != nil {
 		return "", err
 	}
@@ -160,7 +167,7 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	dir, err := args.Context.ToDirectory()
+	dir, err := args.Context.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +188,7 @@ type containerWithRootFSArgs struct {
 }
 
 func (s *containerSchema) withRootfs(ctx *core.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	dir, err := args.Directory.ToDirectory()
+	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -438,11 +445,11 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *core.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Source.ToDirectory()
+	dir, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner)
+	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner, false)
 }
 
 type containerPublishArgs struct {
@@ -463,11 +470,11 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx *core.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	file, err := args.Source.ToFile()
+	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner)
+	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner, false)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -482,13 +489,13 @@ func (s *containerSchema) withMountedCache(ctx *core.Context, parent *core.Conta
 	var dir *core.Directory
 	if args.Source != "" {
 		var err error
-		dir, err = args.Source.ToDirectory()
+		dir, err = args.Source.Decode()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cache, err := args.Cache.ToCacheVolume()
+	cache, err := args.Cache.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +583,7 @@ type containerWithSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withSecretVariable(ctx *core.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
-	secret, err := args.Secret.ToSecret()
+	secret, err := args.Secret.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -591,7 +598,7 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx *core.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	secret, err := args.Source.ToSecret()
+	secret, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +611,7 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx *core.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Directory.ToDirectory()
+	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +624,7 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx *core.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
-	file, err := args.Source.ToFile()
+	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -640,7 +647,7 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx *core.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	socket, err := args.Source.ToSocket()
+	socket, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -756,7 +763,7 @@ type containerWithServiceDependencyArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	svc, err := args.Service.ToContainer()
+	svc, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
 	}

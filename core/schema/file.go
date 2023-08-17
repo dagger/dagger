@@ -28,7 +28,7 @@ func (s *fileSchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"file": ToResolver(s.file),
 		},
-		"File": ToIDableObjectResolver(core.FileID.ToFile, ObjectResolver{
+		"File": ToIDableObjectResolver(core.FileID.Decode, ObjectResolver{
 			"id":             ToResolver(s.id),
 			"sync":           ToResolver(s.sync),
 			"contents":       ToResolver(s.contents),
@@ -48,7 +48,7 @@ type fileArgs struct {
 }
 
 func (s *fileSchema) file(ctx *core.Context, parent any, args fileArgs) (*core.File, error) {
-	return args.ID.ToFile()
+	return args.ID.Decode()
 }
 
 func (s *fileSchema) id(ctx *core.Context, parent *core.File, args any) (core.FileID, error) {

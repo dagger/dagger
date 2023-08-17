@@ -4,7 +4,8 @@ package {{ .Package }}
 
 import (
 	"context"
+  "encoding/json"
 
 	"github.com/Khan/genqlient/graphql"
-	"dagger.io/dagger/internal/querybuilder"
+	"dagger.io/dagger/querybuilder"
 )

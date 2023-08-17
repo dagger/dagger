@@ -8,49 +8,91 @@ import (
 var (
 	//go:embed src/header.go.tmpl
 	headerSource string
-	Header       *template.Template
+	header       *template.Template
 
 	//go:embed src/scalar.go.tmpl
 	scalarSource string
-	Scalar       *template.Template
+	scalar       *template.Template
 
 	//go:embed src/input.go.tmpl
 	inputSource string
-	Input       *template.Template
+	input       *template.Template
 
 	//go:embed src/object.go.tmpl
 	objectSource string
-	Object       *template.Template
+	object       *template.Template
 
 	//go:embed src/enum.go.tmpl
 	enumSource string
-	Enum       *template.Template
+	enum       *template.Template
+
+	//go:embed src/environment.go.tmpl
+	environmentSource string
+	environment       *template.Template
 )
 
-func init() {
-	var err error
+func Header(funcs template.FuncMap) *template.Template {
+	if header == nil {
+		var err error
+		header, err = template.New("header").Funcs(funcs).Parse(headerSource)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return header
+}
 
-	Header, err = template.New("header").Funcs(funcMap).Parse(headerSource)
-	if err != nil {
-		panic(err)
+func Scalar(funcs template.FuncMap) *template.Template {
+	if scalar == nil {
+		var err error
+		scalar, err = template.New("scalar").Funcs(funcs).Parse(scalarSource)
+		if err != nil {
+			panic(err)
+		}
 	}
-	Scalar, err = template.New("scalar").Funcs(funcMap).Parse(scalarSource)
-	if err != nil {
-		panic(err)
-	}
+	return scalar
+}
 
-	Input, err = template.New("input").Funcs(funcMap).Parse(inputSource)
-	if err != nil {
-		panic(err)
+func Input(funcs template.FuncMap) *template.Template {
+	if input == nil {
+		var err error
+		input, err = template.New("input").Funcs(funcs).Parse(inputSource)
+		if err != nil {
+			panic(err)
+		}
 	}
+	return input
+}
 
-	Object, err = template.New("object").Funcs(funcMap).Parse(objectSource)
-	if err != nil {
-		panic(err)
+func Object(funcs template.FuncMap) *template.Template {
+	if object == nil {
+		var err error
+		object, err = template.New("object").Funcs(funcs).Parse(objectSource)
+		if err != nil {
+			panic(err)
+		}
 	}
+	return object
+}
 
-	Enum, err = template.New("enum").Funcs(funcMap).Parse(enumSource)
-	if err != nil {
-		panic(err)
+func Enum(funcs template.FuncMap) *template.Template {
+	if enum == nil {
+		var err error
+		enum, err = template.New("enum").Funcs(funcs).Parse(enumSource)
+		if err != nil {
+			panic(err)
+		}
 	}
+	return enum
+}
+
+func Environment(funcs template.FuncMap) *template.Template {
+	if environment == nil {
+		var err error
+		environment, err = template.New("environment").Funcs(funcs).Parse(environmentSource)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return environment
 }

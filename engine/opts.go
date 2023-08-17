@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
+	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -61,7 +62,10 @@ type ClientMetadata struct {
 	ParentClientIDs []string `json:"parent_client_ids"`
 
 	// Import configuration for Buildkit's remote cache
-	UpstreamCacheConfig []*controlapi.CacheOptionsEntry
+	UpstreamCacheConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_config"`
+
+	// TODO: doc if stays in
+	EnvironmentDigest digest.Digest `json:"environment_digest"`
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

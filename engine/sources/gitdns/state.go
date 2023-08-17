@@ -1,58 +1,53 @@
 package gitdns
 
 import (
-	"strings"
+	"path"
 
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/moby/buildkit/util/sshutil"
+	"github.com/pkg/errors"
 )
 
 const AttrNetConfig = "gitdns.netconfig"
 
 // Git is a helper mimicking the llb.Git function, but with the ability to
 // set additional attributes.
-func State(remote, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
-	hi := &llb.GitInfo{}
-	for _, o := range opts {
-		o.SetGitOption(hi)
-	}
-
-	attrs := map[string]string{}
-	url := strings.Split(remote, "#")[0]
-
-	var protocolType int
-	remote, protocolType = gitutil.ParseProtocol(remote)
-
-	var sshHost string
-	if protocolType == gitutil.SSHProtocol {
-		parts := strings.SplitN(remote, ":", 2)
-		if len(parts) == 2 {
-			sshHost = parts[0]
-			// keep remote consistent with http(s) version
-			remote = parts[0] + "/" + parts[1]
-		}
-	}
-	if protocolType == gitutil.UnknownProtocol {
+func State(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
+	remote, err := gitutil.ParseURL(url)
+	if errors.Is(err, gitutil.ErrUnknownProtocol) {
 		url = "https://" + url
+		remote, err = gitutil.ParseURL(url)
+	}
+	if remote != nil {
+		remote.Fragment = ""
+		url = remote.String()
 	}
 
-	// TODO(vito): replace when custom sources are supported
-	hack, err := buildkit.EncodeIDHack(DaggerGitURLHack{
+	if hack, err := buildkit.EncodeIDHack(DaggerGitURLHack{
 		Remote:    url,
 		ClientIDs: clientIDs,
-	})
-	if err != nil {
+	}); err != nil {
 		panic(err)
+	} else {
+		url = "git://" + hack
 	}
-	url = "git://" + hack
 
-	id := remote
-
-	if ref != "" {
-		id += "#" + ref
+	var id string
+	if err != nil {
+		// If we can't parse the URL, just use the full URL as the ID. The git
+		// operation will fail later on.
+		id = url
+	} else {
+		// We construct the ID manually here, so that we can create the same ID
+		// for different protocols (e.g. https and ssh) that have the same
+		// host/path/fragment combination.
+		id = remote.Host + path.Join("/", remote.Path)
+		if ref != "" {
+			id += "#" + ref
+		}
 	}
 
 	gi := &llb.GitInfo{
@@ -62,6 +57,7 @@ func State(remote, ref string, clientIDs []string, opts ...llb.GitOption) llb.St
 	for _, o := range opts {
 		o.SetGitOption(gi)
 	}
+	attrs := map[string]string{}
 	if gi.KeepGitDir {
 		attrs[pb.AttrKeepGitDir] = "true"
 	}
@@ -74,11 +70,11 @@ func State(remote, ref string, clientIDs []string, opts ...llb.GitOption) llb.St
 	if gi.AuthHeaderSecret != "" {
 		attrs[pb.AttrAuthHeaderSecret] = gi.AuthHeaderSecret
 	}
-	if protocolType == gitutil.SSHProtocol {
+	if remote != nil && remote.Scheme == gitutil.SSHProtocol {
 		if gi.KnownSSHHosts != "" {
 			attrs[pb.AttrKnownSSHHosts] = gi.KnownSSHHosts
-		} else if sshHost != "" {
-			keyscan, err := sshutil.SSHKeyScan(sshHost)
+		} else {
+			keyscan, err := sshutil.SSHKeyScan(remote.Host)
 			if err == nil {
 				// best effort
 				attrs[pb.AttrKnownSSHHosts] = keyscan

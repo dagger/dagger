@@ -13,34 +13,49 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
-var (
-	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
-	funcMap    = template.FuncMap{
-		"Comment":                 comment,
-		"FormatDeprecation":       formatDeprecation,
-		"FormatReturnType":        commonFunc.FormatReturnType,
-		"FormatInputType":         commonFunc.FormatInputType,
-		"FormatOutputType":        commonFunc.FormatOutputType,
-		"FormatName":              formatName,
-		"FormatEnum":              formatEnum,
-		"SortEnumFields":          sortEnumFields,
-		"FieldOptionsStructName":  fieldOptionsStructName,
-		"FieldFunction":           fieldFunction,
-		"IsEnum":                  isEnum,
-		"GetArrayField":           commonFunc.GetArrayField,
-		"IsListOfObject":          commonFunc.IsListOfObject,
-		"ToLowerCase":             commonFunc.ToLowerCase,
-		"ToUpperCase":             commonFunc.ToUpperCase,
-		"FormatArrayField":        formatArrayField,
-		"FormatArrayToSingleType": formatArrayToSingleType,
-		"ConvertID":               commonFunc.ConvertID,
-		"IsSelfChainable":         commonFunc.IsSelfChainable,
+func GoTemplateFuncs(envName string) template.FuncMap {
+	return goTemplateFuncs{
+		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
+		envName:         envName,
+	}.FuncMap()
+}
+
+type goTemplateFuncs struct {
+	*generator.CommonFunctions
+	envName string
+}
+
+func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
+	return template.FuncMap{
+		// common
+		"FormatReturnType": funcs.FormatReturnType,
+		"FormatInputType":  funcs.FormatInputType,
+		"FormatOutputType": funcs.FormatOutputType,
+		"GetArrayField":    funcs.GetArrayField,
+		"IsListOfObject":   funcs.IsListOfObject,
+		"ToLowerCase":      funcs.ToLowerCase,
+		"ToUpperCase":      funcs.ToUpperCase,
+		"ConvertID":        funcs.ConvertID,
+		"IsSelfChainable":  funcs.IsSelfChainable,
+
+		// go specific
+		"Comment":                       funcs.comment,
+		"FormatDeprecation":             funcs.formatDeprecation,
+		"FormatName":                    formatName,
+		"FormatEnum":                    funcs.formatEnum,
+		"SortEnumFields":                funcs.sortEnumFields,
+		"FieldOptionsStructName":        funcs.fieldOptionsStructName,
+		"FieldFunction":                 funcs.fieldFunction,
+		"IsEnum":                        funcs.isEnum,
+		"FormatArrayField":              funcs.formatArrayField,
+		"FormatArrayToSingleType":       funcs.formatArrayToSingleType,
+		"EnvironmentWithMethodPreamble": funcs.environmentWithMethodPreamble,
 	}
-)
+}
 
 // comments out a string
 // Example: `hello\nworld` -> `// hello\n// world\n`
-func comment(s string) string {
+func (funcs goTemplateFuncs) comment(s string) string {
 	if s == "" {
 		return ""
 	}
@@ -55,7 +70,7 @@ func comment(s string) string {
 
 // format the deprecation reason
 // Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
-func formatDeprecation(s string) string {
+func (funcs goTemplateFuncs) formatDeprecation(s string) string {
 	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
 	matches := r.FindAllString(s, -1)
 	for _, match := range matches {
@@ -64,10 +79,10 @@ func formatDeprecation(s string) string {
 		replacement = formatName(replacement)
 		s = strings.ReplaceAll(s, match, replacement)
 	}
-	return comment("Deprecated: " + s)
+	return funcs.comment("Deprecated: " + s)
 }
 
-func isEnum(t introspection.Type) bool {
+func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
 		!strings.HasPrefix(t.Name, "__")
@@ -85,36 +100,36 @@ func formatName(s string) string {
 	return lintName(s)
 }
 
-// formatName formats a GraphQL Enum value into a Go equivalent
+// formatEnum formats a GraphQL Enum value into a Go equivalent
 // Example: `fooId` -> `FooID`
-func formatEnum(s string) string {
+func (funcs goTemplateFuncs) formatEnum(s string) string {
 	s = strings.ToLower(s)
 	return strcase.ToCamel(s)
 }
 
-func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
+func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	sort.SliceStable(s, func(i, j int) bool {
 		return s[i].Name < s[j].Name
 	})
 	return s
 }
 
-func formatArrayField(fields []*introspection.Field) string {
+func (funcs goTemplateFuncs) formatArrayField(fields []*introspection.Field) string {
 	result := []string{}
 
 	for _, f := range fields {
-		result = append(result, fmt.Sprintf("%s: &fields[i].%s", f.Name, commonFunc.ToUpperCase(f.Name)))
+		result = append(result, fmt.Sprintf("%s: &fields[i].%s", f.Name, funcs.ToUpperCase(f.Name)))
 	}
 
 	return strings.Join(result, ", ")
 }
 
-func formatArrayToSingleType(arrType string) string {
+func (funcs goTemplateFuncs) formatArrayToSingleType(arrType string) string {
 	return arrType[2:]
 }
 
 // fieldOptionsStructName returns the options struct name for a given field
-func fieldOptionsStructName(f introspection.Field) string {
+func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field) string {
 	// Exception: `Query` option structs are not prefixed by `Query`.
 	// This is just so that they're nicer to work with, e.g.
 	// `ContainerOpts` rather than `QueryContainerOpts`
@@ -128,7 +143,15 @@ func fieldOptionsStructName(f introspection.Field) string {
 
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
-func fieldFunction(f introspection.Field) string {
+func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
+	// don't create methods on query for the env itself,
+	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
+	if envName := funcs.envName; envName != "" {
+		if f.ParentObject.Name == generator.QueryStructName && f.Name == envName {
+			return ""
+		}
+	}
+
 	structName := formatName(f.ParentObject.Name)
 	signature := fmt.Sprintf(`func (r *%s) %s`,
 		structName, formatName(f.Name))
@@ -146,21 +169,24 @@ func fieldFunction(f introspection.Field) string {
 		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
 		// scalar (DirectoryID) rather than an object (*Directory).
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, commonFunc.FormatOutputType(arg.TypeRef)))
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, funcs.FormatOutputType(arg.TypeRef)))
+		} else if funcs.envName != "" && formatName(f.ParentObject.Name) == "Environment" && arg.Name == "id" {
+			args = append(args, fmt.Sprintf("%s any", arg.Name))
 		} else {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, commonFunc.FormatInputType(arg.TypeRef)))
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, funcs.FormatInputType(arg.TypeRef)))
 		}
 	}
+
 	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
 	if f.Args.HasOptionals() {
 		args = append(
 			args,
-			fmt.Sprintf("opts ...%s", fieldOptionsStructName(f)),
+			fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)),
 		)
 	}
 	signature += "(" + strings.Join(args, ", ") + ")"
 
-	retType := commonFunc.FormatReturnType(f)
+	retType := funcs.FormatReturnType(f)
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
 		retType = fmt.Sprintf("(%s, error)", retType)
 	} else {
@@ -169,4 +195,18 @@ func fieldFunction(f introspection.Field) string {
 	signature += " " + retType
 
 	return signature
+}
+
+func (funcs goTemplateFuncs) environmentWithMethodPreamble(f introspection.Field) string {
+	if funcs.envName == "" || f.ParentObject.Name != "Environment" || !strings.HasPrefix(f.Name, "with") {
+		return ""
+	}
+	if f.Name == "withWorkdir" {
+		return ""
+	}
+	return fmt.Sprintf(`res := %s(r, id)
+if res != nil {
+	return res
+}
+`, formatName(f.Name))
 }

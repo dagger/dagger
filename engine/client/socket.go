@@ -26,7 +26,7 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 	if req.ID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "id is not set")
 	}
-	socket, err := socket.ID(req.ID).ToSocket()
+	socket, err := socket.ID(req.ID).Decode()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
 	}
@@ -51,7 +51,7 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	if id == "" {
 		return status.Errorf(codes.InvalidArgument, "id is not set")
 	}
-	socket, err := socket.ID(id).ToSocket()
+	socket, err := socket.ID(id).Decode()
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
 	}

@@ -2,12 +2,15 @@ package buildkit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -45,6 +48,7 @@ type Opts struct {
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
+	ProgSockPath          string
 	// MainClientCaller is the caller who initialized the server associated with this
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
@@ -189,6 +193,49 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
+
+	// include exec metadata that isn't included in the cache key
+	if req.Definition != nil && req.Definition.Def != nil {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		dag, err := DefToDAG(req.Definition)
+		if err != nil {
+			return nil, err
+		}
+		if err := dag.Walk(func(dag *OpDAG) error {
+			execOp, ok := dag.AsExec()
+			if !ok {
+				return nil
+			}
+			if execOp.Meta == nil {
+				execOp.Meta = &bksolverpb.Meta{}
+			}
+			if execOp.Meta.ProxyEnv == nil {
+				execOp.Meta.ProxyEnv = &bksolverpb.ProxyEnv{}
+			}
+			var err error
+			execOp.Meta.ProxyEnv.FtpProxy, err = ContainerExecUncachedMetadata{
+				ParentClientIDs:   clientMetadata.ClientIDs(),
+				ServerID:          clientMetadata.ServerID,
+				ProgSockPath:      c.ProgSockPath,
+				EnvironmentDigest: clientMetadata.EnvironmentDigest,
+			}.ToPBFtpProxyVal()
+			if err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		newDef, err := dag.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		req.Definition = newDef
+	}
 
 	llbRes, err := c.llbBridge.Solve(ctx, req, c.ID())
 	if err != nil {
@@ -458,4 +505,44 @@ func withOutgoingContext(ctx context.Context) context.Context {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 	return ctx
+}
+
+// Metadata passed to an exec that doesn't count towards the cache key.
+// This should be used with great caution; only for metadata that is
+// safe to be de-duplicated across execs.
+//
+// Currently, this uses the FTPProxy LLB option to pass without becoming
+// part of the cache key. This is a hack that, while ugly to look at,
+// is simple and robust. Alternatives would be to use secrets or sockets,
+// but they are more complicated, or to create a custom buildkit
+// worker/executor, which is MUCH more complicated.
+//
+// If a need to add ftp proxy support arises, then we can just also embed
+// the "real" ftp proxy setting in here too and have the shim handle
+// leaving only that set in the actual env var.
+type ContainerExecUncachedMetadata struct {
+	ParentClientIDs   []string      `json:"parentClientIDs,omitempty"`
+	ServerID          string        `json:"serverID,omitempty"`
+	ProgSockPath      string        `json:"progSockPath,omitempty"`
+	EnvironmentDigest digest.Digest `json:"environmentDigest,omitempty"`
+}
+
+func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {
+	b, err := json.Marshal(md)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
+	_, val, ok := strings.Cut(envKV, "ftp_proxy=")
+	if !ok {
+		return false, nil
+	}
+	err := json.Unmarshal([]byte(val), md)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

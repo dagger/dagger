@@ -1,0 +1,8 @@
+{
+  "root": "../../../../../../",
+  "name": "basic",
+  "sdk": "go",
+  "dependencies": [
+    "explicitdep"
+  ]
+}

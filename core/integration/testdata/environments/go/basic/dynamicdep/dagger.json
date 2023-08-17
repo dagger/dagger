@@ -1,0 +1,5 @@
+{
+  "root": "../../../../../../../",
+  "name": "basic_dynamicdep",
+  "sdk": "go"
+}

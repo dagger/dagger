@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/docker/cli/cli/config"
@@ -28,6 +30,7 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
+	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
@@ -63,6 +66,9 @@ type Params struct {
 	ProgrockWriter     progrock.Writer
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
+
+	// TODO: doc if this stays in
+	EnvironmentDigest digest.Digest
 }
 
 type Client struct {
@@ -77,9 +83,14 @@ type Client struct {
 
 	Recorder *progrock.Recorder
 
-	httpClient           *http.Client
-	bkClient             *bkclient.Client
-	bkSession            *bksession.Session
+	httpClient *http.Client
+	bkClient   *bkclient.Client
+	bkSession  *bksession.Session
+
+	// A client for the dagger API that is directly hooked up to this engine client.
+	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
+	daggerClient *dagger.Client
+
 	upstreamCacheOptions []*controlapi.CacheOptionsEntry
 
 	hostname string
@@ -144,6 +155,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				DisableKeepAlives: true,
 			},
 		}
+
+		c.daggerClient, err = dagger.Connect(ctx, dagger.WithConn(EngineConn(c)))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+		}
+
 		return c, ctx, nil
 	}
 
@@ -232,6 +249,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ClientHostname:    c.hostname,
 		Labels:            c.labels,
 		ParentClientIDs:   c.ParentClientIDs,
+		EnvironmentDigest: c.EnvironmentDigest,
 	})
 
 	// progress
@@ -264,6 +282,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ClientHostname:      hostname,
 				UpstreamCacheConfig: c.upstreamCacheOptions,
 				Labels:              c.labels,
+				EnvironmentDigest:   c.EnvironmentDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -301,6 +320,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.CloudURLCallback(cloudURL)
 	}
 
+	c.daggerClient, err = dagger.Connect(ctx, dagger.WithConn(EngineConn(c)))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
 	return c, ctx, nil
 }
 
@@ -328,6 +352,10 @@ func (c *Client) Close() (rerr error) {
 
 	if c.internalCancel != nil {
 		c.internalCancel()
+	}
+
+	if c.daggerClient != nil {
+		c.eg.Go(c.daggerClient.Close)
 	}
 
 	if c.httpClient != nil {
@@ -394,6 +422,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error)
 		ClientHostname:    c.hostname,
 		ParentClientIDs:   c.ParentClientIDs,
 		Labels:            c.labels,
+		EnvironmentDigest: c.EnvironmentDigest,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err
@@ -497,7 +526,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	resp, err := c.httpClient.Do(&http.Request{
+	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
 			Scheme: "http",
@@ -506,7 +535,9 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		Header: r.Header,
 		Body:   r.Body,
-	})
+	}
+	proxyReq = proxyReq.WithContext(ctx)
+	resp, err := c.httpClient.Do(proxyReq)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("http do: " + err.Error()))
@@ -521,6 +552,11 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
 	}
+}
+
+// A client to the Dagger API hooked up directly with this engine client.
+func (c *Client) Dagger() *dagger.Client {
+	return c.daggerClient
 }
 
 // Local dir imports
@@ -717,4 +753,27 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 		req.Header[k] = v
 	}
 	return d.inner.Do(req)
+}
+
+func EngineConn(engineClient *Client) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		req.SetBasicAuth(engineClient.SecretToken, "")
+		resp := httptest.NewRecorder()
+		engineClient.ServeHTTP(resp, req)
+		return resp.Result(), nil
+	}
+}
+
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f DirectConn) Host() string {
+	return ":mem:"
+}
+
+func (f DirectConn) Close() error {
+	return nil
 }

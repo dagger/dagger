@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/graphql"
 	"github.com/vito/progrock"
 )
@@ -108,7 +109,7 @@ func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) gra
 			return nil, err
 		}
 
-		if edible, ok := any(res).(core.Digestible); ok {
+		if edible, ok := any(res).(resourceid.Digestible); ok {
 			dg, err := edible.Digest()
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute digest: %w", err)

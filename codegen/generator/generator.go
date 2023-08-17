@@ -2,17 +2,18 @@ package generator
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/graphql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
 
+// TODO: de-dupe this with environment api
 type SDKLang string
 
 const (
@@ -26,6 +27,9 @@ type Config struct {
 	// Package is the target package that is generated.
 	// Not used for the SDKLangNodeJS.
 	Package string
+	// TODO:
+	EnvironmentName        string
+	DependencyEnvironments []*dagger.Environment
 }
 
 type Generator interface {
@@ -42,39 +46,23 @@ func SetSchemaParents(schema *introspection.Schema) {
 }
 
 // Introspect get the Dagger Schema
-func Introspect(ctx context.Context) (*introspection.Schema, error) {
-	api, err := schema.New(schema.InitializeArgs{})
-	if err != nil {
-		return nil, err
-	}
-	apiSchema := api.Schema()
-	resp := graphql.Do(graphql.Params{Schema: *apiSchema, RequestString: introspection.Query, Context: ctx})
-	if resp.Errors != nil {
-		errs := make([]error, len(resp.Errors))
-		for i, err := range resp.Errors {
-			errs[i] = err
+func Introspect(ctx context.Context, engineClient *client.Client) (*introspection.Schema, error) {
+	if engineClient == nil {
+		var err error
+		engineClient, ctx, err = client.Connect(ctx, client.Params{
+			RunnerHost: engine.RunnerHost(),
+		})
+		if err != nil {
+			return nil, err
 		}
-		return nil, errors.Join(errs...)
+		defer engineClient.Close()
 	}
 
 	var introspectionResp introspection.Response
-	dataBytes, err := json.Marshal(resp.Data)
+	err := engineClient.Do(ctx, introspection.Query, "IntrospectionQuery", nil, &introspectionResp)
 	if err != nil {
-		return nil, fmt.Errorf("marshal data: %w", err)
+		return nil, fmt.Errorf("introspection query: %w", err)
 	}
-	err = json.Unmarshal(dataBytes, &introspectionResp)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal data: %w", err)
-	}
+
 	return introspectionResp.Schema, nil
-}
-
-// IntrospectAndGenerate generate the Dagger API
-func IntrospectAndGenerate(ctx context.Context, generator Generator) ([]byte, error) {
-	schema, err := Introspect(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return generator.Generate(ctx, schema)
 }

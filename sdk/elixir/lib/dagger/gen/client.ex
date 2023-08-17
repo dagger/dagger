@@ -16,6 +16,40 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "The check initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec check(t(), keyword()) :: Dagger.Check.t()
+    def check(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "check")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Check{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "The check result initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec check_result(t(), keyword()) :: Dagger.CheckResult.t()
+    def check_result(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "checkResult")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.CheckResult{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Checks if the current Dagger Engine is compatible with an SDK's required version.\n\n## Required Arguments\n\n* `version` - The SDK's required version."
     @spec check_version_compatibility(t(), Dagger.String.t()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
@@ -52,6 +86,15 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "The environment the requester is being executed in (or an error if none)."
+    @spec current_environment(t()) :: Dagger.Environment.t()
+    def current_environment(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentEnvironment")
+      %Dagger.Environment{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "The default platform of the builder."
     @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
     def default_platform(%__MODULE__{} = query) do
@@ -75,6 +118,23 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Directory{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "The environment initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec environment(t(), keyword()) :: Dagger.Environment.t()
+    def environment(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "environment")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Environment{selection: selection, client: query.client}
     end
   )
 
@@ -143,6 +203,17 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Install the given environment into this graphql API. Its schema will be\nstitched into the schema of this server, making those APIs available for\nsubsequent queries.\n\nIf an environment with the same ID has already been installed, this is a no-op.\n\nIf there are any conflicts between the environment's schema and any existing\nschemas, an error will be returned.\n\n## Required Arguments\n\n* `id` -"
+    @spec install_environment(t(), Dagger.Environment.t()) ::
+            {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def install_environment(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "installEnvironment")
+      selection = arg(selection, "id", id)
+      execute(selection, query.client)
+    end
+  )
+
+  (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
     @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Client.t()
     def pipeline(%__MODULE__{} = query, name, optional_args \\ []) do
@@ -164,42 +235,6 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Client{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Load a project from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec project(t(), keyword()) :: Dagger.Project.t()
-    def project(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "project")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.Project.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
-      %Dagger.Project{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Load a project command from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec project_command(t(), keyword()) :: Dagger.ProjectCommand.t()
-    def project_command(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "projectCommand")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.ProjectCommand.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
-      %Dagger.ProjectCommand{selection: selection, client: query.client}
     end
   )
 
@@ -239,6 +274,24 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Socket{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "A check result initialized with the given success and output.\n\n## Required Arguments\n\n* `success` - \n\n## Optional Arguments\n\n* `output` -"
+    @spec static_check_result(t(), Dagger.Boolean.t(), keyword()) :: Dagger.CheckResult.t()
+    def static_check_result(%__MODULE__{} = query, success, optional_args \\ []) do
+      selection = select(query.selection, "staticCheckResult")
+      selection = arg(selection, "success", success)
+
+      selection =
+        if is_nil(optional_args[:output]) do
+          selection
+        else
+          arg(selection, "output", optional_args[:output])
+        end
+
+      %Dagger.CheckResult{selection: selection, client: query.client}
     end
   )
 end

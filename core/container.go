@@ -81,8 +81,37 @@ type Container struct {
 	Focused bool `json:"focused"`
 }
 
+func (container *Container) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if container.FS != nil {
+		defs = append(defs, container.FS)
+	}
+	for _, mnt := range container.Mounts {
+		if mnt.Source != nil {
+			defs = append(defs, mnt.Source)
+		}
+	}
+	if container.Services != nil {
+		for ctrID := range container.Services {
+			ctr, err := ctrID.Decode()
+			if err != nil {
+				return nil, err
+			}
+			if ctr == nil {
+				continue
+			}
+			ctrDefs, err := ctr.PBDefinitions()
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, ctrDefs...)
+		}
+	}
+	return defs, nil
+}
+
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
-	container, err := id.ToContainer()
+	container, err := id.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -113,43 +142,9 @@ func (container *Container) Clone() *Container {
 	return &cp
 }
 
-// ContainerID is an opaque value representing a content-addressed container.
-type ContainerID string
-
-func (id ContainerID) String() string {
-	return string(id)
-}
-
-// ContainerID is digestible so that smaller hashes can be displayed in
-// --debug vertex names.
-var _ Digestible = ContainerID("")
-
-func (id ContainerID) Digest() (digest.Digest, error) {
-	ctr, err := id.ToContainer()
-	if err != nil {
-		return "", err
-	}
-	return ctr.Digest()
-}
-
-func (id ContainerID) ToContainer() (*Container, error) {
-	var container Container
-
-	if id == "" {
-		// scratch
-		return &container, nil
-	}
-
-	if err := resourceid.Decode(&container, id); err != nil {
-		return nil, err
-	}
-
-	return &container, nil
-}
-
 // ID marshals the container into a content-addressed ID.
 func (container *Container) ID() (ContainerID, error) {
-	return resourceid.Encode[ContainerID](container)
+	return resourceid.Encode(container)
 }
 
 var _ pipeline.Pipelineable = (*Container)(nil)
@@ -161,7 +156,7 @@ func (container *Container) PipelinePath() pipeline.Path {
 
 // Container is digestible so that it can be recorded as an output of the
 // --debug vertex that created it.
-var _ Digestible = (*Container)(nil)
+var _ resourceid.Digestible = (*Container)(nil)
 
 // Digest returns the container's content hash.
 func (container *Container) Digest() (digest.Digest, error) {
@@ -257,6 +252,9 @@ type ContainerMount struct {
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
+
+	// Configure the mount as read-only.
+	Readonly bool `json:"readonly,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
@@ -395,7 +393,7 @@ func (container *Container) buildUncached(
 	container.Services.Merge(context.Services)
 
 	for _, secretID := range secrets {
-		secret, err := secretID.ToSecret()
+		secret, err := secretID.Decode()
 		if err != nil {
 			return nil, err
 		}
@@ -561,16 +559,16 @@ func (container *Container) WithNewFile(ctx context.Context, bk *buildkit.Client
 	})
 }
 
-func (container *Container) WithMountedDirectory(ctx context.Context, bk *buildkit.Client, target string, dir *Directory, owner string) (*Container, error) {
+func (container *Container) WithMountedDirectory(ctx context.Context, bk *buildkit.Client, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, bk, target, dir.LLB, dir.Dir, dir.Services, owner)
+	return container.withMounted(ctx, bk, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
 }
 
-func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Client, target string, file *File, owner string) (*Container, error) {
+func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Client, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner)
+	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner, readonly)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
@@ -877,6 +875,7 @@ func (container *Container) withMounted(
 	srcPath string,
 	svcs ServiceBindings,
 	owner string,
+	readonly bool,
 ) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1004,7 +1003,7 @@ func (container *Container) writeToPath(ctx context.Context, bk *buildkit.Client
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.withMounted(ctx, bk, mount.Target, dir.LLB, mount.SourcePath, nil, "")
+	return container.withMounted(ctx, bk, mount.Target, dir.LLB, mount.SourcePath, nil, "", false)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1066,24 +1065,13 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	uncachedExecMetadataOpt, err := ContainerExecUncachedMetadata{
-		ParentClientIDs: clientMetadata.ClientIDs(),
-		ServerID:        clientMetadata.ServerID,
-		ProgSockPath:    progSock,
-	}.ToLLBRunOpt()
-	if err != nil {
-		return nil, err
-	}
-	runOpts = append(runOpts, uncachedExecMetadataOpt)
-
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
+	}
+
+	if opts.CacheExitCode != 0 {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_CACHE_EXIT_CODE", strconv.FormatUint(uint64(opts.CacheExitCode), 10)))
 	}
 
 	// because the shim might run as non-root, we need to make a world-writable
@@ -1236,6 +1224,10 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			mountOpts = append(mountOpts, llb.Tmpfs())
 		}
 
+		if mnt.Readonly {
+			mountOpts = append(mountOpts, llb.Readonly)
+		}
+
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
 
@@ -1288,12 +1280,12 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) error {
+func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) (*buildkit.Result, error) {
 	if container.FS == nil {
-		return nil
+		return nil, nil
 	}
 
-	_, err := WithServices(ctx, bk, container.Services, func() (*buildkit.Result, error) {
+	return WithServices(ctx, bk, container.Services, func() (*buildkit.Result, error) {
 		st, err := container.FSState()
 		if err != nil {
 			return nil, err
@@ -1309,7 +1301,6 @@ func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) e
 			Definition: def.ToPB(),
 		})
 	})
-	return err
 }
 
 func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Service, error) {
@@ -1330,14 +1321,14 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 	// is an exec plus something else like fileop on top, should error
 	// Also note that this is technically a breaking change sort of but
 	// the fact that it ever worked was not intentional afaik
-	dag, err := defToDAG(container.FS)
+	dag, err := buildkit.DefToDAG(container.FS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert container def to dag: %w", err)
 	}
-	if len(dag.inputs) == 0 {
+	if len(dag.Inputs) == 0 {
 		return nil, fmt.Errorf("service container must be result of withExec")
 	}
-	execOp, ok := dag.inputs[0].AsExec()
+	execOp, ok := dag.Inputs[0].AsExec()
 	if !ok {
 		return nil, fmt.Errorf("service container must be result of withExec")
 	}
@@ -1368,7 +1359,8 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 
 	exited := make(chan error, 1)
 	go func() {
-		exited <- container.Evaluate(svcCtx, bk)
+		_, err := container.Evaluate(svcCtx, bk)
+		exited <- err
 	}()
 
 	select {
@@ -1444,7 +1436,7 @@ func (container *Container) Publish(
 	}
 	services := ServiceBindings{}
 	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
-		variant, err := variantID.ToContainer()
+		variant, err := variantID.Decode()
 		if err != nil {
 			return "", err
 		}
@@ -1538,7 +1530,7 @@ func (container *Container) Export(
 	}
 	services := ServiceBindings{}
 	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
-		variant, err := variantID.ToContainer()
+		variant, err := variantID.Decode()
 		if err != nil {
 			return err
 		}
@@ -1595,7 +1587,7 @@ func (container *Container) Import(
 	store content.Store,
 	lm *leaseutil.Manager,
 ) (*Container, error) {
-	file, err := source.ToFile()
+	file, err := source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -1632,7 +1624,7 @@ func (container *Container) Import(
 		return resolveIndex(ctx, store, desc, container.Platform, tag)
 	}
 
-	// TODO: seems ineffecient to recompute for each platform, but do need to get platform-specific manifest stil..
+	// TODO: seems inefficient to recompute for each platform, but do need to get platform-specific manifest stil..
 	key := cacheKey(
 		file,
 		tag,
@@ -1866,6 +1858,11 @@ type ContainerExecOpts struct {
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool
+
+	// (Internal-only for now) An exit code that will be caught by the shim, written to
+	// the exec meta mount, but then result in the shim still exiting with 0 so that
+	// the exec is cached.
+	CacheExitCode uint32
 }
 
 type BuildArg struct {
@@ -1945,46 +1942,3 @@ const (
 	OCIMediaTypes    ImageMediaTypes = "OCIMediaTypes"
 	DockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 )
-
-// Metadata passed to an exec that doesn't count towards the cache key.
-// This should be used with great caution; only for metadata that is
-// safe to be de-duplicated across execs.
-//
-// Currently, this uses the FTPProxy LLB option to pass without becoming
-// part of the cache key. This is a hack that, while ugly to look at,
-// is simple and robust. Alternatives would be to use secrets or sockets,
-// but they are more complicated, or to create a custom buildkit
-// worker/executor, which is MUCH more complicated.
-//
-// If a need to add ftp proxy support arises, then we can just also embed
-// the "real" ftp proxy setting in here too and have the shim handle
-// leaving only that set in the actual env var.
-type ContainerExecUncachedMetadata struct {
-	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
-	ServerID        string   `json:"serverID,omitempty"`
-	ProgSockPath    string   `json:"progSockPath,omitempty"`
-}
-
-func (md ContainerExecUncachedMetadata) ToLLBRunOpt() (llb.RunOption, error) {
-	b, err := json.Marshal(md)
-	if err != nil {
-		return nil, err
-	}
-
-	return llb.WithProxy(llb.ProxyEnv{
-		// no one uses FTP anymore right?
-		FTPProxy: string(b),
-	}), nil
-}
-
-func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
-	_, val, ok := strings.Cut(envKV, "ftp_proxy=")
-	if !ok {
-		return false, nil
-	}
-	err := json.Unmarshal([]byte(val), md)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}

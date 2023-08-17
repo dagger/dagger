@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +24,9 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
+	httpsource "github.com/moby/buildkit/source/http"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/tracing"
 	"github.com/moby/locker"
@@ -58,13 +61,53 @@ func NewSource(opt Opt) (source.Source, error) {
 	return hs, nil
 }
 
-func (hs *httpSource) ID() string {
-	return srctypes.HTTPSScheme
+func (hs *httpSource) Schemes() []string {
+	return []string{srctypes.HTTPScheme, srctypes.HTTPSScheme}
+}
+
+func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
+	id, err := httpsource.NewHTTPIdentifier(ref, scheme == "https")
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range attrs {
+		switch k {
+		case pb.AttrHTTPChecksum:
+			dgst, err := digest.Parse(v)
+			if err != nil {
+				return nil, err
+			}
+			id.Checksum = dgst
+		case pb.AttrHTTPFilename:
+			id.Filename = v
+		case pb.AttrHTTPPerm:
+			i, err := strconv.ParseInt(v, 0, 64)
+			if err != nil {
+				return nil, err
+			}
+			id.Perm = int(i)
+		case pb.AttrHTTPUID:
+			i, err := strconv.ParseInt(v, 0, 64)
+			if err != nil {
+				return nil, err
+			}
+			id.UID = int(i)
+		case pb.AttrHTTPGID:
+			i, err := strconv.ParseInt(v, 0, 64)
+			if err != nil {
+				return nil, err
+			}
+			id.GID = int(i)
+		}
+	}
+
+	return id, nil
 }
 
 type httpSourceHandler struct {
 	*httpSource
-	src       source.HTTPIdentifier
+	src       httpsource.HTTPIdentifier
 	clientIDs []string
 	refID     string
 	cacheKey  digest.Digest
@@ -79,7 +122,7 @@ type DaggerHTTPURLHack struct {
 }
 
 func (hs *httpSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	httpIdentifier, ok := id.(*source.HTTPIdentifier)
+	httpIdentifier, ok := id.(*httpsource.HTTPIdentifier)
 	if !ok {
 		return nil, errors.Errorf("invalid http identifier %v", id)
 	}
