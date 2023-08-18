@@ -264,7 +264,7 @@ In this code listing:
 </TabItem>
 </Tabs>
 
-## Use build secrets with Dockerfiles
+## Use secrets with Dockerfile builds
 
 Secrets can also be passed to Dockerfile builds performed with Dagger. Build secrets set with Dagger are automatically mounted in the build container at the default Dockerfile location of `/run/secrets/SECRET-ID`.
 
@@ -311,7 +311,7 @@ This code listing expects a host environment variable named `GH_SECRET` containi
 
 The sample Dockerfile below demonstrates the process of mounting the secret using a [`secret` filesystem mount type](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret) and using it in the Dockerfile build process:
 
-``` file=./snippets/use-secrets/dockerfile/Dockerfile
+```dockerfile file=./snippets/use-secrets/dockerfile/Dockerfile
 ```
 
 ## Understand how Dagger secures secrets

@@ -680,6 +680,11 @@ The following code listing demonstrates how to inject a secret into a Dockerfile
 </TabItem>
 </Tabs>
 
+The sample Dockerfile below demonstrates the process of mounting the secret using a [`secret` filesystem mount type](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret) and using it in the Dockerfile build process:
+
+```dockerfile file=./guides/snippets/use-secrets/dockerfile/Dockerfile
+```
+
 [Learn more](./guides/723462-use-secrets.md)
 
 ### Load secret from Google Cloud Secret Manager
