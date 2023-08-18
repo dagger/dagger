@@ -38,7 +38,6 @@ func Pkgs(packages []string, opts PkgsOpts) *Container {
 			WithMountedTemp("/tmp").
 			// TODO: --option filter-syscalls false to let Apple Silicon
 			// cross-compile to Intel
-			WithFocus().
 			WithExec([]string{"nix", "build", "-f", "/src/image.nix"}).
 			// TODO: Container.file/Directory.file should follow symlinks
 			WithExec([]string{

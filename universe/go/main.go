@@ -222,9 +222,7 @@ func Gotestsum(
 		With(GlobalCache).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
-		WithFocus().
-		WithExec(cmd).
-		WithoutFocus()
+		WithExec(cmd)
 }
 
 func Generate(
@@ -235,9 +233,7 @@ func Generate(
 	return base.
 		With(GlobalCache).
 		With(Cd("/src", src)).
-		WithFocus().
 		WithExec([]string{"go", "generate", "./..."}).
-		WithoutFocus().
 		Directory("/src")
 }
 
@@ -263,7 +259,5 @@ func GolangCILint(
 		With(GlobalCache).
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
-		WithFocus().
-		WithExec(cmd).
-		WithoutFocus()
+		WithExec(cmd)
 }
