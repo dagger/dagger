@@ -51,6 +51,10 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string) 
 
 		if err := container.runShell(r.Context(), ws, bk, progSock, clientMetadata); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
+			err = ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			if err != nil {
+				bklog.G(r.Context()).WithError(err).Error("shell handler failed to write close message")
+			}
 		}
 	}), nil
 }

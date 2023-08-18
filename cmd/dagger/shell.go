@@ -215,7 +215,7 @@ func addShell(ctx context.Context, envShell *dagger.EnvironmentShell, c *dagger.
 	return returnCmds, nil
 }
 
-func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) error {
+func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
 	rec := progrock.RecorderFromContext(ctx)
 
 	// TODO:
@@ -263,6 +263,9 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
 			})
 		}))
+	defer func() {
+		vtx.Done(rerr)
+	}()
 
 	// Handle incoming messages
 	errCh := make(chan error)
