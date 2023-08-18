@@ -181,13 +181,13 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}).WithFile("/dagger", util.DaggerBinary(c), dagger.DirectoryWithFileOpts{
 		Permissions: 0755,
 	})
-
+	
 	registrySvc := registry(c)
 	devEngine = devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
