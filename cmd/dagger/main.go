@@ -34,12 +34,10 @@ func init() {
 
 	rootCmd.AddCommand(
 		listenCmd,
-		doCmd,
 		versionCmd,
 		queryCmd,
 		runCmd,
 		sessionCmd(),
-		projectCmd,
 	)
 }
 

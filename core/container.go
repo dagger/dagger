@@ -79,6 +79,10 @@ type Container struct {
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
 	Focused bool `json:"focused"`
+
+	// TODO: doc, if this is left in
+	// TODO: actually provide this during WithExec
+	EnvironmentName string `json:"environment_name,omitempty"`
 }
 
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {

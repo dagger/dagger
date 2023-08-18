@@ -16,6 +16,40 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a environment check from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec check(t(), keyword()) :: Dagger.Check.t()
+    def check(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "check")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Check{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a environment check result from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec check_result(t(), keyword()) :: Dagger.Check.t()
+    def check_result(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "checkResult")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Check{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Checks if the current Dagger Engine is compatible with an SDK's required version.\n\n## Required Arguments\n\n* `version` - The SDK's required version."
     @spec check_version_compatibility(t(), Dagger.String.t()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
@@ -52,6 +86,15 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Return the current environment being executed in."
+    @spec current_environment(t()) :: Dagger.Environment.t()
+    def current_environment(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentEnvironment")
+      %Dagger.Environment{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "The default platform of the builder."
     @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
     def default_platform(%__MODULE__{} = query) do
@@ -75,6 +118,23 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Directory{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a environment from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec environment(t(), keyword()) :: Dagger.Environment.t()
+    def environment(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "environment")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Environment{selection: selection, client: query.client}
     end
   )
 
@@ -168,42 +228,6 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a project from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec project(t(), keyword()) :: Dagger.Project.t()
-    def project(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "project")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.Project.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
-      %Dagger.Project{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Load a project command from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec project_command(t(), keyword()) :: Dagger.ProjectCommand.t()
-    def project_command(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "projectCommand")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.ProjectCommand.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
-      %Dagger.ProjectCommand{selection: selection, client: query.client}
-    end
-  )
-
-  (
     @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec secret(t(), Dagger.SecretID.t()) :: Dagger.Secret.t()
     def secret(%__MODULE__{} = query, secret) do
@@ -239,6 +263,31 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Socket{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Create a check result with the given name, success and output.\n\n## Required Arguments\n\n* `success` - \n\n## Optional Arguments\n\n* `name` - \n* `output` -"
+    @spec static_check_result(t(), Dagger.Boolean.t(), keyword()) :: Dagger.CheckResult.t()
+    def static_check_result(%__MODULE__{} = query, success, optional_args \\ []) do
+      selection = select(query.selection, "staticCheckResult")
+      selection = arg(selection, "success", success)
+
+      selection =
+        if is_nil(optional_args[:name]) do
+          selection
+        else
+          arg(selection, "name", optional_args[:name])
+        end
+
+      selection =
+        if is_nil(optional_args[:output]) do
+          selection
+        else
+          arg(selection, "output", optional_args[:output])
+        end
+
+      %Dagger.CheckResult{selection: selection, client: query.client}
     end
   )
 end

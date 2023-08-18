@@ -12,11 +12,20 @@ import (
 // A global cache volume identifier.
 type CacheID string
 
+// A unique environment check identifier.
+type CheckID string
+
+// A unique environment check result identifier.
+type CheckResultID string
+
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
 // A content-addressed directory identifier.
 type DirectoryID string
+
+// A unique environment identifier.
+type EnvironmentID string
 
 // A file identifier.
 type FileID string
@@ -25,12 +34,6 @@ type FileID string
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
-
-// A unique project command identifier.
-type ProjectCommandID string
-
-// A unique project identifier.
-type ProjectID string
 
 // A unique identifier for a secret.
 type SecretID string
@@ -93,6 +96,253 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+// An entrypoint for tests, lints or anything that can pass/fail.
+type Check struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	id          *CheckID
+	name        *string
+}
+type WithCheckFunc func(r *Check) *Check
+
+// With calls the provided function with current Check.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Check) With(f WithCheckFunc) *Check {
+	return f(r)
+}
+
+// Documentation for this check.
+func (r *Check) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A unique identifier for this check.
+func (r *Check) ID(ctx context.Context) (CheckID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response CheckID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Check) XXX_GraphQLType() string {
+	return "Check"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Check) XXX_GraphQLIDType() string {
+	return "CheckID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Check) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// The name of the check.
+func (r *Check) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The result of this check.
+func (r *Check) Result() *CheckResult {
+	q := r.q.Select("result")
+
+	return &CheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The subchecks of this check.
+func (r *Check) Subchecks(ctx context.Context) ([]Check, error) {
+	q := r.q.Select("subchecks")
+
+	q = q.Select("description id name")
+
+	type subchecks struct {
+		Description string
+		Id          CheckID
+		Name        string
+	}
+
+	convert := func(fields []subchecks) []Check {
+		out := []Check{}
+
+		for i := range fields {
+			out = append(out, Check{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []subchecks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// This check with the given container used to determine the check's result.
+// If set, the container will be executed and the check result will be set to
+// success if the container exits with a zero exit code, failure otherwise.
+func (r *Check) WithContainer(id *Container) *Check {
+	q := r.q.Select("withContainer")
+	q = q.Arg("id", id)
+
+	return &Check{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This check with the given description
+func (r *Check) WithDescription(description string) *Check {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &Check{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This check with the given name
+func (r *Check) WithName(name string) *Check {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &Check{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This check with the given subcheck
+func (r *Check) WithSubcheck(id CheckID) *Check {
+	q := r.q.Select("withSubcheck")
+	q = q.Arg("id", id)
+
+	return &Check{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The result of an environment's check.
+type CheckResult struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id      *CheckResultID
+	name    *string
+	output  *string
+	success *bool
+}
+
+// A unique identifier for this check result.
+func (r *CheckResult) ID(ctx context.Context) (CheckResultID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response CheckResultID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CheckResult) XXX_GraphQLType() string {
+	return "CheckResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CheckResult) XXX_GraphQLIDType() string {
+	return "CheckResultID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CheckResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// The name of the check result.
+func (r *CheckResult) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Any output associated with this check result.
+func (r *CheckResult) Output(ctx context.Context) (string, error) {
+	if r.output != nil {
+		return *r.output, nil
+	}
+	q := r.q.Select("output")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Whether this check result was successful.
+func (r *CheckResult) Success(ctx context.Context) (bool, error) {
+	if r.success != nil {
+		return *r.success, nil
+	}
+	q := r.q.Select("success")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // An OCI-compatible container, also known as a docker container.
@@ -1718,6 +1968,162 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// A group of Dagger entrypoints that can be queried and/or invoked.
+type Environment struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id      *EnvironmentID
+	name    *string
+	workdir *DirectoryID
+}
+type WithEnvironmentFunc func(r *Environment) *Environment
+
+// With calls the provided function with current Environment.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Environment) With(f WithEnvironmentFunc) *Environment {
+	return f(r)
+}
+
+// The check in this environment with the given name, if any
+func (r *Environment) Check(name string) *Check {
+	q := r.q.Select("check")
+	q = q.Arg("name", name)
+
+	return &Check{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The list of checks in this environment
+func (r *Environment) Checks(ctx context.Context) ([]Check, error) {
+	q := r.q.Select("checks")
+
+	q = q.Select("description id name")
+
+	type checks struct {
+		Description string
+		Id          CheckID
+		Name        string
+	}
+
+	convert := func(fields []checks) []Check {
+		out := []Check{}
+
+		for i := range fields {
+			out = append(out, Check{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []checks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this environment.
+func (r *Environment) ID(ctx context.Context) (EnvironmentID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvironmentID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Environment) XXX_GraphQLType() string {
+	return "Environment"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Environment) XXX_GraphQLIDType() string {
+	return "EnvironmentID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Environment) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// Initialize this environment from its source. The full context needed to execute
+// the environment is provided as environmentDirectory, with the environment's configuration
+// file located at configPath.
+func (r *Environment) Load(environmentDirectory *Directory, configPath string) *Environment {
+	q := r.q.Select("load")
+	q = q.Arg("environmentDirectory", environmentDirectory)
+	q = q.Arg("configPath", configPath)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Name of the environment
+func (r *Environment) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// This environment plus the given check
+func (r *Environment) WithCheck(id CheckID) *Environment {
+	q := r.q.Select("withCheck")
+	q = q.Arg("id", id)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This environment with the given workdir
+func (r *Environment) WithWorkdir(workdir *Directory) *Environment {
+	q := r.q.Select("withWorkdir")
+	q = q.Arg("workdir", workdir)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The directory the environment code will execute in as its current working directory.
+func (r *Environment) Workdir(ctx context.Context) (DirectoryID, error) {
+	if r.workdir != nil {
+		return *r.workdir, nil
+	}
+	q := r.q.Select("workdir")
+
+	var response DirectoryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A file.
 type File struct {
 	q *querybuilder.Selection
@@ -2067,297 +2473,6 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// A collection of Dagger resources that can be queried and invoked.
-type Project struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	id   *ProjectID
-	name *string
-}
-type WithProjectFunc func(r *Project) *Project
-
-// With calls the provided function with current Project.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Project) With(f WithProjectFunc) *Project {
-	return f(r)
-}
-
-// Commands provided by this project
-func (r *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
-	q := r.q.Select("commands")
-
-	q = q.Select("description id name resultType")
-
-	type commands struct {
-		Description string
-		Id          ProjectCommandID
-		Name        string
-		ResultType  string
-	}
-
-	convert := func(fields []commands) []ProjectCommand {
-		out := []ProjectCommand{}
-
-		for i := range fields {
-			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
-		}
-
-		return out
-	}
-	var response []commands
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this project.
-func (r *Project) ID(ctx context.Context) (ProjectID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.q.Select("id")
-
-	var response ProjectID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Project) XXX_GraphQLType() string {
-	return "Project"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Project) XXX_GraphQLIDType() string {
-	return "ProjectID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Project) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-// Initialize this project from the given directory and config path
-func (r *Project) Load(source *Directory, configPath string) *Project {
-	q := r.q.Select("load")
-	q = q.Arg("source", source)
-	q = q.Arg("configPath", configPath)
-
-	return &Project{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Name of the project
-func (r *Project) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.q.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// A command defined in a project that can be invoked from the CLI.
-type ProjectCommand struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	description *string
-	id          *ProjectCommandID
-	name        *string
-	resultType  *string
-}
-
-// Documentation for what this command does.
-func (r *ProjectCommand) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.q.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// Flags accepted by this command.
-func (r *ProjectCommand) Flags(ctx context.Context) ([]ProjectCommandFlag, error) {
-	q := r.q.Select("flags")
-
-	q = q.Select("description name")
-
-	type flags struct {
-		Description string
-		Name        string
-	}
-
-	convert := func(fields []flags) []ProjectCommandFlag {
-		out := []ProjectCommandFlag{}
-
-		for i := range fields {
-			out = append(out, ProjectCommandFlag{description: &fields[i].Description, name: &fields[i].Name})
-		}
-
-		return out
-	}
-	var response []flags
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this command.
-func (r *ProjectCommand) ID(ctx context.Context) (ProjectCommandID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.q.Select("id")
-
-	var response ProjectCommandID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ProjectCommand) XXX_GraphQLType() string {
-	return "ProjectCommand"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ProjectCommand) XXX_GraphQLIDType() string {
-	return "ProjectCommandID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ProjectCommand) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-// The name of the command.
-func (r *ProjectCommand) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.q.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// The name of the type returned by this command.
-func (r *ProjectCommand) ResultType(ctx context.Context) (string, error) {
-	if r.resultType != nil {
-		return *r.resultType, nil
-	}
-	q := r.q.Select("resultType")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// Subcommands, if any, that this command provides.
-func (r *ProjectCommand) Subcommands(ctx context.Context) ([]ProjectCommand, error) {
-	q := r.q.Select("subcommands")
-
-	q = q.Select("description id name resultType")
-
-	type subcommands struct {
-		Description string
-		Id          ProjectCommandID
-		Name        string
-		ResultType  string
-	}
-
-	convert := func(fields []subcommands) []ProjectCommand {
-		out := []ProjectCommand{}
-
-		for i := range fields {
-			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
-		}
-
-		return out
-	}
-	var response []subcommands
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A flag accepted by a project command.
-type ProjectCommandFlag struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	description *string
-	name        *string
-}
-
-// Documentation for what this flag sets.
-func (r *ProjectCommandFlag) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.q.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// The name of the flag.
-func (r *ProjectCommandFlag) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.q.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 type WithClientFunc func(r *Client) *Client
 
 // With calls the provided function with current Client.
@@ -2373,6 +2488,48 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
+		q: q,
+		c: r.c,
+	}
+}
+
+// CheckOpts contains options for Client.Check
+type CheckOpts struct {
+	ID CheckID
+}
+
+// Load a environment check from ID.
+func (r *Client) Check(opts ...CheckOpts) *Check {
+	q := r.q.Select("check")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &Check{
+		q: q,
+		c: r.c,
+	}
+}
+
+// CheckResultOpts contains options for Client.CheckResult
+type CheckResultOpts struct {
+	ID CheckResultID
+}
+
+// Load a environment check result from ID.
+func (r *Client) CheckResult(opts ...CheckResultOpts) *Check {
+	q := r.q.Select("checkResult")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &Check{
 		q: q,
 		c: r.c,
 	}
@@ -2420,6 +2577,16 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Return the current environment being executed in.
+func (r *Client) CurrentEnvironment() *Environment {
+	q := r.q.Select("currentEnvironment")
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
 // The default platform of the builder.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
@@ -2446,6 +2613,27 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	}
 
 	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentOpts contains options for Client.Environment
+type EnvironmentOpts struct {
+	ID EnvironmentID
+}
+
+// Load a environment from ID.
+func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
+	q := r.q.Select("environment")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &Environment{
 		q: q,
 		c: r.c,
 	}
@@ -2553,48 +2741,6 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 }
 
-// ProjectOpts contains options for Client.Project
-type ProjectOpts struct {
-	ID ProjectID
-}
-
-// Load a project from ID.
-func (r *Client) Project(opts ...ProjectOpts) *Project {
-	q := r.q.Select("project")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
-
-	return &Project{
-		q: q,
-		c: r.c,
-	}
-}
-
-// ProjectCommandOpts contains options for Client.ProjectCommand
-type ProjectCommandOpts struct {
-	ID ProjectCommandID
-}
-
-// Load a project command from ID.
-func (r *Client) ProjectCommand(opts ...ProjectCommandOpts) *ProjectCommand {
-	q := r.q.Select("projectCommand")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
-
-	return &ProjectCommand{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Loads a secret from its ID.
 func (r *Client) Secret(id SecretID) *Secret {
 	q := r.q.Select("secret")
@@ -2635,6 +2781,34 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 
 	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
+// StaticCheckResultOpts contains options for Client.StaticCheckResult
+type StaticCheckResultOpts struct {
+	Name string
+
+	Output string
+}
+
+// Create a check result with the given name, success and output.
+func (r *Client) StaticCheckResult(success bool, opts ...StaticCheckResultOpts) *CheckResult {
+	q := r.q.Select("staticCheckResult")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+		// `output` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Output) {
+			q = q.Arg("output", opts[i].Output)
+		}
+	}
+	q = q.Arg("success", success)
+
+	return &CheckResult{
 		q: q,
 		c: r.c,
 	}
