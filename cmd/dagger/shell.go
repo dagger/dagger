@@ -236,23 +236,6 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	// TODO:
 	// fmt.Fprintf(os.Stderr, "WE ARE SO CONNECTED\n")
 
-	shellStdinR, shellStdinW := io.Pipe()
-	go io.Copy(shellStdinW, os.Stdin)
-
-	vtx := rec.Vertex("shell", "shell",
-		progrock.Focused(),
-		progrock.Zoomed(func(v *vt100.VT100) {
-			v.OnResize(func(h, w int) {
-				message := append([]byte{}, resizePrefix...)
-				message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
-				// best effort
-				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
-			})
-			v.ForwardRequests = os.Stdin
-			v.ForwardResponses = shellStdinW
-			v.CursorVisible = true
-		}))
-
 	origState, err := term.GetState(int(os.Stdin.Fd()))
 	if err != nil {
 		return fmt.Errorf("failed to get stdin state: %w", err)
@@ -263,6 +246,23 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	if err != nil {
 		panic(fmt.Sprintf("failed to set stdin to raw mode: %v", err))
 	}
+
+	shellStdinR, shellStdinW := io.Pipe()
+	go io.Copy(shellStdinW, os.Stdin)
+
+	vtx := rec.Vertex("shell", "shell",
+		progrock.Focused(),
+		progrock.Zoomed(func(v *vt100.VT100) {
+			v.ForwardRequests = os.Stdout
+			v.ForwardResponses = shellStdinW
+			v.CursorVisible = true
+			v.OnResize(func(h, w int) {
+				message := append([]byte{}, resizePrefix...)
+				message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
+				// best effort
+				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
+			})
+		}))
 
 	// Handle incoming messages
 	errCh := make(chan error)
