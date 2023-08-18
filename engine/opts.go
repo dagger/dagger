@@ -228,6 +228,7 @@ func decodeMeta(md metadata.MD, key string, dest interface{}) error {
 	if !ok {
 		return fmt.Errorf("failed to get %s from metadata", key)
 	}
+	fmt.Println(vals)
 	if len(vals) != 1 {
 		return fmt.Errorf("expected exactly one %s value, got %d", key, len(vals))
 	}
