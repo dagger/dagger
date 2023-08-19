@@ -32,6 +32,12 @@ The following code listing obtains a reference to the host working directory and
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/list-dir/main.exs
+```
+
+</TabItem>
 </Tabs>
 
 When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory.
@@ -54,6 +60,12 @@ The following listing revises the previous one, obtaining a reference to the par
 <TabItem value="Python">
 
 ```python file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.py
+```
+
+</TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.exs
 ```
 
 </TabItem>
@@ -84,6 +96,12 @@ The following code listing obtains a reference to the host working directory con
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/list-dir-exclude/main.exs
+```
+
+</TabItem>
 </Tabs>
 
 The following code listing obtains a reference to the host working directory containing only `*.rar` files.
@@ -107,6 +125,12 @@ The following code listing obtains a reference to the host working directory con
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/list-dir-include/main.exs
+```
+
+</TabItem>
 </Tabs>
 
 The following code listing obtains a reference to the host working directory containing all files except `*.rar` files.
@@ -127,6 +151,12 @@ The following code listing obtains a reference to the host working directory con
 <TabItem value="Python">
 
 ```python file=./guides/snippets/work-with-host-filesystem/list-dir-exclude-include/main.py
+```
+
+</TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/list-dir-exclude-include/main.exs
 ```
 
 </TabItem>
@@ -154,6 +184,12 @@ The following code listing mounts a host directory in a container at the `/host`
 <TabItem value="Python">
 
 ```python file=./guides/snippets/work-with-host-filesystem/mount-dir/main.py
+```
+
+</TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/mount-dir/main.exs
 ```
 
 </TabItem>
@@ -186,6 +222,12 @@ Modifications made to a host directory mounted in a container do not appear on t
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./guides/snippets/work-with-host-filesystem/mount-dir-export/main.exs
+```
+
+</TabItem>
 </Tabs>
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
@@ -210,6 +252,12 @@ The following code listing adds a remote Git repository branch to a container as
 <TabItem value="Python">
 
 ```python file=./cookbook/snippets/filesystem-operations/add-git-dir/main.py
+```
+
+</TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./cookbook/snippets/filesystem-operations/add-git-dir/main.exs
 ```
 
 </TabItem>
@@ -238,6 +286,12 @@ The following code listing adds a remote Git repository branch as a directory at
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude/main.exs
+```
+
+</TabItem>
 </Tabs>
 
 The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including only `*.md` files.
@@ -261,6 +315,12 @@ The following code listing adds a remote Git repository branch as a directory at
 ```
 
 </TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./cookbook/snippets/filesystem-operations/add-git-dir-include/main.exs
+```
+
+</TabItem>
 </Tabs>
 
 The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including all `*.md` files except `README.md`.
@@ -281,6 +341,12 @@ The following code listing adds a remote Git repository branch as a directory at
 <TabItem value="Python">
 
 ```python file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude-include/main.py
+```
+
+</TabItem>
+<TabItem value="Elixir">
+
+```elixir file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude-include/main.exs
 ```
 
 </TabItem>
