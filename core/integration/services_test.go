@@ -1334,6 +1334,22 @@ func TestServiceHostToContainer(t *testing.T) {
 			require.Equal(t, fmt.Sprintf("%s-%d", content, i+1), string(body))
 		}
 	})
+
+	t.Run("no ports to forward", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory(
+				"/srv/www",
+				c.Directory().WithNewFile("index.html", content),
+			).
+			WithWorkdir("/srv/www").
+			// WithExposedPort(8000). // INTENTIONAL
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
+
+		_, err := c.Host().Tunnel(srv).ID(ctx)
+		require.Error(t, err)
+	})
 }
 
 func TestServiceContainerToHost(t *testing.T) {
@@ -1356,19 +1372,59 @@ func TestServiceContainerToHost(t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
-	host := c.Host().Service([]dagger.PortForward{
-		{Frontend: 80, Backend: port},
+	t.Run("simple", func(t *testing.T) {
+		host := c.Host().Service([]dagger.PortForward{
+			{Frontend: 80, Backend: port},
+		})
+
+		for _, content := range []string{"yes", "no", "maybe", "so"} {
+			out, err := c.Container().
+				From(alpineImage).
+				WithServiceBinding("www", host).
+				WithExec([]string{"wget", "-O-", "http://www/?content=" + content}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, content+"\n", out)
+		}
 	})
 
-	for _, content := range []string{"yes", "no", "maybe", "so"} {
+	t.Run("multiple ports", func(t *testing.T) {
+		l2, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		defer l2.Close()
+
+		go http.Serve(l2, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintln(w, r.URL.Query().Get("content")+"-2")
+		}))
+
+		_, port2Str, err := net.SplitHostPort(l2.Addr().String())
+		require.NoError(t, err)
+		port2, err := strconv.Atoi(port2Str)
+		require.NoError(t, err)
+
+		host := c.Host().Service([]dagger.PortForward{
+			{Frontend: 80, Backend: port},
+			{Frontend: 8000, Backend: port2},
+		})
+
 		out, err := c.Container().
 			From(alpineImage).
 			WithServiceBinding("www", host).
-			WithExec([]string{"wget", "-O-", "http://www/?content=" + content}).
+			WithExec([]string{"sh", "-c", `
+				a=$(wget -O- http://www/?content=hey)
+				b=$(wget -O- http://www:8000/?content=hey)
+				echo $a $b
+			`}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, content+"\n", out)
-	}
+		require.Equal(t, "hey hey-2", out)
+	})
+
+	t.Run("no ports given", func(t *testing.T) {
+		_, err := c.Host().Service(nil).ID(ctx)
+		require.Error(t, err)
+	})
 }
 
 func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Service, string) {

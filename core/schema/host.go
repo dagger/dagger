@@ -92,7 +92,7 @@ func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileAr
 type hostTunnelArgs struct {
 	Service core.ServiceID
 	Ports   []core.PortForward
-	Offset  int
+	Offset  *int
 }
 
 func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
@@ -106,13 +106,17 @@ func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) 
 			return nil, errors.New("TODO: invalid")
 		}
 
+		if len(svc.Container.Ports) == 0 {
+			return nil, errors.New("no ports specified and no ports exposed by container")
+		}
+
 		for _, port := range svc.Container.Ports {
-			frontend := 0
-			if args.Offset != 0 {
-				frontend = port.Port + args.Offset
+			frontend := 0 // pick a random port on the host
+			if args.Offset != nil {
+				frontend = port.Port + *args.Offset
 			}
 			args.Ports = append(args.Ports, core.PortForward{
-				Frontend: frontend, // pick a random port on the host
+				Frontend: frontend,
 				Backend:  port.Port,
 				Protocol: port.Protocol,
 			})
@@ -128,5 +132,9 @@ type hostServiceArgs struct {
 }
 
 func (s *hostSchema) service(ctx *core.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+	if len(args.Ports) == 0 {
+		return nil, errors.New("no ports specified")
+	}
+
 	return core.NewHostService(args.Host, args.Ports), nil
 }

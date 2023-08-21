@@ -55,20 +55,21 @@ type Host {
     """
     Port forwarding rules to configure for the tunnel.
 
-    If the frontend port is not specified, a random port will be allocated on
-    the host.
+    If a frontend port is not specified or set to 0, a random port will be
+    chosen by the host.
 
-    If no forwards and no offset are specified, all exposed ports are forwarded
-    as if they were listed with no frontend (i.e. a random host-side port will
-    be chosen).
+    If no ports are given, all of the service's ports are forwarded using the
+    configured offset to determine the frontend port. If an offset is
+    specified, including an offset of 0, it will be used to determine the
+    frontend port. If no offset is specified, the frontend port will be 0, i.e.
+    chosen by the host.
     """
     ports: [PortForward!]
 
     """
-    Optional offset to configure for frontend ports, relative to their
-    corresponding backend port.
+    Optional offset to use when deriving a frontend port for a backend port.
 
-    Port forwarding rules take precedence.
+    If any port forwarding rules are configured, this option has no effect.
     """
     offset: Int
   ): Service!
