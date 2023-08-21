@@ -1259,38 +1259,81 @@ func TestServiceHostToContainer(t *testing.T) {
 
 	content := identity.NewID()
 
-	srv := c.Container().
-		From("python").
-		WithMountedDirectory(
-			"/srv/www",
-			c.Directory().WithNewFile("index.html", content),
-		).
-		WithWorkdir("/srv/www").
-		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"}).
-		Service()
+	t.Run("no options means bind to random", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory(
+				"/srv/www",
+				c.Directory().WithNewFile("index.html", content),
+			).
+			WithWorkdir("/srv/www").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
 
-	tunnel, err := c.Host().Tunnel(srv).Start(ctx)
-	require.NoError(t, err)
-
-	defer func() {
-		_, err := tunnel.Stop(ctx)
-		require.NoError(t, err)
-	}()
-
-	srvURL, err := tunnel.Endpoint(ctx)
-	require.NoError(t, err)
-
-	for i := 0; i < 10; i++ {
-		res, err := http.Get("http://" + srvURL)
-		require.NoError(t, err)
-		defer res.Body.Close()
-
-		body, err := io.ReadAll(res.Body)
+		tunnel, err := c.Host().Tunnel(srv).Start(ctx)
 		require.NoError(t, err)
 
-		require.Equal(t, content, string(body))
-	}
+		defer func() {
+			_, err := tunnel.Stop(ctx)
+			require.NoError(t, err)
+		}()
+
+		srvURL, err := tunnel.Endpoint(ctx)
+		require.NoError(t, err)
+
+		for i := 0; i < 10; i++ {
+			res, err := http.Get("http://" + srvURL)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, content, string(body))
+		}
+	})
+
+	t.Run("multiple ports", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory("/srv/www1",
+				c.Directory().WithNewFile("index.html", content+"-1")).
+			WithMountedDirectory("/srv/www2",
+				c.Directory().WithNewFile("index.html", content+"-2")).
+			WithExec([]string{"sh", "-c",
+				`( cd /srv/www1 && python -m http.server 8000 ) &
+				 ( cd /srv/www2 && python -m http.server 9000 ) &
+				 wait`,
+			}).
+			WithExposedPort(8000).
+			WithExposedPort(9000).
+			Service()
+
+		tunnel, err := c.Host().Tunnel(srv).Start(ctx)
+		require.NoError(t, err)
+
+		defer func() {
+			_, err := tunnel.Stop(ctx)
+			require.NoError(t, err)
+		}()
+
+		endpoints, err := tunnel.Endpoints(ctx, dagger.ServiceEndpointsOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+
+		for i, endpoint := range endpoints {
+			res, err := http.Get(endpoint)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, fmt.Sprintf("%s-%d", content, i+1), string(body))
+		}
+	})
 }
 
 func TestServiceContainerToHost(t *testing.T) {
