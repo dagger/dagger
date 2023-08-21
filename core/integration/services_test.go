@@ -1264,7 +1264,7 @@ func TestServiceContainerToHost(t *testing.T) {
 	require.NoError(t, err)
 
 	host := c.Host().Service([]dagger.PortForward{
-		{Frontend: 80, Backend: port, Protocol: dagger.Tcp},
+		{Frontend: 80, Backend: port},
 	})
 
 	for _, content := range []string{"yes", "no", "maybe", "so"} {
