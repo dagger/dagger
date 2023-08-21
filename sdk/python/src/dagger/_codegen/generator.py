@@ -423,7 +423,7 @@ def is_self_chainable(t: GraphQLObjectType) -> bool:
         f
         for f in t.fields.values()
         # Only consider fields that return a non-null object.
-        if is_required_type(f.type) and f.type.of_type.name == t.name
+        if is_required_type(f.type) and is_object_type(f.type.of_type) and f.type.of_type.name == t.name
     )
 
 
