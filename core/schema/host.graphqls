@@ -46,34 +46,50 @@ type Host {
   ): Socket!
 
   """
-  Creates a tunnel forwarding traffic from the host to a service.
+  Creates a tunnel that forwards traffic from the host to a service.
   """
   tunnel(
     "Service to send traffic from the tunnel."
-    upstream: ServiceID!
+    service: ServiceID!
 
-    "Host IP:port for the tunnel to listen for traffic. Port 0 implies any available port."
-    hostListenAddress: String!
+    """
+    Port forwarding rules to configure for the tunnel.
 
-    "Service port to send traffic to. Defaults to the first exposed port."
-    upstreamPort: Int
+    If the frontend port is not specified, a random port will be allocated on
+    the host.
 
-    "Traffic protocol. Defaults to TCP."
-    protocol: NetworkProtocol = TCP
+    If no forwards and no offset are specified, all exposed ports are forwarded
+    as if they were listed with no frontend (i.e. a random host-side port will
+    be chosen).
+    """
+    ports: [PortForward!]
+
+    """
+    Optional offset to configure for frontend ports, relative to their
+    corresponding backend port.
+
+    Port forwarding rules take precedence.
+    """
+    offset: Int
   ): Service!
 
   """
-  Creates a tunnel forwarding traffic to a specified address via the host.
+  Creates a service that forwards traffic to a specified address via the host.
   """
-  reverseTunnel(
-    "Host:Port to send traffic from the tunnel."
-    upstreamAddress: String!
+  service(
+    """
+    Ports to expose via the service, forwarding through the host network.
 
-    "Port to expose from the tunnel service for downstream clients."
-    servicePort: Int!
+    If the frontend port is not specified, it defaults to the same as the
+    backend port.
 
-    "Traffic protocol. Defaults to TCP."
-    protocol: NetworkProtocol = TCP
+    An empty set of ports is not valid; an error will be
+    returned.
+    """
+    ports: [PortForward!]!
+
+    "Upstream host to forward traffic to."
+    host: String = "localhost"
   ): Service!
 
   """
@@ -91,4 +107,18 @@ type Host {
     """
     path: String!
   ): Secret!
+}
+
+"Port forwarding rules for tunneling network traffic."
+input PortForward {
+  """
+  Port to expose to clients. If unspecified, a default will be chosen.
+  """
+  frontend: Int
+
+  "Destination port for traffic."
+  backend: Int!
+
+  "Protocol to use for traffic."
+  protocol: NetworkProtocol = TCP
 }

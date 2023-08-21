@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,7 +21,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
@@ -29,22 +29,16 @@ type Service struct {
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
 
-	// Upstream is the service that this service is tunnelling to.
+	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream *Service `json:"upstream,omitempty"`
-	// TunnelUpstreamPort is the port for the tunnel to send traffic to.
-	TunnelUpstreamPort int `json:"tunnel_port,omitempty"`
-	// TunnelListenAddress is the host address that the tunnel listens on.
-	TunnelListenAddress string `json:"tunnel_listen_address,omitempty"`
-	// TunnelProtocol is the protocol for traffic proxied to upstream.
-	TunnelProtocol NetworkProtocol `json:"tunnel_protocol,omitempty"`
+	// TunnelPorts configures the port forwarding rules for the tunnel.
+	TunnelPorts []PortForward `json:"tunnel_ports,omitempty"`
 
-	// ReverseTunnelUpstreamAddr is the address for the reverse tunnel to request
-	// through the host.
-	ReverseTunnelUpstreamAddr string `json:"reverse_tunnel_upstream_addr,omitempty"`
-	// ReverseTunnelExposedPort is the port for the reverse tunnel service to expose
-	ReverseTunnelExposedPort int `json:"reverse_tunnel_exposed_port,omitempty"`
-	// ReverseTunnelProtocol is the protocol for traffic proxied to upstream.
-	ReverseTunnelProtocol NetworkProtocol `json:"reverse_tunnel_protocol,omitempty"`
+	// HostUpstream is the host address (i.e. hostname or IP) for the reverse
+	// tunnel to request through the host.
+	HostUpstream string `json:"reverse_tunnel_upstream_addr,omitempty"`
+	// HostPorts configures the port forwarding rules for the host.
+	HostPorts []PortForward `json:"host_ports,omitempty"`
 }
 
 func NewContainerService(ctr *Container) *Service {
@@ -53,20 +47,17 @@ func NewContainerService(ctr *Container) *Service {
 	}
 }
 
-func NewTunnelService(upstream *Service, addr string, port int, proto NetworkProtocol) *Service {
+func NewTunnelService(upstream *Service, ports []PortForward) *Service {
 	return &Service{
-		TunnelUpstream:      upstream,
-		TunnelUpstreamPort:  port,
-		TunnelListenAddress: addr,
-		TunnelProtocol:      proto,
+		TunnelUpstream: upstream,
+		TunnelPorts:    ports,
 	}
 }
 
-func NewReverseTunnelService(upstreamAddr string, exposedPort int, proto NetworkProtocol) *Service {
+func NewHostService(upstream string, ports []PortForward) *Service {
 	return &Service{
-		ReverseTunnelUpstreamAddr: upstreamAddr,
-		ReverseTunnelExposedPort:  exposedPort,
-		ReverseTunnelProtocol:     proto,
+		HostUpstream: upstream,
+		HostPorts:    ports,
 	}
 }
 
@@ -152,14 +143,9 @@ func (svc *Service) Hostname(ctx context.Context) (string, error) {
 			return "", err
 		}
 
-		host, _, err := net.SplitHostPort(upstream.Addr)
-		if err != nil {
-			return "", err
-		}
-
-		return host, nil
+		return upstream.Host, nil
 	case svc.Container != nil,
-		svc.ReverseTunnelUpstreamAddr != "":
+		svc.HostUpstream != "":
 		dig, err := svc.Digest()
 		if err != nil {
 			return "", err
@@ -194,26 +180,27 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 			return "", err
 		}
 
-		var portStr string
-		host, portStr, err = net.SplitHostPort(tunnel.Addr)
-		if err != nil {
-			return "", err
-		}
+		host = tunnel.Host
 
 		if port == 0 {
-			port, err = strconv.Atoi(portStr)
-			if err != nil {
-				return "", err
+			if len(tunnel.Ports) == 0 {
+				return "", fmt.Errorf("no ports exposed")
 			}
+
+			port = tunnel.Ports[0].Port
 		}
-	case svc.ReverseTunnelUpstreamAddr != "":
+	case svc.HostUpstream != "":
 		host, err = svc.Hostname(ctx)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			port = svc.ReverseTunnelExposedPort
+			firstForward := svc.HostPorts[0]
+			port = firstForward.Frontend
+			if port == 0 {
+				port = firstForward.Backend
+			}
 		}
 	default:
 		return "", fmt.Errorf("unknown service type")
@@ -233,7 +220,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client) (running *Ru
 		return svc.startContainer(ctx, bk)
 	case svc.TunnelUpstream != nil:
 		return svc.startTunnel(ctx, bk)
-	case svc.ReverseTunnelUpstreamAddr != "":
+	case svc.HostUpstream != "":
 		return svc.startReverseTunnel(ctx, bk)
 	default:
 		return nil, fmt.Errorf("unknown service type")
@@ -413,7 +400,8 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client) (ru
 
 		return &RunningService{
 			Service: svc,
-			Addr:    fullHost,
+			Host:    fullHost,
+			Ports:   ctr.Ports,
 			Key: ServiceKey{
 				Digest:   dig,
 				ClientID: clientMetadata.ClientID,
@@ -467,15 +455,46 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
 
-	res, closeListener, err := bk.ListenHostToContainer(
-		svcCtx,
-		svc.TunnelListenAddress,
-		svc.TunnelProtocol.Network(),
-		fmt.Sprintf("%s:%d", upstream.Addr, svc.TunnelUpstreamPort),
-	)
-	if err != nil {
-		stop()
-		return nil, fmt.Errorf("host to container: %w", err)
+	var closers []func() error
+	var ports []Port
+
+	// TODO: make these configurable?
+	const bindHost = "0.0.0.0"
+	const dialHost = "127.0.0.1"
+
+	for _, forward := range svc.TunnelPorts {
+		res, closeListener, err := bk.ListenHostToContainer(
+			svcCtx,
+			fmt.Sprintf("%s:%d", bindHost, forward.Frontend),
+			forward.Protocol.Network(),
+			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
+		)
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("host to container: %w", err)
+		}
+
+		_, portStr, err := net.SplitHostPort(res.GetAddr())
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("split host port: %w", err)
+		}
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("parse port: %w", err)
+		}
+
+		desc := fmt.Sprintf("tunnel %s:%d -> %s:%d", bindHost, port, upstream.Host, forward.Backend)
+
+		ports = append(ports, Port{
+			Port:        port,
+			Protocol:    forward.Protocol,
+			Description: &desc,
+		})
+
+		closers = append(closers, closeListener)
 	}
 
 	dig, err := svc.Digest()
@@ -490,12 +509,17 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 			Digest:   dig,
 			ClientID: clientMetadata.ClientID,
 		},
-		Addr: res.GetAddr(),
+		Host:  dialHost,
+		Ports: ports,
 		Stop: func(context.Context) error {
 			stop()
 			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
 			go AllServices.Detach(svcCtx, upstream)
-			return closeListener()
+			var errs []error
+			for _, closeListener := range closers {
+				errs = append(errs, closeListener())
+			}
+			return errors.Join(errs...)
 		},
 	}, nil
 }
@@ -525,23 +549,23 @@ func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client)
 	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
 
 	tunnel := &c2hTunnel{
-		bk:                bk,
-		upstreamAddr:      svc.ReverseTunnelUpstreamAddr,
-		tunnelServiceHost: fullHost,
-		tunnelServicePort: svc.ReverseTunnelExposedPort,
-		protocol:          svc.ReverseTunnelProtocol,
+		bk:                 bk,
+		upstreamHost:       svc.HostUpstream,
+		tunnelServiceHost:  fullHost,
+		tunnelServicePorts: svc.HostPorts,
 	}
 
-	check := newHealth(
-		bk,
-		fullHost,
-		[]ContainerPort{
-			{
-				Port:     svc.ReverseTunnelExposedPort,
-				Protocol: svc.ReverseTunnelProtocol,
-			},
-		},
-	)
+	checkPorts := []Port{}
+	for _, p := range svc.HostPorts {
+		desc := fmt.Sprintf("tunnel %s %d -> %d", p.Protocol, p.FrontendOrBackendPort(), p.Backend)
+		checkPorts = append(checkPorts, Port{
+			Port:        p.FrontendOrBackendPort(),
+			Protocol:    p.Protocol,
+			Description: &desc,
+		})
+	}
+
+	check := newHealth(bk, fullHost, checkPorts)
 
 	exited := make(chan error, 1)
 	go func() {
@@ -566,7 +590,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client)
 				Digest:   dig,
 				ClientID: clientMetadata.ClientID,
 			},
-			Addr: fullHost,
+			Host:  fullHost,
+			Ports: checkPorts,
 			Stop: func(context.Context) error {
 				stop()
 				return nil
@@ -581,7 +606,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client)
 type RunningService struct {
 	Service *Service
 	Key     ServiceKey
-	Addr    string
+	Host    string
+	Ports   []Port
 	Stop    func(context.Context) error
 }
 
@@ -853,21 +879,6 @@ func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 	}
 
 	*bndp = merged
-}
-
-// NetworkProtocol is a string deriving from NetworkProtocol enum
-type NetworkProtocol string
-
-const (
-	NetworkProtocolTCP NetworkProtocol = "TCP"
-	NetworkProtocolUDP NetworkProtocol = "UDP"
-)
-
-// Network returns the value appropriate for the "network" argument to Go
-// net.Dial, and for appending to the port number to form the key for the
-// ExposedPorts object in the OCI image config.
-func (p NetworkProtocol) Network() string {
-	return strings.ToLower(string(p))
 }
 
 func StartServices(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {

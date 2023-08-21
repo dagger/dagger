@@ -3653,7 +3653,7 @@ EXPOSE 8080
 
 	res := struct {
 		Container struct {
-			ExposedPorts []core.ContainerPort
+			ExposedPorts []core.Port
 		}
 	}{}
 

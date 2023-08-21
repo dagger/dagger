@@ -17,29 +17,14 @@ import (
 )
 
 type c2hTunnel struct {
-	bk                *buildkit.Client
-	upstreamAddr      string
-	tunnelServiceHost string
-	tunnelServicePort int
-	protocol          NetworkProtocol
+	bk                 *buildkit.Client
+	upstreamHost       string
+	tunnelServiceHost  string
+	tunnelServicePorts []PortForward
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
-
-	args := []string{
-		"tunnel",
-		fmt.Sprintf("%d/%s", d.tunnelServicePort, d.protocol.Network()),
-	}
-
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		strings.Join(args, " "),
-		progrock.Internal(),
-	)
-	defer func() {
-		vtx.Done(err)
-	}()
 
 	scratchDef, err := llb.Scratch().Marshal(ctx)
 	if err != nil {
@@ -53,29 +38,62 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 		return err
 	}
 
-	// TODO(vito): make sure client scoping is correct
-	upstream := socket.NewHostIPSocket(d.protocol.Network(), d.upstreamAddr)
-	upstreamID, err := upstream.ID()
-	if err != nil {
-		return err
+	mounts := []bkgw.Mount{
+		{
+			Dest:      "/",
+			MountType: pb.MountType_BIND,
+			Ref:       scratchRes.Ref,
+		},
 	}
+
+	args := []string{"tunnel"}
+
+	for _, port := range d.tunnelServicePorts {
+		frontend := port.Frontend
+		if frontend == 0 {
+			frontend = port.Backend
+		}
+
+		upstream := socket.NewHostIPSocket(
+			port.Protocol.Network(),
+			fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
+		)
+
+		upstreamID, err := upstream.ID()
+		if err != nil {
+			return err
+		}
+
+		sockPath := fmt.Sprintf("/upstream.%d.sock", frontend)
+
+		mounts = append(mounts, bkgw.Mount{
+			Dest:      sockPath,
+			MountType: pb.MountType_SSH,
+			SSHOpt: &pb.SSHOpt{
+				ID: upstreamID.String(),
+			},
+		})
+
+		args = append(args, fmt.Sprintf(
+			"%s:%d/%s",
+			sockPath,
+			frontend,
+			port.Protocol.Network(),
+		))
+	}
+
+	vtx := rec.Vertex(
+		digest.Digest(identity.NewID()),
+		strings.Join(args, " "),
+		// progrock.Internal(),
+	)
+	defer func() {
+		vtx.Done(err)
+	}()
 
 	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
 		Hostname: d.tunnelServiceHost,
-		Mounts: []bkgw.Mount{
-			{
-				Dest:      "/",
-				MountType: pb.MountType_BIND,
-				Ref:       scratchRes.Ref,
-			},
-			{
-				Dest:      "/upstream.sock",
-				MountType: pb.MountType_SSH,
-				SSHOpt: &pb.SSHOpt{
-					ID: upstreamID.String(),
-				},
-			},
-		},
+		Mounts:   mounts,
 	})
 	if err != nil {
 		return err

@@ -18,10 +18,10 @@ import (
 type portHealthChecker struct {
 	bk    *buildkit.Client
 	host  string
-	ports []ContainerPort
+	ports []Port
 }
 
-func newHealth(bk *buildkit.Client, host string, ports []ContainerPort) *portHealthChecker {
+func newHealth(bk *buildkit.Client, host string, ports []Port) *portHealthChecker {
 	return &portHealthChecker{
 		bk:    bk,
 		host:  host,

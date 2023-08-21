@@ -19,6 +19,9 @@ type Service {
   """
   hostname: String!
 
+  "Retrieves the list of ports provided by the service."
+  ports: [Port!]!
+
   """
   Retrieves an endpoint that clients can use to reach this container.
 

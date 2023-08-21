@@ -1220,8 +1220,7 @@ func TestServiceHostToContainer(t *testing.T) {
 		WithExec([]string{"python", "-m", "http.server"}).
 		Service()
 
-	localBindAddr := "127.0.0.1:0"
-	tunnel, err := c.Host().Tunnel(srv, localBindAddr).Start(ctx)
+	tunnel, err := c.Host().Tunnel(srv).Start(ctx)
 	require.NoError(t, err)
 
 	defer func() {
@@ -1259,9 +1258,14 @@ func TestServiceContainerToHost(t *testing.T) {
 		fmt.Fprintln(w, r.URL.Query().Get("content"))
 	}))
 
-	localDialAddr := l.Addr().String()
+	_, portStr, err := net.SplitHostPort(l.Addr().String())
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
 
-	host := c.Host().ReverseTunnel(localDialAddr, 80)
+	host := c.Host().Service([]dagger.PortForward{
+		{Frontend: 80, Backend: port, Protocol: dagger.Tcp},
+	})
 
 	for _, content := range []string{"yes", "no", "maybe", "so"} {
 		out, err := c.Container().

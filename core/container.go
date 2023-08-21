@@ -68,7 +68,7 @@ type Container struct {
 	ImageRef string `json:"image_ref,omitempty"`
 
 	// Ports to expose from the container.
-	Ports []ContainerPort `json:"ports,omitempty"`
+	Ports []Port `json:"ports,omitempty"`
 
 	// Services to start before running the container.
 	Services ServiceBindings `json:"services,omitempty"`
@@ -191,13 +191,6 @@ type ContainerSocket struct {
 	SocketID socket.ID  `json:"socket"`
 	UnixPath string     `json:"unix_path,omitempty"`
 	Owner    *Ownership `json:"owner,omitempty"`
-}
-
-// ContainerPort configures a port to expose from the container.
-type ContainerPort struct {
-	Port        int             `json:"port"`
-	Protocol    NetworkProtocol `json:"protocol"`
-	Description *string         `json:"description,omitempty"`
 }
 
 // FSState returns the container's root filesystem mount state. If there is
@@ -1591,7 +1584,7 @@ func (container *Container) Import(
 	return container, nil
 }
 
-func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
+func (container *Container) WithExposedPort(port Port) (*Container, error) {
 	container = container.Clone()
 
 	// replace existing port to avoid duplicates
@@ -1622,7 +1615,7 @@ func (container *Container) WithExposedPort(port ContainerPort) (*Container, err
 func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
 	container = container.Clone()
 
-	filtered := []ContainerPort{}
+	filtered := []Port{}
 	filteredOCI := map[string]struct{}{}
 	for _, p := range container.Ports {
 		if p.Port != port || p.Protocol != protocol {

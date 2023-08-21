@@ -35,7 +35,7 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"unixSocket":    ToResolver(s.socket),
 			"setSecretFile": ToResolver(s.setSecretFile),
 			"tunnel":        ToResolver(s.tunnel),
-			"reverseTunnel": ToResolver(s.reverseTunnel),
+			"service":       ToResolver(s.service),
 		},
 	}
 }
@@ -90,40 +90,43 @@ func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileAr
 }
 
 type hostTunnelArgs struct {
-	Upstream          core.ServiceID
-	HostListenAddress string
-	UpstreamPort      int
-	Protocol          core.NetworkProtocol
+	Service core.ServiceID
+	Ports   []core.PortForward
+	Offset  int
 }
 
 func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
-	svc, err := args.Upstream.ToService()
+	svc, err := args.Service.ToService()
 	if err != nil {
 		return nil, err
 	}
 
-	if args.UpstreamPort == 0 {
+	if len(args.Ports) == 0 {
 		if svc.Container == nil {
 			return nil, errors.New("TODO: invalid")
 		}
 
-		ports := svc.Container.Ports
-		if len(ports) == 0 {
-			return nil, errors.New("TODO: no ports")
+		for _, port := range svc.Container.Ports {
+			frontend := 0
+			if args.Offset != 0 {
+				frontend = port.Port + args.Offset
+			}
+			args.Ports = append(args.Ports, core.PortForward{
+				Frontend: frontend, // pick a random port on the host
+				Backend:  port.Port,
+				Protocol: port.Protocol,
+			})
 		}
-
-		args.UpstreamPort = ports[0].Port
 	}
 
-	return core.NewTunnelService(svc, args.HostListenAddress, args.UpstreamPort, args.Protocol), nil
+	return core.NewTunnelService(svc, args.Ports), nil
 }
 
-type hostReverseTunnelArgs struct {
-	UpstreamAddress string
-	ServicePort     int
-	Protocol        core.NetworkProtocol
+type hostServiceArgs struct {
+	Host  string
+	Ports []core.PortForward
 }
 
-func (s *hostSchema) reverseTunnel(ctx *core.Context, parent *core.Host, args hostReverseTunnelArgs) (*core.Service, error) {
-	return core.NewReverseTunnelService(args.UpstreamAddress, args.ServicePort, args.Protocol), nil
+func (s *hostSchema) service(ctx *core.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+	return core.NewHostService(args.Host, args.Ports), nil
 }

@@ -738,7 +738,7 @@ type containerWithExposedPortArgs struct {
 }
 
 func (s *containerSchema) withExposedPort(ctx *core.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
-	return parent.WithExposedPort(core.ContainerPort{
+	return parent.WithExposedPort(core.Port{
 		Protocol:    args.Protocol,
 		Port:        args.Port,
 		Description: args.Description,

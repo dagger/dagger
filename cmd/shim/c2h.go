@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,26 +10,48 @@ import (
 	"os"
 	"strings"
 	"sync"
-)
 
-const upstreamSock = "/upstream.sock"
+	"golang.org/x/sync/errgroup"
+)
 
 func tunnel(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: tunnel <upstream> port/tcp")
+		return fmt.Errorf("usage: tunnel <socket>:<port>[/<tcp|udp>] [...]")
 	}
 
-	log.Println("listening on", args[0])
+	eg, ctx := errgroup.WithContext(context.Background())
 
-	port, network, ok := strings.Cut(args[0], "/")
-	if !ok {
-		network = "tcp"
+	for _, trio := range args {
+		upstreamSock, portSpec, ok := strings.Cut(trio, ":")
+		if !ok {
+			return fmt.Errorf("invalid socket:port:protocol spec: %s", trio)
+		}
+
+		port, network, ok := strings.Cut(portSpec, "/")
+		if !ok {
+			network = "tcp"
+		}
+
+		eg.Go(func() error {
+			return tunnelOne(ctx, upstreamSock, port, network)
+		})
 	}
+
+	return eg.Wait()
+}
+
+func tunnelOne(ctx context.Context, upstreamSock, port, network string) error {
+	log.Printf("listening on %s/%s", port, network)
 
 	l, err := net.Listen(network, fmt.Sprintf(":%s", port))
 	if err != nil {
 		return err
 	}
+
+	go func() {
+		<-ctx.Done()
+		l.Close()
+	}()
 
 	for {
 		downstream, err := l.Accept()
