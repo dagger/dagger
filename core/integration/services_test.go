@@ -161,6 +161,56 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 	})
 }
 
+func TestServicePortsEndpoints(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Run("ports and endpoints are returned in consistent order", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithExposedPort(9000).
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
+
+		ports, err := srv.Ports(ctx)
+		require.NoError(t, err)
+		require.Len(t, ports, 2)
+		require.Equal(t, ports[0].Port, 8000)
+		require.Equal(t, ports[1].Port, 9000)
+
+		hn, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		eps, err := srv.Endpoints(ctx)
+		require.NoError(t, err)
+		require.Len(t, eps, 2)
+		require.Equal(t, eps[0], hn+":8000")
+		require.Equal(t, eps[1], hn+":9000")
+	})
+
+	t.Run("can specify scheme for endpoints", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithExposedPort(9000).
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
+
+		hn, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		eps, err := srv.Endpoints(ctx, dagger.ServiceEndpointsOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+		require.Equal(t, eps[0], "http://"+hn+":8000")
+		require.Equal(t, eps[1], "http://"+hn+":9000")
+	})
+}
+
 func TestContainerPortLifecycle(t *testing.T) {
 	t.Parallel()
 

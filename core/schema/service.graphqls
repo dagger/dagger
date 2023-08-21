@@ -39,6 +39,17 @@ type Service {
   ): String!
 
   """
+  Retrieves all endpoints that clients can use to reach this container.
+
+  If a scheme is specified, URLs are returned. Otherwise, host:port pairs are
+  returned.
+  """
+  endpoints(
+    "Return URLs with the given scheme, eg. http for http://"
+    scheme: String
+  ): [String!]!
+
+  """
   Start the service and wait for its health checks to succeed.
 
   Services bound to a Container do not need to be manually started.

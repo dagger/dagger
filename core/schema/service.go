@@ -30,11 +30,13 @@ func (s *serviceSchema) Resolvers() Resolvers {
 			"service": ToResolver(s.containerService),
 		},
 		"Service": ObjectResolver{
-			"id":       ToResolver(s.id),
-			"hostname": ToResolver(s.hostname),
-			"endpoint": ToResolver(s.endpoint),
-			"start":    ToResolver(s.start),
-			"stop":     ToResolver(s.stop),
+			"id":        ToResolver(s.id),
+			"hostname":  ToResolver(s.hostname),
+			"ports":     ToResolver(s.ports),
+			"endpoint":  ToResolver(s.endpoint),
+			"endpoints": ToResolver(s.endpoints),
+			"start":     ToResolver(s.start),
+			"stop":      ToResolver(s.stop),
 		},
 	}
 }
@@ -61,6 +63,18 @@ func (s *serviceSchema) id(ctx *core.Context, parent *core.Service, args any) (c
 
 func (s *serviceSchema) hostname(ctx *core.Context, parent *core.Service, args any) (string, error) {
 	return parent.Hostname(ctx)
+}
+
+func (s *serviceSchema) ports(ctx *core.Context, parent *core.Service, args any) ([]core.Port, error) {
+	return parent.Ports(ctx)
+}
+
+type serviceEndpointsArgs struct {
+	Scheme string
+}
+
+func (s *serviceSchema) endpoints(ctx *core.Context, parent *core.Service, args serviceEndpointsArgs) ([]string, error) {
+	return parent.Endpoints(ctx, args.Scheme)
 }
 
 type serviceEndpointArgs struct {

@@ -137,15 +137,14 @@ func (svc *Service) Digest() (digest.Digest, error) {
 
 func (svc *Service) Hostname(ctx context.Context) (string, error) {
 	switch {
-	case svc.TunnelUpstream != nil:
+	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
 		upstream, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
 		}
 
 		return upstream.Host, nil
-	case svc.Container != nil,
-		svc.HostUpstream != "":
+	case svc.Container != nil:
 		dig, err := svc.Digest()
 		if err != nil {
 			return "", err
@@ -154,6 +153,22 @@ func (svc *Service) Hostname(ctx context.Context) (string, error) {
 		return network.HostHash(dig), nil
 	default:
 		return "", errors.New("unknown service type")
+	}
+}
+
+func (svc *Service) Ports(ctx context.Context) ([]Port, error) {
+	switch {
+	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
+		upstream, err := AllServices.Get(ctx, svc)
+		if err != nil {
+			return nil, err
+		}
+
+		return upstream.Ports, nil
+	case svc.Container != nil:
+		return svc.Container.Ports, nil
+	default:
+		return nil, errors.New("unknown service type")
 	}
 }
 
@@ -174,7 +189,7 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 
 			port = svc.Container.Ports[0].Port
 		}
-	case svc.TunnelUpstream != nil:
+	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
 		tunnel, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
@@ -189,19 +204,6 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 
 			port = tunnel.Ports[0].Port
 		}
-	case svc.HostUpstream != "":
-		host, err = svc.Hostname(ctx)
-		if err != nil {
-			return "", err
-		}
-
-		if port == 0 {
-			firstForward := svc.HostPorts[0]
-			port = firstForward.Frontend
-			if port == 0 {
-				port = firstForward.Backend
-			}
-		}
 	default:
 		return "", fmt.Errorf("unknown service type")
 	}
@@ -212,6 +214,25 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 	}
 
 	return endpoint, nil
+}
+
+func (svc *Service) Endpoints(ctx context.Context, scheme string) ([]string, error) {
+	ports, err := svc.Ports(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var endpoints []string
+	for _, port := range ports {
+		endpoint, err := svc.Endpoint(ctx, port.Port, scheme)
+		if err != nil {
+			return nil, err
+		}
+
+		endpoints = append(endpoints, endpoint)
+	}
+
+	return endpoints, nil
 }
 
 func (svc *Service) Start(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
