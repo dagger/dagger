@@ -22,7 +22,8 @@ defmodule Dagger.GitRef do
         if is_nil(optional_args[:ssh_auth_socket]) do
           selection
         else
-          arg(selection, "sshAuthSocket", optional_args[:ssh_auth_socket])
+          {:ok, id} = Dagger.Socket.id(optional_args[:ssh_auth_socket])
+          arg(selection, "sshAuthSocket", id)
         end
 
       %Dagger.Directory{selection: selection, client: git_ref.client}

@@ -370,12 +370,56 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       name = arg["name"]
       arg_name = Function.format_var_name(name)
 
+      render =
+        case arg do
+          %{
+            "type" => %{
+              "kind" => "LIST",
+              "name" => nil,
+              "ofType" => %{
+                "kind" => "NON_NULL",
+                "name" => nil,
+                "ofType" => %{"kind" => "SCALAR", "name" => type_name, "ofType" => nil}
+              }
+            }
+          }
+          when type_name in @id_modules ->
+            mod = Mod.from_name(Mod.id_module_to_module(type_name))
+
+            quote do
+              ids =
+                optional_args[unquote(arg_name)]
+                |> Enum.map(fn value ->
+                  {:ok, id} = unquote(mod).id(value)
+                  id
+                end)
+
+              arg(selection, unquote(name), ids)
+            end
+
+          %{
+            "type" => %{"kind" => "SCALAR", "name" => type_name, "ofType" => nil}
+          }
+          when type_name in @id_modules ->
+            mod = Mod.from_name(Mod.id_module_to_module(type_name))
+
+            quote do
+              {:ok, id} = unquote(mod).id(optional_args[unquote(arg_name)])
+              arg(selection, unquote(name), id)
+            end
+
+          _ ->
+            quote do
+              arg(selection, unquote(name), optional_args[unquote(arg_name)])
+            end
+        end
+
       quote do
         selection =
           if is_nil(optional_args[unquote(arg_name)]) do
             selection
           else
-            arg(selection, unquote(name), optional_args[unquote(arg_name)])
+            unquote(render)
           end
       end
     end

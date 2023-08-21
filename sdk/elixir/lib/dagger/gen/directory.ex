@@ -69,7 +69,14 @@ defmodule Dagger.Directory do
         if is_nil(optional_args[:secrets]) do
           selection
         else
-          arg(selection, "secrets", optional_args[:secrets])
+          ids =
+            optional_args[:secrets]
+            |> Enum.map(fn value ->
+              {:ok, id} = Dagger.Secret.id(value)
+              id
+            end)
+
+          arg(selection, "secrets", ids)
         end
 
       %Dagger.Container{selection: selection, client: directory.client}
