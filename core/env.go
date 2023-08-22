@@ -45,6 +45,9 @@ func (id EnvironmentID) ToEnvironment() (*Environment, error) {
 	if err := resourceid.Decode(env, id); err != nil {
 		return nil, err
 	}
+	if err := env.setEntrypointEnvs(id); err != nil {
+		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
 	return env, nil
 }
 
@@ -69,10 +72,6 @@ type Environment struct {
 	Checks []*Check `json:"checks,omitempty"`
 }
 
-func (env *Environment) ID() (EnvironmentID, error) {
-	return resourceid.Encode[EnvironmentID](env)
-}
-
 func (env *Environment) Clone() *Environment {
 	cp := *env
 	if env.Directory != nil {
@@ -85,7 +84,7 @@ func (env *Environment) Clone() *Environment {
 		cp.Runtime = env.Runtime.Clone()
 	}
 	if env.Config != nil {
-		env.Config = &envconfig.Config{
+		cp.Config = &envconfig.Config{
 			Root:         env.Config.Root,
 			Name:         env.Config.Name,
 			SDK:          env.Config.SDK,
@@ -94,14 +93,97 @@ func (env *Environment) Clone() *Environment {
 			Dependencies: cloneSlice(env.Config.Dependencies),
 		}
 	}
+	cp.Checks = make([]*Check, len(env.Checks))
 	for i, check := range env.Checks {
 		cp.Checks[i] = check.Clone()
 	}
 	return &cp
 }
 
+func (env *Environment) ID() (EnvironmentID, error) {
+	env = env.Clone()
+	if err := env.setEntrypointEnvs(""); err != nil {
+		return "", fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
+	return resourceid.Encode[EnvironmentID](env)
+}
+
+// TODO: doc subtleties
+func (env *Environment) Digest() (uint64, error) {
+	env = env.Clone()
+	if err := env.setEntrypointEnvs(""); err != nil {
+		return 0, fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
+	return cacheKey(env), nil
+}
+
+func (env *Environment) setEntrypointEnvs(id EnvironmentID) error {
+	// TODO: guard against infinite recursion
+	curChecks := env.Checks
+	for len(curChecks) > 0 {
+		var nextChecks []*Check
+		for _, check := range curChecks {
+			nextChecks = append(nextChecks, check.Subchecks...)
+			if check.EnvironmentID == "" {
+				check.EnvironmentID = id
+				continue
+			}
+			checkEnv, err := check.EnvironmentID.ToEnvironment()
+			if err != nil {
+				return fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
+			}
+			if checkEnv.Config.Name == env.Config.Name {
+				check.EnvironmentID = id
+			}
+		}
+		curChecks = nextChecks
+	}
+	return nil
+}
+
+type EnvironmentCache CacheMap[uint64, *Environment]
+
+func NewEnvironmentCache() *EnvironmentCache {
+	return (*EnvironmentCache)(NewCacheMap[uint64, *Environment]())
+}
+
+func (cache *EnvironmentCache) cacheMap() *CacheMap[uint64, *Environment] {
+	return (*CacheMap[uint64, *Environment])(cache)
+}
+
+func (cache *EnvironmentCache) ContextWithCachedEnv(ctx context.Context, env *Environment) (context.Context, error) {
+	envDigest, err := env.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment digest: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	clientMetadata.EnvironmentDigest = envDigest
+
+	_, err = cache.cacheMap().GetOrInitialize(envDigest, func() (*Environment, error) {
+		return env, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to cache environment: %w", err)
+	}
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+}
+
+func (cache *EnvironmentCache) CachedEnvFromContext(ctx context.Context) (*Environment, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	return cache.cacheMap().GetOrInitialize(clientMetadata.EnvironmentDigest, func() (*Environment, error) {
+		return nil, fmt.Errorf("environment %d not found in cache", clientMetadata.EnvironmentDigest)
+	})
+}
+
 // Just load the config without actually getting the schema, useful for checking env metadata
-// in an inexpensive way
+// in an inexpensive way.
 func LoadEnvironmentConfig(
 	ctx context.Context,
 	bk *buildkit.Client,
@@ -129,7 +211,7 @@ func LoadEnvironment(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
-	envCache *CacheMap[uint64, *Environment],
+	envCache *EnvironmentCache,
 	pipeline pipeline.Path,
 	platform specs.Platform,
 	rootDir *Directory,
@@ -149,13 +231,10 @@ func LoadEnvironment(
 		Platform:   platform,
 	}
 
-	// cache the base env so CurrentEnvironment works in the exec below
-	baseEnvDigest := cacheKey(env)
-	_, err = envCache.GetOrInitialize(baseEnvDigest, func() (*Environment, error) {
-		return env, nil
-	})
+	// add the base env to the context so CurrentEnvironment works in the exec below
+	ctx, err = envCache.ContextWithCachedEnv(ctx, env)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or initialize environment digest cache: %w", err)
+		return nil, fmt.Errorf("failed to set environment in context: %w", err)
 	}
 
 	ctr, err := env.runtime(ctx, bk, progSock, pipeline)
@@ -169,14 +248,7 @@ func LoadEnvironment(
 		return nil, fmt.Errorf("failed to mount env metadata directory: %w", err)
 	}
 
-	// ask the environment for its definition (checks, commands, etc.)
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	clientMetadata.EnvironmentDigest = baseEnvDigest
-
-	ctr, err = ctr.WithExec(engine.ContextWithClientMetadata(ctx, clientMetadata), bk, progSock, platform, ContainerExecOpts{
+	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
 		Args:                          []string{"-env"},
 		ExperimentalPrivilegedNesting: true,
 	})
@@ -196,51 +268,22 @@ func LoadEnvironment(
 		return nil, fmt.Errorf("failed to decode envid: %w", err)
 	}
 
-	// finalize the environment's container where resolvers execute
+	// finalize the environment's container where entrypoint code executes
 	ctr, err = ctr.WithoutMount(ctx, envMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmount env metadata directory: %w", err)
 	}
 	env.Runtime = ctr
 
-	return env.cached(envCache)
-}
+	finalEnvID, err := env.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment ID: %w", err)
+	}
+	if err := env.setEntrypointEnvs(finalEnvID); err != nil {
+		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
 
-// TODO: doc subtleties
-func (env *Environment) cached(cache *CacheMap[uint64, *Environment]) (*Environment, error) {
-	envDigest := cacheKey(env)
-	return cache.GetOrInitialize(envDigest, func() (*Environment, error) {
-		// TODO: consider per-entrypoint-type methods for this, to reduce mess once more are added
-		var setCheckEnv func(*Check) error
-		setCheckEnv = func(check *Check) error {
-			if len(check.Subchecks) > 0 {
-				for _, subcheck := range check.Subchecks {
-					if err := setCheckEnv(subcheck); err != nil {
-						return err
-					}
-				}
-				return nil
-			}
-			if check.UserContainer != nil {
-				return nil
-			}
-			if check.EnvironmentDigest == 0 {
-				check.EnvironmentDigest = envDigest
-				check.EnvironmentName = env.Config.Name
-				return nil
-			}
-			if check.EnvironmentName == env.Config.Name {
-				check.EnvironmentDigest = envDigest
-			}
-			return nil
-		}
-		for _, check := range env.Checks {
-			if err := setCheckEnv(check); err != nil {
-				return nil, err
-			}
-		}
-		return env, nil
-	})
+	return env, nil
 }
 
 // figure out if we were passed a path to a dagger.json file or a parent dir that may contain such a file
@@ -268,26 +311,20 @@ func (env *Environment) runtime(
 	}
 }
 
-func execResolver(
+func execEntrypoint(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
 	pipeline pipeline.Path,
-	envCache *CacheMap[uint64, *Environment],
-	envDigest uint64,
+	envCache *EnvironmentCache,
+	env *Environment,
 	entrypointName string,
 	args any,
 ) ([]byte, error) {
-	// TODO: doc subtleties
-	env, err := envCache.GetOrInitialize(envDigest, func() (*Environment, error) {
-		return nil, fmt.Errorf("environment %d not found", envDigest)
-	})
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	ctx, err := envCache.ContextWithCachedEnv(ctx, env)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		return nil, fmt.Errorf("failed to set environment in context: %w", err)
 	}
-	clientMetadata.EnvironmentDigest = envDigest
-	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
 	inputMap := map[string]any{
 		// TODO: remember to tell Helder that this is a small breaking change, need to tweak python sdk code.
@@ -306,7 +343,7 @@ func execResolver(
 		return nil, fmt.Errorf("failed to mount resolver input file: %w", err)
 	}
 
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(nil, ctr.Platform), "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, ctr.Platform), "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount resolver output directory: %w", err)
 	}
@@ -327,18 +364,25 @@ func execResolver(
 		return nil, fmt.Errorf("failed to get resolver output file: %w", err)
 	}
 
-	resolverOutput, err := outputFile.Contents(ctx, bk)
+	entrypointOutput, err := outputFile.Contents(ctx, bk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read resolver output file: %w", err)
 	}
 
-	return resolverOutput, nil
+	return entrypointOutput, nil
 }
 
-func (env *Environment) WithCheck(check *Check, envCache *CacheMap[uint64, *Environment]) (*Environment, error) {
+func (env *Environment) WithCheck(check *Check, envCache *EnvironmentCache) (*Environment, error) {
 	env = env.Clone()
 	env.Checks = append(env.Checks, check)
-	return env.cached(envCache)
+	envID, err := env.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment ID: %w", err)
+	}
+	if err := env.setEntrypointEnvs(envID); err != nil {
+		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
+	return env, nil
 }
 
 type CheckID string
@@ -362,6 +406,8 @@ func (id CheckID) ToCheck() (*Check, error) {
 }
 
 type Check struct {
+	EnvironmentID EnvironmentID `json:"environmentId,omitempty"`
+
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Subchecks   []*Check `json:"subchecks"`
@@ -369,10 +415,6 @@ type Check struct {
 	// The container to exec if the check's success+output is being resolved
 	// from a user-defined container via the Check.withContainer API
 	UserContainer *Container `json:"user_container"`
-
-	// TODO: doc subtleties
-	EnvironmentName   string `json:"environment_name"`
-	EnvironmentDigest uint64 `json:"environment_digest"`
 
 	// TODO: backport generalize polymorphic safety checks
 	IsCheck bool `json:"is_check"`
@@ -388,13 +430,18 @@ func (check *Check) Digest() (digest.Digest, error) {
 }
 
 func (check Check) Clone() *Check {
-	cp := check
-	if cp.UserContainer != nil {
-		cp.UserContainer = check.UserContainer.Clone()
+	cp := Check{
+		Name:          check.Name,
+		Description:   check.Description,
+		Subchecks:     make([]*Check, len(check.Subchecks)),
+		EnvironmentID: check.EnvironmentID,
+		IsCheck:       check.IsCheck,
 	}
-	cp.Subchecks = make([]*Check, len(check.Subchecks))
 	for i, subcheck := range check.Subchecks {
 		cp.Subchecks[i] = subcheck.Clone()
+	}
+	if check.UserContainer != nil {
+		cp.UserContainer = check.UserContainer.Clone()
 	}
 	return &cp
 }
@@ -423,12 +470,50 @@ func (check *Check) WithUserContainer(ctr *Container) *Check {
 	return check
 }
 
+func (check *Check) GetSubchecks(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	pipeline pipeline.Path,
+	envCache *EnvironmentCache,
+) ([]*Check, error) {
+	if len(check.Subchecks) > 0 {
+		return check.Subchecks, nil
+	}
+
+	if check.EnvironmentID != "" {
+		env, err := check.EnvironmentID.ToEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
+		}
+		entrypointOutput, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
+		}
+
+		// TODO: comments once finalized, also backport polymorphic safety checks
+		var id string
+		if err := json.Unmarshal(entrypointOutput, &id); err != nil {
+			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
+		}
+
+		recursiveCheck, err := CheckID(id).ToCheck()
+		if err != nil {
+			// not a recursive check, there are no subchecks
+			return nil, nil
+		}
+		return recursiveCheck.GetSubchecks(ctx, bk, progSock, pipeline, envCache)
+	}
+
+	return nil, nil
+}
+
 func (check *Check) Result(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
 	pipeline pipeline.Path,
-	envCache *CacheMap[uint64, *Environment],
+	envCache *EnvironmentCache,
 ) (*CheckResult, error) {
 	if len(check.Subchecks) > 0 {
 		// This is a composite check, evaluate it by evaluating each subcheck
@@ -492,16 +577,20 @@ func (check *Check) Result(
 		}, nil
 	}
 
-	if check.EnvironmentDigest != 0 {
+	if check.EnvironmentID != "" {
 		// check will be evaluated by exec'ing the environment's resolver
-		resolverOutput, err := execResolver(ctx, bk, progSock, pipeline, envCache, check.EnvironmentDigest, check.Name, nil)
+		env, err := check.EnvironmentID.ToEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
+		}
+		entrypointOutput, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
 		}
 
 		// TODO: comments once finalized, also backport polymorphic safety checks
 		var id string
-		if err := json.Unmarshal(resolverOutput, &id); err != nil {
+		if err := json.Unmarshal(entrypointOutput, &id); err != nil {
 			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
 		}
 

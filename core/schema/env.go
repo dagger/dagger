@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 	"golang.org/x/sync/errgroup"
@@ -15,13 +14,11 @@ import (
 
 type environmentSchema struct {
 	*MergedSchemas
+	envCache *core.EnvironmentCache
 
 	// NOTE: this should only be used to dedupe environment load by name
 	// TODO: doc subtleties and difference from below cache
 	loadedEnvCache *core.CacheMap[string, *core.Environment] // env name -> env
-
-	// TODO: doc subtleties
-	envDigestCache *core.CacheMap[uint64, *core.Environment] // env digest -> env
 }
 
 var _ ExecutableSchema = &environmentSchema{}
@@ -59,6 +56,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withWorkdir": ToResolver(s.withWorkdir),
 			"withCheck":   ToResolver(s.withCheck),
 			"check":       ToResolver(s.checkByName),
+			"checks":      ToResolver(s.checks),
 		}),
 		"Check": ToIDableObjectResolver(core.CheckID.ToCheck, ObjectResolver{
 			"id":              ToResolver(s.checkID),
@@ -66,6 +64,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withDescription": ToResolver(s.withCheckDescription),
 			"withSubcheck":    ToResolver(s.withSubcheck),
 			"withContainer":   ToResolver(s.withCheckContainer),
+			"subchecks":       ToResolver(s.subchecks),
 			"result":          ToResolver(s.evaluateCheckResult),
 		}),
 		"CheckResult": ToIDableObjectResolver(core.CheckResultID.ToCheckResult, ObjectResolver{
@@ -107,18 +106,7 @@ func (s *environmentSchema) staticCheckResult(ctx *core.Context, _ *core.Query, 
 }
 
 func (s *environmentSchema) currentEnvironment(ctx *core.Context, _ *core.Query, args any) (*core.Environment, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if clientMetadata.EnvironmentDigest == 0 {
-		return nil, fmt.Errorf("not executing in an environment")
-	}
-
-	// TODO: doc subtleties
-	return s.envDigestCache.GetOrInitialize(clientMetadata.EnvironmentDigest, func() (*core.Environment, error) {
-		return nil, fmt.Errorf("environment with digest %d not found", clientMetadata.EnvironmentDigest)
-	})
+	return s.envCache.CachedEnvFromContext(ctx)
 }
 
 func (s *environmentSchema) environmentID(ctx *core.Context, env *core.Environment, args any) (core.EnvironmentID, error) {
@@ -163,7 +151,7 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	}
 
 	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, s.envDigestCache, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, s.envCache, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load environment: %w", err)
 		}
@@ -268,7 +256,7 @@ func (s *environmentSchema) withCheck(ctx *core.Context, env *core.Environment, 
 	if err != nil {
 		return nil, err
 	}
-	return env.WithCheck(check, s.envDigestCache)
+	return env.WithCheck(check, s.envCache)
 }
 
 type checkByNameArgs struct {
@@ -282,6 +270,10 @@ func (s *environmentSchema) checkByName(ctx *core.Context, env *core.Environment
 		}
 	}
 	return nil, fmt.Errorf("no check named %q", args.Name)
+}
+
+func (s *environmentSchema) checks(ctx *core.Context, env *core.Environment, _ any) ([]*core.Check, error) {
+	return env.Checks, nil
 }
 
 func (s *environmentSchema) checkID(ctx *core.Context, check *core.Check, args any) (core.CheckID, error) {
@@ -328,9 +320,14 @@ func (s *environmentSchema) withCheckContainer(ctx *core.Context, check *core.Ch
 	return check.WithUserContainer(ctr), nil
 }
 
+func (s *environmentSchema) subchecks(ctx *core.Context, check *core.Check, _ any) ([]*core.Check, error) {
+	// TODO: set real pipeline
+	return check.GetSubchecks(ctx, s.bk, s.progSockPath, nil, s.envCache)
+}
+
 func (s *environmentSchema) evaluateCheckResult(ctx *core.Context, check *core.Check, _ any) (*core.CheckResult, error) {
 	// TODO: set real pipeline
-	return check.Result(ctx, s.bk, s.progSockPath, nil, s.envDigestCache)
+	return check.Result(ctx, s.bk, s.progSockPath, nil, s.envCache)
 }
 
 func (s *environmentSchema) checkResultID(ctx *core.Context, checkResult *core.CheckResult, args any) (core.CheckResultID, error) {

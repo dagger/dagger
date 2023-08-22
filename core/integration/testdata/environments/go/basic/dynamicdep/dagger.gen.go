@@ -656,71 +656,6 @@ type PipelineLabel struct {
 	Value string `json:"value"`
 }
 
-type BasicExplicitdep struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
-func (r *BasicExplicitdep) AnotherCoolCompositeCheck() *Check {
-
-	q := r.q.Select("anotherCoolCompositeCheck")
-
-	return &Check{
-		q: q,
-		c: r.c,
-	}
-}
-
-func (r *BasicExplicitdep) AnotherCoolContainerCheck() *Check {
-
-	q := r.q.Select("anotherCoolContainerCheck")
-
-	return &Check{
-		q: q,
-		c: r.c,
-	}
-}
-
-func (r *BasicExplicitdep) AnotherCoolStaticCheck() *Check {
-
-	q := r.q.Select("anotherCoolStaticCheck")
-
-	return &Check{
-		q: q,
-		c: r.c,
-	}
-}
-
-func (r *BasicExplicitdep) AnotherSadCompositeCheck() *Check {
-
-	q := r.q.Select("anotherSadCompositeCheck")
-
-	return &Check{
-		q: q,
-		c: r.c,
-	}
-}
-
-func (r *BasicExplicitdep) AnotherSadContainerCheck() *Check {
-
-	q := r.q.Select("anotherSadContainerCheck")
-
-	return &Check{
-		q: q,
-		c: r.c,
-	}
-}
-
-func (r *BasicExplicitdep) AnotherSadStaticCheck() *Check {
-
-	q := r.q.Select("anotherSadStaticCheck")
-
-	return &Check{
-		q: q,
-		c: r.c,
-	}
-}
-
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -3237,16 +3172,6 @@ type WithDAGFunc func(r *DAG) *DAG
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *DAG) With(f WithDAGFunc) *DAG {
 	return f(r)
-}
-
-func (r *DAG) BasicExplicitdep() *BasicExplicitdep {
-
-	q := r.q.Select("basic_explicitdep")
-
-	return &BasicExplicitdep{
-		q: q,
-		c: r.c,
-	}
 }
 
 // Constructs a cache volume for a given cache key.

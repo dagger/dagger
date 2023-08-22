@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/iancoleman/strcase"
 	"github.com/juju/ansiterm/tabwriter"
+	"github.com/moby/buildkit/identity"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock"
+	"golang.org/x/sync/errgroup"
 )
 
 var checkCmd = &cobra.Command{
@@ -53,36 +56,12 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 
 	tw := tabwriter.NewWriter(vtx.Stdout(), 0, 0, 2, ' ', 0)
 
-	// TODO:
-	// TODO:
-	// TODO:
-	envid, err := loadedEnv.ID(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get environment id: %w", err)
-	}
-	fmt.Fprintf(tw, "ENVID: %d\n", len(envid))
-
-	loadedEnv = c.Environment(dagger.EnvironmentOpts{ID: envid})
-	envid, err = loadedEnv.ID(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get environment: %w", err)
-	}
-	fmt.Fprintf(tw, "ENVID: %d\n", len(envid))
-
-	loadedEnv = c.Environment(dagger.EnvironmentOpts{ID: envid})
-	envid, err = loadedEnv.ID(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get environment: %w", err)
-	}
-	fmt.Fprintf(tw, "ENVID: %d\n", len(envid))
-
 	if stdoutIsTTY {
 		fmt.Fprintf(tw, "%s\t%s\n", termenv.String("check name").Bold(), termenv.String("description").Bold())
 	}
 
 	var printCheck func(*dagger.Check) error
 	printCheck = func(check *dagger.Check) error {
-
 		name, err := check.Name(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check name: %w", err)
@@ -123,11 +102,6 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 			return fmt.Errorf("failed to get check id: %w", err)
 		}
 
-		// TODO:
-		// TODO:
-		// TODO:
-		fmt.Fprintf(tw, "CHECKID: %d\n", len(checkID))
-
 		check = *c.Check(dagger.CheckOpts{ID: checkID})
 		err = printCheck(&check)
 		if err != nil {
@@ -139,69 +113,119 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 }
 
 func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
-	subCmd, restOfArgs, err := cmd.Find(dynamicCmdArgs)
+	rec := progrock.RecorderFromContext(ctx)
+
+	envName, err := loadedEnv.Name(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to find: %w", err)
+		return fmt.Errorf("failed to get environment name: %w", err)
 	}
 
-	// prevent errors below from double printing
-	cmd.Root().SilenceErrors = true
-	cmd.Root().SilenceUsage = true
-	// If there's any overlaps between dagger cmd args and the dynamic cmd args
-	// we want to ensure they are parsed separately. For some reason, this flag
-	// does that ¯\_(ツ)_/¯
-	cmd.Root().TraverseChildren = true
+	envChecks, err := loadedEnv.Checks(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get environment commands: %w", err)
+	}
 
-	if subCmd.Name() == cmd.Name() {
-		envChecks, err := loadedEnv.Checks(ctx)
+	path := []string{}
+	var eg errgroup.Group
+	for _, check := range envChecks {
+		check := check
+		// TODO: workaround bug in codegen
+		checkID, err := check.ID(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get environment commands: %w", err)
+			return fmt.Errorf("failed to get check id: %w", err)
+		}
+		check = *c.Check(dagger.CheckOpts{ID: checkID})
+		runCheckHierarchy(ctx, c, rec, path, envName, &eg, &check)
+	}
+	return eg.Wait()
+}
+
+func runCheckHierarchy(
+	ctx context.Context,
+	c *dagger.Client,
+	rec *progrock.Recorder,
+	path []string,
+	envName string,
+	eg *errgroup.Group,
+	check *dagger.Check,
+) error {
+	name, err := check.Name(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get check name: %w", err)
+	}
+	description, err := check.Description(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get check description: %w", err)
+	}
+
+	if name == "" {
+		name = description
+	}
+	if name == "" {
+		name = identity.NewID()
+	}
+	name = strcase.ToKebab(name)
+
+	parentPathName := strings.Join(path, "->")
+	path = append([]string{}, path...)
+	path = append(path, name)
+	fullPathName := strings.Join(path, "->")
+	digest := digest.FromString(fullPathName)
+
+	rec = rec.WithGroup(parentPathName, progrock.WithGroupID(digest.String()))
+
+	eg.Go(func() (rerr error) {
+		subChecks, err := check.Subchecks(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get check subchecks: %w", err)
+		}
+		if len(subChecks) == 0 {
+			vtx := rec.Vertex(digest+":result", name, progrock.Focused())
+			var success bool
+			var output string
+			defer func() {
+				if rerr != nil {
+					fmt.Fprintln(vtx.Stderr(), rerr.Error())
+					vtx.Done(rerr)
+				}
+			}()
+			// rec = rec.WithGroup(name, progrock.WithGroupID(digest.String()))
+
+			result := check.Result()
+			success, err = result.Success(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get check result success: %w", err)
+			}
+			output, err = result.Output(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get check result output: %w", err)
+			}
+
+			fmt.Fprint(vtx.Stdout(), output)
+			if success {
+				vtx.Complete()
+			} else {
+				vtx.Done(fmt.Errorf("failed"))
+			}
+			return nil
 		}
 
-		// default to running all checks
-		// TODO: this case also gets triggered if you try to run a check that doesn't exist, fix
-		allChecks := c.Check()
-		for _, check := range envChecks {
-			check := check
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			checkID, err := check.ID(ctx)
+		// rec = rec.WithGroup(name, progrock.WithGroupID(digest.String()))
+		for _, subCheck := range subChecks {
+			subCheck := subCheck
+			// TODO: workaround bug in codegen
+			subCheckID, err := subCheck.ID(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get check id: %w", err)
 			}
-			ch, err := core.CheckID(checkID).ToCheck()
+			subCheck = *c.Check(dagger.CheckOpts{ID: subCheckID})
+			err = runCheckHierarchy(ctx, c, rec, path, envName, eg, &subCheck)
 			if err != nil {
-				return fmt.Errorf("failed to convert check id to check: %w", err)
+				return err
 			}
-			fmt.Printf("CHECK: %+v\n", ch)
-
-			allChecks = allChecks.WithSubcheck(&check)
-		}
-
-		result := allChecks.Result()
-
-		output, err := result.Output(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check result output: %w", err)
-		}
-
-		success, err := result.Success(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check result success: %w", err)
-		}
-		if !success {
-			return fmt.Errorf("checks failed: %s", output)
 		}
 		return nil
-	}
-
-	subCmd.SetArgs(restOfArgs)
-	err = subCmd.Execute()
-	if err != nil {
-		return fmt.Errorf("failed to execute subcmd: %w", err)
-	}
+	})
 
 	return nil
 }

@@ -56,9 +56,9 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		&secretSchema{merged},
 		&hostSchema{merged, host},
 		&environmentSchema{
-			merged,
-			core.NewCacheMap[string, *core.Environment](),
-			core.NewCacheMap[uint64, *core.Environment](),
+			MergedSchemas:  merged,
+			envCache:       core.NewEnvironmentCache(),
+			loadedEnvCache: core.NewCacheMap[string, *core.Environment](),
 		},
 		&httpSchema{merged},
 		&platformSchema{merged},
