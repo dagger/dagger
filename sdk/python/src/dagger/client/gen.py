@@ -174,7 +174,13 @@ class Container(Type):
             Target build stage to build.
         secrets:
             Secrets to pass to the build.
-            They will be mounted at /run/secrets/[secret-name].
+            They will be mounted at /run/secrets/[secret-name] in the build
+            container
+            They can be accessed in the Dockerfile using the "secret" mount
+            type
+            and mount path /run/secrets/[secret-name]
+            e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat
+            /run/secrets/my-secret)"
         """
         _args = [
             Arg("context", context),

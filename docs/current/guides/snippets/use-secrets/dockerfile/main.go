@@ -9,13 +9,13 @@ import (
 )
 
 func main() {
-	// initialize Dagger client
 	ctx := context.Background()
 
 	if os.Getenv("GH_SECRET") == "" {
 		panic("Environment variable GH_SECRET is not set")
 	}
 
+	// initialize Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		panic(err)
@@ -25,14 +25,19 @@ func main() {
 	// read secret from host variable
 	secret := client.SetSecret("gh-secret", os.Getenv("GH_SECRET"))
 
-	// use secret in container environment
-	out, err := client.
-		Container().
-		From("alpine:3.17").
-		WithSecretVariable("GITHUB_API_TOKEN", secret).
-		WithExec([]string{"apk", "add", "curl"}).
-		WithExec([]string{"sh", "-c", `curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_API_TOKEN"`}).
+	// set context directory for Dockerfile build
+	contextDir := client.Host().Directory(".")
+
+	// build using Dockerfile
+	// specify secrets for Dockerfile build
+	// secrets will be mounted at /run/secrets/[secret-name]
+	out, err := contextDir.
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Dockerfile: "Dockerfile",
+			Secrets:    []*dagger.Secret{secret},
+		}).
 		Stdout(ctx)
+
 	if err != nil {
 		panic(err)
 	}

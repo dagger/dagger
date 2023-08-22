@@ -682,6 +682,38 @@ The following code listing demonstrates how to inject a file in a container as a
 
 [Learn more](./guides/723462-use-secrets.md)
 
+### Use secret in Dockerfile build
+
+The following code listing demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-secrets/dockerfile/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/use-secrets/dockerfile/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-secrets/dockerfile/main.py
+```
+
+</TabItem>
+</Tabs>
+
+The sample Dockerfile below demonstrates the process of mounting the secret using a [`secret` filesystem mount type](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret) and using it in the Dockerfile build process:
+
+```dockerfile file=./guides/snippets/use-secrets/dockerfile/Dockerfile
+```
+
+[Learn more](./guides/723462-use-secrets.md)
+
 ### Load secret from Google Cloud Secret Manager
 
 The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API.
