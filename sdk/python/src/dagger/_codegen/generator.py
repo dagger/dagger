@@ -423,7 +423,9 @@ def is_self_chainable(t: GraphQLObjectType) -> bool:
         f
         for f in t.fields.values()
         # Only consider fields that return a non-null object.
-        if is_required_type(f.type) and is_object_type(f.type.of_type) and f.type.of_type.name == t.name
+        if is_required_type(f.type)
+        and is_object_type(f.type.of_type)
+        and f.type.of_type.name == t.name
     )
 
 
@@ -552,10 +554,13 @@ class _InputField:
     def as_arg(self) -> str:
         """As a Arg object for the query builder."""
         params = [quote(self.graphql_name), self.name]
+        comment = ""
         if self.has_default:
             # repr uses single quotes for strings, contrary to black
             params.append(repr(self.default_value).replace("'", '"'))
-        return f"Arg({', '.join(params)}),"
+            if isinstance(self.default_value, bool):
+                comment = " # noqa: FBT003"  # ruff is picky about bool args
+        return f"Arg({', '.join(params)}),{comment}"
 
 
 class _ObjectField:
