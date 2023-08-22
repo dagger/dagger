@@ -222,14 +222,12 @@ func (svc *Service) Endpoints(ctx context.Context, scheme string) ([]string, err
 		return nil, err
 	}
 
-	var endpoints []string
-	for _, port := range ports {
-		endpoint, err := svc.Endpoint(ctx, port.Port, scheme)
+	endpoints := make([]string, 0, len(ports))
+	for i, port := range ports {
+		endpoints[i], err = svc.Endpoint(ctx, port.Port, scheme)
 		if err != nil {
 			return nil, err
 		}
-
-		endpoints = append(endpoints, endpoint)
 	}
 
 	return endpoints, nil
@@ -476,14 +474,14 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
 
-	var closers []func() error
-	var ports []Port
+	closers := make([]func() error, 0, len(svc.TunnelPorts))
+	ports := make([]Port, 0, len(svc.TunnelPorts))
 
 	// TODO: make these configurable?
 	const bindHost = "0.0.0.0"
 	const dialHost = "127.0.0.1"
 
-	for _, forward := range svc.TunnelPorts {
+	for i, forward := range svc.TunnelPorts {
 		res, closeListener, err := bk.ListenHostToContainer(
 			svcCtx,
 			fmt.Sprintf("%s:%d", bindHost, forward.Frontend),
@@ -509,13 +507,13 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 
 		desc := fmt.Sprintf("tunnel %s:%d -> %s:%d", bindHost, port, upstream.Host, forward.Backend)
 
-		ports = append(ports, Port{
+		ports[i] = Port{
 			Port:        port,
 			Protocol:    forward.Protocol,
 			Description: &desc,
-		})
+		}
 
-		closers = append(closers, closeListener)
+		closers[i] = closeListener
 	}
 
 	dig, err := svc.Digest()
