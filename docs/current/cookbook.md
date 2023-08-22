@@ -372,7 +372,7 @@ The following code listing builds an image from a Dockerfile in the current work
 
 ### Build image from Dockerfile using different build context
 
-The following code listing builds an image from a Dockerfile using a build context directory in a different location on the host filesystem.
+The following code listing builds an image from a Dockerfile using a build context directory in a different location than the current working directory.
 
 <Tabs groupId="language">
 <TabItem value="Go">
