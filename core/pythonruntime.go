@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path"
+
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine/buildkit"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func pythonRuntime(
@@ -20,11 +22,11 @@ func pythonRuntime(
 ) (*Container, error) {
 	ctr, err := NewContainer("", pipeline, platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
 	ctr, err = ctr.From(ctx, bk, "python:3.11-alpine")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
 	workdir := "/src"
@@ -34,23 +36,23 @@ func pythonRuntime(
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, rootDir, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount workdir directory: %w", err)
 	}
 
 	ctr, err = ctr.WithMountedCache(ctx, bk, "/root/.cache/pip", NewCache("pythonpipcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount pipcache: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
 		Args: []string{"pip", "install", "shiv"},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to install shiv: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
@@ -61,7 +63,7 @@ func pythonRuntime(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to exec shiv: %w", err)
 	}
 
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
@@ -69,7 +71,7 @@ func pythonRuntime(
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
 	return ctr, nil
