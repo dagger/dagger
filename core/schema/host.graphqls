@@ -53,25 +53,26 @@ type Host {
     service: ServiceID!
 
     """
-    Port forwarding rules to configure for the tunnel.
+    Map each service port to the same port on the host, as if the service were
+    running natively.
 
-    If a frontend port is not specified or set to 0, a random port will be
-    chosen by the host.
+    Note: enabling may result in port conflicts.
+    """
+    native: Boolean = false
 
-    If no ports are given, all of the service's ports are forwarded using the
-    configured offset to determine the frontend port. If an offset is
-    specified, including an offset of 0, it will be used to determine the
-    frontend port. If no offset is specified, the frontend port will be 0, i.e.
-    chosen by the host.
+    """
+    Configure explicit port forwarding rules for the tunnel.
+
+    If a port's frontend is unspecified or 0, a random port will be chosen by
+    the host.
+
+    If no ports are given, all of the service's ports are forwarded. If native
+    is true, each port maps to the same port on the host. If native is false,
+    each port maps to a random port chosen by the host.
+
+    If ports are given and native is true, the ports are additive.
     """
     ports: [PortForward!]
-
-    """
-    Optional offset to use when deriving a frontend port for a backend port.
-
-    If any port forwarding rules are configured, this option has no effect.
-    """
-    offset: Int
   ): Service!
 
   """
@@ -81,11 +82,10 @@ type Host {
     """
     Ports to expose via the service, forwarding through the host network.
 
-    If the frontend port is not specified, it defaults to the same as the
+    If a port's frontend is unspecified or 0, it defaults to the same as the
     backend port.
 
-    An empty set of ports is not valid; an error will be
-    returned.
+    An empty set of ports is not valid; an error will be returned.
     """
     ports: [PortForward!]!
 

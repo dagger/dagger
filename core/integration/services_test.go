@@ -1255,11 +1255,13 @@ func TestServiceHostToContainer(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
+	t.Cleanup(func() { c.Close() })
 
 	content := identity.NewID()
 
 	t.Run("no options means bind to random", func(t *testing.T) {
+		t.Parallel()
+
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory(
@@ -1295,6 +1297,8 @@ func TestServiceHostToContainer(t *testing.T) {
 	})
 
 	t.Run("multiple ports", func(t *testing.T) {
+		t.Parallel()
+
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory("/srv/www1",
@@ -1335,7 +1339,104 @@ func TestServiceHostToContainer(t *testing.T) {
 		}
 	})
 
+	t.Run("native mapping", func(t *testing.T) {
+		t.Parallel()
+
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory("/srv/www1",
+				c.Directory().WithNewFile("index.html", content+"-1")).
+			WithMountedDirectory("/srv/www2",
+				c.Directory().WithNewFile("index.html", content+"-2")).
+			WithExec([]string{"sh", "-c",
+				`( cd /srv/www1 && python -m http.server 32767 ) &
+				 ( cd /srv/www2 && python -m http.server 32766 ) &
+				 wait`,
+			}).
+			WithExposedPort(32767). // NB: trying to avoid conflicts...
+			WithExposedPort(32766).
+			Service()
+
+		tunnel, err := c.Host().Tunnel(srv, dagger.HostTunnelOpts{
+			Native: true,
+		}).Start(ctx)
+		require.NoError(t, err)
+
+		defer func() {
+			_, err := tunnel.Stop(ctx)
+			require.NoError(t, err)
+		}()
+
+		endpoints, err := tunnel.Endpoints(ctx, dagger.ServiceEndpointsOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"http://127.0.0.1:32767", "http://127.0.0.1:32766"}, endpoints)
+
+		for i, endpoint := range endpoints {
+			res, err := http.Get(endpoint)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, fmt.Sprintf("%s-%d", content, i+1), string(body))
+		}
+	})
+
+	t.Run("native mapping + extra ports", func(t *testing.T) {
+		t.Parallel()
+
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory("/srv/www1",
+				c.Directory().WithNewFile("index.html", content+"-1")).
+			WithMountedDirectory("/srv/www2",
+				c.Directory().WithNewFile("index.html", content+"-2")).
+			WithExec([]string{"sh", "-c",
+				`( cd /srv/www1 && python -m http.server 32765 ) &
+				 ( cd /srv/www2 && python -m http.server 32764 ) &
+				 wait`,
+			}).
+			WithExposedPort(32765). // NB: trying to avoid conflicts...
+			Service()
+
+		tunnel, err := c.Host().Tunnel(srv, dagger.HostTunnelOpts{
+			Native: true,
+			Ports: []dagger.PortForward{
+				{Backend: 32764, Frontend: 32764},
+			},
+		}).Start(ctx)
+		require.NoError(t, err)
+
+		defer func() {
+			_, err := tunnel.Stop(ctx)
+			require.NoError(t, err)
+		}()
+
+		endpoints, err := tunnel.Endpoints(ctx, dagger.ServiceEndpointsOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+		require.Len(t, endpoints, 2)
+		require.Equal(t, []string{"http://127.0.0.1:32765", "http://127.0.0.1:32764"}, endpoints)
+
+		for i, endpoint := range endpoints {
+			res, err := http.Get(endpoint)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, fmt.Sprintf("%s-%d", content, i+1), string(body))
+		}
+	})
+
 	t.Run("no ports to forward", func(t *testing.T) {
+		t.Parallel()
+
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory(

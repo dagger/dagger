@@ -92,7 +92,7 @@ func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileAr
 type hostTunnelArgs struct {
 	Service core.ServiceID
 	Ports   []core.PortForward
-	Offset  *int
+	Native  bool
 }
 
 func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
@@ -101,29 +101,41 @@ func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) 
 		return nil, err
 	}
 
-	if len(args.Ports) == 0 {
-		if svc.Container == nil {
-			return nil, errors.New("TODO: invalid")
-		}
+	if svc.Container == nil {
+		return nil, errors.New("tunneling to non-Container services is not supported")
+	}
 
-		if len(svc.Container.Ports) == 0 {
-			return nil, errors.New("no ports specified and no ports exposed by container")
-		}
+	ports := []core.PortForward{}
 
+	if args.Native {
 		for _, port := range svc.Container.Ports {
-			frontend := 0 // pick a random port on the host
-			if args.Offset != nil {
-				frontend = port.Port + *args.Offset
-			}
-			args.Ports = append(args.Ports, core.PortForward{
-				Frontend: frontend,
+			ports = append(ports, core.PortForward{
+				Frontend: port.Port,
 				Backend:  port.Port,
 				Protocol: port.Protocol,
 			})
 		}
 	}
 
-	return core.NewTunnelService(svc, args.Ports), nil
+	if len(args.Ports) > 0 {
+		ports = append(ports, args.Ports...)
+	}
+
+	if len(ports) == 0 {
+		for _, port := range svc.Container.Ports {
+			ports = append(ports, core.PortForward{
+				Frontend: 0, // pick a random port on the host
+				Backend:  port.Port,
+				Protocol: port.Protocol,
+			})
+		}
+	}
+
+	if len(ports) == 0 {
+		return nil, errors.New("no ports to forward")
+	}
+
+	return core.NewTunnelService(svc, ports), nil
 }
 
 type hostServiceArgs struct {
