@@ -17,11 +17,15 @@ const (
 	NetworkProtocolUDP NetworkProtocol = "UDP"
 )
 
+func (proto NetworkProtocol) EnumName() string {
+	return string(proto)
+}
+
 // Network returns the value appropriate for the "network" argument to Go
 // net.Dial, and for appending to the port number to form the key for the
 // ExposedPorts object in the OCI image config.
-func (p NetworkProtocol) Network() string {
-	return strings.ToLower(string(p))
+func (proto NetworkProtocol) Network() string {
+	return strings.ToLower(string(proto))
 }
 
 type PortForward struct {

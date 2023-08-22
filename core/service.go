@@ -137,14 +137,15 @@ func (svc *Service) Digest() (digest.Digest, error) {
 
 func (svc *Service) Hostname(ctx context.Context) (string, error) {
 	switch {
-	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
+	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
 		upstream, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
 		}
 
 		return upstream.Host, nil
-	case svc.Container != nil:
+	case svc.Container != nil, // container=>container
+		svc.HostUpstream != "": // container=>host
 		dig, err := svc.Digest()
 		if err != nil {
 			return "", err
@@ -159,12 +160,12 @@ func (svc *Service) Hostname(ctx context.Context) (string, error) {
 func (svc *Service) Ports(ctx context.Context) ([]Port, error) {
 	switch {
 	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
-		upstream, err := AllServices.Get(ctx, svc)
+		running, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
 
-		return upstream.Ports, nil
+		return running.Ports, nil
 	case svc.Container != nil:
 		return svc.Container.Ports, nil
 	default:
@@ -189,7 +190,7 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 
 			port = svc.Container.Ports[0].Port
 		}
-	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
+	case svc.TunnelUpstream != nil:
 		tunnel, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
@@ -199,10 +200,23 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 
 		if port == 0 {
 			if len(tunnel.Ports) == 0 {
-				return "", fmt.Errorf("no ports exposed")
+				return "", fmt.Errorf("no ports")
 			}
 
 			port = tunnel.Ports[0].Port
+		}
+	case svc.HostUpstream != "":
+		host, err = svc.Hostname(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		if port == 0 {
+			if len(svc.HostPorts) == 0 {
+				return "", fmt.Errorf("no ports")
+			}
+
+			port = svc.HostPorts[0].FrontendOrBackendPort()
 		}
 	default:
 		return "", fmt.Errorf("unknown service type")
@@ -214,23 +228,6 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 	}
 
 	return endpoint, nil
-}
-
-func (svc *Service) Endpoints(ctx context.Context, scheme string) ([]string, error) {
-	ports, err := svc.Ports(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	endpoints := make([]string, 0, len(ports))
-	for i, port := range ports {
-		endpoints[i], err = svc.Endpoint(ctx, port.Port, scheme)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return endpoints, nil
 }
 
 func (svc *Service) Start(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
@@ -474,8 +471,8 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
 
-	closers := make([]func() error, 0, len(svc.TunnelPorts))
-	ports := make([]Port, 0, len(svc.TunnelPorts))
+	closers := make([]func() error, len(svc.TunnelPorts))
+	ports := make([]Port, len(svc.TunnelPorts))
 
 	// TODO: make these configurable?
 	const bindHost = "0.0.0.0"
