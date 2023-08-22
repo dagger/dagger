@@ -25,21 +25,24 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type DAG struct {
-	c graphql.Client
-	q *querybuilder.Selection
-}
+var (
+	errorT      = reflect.TypeOf((*error)(nil)).Elem()
+	marshallerT = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
+	contextT    = reflect.TypeOf((*context.Context)(nil)).Elem()
+)
 
-var dag *DAG
+var resolvers = map[string]*goFunc{}
 
-func init() {
+var getEnv bool
+
+func getClientParams() (graphql.Client, *querybuilder.Selection) {
 	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
 	if !ok {
 		panic("DAGGER_SESSION_PORT is not set")
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		panic(fmt.Sprintf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
+		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
 	}
 
 	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
@@ -62,35 +65,10 @@ func init() {
 	}
 	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
 
-	dag = &DAG{
-		c: gqlClient,
-		q: querybuilder.Query(),
-	}
+	return gqlClient, querybuilder.Query()
 }
 
-// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
-}
-
-var getEnv bool
-
-func init() {
-	flag.BoolVar(&getEnv, "env", false, "build and return the environment definition rather than executing an entrypoint")
-}
-
-var (
-	errorT      = reflect.TypeOf((*error)(nil)).Elem()
-	marshallerT = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-	contextT    = reflect.TypeOf((*context.Context)(nil)).Elem()
-)
-
-// TODO: this is obviously dumb, but can be cleaned up nicely w/ codegen changes
-var resolvers = map[string]*goFunc{}
-
-func (r *Environment) Serve() {
+func Serve(r *Environment) {
 	ctx := context.Background()
 	if getEnv {
 		id, err := r.ID(ctx)
@@ -153,6 +131,105 @@ func (r *Environment) Serve() {
 	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
 		writeErrorf(fmt.Errorf("unable to write response file: %v", err))
 	}
+}
+
+func WithCheck(r *Environment, in any) *Environment {
+	if _, ok := in.(*Check); ok {
+		// just let the codegen sdk caller handle this
+		return nil
+	}
+	flag.Parse()
+
+	// TODO: dedupe huge chunks of code
+	typ := reflect.TypeOf(in)
+	if typ.Kind() != reflect.Func {
+		writeErrorf(fmt.Errorf("expected func, got %v", typ))
+	}
+	val := reflect.ValueOf(in)
+	name := runtime.FuncForPC(val.Pointer()).Name()
+	if name == "" {
+		writeErrorf(fmt.Errorf("anonymous functions are not supported"))
+	}
+	fn := &goFunc{
+		name: name,
+		typ:  typ,
+		val:  val,
+	}
+	for i := 0; i < fn.typ.NumIn(); i++ {
+		inputParam := fn.typ.In(i)
+		fn.args = append(fn.args, &goParam{
+			typ: inputParam,
+		})
+	}
+	for i := 0; i < fn.typ.NumOut(); i++ {
+		outputParam := fn.typ.Out(i)
+		fn.returns = append(fn.returns, &goParam{
+			typ: outputParam,
+		})
+	}
+	if len(fn.returns) > 2 {
+		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
+	}
+
+	filePath, lineNum := fn.srcPathAndLine()
+	// TODO: cache parsed files
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, filePath, nil, parser.ParseComments)
+	if err != nil {
+		writeErrorf(fmt.Errorf("parse file: %w", err))
+	}
+	goast.Inspect(parsed, func(n goast.Node) bool {
+		if n == nil {
+			return false
+		}
+		switch decl := n.(type) {
+		case *goast.FuncDecl:
+			astStart := fileSet.PositionFor(decl.Pos(), false)
+			astEnd := fileSet.PositionFor(decl.End(), false)
+			// lineNum can be inside the function body due to optimizations that set it to
+			// the location of the return statement
+			if lineNum < astStart.Line || lineNum > astEnd.Line {
+				return true
+			}
+
+			fn.name = decl.Name.Name
+			fn.doc = strings.TrimSpace(decl.Doc.Text())
+
+			fnArgs := fn.args
+			if decl.Recv != nil {
+				// ignore the object receiver for now
+				fnArgs = fnArgs[1:]
+				fn.hasReceiver = true
+			}
+			astParamList := decl.Type.Params.List
+			argIndex := 0
+			for _, param := range astParamList {
+				// if the signature is like func(a, b string), then a and b are in the same Names slice
+				for _, name := range param.Names {
+					fnArgs[argIndex].name = name.Name
+					argIndex++
+				}
+			}
+			return false
+
+		case *goast.GenDecl:
+		default:
+		}
+		return true
+	})
+
+	check := dag.Check()
+	resolvers[lowerCamelCase(fn.name)] = fn
+
+	if !getEnv {
+		return r
+	}
+
+	check = check.
+		WithName(strcase.ToLowerCamel(fn.name)).
+		WithDescription(fn.doc)
+
+	return r.WithCheck(check)
 }
 
 type goTypes struct {
@@ -264,11 +341,6 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 		}
 	}
 	return returnVal, returnErr
-}
-
-func writeErrorf(err error) {
-	fmt.Println(err.Error())
-	os.Exit(1)
 }
 
 func init() {
@@ -507,103 +579,37 @@ func convertInput(input any, desiredType reflect.Type) (any, error) {
 	}
 }
 
-func WithCheck(r *Environment, in any) *Environment {
-	if _, ok := in.(*Check); ok {
-		// just let the codegen sdk caller handle this
-		return nil
-	}
-	flag.Parse()
+func writeErrorf(err error) {
+	fmt.Println(err.Error())
+	os.Exit(1)
+}
 
-	// TODO: dedupe huge chunks of code
-	typ := reflect.TypeOf(in)
-	if typ.Kind() != reflect.Func {
-		writeErrorf(fmt.Errorf("expected func, got %v", typ))
-	}
-	val := reflect.ValueOf(in)
-	name := runtime.FuncForPC(val.Pointer()).Name()
-	if name == "" {
-		writeErrorf(fmt.Errorf("anonymous functions are not supported"))
-	}
-	fn := &goFunc{
-		name: name,
-		typ:  typ,
-		val:  val,
-	}
-	for i := 0; i < fn.typ.NumIn(); i++ {
-		inputParam := fn.typ.In(i)
-		fn.args = append(fn.args, &goParam{
-			typ: inputParam,
-		})
-	}
-	for i := 0; i < fn.typ.NumOut(); i++ {
-		outputParam := fn.typ.Out(i)
-		fn.returns = append(fn.returns, &goParam{
-			typ: outputParam,
-		})
-	}
-	if len(fn.returns) > 2 {
-		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
-	}
+// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
+type roundTripperFunc func(*http.Request) (*http.Response, error)
 
-	filePath, lineNum := fn.srcPathAndLine()
-	// TODO: cache parsed files
-	fileSet := token.NewFileSet()
-	parsed, err := parser.ParseFile(fileSet, filePath, nil, parser.ParseComments)
-	if err != nil {
-		writeErrorf(fmt.Errorf("parse file: %w", err))
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type DAG struct {
+	c graphql.Client
+	q *querybuilder.Selection
+}
+
+var dag *DAG
+
+func init() {
+	flag.BoolVar(&getEnv, "env", false, "build and return the environment definition rather than executing an entrypoint")
+
+	gqlClient, q := getClientParams()
+	dag = &DAG{
+		c: gqlClient,
+		q: q,
 	}
-	goast.Inspect(parsed, func(n goast.Node) bool {
-		if n == nil {
-			return false
-		}
-		switch decl := n.(type) {
-		case *goast.FuncDecl:
-			astStart := fileSet.PositionFor(decl.Pos(), false)
-			astEnd := fileSet.PositionFor(decl.End(), false)
-			// lineNum can be inside the function body due to optimizations that set it to
-			// the location of the return statement
-			if lineNum < astStart.Line || lineNum > astEnd.Line {
-				return true
-			}
+}
 
-			fn.name = decl.Name.Name
-			fn.doc = strings.TrimSpace(decl.Doc.Text())
-
-			fnArgs := fn.args
-			if decl.Recv != nil {
-				// ignore the object receiver for now
-				fnArgs = fnArgs[1:]
-				fn.hasReceiver = true
-			}
-			astParamList := decl.Type.Params.List
-			argIndex := 0
-			for _, param := range astParamList {
-				// if the signature is like func(a, b string), then a and b are in the same Names slice
-				for _, name := range param.Names {
-					fnArgs[argIndex].name = name.Name
-					argIndex++
-				}
-			}
-			return false
-
-		case *goast.GenDecl:
-		default:
-		}
-		return true
-	})
-
-	check := dag.Check()
-	resolvers[lowerCamelCase(fn.name)] = fn
-
-	if !getEnv {
-		return r
-	}
-
-	check = check.
-		WithName(strcase.ToLowerCamel(fn.name)).
-		WithDescription(fn.doc)
-
-	return r.WithCheck(check)
+func (r *Environment) Serve() {
+	Serve(r)
 }
 
 // A global cache volume identifier.

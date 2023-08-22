@@ -7,6 +7,7 @@ import (
 	"go/format"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/generator/go/templates"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -20,12 +21,20 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	generator.SetSchema(schema)
 	isForEnv := g.Config.EnvironmentName != ""
 
+	// TODO: ugly, trim the first line because it has `package dagger` in order to be compilable
+	_, envCode, ok := strings.Cut(dagger.EnvironmentCode, "\n")
+	if !ok {
+		return nil, fmt.Errorf("unexpected format for environment code")
+	}
+
 	headerData := struct {
-		Package string
-		Schema  *introspection.Schema
+		Package         string
+		Schema          *introspection.Schema
+		EnvironmentCode string
 	}{
-		Package: g.Config.Package,
-		Schema:  schema,
+		Package:         g.Config.Package,
+		Schema:          schema,
+		EnvironmentCode: envCode,
 	}
 
 	var render []string
@@ -36,6 +45,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		generator.QueryStructClientName = "DAG"
 		templates.EvilGlobalVarToTriggerEnvSpecificCodegen = true
 		templates.EvilGlobalVarWithEnvironmentName = g.Config.EnvironmentName
+
 		if err := templates.Environment.Execute(&header, headerData); err != nil {
 			return nil, err
 		}
@@ -58,7 +68,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		Object: func(t *introspection.Type) error {
 			objectTmpl := templates.Object
 
-			// don't create methods on query for the env itself,
+			// don't create methods on query for the env itself, only its deps
 			// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
 			if g.Config.EnvironmentName != "" && t.Name == generator.QueryStructName {
 				var newFields []*introspection.Field
