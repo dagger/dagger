@@ -166,19 +166,22 @@ func runCheckHierarchy(
 	}
 	name = strcase.ToKebab(name)
 
-	parentPathName := strings.Join(path, "->")
 	path = append([]string{}, path...)
 	path = append(path, name)
 	fullPathName := strings.Join(path, "->")
 	digest := digest.FromString(fullPathName)
-
-	rec = rec.WithGroup(parentPathName, progrock.WithGroupID(digest.String()))
 
 	eg.Go(func() (rerr error) {
 		subChecks, err := check.Subchecks(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check subchecks: %w", err)
 		}
+
+		if len(subChecks) > 0 {
+			rec = rec.WithGroup(name, progrock.WithGroupID(digest.String()))
+			ctx = progrock.RecorderToContext(ctx, rec)
+		}
+
 		if len(subChecks) == 0 {
 			vtx := rec.Vertex(digest+":result", name, progrock.Focused())
 			var success bool
@@ -189,7 +192,6 @@ func runCheckHierarchy(
 					vtx.Done(rerr)
 				}
 			}()
-			// rec = rec.WithGroup(name, progrock.WithGroupID(digest.String()))
 
 			result := check.Result()
 			success, err = result.Success(ctx)
@@ -210,7 +212,6 @@ func runCheckHierarchy(
 			return nil
 		}
 
-		// rec = rec.WithGroup(name, progrock.WithGroupID(digest.String()))
 		for _, subCheck := range subChecks {
 			subCheck := subCheck
 			// TODO: workaround bug in codegen

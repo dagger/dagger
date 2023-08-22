@@ -269,7 +269,3 @@ require (
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-// replace github.com/vito/progrock => ./progrock
-
-// replace github.com/vito/vt100 => ./vt100
