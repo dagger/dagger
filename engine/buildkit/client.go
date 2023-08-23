@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
-	"github.com/hashicorp/go-multierror"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -125,18 +124,18 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 					return nil, errors.New("no nameservers configured")
 				}
 
-				var errs error
+				var errs []error
 				for _, ns := range opts.DNSConfig.Nameservers {
 					conn, err := client.dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
 					if err != nil {
-						errs = multierror.Append(errs, err)
+						errs = append(errs, err)
 						continue
 					}
 
 					return conn, nil
 				}
 
-				return nil, errs
+				return nil, errors.Join(errs...)
 			},
 		}
 	}

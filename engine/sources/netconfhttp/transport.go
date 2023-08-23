@@ -2,13 +2,13 @@ package netconfhttp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/moby/buildkit/executor/oci"
-	"github.com/pkg/errors"
 )
 
 // NewTransport returns a http.RoundTripper that will respect the settings in
@@ -30,18 +30,18 @@ func NewTransport(rt http.RoundTripper, dns *oci.DNSConfig) http.RoundTripper {
 					return nil, errors.New("no nameservers configured")
 				}
 
-				var errs error
+				var errs []error
 				for _, ns := range dns.Nameservers {
 					conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
 					if err != nil {
-						errs = multierror.Append(errs, err)
+						errs = append(errs, err)
 						continue
 					}
 
 					return conn, nil
 				}
 
-				return nil, errs
+				return nil, errors.Join(errs...)
 			},
 		}
 	}
@@ -83,7 +83,7 @@ func (h *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (h *transport) lookup(ctx context.Context, target string) (net.IP, error) {
-	var errs error
+	var errs []error
 	for _, domain := range append([]string{""}, h.searchDomains...) {
 		qualified := target
 
@@ -93,7 +93,7 @@ func (h *transport) lookup(ctx context.Context, target string) (net.IP, error) {
 
 		ips, err := h.resolver.LookupIPAddr(ctx, qualified)
 		if err != nil {
-			errs = multierror.Append(errs, err)
+			errs = append(errs, err)
 			continue
 		}
 
@@ -101,9 +101,9 @@ func (h *transport) lookup(ctx context.Context, target string) (net.IP, error) {
 			return ips[0].IP, nil
 		}
 	}
-	if errs != nil {
-		return nil, errs
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 
-	return nil, errors.Errorf("no IPs found for %s", target)
+	return nil, fmt.Errorf("no IPs found for %s", target)
 }
