@@ -495,6 +495,12 @@ func (c *Client) ListenHostToContainer(
 	ctx context.Context,
 	hostListenAddr, proto, upstream string,
 ) (*session.ListenResponse, func() error, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cancel()
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get requester session ID: %s", err)
