@@ -12,6 +12,8 @@ var _ ExecutableSchema = &httpSchema{}
 
 type httpSchema struct {
 	*MergedSchemas
+
+	svcs *core.Services
 }
 
 func (s *httpSchema) Name() string {
@@ -52,7 +54,7 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 		if err != nil {
 			return nil, err
 		}
-		host, err := svc.Hostname(ctx)
+		host, err := svc.Hostname(ctx, s.svcs)
 		if err != nil {
 			return nil, err
 		}

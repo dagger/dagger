@@ -137,10 +137,10 @@ func (svc *Service) Digest() (digest.Digest, error) {
 	return stableDigest(svc)
 }
 
-func (svc *Service) Hostname(ctx context.Context) (string, error) {
+func (svc *Service) Hostname(ctx context.Context, svcs *Services) (string, error) {
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
-		upstream, err := AllServices.Get(ctx, svc)
+		upstream, err := svcs.Get(ctx, svc)
 		if err != nil {
 			return "", err
 		}
@@ -159,10 +159,10 @@ func (svc *Service) Hostname(ctx context.Context) (string, error) {
 	}
 }
 
-func (svc *Service) Ports(ctx context.Context) ([]Port, error) {
+func (svc *Service) Ports(ctx context.Context, svcs *Services) ([]Port, error) {
 	switch {
 	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
-		running, err := AllServices.Get(ctx, svc)
+		running, err := svcs.Get(ctx, svc)
 		if err != nil {
 			return nil, err
 		}
@@ -175,12 +175,12 @@ func (svc *Service) Ports(ctx context.Context) ([]Port, error) {
 	}
 }
 
-func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (string, error) {
+func (svc *Service) Endpoint(ctx context.Context, svcs *Services, port int, scheme string) (string, error) {
 	var host string
 	var err error
 	switch {
 	case svc.Container != nil:
-		host, err = svc.Hostname(ctx)
+		host, err = svc.Hostname(ctx, svcs)
 		if err != nil {
 			return "", err
 		}
@@ -193,7 +193,7 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 			port = svc.Container.Ports[0].Port
 		}
 	case svc.TunnelUpstream != nil:
-		tunnel, err := AllServices.Get(ctx, svc)
+		tunnel, err := svcs.Get(ctx, svc)
 		if err != nil {
 			return "", err
 		}
@@ -208,7 +208,7 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 			port = tunnel.Ports[0].Port
 		}
 	case svc.HostUpstream != "":
-		host, err = svc.Hostname(ctx)
+		host, err = svc.Hostname(ctx, svcs)
 		if err != nil {
 			return "", err
 		}
@@ -232,26 +232,26 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 	return endpoint, nil
 }
 
-func (svc *Service) Start(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
+func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, bk)
+		return svc.startContainer(ctx, bk, svcs)
 	case svc.TunnelUpstream != nil:
-		return svc.startTunnel(ctx, bk)
+		return svc.startTunnel(ctx, bk, svcs)
 	case svc.HostUpstream != "":
-		return svc.startReverseTunnel(ctx, bk)
+		return svc.startReverseTunnel(ctx, bk, svcs)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
 }
 
-func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
+func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
 	dig, err := svc.Digest()
 	if err != nil {
 		return nil, err
 	}
 
-	host, err := svc.Hostname(ctx)
+	host, err := svc.Hostname(ctx, svcs)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +286,7 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client) (ru
 		return nil, fmt.Errorf("expected exec op, got %T", dag.GetOp())
 	}
 
-	detachDeps, _, err := StartServices(ctx, bk, ctr.Services)
+	detachDeps, _, err := svcs.StartBindings(ctx, bk, ctr.Services)
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
 	}
@@ -455,7 +455,7 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 	return out
 }
 
-func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
+func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
 	svcCtx, stop := context.WithCancel(context.Background())
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -467,7 +467,7 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 
 	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
 
-	upstream, err := AllServices.Start(svcCtx, bk, svc.TunnelUpstream)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream)
 	if err != nil {
 		stop()
 		return nil, fmt.Errorf("start upstream: %w", err)
@@ -532,7 +532,7 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 		Stop: func(context.Context) error {
 			stop()
 			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
-			go AllServices.Detach(svcCtx, upstream)
+			go svcs.Detach(svcCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
@@ -542,13 +542,13 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (runni
 	}, nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
+func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
 	dig, err := svc.Digest()
 	if err != nil {
 		return nil, err
 	}
 
-	host, err := svc.Hostname(ctx)
+	host, err := svc.Hostname(ctx, svcs)
 	if err != nil {
 		return nil, err
 	}
@@ -630,6 +630,7 @@ type RunningService struct {
 }
 
 type Services struct {
+	bk       *buildkit.Client
 	starting map[ServiceKey]*sync.WaitGroup
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
@@ -641,12 +642,14 @@ type ServiceKey struct {
 	ClientID string
 }
 
-// AllServices is a pesky global variable storing the state of all running
-// services.
-var AllServices = &Services{
-	starting: map[ServiceKey]*sync.WaitGroup{},
-	running:  map[ServiceKey]*RunningService{},
-	bindings: map[ServiceKey]int{},
+// NewServices returns a new Services.
+func NewServices(bk *buildkit.Client) *Services {
+	return &Services{
+		bk:       bk,
+		starting: map[ServiceKey]*sync.WaitGroup{},
+		running:  map[ServiceKey]*RunningService{},
+		bindings: map[ServiceKey]int{},
+	}
 }
 
 func (ss *Services) Get(ctx context.Context, svc *Service) (*RunningService, error) {
@@ -691,7 +694,7 @@ func (ss *Services) Get(ctx context.Context, svc *Service) (*RunningService, err
 	}
 }
 
-func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service) (*RunningService, error) {
+func (ss *Services) Start(ctx context.Context, svc *Service) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -744,7 +747,7 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service
 		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 	}
 
-	running, err = svc.Start(svcCtx, bk)
+	running, err = svc.Start(svcCtx, ss.bk, ss)
 	if err != nil {
 		stop()
 		ss.l.Lock()
@@ -899,14 +902,16 @@ func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 	*bndp = merged
 }
 
-func StartServices(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
+// StartBindings starts each of the bound services in parallel and returns a
+// function that will detach from all of them after 10 seconds.
+func (svcs *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	running := []*RunningService{}
 	detach := func() {
 		go func() {
 			<-time.After(10 * time.Second)
 
 			for _, svc := range running {
-				AllServices.Detach(ctx, svc)
+				svcs.Detach(ctx, svc)
 			}
 		}()
 	}
@@ -924,7 +929,7 @@ func StartServices(ctx context.Context, bk *buildkit.Client, bindings ServiceBin
 	for _, bnd := range bindings {
 		bnd := bnd
 		eg.Go(func() error {
-			runningSvc, err := AllServices.Start(ctx, bk, bnd.Service)
+			runningSvc, err := svcs.Start(ctx, bnd.Service)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
@@ -946,18 +951,4 @@ func StartServices(ctx context.Context, bk *buildkit.Client, bindings ServiceBin
 	}
 
 	return detach, running, nil
-}
-
-// WithServices runs the given function with the given services started,
-// detaching from each of them after the function completes.
-func WithServices[T any](ctx context.Context, bk *buildkit.Client, bindings ServiceBindings, fn func() (T, error)) (T, error) {
-	var zero T
-
-	detach, _, err := StartServices(ctx, bk, bindings)
-	if err != nil {
-		return zero, err
-	}
-	defer detach()
-
-	return fn()
 }

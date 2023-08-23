@@ -12,6 +12,7 @@ type directorySchema struct {
 	*MergedSchemas
 
 	host       *core.Host
+	svcs       *core.Services
 	buildCache *core.CacheMap[uint64, *core.Container]
 }
 
@@ -85,7 +86,7 @@ func (s *directorySchema) id(ctx *core.Context, parent *core.Directory, args any
 }
 
 func (s *directorySchema) sync(ctx *core.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
-	err := parent.Evaluate(ctx.Context, s.bk)
+	err := parent.Evaluate(ctx.Context, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +98,7 @@ type subdirectoryArgs struct {
 }
 
 func (s *directorySchema) subdirectory(ctx *core.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.bk, args.Path)
+	return parent.Directory(ctx, s.bk, s.svcs, args.Path)
 }
 
 type withNewDirectoryArgs struct {
@@ -137,7 +138,7 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx *core.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.bk, args.Path)
+	return parent.Entries(ctx, s.bk, s.svcs, args.Path)
 }
 
 type dirFileArgs struct {
@@ -145,7 +146,7 @@ type dirFileArgs struct {
 }
 
 func (s *directorySchema) file(ctx *core.Context, parent *core.Directory, args dirFileArgs) (_ *core.File, rerr error) {
-	return parent.File(ctx, s.bk, args.Path)
+	return parent.File(ctx, s.bk, s.svcs, args.Path)
 }
 
 type withNewFileArgs struct {
@@ -206,7 +207,7 @@ type dirExportArgs struct {
 }
 
 func (s *directorySchema) export(ctx *core.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.bk, s.host, args.Path)
+	err := parent.Export(ctx, s.bk, s.host, s.svcs, args.Path)
 	if err != nil {
 		return false, err
 	}
@@ -239,6 +240,7 @@ func (s *directorySchema) dockerBuild(ctx *core.Context, parent *core.Directory,
 		args.Target,
 		args.Secrets,
 		s.bk,
+		s.svcs,
 		s.buildCache,
 	)
 }

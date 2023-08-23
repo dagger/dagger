@@ -39,14 +39,16 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 	}
 	host := core.NewHost()
 	buildCache := core.NewCacheMap[uint64, *core.Container]()
+	svcs := core.NewServices(params.BuildkitClient)
 	err := merged.addSchemas(
 		&querySchema{merged},
-		&directorySchema{merged, host, buildCache},
-		&fileSchema{merged, host},
-		&gitSchema{merged},
+		&directorySchema{merged, host, svcs, buildCache},
+		&fileSchema{merged, host, svcs},
+		&gitSchema{merged, svcs},
 		&containerSchema{
 			merged,
 			host,
+			svcs,
 			params.OCIStore,
 			params.LeaseManager,
 			buildCache,
@@ -54,10 +56,10 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		},
 		&cacheSchema{merged},
 		&secretSchema{merged},
-		&serviceSchema{merged},
-		&hostSchema{merged, host},
-		&projectSchema{merged},
-		&httpSchema{merged},
+		&serviceSchema{merged, svcs},
+		&hostSchema{merged, host, svcs},
+		&projectSchema{merged, svcs},
+		&httpSchema{merged, svcs},
 		&platformSchema{merged},
 		&socketSchema{merged, host},
 	)

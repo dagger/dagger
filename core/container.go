@@ -335,6 +335,7 @@ func (container *Container) Build(
 	target string,
 	secrets []SecretID,
 	bk *buildkit.Client,
+	svcs *Services,
 	buildCache *CacheMap[uint64, *Container],
 ) (*Container, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -356,7 +357,7 @@ func (container *Container) Build(
 			clientMetadata.ClientID,
 		),
 		func() (*Container, error) {
-			return container.buildUncached(ctx, bk, context, dockerfile, buildArgs, target, secrets)
+			return container.buildUncached(ctx, bk, context, dockerfile, buildArgs, target, secrets, svcs)
 		},
 	)
 }
@@ -369,6 +370,7 @@ func (container *Container) buildUncached(
 	buildArgs []BuildArg,
 	target string,
 	secrets []SecretID,
+	svcs *Services,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -392,80 +394,84 @@ func (container *Container) buildUncached(
 	// add a weak group for the docker build vertices
 	ctx, subRecorder := progrock.WithGroup(ctx, "docker build", progrock.Weak())
 
-	return WithServices(ctx, bk, container.Services, func() (*Container, error) {
-		platform := container.Platform
+	detach, _, err := svcs.StartBindings(ctx, bk, container.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
-		opts := map[string]string{
-			"platform":      platforms.Format(platform),
-			"contextsubdir": context.Dir,
-		}
+	platform := container.Platform
 
-		if dockerfile != "" {
-			opts["filename"] = path.Join(context.Dir, dockerfile)
-		} else {
-			opts["filename"] = path.Join(context.Dir, defaultDockerfileName)
-		}
+	opts := map[string]string{
+		"platform":      platforms.Format(platform),
+		"contextsubdir": context.Dir,
+	}
 
-		if target != "" {
-			opts["target"] = target
-		}
+	if dockerfile != "" {
+		opts["filename"] = path.Join(context.Dir, dockerfile)
+	} else {
+		opts["filename"] = path.Join(context.Dir, defaultDockerfileName)
+	}
 
-		for _, buildArg := range buildArgs {
-			opts["build-arg:"+buildArg.Name] = buildArg.Value
-		}
+	if target != "" {
+		opts["target"] = target
+	}
 
-		inputs := map[string]*pb.Definition{
-			dockerui.DefaultLocalNameContext:    context.LLB,
-			dockerui.DefaultLocalNameDockerfile: context.LLB,
-		}
+	for _, buildArg := range buildArgs {
+		opts["build-arg:"+buildArg.Name] = buildArg.Value
+	}
 
-		res, err := bk.Solve(ctx, bkgw.SolveRequest{
-			Frontend:       "dockerfile.v0",
-			FrontendOpt:    opts,
-			FrontendInputs: inputs,
-		})
-		if err != nil {
-			return nil, err
-		}
+	inputs := map[string]*pb.Definition{
+		dockerui.DefaultLocalNameContext:    context.LLB,
+		dockerui.DefaultLocalNameDockerfile: context.LLB,
+	}
 
-		bkref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
-		var st llb.State
-		if bkref == nil {
-			st = llb.Scratch()
-		} else {
-			st, err = bkref.ToState()
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		def, err := st.Marshal(ctx, llb.Platform(platform))
-		if err != nil {
-			return nil, err
-		}
-
-		// associate vertexes to the 'docker build' sub-pipeline
-		buildkit.RecordVertexes(subRecorder, def.ToPB())
-
-		container.FS = def.ToPB()
-		container.FS.Source = nil
-
-		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-		if found {
-			var imgSpec specs.Image
-			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-				return nil, err
-			}
-
-			container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-		}
-
-		return container, nil
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Frontend:       "dockerfile.v0",
+		FrontendOpt:    opts,
+		FrontendInputs: inputs,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	bkref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	var st llb.State
+	if bkref == nil {
+		st = llb.Scratch()
+	} else {
+		st, err = bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	def, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	// associate vertexes to the 'docker build' sub-pipeline
+	buildkit.RecordVertexes(subRecorder, def.ToPB())
+
+	container.FS = def.ToPB()
+	container.FS.Source = nil
+
+	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+	if found {
+		var imgSpec specs.Image
+		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+			return nil, err
+		}
+
+		container.Config = mergeImageConfig(container.Config, imgSpec.Config)
+	}
+
+	return container, nil
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
@@ -750,7 +756,7 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, svcs *Services, dirPath string) (*Directory, error) {
 	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -758,7 +764,7 @@ func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, 
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, ".")
+	info, err := dir.Stat(ctx, bk, svcs, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -770,7 +776,7 @@ func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, 
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, bk *buildkit.Client, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, bk *buildkit.Client, svcs *Services, filePath string) (*File, error) {
 	file, _, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
@@ -778,7 +784,7 @@ func (container *Container) File(ctx context.Context, bk *buildkit.Client, fileP
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := file.Stat(ctx, bk)
+	info, err := file.Stat(ctx, bk, svcs)
 	if err != nil {
 		return nil, err
 	}
@@ -1240,37 +1246,41 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) error {
+func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) error {
 	if container.FS == nil {
 		return nil
 	}
 
-	_, err := WithServices(ctx, bk, container.Services, func() (*buildkit.Result, error) {
-		st, err := container.FSState()
-		if err != nil {
-			return nil, err
-		}
+	detach, _, err := svcs.StartBindings(ctx, bk, container.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
 
-		def, err := st.Marshal(ctx, llb.Platform(container.Platform))
-		if err != nil {
-			return nil, err
-		}
+	st, err := container.FSState()
+	if err != nil {
+		return err
+	}
 
-		return bk.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: def.ToPB(),
-		})
+	def, err := st.Marshal(ctx, llb.Platform(container.Platform))
+	if err != nil {
+		return err
+	}
+
+	_, err = bk.Solve(ctx, bkgw.SolveRequest{
+		Evaluate:   true,
+		Definition: def.ToPB(),
 	})
 	return err
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.Client, progSock string, filePath string) (string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.Client, svcs *Services, progSock string, filePath string) (string, error) {
 	if container.Meta == nil {
 		ctr, err := container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, bk, progSock, filePath)
+		return ctr.MetaFileContents(ctx, bk, svcs, progSock, filePath)
 	}
 
 	file := NewFile(
@@ -1282,7 +1292,7 @@ func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.C
 		container.Services,
 	)
 
-	content, err := file.Contents(ctx, bk)
+	content, err := file.Contents(ctx, bk, svcs)
 	if err != nil {
 		return "", err
 	}
@@ -1293,6 +1303,7 @@ func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.C
 func (container *Container) Publish(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	ref string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
@@ -1354,9 +1365,13 @@ func (container *Container) Publish(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	resp, err := WithServices(ctx, bk, services, func() (map[string]string, error) {
-		return bk.PublishContainerImage(ctx, inputByPlatform, opts)
-	})
+	detach, _, err := svcs.StartBindings(ctx, bk, services)
+	if err != nil {
+		return "", err
+	}
+	defer detach()
+
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, opts)
 	if err != nil {
 		return "", err
 	}
@@ -1387,6 +1402,7 @@ func (container *Container) Publish(
 func (container *Container) Export(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	dest string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
@@ -1448,9 +1464,13 @@ func (container *Container) Export(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	_, err = WithServices(ctx, bk, services, func() (map[string]string, error) {
-		return bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
-	})
+	detach, _, err := svcs.StartBindings(ctx, bk, services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
 	return err
 }
 
@@ -1460,6 +1480,7 @@ func (container *Container) Import(
 	tag string,
 	bk *buildkit.Client,
 	host *Host,
+	svcs *Services,
 	importCache *CacheMap[uint64, *specs.Descriptor],
 	store content.Store,
 	lm *leaseutil.Manager,
@@ -1476,7 +1497,7 @@ func (container *Container) Import(
 
 	var release func(context.Context) error
 	loadManifest := func() (*specs.Descriptor, error) {
-		src, err := file.Open(ctx, host, bk)
+		src, err := file.Open(ctx, host, bk, svcs)
 		if err != nil {
 			return nil, err
 		}
@@ -1631,10 +1652,10 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, svc *Service, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svcs *Services, svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Hostname(ctx)
+	host, err := svc.Hostname(ctx, svcs)
 	if err != nil {
 		return nil, err
 	}

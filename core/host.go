@@ -90,6 +90,7 @@ func (host *Host) Directory(
 func (host *Host) File(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	path string,
 	p pipeline.Path,
 	platform specs.Platform,
@@ -100,7 +101,7 @@ func (host *Host) File(
 	if err != nil {
 		return nil, err
 	}
-	return parentDir.File(ctx, bk, filepath.Base(path))
+	return parentDir.File(ctx, bk, svcs, filepath.Base(path))
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*socket.Socket, error) {

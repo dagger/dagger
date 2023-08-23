@@ -13,6 +13,8 @@ var _ ExecutableSchema = &gitSchema{}
 
 type gitSchema struct {
 	*MergedSchemas
+
+	svcs *core.Services
 }
 
 func (s *gitSchema) Name() string {
@@ -131,7 +133,7 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
-		host, err := parent.Repository.ServiceHost.Hostname(ctx)
+		host, err := parent.Repository.ServiceHost.Hostname(ctx, s.svcs)
 		if err != nil {
 			return nil, err
 		}

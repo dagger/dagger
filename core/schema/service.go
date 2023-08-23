@@ -8,6 +8,8 @@ import (
 
 type serviceSchema struct {
 	*MergedSchemas
+
+	svcs *core.Services
 }
 
 var _ ExecutableSchema = &serviceSchema{}
@@ -61,11 +63,11 @@ func (s *serviceSchema) id(ctx *core.Context, parent *core.Service, args any) (c
 }
 
 func (s *serviceSchema) hostname(ctx *core.Context, parent *core.Service, args any) (string, error) {
-	return parent.Hostname(ctx)
+	return parent.Hostname(ctx, s.svcs)
 }
 
 func (s *serviceSchema) ports(ctx *core.Context, parent *core.Service, args any) ([]core.Port, error) {
-	return parent.Ports(ctx)
+	return parent.Ports(ctx, s.svcs)
 }
 
 type serviceEndpointArgs struct {
@@ -74,7 +76,7 @@ type serviceEndpointArgs struct {
 }
 
 func (s *serviceSchema) endpoint(ctx *core.Context, parent *core.Service, args serviceEndpointArgs) (string, error) {
-	return parent.Endpoint(ctx, args.Port, args.Scheme)
+	return parent.Endpoint(ctx, s.svcs, args.Port, args.Scheme)
 }
 
 func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
@@ -85,7 +87,7 @@ func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any)
 		}
 	}()
 
-	running, err := core.AllServices.Start(ctx, s.bk, parent)
+	running, err := s.svcs.Start(ctx, parent)
 	if err != nil {
 		return "", err
 	}
@@ -94,7 +96,7 @@ func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any)
 }
 
 func (s *serviceSchema) stop(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
-	err := core.AllServices.Stop(ctx, s.bk, parent)
+	err := s.svcs.Stop(ctx, s.bk, parent)
 	if err != nil {
 		return "", err
 	}
