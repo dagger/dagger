@@ -115,6 +115,11 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
 
+	// TODO(vito): this is pretty confusing, but we need to initialize a root
+	// group for subsequent groups + vertices
+	rec = rec.WithGroup(progrock.RootGroup)
+	ctx = progrock.RecorderToContext(ctx, rec)
+
 	envName, err := loadedEnv.Name(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get environment name: %w", err)
