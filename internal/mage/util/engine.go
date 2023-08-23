@@ -300,10 +300,10 @@ func runcBin(c *dagger.Client, arch string) *dagger.File {
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", "linux/"+arch).
 		WithEnvVariable("CGO_ENABLED", "1").
-		WithExec([]string{"apk", "add", "clang", "lld", "git"}).
+		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
 		WithDirectory("/", c.Container().From("tonistiigi/xx:1.2.1").Rootfs()).
 		WithExec([]string{"xx-apk", "update"}).
-		WithExec([]string{"xx-apk", "add", "musl-dev", "gcc", "libseccomp-dev", "libseccomp-static"}).
+		WithExec([]string{"xx-apk", "add", "build-base", "pkgconf", "libseccomp-dev", "libseccomp-static"}).
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
 		WithMountedDirectory("/src", c.Git("github.com/opencontainers/runc").Tag(runcVersion).Tree()).
