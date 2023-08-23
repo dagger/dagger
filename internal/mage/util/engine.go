@@ -292,13 +292,19 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 func runcBin(c *dagger.Client, arch string) *dagger.File {
 	return c.Container().
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
-		WithExec([]string{"apk", "add", "build-base", "go", "libseccomp-dev", "libseccomp-static", "git"}).
-		WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithEnvVariable("GOARCH", arch).
+		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
+		WithEnvVariable("TARGETPLATFORM", "linux/"+arch).
+		WithEnvVariable("CGO_ENABLED", "1").
+		WithExec([]string{"apk", "add", "clang", "lld", "git"}).
+		WithDirectory("/", c.Container().From("tonistiigi/xx:1.2.1").Rootfs()).
+		WithExec([]string{"xx-apk", "update"}).
+		WithExec([]string{"xx-apk", "add", "musl-dev", "gcc", "libseccomp-dev", "libseccomp-static"}).
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
 		WithMountedDirectory("/src", c.Git("github.com/opencontainers/runc").Tag(runcVersion).Tree()).
 		WithWorkdir("/src").
-		WithEnvVariable("GOARCH", arch).
-		WithExec([]string{"make", "static"}).
+		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=1.1.9 -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
 		File("runc")
 }
 
