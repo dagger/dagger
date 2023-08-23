@@ -42,6 +42,12 @@ func LoadVCSLabels(workdir string) []Label {
 		logrus.Warnf("failed to collect GitHub labels: %s", err)
 	}
 
+	if gitlabLabels, err := LoadGitLabLabels(); err == nil {
+		labels = append(labels, gitlabLabels...)
+	} else {
+		logrus.Warnf("failed to collect GitHub labels: %s", err)
+	}
+
 	return labels
 }
 
@@ -127,6 +133,83 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		labels = append(labels, Label{
 			Name:  "dagger.io/git.branch",
 			Value: head.Name().Short(),
+		})
+	}
+
+	return labels, nil
+}
+
+func LoadGitLabLabels() ([]Label, error) {
+	if os.Getenv("GITLAB_CI") != "true" {
+		return []Label{}, nil
+	}
+
+	labels := []Label{
+		{
+			Name:  "gitlab.com/job.id",
+			Value: os.Getenv("CI_JOB_ID"),
+		},
+		{
+			Name:  "event.action",
+			Value: os.Getenv("CI_PIPELINE_SOURCE"),
+		},
+		{
+			Name:  "gitlab.com/repo.url",
+			Value: os.Getenv("CI_PROJECT_URL"),
+		},
+		{
+			Name:  "gitlab.com/repo.full_name",
+			Value: os.Getenv("CI_PROJECT_PATH"),
+		},
+		{
+			Name:  "gitlab.com/job.name",
+			Value: os.Getenv("CI_JOB_NAME"),
+		},
+		{
+			Name:  "gitlab.com/mr.branch",
+			Value: os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"),
+		},
+		{
+			Name:  "gitlab.com/mr.title",
+			Value: os.Getenv("CI_MERGE_REQUEST_TITLE"),
+		},
+		{
+			Name:  "gitlab.com/mr.label",
+			Value: os.Getenv("CI_MERGE_REQUEST_LABELS"),
+		},
+		{
+			Name:  "gitlab.com/mr.head",
+			Value: os.Getenv("CI_COMMIT_SHA"),
+		},
+		{
+			Name:  "gitlab.com/mr.id",
+			Value: os.Getenv("CI_MERGE_REQUEST_ID"),
+		},
+		{
+			Name:  "gitlab.com/triggerer.id",
+			Value: os.Getenv("GITLAB_USER_ID"),
+		},
+		{
+			Name:  "gitlab.com/triggerer.email",
+			Value: os.Getenv("GITLAB_USER_EMAIL"),
+		},
+		{
+			Name:  "gitlab.com/triggerer.login",
+			Value: os.Getenv("GITLAB_USER_LOGIN"),
+		},
+		{
+			Name:  "gitlab.com/triggerer.name",
+			Value: os.Getenv("GITLAB_USER_NAME"),
+		},
+	}
+
+	projectURL := os.Getenv("CI_MERGE_REQUEST_PROJECT_URL")
+	mrIID := os.Getenv("CI_MERGE_REQUEST_IID")
+
+	if projectURL != "" && mrIID != "" {
+		labels = append(labels, Label{
+			Name:  "gitlab.com/mr.url",
+			Value: fmt.Sprintf("%s/-/merge_requests/%s", projectURL, mrIID),
 		})
 	}
 
