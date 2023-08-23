@@ -283,11 +283,16 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
-	return c.HTTP(fmt.Sprintf(
-		"https://github.com/opencontainers/runc/releases/download/%s/runc.%s",
-		runcVersion,
-		arch,
-	))
+	return c.Container().
+		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		WithExec([]string{"apk", "add", "build-base", "go", "libseccomp-dev", "libseccomp-static", "git"}).
+		WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
+		WithMountedDirectory("/src", c.Git("github.com/opencontainers/runc").Tag(runcVersion).Tree()).
+		WithWorkdir("/src").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{"make", "static"}).
+		File("runc")
 }
 
 func shimBin(c *dagger.Client, arch string) *dagger.File {
