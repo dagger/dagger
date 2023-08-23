@@ -567,8 +567,8 @@ func (c *Client) ListenHostToContainer(
 				go func() {
 					defer wg.Done()
 
+					data := make([]byte, 32*1024)
 					for {
-						data := make([]byte, 1024) // TODO larger?
 						n, err := conn.Read(data)
 						if err != nil {
 							return
