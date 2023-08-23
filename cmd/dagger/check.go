@@ -183,6 +183,8 @@ func runCheckHierarchy(
 				if rerr != nil {
 					fmt.Fprintln(vtx.Stderr(), rerr.Error())
 					vtx.Done(rerr)
+				} else if !success {
+					rerr = fmt.Errorf("check failed")
 				}
 			}()
 

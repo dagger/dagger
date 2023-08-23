@@ -1206,6 +1206,11 @@ func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content st
 
 func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *dagger.Directory) (*dagger.Container, string) {
 	t.Helper()
+	return gitServiceWithBranch(ctx, t, c, content, "main")
+}
+
+func gitServiceWithBranch(ctx context.Context, t *testing.T, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Container, string) {
+	t.Helper()
 
 	const gitPort = 9418
 	gitDaemon := c.Container().
@@ -1214,7 +1219,7 @@ func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *da
 		WithDirectory("/root/repo", content).
 		WithMountedFile("/root/start.sh",
 			c.Directory().
-				WithNewFile("start.sh", `#!/bin/sh
+				WithNewFile("start.sh", fmt.Sprintf(`#!/bin/sh
 
 set -e -u -x
 
@@ -1227,7 +1232,7 @@ mkdir srv
 
 cd repo
 	git init
-	git branch -m main
+	git branch -m %s
 	git add * || true
 	git commit -m "init"
 cd ..
@@ -1237,7 +1242,7 @@ cd srv
 cd ..
 
 git daemon --verbose --export-all --base-path=/root/srv
-`).
+`, branchName)).
 				File("start.sh")).
 		WithExposedPort(gitPort).
 		WithExec([]string{"sh", "/root/start.sh"})

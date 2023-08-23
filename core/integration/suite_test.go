@@ -273,12 +273,13 @@ func (ctr DaggerCLIContainer) WithLoadedEnv(
 
 	baseCtr := ctr.Container
 	if convertToGitEnv {
-		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, thisRepoDir)
+		branchName := identity.NewID()
+		gitSvc, _ := gitServiceWithBranch(ctr.ctx, ctr.t, ctr.c, thisRepoDir, branchName)
 		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
 
 		endpoint, err := gitSvc.Endpoint(ctr.ctx)
 		require.NoError(ctr.t, err)
-		environmentArg = "git://" + endpoint + "/repo.git" + "?ref=main&protocol=git"
+		environmentArg = "git://" + endpoint + "/repo.git" + "?ref=" + branchName + "&protocol=git"
 		if environmentPath != "" {
 			environmentArg += "&subpath=" + environmentPath
 		}

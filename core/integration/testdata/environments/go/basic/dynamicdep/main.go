@@ -53,12 +53,12 @@ func YetAnotherSadContainerCheck(ctx context.Context) (*Check, error) {
 
 func YetAnotherCoolCompositeCheck(ctx context.Context) (*Check, error) {
 	return dag.Check().
-		WithSubcheck(containerCheck("YetAnotherCoolSubcheck1", true)).
-		WithSubcheck(containerCheck("YetAnotherCoolSubcheck2", true)), nil
+		WithSubcheck(containerCheck("YetAnotherCoolSubcheckA", true)).
+		WithSubcheck(containerCheck("YetAnotherCoolSubcheckB", true)), nil
 }
 
 func YetAnotherSadCompositeCheck(ctx context.Context) (*Check, error) {
 	return dag.Check().
-		WithSubcheck(containerCheck("YetAnotherSadSubcheck1", false)).
-		WithSubcheck(containerCheck("YetAnotherSadSubcheck2", false)), nil
+		WithSubcheck(containerCheck("YetAnotherSadSubcheckA", false)).
+		WithSubcheck(containerCheck("YetAnotherSadSubcheckB", false)), nil
 }

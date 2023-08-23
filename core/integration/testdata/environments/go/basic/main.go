@@ -59,14 +59,14 @@ func SadContainerCheck(ctx context.Context) (*Check, error) {
 
 func CoolCompositeCheck(ctx context.Context) (*Check, error) {
 	return dag.Check().
-		WithSubcheck(containerCheck("CoolSubcheck1", true)).
-		WithSubcheck(containerCheck("CoolSubcheck2", true)), nil
+		WithSubcheck(containerCheck("CoolSubcheckA", true)).
+		WithSubcheck(containerCheck("CoolSubcheckB", true)), nil
 }
 
 func SadCompositeCheck(ctx context.Context) (*Check, error) {
 	return dag.Check().
-		WithSubcheck(containerCheck("SadSubcheck1", false)).
-		WithSubcheck(containerCheck("SadSubcheck2", false)), nil
+		WithSubcheck(containerCheck("SadSubcheckA", false)).
+		WithSubcheck(containerCheck("SadSubcheckB", false)), nil
 }
 
 func CoolCompositeCheckFromExplicitDep(ctx context.Context) (*Check, error) {

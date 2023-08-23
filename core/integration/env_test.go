@@ -1,11 +1,14 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/ettle/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -190,12 +193,12 @@ func TestEnvChecks(t *testing.T) {
 	}
 	compositeCheckToSubcheckNames := map[string][]string{
 		"cool-composite-check": {
-			"cool-subcheck-1",
-			"cool-subcheck-2",
+			"cool-subcheck-a",
+			"cool-subcheck-b",
 		},
 		"sad-composite-check": {
-			"sad-subcheck-1",
-			"sad-subcheck-2",
+			"sad-subcheck-a",
+			"sad-subcheck-b",
 		},
 		"cool-composite-check-from-explicit-dep": {
 			"another-cool-static-check",
@@ -218,20 +221,20 @@ func TestEnvChecks(t *testing.T) {
 			"yet-another-sad-composite-check",
 		},
 		"another-cool-composite-check": {
-			"another-cool-subcheck-1",
-			"another-cool-subcheck-2",
+			"another-cool-subcheck-a",
+			"another-cool-subcheck-b",
 		},
 		"another-sad-composite-check": {
-			"another-sad-subcheck-1",
-			"another-sad-subcheck-2",
+			"another-sad-subcheck-a",
+			"another-sad-subcheck-b",
 		},
 		"yet-another-cool-composite-check": {
-			"yet-another-cool-subcheck-1",
-			"yet-another-cool-subcheck-2",
+			"yet-another-cool-subcheck-a",
+			"yet-another-cool-subcheck-b",
 		},
 		"yet-another-sad-composite-check": {
-			"yet-another-sad-subcheck-1",
-			"yet-another-sad-subcheck-2",
+			"yet-another-sad-subcheck-a",
+			"yet-another-sad-subcheck-b",
 		},
 	}
 
@@ -259,11 +262,31 @@ func TestEnvChecks(t *testing.T) {
 				"cool-composite-check-from-dynamic-dep",
 			},
 		},
+		{
+			name:            "sad-path",
+			expectFailure:   true,
+			environmentPath: "core/integration/testdata/environments/go/basic",
+			selectedChecks: []string{
+				"sad-static-check",
+				"sad-container-check",
+				"sad-composite-check",
+				"another-sad-static-check",
+				"sad-composite-check-from-explicit-dep",
+				"sad-composite-check-from-dynamic-dep",
+			},
+		},
+		{
+			name:            "mixed-path",
+			expectFailure:   true,
+			environmentPath: "core/integration/testdata/environments/go/basic",
+			// run all checks, don't select any
+		},
 	} {
 		tc := tc
 		for _, testGitEnv := range []bool{false, true} {
 			testGitEnv := testGitEnv
 			testName := tc.name
+			testName += "/gitenv=" + strconv.FormatBool(testGitEnv)
 			testName += "/" + tc.environmentPath
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
@@ -273,7 +296,15 @@ func TestEnvChecks(t *testing.T) {
 					WithLoadedEnv(tc.environmentPath, testGitEnv).
 					CallChecks(tc.selectedChecks...).
 					Stderr(ctx)
-				require.NoError(t, err)
+				if tc.expectFailure {
+					require.Error(t, err)
+					execErr := new(dagger.ExecError)
+					require.True(t, errors.As(err, &execErr))
+					stderr = execErr.Stderr
+				} else {
+					require.NoError(t, err)
+				}
+
 				selectedChecks := tc.selectedChecks
 				if len(selectedChecks) == 0 {
 					selectedChecks = allChecks
