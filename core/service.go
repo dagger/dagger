@@ -111,6 +111,8 @@ func (svc *Service) Clone() *Service {
 	if cp.TunnelUpstream != nil {
 		cp.TunnelUpstream = cp.TunnelUpstream.Clone()
 	}
+	cp.TunnelPorts = cloneSlice(cp.TunnelPorts)
+	cp.HostPorts = cloneSlice(cp.HostPorts)
 	return &cp
 }
 
