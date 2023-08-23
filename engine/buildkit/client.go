@@ -499,15 +499,16 @@ func (c *Client) ListenHostToContainer(
 	if err != nil {
 		return nil, nil, err
 	}
-	defer cancel()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("failed to get requester session ID: %s", err)
 	}
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("failed to get requester session: %s", err)
 	}
 
@@ -517,6 +518,7 @@ func (c *Client) ListenHostToContainer(
 
 	listener, err := tunnelClient.Listen(ctx)
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("failed to listen: %s", err)
 	}
 
@@ -525,11 +527,13 @@ func (c *Client) ListenHostToContainer(
 		Protocol: proto,
 	})
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("failed to send listen request: %s", err)
 	}
 
 	listenRes, err := listener.Recv()
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("failed to receive listen response: %s", err)
 	}
 
@@ -602,6 +606,7 @@ func (c *Client) ListenHostToContainer(
 	}()
 
 	return listenRes, func() error {
+		defer cancel()
 		sendL.Lock()
 		err := listener.CloseSend()
 		sendL.Unlock()
