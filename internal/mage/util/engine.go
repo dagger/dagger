@@ -237,6 +237,8 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 // helper functions for building the dev engine container
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
+	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
+	// can contain CVEs in the builds on github releases
 	ctr := c.Container().
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
 		WithExec([]string{"apk", "add", "build-base", "go", "git"}).
@@ -290,6 +292,8 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
+	// We build runc from source to enable upgrades to go and other dependencies that
+	// can contain CVEs in the builds on github releases
 	return c.Container().
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
 		WithEnvVariable("GOARCH", arch).
@@ -304,7 +308,7 @@ func runcBin(c *dagger.Client, arch string) *dagger.File {
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
 		WithMountedDirectory("/src", c.Git("github.com/opencontainers/runc").Tag(runcVersion).Tree()).
 		WithWorkdir("/src").
-		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=1.1.9 -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
+		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + runcVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
 		File("runc")
 }
 
