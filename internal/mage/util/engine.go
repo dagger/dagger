@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -211,7 +212,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
-		WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
+		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
@@ -236,24 +237,30 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 // helper functions for building the dev engine container
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
-	cniURL := fmt.Sprintf(
-		"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
-		cniVersion, "linux", arch, cniVersion,
-	)
+	ctr := c.Container().
+		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		WithExec([]string{"apk", "add", "build-base", "go", "git"}).
+		WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
+		WithMountedDirectory("/src", c.Git("github.com/containernetworking/plugins").Tag(cniVersion).Tree()).
+		WithWorkdir("/src").
+		WithEnvVariable("GOARCH", arch)
 
-	return c.Container().
-		From("alpine:"+alpineVersion).
-		WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
-		WithDirectory("/opt/cni/bin", c.Directory()).
-		WithExec([]string{
-			"tar", "-xzf", "/tmp/cni-plugins.tgz",
-			"-C", "/opt/cni/bin",
-			// only unpack plugins we actually need
-			"./bridge", "./firewall", // required by dagger network stack
-			"./loopback", "./host-local", // implicitly required (container fails without them)
-		}).
-		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
-		Directory("/opt/cni/bin")
+	pluginDir := c.Directory().WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch))
+	for _, pluginPath := range []string{
+		"plugins/main/bridge",
+		"plugins/main/loopback",
+		"plugins/meta/firewall",
+		"plugins/ipam/host-local",
+	} {
+		pluginName := filepath.Base(pluginPath)
+		pluginDir = pluginDir.WithFile(filepath.Join("/opt/cni/bin", pluginName), ctr.
+			WithWorkdir(pluginPath).
+			WithExec([]string{"go", "build", "-o", pluginName, "-ldflags", "-s -w", "."}).
+			File(pluginName))
+	}
+
+	return pluginDir
 }
 
 func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
