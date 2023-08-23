@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -101,7 +102,11 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 
 	// NB: use a different ctx than the one that'll be interrupted for anything
 	// that needs to run as part of post-interruption cleanup
-	cleanupCtx := context.Background()
+	//
+	// set a reasonable timeout on this since there have been funky hangs in the
+	// past
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cleanupCancel()
 
 	defer container.Release(cleanupCtx)
 
