@@ -442,7 +442,7 @@ func (s *containerSchema) withMountedDirectory(ctx *core.Context, parent *core.C
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner)
+	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner, false)
 }
 
 type containerPublishArgs struct {

@@ -38,7 +38,7 @@ func pythonRuntime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, rootDir, "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, rootDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount workdir directory: %w", err)
 	}

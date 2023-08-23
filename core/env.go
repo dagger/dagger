@@ -29,6 +29,8 @@ const (
 	envMetaDirPath = "/env"
 	envIDFileName  = "id"
 	EnvIDFile      = envMetaDirPath + "/" + envIDFileName
+
+	envDepsPath = "/.deps"
 )
 
 type EnvironmentID string
@@ -214,6 +216,7 @@ func LoadEnvironment(
 	envCache *EnvironmentCache,
 	pipeline pipeline.Path,
 	platform specs.Platform,
+	deps []*Environment,
 	rootDir *Directory,
 	configPath string,
 ) (*Environment, error) {
@@ -242,8 +245,23 @@ func LoadEnvironment(
 		return nil, fmt.Errorf("failed to get runtime container: %w", err)
 	}
 
+	// Mount in read-only dep env filesystems to ensure that if they change, this env's cache is
+	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
+	for _, dep := range deps {
+		dirMntPath := filepath.Join(envDepsPath, dep.Config.Name, "dir")
+		ctr, err = ctr.WithMountedDirectory(ctx, bk, dirMntPath, dep.Directory, "", true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount dep directory: %w", err)
+		}
+		workdirMntPath := filepath.Join(envDepsPath, dep.Config.Name, "workdir")
+		ctr, err = ctr.WithMountedDirectory(ctx, bk, workdirMntPath, dep.Workdir, "", true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount dep workdir: %w", err)
+		}
+	}
+
 	envMetaDir := NewScratchDirectory(pipeline, platform)
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, envMetaDirPath, envMetaDir, "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, envMetaDirPath, envMetaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount env metadata directory: %w", err)
 	}
@@ -340,33 +358,33 @@ func execEntrypoint(
 	}
 	ctr, err := env.Runtime.WithNewFile(ctx, bk, filepath.Join(inputMountPath, inputFile), inputBytes, 0644, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount resolver input file: %w", err)
+		return nil, fmt.Errorf("failed to mount entrypoint input file: %w", err)
 	}
 
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, ctr.Platform), "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, ctr.Platform), "", false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount resolver output directory: %w", err)
+		return nil, fmt.Errorf("failed to mount entrypoint output directory: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, ctr.Platform, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec resolver: %w", err)
+		return nil, fmt.Errorf("failed to exec entrypoint: %w", err)
 	}
 	err = ctr.Evaluate(ctx, bk)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate resolver: %w", err)
+		return nil, fmt.Errorf("failed to evaluate entrypoint: %w", err)
 	}
 
 	outputFile, err := ctr.File(ctx, bk, filepath.Join(outputMountPath, outputFile))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get resolver output file: %w", err)
+		return nil, fmt.Errorf("failed to get entrypoint output file: %w", err)
 	}
 
 	entrypointOutput, err := outputFile.Contents(ctx, bk)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read resolver output file: %w", err)
+		return nil, fmt.Errorf("failed to read entrypoint output file: %w", err)
 	}
 
 	return entrypointOutput, nil

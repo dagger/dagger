@@ -135,15 +135,17 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	}
 
 	var eg errgroup.Group
-	for _, dep := range envCfg.Dependencies {
-		dep := dep
+	deps := make([]*core.Environment, len(envCfg.Dependencies))
+	for i, dep := range envCfg.Dependencies {
+		i, dep := i, dep
 		// TODO: currently just assuming that all deps are local and that they all share the same root
 		depConfigPath := filepath.Join(filepath.Dir(args.ConfigPath), dep)
 		eg.Go(func() error {
-			_, err := s.load(ctx, nil, loadArgs{EnvironmentDirectory: args.EnvironmentDirectory, ConfigPath: depConfigPath})
+			depEnv, err := s.load(ctx, nil, loadArgs{EnvironmentDirectory: args.EnvironmentDirectory, ConfigPath: depConfigPath})
 			if err != nil {
 				return fmt.Errorf("failed to load environment dependency %q: %w", dep, err)
 			}
+			deps[i] = depEnv
 			return nil
 		})
 	}
@@ -152,7 +154,7 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	}
 
 	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, s.envCache, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, s.envCache, rootDir.Pipeline, s.platform, deps, rootDir, args.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load environment: %w", err)
 		}

@@ -256,6 +256,9 @@ type ContainerMount struct {
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
+
+	// Configure the mount as read-only.
+	Readonly bool `json:"readonly,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
@@ -560,16 +563,16 @@ func (container *Container) WithNewFile(ctx context.Context, bk *buildkit.Client
 	})
 }
 
-func (container *Container) WithMountedDirectory(ctx context.Context, bk *buildkit.Client, target string, dir *Directory, owner string) (*Container, error) {
+func (container *Container) WithMountedDirectory(ctx context.Context, bk *buildkit.Client, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, bk, target, dir.LLB, dir.Dir, dir.Services, owner)
+	return container.withMounted(ctx, bk, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Client, target string, file *File, owner string) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner)
+	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner, false)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
@@ -875,6 +878,7 @@ func (container *Container) withMounted(
 	srcPath string,
 	svcs ServiceBindings,
 	owner string,
+	readonly bool,
 ) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1002,7 +1006,7 @@ func (container *Container) writeToPath(ctx context.Context, bk *buildkit.Client
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.withMounted(ctx, bk, mount.Target, dir.LLB, mount.SourcePath, nil, "")
+	return container.withMounted(ctx, bk, mount.Target, dir.LLB, mount.SourcePath, nil, "", false)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1228,6 +1232,10 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 		if mnt.Tmpfs {
 			mountOpts = append(mountOpts, llb.Tmpfs())
+		}
+
+		if mnt.Readonly {
+			mountOpts = append(mountOpts, llb.Readonly)
 		}
 
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
