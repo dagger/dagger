@@ -84,14 +84,20 @@ func tunnelOne(ctx context.Context, upstreamSock, port, network string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = io.Copy(downstream, upstream)
+			_, err := io.Copy(downstream, upstream)
+			if err != nil && !errors.Is(err, io.EOF) {
+				log.Println("copy upstream->downstream error", err)
+			}
 			_ = downstream.Close()
 		}()
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = io.Copy(upstream, downstream)
+			_, err := io.Copy(upstream, downstream)
+			if err != nil && !errors.Is(err, io.EOF) {
+				log.Println("copy downstream->upstream error", err)
+			}
 			_ = upstream.Close()
 		}()
 
