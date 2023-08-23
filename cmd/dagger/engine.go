@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
@@ -142,11 +141,13 @@ func interactiveTUI(
 		tuiErr := <-tuiDone
 		return errors.Join(tuiErr, err)
 	}
-	defer sess.Close()
 
 	err = fn(ctx, sess)
+
+	closeErr := sess.Close()
+
 	tuiErr := <-tuiDone
-	return errors.Join(tuiErr, err)
+	return errors.Join(tuiErr, closeErr, err)
 }
 
 func inlineTUI(
@@ -195,13 +196,7 @@ func inlineTUI(
 		return err
 	}
 	defer sess.Close()
-	before := time.Now()
 	err = fn(ctx, sess)
-	program.Send(progrock.StatusInfoMsg{
-		Name:  "Duration",
-		Value: time.Since(before).Truncate(time.Millisecond).String(),
-		Order: 3,
-	})
 	return err
 }
 

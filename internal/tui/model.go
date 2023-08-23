@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/vito/progrock"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -24,10 +25,12 @@ func New(quit func(), r progrock.Reader) *Model {
 			spinner:   newSpinner(),
 			collapsed: make(map[TreeEntry]bool),
 			focus:     true,
+			root:      NewGroup("", ""),
 		},
 		itemsByID:         make(map[string]*Item),
 		groupsByID:        make(map[string]*Group),
 		futureMemberships: make(map[string][]*Group),
+		pipeliner:         telemetry.NewPipeliner(),
 		details:           Details{},
 		follow:            true,
 		updates:           r,
@@ -42,6 +45,7 @@ type Model struct {
 	itemsByID         map[string]*Item
 	groupsByID        map[string]*Group
 	futureMemberships map[string][]*Group
+	pipeliner         *telemetry.Pipeliner
 
 	tree    *Tree
 	details Details
@@ -261,6 +265,8 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
+	m.pipeliner.TrackUpdate(msg)
+
 	cmds := []tea.Cmd{
 		m.waitForActivity(),
 	}
@@ -268,13 +274,20 @@ func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 	for _, g := range msg.Groups {
 		grp, found := m.groupsByID[g.Id]
 		if !found {
-			grp = NewGroup(g.Id, g.Name)
-			m.groupsByID[g.Id] = grp
-			if g.Parent != nil {
-				parent := m.groupsByID[g.GetParent()]
-				parent.Add(grp)
+			if g.Name == progrock.RootGroup {
+				// TODO(vito): special-case all RootGroups to add entries to the root
+				// of the tree, since sometimes there can be multiple "roots" - at
+				// least, until this is all cleaned up
+				m.groupsByID[g.Id] = m.tree.root
 			} else {
-				m.tree.SetRoot(grp)
+				grp = NewGroup(g.Id, g.Name)
+				m.groupsByID[g.Id] = grp
+				if g.Parent != nil {
+					parent := m.groupsByID[g.GetParent()]
+					parent.Add(grp)
+				} else {
+					m.tree.AddRoot(grp)
+				}
 			}
 		}
 		// TODO: update group completion
@@ -303,28 +316,18 @@ func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		for _, g := range m.futureMemberships[v.Id] {
-			g.Add(item)
+		if v.Id == RootVertex {
+			m.tree.root.Add(item)
+		} else {
+			m.addToFirstGroup(v.Id)
 		}
-
-		delete(m.futureMemberships, v.Id)
 
 		item.UpdateVertex(v)
 	}
 
 	for _, mem := range msg.Memberships {
-		g, found := m.groupsByID[mem.Group]
-		if !found {
-			panic("group not found: " + mem.Group)
-		}
-
 		for _, id := range mem.Vertexes {
-			i, found := m.itemsByID[id]
-			if found {
-				g.Add(i)
-			} else {
-				m.futureMemberships[id] = append(m.futureMemberships[id], g)
-			}
+			m.addToFirstGroup(id)
 		}
 	}
 
@@ -347,16 +350,41 @@ func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m Model) addToFirstGroup(id string) {
+	pipelineVertex, found := m.pipeliner.Vertex(id)
+	if !found {
+		return
+	}
+
+	groups := pipelineVertex.Groups
+	if len(groups) == 0 {
+		return
+	}
+
+	// always add vertex to the same group to avoid duplicating
+	g, found := m.groupsByID[groups[0]]
+	if !found {
+		panic("group not found: " + groups[0])
+	}
+
+	i, found := m.itemsByID[id]
+	if found {
+		g.Add(i)
+	} else {
+		m.futureMemberships[id] = append(m.futureMemberships[id], g)
+	}
+}
+
 func (m Model) statusBarTimerView() string {
 	root := m.tree.Root()
-	if root == nil || root.Started() == nil {
+	if root.Started() == nil {
 		return "0.0s"
 	}
-	current := time.Now()
+	now := time.Now()
 	if m.done && root.Completed() != nil {
-		current = *root.Completed()
+		now = *root.Completed()
 	}
-	diff := current.Sub(*root.Started())
+	diff := now.Sub(*root.Started())
 
 	prec := 1
 	sec := diff.Seconds()
