@@ -44,12 +44,12 @@ func init() {
 
 }
 
-func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
 	vtx := rec.Vertex("cmd-list-checks", "list checks", progrock.Focused())
 	defer func() { vtx.Done(err) }()
 
-	envChecks, err := loadedEnv.Checks(ctx)
+	envChecks, err := env.Checks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get environment commands: %w", err)
 	}
@@ -73,24 +73,6 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 			return fmt.Errorf("failed to get check description: %w", err)
 		}
 		fmt.Fprintf(tw, "%s\t%s\n", name, descr)
-		subChecks, err := check.Subchecks(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check subchecks: %w", err)
-		}
-
-		for _, subCheck := range subChecks {
-			// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
-			// internally be doing this so it's not needed explicitly
-			subCheckID, err := subCheck.ID(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get check id: %w", err)
-			}
-			subCheck = *c.Check(dagger.CheckOpts{ID: subCheckID})
-			err = printCheck(&subCheck)
-			if err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 
@@ -112,7 +94,7 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 	return tw.Flush()
 }
 
-func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
 
 	// TODO(vito): this is pretty confusing, but we need to initialize a root
@@ -120,27 +102,34 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 	rec = rec.WithGroup(progrock.RootGroup)
 	ctx = progrock.RecorderToContext(ctx, rec)
 
-	envName, err := loadedEnv.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get environment name: %w", err)
-	}
-
-	envChecks, err := loadedEnv.Checks(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get environment commands: %w", err)
+	var selectedChecks []*dagger.Check
+	if len(dynamicCmdArgs) > 0 {
+		for _, checkName := range dynamicCmdArgs {
+			// we accept check names in both kebab-case and lowerCamelCase
+			checkName = strcase.ToLowerCamel(checkName)
+			selectedChecks = append(selectedChecks, env.Check(checkName))
+		}
+	} else {
+		envChecks, err := env.Checks(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get environment commands: %w", err)
+		}
+		// TODO: workaround bug in codegen
+		for _, check := range envChecks {
+			check := check
+			checkID, err := check.ID(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get check id: %w", err)
+			}
+			selectedChecks = append(selectedChecks, c.Check(dagger.CheckOpts{ID: checkID}))
+		}
 	}
 
 	path := []string{}
 	var eg errgroup.Group
-	for _, check := range envChecks {
+	for _, check := range selectedChecks {
 		check := check
-		// TODO: workaround bug in codegen
-		checkID, err := check.ID(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check id: %w", err)
-		}
-		check = *c.Check(dagger.CheckOpts{ID: checkID})
-		runCheckHierarchy(ctx, c, rec, path, envName, &eg, &check)
+		runCheckHierarchy(ctx, c, rec, path, &eg, check)
 	}
 	return eg.Wait()
 }
@@ -150,7 +139,6 @@ func runCheckHierarchy(
 	c *dagger.Client,
 	rec *progrock.Recorder,
 	path []string,
-	envName string,
 	eg *errgroup.Group,
 	check *dagger.Check,
 ) error {
@@ -225,7 +213,7 @@ func runCheckHierarchy(
 				return fmt.Errorf("failed to get check id: %w", err)
 			}
 			subCheck = *c.Check(dagger.CheckOpts{ID: subCheckID})
-			err = runCheckHierarchy(ctx, c, rec, path, envName, eg, &subCheck)
+			err = runCheckHierarchy(ctx, c, rec, path, eg, &subCheck)
 			if err != nil {
 				return err
 			}
