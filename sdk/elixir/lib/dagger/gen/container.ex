@@ -42,7 +42,14 @@ defmodule Dagger.Container do
         if is_nil(optional_args[:secrets]) do
           selection
         else
-          arg(selection, "secrets", optional_args[:secrets])
+          ids =
+            optional_args[:secrets]
+            |> Enum.map(fn value ->
+              {:ok, id} = Dagger.Secret.id(value)
+              id
+            end)
+
+          arg(selection, "secrets", ids)
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -137,7 +144,14 @@ defmodule Dagger.Container do
         if is_nil(optional_args[:platform_variants]) do
           selection
         else
-          arg(selection, "platformVariants", optional_args[:platform_variants])
+          ids =
+            optional_args[:platform_variants]
+            |> Enum.map(fn value ->
+              {:ok, id} = Dagger.Container.id(value)
+              id
+            end)
+
+          arg(selection, "platformVariants", ids)
         end
 
       selection =
@@ -318,7 +332,14 @@ defmodule Dagger.Container do
         if is_nil(optional_args[:platform_variants]) do
           selection
         else
-          arg(selection, "platformVariants", optional_args[:platform_variants])
+          ids =
+            optional_args[:platform_variants]
+            |> Enum.map(fn value ->
+              {:ok, id} = Dagger.Container.id(value)
+              id
+            end)
+
+          arg(selection, "platformVariants", ids)
         end
 
       selection =
@@ -618,7 +639,8 @@ defmodule Dagger.Container do
         if is_nil(optional_args[:source]) do
           selection
         else
-          arg(selection, "source", optional_args[:source])
+          {:ok, id} = Dagger.Directory.id(optional_args[:source])
+          arg(selection, "source", id)
         end
 
       selection =

@@ -1,0 +1,6 @@
+kind: Fixed
+body: Calling `id/1` before constructing GraphQL argument
+time: 2023-08-21T22:39:27.196719+07:00
+custom:
+  Author: wingyplus
+  PR: "5674"
