@@ -29,6 +29,37 @@ jobs:
           name: ${{ github.workflow }}-${{ github.job }}-journal.log
           path: /tmp/journal.log
 
+  scan-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "1.20"
+
+      - name: "Build Dev Engine"
+        run: |
+          ./hack/dev
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+
+      - name: "Scan Dev Engine for Vulnerabilities"
+        uses: aquasecurity/trivy-action@0.11.2
+        with:
+          input: ./bin/engine.tar
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
+
   test-publish-cli:
     runs-on: ubuntu-latest
     steps:

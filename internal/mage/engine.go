@@ -118,7 +118,7 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	defer c.Close()
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
-	_, err = c.Container().Export(ctx, "./engine.tar.gz", dagger.ContainerExportOpts{
+	_, err = c.Container().Export(ctx, "./engine.tar", dagger.ContainerExportOpts{
 		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, ""),
 	})
 	return err
