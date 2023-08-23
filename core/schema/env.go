@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 	"golang.org/x/sync/errgroup"
@@ -264,8 +265,10 @@ type checkByNameArgs struct {
 }
 
 func (s *environmentSchema) checkByName(ctx *core.Context, env *core.Environment, args checkByNameArgs) (*core.Check, error) {
+	// normalize name to camel case so user can provide alternative casing like kebab-case, same as CLI.
+	wantedCheckName := strcase.ToLowerCamel(args.Name)
 	for _, check := range env.Checks {
-		if check.Name == args.Name {
+		if check.Name == wantedCheckName {
 			return check, nil
 		}
 	}

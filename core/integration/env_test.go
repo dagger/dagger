@@ -6,11 +6,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ettle/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
-func TestEnvironmentCmd(t *testing.T) {
+/* TODO: add coverage for
+* dagger env extend
+* dagger env sync
+* that the codegen of the testdata envs are up to date (or incorporate that into a cli command)
+* if a dependency changes, then checks should re-run
+ */
+
+func TestEnvCmd(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -28,10 +36,10 @@ func TestEnvironmentCmd(t *testing.T) {
 		},
 	} {
 		tc := tc
-		for _, testGitEnvironment := range []bool{false, true} {
-			testGitEnvironment := testGitEnvironment
+		for _, testGitEnv := range []bool{false, true} {
+			testGitEnv := testGitEnv
 			testName := "local environment"
-			if testGitEnvironment {
+			if testGitEnv {
 				testName = "git environment"
 			}
 			testName += "/" + tc.environmentPath
@@ -40,8 +48,8 @@ func TestEnvironmentCmd(t *testing.T) {
 				c, ctx := connect(t)
 				defer c.Close()
 				stderr, err := CLITestContainer(ctx, t, c).
-					WithLoadedEnvironment(tc.environmentPath, testGitEnvironment).
-					CallEnvironment().
+					WithLoadedEnv(tc.environmentPath, testGitEnv).
+					CallEnv().
 					Stderr(ctx)
 				require.NoError(t, err)
 				require.Contains(t, stderr, fmt.Sprintf(`"root": %q`, tc.expectedRoot))
@@ -52,7 +60,7 @@ func TestEnvironmentCmd(t *testing.T) {
 	}
 }
 
-func TestEnvironmentCmdInit(t *testing.T) {
+func TestEnvCmdInit(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -117,10 +125,10 @@ func TestEnvironmentCmdInit(t *testing.T) {
 			c, ctx := connect(t)
 			defer c.Close()
 			ctr := CLITestContainer(ctx, t, c).
-				WithEnvironmentArg(tc.environmentPath).
+				WithEnvArg(tc.environmentPath).
 				WithSDKArg(tc.sdk).
 				WithNameArg(tc.name).
-				CallEnvironmentInit()
+				CallEnvInit()
 
 			if tc.expectedErrorMessage != "" {
 				_, err := ctr.Sync(ctx)
@@ -142,7 +150,7 @@ func TestEnvironmentCmdInit(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			stderr, err := ctr.CallEnvironment().Stderr(ctx)
+			stderr, err := ctr.CallEnv().Stderr(ctx)
 			require.NoError(t, err)
 			require.Contains(t, stderr, fmt.Sprintf(`"name": %q`, tc.name))
 			require.Contains(t, stderr, fmt.Sprintf(`"sdk": %q`, tc.sdk))
@@ -154,11 +162,137 @@ func TestEnvironmentCmdInit(t *testing.T) {
 		c, ctx := connect(t)
 		defer c.Close()
 		_, err := CLITestContainer(ctx, t, c).
-			WithLoadedEnvironment("core/integration/testdata/environments/go/basic", false).
+			WithLoadedEnv("core/integration/testdata/environments/go/basic", false).
 			WithSDKArg("go").
 			WithNameArg("foo").
-			CallEnvironmentInit().
+			CallEnvInit().
 			Sync(ctx)
 		require.ErrorContains(t, err, "environment init config path already exists")
 	})
+}
+
+func TestEnvChecks(t *testing.T) {
+	t.Parallel()
+
+	allChecks := []string{
+		"cool-static-check",
+		"sad-static-check",
+		"cool-container-check",
+		"sad-container-check",
+		"cool-composite-check",
+		"sad-composite-check",
+		"another-cool-static-check",
+		"another-sad-static-check",
+		"cool-composite-check-from-explicit-dep",
+		"sad-composite-check-from-explicit-dep",
+		"cool-composite-check-from-dynamic-dep",
+		"sad-composite-check-from-dynamic-dep",
+	}
+	compositeCheckToSubcheckNames := map[string][]string{
+		"cool-composite-check": {
+			"cool-subcheck-1",
+			"cool-subcheck-2",
+		},
+		"sad-composite-check": {
+			"sad-subcheck-1",
+			"sad-subcheck-2",
+		},
+		"cool-composite-check-from-explicit-dep": {
+			"another-cool-static-check",
+			"another-cool-container-check",
+			"another-cool-composite-check",
+		},
+		"sad-composite-check-from-explicit-dep": {
+			"another-sad-static-check",
+			"another-sad-container-check",
+			"another-sad-composite-check",
+		},
+		"cool-composite-check-from-dynamic-dep": {
+			"yet-another-cool-static-check",
+			"yet-another-cool-container-check",
+			"yet-another-cool-composite-check",
+		},
+		"sad-composite-check-from-dynamic-dep": {
+			"yet-another-sad-static-check",
+			"yet-another-sad-container-check",
+			"yet-another-sad-composite-check",
+		},
+		"another-cool-composite-check": {
+			"another-cool-subcheck-1",
+			"another-cool-subcheck-2",
+		},
+		"another-sad-composite-check": {
+			"another-sad-subcheck-1",
+			"another-sad-subcheck-2",
+		},
+		"yet-another-cool-composite-check": {
+			"yet-another-cool-subcheck-1",
+			"yet-another-cool-subcheck-2",
+		},
+		"yet-another-sad-composite-check": {
+			"yet-another-sad-subcheck-1",
+			"yet-another-sad-subcheck-2",
+		},
+	}
+
+	// should be aligned w/ `func checkOutput` in ./testdata/environments/go/basic/main.go
+	checkOutput := func(name string) string {
+		return "WE ARE RUNNING CHECK " + strcase.ToKebab(name)
+	}
+
+	type testCase struct {
+		name            string
+		environmentPath string
+		selectedChecks  []string
+		expectFailure   bool
+	}
+	for _, tc := range []testCase{
+		{
+			name:            "happy-path",
+			environmentPath: "core/integration/testdata/environments/go/basic",
+			selectedChecks: []string{
+				"cool-static-check",
+				"cool-container-check",
+				"cool-composite-check",
+				"another-cool-static-check",
+				"cool-composite-check-from-explicit-dep",
+				"cool-composite-check-from-dynamic-dep",
+			},
+		},
+	} {
+		tc := tc
+		for _, testGitEnv := range []bool{false, true} {
+			testGitEnv := testGitEnv
+			testName := tc.name
+			testName += "/" + tc.environmentPath
+			t.Run(testName, func(t *testing.T) {
+				t.Parallel()
+				c, ctx := connect(t)
+				defer c.Close()
+				stderr, err := CLITestContainer(ctx, t, c).
+					WithLoadedEnv(tc.environmentPath, testGitEnv).
+					CallChecks(tc.selectedChecks...).
+					Stderr(ctx)
+				require.NoError(t, err)
+				selectedChecks := tc.selectedChecks
+				if len(selectedChecks) == 0 {
+					selectedChecks = allChecks
+				}
+
+				curChecks := selectedChecks
+				for len(curChecks) > 0 {
+					var nextChecks []string
+					for _, checkName := range curChecks {
+						subChecks, ok := compositeCheckToSubcheckNames[checkName]
+						if ok {
+							nextChecks = append(nextChecks, subChecks...)
+						} else {
+							require.Contains(t, stderr, checkOutput(checkName))
+						}
+					}
+					curChecks = nextChecks
+				}
+			})
+		}
+	}
 }

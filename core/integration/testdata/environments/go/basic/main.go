@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"github.com/iancoleman/strcase"
 )
 
 func main() {
@@ -21,44 +23,50 @@ func main() {
 		Serve()
 }
 
+func checkOutput(name string) string {
+	return "WE ARE RUNNING CHECK " + strcase.ToKebab(name)
+}
+
+func containerCheck(name string, succeed bool) *Check {
+	cmd := "false"
+	if succeed {
+		cmd = "true"
+	}
+	ctr := dag.Container().From("alpine:3.18").
+		WithExec([]string{"sh", "-e", "-c", "echo " + checkOutput(name) + "; " + cmd})
+	return dag.Check().WithName(name).WithContainer(ctr)
+}
+
 func CoolStaticCheck(ctx context.Context) (*CheckResult, error) {
 	return dag.StaticCheckResult(true, StaticCheckResultOpts{
-		Output: "We're cool",
+		Output: checkOutput("CoolStaticCheck"),
 	}), nil
 }
 
 func SadStaticCheck(ctx context.Context) (*CheckResult, error) {
 	return dag.StaticCheckResult(false, StaticCheckResultOpts{
-		Output: "So sad...",
+		Output: checkOutput("SadStaticCheck"),
 	}), nil
 }
 
 func CoolContainerCheck(ctx context.Context) (*Check, error) {
-	return dag.Check().WithContainer(dag.Container().From("alpine:3.18").WithExec([]string{"true"})), nil
+	return containerCheck("CoolContainerCheck", true), nil
 }
 
 func SadContainerCheck(ctx context.Context) (*Check, error) {
-	return dag.Check().WithContainer(dag.Container().From("alpine:3.18").WithExec([]string{"false"})), nil
+	return containerCheck("SadContainerCheck", false), nil
 }
 
 func CoolCompositeCheck(ctx context.Context) (*Check, error) {
-	ctr := dag.Container().From("alpine:3.18")
 	return dag.Check().
-		WithSubcheck(dag.Check().WithName("CoolSubcheck1").WithContainer(
-			ctr.WithEnvVariable("BASIC", "1").WithExec([]string{"sh", "-c", "echo BASIC $BASIC; true"}),
-		)).WithSubcheck(dag.Check().WithName("CoolSubcheck2").WithContainer(
-		ctr.WithEnvVariable("BASIC", "2").WithExec([]string{"sh", "-c", "echo BASIC $BASIC; true"}),
-	)), nil
+		WithSubcheck(containerCheck("CoolSubcheck1", true)).
+		WithSubcheck(containerCheck("CoolSubcheck2", true)), nil
 }
 
 func SadCompositeCheck(ctx context.Context) (*Check, error) {
-	ctr := dag.Container().From("alpine:3.18")
 	return dag.Check().
-		WithSubcheck(dag.Check().WithName("SadSubcheck3").WithContainer(
-			ctr.WithEnvVariable("BASIC", "3").WithExec([]string{"sh", "-c", "echo BASIC $BASIC; false"}),
-		)).WithSubcheck(dag.Check().WithName("SadSubcheck4").WithContainer(
-		ctr.WithEnvVariable("BASIC", "4").WithExec([]string{"sh", "-c", "echo BASIC $BASIC; false"}),
-	)), nil
+		WithSubcheck(containerCheck("SadSubcheck1", false)).
+		WithSubcheck(containerCheck("SadSubcheck2", false)), nil
 }
 
 func CoolCompositeCheckFromExplicitDep(ctx context.Context) (*Check, error) {

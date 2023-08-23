@@ -248,14 +248,9 @@ type DaggerCLIContainer struct {
 	c   *dagger.Client
 
 	// common
-	EnvironmentArg string
+	EnvArg string
 
-	// "do"
-	OutputArg string
-	TargetArg string
-	UserArgs  map[string]string
-
-	// "environment init"
+	// "env init"
 	SDKArg  string
 	NameArg string
 	RootArg string
@@ -263,9 +258,9 @@ type DaggerCLIContainer struct {
 
 const cliContainerRepoMntPath = "/src"
 
-func (ctr DaggerCLIContainer) WithLoadedEnvironment(
+func (ctr DaggerCLIContainer) WithLoadedEnv(
 	environmentPath string,
-	convertToGitEnvironment bool,
+	convertToGitEnv bool,
 ) *DaggerCLIContainer {
 	ctr.t.Helper()
 	thisRepoPath, err := filepath.Abs("../..")
@@ -277,7 +272,7 @@ func (ctr DaggerCLIContainer) WithLoadedEnvironment(
 	environmentArg := filepath.Join(cliContainerRepoMntPath, environmentPath)
 
 	baseCtr := ctr.Container
-	if convertToGitEnvironment {
+	if convertToGitEnv {
 		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, thisRepoDir)
 		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
 
@@ -292,30 +287,12 @@ func (ctr DaggerCLIContainer) WithLoadedEnvironment(
 	}
 
 	ctr.Container = baseCtr
-	ctr.EnvironmentArg = environmentArg
+	ctr.EnvArg = environmentArg
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) WithEnvironmentArg(environmentArg string) *DaggerCLIContainer {
-	ctr.EnvironmentArg = environmentArg
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithOutputArg(outputArg string) *DaggerCLIContainer {
-	ctr.OutputArg = outputArg
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithTarget(target string) *DaggerCLIContainer {
-	ctr.TargetArg = target
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithUserArg(key, value string) *DaggerCLIContainer {
-	if ctr.UserArgs == nil {
-		ctr.UserArgs = map[string]string{}
-	}
-	ctr.UserArgs[key] = value
+func (ctr DaggerCLIContainer) WithEnvArg(environmentArg string) *DaggerCLIContainer {
+	ctr.EnvArg = environmentArg
 	return &ctr
 }
 
@@ -329,35 +306,32 @@ func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--debug", "do"}
-	if ctr.EnvironmentArg != "" {
-		args = append(args, "--env", ctr.EnvironmentArg)
+func (ctr DaggerCLIContainer) CallChecks(selectedChecks ...string) *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--debug", "--progress=plain"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
 	}
-	if ctr.OutputArg != "" {
-		args = append(args, "--output", ctr.OutputArg)
-	}
-	args = append(args, ctr.TargetArg)
-	for k, v := range ctr.UserArgs {
-		args = append(args, "--"+k, v)
+	args = append(args, "checks")
+	if len(selectedChecks) > 0 {
+		args = append(args, selectedChecks...)
 	}
 	ctr.Container = ctr.Container.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) CallEnvironment() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "environment"}
-	if ctr.EnvironmentArg != "" {
-		args = append(args, "--env", ctr.EnvironmentArg)
+func (ctr DaggerCLIContainer) CallEnv() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) CallEnvironmentInit() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "environment", "init"}
-	if ctr.EnvironmentArg != "" {
-		args = append(args, "--env", ctr.EnvironmentArg)
+func (ctr DaggerCLIContainer) CallEnvInit() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env", "init"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
 	}
 	if ctr.SDKArg != "" {
 		args = append(args, "--sdk", ctr.SDKArg)
