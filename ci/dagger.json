@@ -1,5 +1,23 @@
 {
-  "name": "ci",
+  "root": "..",
+  "name": "dagger",
   "sdk": "go",
-  "root": ".."
+  "exclude": [
+    ".git",
+    "bin",
+    "**/.DS_Store",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv",
+    "**/.mypy_cache",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+    "sdk/python/dist",
+    "go.work",
+    "go.work.sum",
+    "**/target",
+    "**/deps",
+    "**/cover",
+    "**/_build"
+  ]
 }
