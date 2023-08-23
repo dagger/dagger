@@ -59,7 +59,7 @@ func tunnelOne(ctx context.Context, upstreamSock, port, network string) error {
 			if errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			log.Println("accept error", err)
+			log.Println("fatal accept error:", err)
 			return err
 		}
 
@@ -73,8 +73,9 @@ func tunnelOne(ctx context.Context, upstreamSock, port, network string) error {
 
 		upstream, err := net.Dial("unix", upstreamSock)
 		if err != nil {
-			log.Println("dial error", err)
-			return err
+			log.Println("dial error:", err)
+			_ = downstream.Close()
+			continue
 		}
 
 		log.Println("dialed", upstream.RemoteAddr())
