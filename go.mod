@@ -17,7 +17,7 @@ require (
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/containerd/containerd v1.7.2
-	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
+	github.com/containerd/fuse-overlayfs-snapshotter v1.0.6
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
