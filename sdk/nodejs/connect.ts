@@ -54,6 +54,13 @@ export async function connect(
         "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
       )
     }
+
+    if (config.Workdir && config.Workdir !== "") {
+      throw new Error(
+        "cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)"
+      )
+    }
+
     client = new Client({
       host: `127.0.0.1:${daggerSessionPort}`,
       sessionToken: sessionToken,
