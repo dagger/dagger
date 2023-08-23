@@ -60,11 +60,10 @@ Next, you need a Dagger Engine running as a Daemonset in your Kubernetes cluster
 This daemonset configuration is unofficial and should be modified to fit your use case
 :::
 
-Clone the [demo repo](https://github.com/kpenfound/dagger-argo-workflows).
+Create a file called `daemonset.yaml` with the following content:
 
-`git clone https://github.com/kpenfound/dagger-argo-workflows.git`
-
-In this repo, `daemonset.yaml` creates the daemonset for the dagger engine. Review the `daemonset.yaml` and note the following items:
+```yaml file=./snippets/argo-workflows/daemonset.yaml
+```
 
 - `registry.dagger.io/engine:{VERSION}` is specified twice. Ensure it has the appropriate version for your use case.
 - `buildkit-v0.12.1.linux-amd64.tar.gz` is downloaded to use for the readinessProbe. If you're running on arm64, be sure to change this to `buildkit-v0.12.1.linux-arm64.tar.gz`.
@@ -74,18 +73,30 @@ When you're satisfied with the configuration, apply the daemonset
 
 `kubectl apply -f ./daemonset.yaml`
 
-## Run the sample workflow
+## Run a sample workflow
 
 The sample workflow will clone and run the CI for the [greetings-api](https://github.com/kpenfound/greetings-api) demo project. This project uses the Dagger Go SDK for CI.
 
-Examine `workflow.yaml` and note the following:
+Create a file called `workflow.yaml` with the following content:
+
+```yaml file=./snippets/argo-workflows/workflow.yaml
+```
 
 - The workflow uses hardwired artifacts to clone the git repository and to install the Dagger CLI
 - `/var/run/buildkit` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable
 - The Dagger CLI `dagger_v0.8.4_linux_amd64.tar.gz` is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project
 - The image `golang:1.21.0-bookworm` is used as the runtime for the container because the example project requires Go
 - The environment variable `_EXPERIMENTAL_DAGGER_CLOUD_TOKEN` is set from the kubernetes secret `dagger-cloud.token`. If you have a dagger cloud token, set this as a secret with `kubectl create secret generic dagger-cloud --from-literal=token={YOUR_TOKEN}`. If not, remove this variable.
-- The workflow uses a persistentVolumeClaim for the runtime dependencies of the pipeline. Even though the dependencies within the pipeline are cached through Dagger, we still have dependencies to run the pipeline. Create the persistentVolumeClaim with `kubectl apply -f ./gomodcache.yaml`
+
+
+The workflow uses a persistentVolumeClaim for the runtime dependencies of the pipeline. Even though the dependencies within the pipeline are cached through Dagger, we still have dependencies to run the pipeline. Create the persistentVolumeClaim configuration in a file called gomodcache.yaml:
+
+```yaml file=./snippets/argo-workflows/gomodcache.yaml
+```
+
+and apply the persistentVolumeClaim:
+
+ `kubectl apply -f ./gomodcache.yaml`
 
 When you're satisfied with the workflow configuration, run it with argo
 
