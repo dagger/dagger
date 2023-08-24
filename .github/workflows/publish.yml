@@ -75,6 +75,18 @@ jobs:
           name: ${{ github.workflow }}-${{ github.job }}-journal.log
           path: /tmp/journal.log
 
+  scan-engine:
+    name: "Scan Engine Image for Vulnerabilities"
+    needs: [publish]
+    # only run this on push events, not in PRs (since we only publish images during pushes)
+    if: github.event_name == 'push' && github.repository == 'dagger/dagger'
+    uses: aquasecurity/trivy-action@0.11.2
+    with:
+      image-ref: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main
+      format: "json"
+      exit-code: "1"
+      severity: "CRITICAL,HIGH"
+
   test-provision-macos:
     name: "Test SDK Provision / macos"
     # We want to test the SDKs in a CLI dependency bump PR, in which case publish
