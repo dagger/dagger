@@ -132,8 +132,8 @@ Guidelines:
 - Each commit should work on its own: it must compile, pass the linter and so on.
   - This makes life much easier when using `git log`, `git blame`, `git bisect`, etc.
   - For instance, when doing a `git blame` on a file to figure out why a change
-  was introduced, it's pretty meaningless to see a _Fix linter_ commit message.
-  "Add Feature X" is much more meaningful.
+    was introduced, it's pretty meaningless to see a _Fix linter_ commit message.
+    "Add Feature X" is much more meaningful.
 - Use `git rebase -i main` to group commits together and rewrite their commit message.
 - To add changes to the previous commit, use `git commit --amend -s`. This will
   change the last commit (amend) instead of creating a new commit.
@@ -146,7 +146,7 @@ Guidelines:
   - `website:` for the documentation website (i.e., the frontend code; e.g., `website: Add X link to navbar`);
   - `ci:` for internal CI specific changes (e.g., `ci: Enable X for tests`);
   - `infra:` for infrastructure changes (e.g., `infra: Enable cloudfront for X`);
-  - `fix`:  for improvements and bugfixes that do not introduce a feature (e.g., `fix: improve error message`);
+  - `fix`: for improvements and bugfixes that do not introduce a feature (e.g., `fix: improve error message`);
   - `feat`: for new features (e.g., `feat: implement --cache-to feature to export cache`)
 
 [^1]: See [https://www.conventionalcommits.org](https://www.conventionalcommits.org)
@@ -167,6 +167,36 @@ The docs compiler will replace file links with URLs automatically. This helps
 prevent broken internal links. If a file gets renamed, the compiler will catch
 broken links and throw an error. [Learn
 more](https://docusaurus.io/docs/markdown-features/links).
+
+## Vulnerability Scanning
+
+We run trivy scanning of our engine image in GHA to scan for any CVEs present in any third-party binaries we build or that we include in the image (e.g. runc, CNI plugins, etc.). As of this writing, we currently only scan for Critical and High severity CVEs. If any of those are found the GHA job will fail.
+
+It's sometimes possible that the vulnerability may require quite a bit of work to address, especially if it's coming from third-party binary or a transitive dependency in our go.mod that does not have a release with the fix yet.
+
+- In this case, it's worth checking whether the specific vulnerability is actually relevant to us. If it's not or if you're unsure, reach out to the Dagger team on Github or Discord and we can figure out whether to address it or add it to an ignore list.
+
+The rest of this section gives some guidance on fixing these vulnerabilities when they are relevant.
+
+### Vulnerability in a Dagger binary
+
+If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `golangVersion` in `internal/mage/util/engine.go`.
+
+Otherwise, if a vulnerability is reported in a Go dependency, you'll want to track down where the dependency is coming from.
+
+This can become a bit complicated since it's possible for multiple versions of a Go module to be in the dependency DAG, with only a subset of the versions actually being vulnerable.
+
+1. If the dependency at the vulnerable version is directly listed in our `go.mod`, then you should start by just upgrading it there.
+1. After that, if the vulnerability is still reported, it may be coming from a transitive dependency.
+   - You can track those down with the `go mod graph` command. For example, if the vulnerable module version is `golang.org/x/sys@v0.0.0-20211116061358-0a5406a5449c`, you can run `go mod graph | grep 'golang.org/x/sys@v0.0.0-20211116061358-0a5406a5449c'`.
+
+### Vulnerability in a third-party binary
+
+If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `golangVersion` in `internal/mage/util/engine.go`.
+
+Otherwise, you'll want to check if the binary in question has a newer version with the vulnerability gone. The versions of these binaries are also controlled in `internal/mage/util/engine.go`.
+
+If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on Github or Discord if you're unsure how to best proceed.
 
 ## FAQ
 
