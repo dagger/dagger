@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dagger-engine
+  labels:
+    k8s-app: dagger-engine
+spec:
+  selector:
+    matchLabels:
+      name: dagger-engine
+  template:
+    metadata:
+      labels:
+        name: dagger-engine
+    spec:
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: download-bin
+          image: registry.dagger.io/engine:v0.8.4
+          command:
+            - sh
+            - -c
+            - wget https://github.com/moby/buildkit/releases/download/v0.12.1/buildkit-v0.12.1.linux-amd64.tar.gz -O /shared-bin/buildkit.tar.gz && tar -xvzf /shared-bin/buildkit.tar.gz --strip-components 1 bin/buildctl -C /shared-bin
+          volumeMounts:
+            - name: shared-bin
+              mountPath: /shared-bin
+      containers:
+        - name: dagger-engine
+          image: registry.dagger.io/engine:v0.8.4
+          imagePullPolicy: Always
+          args:
+            - --oci-max-parallelism
+            - num-cpu
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - ALL
+          readinessProbe:
+            exec:
+              command:
+                - /shared-bin/buildctl
+                - debug
+                - workers
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: varlibdagger
+              mountPath: /var/lib/dagger
+            - name: varrundagger
+              mountPath: /var/run/buildkit
+            - name: shared-bin
+              mountPath: /shared-bin
+      terminationGracePeriodSeconds: 300
+      volumes:
+        - name: shared-bin
+          emptyDir: {}
+        - name: varlibdagger
+          hostPath:
+            path: /var/lib/dagger
+        - name: varrundagger
+          hostPath:
+            path: /var/run/dagger
