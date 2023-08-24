@@ -1,0 +1,6 @@
+kind: Fixed
+body: Dagger.connect!/1 always returns `:error` when using stable engine
+time: 2023-08-18T23:11:00.741628+07:00
+custom:
+  Author: wingyplus
+  PR: "5665"
