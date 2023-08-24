@@ -129,13 +129,36 @@ Right now very few configuration knobs are suppported as we are still working ou
 
 Currently supported is:
 
-1. Custom CA Certs - If you need any extra CA certs to be included in order to, e.g. push images to a private registry, they can be included under `/etc/ssl/certs` in the runner image.
-   - This can be accomplished by building a custom engine image using ours as a base or by mounting them into a container created from our image at runtime.
-1. Disabling Privileged Execs - By default, the Dagger engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API. This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to
-   1. Remove `insecure-entitlements = ["security.insecure"]`
+#### Custom CA Certs
 
-> **Warning**
-> The entrypoint currently invokes `buildkitd`, so there are numerous flags available there in addition to buildkit configuration files. However, this is just an implementation detail and it's highly likely the entrypoint may end up pointing to a different wrapper around `buildkitd` with a different interface in the near future, so any reliance on extra entrypoint flags or configuration files should be considered subject to breakage at any time.
+If you need any extra CA certs to be included in order to, e.g. push images to a private registry, they can be included under `/etc/ssl/certs` in the runner image.
+
+This can be accomplished by building a custom engine image using ours as a base or by mounting them into a container created from our image at runtime.
+
+#### Disabling Privileged Execs
+
+By default, the Dagger engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
+
+This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`
+
+#### Registry Mirrors
+
+If you want to use a registry mirror, you can append the configuration to `/etc/dagger/engine.toml` using this format:
+
+```toml
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
+```
+
+You can repeat that for as many registries and mirrors you want, e.g.
+
+```toml
+[registry."docker.io"]
+  mirrors = ["mirror.a.com", "mirror.b.com"]
+
+[registry."some.other.registry.com"]
+  mirrors = ["mirror.foo.com", "mirror.bar.com"]
+```
 
 ### Connection Interface
 
