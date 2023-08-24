@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/md5"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"dagger.io/dagger"
@@ -20,7 +23,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Setenv("_DAGGER_DEBUG_HEALTHCHECKS", "1")
 	// start with fresh test registries once per suite; they're an engine-global
 	// dependency
 	// startRegistry()
@@ -28,20 +30,25 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func connect(t require.TestingT) (*dagger.Client, context.Context) {
-	return connectWithLogOutput(t, os.Stderr)
+func connect(t *testing.T) (*dagger.Client, context.Context) {
+	tw := newTWriter(t)
+	t.Cleanup(tw.Flush)
+	return connectWithLogOutput(t, tw)
 }
 
-func connectWithBufferedLogs(t require.TestingT) (*dagger.Client, context.Context, *safeBuffer) {
+func connectWithBufferedLogs(t *testing.T) (*dagger.Client, context.Context, *safeBuffer) {
+	tw := newTWriter(t)
+	t.Cleanup(tw.Flush)
 	output := &safeBuffer{}
-	c, ctx := connectWithLogOutput(t, io.MultiWriter(os.Stderr, output))
+	c, ctx := connectWithLogOutput(t, io.MultiWriter(tw, output))
 	return c, ctx, output
 }
 
-func connectWithLogOutput(t require.TestingT, logOutput io.Writer) (*dagger.Client, context.Context) {
+func connectWithLogOutput(t *testing.T, logOutput io.Writer) (*dagger.Client, context.Context) {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(logOutput))
 	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
 	return client, ctx
 }
 
@@ -355,4 +362,66 @@ func goCache(c *dagger.Client) dagger.WithContainerFunc {
 			WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 			WithEnvVariable("GOCACHE", "/go/build-cache")
 	}
+}
+
+// tWriter is a writer that writes to testing.T
+type tWriter struct {
+	t   *testing.T
+	buf bytes.Buffer
+	mu  sync.Mutex
+}
+
+// newTWriter creates a new TWriter
+func newTWriter(t *testing.T) *tWriter {
+	return &tWriter{t: t}
+}
+
+// Write writes data to the testing.T
+func (tw *tWriter) Write(p []byte) (n int, err error) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+
+	tw.t.Helper()
+
+	if n, err = tw.buf.Write(p); err != nil {
+		return n, err
+	}
+
+	for {
+		line, err := tw.buf.ReadBytes('\n')
+		if err == io.EOF {
+			// If we've reached the end of the buffer, write it back, because it doesn't have a newline
+			tw.buf.Write(line)
+			break
+		}
+		if err != nil {
+			return n, err
+		}
+
+		tw.t.Log(strings.TrimSuffix(string(line), "\n"))
+	}
+	return n, nil
+}
+
+func (tw *tWriter) Flush() {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	tw.t.Log(tw.buf.String())
+}
+
+type safeBuffer struct {
+	bu bytes.Buffer
+	mu sync.Mutex
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.String()
 }
