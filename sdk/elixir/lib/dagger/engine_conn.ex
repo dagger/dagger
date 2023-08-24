@@ -13,6 +13,9 @@ defmodule Dagger.EngineConn do
       {:ok, conn} ->
         {:ok, conn}
 
+      {:error, :workdir_configure_on_session} = error ->
+        error
+
       _otherwise ->
         case from_local_cli(opts) do
           {:ok, conn} -> {:ok, conn}
@@ -23,14 +26,18 @@ defmodule Dagger.EngineConn do
   end
 
   @doc false
-  def from_session_env(_opts) do
+  def from_session_env(opts) do
     with {:ok, port} <- System.fetch_env("DAGGER_SESSION_PORT"),
-         {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN") do
+         {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN"),
+         false <- Keyword.has_key?(opts, :workdir) do
       {:ok,
        %__MODULE__{
          port: port,
          token: token
        }}
+    else
+      true -> {:error, :workdir_configure_on_session}
+      :error -> {:error, :no_session}
     end
   end
 
