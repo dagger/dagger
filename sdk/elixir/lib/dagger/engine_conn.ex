@@ -48,6 +48,7 @@ defmodule Dagger.EngineConn do
          bin_path when is_binary(bin_path) <- System.find_executable(bin) do
       start_cli_session(bin_path, opts)
     else
+      :error -> {:error, :no_executable}
       nil -> {:error, :no_executable}
       otherwise -> otherwise
     end
