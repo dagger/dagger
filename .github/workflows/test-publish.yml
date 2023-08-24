@@ -49,6 +49,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.11.2
         with:
           input: ./bin/engine.tar
+          format: "json"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
 
