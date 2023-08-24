@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"path"
@@ -219,7 +220,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 	})
 }
 
-func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, src string, include []string, withMode bool) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
 	return WithServices(ctx, bk, dir.Services, func() ([]string, error) {
@@ -243,7 +244,8 @@ func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, src stri
 		}
 
 		entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-			Path: src,
+			Path:           src,
+			IncludePattern: includePatterns(include),
 		})
 		if err != nil {
 			return nil, err
@@ -251,11 +253,23 @@ func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, src stri
 
 		paths := []string{}
 		for _, entry := range entries {
+			if withMode {
+				paths = append(paths, fmt.Sprintf("%s %s", entry.GetPath(), fs.FileMode(entry.Mode)))
+				continue
+			}
 			paths = append(paths, entry.GetPath())
 		}
 
 		return paths, nil
 	})
+}
+
+func includePatterns(include []string) string {
+	if len(include) == 0 {
+		return ""
+	}
+	dt, _ := json.Marshal(include) // empty on error
+	return string(dt)
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {

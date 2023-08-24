@@ -32,6 +32,14 @@ type Directory {
     Location of the directory to look at (e.g., "/src").
     """
     path: String
+    """
+    Return with file mode (e.g., ["src drwxr-xr-x"]).
+    """
+    withMode: Boolean
+    """
+    Deep walk (e.g., ["*, "*/*"]).
+    """
+    include: [String!]
   ): [String!]!
 
   """

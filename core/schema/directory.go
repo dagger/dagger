@@ -133,11 +133,13 @@ func (s *directorySchema) withTimestamps(ctx *core.Context, parent *core.Directo
 }
 
 type entriesArgs struct {
-	Path string
+	Path     string
+	WithMode bool
+	Include  []string
 }
 
 func (s *directorySchema) entries(ctx *core.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.bk, args.Path)
+	return parent.Entries(ctx, s.bk, args.Path, args.Include, args.WithMode)
 }
 
 type dirFileArgs struct {
