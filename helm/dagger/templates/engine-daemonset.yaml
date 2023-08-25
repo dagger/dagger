@@ -75,11 +75,13 @@ spec:
             capabilities:
               add:
                 - ALL
+          resources: {{- toYaml .Values.engine.resources | nindent 12 }}
           readinessProbe:
             exec:
               command: ["/shared-bin/buildctl", "debug", "workers"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
+            {{- if .Values.engine.readinessProbeSettings }}
+            {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
+            {{- end }}
           volumeMounts:
             - name: varlibdagger
               mountPath: /var/lib/dagger

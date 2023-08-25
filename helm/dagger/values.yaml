@@ -8,6 +8,19 @@ engine:
   #   insecure-entitlements = ["security.insecure"]
   #   [registry."registry:5000"]
   #     http = true
+  resources:
+    ## Example:
+    ## limits:
+    ##    cpu: 100m
+    ##    memory: 128Mi
+    ##
+    limits: {}
+    ## Examples:
+    ## requests:
+    ##    cpu: 100m
+    ##    memory: 128Mi
+    ##
+    requests: {}
   image:
     repository: registry.dagger.io/engine
     # tag: v0.6.5
@@ -22,6 +35,12 @@ engine:
         - matchExpressions:
           - key: actions-runner
             operator: Exists
+  readinessProbeSettings: 
+    initialDelaySeconds: 5
+    timeoutSeconds: 30
+    periodSeconds: 15
+    successThreshold: 1
+    failureThreshold: 10
 magicache:
   enabled: true
   url: https://api.dagger.cloud/magicache
