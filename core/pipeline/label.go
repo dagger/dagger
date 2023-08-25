@@ -170,7 +170,7 @@ func LoadGitLabLabels() ([]Label, error) {
 			Value: os.Getenv("GITLAB_USER_LOGIN"),
 		},
 		{
-			Name:  "dagger.io/vcs.event.action",
+			Name:  "dagger.io/vcs.event.type",
 			Value: os.Getenv("CI_PIPELINE_SOURCE"),
 		},
 		{
@@ -229,7 +229,7 @@ func LoadGitHubLabels() ([]Label, error) {
 
 	labels := []Label{
 		{
-			Name:  "dagger.io/vcs.event.action",
+			Name:  "dagger.io/vcs.event.type",
 			Value: eventType,
 		},
 		{
