@@ -97,7 +97,7 @@ and apply the persistentVolumeClaim:
 
  `kubectl apply -f ./gomodcache.yaml`
 
-When you're satisfied with the workflow configuration, run it with argo
+When you're satisfied with the workflow configuration, run it with Argo:
 
 `argo submit -n argo --watch ./workflow.yaml`
 
