@@ -105,6 +105,6 @@ The `--watch` argument provides an ongoing status feed of the workflow request i
 
 Once the workflow has successfully completed, run it again with `argo submit -n argo --watch ./workflow.yaml` and notice the caching this time!
 
-## Closing thoughts
+## Conclusion
 
 This example demonstrated a very basic way to run Dagger with Argo Workflows. In real world environments, Argo Workflows is often coupled with ArgoCD and Argo Events to create a fully featured CI/CD platform. Read more about that [here](https://medium.com/atlantbh/implementing-ci-cd-pipeline-using-argo-workflows-and-argo-events-6417dd157566).
