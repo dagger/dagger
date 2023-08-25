@@ -52,7 +52,7 @@ The next step is to install [Argo Workflows](https://argoproj.github.io/argo-wor
 
 Follow the [Argo Workflows quickstart](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) steps, adjusting them as needed to your own requirements. Once you've successfully installed Argo Workflows to your cluster, continue to the next step.
 
-## Configure the Dagger Daemonset
+## Step 3: Configure the Dagger Daemonset
 
 Next, you need a Dagger Engine running as a Daemonset in your Kubernetes cluster. There are many benefits to running the engine as a Daemonset, but most importantly it means an engine will always be available when you need it and it will be able to persist cache between pipeline executions.
 
