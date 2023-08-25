@@ -73,7 +73,7 @@ When you're satisfied with the configuration, apply the daemonset
 
 `kubectl apply -f ./daemonset.yaml`
 
-## Run a sample workflow
+## Step 4: Run a sample workflow
 
 The sample workflow will clone and run the CI for the [greetings-api](https://github.com/kpenfound/greetings-api) demo project. This project uses the Dagger Go SDK for CI.
 
