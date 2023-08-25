@@ -20,7 +20,7 @@ import TabItem from '@theme/TabItem';
 
 In this guide, Argo Workflows will be running on a [kind](https://kind.sigs.k8s.io/) cluster. If you already have a kubernetes cluster to use, skip ahead to the next section.
 
-Install kind following the [kind quickstart guide](https://kind.sigs.k8s.io/docs/user/quick-start/). If you use brew, that looks like `brew install kind`.
+Install kind following the [kind quickstart guide](https://kind.sigs.k8s.io/docs/user/quick-start/). 
 
 Next, create a configuration to use to initiate the kind cluster. Here's an example configuration to use:
 
