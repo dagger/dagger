@@ -16,7 +16,7 @@ import TabItem from '@theme/TabItem';
 
 [Argo Workflows](https://argoproj.github.io/argo-workflows/) is an open source container-native workflow engine for orchestrating parallel jobs on Kubernetes. This guide explains how to run Dagger pipelines in Argo Workflows. 
 
-## Configuring Kubernetes
+## Step 1: Create a Kubernetes cluster
 
 In this guide, Argo Workflows will be running on a [kind](https://kind.sigs.k8s.io/) cluster. If you already have a kubernetes cluster to use, skip ahead to the next section.
 
