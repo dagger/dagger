@@ -22,7 +22,7 @@ In this guide, Argo Workflows will be running on a [kind](https://kind.sigs.k8s.
 
 Install kind following the [kind quickstart guide](https://kind.sigs.k8s.io/docs/user/quick-start/). 
 
-Next, create a configuration to use to initiate the kind cluster. Here's an example configuration to use:
+Next, create a configuration to initiate the kind cluster. Here's an example configuration to use:
 
 `~/.kube/kind-config.yaml`
 
