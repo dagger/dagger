@@ -2,7 +2,7 @@
 slug: /324301/argo-workflows
 displayed_sidebar: "current"
 category: "guides"
-tags: ["python", "go", "nodejs", "argo", "kubernetes"]
+tags: ["argo", "kubernetes"]
 authors: ["Kyle Penfound"]
 date: "2023-08-22"
 ---
