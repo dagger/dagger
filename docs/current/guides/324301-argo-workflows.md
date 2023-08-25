@@ -84,7 +84,7 @@ Create a file called `workflow.yaml` with the following content:
 A few important points to note:
 - The workflow uses hardwired artifacts to clone the Git repository and to install the Dagger CLI.
 - `/var/run/buildkit` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
-- The Dagger CLI `dagger_v0.8.4_linux_amd64.tar.gz` is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project
+- The Dagger CLI `dagger_v0.8.4_linux_amd64.tar.gz` is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project.
 - The image `golang:1.21.0-bookworm` is used as the runtime for the container because the example project requires Go
 - The environment variable `_EXPERIMENTAL_DAGGER_CLOUD_TOKEN` is set from the kubernetes secret `dagger-cloud.token`. If you have a dagger cloud token, set this as a secret with `kubectl create secret generic dagger-cloud --from-literal=token={YOUR_TOKEN}`. If not, remove this variable.
 
