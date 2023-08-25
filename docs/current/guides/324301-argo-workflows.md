@@ -42,7 +42,7 @@ nodes:
     listenAddress: "0.0.0.0"
 ```
 
-Now that you have a configuration file for kind, you can initiate the cluster:
+Initiate the cluster:
 
 `kind create cluster --name argo --config ~/.kube/kind-config.yaml`
 
