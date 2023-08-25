@@ -146,44 +146,48 @@ func LoadGitLabLabels() ([]Label, error) {
 
 	labels := []Label{
 		{
-			Name:  "gitlab.com/job.id",
-			Value: os.Getenv("CI_JOB_ID"),
-		},
-		{
-			Name:  "event.action",
-			Value: os.Getenv("CI_PIPELINE_SOURCE"),
-		},
-		{
-			Name:  "gitlab.com/repo.url",
+			Name:  "dagger.io/vcs.repo.url",
 			Value: os.Getenv("CI_PROJECT_URL"),
 		},
 		{
-			Name:  "gitlab.com/repo.full_name",
+			Name:  "dagger.io/vcs.repo.full_name",
 			Value: os.Getenv("CI_PROJECT_PATH"),
 		},
 		{
-			Name:  "gitlab.com/job.name",
-			Value: os.Getenv("CI_JOB_NAME"),
-		},
-		{
-			Name:  "gitlab.com/mr.branch",
+			Name:  "dagger.io/vcs.change.branch",
 			Value: os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"),
 		},
 		{
-			Name:  "gitlab.com/mr.title",
+			Name:  "dagger.io/vcs.change.title",
 			Value: os.Getenv("CI_MERGE_REQUEST_TITLE"),
 		},
 		{
-			Name:  "gitlab.com/mr.label",
-			Value: os.Getenv("CI_MERGE_REQUEST_LABELS"),
-		},
-		{
-			Name:  "gitlab.com/mr.head",
+			Name:  "dagger.io/vcs.change.head_sha",
 			Value: os.Getenv("CI_COMMIT_SHA"),
 		},
 		{
-			Name:  "gitlab.com/mr.id",
-			Value: os.Getenv("CI_MERGE_REQUEST_ID"),
+			Name:  "dagger.io/vcs.triggerer.login",
+			Value: os.Getenv("GITLAB_USER_LOGIN"),
+		},
+		{
+			Name:  "dagger.io/vcs.event.action",
+			Value: os.Getenv("CI_PIPELINE_SOURCE"),
+		},
+		{
+			Name:  "dagger.io/vcs.job.name",
+			Value: os.Getenv("CI_JOB_NAME"),
+		},
+		{
+			Name:  "dagger.io/vcs.workflow.name",
+			Value: os.Getenv("CI_PIPELINE_NAME"),
+		},
+		{
+			Name:  "dagger.io/vcs.change.label",
+			Value: os.Getenv("CI_MERGE_REQUEST_LABELS"),
+		},
+		{
+			Name:  "gitlab.com/job.id",
+			Value: os.Getenv("CI_JOB_ID"),
 		},
 		{
 			Name:  "gitlab.com/triggerer.id",
@@ -194,10 +198,6 @@ func LoadGitLabLabels() ([]Label, error) {
 			Value: os.Getenv("GITLAB_USER_EMAIL"),
 		},
 		{
-			Name:  "gitlab.com/triggerer.login",
-			Value: os.Getenv("GITLAB_USER_LOGIN"),
-		},
-		{
 			Name:  "gitlab.com/triggerer.name",
 			Value: os.Getenv("GITLAB_USER_NAME"),
 		},
@@ -205,11 +205,15 @@ func LoadGitLabLabels() ([]Label, error) {
 
 	projectURL := os.Getenv("CI_MERGE_REQUEST_PROJECT_URL")
 	mrIID := os.Getenv("CI_MERGE_REQUEST_IID")
-
 	if projectURL != "" && mrIID != "" {
 		labels = append(labels, Label{
-			Name:  "gitlab.com/mr.url",
+			Name:  "dagger.io/vcs.change.url",
 			Value: fmt.Sprintf("%s/-/merge_requests/%s", projectURL, mrIID),
+		})
+
+		labels = append(labels, Label{
+			Name:  "dagger.io/vcs.change.number",
+			Value: mrIID,
 		})
 	}
 
@@ -225,20 +229,20 @@ func LoadGitHubLabels() ([]Label, error) {
 
 	labels := []Label{
 		{
-			Name:  "github.com/actor",
-			Value: os.Getenv("GITHUB_ACTOR"),
-		},
-		{
-			Name:  "github.com/event.type",
+			Name:  "dagger.io/vcs.event.action",
 			Value: eventType,
 		},
 		{
-			Name:  "github.com/workflow.name",
-			Value: os.Getenv("GITHUB_WORKFLOW"),
+			Name:  "dagger.io/vcs.job.name",
+			Value: os.Getenv("GITHUB_JOB"),
 		},
 		{
-			Name:  "github.com/workflow.job",
-			Value: os.Getenv("GITHUB_JOB"),
+			Name:  "dagger.io/vcs.triggerer.login",
+			Value: os.Getenv("GITHUB_ACTOR"),
+		},
+		{
+			Name:  "dagger.io/vcs.workflow.name",
+			Value: os.Getenv("GITHUB_WORKFLOW"),
 		},
 	}
 
@@ -265,12 +269,12 @@ func LoadGitHubLabels() ([]Label, error) {
 
 		if repo, ok := getRepoIsh(event); ok {
 			labels = append(labels, Label{
-				Name:  "github.com/repo.full_name",
+				Name:  "dagger.io/vcs.repo.full_name",
 				Value: repo.GetFullName(),
 			})
 
 			labels = append(labels, Label{
-				Name:  "github.com/repo.url",
+				Name:  "dagger.io/vcs.repo.url",
 				Value: repo.GetHTMLURL(),
 			})
 		}
@@ -281,34 +285,35 @@ func LoadGitHubLabels() ([]Label, error) {
 			pr := event.GetPullRequest()
 
 			labels = append(labels, Label{
-				Name:  "github.com/pr.number",
+				Name:  "dagger.io/vcs.change.number",
 				Value: fmt.Sprintf("%d", pr.GetNumber()),
 			})
 
 			labels = append(labels, Label{
-				Name:  "github.com/pr.title",
+				Name:  "dagger.io/vcs.change.title",
 				Value: pr.GetTitle(),
 			})
 
 			labels = append(labels, Label{
-				Name:  "github.com/pr.url",
+				Name:  "dagger.io/vcs.change.url",
 				Value: pr.GetHTMLURL(),
 			})
 
 			labels = append(labels, Label{
-				Name:  "github.com/pr.branch",
+				Name:  "dagger.io/vcs.change.branch",
 				Value: pr.GetHead().GetRef(),
 			})
 
 			labels = append(labels, Label{
-				Name:  "github.com/pr.label",
-				Value: pr.GetHead().GetLabel(),
+				Name:  "dagger.io/vcs.change.head_sha",
+				Value: pr.GetHead().GetSHA(),
 			})
 
 			labels = append(labels, Label{
-				Name:  "github.com/pr.head",
-				Value: pr.GetHead().GetSHA(),
+				Name:  "dagger.io/vcs.change.label",
+				Value: pr.GetHead().GetLabel(),
 			})
+
 		}
 	}
 
