@@ -50,7 +50,7 @@ Initiate the cluster:
 
 The next step is to install [Argo Workflows](https://argoproj.github.io/argo-workflows/) in the Kubernetes cluster.
 
-This guide will follow the [quickstart](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) installation, however your own deployment may have different requirements. Once you've successfully installed argo workflows to your cluster, continue to the next step.
+Follow the [Argo Workflows quickstart](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) steps, adjusting them as needed to your own requirements. Once you've successfully installed Argo Workflows to your cluster, continue to the next step.
 
 ## Configure the Dagger Daemonset
 
