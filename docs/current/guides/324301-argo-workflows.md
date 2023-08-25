@@ -46,7 +46,7 @@ Initiate the cluster:
 
 `kind create cluster --name argo --config ~/.kube/kind-config.yaml`
 
-## Install Argo Workflows
+## Step 2: Install Argo Workflows
 
 Next up you need to install [Argo Workflows](https://argoproj.github.io/argo-workflows/) in the Kubernetes cluster.
 
