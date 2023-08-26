@@ -33,6 +33,7 @@ This tutorial assumes that:
 - You have a basic understanding of the JavaScript programming language.
 - You have a basic understanding of GitHub Actions. If not, [learn about GitHub Actions](https://docs.github.com/en/actions).
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have the Google Cloud CLI installed. If not, [install the Google Cloud CLI](https://cloud.google.com/sdk/docs/install).
 - You have a Google Cloud account and a Google Cloud project with billing enabled. If not, [register for a Google Cloud account](https://cloud.google.com/), [create a Google Cloud project](https://console.cloud.google.com/project) and [enable billing](https://support.google.com/cloud/answer/6293499#enable-billing).
@@ -151,21 +152,21 @@ Once credentials are configured, test the Dagger pipeline by running the command
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>
@@ -220,12 +221,13 @@ This also means that it's very easy to move your Dagger pipeline from your local
   </TabItem>
   </Tabs>
 
-  This workflow runs on every commit to the repository `master` branch. It consists of a single job with six steps, as below:
+  This workflow runs on every commit to the repository `master` branch. It consists of a single job with seven steps, as below:
     - The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner.
     - The second step uses the [Authenticate to Google Cloud action](https://github.com/marketplace/actions/authenticate-to-google-cloud) to authenticate to Google Cloud. It requires a service account key in JSON format, which it expects to find in the `GOOGLE_CREDENTIALS` GitHub secret. This step sets various environment variables (including the GOOGLE_APPLICATION_CREDENTIALS variable required by the Google Cloud Run SDK) and returns an access token as output, which is used to authenticate the next step.
     - The third step uses the [Docker Login action](https://github.com/marketplace/actions/docker-login) and the access token from the previous step to authenticate to Google Container Registry from the GitHub runner. This is necessary because Dagger relies on the host's Docker credentials and authorizations when publishing to remote registries.
     - The fourth and fifth steps download and install the programming language and required dependencies (such as the Dagger SDK and the Google Cloud Run SDK) on the GitHub runner.
-    - The sixth and final step executes the Dagger pipeline.
+    - The sixth step downloads and installs the Dagger CLI on the GitHub runner.
+    - The seventh and final step executes the Dagger pipeline.
 
 The [Authenticate to Google Cloud action](https://github.com/marketplace/actions/authenticate-to-google-cloud) looks for a JSON service account key in the `GOOGLE_CREDENTIALS` GitHub secret. Create this secret as follows:
 

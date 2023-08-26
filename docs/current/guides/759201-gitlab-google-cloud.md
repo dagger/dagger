@@ -29,6 +29,7 @@ This tutorial assumes that:
 - You have a basic understanding of the Go programming language.
 - You have a basic understanding of GitLab and GitLab CI/CD. If not, [learn about GitLab CI/CD](https://docs.gitlab.com/ee/ci/).
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have the Google Cloud CLI installed. If not, [install the Google Cloud CLI](https://cloud.google.com/sdk/docs/install).
 - You have a Google Cloud account and a Google Cloud project with billing enabled. If not, [register for a Google Cloud account](https://cloud.google.com/), [create a Google Cloud project](https://console.cloud.google.com/project) and [enable billing](https://support.google.com/cloud/answer/6293499#enable-billing).
@@ -154,21 +155,21 @@ Once credentials are configured, test the Dagger pipeline by running the command
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>
