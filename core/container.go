@@ -82,7 +82,7 @@ type Container struct {
 }
 
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
-	container, err := id.ToContainer()
+	container, err := id.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -113,43 +113,9 @@ func (container *Container) Clone() *Container {
 	return &cp
 }
 
-// ContainerID is an opaque value representing a content-addressed container.
-type ContainerID string
-
-func (id ContainerID) String() string {
-	return string(id)
-}
-
-// ContainerID is digestible so that smaller hashes can be displayed in
-// --debug vertex names.
-var _ Digestible = ContainerID("")
-
-func (id ContainerID) Digest() (digest.Digest, error) {
-	ctr, err := id.ToContainer()
-	if err != nil {
-		return "", err
-	}
-	return ctr.Digest()
-}
-
-func (id ContainerID) ToContainer() (*Container, error) {
-	var container Container
-
-	if id == "" {
-		// scratch
-		return &container, nil
-	}
-
-	if err := resourceid.Decode(&container, id); err != nil {
-		return nil, err
-	}
-
-	return &container, nil
-}
-
 // ID marshals the container into a content-addressed ID.
 func (container *Container) ID() (ContainerID, error) {
-	return resourceid.Encode[ContainerID](container)
+	return resourceid.Encode(container)
 }
 
 var _ pipeline.Pipelineable = (*Container)(nil)
@@ -161,7 +127,7 @@ func (container *Container) PipelinePath() pipeline.Path {
 
 // Container is digestible so that it can be recorded as an output of the
 // --debug vertex that created it.
-var _ Digestible = (*Container)(nil)
+var _ resourceid.Digestible = (*Container)(nil)
 
 // Digest returns the container's content hash.
 func (container *Container) Digest() (digest.Digest, error) {
@@ -397,7 +363,7 @@ func (container *Container) buildUncached(
 	container.Services.Merge(context.Services)
 
 	for _, secretID := range secrets {
-		secret, err := secretID.ToSecret()
+		secret, err := secretID.Decode()
 		if err != nil {
 			return nil, err
 		}
@@ -1446,7 +1412,7 @@ func (container *Container) Publish(
 	}
 	services := ServiceBindings{}
 	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
-		variant, err := variantID.ToContainer()
+		variant, err := variantID.Decode()
 		if err != nil {
 			return "", err
 		}
@@ -1540,7 +1506,7 @@ func (container *Container) Export(
 	}
 	services := ServiceBindings{}
 	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
-		variant, err := variantID.ToContainer()
+		variant, err := variantID.Decode()
 		if err != nil {
 			return err
 		}
@@ -1597,7 +1563,7 @@ func (container *Container) Import(
 	store content.Store,
 	lm *leaseutil.Manager,
 ) (*Container, error) {
-	file, err := source.ToFile()
+	file, err := source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -1962,10 +1928,10 @@ const (
 // the "real" ftp proxy setting in here too and have the shim handle
 // leaving only that set in the actual env var.
 type ContainerExecUncachedMetadata struct {
-	ParentClientIDs   []string `json:"parentClientIDs,omitempty"`
-	ServerID          string   `json:"serverID,omitempty"`
-	ProgSockPath      string   `json:"progSockPath,omitempty"`
-	EnvironmentDigest uint64   `json:"environmentDigest,omitempty"`
+	ParentClientIDs   []string      `json:"parentClientIDs,omitempty"`
+	ServerID          string        `json:"serverID,omitempty"`
+	ProgSockPath      string        `json:"progSockPath,omitempty"`
+	EnvironmentDigest digest.Digest `json:"environmentDigest,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToLLBRunOpt() (llb.RunOption, error) {

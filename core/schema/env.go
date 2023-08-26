@@ -50,16 +50,17 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"staticCheckResult":  ToResolver(s.staticCheckResult),
 			"currentEnvironment": ToResolver(s.currentEnvironment),
 		},
-		"Environment": ToIDableObjectResolver(core.EnvironmentID.ToEnvironment, ObjectResolver{
-			"id":          ToResolver(s.environmentID),
-			"name":        ToResolver(s.environmentName),
-			"load":        ToResolver(s.load),
-			"withWorkdir": ToResolver(s.withWorkdir),
-			"withCheck":   ToResolver(s.withCheck),
-			"check":       ToResolver(s.checkByName),
-			"checks":      ToResolver(s.checks),
+		"Environment": ToIDableObjectResolver(core.EnvironmentID.Decode, ObjectResolver{
+			"id":                      ToResolver(s.environmentID),
+			"name":                    ToResolver(s.environmentName),
+			"load":                    ToResolver(s.load),
+			"withWorkdir":             ToResolver(s.withWorkdir),
+			"withCheck":               ToResolver(s.withCheck),
+			"check":                   ToResolver(s.checkByName),
+			"checks":                  ToResolver(s.checks),
+			"exportEnvironmentResult": ToResolver(s.exportResult),
 		}),
-		"Check": ToIDableObjectResolver(core.CheckID.ToCheck, ObjectResolver{
+		"Check": ToIDableObjectResolver(core.CheckID.Decode, ObjectResolver{
 			"id":              ToResolver(s.checkID),
 			"withName":        ToResolver(s.withCheckName),
 			"withDescription": ToResolver(s.withCheckDescription),
@@ -68,7 +69,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"subchecks":       ToResolver(s.subchecks),
 			"result":          ToResolver(s.evaluateCheckResult),
 		}),
-		"CheckResult": ToIDableObjectResolver(core.CheckResultID.ToCheckResult, ObjectResolver{
+		"CheckResult": ToIDableObjectResolver(core.CheckResultID.Decode, ObjectResolver{
 			"id": ToResolver(s.checkResultID),
 		}),
 	}
@@ -83,7 +84,7 @@ type environmentArgs struct {
 }
 
 func (s *environmentSchema) environment(ctx *core.Context, _ *core.Query, args environmentArgs) (*core.Environment, error) {
-	return args.ID.ToEnvironment()
+	return args.ID.Decode()
 }
 
 type checkArgs struct {
@@ -91,7 +92,7 @@ type checkArgs struct {
 }
 
 func (s *environmentSchema) check(ctx *core.Context, _ *core.Query, args checkArgs) (*core.Check, error) {
-	return args.ID.ToCheck()
+	return args.ID.Decode()
 }
 
 type checkResultArgs struct {
@@ -99,7 +100,7 @@ type checkResultArgs struct {
 }
 
 func (s *environmentSchema) checkResult(ctx *core.Context, _ *core.Query, args checkResultArgs) (*core.CheckResult, error) {
-	return args.ID.ToCheckResult()
+	return args.ID.Decode()
 }
 
 func (s *environmentSchema) staticCheckResult(ctx *core.Context, _ *core.Query, args core.CheckResult) (*core.CheckResult, error) {
@@ -124,7 +125,7 @@ type loadArgs struct {
 }
 
 func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args loadArgs) (*core.Environment, error) {
-	rootDir, err := args.EnvironmentDirectory.ToDirectory()
+	rootDir, err := args.EnvironmentDirectory.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load env root directory: %w", err)
 	}
@@ -241,7 +242,7 @@ type withWorkdirArgs struct {
 }
 
 func (s *environmentSchema) withWorkdir(ctx *core.Context, env *core.Environment, args withWorkdirArgs) (*core.Environment, error) {
-	workdir, err := args.Workdir.ToDirectory()
+	workdir, err := args.Workdir.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +256,7 @@ type withCheckArgs struct {
 }
 
 func (s *environmentSchema) withCheck(ctx *core.Context, env *core.Environment, args withCheckArgs) (_ *core.Environment, rerr error) {
-	check, err := args.ID.ToCheck()
+	check, err := args.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -279,6 +280,18 @@ func (s *environmentSchema) checkByName(ctx *core.Context, env *core.Environment
 
 func (s *environmentSchema) checks(ctx *core.Context, env *core.Environment, _ any) ([]*core.Check, error) {
 	return env.Checks, nil
+}
+
+type exportEnvironmentResultArgs struct {
+	Result string
+}
+
+func (s *environmentSchema) exportResult(ctx *core.Context, env *core.Environment, args exportEnvironmentResultArgs) (bool, error) {
+	// TODO: real pipeline
+	if err := env.ExportResult(ctx, s.bk, s.progSockPath, nil, s.envCache, args.Result); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *environmentSchema) checkID(ctx *core.Context, check *core.Check, args any) (core.CheckID, error) {
@@ -306,7 +319,7 @@ type withSubcheckArgs struct {
 }
 
 func (s *environmentSchema) withSubcheck(ctx *core.Context, check *core.Check, args withSubcheckArgs) (*core.Check, error) {
-	subcheck, err := args.ID.ToCheck()
+	subcheck, err := args.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +331,7 @@ type withCheckContainerArgs struct {
 }
 
 func (s *environmentSchema) withCheckContainer(ctx *core.Context, check *core.Check, args withCheckContainerArgs) (*core.Check, error) {
-	ctr, err := args.ID.ToContainer()
+	ctr, err := args.ID.Decode()
 	if err != nil {
 		return nil, err
 	}

@@ -7,23 +7,21 @@ import (
 
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/sshforward"
+	"github.com/opencontainers/go-digest"
 )
 
 type Socket struct {
 	HostPath string `json:"host_path,omitempty"`
 }
 
-type ID string
+type ID = resourceid.ID[Socket]
 
-func (id ID) String() string { return string(id) }
-
-func (id ID) ToSocket() (*Socket, error) {
-	var socket Socket
-	if err := resourceid.Decode(&socket, id); err != nil {
-		return nil, err
+func (socket *Socket) Digest() (digest.Digest, error) {
+	id, err := socket.ID()
+	if err != nil {
+		return "", err
 	}
-
-	return &socket, nil
+	return digest.FromString(string(id)), nil
 }
 
 func NewHostSocket(absPath string) *Socket {
@@ -33,7 +31,7 @@ func NewHostSocket(absPath string) *Socket {
 }
 
 func (socket *Socket) ID() (ID, error) {
-	return resourceid.Encode[ID](socket)
+	return resourceid.Encode(socket)
 }
 
 func (socket *Socket) IsHost() bool {

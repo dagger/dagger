@@ -28,6 +28,7 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
+	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
@@ -65,7 +66,7 @@ type Params struct {
 	CloudURLCallback   func(string)
 
 	// TODO: doc if this stays in
-	EnvironmentDigest uint64
+	EnvironmentDigest digest.Digest
 }
 
 type Client struct {

@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
+	"github.com/opencontainers/go-digest"
 )
 
 // Secret is a content-addressed secret.
@@ -16,25 +17,11 @@ type Secret struct {
 	Name string `json:"name,omitempty"`
 }
 
-// SecretID is an opaque value representing a content-addressed secret.
-type SecretID string
-
 func NewDynamicSecret(name string) *Secret {
 	return &Secret{
 		Name: name,
 	}
 }
-
-func (id SecretID) ToSecret() (*Secret, error) {
-	var secret Secret
-	if err := resourceid.Decode(&secret, id); err != nil {
-		return nil, err
-	}
-
-	return &secret, nil
-}
-
-func (id SecretID) String() string { return string(id) }
 
 func (secret *Secret) Clone() *Secret {
 	cp := *secret
@@ -42,7 +29,11 @@ func (secret *Secret) Clone() *Secret {
 }
 
 func (secret *Secret) ID() (SecretID, error) {
-	return resourceid.Encode[SecretID](secret)
+	return resourceid.Encode(secret)
+}
+
+func (secret *Secret) Digest() (digest.Digest, error) {
+	return stableDigest(secret)
 }
 
 // ErrNotFound indicates a secret can not be found.
@@ -94,7 +85,7 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 	defer store.mu.Unlock()
 
 	var name string
-	if secret, err := SecretID(idOrName).ToSecret(); err == nil {
+	if secret, err := SecretID(idOrName).Decode(); err == nil {
 		name = secret.Name
 	} else {
 		name = idOrName

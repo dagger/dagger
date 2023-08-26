@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
@@ -43,7 +44,7 @@ func stableDigest(value any) (digest.Digest, error) {
 	var debugW = io.Discard
 
 	if debugDigest {
-		if x, ok := value.(Digestible); ok && x != nil {
+		if x, ok := value.(resourceid.Digestible); ok && x != nil {
 			debugTag = identity.NewID()
 			debugW = prefixw.New(debugDigestLogsW, fmt.Sprintf("%s %T >> ", debugTag, x))
 			fmt.Fprintln(debugW, "BEGIN")
@@ -61,7 +62,7 @@ func stableDigest(value any) (digest.Digest, error) {
 	}
 
 	if debugDigest {
-		if x, ok := value.(Digestible); ok && x != nil {
+		if x, ok := value.(resourceid.Digestible); ok && x != nil {
 			fmt.Fprintln(debugW, "END", network.HostHash(dig))
 		}
 	}
@@ -141,7 +142,7 @@ func digestInner(value any, dest io.Writer) error {
 
 		return stableDigestInto(stabilized, dest)
 
-	case Digestible:
+	case resourceid.Digestible:
 		digest, err := x.Digest()
 		if err != nil {
 			return err

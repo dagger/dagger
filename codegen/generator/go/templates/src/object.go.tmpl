@@ -156,5 +156,13 @@ func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, 
     }
 	return string(id), nil
 }
+
+func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
+  id, err := r.ID(context.Background())
+  if err != nil {
+    return nil, err
+  }
+  return json.Marshal(id)
+}
 {{ end }}
 {{ end -}}

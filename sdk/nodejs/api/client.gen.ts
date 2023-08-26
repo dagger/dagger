@@ -2854,6 +2854,7 @@ export class EnvVariable extends BaseClient {
  * A group of Dagger entrypoints that can be queried and/or invoked.
  */
 export class Environment extends BaseClient {
+  private readonly _exportEnvironmentResult?: boolean = undefined
   private readonly _id?: EnvironmentID = undefined
   private readonly _name?: string = undefined
   private readonly _workdir?: DirectoryID = undefined
@@ -2863,12 +2864,14 @@ export class Environment extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _exportEnvironmentResult?: boolean,
     _id?: EnvironmentID,
     _name?: string,
     _workdir?: DirectoryID
   ) {
     super(parent)
 
+    this._exportEnvironmentResult = _exportEnvironmentResult
     this._id = _id
     this._name = _name
     this._workdir = _workdir
@@ -2923,6 +2926,28 @@ export class Environment extends BaseClient {
           r.id
         )
     )
+  }
+
+  /**
+   * TODO: hide from docs, possibly standard codegen too
+   */
+  async exportEnvironmentResult(result: string): Promise<boolean> {
+    if (this._exportEnvironmentResult) {
+      return this._exportEnvironmentResult
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exportEnvironmentResult",
+          args: { result },
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**

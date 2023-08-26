@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,18 +34,9 @@ const (
 	envDepsPath = "/.deps"
 )
 
-type EnvironmentID string
-
-func (id EnvironmentID) String() string {
-	return string(id)
-}
-
-func (id EnvironmentID) ToEnvironment() (*Environment, error) {
-	env := new(Environment)
-	if id == "" {
-		return env, nil
-	}
-	if err := resourceid.Decode(env, id); err != nil {
+func (id EnvironmentID) Decode() (*Environment, error) {
+	env, err := resourceid.ID[Environment](id).Decode()
+	if err != nil {
 		return nil, err
 	}
 	if err := env.setEntrypointEnvs(id); err != nil {
@@ -74,8 +66,8 @@ type Environment struct {
 	Checks []*Check `json:"checks,omitempty"`
 }
 
-func (env *Environment) Clone() *Environment {
-	cp := *env
+func (env Environment) Clone() *Environment {
+	cp := env
 	if env.Directory != nil {
 		cp.Directory = env.Directory.Clone()
 	}
@@ -107,16 +99,20 @@ func (env *Environment) ID() (EnvironmentID, error) {
 	if err := env.setEntrypointEnvs(""); err != nil {
 		return "", fmt.Errorf("failed to set entrypoint envs: %w", err)
 	}
-	return resourceid.Encode[EnvironmentID](env)
+	id, err := resourceid.Encode(env)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode environment to id: %w", err)
+	}
+	return EnvironmentID(id), nil
 }
 
 // TODO: doc subtleties
-func (env *Environment) Digest() (uint64, error) {
+func (env *Environment) Digest() (digest.Digest, error) {
 	env = env.Clone()
 	if err := env.setEntrypointEnvs(""); err != nil {
-		return 0, fmt.Errorf("failed to set entrypoint envs: %w", err)
+		return "", fmt.Errorf("failed to set entrypoint envs: %w", err)
 	}
-	return cacheKey(env), nil
+	return stableDigest(env)
 }
 
 func (env *Environment) setEntrypointEnvs(id EnvironmentID) error {
@@ -130,7 +126,7 @@ func (env *Environment) setEntrypointEnvs(id EnvironmentID) error {
 				check.EnvironmentID = id
 				continue
 			}
-			checkEnv, err := check.EnvironmentID.ToEnvironment()
+			checkEnv, err := check.EnvironmentID.Decode()
 			if err != nil {
 				return fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
 			}
@@ -143,14 +139,14 @@ func (env *Environment) setEntrypointEnvs(id EnvironmentID) error {
 	return nil
 }
 
-type EnvironmentCache CacheMap[uint64, *Environment]
+type EnvironmentCache CacheMap[digest.Digest, *Environment]
 
 func NewEnvironmentCache() *EnvironmentCache {
-	return (*EnvironmentCache)(NewCacheMap[uint64, *Environment]())
+	return (*EnvironmentCache)(NewCacheMap[digest.Digest, *Environment]())
 }
 
-func (cache *EnvironmentCache) cacheMap() *CacheMap[uint64, *Environment] {
-	return (*CacheMap[uint64, *Environment])(cache)
+func (cache *EnvironmentCache) cacheMap() *CacheMap[digest.Digest, *Environment] {
+	return (*CacheMap[digest.Digest, *Environment])(cache)
 }
 
 func (cache *EnvironmentCache) ContextWithCachedEnv(ctx context.Context, env *Environment) (context.Context, error) {
@@ -180,7 +176,7 @@ func (cache *EnvironmentCache) CachedEnvFromContext(ctx context.Context) (*Envir
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 	return cache.cacheMap().GetOrInitialize(clientMetadata.EnvironmentDigest, func() (*Environment, error) {
-		return nil, fmt.Errorf("environment %d not found in cache", clientMetadata.EnvironmentDigest)
+		return nil, fmt.Errorf("environment %s not found in cache", clientMetadata.EnvironmentDigest)
 	})
 }
 
@@ -281,7 +277,7 @@ func LoadEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read envid file: %w", err)
 	}
-	env, err = EnvironmentID(envID).ToEnvironment()
+	env, err = EnvironmentID(envID).Decode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode envid: %w", err)
 	}
@@ -390,6 +386,57 @@ func execEntrypoint(
 	return entrypointOutput, nil
 }
 
+func (env *Environment) ExportResult(
+	ctx *Context,
+	bk *buildkit.Client,
+	progSock string,
+	pipeline pipeline.Path,
+	envCache *EnvironmentCache,
+	resultStr string,
+) error {
+	var result any
+	if err := json.Unmarshal([]byte(resultStr), &result); err != nil {
+		return fmt.Errorf("failed to unmarshal result: %s", err)
+	}
+
+	var output any
+	switch result := result.(type) {
+	case string:
+		resource, err := ResourceFromID(result)
+		if err != nil {
+			// this isn't a resource id, just use the string as the output
+			output = result
+			break
+		}
+		switch resource := resource.(type) {
+		case *Check:
+			check := resource
+			checkRes, err := check.Result(ctx.Context, bk, progSock, pipeline, envCache)
+			if err != nil {
+				return fmt.Errorf("failed to get check result: %w", err)
+			}
+			check.StaticCheckResult = checkRes
+			checkID, err := check.ID()
+			if err != nil {
+				return fmt.Errorf("failed to get check ID: %w", err)
+			}
+			output = string(checkID)
+		default:
+			// just use the id as is
+			output = result
+		}
+	default:
+		output = result
+	}
+
+	outputBytes, err := json.Marshal(output)
+	if err != nil {
+		return fmt.Errorf("failed to marshal output: %w", err)
+	}
+
+	return bk.IOReaderExport(ctx, bytes.NewReader(outputBytes), filepath.Join(outputMountPath, outputFile), 0600)
+}
+
 func (env *Environment) WithCheck(check *Check, envCache *EnvironmentCache) (*Environment, error) {
 	env = env.Clone()
 	env.Checks = append(env.Checks, check)
@@ -403,26 +450,6 @@ func (env *Environment) WithCheck(check *Check, envCache *EnvironmentCache) (*En
 	return env, nil
 }
 
-type CheckID string
-
-func (id CheckID) String() string {
-	return string(id)
-}
-
-func (id CheckID) ToCheck() (*Check, error) {
-	var check Check
-	if id == "" {
-		return &check, nil
-	}
-	if err := resourceid.Decode(&check, id); err != nil {
-		return nil, err
-	}
-	if !check.IsCheck {
-		return nil, fmt.Errorf("resource %q is not a check", id)
-	}
-	return &check, nil
-}
-
 type Check struct {
 	EnvironmentID EnvironmentID `json:"environmentId,omitempty"`
 
@@ -430,17 +457,15 @@ type Check struct {
 	Description string   `json:"description"`
 	Subchecks   []*Check `json:"subchecks"`
 
+	StaticCheckResult *CheckResult `json:"staticCheckResult,omitempty"`
+
 	// The container to exec if the check's success+output is being resolved
 	// from a user-defined container via the Check.withContainer API
 	UserContainer *Container `json:"user_container"`
-
-	// TODO: backport generalize polymorphic safety checks
-	IsCheck bool `json:"is_check"`
 }
 
 func (check *Check) ID() (CheckID, error) {
-	check.IsCheck = true
-	return resourceid.Encode[CheckID](check)
+	return resourceid.Encode(check)
 }
 
 func (check *Check) Digest() (digest.Digest, error) {
@@ -453,7 +478,6 @@ func (check Check) Clone() *Check {
 		Description:   check.Description,
 		Subchecks:     make([]*Check, len(check.Subchecks)),
 		EnvironmentID: check.EnvironmentID,
-		IsCheck:       check.IsCheck,
 	}
 	for i, subcheck := range check.Subchecks {
 		cp.Subchecks[i] = subcheck.Clone()
@@ -499,8 +523,12 @@ func (check *Check) GetSubchecks(
 		return check.Subchecks, nil
 	}
 
+	if check.StaticCheckResult != nil {
+		return nil, nil
+	}
+
 	if check.EnvironmentID != "" {
-		env, err := check.EnvironmentID.ToEnvironment()
+		env, err := check.EnvironmentID.Decode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
 		}
@@ -515,7 +543,7 @@ func (check *Check) GetSubchecks(
 			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
 		}
 
-		recursiveCheck, err := CheckID(id).ToCheck()
+		recursiveCheck, err := CheckID(id).Decode()
 		if err != nil {
 			// not a recursive check, there are no subchecks
 			return nil, nil
@@ -533,6 +561,10 @@ func (check *Check) Result(
 	pipeline pipeline.Path,
 	envCache *EnvironmentCache,
 ) (*CheckResult, error) {
+	if check.StaticCheckResult != nil {
+		return check.StaticCheckResult, nil
+	}
+
 	if len(check.Subchecks) > 0 {
 		// This is a composite check, evaluate it by evaluating each subcheck
 		var eg errgroup.Group
@@ -597,7 +629,7 @@ func (check *Check) Result(
 
 	if check.EnvironmentID != "" {
 		// check will be evaluated by exec'ing the environment's resolver
-		env, err := check.EnvironmentID.ToEnvironment()
+		env, err := check.EnvironmentID.Decode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
 		}
@@ -612,12 +644,12 @@ func (check *Check) Result(
 			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
 		}
 
-		checkResult, err := CheckResultID(id).ToCheckResult()
+		checkResult, err := CheckResultID(id).Decode()
 		if err == nil {
 			return checkResult, nil
 		}
 
-		recursiveCheck, err := CheckID(id).ToCheck()
+		recursiveCheck, err := CheckID(id).Decode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode check from environment container: %w", err)
 		}
@@ -631,36 +663,13 @@ func (check *Check) Result(
 	return nil, fmt.Errorf("invalid empty check %q", check.Name)
 }
 
-type CheckResultID string
-
-func (id CheckResultID) String() string {
-	return string(id)
-}
-
-func (id CheckResultID) ToCheckResult() (*CheckResult, error) {
-	var checkResult CheckResult
-	if id == "" {
-		return &checkResult, nil
-	}
-	if err := resourceid.Decode(&checkResult, id); err != nil {
-		return nil, err
-	}
-	if !checkResult.IsCheckResult {
-		return nil, fmt.Errorf("invalid check result ID %q", id)
-	}
-	return &checkResult, nil
-}
-
 type CheckResult struct {
 	Success bool   `json:"success"`
 	Output  string `json:"output"`
-	// TODO: backport generalize polymorphic safety checks
-	IsCheckResult bool `json:"is_check_result"`
 }
 
 func (checkResult *CheckResult) ID() (CheckResultID, error) {
-	checkResult.IsCheckResult = true
-	return resourceid.Encode[CheckResultID](checkResult)
+	return resourceid.Encode(checkResult)
 }
 
 func (checkResult *CheckResult) Digest() (digest.Digest, error) {

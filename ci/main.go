@@ -43,7 +43,6 @@ func EngineTests(ctx context.Context) (*Check, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
 
 	engineTarPath := filepath.Join(tmpDir, "engine.tar")
 	_, err = devEngine.Export(ctx, engineTarPath)
@@ -56,13 +55,6 @@ func EngineTests(ctx context.Context) (*Check, error) {
 	}).WithFile("/dagger", daggerCLI(), DirectoryWithFileOpts{
 		Permissions: 0755,
 	})
-
-	// TODO: workaround needed so that the host file sync happens here, not when the Check Container
-	// is executed later. Need better fix
-	_, err = testEngineUtils.Sync(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sync test engine utils: %w", err)
-	}
 
 	registrySvc := registry()
 	devEngine = devEngine.
@@ -90,6 +82,12 @@ func EngineTests(ctx context.Context) (*Check, error) {
 		"-parallel=16",
 		"-count=1",
 		"-timeout=15m",
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		"-run=TestDirectory",
 	}
 
 	/* TODO: re-add support

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
+	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -64,7 +65,7 @@ type ClientMetadata struct {
 	UpstreamCacheConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_config"`
 
 	// TODO: doc if stays in
-	EnvironmentDigest uint64 `json:"environment_digest"`
+	EnvironmentDigest digest.Digest `json:"environment_digest"`
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

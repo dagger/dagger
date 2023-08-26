@@ -115,19 +115,13 @@ func Serve(r *Environment) {
 		result = make(map[string]any)
 	}
 
-	if fn.resultConverter == nil {
-		fn.resultConverter = convertResult
-	}
-	result, err = fn.resultConverter(ctx, result)
-	if err != nil {
-		writeErrorf(err)
-	}
 	output, err := json.Marshal(result)
 	if err != nil {
 		writeErrorf(fmt.Errorf("unable to marshal response: %v", err))
 	}
-	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
-		writeErrorf(fmt.Errorf("unable to write response file: %v", err))
+	_, err = dag.CurrentEnvironment().ExportEnvironmentResult(ctx, string(output))
+	if err != nil {
+		writeErrorf(fmt.Errorf("unable to export response: %v", err))
 	}
 }
 
@@ -262,9 +256,8 @@ type goFunc struct {
 	val     reflect.Value
 	// TODO:
 	// receiver *goStruct // only set for methods
-	hasReceiver     bool
-	doc             string
-	resultConverter func(context.Context, any) (any, error)
+	hasReceiver bool
+	doc         string
 }
 
 type goParam struct {
@@ -411,68 +404,6 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 	default:
 		// TODO: return nil, fmt.Errorf("unsupported type %s", t.Kind())
 		return nil, fmt.Errorf("unsupported type %s %s %s", t.Kind(), t.Name(), string(debug.Stack()))
-	}
-}
-
-// convertResult will recursively walk the result and update any values that can
-// be converted into a graphql ID to that. It also fixes the casing of any fields
-// to match the casing of the graphql schema (lower camel case).
-// TODO: the MarshalGQL func in querybuilder is very similar to this one, dedupe somehow?
-func convertResult(ctx context.Context, result any) (any, error) {
-	if result == nil {
-		return result, nil
-	}
-
-	if result, ok := result.(querybuilder.GraphQLMarshaller); ok {
-		id, err := result.XXX_GraphQLID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		// ID-able dagger objects are serialized as their ID string across the wire
-		// between the session and project container.
-		return id, nil
-	}
-
-	switch typ := reflect.TypeOf(result).Kind(); typ {
-	case reflect.Pointer:
-		return convertResult(ctx, reflect.ValueOf(result).Elem().Interface())
-	case reflect.Interface:
-		return convertResult(ctx, reflect.ValueOf(result).Elem().Interface())
-	case reflect.Slice:
-		slice := reflect.ValueOf(result)
-		for i := 0; i < slice.Len(); i++ {
-			converted, err := convertResult(ctx, slice.Index(i).Interface())
-			if err != nil {
-				return nil, err
-			}
-			slice.Index(i).Set(reflect.ValueOf(converted))
-		}
-		return slice.Interface(), nil
-	case reflect.Struct:
-		converted := map[string]any{}
-		for i := 0; i < reflect.TypeOf(result).NumField(); i++ {
-			field := reflect.TypeOf(result).Field(i)
-			value := reflect.ValueOf(result).Field(i).Interface()
-			convertedField, err := convertResult(ctx, value)
-			if err != nil {
-				return nil, err
-			}
-			converted[lowerCamelCase(field.Name)] = convertedField
-		}
-		return converted, nil
-	case reflect.Map:
-		converted := map[string]any{}
-		for _, key := range reflect.ValueOf(result).MapKeys() {
-			value := reflect.ValueOf(result).MapIndex(key).Interface()
-			convertedValue, err := convertResult(ctx, value)
-			if err != nil {
-				return nil, err
-			}
-			converted[lowerCamelCase(key.String())] = convertedValue
-		}
-		return converted, nil
-	default:
-		return result, nil
 	}
 }
 

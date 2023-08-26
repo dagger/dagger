@@ -2295,6 +2295,28 @@ class Environment(Type):
         return await _ctx.execute(list[Check])
 
     @typecheck
+    async def export_environment_result(self, result: str) -> bool:
+        """TODO: hide from docs, possibly standard codegen too
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("result", result),
+        ]
+        _ctx = self._select("exportEnvironmentResult", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
     async def id(self) -> EnvironmentID:
         """A unique identifier for this environment.
 

@@ -4,6 +4,7 @@ package dagger
 
 import (
 	"context"
+	"encoding/json"
 
 	"dagger.io/dagger/querybuilder"
 	"github.com/Khan/genqlient/graphql"
@@ -99,6 +100,14 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+func (r *CacheVolume) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // An entrypoint for tests, lints or anything that can pass/fail.
 type Check struct {
 	q *querybuilder.Selection
@@ -162,6 +171,14 @@ func (r *Check) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+func (r *Check) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // The name of the check.
@@ -311,6 +328,14 @@ func (r *CheckResult) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+func (r *CheckResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Any output obtained from evaluating the check's success.
@@ -703,6 +728,14 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+func (r *Container) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -1816,6 +1849,14 @@ func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+func (r *Directory) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
 	// Pipeline description.
@@ -2043,9 +2084,10 @@ type Environment struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id      *EnvironmentID
-	name    *string
-	workdir *DirectoryID
+	exportEnvironmentResult *bool
+	id                      *EnvironmentID
+	name                    *string
+	workdir                 *DirectoryID
 }
 type WithEnvironmentFunc func(r *Environment) *Environment
 
@@ -2100,6 +2142,21 @@ func (r *Environment) Checks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
+// TODO: hide from docs, possibly standard codegen too
+func (r *Environment) ExportEnvironmentResult(ctx context.Context, result string) (bool, error) {
+
+	if r.exportEnvironmentResult != nil {
+		return *r.exportEnvironmentResult, nil
+	}
+	q := r.q.Select("exportEnvironmentResult")
+	q = q.Arg("result", result)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A unique identifier for this environment.
 func (r *Environment) ID(ctx context.Context) (EnvironmentID, error) {
 
@@ -2131,6 +2188,14 @@ func (r *Environment) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+func (r *Environment) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Initialize this environment from its source. The full context needed to execute
@@ -2293,6 +2358,14 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+func (r *File) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Gets the size of the file, in bytes.
@@ -2963,6 +3036,14 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+func (r *Secret) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // The value of this secret.
 func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 
@@ -3015,6 +3096,14 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+func (r *Socket) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 type CacheSharingMode string

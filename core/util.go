@@ -13,18 +13,9 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/user"
 )
-
-// Digestible is any object which can return a digest of its content.
-//
-// It is used to record the request's result as an output of the request's
-// vertex in the progress stream.
-type Digestible interface {
-	Digest() (digest.Digest, error)
-}
 
 func absPath(workDir string, containerPath string) string {
 	if path.IsAbs(containerPath) {

@@ -289,6 +289,65 @@ func (c *Client) LocalFileExport(
 	return nil
 }
 
+// IOReaderExport exports the contents of an io.Reader to the caller's local fs as a file
+// TODO: de-dupe this with the above method to extent possible
+func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) error {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get requester session ID: %s", err)
+	}
+
+	ctx = engine.LocalExportOpts{
+		DestClientID:     clientMetadata.ClientID,
+		Path:             destPath,
+		IsFileStream:     true,
+		FileOriginalName: filepath.Base(destPath),
+		FileMode:         destMode,
+	}.AppendToOutgoingContext(ctx)
+
+	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	if err != nil {
+		return fmt.Errorf("failed to get requester session: %s", err)
+	}
+	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create diff copy client: %s", err)
+	}
+	defer diffCopyClient.CloseSend()
+
+	chunkSize := int64(MaxFileContentsChunkSize)
+	keepGoing := true
+	for keepGoing {
+		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
+		_, err := io.CopyN(buf, r, chunkSize)
+		if errors.Is(err, io.EOF) {
+			keepGoing = false
+			err = nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read file: %s", err)
+		}
+		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
+		if errors.Is(err, io.EOF) {
+			err := diffCopyClient.RecvMsg(struct{}{})
+			if err != nil {
+				return fmt.Errorf("diff copy client error: %s", err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("failed to send file chunk: %s", err)
+		}
+	}
+	if err := diffCopyClient.CloseSend(); err != nil {
+		return fmt.Errorf("failed to close send: %s", err)
+	}
+	// wait for receiver to finish
+	var msg filesync.BytesMessage
+	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
+		return fmt.Errorf("unexpected closing recv msg: %s", err)
+	}
+	return nil
+}
+
 type localImportOpts struct {
 	*engine.LocalImportOpts
 	session bksession.Caller

@@ -87,7 +87,7 @@ func WithServices[T any](ctx context.Context, bk *buildkit.Client, svcs ServiceB
 	started := make(chan *Service, len(svcs))
 
 	for svcID, aliases := range svcs {
-		svc, err := svcID.ToContainer()
+		svc, err := svcID.Decode()
 		if err != nil {
 			return zero, err
 		}

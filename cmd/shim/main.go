@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/network"
 	"github.com/google/uuid"
+	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vito/progrock"
 	"golang.org/x/sys/unix"
@@ -411,7 +412,7 @@ func setupBundle() int {
 				return 1
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
-			keepEnv = append(keepEnv, "_DAGGER_ENVIRONMENT_DIGEST="+strconv.FormatUint(execMetadata.EnvironmentDigest, 10))
+			keepEnv = append(keepEnv, "_DAGGER_ENVIRONMENT_DIGEST="+execMetadata.EnvironmentDigest.String())
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -611,13 +612,9 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
 	}
-	environmentDigestStr, ok := internalEnv("_DAGGER_ENVIRONMENT_DIGEST")
+	environmentDigest, ok := internalEnv("_DAGGER_ENVIRONMENT_DIGEST")
 	if ok {
-		environmentDigest, err := strconv.ParseUint(environmentDigestStr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("error parsing environment digest: %w", err)
-		}
-		clientParams.EnvironmentDigest = environmentDigest
+		clientParams.EnvironmentDigest = digest.Digest(environmentDigest)
 	}
 
 	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")

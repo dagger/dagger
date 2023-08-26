@@ -598,7 +598,7 @@ func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error)
 	// TODO: hack to unlazy env so it's actually loaded
 	_, err = loadedEnv.ID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get environment ID: %w", err)
+		return nil, fmt.Errorf("failed to get loaded environment ID: %w", err)
 	}
 
 	return loadedEnv, nil

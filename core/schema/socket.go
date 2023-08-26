@@ -49,5 +49,5 @@ type socketArgs struct {
 
 // nolint: unparam
 func (s *socketSchema) socket(_ *core.Context, _ any, args socketArgs) (*socket.Socket, error) {
-	return args.ID.ToSocket()
+	return args.ID.Decode()
 }
