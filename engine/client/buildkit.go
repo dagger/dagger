@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"go.opentelemetry.io/otel"
@@ -58,45 +59,41 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 // waitBuildkit waits for the buildkit daemon to be responsive.
 // TODO: there's a builtin method for this now
 func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, error) {
-	// Try to connect every 100ms up to 1800 times (3 minutes total)
-	// NOTE: the long timeout accounts for startup time of the engine when
-	// it needs to synchronize cache state.
-	const (
-		retryPeriod   = 100 * time.Millisecond
-		retryAttempts = 6000
-	)
-
 	var c *bkclient.Client
+	var workerInfo []*bkclient.WorkerInfo
 	var err error
 
-	for retry := 0; retry < retryAttempts; retry++ {
-		c, err = bkclient.New(ctx, host, bkclient.WithFailFast())
-		if err == nil {
-			break
-		}
-		time.Sleep(retryPeriod)
-	}
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 100 * time.Millisecond
 
+	// NOTE: the long timeout accounts for startup time of the engine when
+	// it needs to synchronize cache state.
+	connectRetryCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+
+	err = backoff.Retry(func() error {
+		ctx, cancel := context.WithTimeout(connectRetryCtx, bo.NextBackOff())
+		defer cancel()
+
+		c, err = bkclient.New(ctx, host, bkclient.WithFailFast())
+		if err != nil {
+			return err
+		}
+
+		// FIXME Does output "failed to wait: signal: broken pipe"
+		defer c.Close()
+
+		workerInfo, err = c.ListWorkers(ctx)
+		if err != nil {
+			listWorkerError := strings.ReplaceAll(err.Error(), "\\n", "")
+			return fmt.Errorf("buildkit failed to respond: %s", listWorkerError)
+		}
+
+		return nil
+	}, backoff.WithContext(bo, connectRetryCtx))
 	if err != nil {
 		return nil, fmt.Errorf("buildkit failed to respond: %w", err)
 	}
 
-	if c == nil {
-		return nil, fmt.Errorf("buildkit failed to respond")
-	}
-
-	// FIXME Does output "failed to wait: signal: broken pipe"
-	defer c.Close()
-
-	var workerInfo []*bkclient.WorkerInfo
-	for retry := 0; retry < retryAttempts; retry++ {
-		workerInfo, err = c.ListWorkers(ctx)
-		if err == nil {
-			return workerInfo, nil
-		}
-		time.Sleep(retryPeriod)
-	}
-
-	listWorkerError := strings.ReplaceAll(err.Error(), "\\n", "")
-	return nil, fmt.Errorf("buildkit failed to respond: %s", listWorkerError)
+	return workerInfo, nil
 }
