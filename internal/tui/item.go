@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tonistiigi/units"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/ui"
 )
 
 func NewItem(v *progrock.Vertex, width int) *Item {
@@ -26,7 +27,7 @@ func NewItem(v *progrock.Vertex, width int) *Item {
 		inputs:     v.Inputs,
 		name:       saneName,
 		logs:       &bytes.Buffer{},
-		logsModel:  NewVterm(width),
+		logsModel:  ui.NewVterm(),
 		tasksModel: viewport.New(width, 1),
 		spinner:    newSpinner(),
 		width:      width,
@@ -44,7 +45,7 @@ type Item struct {
 	cached     bool
 	error      *string
 	logs       *bytes.Buffer
-	logsModel  *Vterm
+	logsModel  *ui.Vterm
 	tasks      []*progrock.VertexTask
 	tasksModel viewport.Model
 	internal   bool
@@ -158,7 +159,7 @@ func (i *Item) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return i, cmd
 		}
 		vtermM, cmd := i.logsModel.Update(msg)
-		i.logsModel = vtermM.(*Vterm)
+		i.logsModel = vtermM.(*ui.Vterm)
 		return i, cmd
 	}
 }

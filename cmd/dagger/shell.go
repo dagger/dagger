@@ -17,9 +17,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock"
-	"github.com/vito/vt100"
-	"golang.org/x/term"
 )
 
 func init() {
@@ -236,32 +235,22 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	// TODO:
 	// fmt.Fprintf(os.Stderr, "WE ARE SO CONNECTED\n")
 
-	origState, err := term.GetState(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("failed to get stdin state: %w", err)
-	}
-	defer term.Restore(int(os.Stdin.Fd()), origState)
-
-	_, err = term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		panic(fmt.Sprintf("failed to set stdin to raw mode: %v", err))
-	}
-
 	shellStdinR, shellStdinW := io.Pipe()
-	go io.Copy(shellStdinW, os.Stdin)
 
 	vtx := rec.Vertex("shell", "shell",
 		progrock.Focused(),
-		progrock.Zoomed(func(v *vt100.VT100) {
-			v.ForwardRequests = os.Stdout
-			v.ForwardResponses = shellStdinW
-			v.CursorVisible = true
-			v.OnResize(func(h, w int) {
+		progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
+			term.ForwardRequests = os.Stderr
+			term.ForwardResponses = shellStdinW
+			term.CursorVisible = true
+			term.OnResize(func(h, w int) {
 				message := append([]byte{}, resizePrefix...)
 				message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
 				// best effort
 				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
 			})
+
+			return shellStdinW
 		}))
 	defer func() {
 		vtx.Done(rerr)
@@ -295,9 +284,9 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 
 	// Forward stdin to websockets
 	go func() {
-		for {
-			b := make([]byte, 512)
+		b := make([]byte, 512)
 
+		for {
 			n, err := shellStdinR.Read(b)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "read: %v\n", err)

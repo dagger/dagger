@@ -53,8 +53,11 @@ func goRuntime(
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
 		Args: []string{
-			"go", "build", "-o", "/entrypoint", "-ldflags", "-s -d -w",
-			path.Join(workdir, path.Dir(configPath)),
+			"go", "build",
+			"-C", path.Join(workdir, path.Dir(configPath)),
+			"-o", "/entrypoint",
+			"-ldflags", "-s -d -w",
+			".",
 		},
 	})
 	if err != nil {

@@ -163,32 +163,32 @@ func inlineTUI(
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()
 
-	program, stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
-	defer stop()
+	return progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) error {
+		params.CloudURLCallback = func(cloudURL string) {
+			ui.SetStatusInfo(progrock.StatusInfo{
+				Name:  "Cloud URL",
+				Value: cloudURL,
+				Order: 1,
+			})
+		}
 
-	params.CloudURLCallback = func(cloudURL string) {
-		program.Send(progrock.StatusInfoMsg{
-			Name:  "Cloud URL",
-			Value: cloudURL,
-			Order: 1,
-		})
-	}
+		params.EngineNameCallback = func(name string) {
+			ui.SetStatusInfo(progrock.StatusInfo{
+				Name:  "Engine",
+				Value: name,
+				Order: 2,
+			})
+		}
 
-	params.EngineNameCallback = func(name string) {
-		program.Send(progrock.StatusInfoMsg{
-			Name:  "Engine",
-			Value: name,
-			Order: 2,
-		})
-	}
+		engineClient, ctx, err := client.Connect(ctx, params)
+		if err != nil {
+			return err
+		}
+		defer engineClient.Close()
 
-	engineClient, ctx, err := client.Connect(ctx, params)
-	if err != nil {
-		return err
-	}
-	defer engineClient.Close()
+		return fn(ctx, engineClient)
+	})
 
-	return fn(ctx, engineClient)
 }
 
 func newProgrockWriter(dest string) (progrock.Writer, error) {
