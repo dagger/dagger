@@ -11,12 +11,12 @@ async fn main() -> eyre::Result<()> {
             .build()?,
     );
 
-    let node_cache = client.cache_volume("node").id().await?;
+    let node_cache = client.cache_volume("node");
 
     let source = client
         .container()
         .from("node:16")
-        .with_mounted_directory("/src", host_source_dir.id().await?)
+        .with_mounted_directory("/src", host_source_dir)
         .with_mounted_cache("/src/node_modules", node_cache);
 
     let runner = source
@@ -34,7 +34,7 @@ async fn main() -> eyre::Result<()> {
     let ref_ = client
         .container()
         .from("nginx")
-        .with_directory("/usr/share/nginx/html", build_dir.id().await?)
+        .with_directory("/usr/share/nginx/html", build_dir)
         .publish(format!("ttl.sh/hello-dagger-sdk-{}:1h", rng.gen::<u64>()))
         .await?;
 

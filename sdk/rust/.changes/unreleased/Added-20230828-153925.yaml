@@ -1,0 +1,17 @@
+kind: Added
+body: |
+  Remove required syntax around id.await
+
+  ```rust
+  let image = client.container().from().with_directory(src.id().await?);
+  // after this pr
+  let image = client.container().from().with_directory(src);
+  ```
+  
+  This means that the with_directory and other functions like that will no longer accept an ID as argument. I could technically support the other option, but that is somewhat considered an anti pattern, because you opt out of the laziness.
+  
+  What rust sdk does in the background is the same as the other sdks, this means that we've now moved the execution back to the actual api call towards the dagger engine. Instead of doing all these small api calls for caches, volumes, secrets and whatnot in the middle of our execution chain.
+time: 2023-08-28T15:39:25.804352+02:00
+custom:
+  Author: kjuulh
+  PR: "5670"
