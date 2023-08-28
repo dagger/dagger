@@ -28,6 +28,7 @@ This tutorial assumes that:
 - You have a basic understanding of the JavaScript programming language.
 - You have a basic understanding of Azure DevOps and Azure Container Instances. If not, learn about [Azure DevOps](https://learn.microsoft.com/en-us/azure/devops) and [Azure Container Instances](https://azure.microsoft.com/en-us/products/container-instances).
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have the Azure CLI installed. If not, [install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
 - You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
@@ -195,21 +196,21 @@ Once credentials are configured, test the Dagger pipeline by running the command
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>

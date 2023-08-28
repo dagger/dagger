@@ -13,5 +13,8 @@ steps:
 - script: pip install .
   displayName: 'Install dependencies'
 
-- script: python main.py
+- script: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+  displayName: 'Install Dagger CLI'
+
+- script: dagger run python main.py
   displayName: 'Run Dagger'

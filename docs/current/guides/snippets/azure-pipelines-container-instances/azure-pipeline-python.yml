@@ -14,7 +14,10 @@ steps:
 - script: pip install dagger-io aiohttp azure-identity azure-mgmt-containerinstance
   displayName: 'Install Dagger and Azure SDKs'
 
-- script: python ci/main.py
+- script: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+  displayName: 'Install Dagger CLI'
+
+- script: dagger run python ci/main.py
   displayName: 'Run Dagger'
   env:
     DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)
