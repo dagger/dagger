@@ -5,11 +5,13 @@ phases:
     commands:
       - echo "Installing Dagger SDK for Node.js"
       - npm install @dagger.io/dagger@latest
+      - echo "Installing Dagger CLI"
+      - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - node ci/index.mjs
+      - dagger run node ci/index.mjs
 
   post_build:
     commands:

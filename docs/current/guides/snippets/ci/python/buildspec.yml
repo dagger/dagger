@@ -5,6 +5,8 @@ phases:
     commands:
       - echo "Installing dependencies"
       - pip install .
+      - echo "Installing Dagger CLI"
+      - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 
   build:
     commands:
