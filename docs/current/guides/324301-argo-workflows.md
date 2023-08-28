@@ -90,7 +90,7 @@ A few important points to note:
 - The image `golang:1.21.0-bookworm` is used as the runtime for the container because the example project requires Go.
 - The environment variable `_EXPERIMENTAL_DAGGER_CLOUD_TOKEN` is set from the Kubernetes secret `dagger-cloud.token`. If you have a Dagger Cloud token, set this as a secret with `kubectl create secret generic dagger-cloud --from-literal=token={YOUR_TOKEN}`. If not, remove this variable.
 
-The workflow uses a PersistentVolumeClaim for the runtime dependencies of the pipeline. Even though the dependencies within the pipeline are cached through Dagger, we still have dependencies to run the pipeline. 
+The workflow uses a PersistentVolumeClaim for the runtime dependencies of the pipeline. Even though the dependencies within the pipeline are cached through Dagger, we still have dependencies to run the pipeline.
 
 Create the PersistentVolumeClaim configuration in a file called `gomodcache.yaml`:
 
