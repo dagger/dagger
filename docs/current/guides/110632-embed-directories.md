@@ -33,7 +33,7 @@ The following example demonstrates how to copy an embedded directory:
 Attempt to run the code and print the content of the `/embed` directory:
 
 ```shell
-➜  go run .
+➜  dagger run go run .
 /embed/:
 total 4
 drwxr-xr-x    1 root     root          4096 Oct 31 16:49 example
