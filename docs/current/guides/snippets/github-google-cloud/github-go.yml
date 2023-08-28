@@ -36,7 +36,7 @@ jobs:
         run: go get dagger.io/dagger@latest cloud.google.com/go/run/apiv2
       -
         name: Install Dagger CLI
-        run: cd /usr/local && curl -L https://dl.dagger.io/dagger/install.sh | sh
+        run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
       -
         name: Release and deploy with Dagger
         run: dagger run go run ci/main.go

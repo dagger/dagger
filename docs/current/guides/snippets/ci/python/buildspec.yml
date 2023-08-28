@@ -11,4 +11,4 @@ phases:
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - python main.py
+      - dagger run python main.py

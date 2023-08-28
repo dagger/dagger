@@ -11,4 +11,4 @@ phases:
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - node index.mjs
+      - dagger run node index.mjs
