@@ -39,7 +39,7 @@ type TreeEntry interface {
 type Tree struct {
 	viewport viewport.Model
 
-	root          *Group
+	root          TreeEntry
 	currentOffset int
 	focus         bool
 
@@ -57,8 +57,8 @@ func (m *Tree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Tree) AddRoot(root TreeEntry) {
-	m.root.Add(root)
+func (m *Tree) SetRoot(root *Group) {
+	m.root = root
 }
 
 func (m *Tree) SetWidth(width int) {

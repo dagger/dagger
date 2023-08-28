@@ -92,7 +92,7 @@ func (g *Group) Open() tea.Cmd {
 	return openEditor(subDir)
 }
 
-const RootVertex = "<root>"
+const RootVertex = "[root-vtx]"
 
 func (g *Group) Add(e TreeEntry) {
 	if e.ID() == RootVertex {

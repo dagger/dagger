@@ -160,7 +160,7 @@ func result(ctx context.Context, bk *buildkit.Client, st marshalable) (*buildkit
 }
 
 func (d *portHealthChecker) Check(ctx context.Context) (err error) {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	args := []string{"check", d.host}
 	for _, port := range d.ports {

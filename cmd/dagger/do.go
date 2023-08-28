@@ -53,7 +53,7 @@ var doCmd = &cobra.Command{
 
 		focus = doFocus
 		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			rec := progrock.RecorderFromContext(ctx)
+			rec := progrock.FromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
 			if !silent {
 				cmd.SetOut(vtx.Stdout())

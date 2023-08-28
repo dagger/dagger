@@ -25,7 +25,6 @@ func New(quit func(), r progrock.Reader) *Model {
 			spinner:   newSpinner(),
 			collapsed: make(map[TreeEntry]bool),
 			focus:     true,
-			root:      NewGroup("", ""),
 		},
 		itemsByID:         make(map[string]*Item),
 		groupsByID:        make(map[string]*Group),
@@ -274,20 +273,13 @@ func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 	for _, g := range msg.Groups {
 		grp, found := m.groupsByID[g.Id]
 		if !found {
-			if g.Name == progrock.RootGroup {
-				// TODO(vito): special-case all RootGroups to add entries to the root
-				// of the tree, since sometimes there can be multiple "roots" - at
-				// least, until this is all cleaned up
-				m.groupsByID[g.Id] = m.tree.root
+			grp = NewGroup(g.Id, g.Name)
+			m.groupsByID[g.Id] = grp
+			if g.Parent != nil {
+				parent := m.groupsByID[g.GetParent()]
+				parent.Add(grp)
 			} else {
-				grp = NewGroup(g.Id, g.Name)
-				m.groupsByID[g.Id] = grp
-				if g.Parent != nil {
-					parent := m.groupsByID[g.GetParent()]
-					parent.Add(grp)
-				} else {
-					m.tree.AddRoot(grp)
-				}
+				m.tree.SetRoot(grp)
 			}
 		}
 		// TODO: update group completion
@@ -316,11 +308,7 @@ func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		if v.Id == RootVertex {
-			m.tree.root.Add(item)
-		} else {
-			m.addToFirstGroup(v.Id)
-		}
+		m.addToFirstGroup(v.Id)
 
 		item.UpdateVertex(v)
 	}
@@ -377,7 +365,7 @@ func (m Model) addToFirstGroup(id string) {
 
 func (m Model) statusBarTimerView() string {
 	root := m.tree.Root()
-	if root.Started() == nil {
+	if root == nil || root.Started() == nil {
 		return "0.0s"
 	}
 	now := time.Now()

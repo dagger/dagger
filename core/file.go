@@ -234,7 +234,7 @@ func (file *File) Export(
 		return err
 	}
 
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	vtx := rec.Vertex(
 		digest.Digest(identity.NewID()),
