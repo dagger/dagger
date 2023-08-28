@@ -192,6 +192,8 @@ type ContainerSecret struct {
 	EnvName   string     `json:"env,omitempty"`
 	MountPath string     `json:"path,omitempty"`
 	Owner     *Ownership `json:"owner,omitempty"`
+	Optional  bool       `json:"optional,omitempty"`
+	Mode      *int       `json:"mode,omitempty"`
 }
 
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
@@ -637,7 +639,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return container, nil
 }
 
-func (container *Container) WithMountedSecret(ctx context.Context, bk *buildkit.Client, target string, source *Secret, owner string) (*Container, error) {
+func (container *Container) WithMountedSecret(ctx context.Context, bk *buildkit.Client, target string, source *Secret, owner string, optional bool, mode *int) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
@@ -656,6 +658,8 @@ func (container *Container) WithMountedSecret(ctx context.Context, bk *buildkit.
 		Secret:    secretID,
 		MountPath: target,
 		Owner:     ownership,
+		Optional:  optional,
+		Mode:      mode,
 	})
 
 	// set image ref to empty string
@@ -1139,6 +1143,10 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	for i, secret := range container.Secrets {
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
 
+		if secret.Optional {
+			secretOpts = append(secretOpts, llb.SecretOptional)
+		}
+
 		var secretDest string
 		switch {
 		case secret.EnvName != "":
@@ -1149,10 +1157,15 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
 			if secret.Owner != nil {
+				mode := 0o400
+				if secret.Mode != nil {
+					mode = *secret.Mode
+				}
+
 				secretOpts = append(secretOpts, llb.SecretFileOpt(
 					secret.Owner.UID,
 					secret.Owner.GID,
-					0o400, // preserve default
+					mode,
 				))
 			}
 		default:

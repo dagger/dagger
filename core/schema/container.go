@@ -584,9 +584,11 @@ func (s *containerSchema) withSecretVariable(ctx *core.Context, parent *core.Con
 }
 
 type containerWithMountedSecretArgs struct {
-	Path   string
-	Source core.SecretID
-	Owner  string
+	Path     string
+	Source   core.SecretID
+	Owner    string
+	Optional bool
+	Mode     *int
 }
 
 func (s *containerSchema) withMountedSecret(ctx *core.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
@@ -594,7 +596,7 @@ func (s *containerSchema) withMountedSecret(ctx *core.Context, parent *core.Cont
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedSecret(ctx, s.bk, args.Path, secret, args.Owner)
+	return parent.WithMountedSecret(ctx, s.bk, args.Path, secret, args.Owner, args.Optional, args.Mode)
 }
 
 type containerWithDirectoryArgs struct {

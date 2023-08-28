@@ -368,6 +368,20 @@ export type ContainerWithMountedSecretOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Set secret as optional
+   *
+   * Default: false.
+   */
+  Optional?: boolean
+
+  /**
+   * Permission given to the mounted secret (e.g., 0600).
+   *
+   * Default: 0644.
+   */
+  Mode?: number
 }
 
 export type ContainerWithNewFileOpts = {
@@ -1745,6 +1759,12 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.Optional Set secret as optional
+   *
+   * Default: false.
+   * @param opts.Mode Permission given to the mounted secret (e.g., 0600).
+   *
+   * Default: 0644.
    */
   withMountedSecret(
     path: string,
