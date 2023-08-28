@@ -25,9 +25,12 @@ import (
 	"github.com/moby/buildkit/session/sshforward"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
+	gitsource "github.com/moby/buildkit/source/git"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/sshutil"
 	"github.com/moby/buildkit/util/urlutil"
 	"github.com/moby/locker"
 	"github.com/pkg/errors"
@@ -66,8 +69,45 @@ func NewSource(opt Opt) (source.Source, error) {
 	return gs, nil
 }
 
-func (gs *gitSource) ID() string {
-	return srctypes.GitScheme
+func (gs *gitSource) Schemes() []string {
+	return []string{srctypes.GitScheme}
+}
+
+func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
+	id, err := gitsource.NewGitIdentifier(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range attrs {
+		switch k {
+		case pb.AttrKeepGitDir:
+			if v == "true" {
+				id.KeepGitDir = true
+			}
+		case pb.AttrFullRemoteURL:
+			if !isGitTransport(v) {
+				v = "https://" + v
+			}
+			id.Remote = v
+		case pb.AttrAuthHeaderSecret:
+			id.AuthHeaderSecret = v
+		case pb.AttrAuthTokenSecret:
+			id.AuthTokenSecret = v
+		case pb.AttrKnownSSHHosts:
+			id.KnownSSHHosts = v
+		case pb.AttrMountSSHSock:
+			id.MountSSHSock = v
+		}
+	}
+
+	return id, nil
+}
+
+// isGitTransport returns true if the provided str is a git transport by inspecting
+// the prefix of the string for known protocols used in git.
+func isGitTransport(str string) bool {
+	return strings.HasPrefix(str, "http://") || strings.HasPrefix(str, "https://") || strings.HasPrefix(str, "git://") || strings.HasPrefix(str, "ssh://") || sshutil.IsImplicitSSHTransport(str)
 }
 
 // needs to be called with repo lock
@@ -160,7 +200,7 @@ func (gs *gitSource) mountRemote(ctx context.Context, remote string, auth []stri
 
 type gitSourceHandler struct {
 	*gitSource
-	src       source.GitIdentifier
+	src       gitsource.GitIdentifier
 	clientIDs []string
 	cacheKey  string
 	sm        *session.Manager
@@ -186,7 +226,7 @@ type DaggerGitURLHack struct {
 }
 
 func (gs *gitSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	gitIdentifier, ok := id.(*source.GitIdentifier)
+	gitIdentifier, ok := id.(*gitsource.GitIdentifier)
 	if !ok {
 		return nil, errors.Errorf("invalid git identifier %v", id)
 	}

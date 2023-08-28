@@ -34,6 +34,30 @@ type File struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
+func (file *File) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if file.LLB != nil {
+		defs = append(defs, file.LLB)
+	}
+	if file.Services != nil {
+		for ctrID := range file.Services {
+			ctr, err := ctrID.Decode()
+			if err != nil {
+				return nil, err
+			}
+			if ctr == nil {
+				continue
+			}
+			ctrDefs, err := ctr.PBDefinitions()
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, ctrDefs...)
+		}
+	}
+	return defs, nil
+}
+
 func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *File {
 	return &File{
 		LLB:      def,

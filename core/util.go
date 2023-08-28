@@ -17,6 +17,10 @@ import (
 	"github.com/opencontainers/runc/libcontainer/user"
 )
 
+type HasPBDefinitions interface {
+	PBDefinitions() ([]*pb.Definition, error)
+}
+
 func absPath(workDir string, containerPath string) string {
 	if path.IsAbs(containerPath) {
 		return containerPath

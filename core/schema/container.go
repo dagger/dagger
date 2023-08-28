@@ -139,7 +139,7 @@ func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args 
 }
 
 func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any) (core.ContainerID, error) {
-	err := parent.Evaluate(ctx, s.bk)
+	_, err := parent.Evaluate(ctx, s.bk)
 	if err != nil {
 		return "", err
 	}

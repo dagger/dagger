@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/moby/buildkit/solver/pb"
+	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
@@ -98,7 +101,17 @@ type opDAG struct {
 	outputIndex pb.OutputIndex            // the specific output of the op that the root represents
 	allOutputs  map[pb.OutputIndex]*opDAG // all outputs of this root, including this one
 
-	asExecOp *execOp // cached execOp conversion
+	// cached op conversions
+	asExecOp  *execOp
+	asFileOp  *fileOp
+	asMergeOp *mergeOp
+	asDiffOp  *diffOp
+	asImageOp *imageOp
+	asGitOp   *gitOp
+	asLocalOp *localOp
+	asHTTPOp  *httpOp
+	asOCIOp   *ociOp
+	asBlobOp  *blobOp
 }
 
 func (dag *opDAG) String() string {
@@ -191,6 +204,30 @@ func (dag *opDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Dige
 	return def, newOpDigest, nil
 }
 
+func (dag *opDAG) BlobDependencies() (map[digest.Digest]*ocispecs.Descriptor, error) {
+	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
+	if err := dag.Walk(func(dag *opDAG) error {
+		blobOp, ok := dag.AsBlob()
+		if !ok {
+			return nil
+		}
+		desc, err := blobOp.OCIDescriptor()
+		if err != nil {
+			return fmt.Errorf("failed to get blob descriptor: %w", err)
+		}
+		dependencyBlobs[desc.Digest] = &desc
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("failed to walk pb definition dag: %w", err)
+	}
+	return dependencyBlobs, nil
+}
+
+type execOp struct {
+	*opDAG
+	*pb.ExecOp
+}
+
 func (dag *opDAG) AsExec() (*execOp, bool) {
 	if dag.asExecOp != nil {
 		return dag.asExecOp, true
@@ -207,10 +244,8 @@ func (dag *opDAG) AsExec() (*execOp, bool) {
 	return exec, true
 }
 
-// NOTE: only added execOp so far, but support for all other op types can be added as needed
-type execOp struct {
-	*opDAG
-	*pb.ExecOp
+func (exec *execOp) Input(i pb.InputIndex) *opDAG {
+	return exec.inputs[i]
 }
 
 func (exec *execOp) OutputMount() *pb.Mount {
@@ -231,4 +266,221 @@ func (exec *execOp) OutputMountBase() *opDAG {
 		}
 	}
 	return nil
+}
+
+type fileOp struct {
+	*opDAG
+	*pb.FileOp
+}
+
+func (dag *opDAG) AsFile() (*fileOp, bool) {
+	if dag.asFileOp != nil {
+		return dag.asFileOp, true
+	}
+	pbFile := dag.GetFile()
+	if pbFile == nil {
+		return nil, false
+	}
+	file := &fileOp{
+		opDAG:  dag,
+		FileOp: pbFile,
+	}
+	dag.asFileOp = file
+	return file, true
+}
+
+type mergeOp struct {
+	*opDAG
+	*pb.MergeOp
+}
+
+func (dag *opDAG) AsMerge() (*mergeOp, bool) {
+	if dag.asMergeOp != nil {
+		return dag.asMergeOp, true
+	}
+	pbMerge := dag.GetMerge()
+	if pbMerge == nil {
+		return nil, false
+	}
+	merge := &mergeOp{
+		opDAG:   dag,
+		MergeOp: pbMerge,
+	}
+	dag.asMergeOp = merge
+	return merge, true
+}
+
+type diffOp struct {
+	*opDAG
+	*pb.DiffOp
+}
+
+func (dag *opDAG) AsDiff() (*diffOp, bool) {
+	if dag.asDiffOp != nil {
+		return dag.asDiffOp, true
+	}
+	pbDiff := dag.GetDiff()
+	if pbDiff == nil {
+		return nil, false
+	}
+	diff := &diffOp{
+		opDAG:  dag,
+		DiffOp: pbDiff,
+	}
+	dag.asDiffOp = diff
+	return diff, true
+}
+
+type imageOp struct {
+	*opDAG
+	*pb.SourceOp
+}
+
+func (dag *opDAG) AsImage() (*imageOp, bool) {
+	if dag.asImageOp != nil {
+		return dag.asImageOp, true
+	}
+	pbSource := dag.GetSource()
+	if pbSource == nil {
+		return nil, false
+	}
+	if !strings.HasPrefix(pbSource.Identifier, srctypes.DockerImageScheme+"://") {
+		return nil, false
+	}
+	img := &imageOp{
+		opDAG:    dag,
+		SourceOp: pbSource,
+	}
+	dag.asImageOp = img
+	return img, true
+}
+
+type gitOp struct {
+	*opDAG
+	*pb.SourceOp
+}
+
+func (dag *opDAG) AsGit() (*gitOp, bool) {
+	if dag.asGitOp != nil {
+		return dag.asGitOp, true
+	}
+	pbSource := dag.GetSource()
+	if pbSource == nil {
+		return nil, false
+	}
+	if !strings.HasPrefix(pbSource.Identifier, srctypes.GitScheme+"://") {
+		return nil, false
+	}
+	op := &gitOp{
+		opDAG:    dag,
+		SourceOp: pbSource,
+	}
+	dag.asGitOp = op
+	return op, true
+}
+
+type localOp struct {
+	*opDAG
+	*pb.SourceOp
+}
+
+func (dag *opDAG) AsLocal() (*localOp, bool) {
+	if dag.asLocalOp != nil {
+		return dag.asLocalOp, true
+	}
+	pbSource := dag.GetSource()
+	if pbSource == nil {
+		return nil, false
+	}
+	if !strings.HasPrefix(pbSource.Identifier, srctypes.LocalScheme+"://") {
+		return nil, false
+	}
+	op := &localOp{
+		opDAG:    dag,
+		SourceOp: pbSource,
+	}
+	dag.asLocalOp = op
+	return op, true
+}
+
+type httpOp struct {
+	*opDAG
+	*pb.SourceOp
+}
+
+func (dag *opDAG) AsHTTP() (*httpOp, bool) {
+	if dag.asHTTPOp != nil {
+		return dag.asHTTPOp, true
+	}
+	pbSource := dag.GetSource()
+	if pbSource == nil {
+		return nil, false
+	}
+	hasHttpScheme := strings.HasPrefix(pbSource.Identifier, srctypes.HTTPScheme+"://")
+	hasHttpsScheme := strings.HasPrefix(pbSource.Identifier, srctypes.HTTPSScheme+"://")
+	if !hasHttpScheme && !hasHttpsScheme {
+		return nil, false
+	}
+	op := &httpOp{
+		opDAG:    dag,
+		SourceOp: pbSource,
+	}
+	dag.asHTTPOp = op
+	return op, true
+}
+
+type ociOp struct {
+	*opDAG
+	*pb.SourceOp
+}
+
+func (dag *opDAG) AsOCI() (*ociOp, bool) {
+	if dag.asOCIOp != nil {
+		return dag.asOCIOp, true
+	}
+	pbSource := dag.GetSource()
+	if pbSource == nil {
+		return nil, false
+	}
+	if !strings.HasPrefix(pbSource.Identifier, srctypes.OCIScheme+"://") {
+		return nil, false
+	}
+	op := &ociOp{
+		opDAG:    dag,
+		SourceOp: pbSource,
+	}
+	dag.asOCIOp = op
+	return op, true
+}
+
+type blobOp struct {
+	*opDAG
+	*pb.SourceOp
+}
+
+func (dag *opDAG) AsBlob() (*blobOp, bool) {
+	if dag.asBlobOp != nil {
+		return dag.asBlobOp, true
+	}
+	pbSource := dag.GetSource()
+	if pbSource == nil {
+		return nil, false
+	}
+	if !strings.HasPrefix(pbSource.Identifier, blob.BlobScheme+"://") {
+		return nil, false
+	}
+	op := &blobOp{
+		opDAG:    dag,
+		SourceOp: pbSource,
+	}
+	dag.asBlobOp = op
+	return op, true
+}
+
+func (op *blobOp) OCIDescriptor() (ocispecs.Descriptor, error) {
+	id, err := blob.IdentifierFromPB(op.SourceOp)
+	if err != nil {
+		return ocispecs.Descriptor{}, err
+	}
+	return id.Descriptor, nil
 }

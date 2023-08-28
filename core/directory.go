@@ -36,6 +36,30 @@ type Directory struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
+func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if dir.LLB != nil {
+		defs = append(defs, dir.LLB)
+	}
+	if dir.Services != nil {
+		for ctrID := range dir.Services {
+			ctr, err := ctrID.Decode()
+			if err != nil {
+				return nil, err
+			}
+			if ctr == nil {
+				continue
+			}
+			ctrDefs, err := ctr.PBDefinitions()
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, ctrDefs...)
+		}
+	}
+	return defs, nil
+}
+
 func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *Directory {
 	return &Directory{
 		LLB:      def,
@@ -137,17 +161,16 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client) error {
+func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client) (*buildkit.Result, error) {
 	if dir.LLB == nil {
-		return nil
+		return nil, nil
 	}
-	_, err := WithServices(ctx, bk, dir.Services, func() (*buildkit.Result, error) {
+	return WithServices(ctx, bk, dir.Services, func() (*buildkit.Result, error) {
 		return bk.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: dir.LLB,
 		})
 	})
-	return err
 }
 
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {

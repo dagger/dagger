@@ -85,7 +85,7 @@ func (s *directorySchema) id(ctx *core.Context, parent *core.Directory, args any
 }
 
 func (s *directorySchema) sync(ctx *core.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
-	err := parent.Evaluate(ctx.Context, s.bk)
+	_, err := parent.Evaluate(ctx.Context, s.bk)
 	if err != nil {
 		return "", err
 	}

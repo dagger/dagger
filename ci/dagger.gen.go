@@ -121,9 +121,8 @@ func Serve(r *Environment) {
 	if err != nil {
 		writeErrorf(fmt.Errorf("unable to marshal response: %v", err))
 	}
-	_, err = dag.CurrentEnvironment().ExportEnvironmentResult(ctx, string(output))
-	if err != nil {
-		writeErrorf(fmt.Errorf("unable to export response: %v", err))
+	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
+		writeErrorf(fmt.Errorf("unable to write response file: %v", err))
 	}
 }
 
@@ -2617,10 +2616,9 @@ type Environment struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	exportEnvironmentResult *bool
-	id                      *EnvironmentID
-	name                    *string
-	workdir                 *DirectoryID
+	id      *EnvironmentID
+	name    *string
+	workdir *DirectoryID
 }
 type WithEnvironmentFunc func(r *Environment) *Environment
 
@@ -2673,21 +2671,6 @@ func (r *Environment) Checks(ctx context.Context) ([]Check, error) {
 	}
 
 	return convert(response), nil
-}
-
-// TODO: hide from docs, possibly standard codegen too
-func (r *Environment) ExportEnvironmentResult(ctx context.Context, result string) (bool, error) {
-
-	if r.exportEnvironmentResult != nil {
-		return *r.exportEnvironmentResult, nil
-	}
-	q := r.q.Select("exportEnvironmentResult")
-	q = q.Arg("result", result)
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this environment.

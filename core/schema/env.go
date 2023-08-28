@@ -51,14 +51,13 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"currentEnvironment": ToResolver(s.currentEnvironment),
 		},
 		"Environment": ToIDableObjectResolver(core.EnvironmentID.Decode, ObjectResolver{
-			"id":                      ToResolver(s.environmentID),
-			"name":                    ToResolver(s.environmentName),
-			"load":                    ToResolver(s.load),
-			"withWorkdir":             ToResolver(s.withWorkdir),
-			"withCheck":               ToResolver(s.withCheck),
-			"check":                   ToResolver(s.checkByName),
-			"checks":                  ToResolver(s.checks),
-			"exportEnvironmentResult": ToResolver(s.exportResult),
+			"id":          ToResolver(s.environmentID),
+			"name":        ToResolver(s.environmentName),
+			"load":        ToResolver(s.load),
+			"withWorkdir": ToResolver(s.withWorkdir),
+			"withCheck":   ToResolver(s.withCheck),
+			"check":       ToResolver(s.checkByName),
+			"checks":      ToResolver(s.checks),
 		}),
 		"Check": ToIDableObjectResolver(core.CheckID.Decode, ObjectResolver{
 			"id":              ToResolver(s.checkID),
@@ -280,18 +279,6 @@ func (s *environmentSchema) checkByName(ctx *core.Context, env *core.Environment
 
 func (s *environmentSchema) checks(ctx *core.Context, env *core.Environment, _ any) ([]*core.Check, error) {
 	return env.Checks, nil
-}
-
-type exportEnvironmentResultArgs struct {
-	Result string
-}
-
-func (s *environmentSchema) exportResult(ctx *core.Context, env *core.Environment, args exportEnvironmentResultArgs) (bool, error) {
-	// TODO: real pipeline
-	if err := env.ExportResult(ctx, s.bk, s.progSockPath, nil, s.envCache, args.Result); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func (s *environmentSchema) checkID(ctx *core.Context, check *core.Check, args any) (core.CheckID, error) {

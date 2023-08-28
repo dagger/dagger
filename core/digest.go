@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -238,11 +237,6 @@ func stabilizeOp(op *opDAG) error {
 				pb.AttrSharedKeyHint: // contains session ID
 				delete(src.Attrs, k)
 			}
-		}
-
-		var localImportOps engine.LocalImportOpts
-		if err := buildkit.DecodeIDHack("local", src.Identifier, &localImportOps); err == nil {
-			src.Identifier = "local://" + localImportOps.Path
 		}
 
 		var httpHack httpdns.DaggerHTTPURLHack

@@ -119,9 +119,8 @@ func Serve(r *Environment) {
 	if err != nil {
 		writeErrorf(fmt.Errorf("unable to marshal response: %v", err))
 	}
-	_, err = dag.CurrentEnvironment().ExportEnvironmentResult(ctx, string(output))
-	if err != nil {
-		writeErrorf(fmt.Errorf("unable to export response: %v", err))
+	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
+		writeErrorf(fmt.Errorf("unable to write response file: %v", err))
 	}
 }
 

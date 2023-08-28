@@ -1,13 +1,13 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/dagger/dagger/core/envconfig"
@@ -15,7 +15,10 @@ import (
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
@@ -64,6 +67,39 @@ type Environment struct {
 
 	// The environment's checks
 	Checks []*Check `json:"checks,omitempty"`
+}
+
+func (env *Environment) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if env.Directory != nil {
+		dirDefs, err := env.Directory.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, dirDefs...)
+	}
+	if env.Workdir != nil {
+		workdirDefs, err := env.Workdir.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, workdirDefs...)
+	}
+	if env.Runtime != nil {
+		ctrDefs, err := env.Runtime.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, ctrDefs...)
+	}
+	for _, check := range env.Checks {
+		checkDefs, err := check.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, checkDefs...)
+	}
+	return defs, nil
 }
 
 func (env Environment) Clone() *Environment {
@@ -334,10 +370,10 @@ func execEntrypoint(
 	env *Environment,
 	entrypointName string,
 	args any,
-) ([]byte, error) {
+) (any, []byte, error) {
 	ctx, err := envCache.ContextWithCachedEnv(ctx, env)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set environment in context: %w", err)
+		return nil, nil, fmt.Errorf("failed to set environment in context: %w", err)
 	}
 
 	inputMap := map[string]any{
@@ -350,91 +386,104 @@ func execEntrypoint(
 	}
 	inputBytes, err := json.Marshal(inputMap)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ctr, err := env.Runtime.WithNewFile(ctx, bk, filepath.Join(inputMountPath, inputFile), inputBytes, 0644, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount entrypoint input file: %w", err)
+		return nil, nil, fmt.Errorf("failed to mount entrypoint input file: %w", err)
 	}
 
 	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, ctr.Platform), "", false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount entrypoint output directory: %w", err)
+		return nil, nil, fmt.Errorf("failed to mount entrypoint output directory: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, ctr.Platform, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec entrypoint: %w", err)
+		return nil, nil, fmt.Errorf("failed to exec entrypoint: %w", err)
 	}
-	err = ctr.Evaluate(ctx, bk)
+	ctrOutputDir, err := ctr.Directory(ctx, bk, outputMountPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate entrypoint: %w", err)
+		return nil, nil, fmt.Errorf("failed to get entrypoint output directory: %w", err)
 	}
 
-	outputFile, err := ctr.File(ctx, bk, filepath.Join(outputMountPath, outputFile))
+	result, err := ctrOutputDir.Evaluate(ctx, bk)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get entrypoint output file: %w", err)
+		return nil, nil, fmt.Errorf("failed to evaluate entrypoint: %w", err)
+	}
+	if result == nil {
+		return nil, nil, fmt.Errorf("entrypoint returned nil result")
 	}
 
-	entrypointOutput, err := outputFile.Contents(ctx, bk)
+	entrypointOutput, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
+		Filename: outputFile,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read entrypoint output file: %w", err)
+		return nil, nil, fmt.Errorf("failed to read entrypoint output file: %w", err)
 	}
 
-	return entrypointOutput, nil
+	resource, err := handleEntrypointResult(ctx, result, entrypointOutput)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to handle entrypoint result: %w", err)
+	}
+	return resource, entrypointOutput, nil
 }
 
-func (env *Environment) ExportResult(
-	ctx *Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-	envCache *EnvironmentCache,
-	resultStr string,
-) error {
-	var result any
-	if err := json.Unmarshal([]byte(resultStr), &result); err != nil {
-		return fmt.Errorf("failed to unmarshal result: %s", err)
+func handleEntrypointResult(ctx context.Context, result *buildkit.Result, outputBytes []byte) (any, error) {
+	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
+	// we can end up in a state where we have a cached result with a dependency blob that we don't
+	// guarantee the continued existence of...
+
+	var rawOutput any
+	if err := json.Unmarshal(outputBytes, &rawOutput); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
 	}
 
-	var output any
-	switch result := result.(type) {
-	case string:
-		resource, err := ResourceFromID(result)
-		if err != nil {
-			// this isn't a resource id, just use the string as the output
-			output = result
-			break
-		}
-		switch resource := resource.(type) {
-		case *Check:
-			check := resource
-			checkRes, err := check.Result(ctx.Context, bk, progSock, pipeline, envCache)
-			if err != nil {
-				return fmt.Errorf("failed to get check result: %w", err)
-			}
-			check.StaticCheckResult = checkRes
-			checkID, err := check.ID()
-			if err != nil {
-				return fmt.Errorf("failed to get check ID: %w", err)
-			}
-			output = string(checkID)
-		default:
-			// just use the id as is
-			output = result
-		}
-	default:
-		output = result
+	strOutput, ok := rawOutput.(string)
+	if !ok {
+		// not a resource ID, nothing to do
+		return nil, nil
 	}
 
-	outputBytes, err := json.Marshal(output)
+	resource, err := ResourceFromID(strOutput)
 	if err != nil {
-		return fmt.Errorf("failed to marshal output: %w", err)
+		// not a resource ID, nothing to do
+		// TODO: check actual error type
+		return nil, nil
 	}
 
-	return bk.IOReaderExport(ctx, bytes.NewReader(outputBytes), filepath.Join(outputMountPath, outputFile), 0600)
+	pbDefinitioner, ok := resource.(HasPBDefinitions)
+	if !ok {
+		// no dependency blobs to handle
+		return resource, nil
+	}
+
+	pbDefs, err := pbDefinitioner.PBDefinitions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pb definitions: %w", err)
+	}
+	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
+	for _, pbDef := range pbDefs {
+		dag, err := defToDAG(pbDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert pb definition to dag: %w", err)
+		}
+		blobs, err := dag.BlobDependencies()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get blob dependencies: %w", err)
+		}
+		for k, v := range blobs {
+			dependencyBlobs[k] = v
+		}
+	}
+
+	if err := result.Ref.AddDependencyBlobs(ctx, dependencyBlobs); err != nil {
+		return nil, fmt.Errorf("failed to add dependency blob: %w", err)
+	}
+
+	return resource, nil
 }
 
 func (env *Environment) WithCheck(check *Check, envCache *EnvironmentCache) (*Environment, error) {
@@ -457,11 +506,28 @@ type Check struct {
 	Description string   `json:"description"`
 	Subchecks   []*Check `json:"subchecks"`
 
-	StaticCheckResult *CheckResult `json:"staticCheckResult,omitempty"`
-
 	// The container to exec if the check's success+output is being resolved
 	// from a user-defined container via the Check.withContainer API
 	UserContainer *Container `json:"user_container"`
+}
+
+func (check *Check) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if check.UserContainer != nil {
+		ctrDefs, err := check.UserContainer.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, ctrDefs...)
+	}
+	for _, subcheck := range check.Subchecks {
+		subcheckDefs, err := subcheck.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, subcheckDefs...)
+	}
+	return defs, nil
 }
 
 func (check *Check) ID() (CheckID, error) {
@@ -518,13 +584,18 @@ func (check *Check) GetSubchecks(
 	progSock string,
 	pipeline pipeline.Path,
 	envCache *EnvironmentCache,
-) ([]*Check, error) {
+) (_ []*Check, rerr error) {
+	// TODO:
+	// TODO:
+	// TODO:
+	defer func() {
+		if err := recover(); err != nil {
+			rerr = fmt.Errorf("panic in GetSubchecks: %v %s", err, string(debug.Stack()))
+		}
+	}()
+
 	if len(check.Subchecks) > 0 {
 		return check.Subchecks, nil
-	}
-
-	if check.StaticCheckResult != nil {
-		return nil, nil
 	}
 
 	if check.EnvironmentID != "" {
@@ -532,19 +603,17 @@ func (check *Check) GetSubchecks(
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
 		}
-		entrypointOutput, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
+		resource, _, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
 		}
 
-		// TODO: comments once finalized, also backport polymorphic safety checks
-		var id string
-		if err := json.Unmarshal(entrypointOutput, &id); err != nil {
-			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
+		if resource == nil {
+			// not a recursive check, there are no subchecks
+			return nil, nil
 		}
-
-		recursiveCheck, err := CheckID(id).Decode()
-		if err != nil {
+		recursiveCheck, ok := resource.(*Check)
+		if !ok {
 			// not a recursive check, there are no subchecks
 			return nil, nil
 		}
@@ -561,10 +630,6 @@ func (check *Check) Result(
 	pipeline pipeline.Path,
 	envCache *EnvironmentCache,
 ) (*CheckResult, error) {
-	if check.StaticCheckResult != nil {
-		return check.StaticCheckResult, nil
-	}
-
 	if len(check.Subchecks) > 0 {
 		// This is a composite check, evaluate it by evaluating each subcheck
 		var eg errgroup.Group
@@ -600,7 +665,7 @@ func (check *Check) Result(
 		ctr := check.UserContainer
 		success := true
 		var output string
-		evalErr := ctr.Evaluate(ctx, bk)
+		_, evalErr := ctr.Evaluate(ctx, bk)
 		var execErr *buildkit.ExecError
 		switch {
 		case errors.As(evalErr, &execErr):
@@ -633,31 +698,23 @@ func (check *Check) Result(
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
 		}
-		entrypointOutput, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
+		resource, _, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
 		}
-
-		// TODO: comments once finalized, also backport polymorphic safety checks
-		var id string
-		if err := json.Unmarshal(entrypointOutput, &id); err != nil {
-			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
+		switch resource := resource.(type) {
+		case *Check:
+			res, err := resource.Result(ctx, bk, progSock, pipeline, envCache)
+			if err != nil {
+				return nil, fmt.Errorf("failed to evaluate recursive check: %w", err)
+			}
+			return res, nil
+		case *CheckResult:
+			return resource, nil
+		default:
+			// TODO: could probably accept Container here too?
+			return nil, fmt.Errorf("unhandled check result type %T", resource)
 		}
-
-		checkResult, err := CheckResultID(id).Decode()
-		if err == nil {
-			return checkResult, nil
-		}
-
-		recursiveCheck, err := CheckID(id).Decode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode check from environment container: %w", err)
-		}
-		res, err := recursiveCheck.Result(ctx, bk, progSock, pipeline, envCache)
-		if err != nil {
-			return nil, fmt.Errorf("failed to evaluate recursive check: %w", err)
-		}
-		return res, nil
 	}
 
 	return nil, fmt.Errorf("invalid empty check %q", check.Name)

@@ -27,8 +27,8 @@ require (
 	github.com/google/go-containerregistry v0.15.2
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.3.0
-	// https://github.com/moby/buildkit/commit/2267f0022b359933bfbdb369bd257e7d9cd2514f
-	github.com/moby/buildkit v0.12.1-0.20230801135201-2267f0022b35
+	// https://github.com/moby/buildkit/commit/c3c65787b5e2c2c9fcab1d0b9bd1884a37384c90
+	github.com/moby/buildkit v0.12.1-0.20230825181333-c3c65787b5e2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/opencontainers/runtime-spec v1.1.0-rc.2
@@ -74,7 +74,7 @@ require (
 	github.com/moby/sys/mount v0.3.3
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
-	github.com/opencontainers/runc v1.1.7
+	github.com/opencontainers/runc v1.1.9
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/zerolog v1.29.1
@@ -250,7 +250,7 @@ require (
 	github.com/klauspost/compress v1.16.5
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/locker v1.0.1
-	github.com/moby/patternmatcher v0.5.0 // indirect
+	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

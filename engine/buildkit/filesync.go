@@ -3,7 +3,6 @@ package buildkit
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sources/blob"
+	cacheconfig "github.com/moby/buildkit/cache/config"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -22,68 +23,141 @@ import (
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
+	bksolver "github.com/moby/buildkit/solver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/compression"
+	bkworker "github.com/moby/buildkit/worker"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	filesynctypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb.LocalOption) (llb.State, error) {
+func (c *Client) LocalImport(
+	ctx context.Context,
+	recorder *progrock.Recorder,
+	platform specs.Platform,
+	srcPath string,
+	excludePatterns []string,
+	includePatterns []string,
+) (*bksolverpb.Definition, error) {
 	srcPath = path.Clean(srcPath)
 	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
-		return llb.State{}, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
+		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return llb.State{}, err
+		return nil, err
 	}
 
-	localImportOpts := engine.LocalImportOpts{
-		// For now, the requester is always the owner of the local dir
-		// when the dir is initially created in LLB (i.e. you can't request a
-		// a new local dir from another session, you can only be passed one
-		// from another session already created).
-		OwnerClientID: clientMetadata.ClientID,
-		Path:          srcPath,
+	localOpts := []llb.LocalOption{
+		llb.SessionID(clientMetadata.ClientID),
+		llb.SharedKeyHint(strings.Join([]string{clientMetadata.ClientHostname, srcPath}, " ")),
 	}
 
-	// set any buildkit llb options too
-	llbLocalOpts := &llb.LocalInfo{}
-	for _, opt := range opts {
-		opt.SetLocalOption(llbLocalOpts)
+	localName := fmt.Sprintf("upload %s from %s (client id: %s)", srcPath, clientMetadata.ClientHostname, clientMetadata.ClientID)
+	if len(excludePatterns) > 0 {
+		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludePatterns, ", "))
+		localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
 	}
-	// llb marshals lists as json for some reason
-	if len(llbLocalOpts.IncludePatterns) > 0 {
-		if err := json.Unmarshal([]byte(llbLocalOpts.IncludePatterns), &localImportOpts.IncludePatterns); err != nil {
-			return llb.State{}, err
-		}
+	if len(includePatterns) > 0 {
+		localName += fmt.Sprintf(" (include: %s)", strings.Join(includePatterns, ", "))
+		localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
 	}
-	if len(llbLocalOpts.ExcludePatterns) > 0 {
-		if err := json.Unmarshal([]byte(llbLocalOpts.ExcludePatterns), &localImportOpts.ExcludePatterns); err != nil {
-			return llb.State{}, err
-		}
-	}
-	if len(llbLocalOpts.FollowPaths) > 0 {
-		if err := json.Unmarshal([]byte(llbLocalOpts.FollowPaths), &localImportOpts.FollowPaths); err != nil {
-			return llb.State{}, err
-		}
-	}
+	localOpts = append(localOpts, llb.WithCustomName(localName))
+	localLLB := llb.Local(srcPath, localOpts...)
 
-	// NOTE: this relies on the fact that the local source is evaluated synchronously in the caller, otherwise
-	// the caller client ID may not be correct.
-	name, err := EncodeIDHack(localImportOpts)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	opts = append(opts,
-		// synchronize concurrent filesyncs for the same srcPath
-		llb.SharedKeyHint(name),
-		llb.SessionID(c.ID()),
+	// We still need to do a copy here for now because buildkit's cache calls Finalize on refs when getting their blobs
+	// which makes the cache ref for the local ref unable to be reused.
+	copyLLB := llb.Scratch().File(
+		llb.Copy(localLLB, "/", "/"),
+		llb.WithCustomNamef(localName),
 	)
-	return llb.Local(name, opts...), nil
+
+	copyDef, err := copyLLB.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+	copyPB := copyDef.ToPB()
+
+	RecordVertexes(recorder, copyPB)
+
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	ctx = withOutgoingContext(ctx)
+
+	llbRes, err := c.llbBridge.Solve(ctx, bkgw.SolveRequest{
+		Definition: copyPB,
+		Evaluate:   true,
+	}, c.ID())
+	if err != nil {
+		return nil, wrapError(ctx, err, c.ID())
+	}
+	defer func() {
+		if llbRes != nil {
+			llbRes.EachRef(func(rp bksolver.ResultProxy) error {
+				return rp.Release(context.Background())
+			})
+		}
+	}()
+	resultProxy, err := llbRes.SingleRef()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get single ref: %s", err)
+	}
+	cachedRes, err := resultProxy.Result(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get result: %s", err)
+	}
+	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
+	if !ok {
+		return nil, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
+	}
+	ref := workerRef.ImmutableRef
+
+	remotes, err := ref.GetRemotes(ctx, true, cacheconfig.RefConfig{
+		Compression: compression.Config{
+			// TODO: double check whether using Zstd is best idea. It's the fastest, but
+			// if it ends up in an exported image and the user tries to load that into
+			// old docker versions, they will get an error unless they specify the force
+			// compression option during export.
+			Type: compression.Zstd,
+		},
+	}, false, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remotes: %s", err)
+	}
+	if len(remotes) != 1 {
+		return nil, fmt.Errorf("expected 1 remote, got %d", len(remotes))
+	}
+	remote := remotes[0]
+	if len(remote.Descriptors) != 1 {
+		return nil, fmt.Errorf("expected 1 descriptor, got %d", len(remote.Descriptors))
+	}
+	desc := remote.Descriptors[0]
+
+	blobDef, err := blob.LLB(desc).Marshal(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal blob source: %s", err)
+	}
+	blobPB := blobDef.ToPB()
+
+	// do a sync solve right now so we can release the cache ref for the local import
+	// without giving up the lease on the blob
+	_, err = c.Solve(ctx, bkgw.SolveRequest{
+		Definition: blobPB,
+		Evaluate:   true,
+	})
+	if err != nil {
+		return nil, wrapError(ctx, err, c.ID())
+	}
+
+	return blobPB, nil
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
@@ -289,92 +363,6 @@ func (c *Client) LocalFileExport(
 	return nil
 }
 
-// IOReaderExport exports the contents of an io.Reader to the caller's local fs as a file
-// TODO: de-dupe this with the above method to extent possible
-func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) error {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
-	ctx = engine.LocalExportOpts{
-		DestClientID:     clientMetadata.ClientID,
-		Path:             destPath,
-		IsFileStream:     true,
-		FileOriginalName: filepath.Base(destPath),
-		FileMode:         destMode,
-	}.AppendToOutgoingContext(ctx)
-
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session: %s", err)
-	}
-	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create diff copy client: %s", err)
-	}
-	defer diffCopyClient.CloseSend()
-
-	chunkSize := int64(MaxFileContentsChunkSize)
-	keepGoing := true
-	for keepGoing {
-		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
-		_, err := io.CopyN(buf, r, chunkSize)
-		if errors.Is(err, io.EOF) {
-			keepGoing = false
-			err = nil
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read file: %s", err)
-		}
-		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
-		if errors.Is(err, io.EOF) {
-			err := diffCopyClient.RecvMsg(struct{}{})
-			if err != nil {
-				return fmt.Errorf("diff copy client error: %s", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("failed to send file chunk: %s", err)
-		}
-	}
-	if err := diffCopyClient.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %s", err)
-	}
-	// wait for receiver to finish
-	var msg filesync.BytesMessage
-	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
-		return fmt.Errorf("unexpected closing recv msg: %s", err)
-	}
-	return nil
-}
-
-type localImportOpts struct {
-	*engine.LocalImportOpts
-	session bksession.Caller
-}
-
-func (c *Client) getLocalImportOpts(stream grpc.ServerStream) (context.Context, *localImportOpts, error) {
-	opts, err := engine.LocalImportOptsFromContext(stream.Context())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get local import opts: %w", err)
-	}
-
-	if err := DecodeIDHack("local", opts.Path, opts); err != nil {
-		return nil, nil, fmt.Errorf("invalid import local dir name: %q", opts.Path)
-	}
-	sess, err := c.SessionManager.Get(stream.Context(), opts.OwnerClientID, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	md := opts.ToGRPCMD()
-	ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
-	ctx = metadata.NewOutgoingContext(ctx, md)
-	return ctx, &localImportOpts{
-		LocalImportOpts: opts,
-		session:         sess,
-	}, nil
-}
-
 type localExportOpts struct {
 	*engine.LocalExportOpts
 	session bksession.Caller
@@ -412,43 +400,6 @@ func (c *Client) getLocalExportOpts(stream grpc.ServerStream) (context.Context, 
 		LocalExportOpts: opts,
 		session:         sess,
 	}, nil
-}
-
-// for local dir imports
-type fileSyncServerProxy struct {
-	c *Client
-}
-
-func (p *fileSyncServerProxy) Register(srv *grpc.Server) {
-	filesync.RegisterFileSyncServer(srv, p)
-}
-
-func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
-	ctx, opts, err := p.c.getLocalImportOpts(stream)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	diffCopyClient, err := filesync.NewFileSyncClient(opts.session.Conn()).DiffCopy(ctx)
-	if err != nil {
-		return err
-	}
-	return proxyStream[filesynctypes.Packet](ctx, diffCopyClient, stream)
-}
-
-func (p *fileSyncServerProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
-	ctx, opts, err := p.c.getLocalImportOpts(stream)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	tarStreamClient, err := filesync.NewFileSyncClient(opts.session.Conn()).TarStream(ctx)
-	if err != nil {
-		return err
-	}
-	return proxyStream[filesynctypes.Packet](ctx, tarStreamClient, stream)
 }
 
 // TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049

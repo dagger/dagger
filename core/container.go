@@ -81,6 +81,35 @@ type Container struct {
 	Focused bool `json:"focused"`
 }
 
+func (container *Container) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if container.FS != nil {
+		defs = append(defs, container.FS)
+	}
+	for _, mnt := range container.Mounts {
+		if mnt.Source != nil {
+			defs = append(defs, mnt.Source)
+		}
+	}
+	if container.Services != nil {
+		for ctrID := range container.Services {
+			ctr, err := ctrID.Decode()
+			if err != nil {
+				return nil, err
+			}
+			if ctr == nil {
+				continue
+			}
+			ctrDefs, err := ctr.PBDefinitions()
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, ctrDefs...)
+		}
+	}
+	return defs, nil
+}
+
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
 	container, err := id.Decode()
 	if err != nil {
@@ -1256,12 +1285,12 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) error {
+func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) (*buildkit.Result, error) {
 	if container.FS == nil {
-		return nil
+		return nil, nil
 	}
 
-	_, err := WithServices(ctx, bk, container.Services, func() (*buildkit.Result, error) {
+	return WithServices(ctx, bk, container.Services, func() (*buildkit.Result, error) {
 		st, err := container.FSState()
 		if err != nil {
 			return nil, err
@@ -1277,7 +1306,6 @@ func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) e
 			Definition: def.ToPB(),
 		})
 	})
-	return err
 }
 
 func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Service, error) {
@@ -1336,7 +1364,8 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 
 	exited := make(chan error, 1)
 	go func() {
-		exited <- container.Evaluate(svcCtx, bk)
+		_, err := container.Evaluate(svcCtx, bk)
+		exited <- err
 	}()
 
 	select {
