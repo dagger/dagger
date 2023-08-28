@@ -9,7 +9,7 @@ resolver = "2"
 [workspace.dependencies]
 dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }
 dagger-bootstrap = { path = "crates/dagger-bootstrap", version = "^0.2.10" }
-dagger-sdk = { path = "crates/dagger-sdk", version = "^0.2.23" }
+dagger-sdk = { path = "crates/dagger-sdk", version = "^0.3.1" }
 
 eyre = "0.6.8"
 color-eyre = "0.6.2"
