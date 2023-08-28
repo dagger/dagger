@@ -286,10 +286,10 @@ This also means that it's very easy to move your Dagger pipeline from your local
   </TabItem>
   </Tabs>
 
-  This Azure Pipeline runs on every commit to the repository `master` branch. It consists of a single job with three steps, as below:
+  This Azure Pipeline runs on every commit to the repository `master` branch. It consists of a single job with four steps, as below:
     - The first step uses a language-specific task to download and install the programing language on the CI runner.
-    - The second step downloads and installs the required dependencies (such as the Dagger SDK and the Azure SDK) on the CI runner.
-    - The third step adds executes the Dagger pipeline. It also explicity adds those variables defined as secret to the CI runner environment (other variables are automatically injected by Azure Pipelines).
+    - The second and third steps download and install the required dependencies (such as the Dagger SDK, the Azure SDK and the Dagger CLI) on the CI runner.
+    - The fourth step adds executes the Dagger pipeline. It also explicity adds those variables defined as secret to the CI runner environment (other variables are automatically injected by Azure Pipelines).
 
   :::tip
   Azure Pipelines automatically transfers pipeline variables to the CI runner environment, except for those marked as secret. Secret variables need to be explicitly defined in the Azure Pipelines configuration file.
