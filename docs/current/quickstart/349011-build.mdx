@@ -42,7 +42,7 @@ The `npm run build` command is appropriate for a React application, but other ap
 Run the pipeline by executing the command below from the application directory:
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
@@ -59,7 +59,7 @@ This revised pipeline does everything described in the previous step, and then p
 Run the pipeline by executing the command below from the application directory:
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
@@ -76,7 +76,7 @@ This revised pipeline does everything described in the previous step, and then p
 Run the pipeline by executing the command below from the application directory:
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>
