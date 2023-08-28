@@ -14,13 +14,13 @@ import TabItem from '@theme/TabItem';
 
 ## Introduction
 
-[Argo Workflows](https://argoproj.github.io/argo-workflows/) is an open source container-native workflow engine for orchestrating parallel jobs on Kubernetes. This guide explains how to run Dagger pipelines in Argo Workflows. 
+[Argo Workflows](https://argoproj.github.io/argo-workflows/) is an open source container-native workflow engine for orchestrating parallel jobs on Kubernetes. This guide explains how to run Dagger pipelines in Argo Workflows.
 
 ## Step 1: Create a Kubernetes cluster
 
 In this guide, Argo Workflows will be running on a [kind](https://kind.sigs.k8s.io/) cluster. If you already have a kubernetes cluster to use, skip ahead to the next section.
 
-Install kind following the [kind quickstart guide](https://kind.sigs.k8s.io/docs/user/quick-start/). 
+Install kind following the [kind quickstart guide](https://kind.sigs.k8s.io/docs/user/quick-start/).
 
 Next, create a configuration to initiate the kind cluster. Here's an example configuration to use:
 
@@ -81,7 +81,9 @@ Create a file called `workflow.yaml` with the following content:
 
 ```yaml file=./snippets/argo-workflows/workflow.yaml
 ```
+
 A few important points to note:
+
 - The workflow uses hardwired artifacts to clone the Git repository and to install the Dagger CLI.
 - `/var/run/buildkit` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
 - The Dagger CLI `dagger_v0.8.4_linux_amd64.tar.gz` is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project.
