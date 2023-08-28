@@ -107,7 +107,7 @@ When you're satisfied with the workflow configuration, run it with Argo:
 
 The `--watch` argument provides an ongoing status feed of the workflow request in Argo. To see the logs from your workflow, note the pod name and in another terminal run `kubectl logs -f POD_NAME`
 
-Once the workflow has successfully completed, run it again with `argo submit -n argo --watch ./workflow.yaml` and notice the caching this time!
+Once the workflow has successfully completed, run it again with `argo submit -n argo --watch ./workflow.yaml`. Dagger's caching should result in a significantly faster second execution.
 
 ## Conclusion
 
