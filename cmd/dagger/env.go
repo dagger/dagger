@@ -525,7 +525,9 @@ func loadEnvCmdWrapper(
 
 		focus = doFocus
 		expectErrs = !revealErrs
-		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngineAndTUI(cmd.Context(), client.Params{
+			SecretToken: os.Getenv("DAGGER_SESSION_TOKEN"),
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
