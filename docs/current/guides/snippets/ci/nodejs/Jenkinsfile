@@ -6,7 +6,8 @@ pipeline {
       steps {
         sh '''
             npm ci
-            node index.mjs
+            cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+            dagger run node index.mjs
         '''
       }
     }
