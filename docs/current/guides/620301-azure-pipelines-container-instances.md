@@ -28,8 +28,8 @@ This tutorial assumes that:
 - You have a basic understanding of the JavaScript programming language.
 - You have a basic understanding of Azure DevOps and Azure Container Instances. If not, learn about [Azure DevOps](https://learn.microsoft.com/en-us/azure/devops) and [Azure Container Instances](https://azure.microsoft.com/en-us/products/container-instances).
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
-- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have the Azure CLI installed. If not, [install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
 - You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
 - You have an Azure subscription with "Owner" (or higher) privileges. If not, [register for an Azure account](https://azure.microsoft.com/en-us/free/).
