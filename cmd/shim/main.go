@@ -22,6 +22,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/network"
 	"github.com/google/uuid"
@@ -349,7 +350,7 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	execMetadata := new(core.ContainerExecUncachedMetadata)
+	execMetadata := new(buildkit.ContainerExecUncachedMetadata)
 	for i, env := range spec.Process.Env {
 		found, err := execMetadata.FromEnv(env)
 		if err != nil {

@@ -466,7 +466,7 @@ func handleEntrypointResult(ctx context.Context, result *buildkit.Result, output
 	}
 	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
 	for _, pbDef := range pbDefs {
-		dag, err := defToDAG(pbDef)
+		dag, err := buildkit.DefToDAG(pbDef)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert pb definition to dag: %w", err)
 		}

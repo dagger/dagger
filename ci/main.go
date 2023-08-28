@@ -82,15 +82,6 @@ func EngineTests(ctx context.Context) (*Check, error) {
 		"-parallel=16",
 		"-count=1",
 		"-timeout=15m",
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		"-run=TestDirectory",
 	}
 
 	/* TODO: re-add support

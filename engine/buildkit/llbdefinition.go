@@ -1,4 +1,4 @@
-package core
+package buildkit
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func defToDAG(def *pb.Definition) (*opDAG, error) {
+func DefToDAG(def *pb.Definition) (*OpDAG, error) {
 	digestToOp := map[digest.Digest]*pb.Op{}
 	digestToMetadata := map[digest.Digest]*pb.OpMetadata{}
 	for _, dt := range def.Def {
@@ -32,7 +32,7 @@ func defToDAG(def *pb.Definition) (*opDAG, error) {
 		0,
 		digestToOp,
 		digestToMetadata,
-		map[digest.Digest]*opDAG{},
+		map[digest.Digest]*OpDAG{},
 	)
 }
 
@@ -42,19 +42,19 @@ func opToDAG(
 	outputIndex pb.OutputIndex,
 	digestToOp map[digest.Digest]*pb.Op,
 	digestToMetadata map[digest.Digest]*pb.OpMetadata,
-	memo map[digest.Digest]*opDAG,
-) (*opDAG, error) {
+	memo map[digest.Digest]*OpDAG,
+) (*OpDAG, error) {
 	if opDigest == "" {
 		return nil, fmt.Errorf("unexpected empty op digest")
 	}
 	if dag, ok := memo[opDigest]; ok {
 		outputSpecificDAG, ok := dag.allOutputs[outputIndex]
 		if !ok {
-			outputSpecificDAG = &opDAG{
+			outputSpecificDAG = &OpDAG{
 				Op:          dag.Op,
-				opDigest:    dag.opDigest,
-				metadata:    dag.metadata,
-				inputs:      dag.inputs,
+				OpDigest:    dag.OpDigest,
+				Metadata:    dag.Metadata,
+				Inputs:      dag.Inputs,
 				outputIndex: outputIndex,
 				allOutputs:  dag.allOutputs,
 			}
@@ -65,12 +65,12 @@ func opToDAG(
 	if op == nil {
 		return nil, fmt.Errorf("op with digest %q not found", opDigest)
 	}
-	dag := &opDAG{
+	dag := &OpDAG{
 		Op:          op,
-		opDigest:    &opDigest,
-		metadata:    digestToMetadata[opDigest],
+		OpDigest:    &opDigest,
+		Metadata:    digestToMetadata[opDigest],
 		outputIndex: outputIndex,
-		allOutputs:  map[pb.OutputIndex]*opDAG{},
+		allOutputs:  map[pb.OutputIndex]*OpDAG{},
 	}
 	dag.allOutputs[outputIndex] = dag
 	memo[opDigest] = dag
@@ -87,51 +87,51 @@ func opToDAG(
 		if err != nil {
 			return nil, err
 		}
-		dag.inputs = append(dag.inputs, inputDAG)
+		dag.Inputs = append(dag.Inputs, inputDAG)
 	}
 	return dag, nil
 }
 
-type opDAG struct {
+type OpDAG struct {
 	*pb.Op                  // the root of the DAG
-	opDigest *digest.Digest // the digest of this root, common across all outputIndexes for this root
-	metadata *pb.OpMetadata // metadata for the root
-	inputs   []*opDAG       // the inputs to the root
+	OpDigest *digest.Digest // the digest of this root, common across all outputIndexes for this root
+	Metadata *pb.OpMetadata // metadata for the root
+	Inputs   []*OpDAG       // the inputs to the root
 
 	outputIndex pb.OutputIndex            // the specific output of the op that the root represents
-	allOutputs  map[pb.OutputIndex]*opDAG // all outputs of this root, including this one
+	allOutputs  map[pb.OutputIndex]*OpDAG // all outputs of this root, including this one
 
 	// cached op conversions
-	asExecOp  *execOp
-	asFileOp  *fileOp
-	asMergeOp *mergeOp
-	asDiffOp  *diffOp
-	asImageOp *imageOp
-	asGitOp   *gitOp
-	asLocalOp *localOp
-	asHTTPOp  *httpOp
-	asOCIOp   *ociOp
-	asBlobOp  *blobOp
+	asExecOp  *ExecOp
+	asFileOp  *FileOp
+	asMergeOp *MergeOp
+	asDiffOp  *DiffOp
+	asImageOp *ImageOp
+	asGitOp   *GitOp
+	asLocalOp *LocalOp
+	asHTTPOp  *HTTPOp
+	asOCIOp   *OCIOp
+	asBlobOp  *BlobOp
 }
 
-func (dag *opDAG) String() string {
+func (dag *OpDAG) String() string {
 	builder := &strings.Builder{}
 	return dag.toString(builder, "")
 }
 
-func (dag *opDAG) toString(builder *strings.Builder, indent string) string {
+func (dag *OpDAG) toString(builder *strings.Builder, indent string) string {
 	fmt.Fprintf(builder, "%s%d %+v\n", indent, dag.outputIndex, dag.Op.Op)
-	for _, input := range dag.inputs {
+	for _, input := range dag.Inputs {
 		input.toString(builder, indent+"  ")
 	}
 	return builder.String()
 }
 
-func (dag *opDAG) Walk(f func(*opDAG) error) error {
-	return dag.walk(f, map[*opDAG]struct{}{})
+func (dag *OpDAG) Walk(f func(*OpDAG) error) error {
+	return dag.walk(f, map[*OpDAG]struct{}{})
 }
 
-func (dag *opDAG) walk(f func(*opDAG) error, memo map[*opDAG]struct{}) error {
+func (dag *OpDAG) walk(f func(*OpDAG) error, memo map[*OpDAG]struct{}) error {
 	if _, ok := memo[dag]; ok {
 		return nil
 	}
@@ -139,7 +139,7 @@ func (dag *opDAG) walk(f func(*opDAG) error, memo map[*opDAG]struct{}) error {
 	if err := f(dag); err != nil {
 		return err
 	}
-	for _, input := range dag.inputs {
+	for _, input := range dag.Inputs {
 		if err := input.walk(f, memo); err != nil {
 			return err
 		}
@@ -149,14 +149,14 @@ func (dag *opDAG) walk(f func(*opDAG) error, memo map[*opDAG]struct{}) error {
 
 // Marshal will convert the dag back to a flat pb.Definition, updating all digests
 // based on any modifications made to the dag.
-func (dag *opDAG) Marshal() (*pb.Definition, error) {
+func (dag *OpDAG) Marshal() (*pb.Definition, error) {
 	def, _, err := dag.marshal(&pb.Definition{
 		Metadata: map[digest.Digest]pb.OpMetadata{},
 	}, map[digest.Digest]digest.Digest{})
 	if dag.Op.Op != nil {
 		op := &pb.Op{
 			Inputs: []*pb.Input{
-				{Digest: *dag.opDigest, Index: dag.outputIndex},
+				{Digest: *dag.OpDigest, Index: dag.outputIndex},
 			},
 			Platform:    dag.Platform,
 			Constraints: dag.Constraints,
@@ -167,13 +167,13 @@ func (dag *opDAG) Marshal() (*pb.Definition, error) {
 		}
 		dig := digest.FromBytes(dt)
 		def.Def = append(def.Def, dt)
-		def.Metadata[dig] = *dag.metadata
+		def.Metadata[dig] = *dag.Metadata
 	}
 	return def, err
 }
 
-func (dag *opDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Digest) (*pb.Definition, digest.Digest, error) {
-	if dgst, ok := memo[*dag.opDigest]; ok {
+func (dag *OpDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Digest) (*pb.Definition, digest.Digest, error) {
+	if dgst, ok := memo[*dag.OpDigest]; ok {
 		return def, dgst, nil
 	}
 
@@ -182,7 +182,7 @@ func (dag *opDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Dige
 		Platform:    dag.Platform,
 		Constraints: dag.Constraints,
 	}
-	for _, input := range dag.inputs {
+	for _, input := range dag.Inputs {
 		updatedDef, newInputOpDigest, err := input.marshal(def, memo)
 		if err != nil {
 			return nil, "", err
@@ -198,15 +198,15 @@ func (dag *opDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Dige
 		return nil, "", err
 	}
 	newOpDigest := digest.FromBytes(newOpBytes)
-	memo[*dag.opDigest] = newOpDigest
+	memo[*dag.OpDigest] = newOpDigest
 	def.Def = append(def.Def, newOpBytes)
-	def.Metadata[newOpDigest] = *dag.metadata
+	def.Metadata[newOpDigest] = *dag.Metadata
 	return def, newOpDigest, nil
 }
 
-func (dag *opDAG) BlobDependencies() (map[digest.Digest]*ocispecs.Descriptor, error) {
+func (dag *OpDAG) BlobDependencies() (map[digest.Digest]*ocispecs.Descriptor, error) {
 	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
-	if err := dag.Walk(func(dag *opDAG) error {
+	if err := dag.Walk(func(dag *OpDAG) error {
 		blobOp, ok := dag.AsBlob()
 		if !ok {
 			return nil
@@ -223,12 +223,12 @@ func (dag *opDAG) BlobDependencies() (map[digest.Digest]*ocispecs.Descriptor, er
 	return dependencyBlobs, nil
 }
 
-type execOp struct {
-	*opDAG
+type ExecOp struct {
+	*OpDAG
 	*pb.ExecOp
 }
 
-func (dag *opDAG) AsExec() (*execOp, bool) {
+func (dag *OpDAG) AsExec() (*ExecOp, bool) {
 	if dag.asExecOp != nil {
 		return dag.asExecOp, true
 	}
@@ -236,19 +236,19 @@ func (dag *opDAG) AsExec() (*execOp, bool) {
 	if pbExec == nil {
 		return nil, false
 	}
-	exec := &execOp{
-		opDAG:  dag,
+	exec := &ExecOp{
+		OpDAG:  dag,
 		ExecOp: pbExec,
 	}
 	dag.asExecOp = exec
 	return exec, true
 }
 
-func (exec *execOp) Input(i pb.InputIndex) *opDAG {
-	return exec.inputs[i]
+func (exec *ExecOp) Input(i pb.InputIndex) *OpDAG {
+	return exec.Inputs[i]
 }
 
-func (exec *execOp) OutputMount() *pb.Mount {
+func (exec *ExecOp) OutputMount() *pb.Mount {
 	for _, mnt := range exec.Mounts {
 		if mnt.Output == exec.outputIndex {
 			return mnt
@@ -258,22 +258,22 @@ func (exec *execOp) OutputMount() *pb.Mount {
 	return nil
 }
 
-func (exec *execOp) OutputMountBase() *opDAG {
+func (exec *ExecOp) OutputMountBase() *OpDAG {
 	if outputMount := exec.OutputMount(); outputMount != nil {
 		// -1 indicates the input is scratch (i.e. it starts empty)
 		if outputMount.Input != -1 {
-			return exec.inputs[outputMount.Input]
+			return exec.Inputs[outputMount.Input]
 		}
 	}
 	return nil
 }
 
-type fileOp struct {
-	*opDAG
+type FileOp struct {
+	*OpDAG
 	*pb.FileOp
 }
 
-func (dag *opDAG) AsFile() (*fileOp, bool) {
+func (dag *OpDAG) AsFile() (*FileOp, bool) {
 	if dag.asFileOp != nil {
 		return dag.asFileOp, true
 	}
@@ -281,20 +281,20 @@ func (dag *opDAG) AsFile() (*fileOp, bool) {
 	if pbFile == nil {
 		return nil, false
 	}
-	file := &fileOp{
-		opDAG:  dag,
+	file := &FileOp{
+		OpDAG:  dag,
 		FileOp: pbFile,
 	}
 	dag.asFileOp = file
 	return file, true
 }
 
-type mergeOp struct {
-	*opDAG
+type MergeOp struct {
+	*OpDAG
 	*pb.MergeOp
 }
 
-func (dag *opDAG) AsMerge() (*mergeOp, bool) {
+func (dag *OpDAG) AsMerge() (*MergeOp, bool) {
 	if dag.asMergeOp != nil {
 		return dag.asMergeOp, true
 	}
@@ -302,20 +302,20 @@ func (dag *opDAG) AsMerge() (*mergeOp, bool) {
 	if pbMerge == nil {
 		return nil, false
 	}
-	merge := &mergeOp{
-		opDAG:   dag,
+	merge := &MergeOp{
+		OpDAG:   dag,
 		MergeOp: pbMerge,
 	}
 	dag.asMergeOp = merge
 	return merge, true
 }
 
-type diffOp struct {
-	*opDAG
+type DiffOp struct {
+	*OpDAG
 	*pb.DiffOp
 }
 
-func (dag *opDAG) AsDiff() (*diffOp, bool) {
+func (dag *OpDAG) AsDiff() (*DiffOp, bool) {
 	if dag.asDiffOp != nil {
 		return dag.asDiffOp, true
 	}
@@ -323,20 +323,20 @@ func (dag *opDAG) AsDiff() (*diffOp, bool) {
 	if pbDiff == nil {
 		return nil, false
 	}
-	diff := &diffOp{
-		opDAG:  dag,
+	diff := &DiffOp{
+		OpDAG:  dag,
 		DiffOp: pbDiff,
 	}
 	dag.asDiffOp = diff
 	return diff, true
 }
 
-type imageOp struct {
-	*opDAG
+type ImageOp struct {
+	*OpDAG
 	*pb.SourceOp
 }
 
-func (dag *opDAG) AsImage() (*imageOp, bool) {
+func (dag *OpDAG) AsImage() (*ImageOp, bool) {
 	if dag.asImageOp != nil {
 		return dag.asImageOp, true
 	}
@@ -347,20 +347,20 @@ func (dag *opDAG) AsImage() (*imageOp, bool) {
 	if !strings.HasPrefix(pbSource.Identifier, srctypes.DockerImageScheme+"://") {
 		return nil, false
 	}
-	img := &imageOp{
-		opDAG:    dag,
+	img := &ImageOp{
+		OpDAG:    dag,
 		SourceOp: pbSource,
 	}
 	dag.asImageOp = img
 	return img, true
 }
 
-type gitOp struct {
-	*opDAG
+type GitOp struct {
+	*OpDAG
 	*pb.SourceOp
 }
 
-func (dag *opDAG) AsGit() (*gitOp, bool) {
+func (dag *OpDAG) AsGit() (*GitOp, bool) {
 	if dag.asGitOp != nil {
 		return dag.asGitOp, true
 	}
@@ -371,20 +371,20 @@ func (dag *opDAG) AsGit() (*gitOp, bool) {
 	if !strings.HasPrefix(pbSource.Identifier, srctypes.GitScheme+"://") {
 		return nil, false
 	}
-	op := &gitOp{
-		opDAG:    dag,
+	op := &GitOp{
+		OpDAG:    dag,
 		SourceOp: pbSource,
 	}
 	dag.asGitOp = op
 	return op, true
 }
 
-type localOp struct {
-	*opDAG
+type LocalOp struct {
+	*OpDAG
 	*pb.SourceOp
 }
 
-func (dag *opDAG) AsLocal() (*localOp, bool) {
+func (dag *OpDAG) AsLocal() (*LocalOp, bool) {
 	if dag.asLocalOp != nil {
 		return dag.asLocalOp, true
 	}
@@ -395,20 +395,20 @@ func (dag *opDAG) AsLocal() (*localOp, bool) {
 	if !strings.HasPrefix(pbSource.Identifier, srctypes.LocalScheme+"://") {
 		return nil, false
 	}
-	op := &localOp{
-		opDAG:    dag,
+	op := &LocalOp{
+		OpDAG:    dag,
 		SourceOp: pbSource,
 	}
 	dag.asLocalOp = op
 	return op, true
 }
 
-type httpOp struct {
-	*opDAG
+type HTTPOp struct {
+	*OpDAG
 	*pb.SourceOp
 }
 
-func (dag *opDAG) AsHTTP() (*httpOp, bool) {
+func (dag *OpDAG) AsHTTP() (*HTTPOp, bool) {
 	if dag.asHTTPOp != nil {
 		return dag.asHTTPOp, true
 	}
@@ -421,20 +421,20 @@ func (dag *opDAG) AsHTTP() (*httpOp, bool) {
 	if !hasHttpScheme && !hasHttpsScheme {
 		return nil, false
 	}
-	op := &httpOp{
-		opDAG:    dag,
+	op := &HTTPOp{
+		OpDAG:    dag,
 		SourceOp: pbSource,
 	}
 	dag.asHTTPOp = op
 	return op, true
 }
 
-type ociOp struct {
-	*opDAG
+type OCIOp struct {
+	*OpDAG
 	*pb.SourceOp
 }
 
-func (dag *opDAG) AsOCI() (*ociOp, bool) {
+func (dag *OpDAG) AsOCI() (*OCIOp, bool) {
 	if dag.asOCIOp != nil {
 		return dag.asOCIOp, true
 	}
@@ -445,20 +445,20 @@ func (dag *opDAG) AsOCI() (*ociOp, bool) {
 	if !strings.HasPrefix(pbSource.Identifier, srctypes.OCIScheme+"://") {
 		return nil, false
 	}
-	op := &ociOp{
-		opDAG:    dag,
+	op := &OCIOp{
+		OpDAG:    dag,
 		SourceOp: pbSource,
 	}
 	dag.asOCIOp = op
 	return op, true
 }
 
-type blobOp struct {
-	*opDAG
+type BlobOp struct {
+	*OpDAG
 	*pb.SourceOp
 }
 
-func (dag *opDAG) AsBlob() (*blobOp, bool) {
+func (dag *OpDAG) AsBlob() (*BlobOp, bool) {
 	if dag.asBlobOp != nil {
 		return dag.asBlobOp, true
 	}
@@ -469,15 +469,15 @@ func (dag *opDAG) AsBlob() (*blobOp, bool) {
 	if !strings.HasPrefix(pbSource.Identifier, blob.BlobScheme+"://") {
 		return nil, false
 	}
-	op := &blobOp{
-		opDAG:    dag,
+	op := &BlobOp{
+		OpDAG:    dag,
 		SourceOp: pbSource,
 	}
 	dag.asBlobOp = op
 	return op, true
 }
 
-func (op *blobOp) OCIDescriptor() (ocispecs.Descriptor, error) {
+func (op *BlobOp) OCIDescriptor() (ocispecs.Descriptor, error) {
 	id, err := blob.IdentifierFromPB(op.SourceOp)
 	if err != nil {
 		return ocispecs.Descriptor{}, err

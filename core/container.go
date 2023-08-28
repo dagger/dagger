@@ -1063,22 +1063,6 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	uncachedExecMetadataOpt, err := ContainerExecUncachedMetadata{
-		ParentClientIDs:   clientMetadata.ClientIDs(),
-		ServerID:          clientMetadata.ServerID,
-		ProgSockPath:      progSock,
-		EnvironmentDigest: clientMetadata.EnvironmentDigest,
-	}.ToLLBRunOpt()
-	if err != nil {
-		return nil, err
-	}
-	runOpts = append(runOpts, uncachedExecMetadataOpt)
-
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
@@ -1326,14 +1310,14 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 	// is an exec plus something else like fileop on top, should error
 	// Also note that this is technically a breaking change sort of but
 	// the fact that it ever worked was not intentional afaik
-	dag, err := defToDAG(container.FS)
+	dag, err := buildkit.DefToDAG(container.FS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert container def to dag: %w", err)
 	}
-	if len(dag.inputs) == 0 {
+	if len(dag.Inputs) == 0 {
 		return nil, fmt.Errorf("service container must be result of withExec")
 	}
-	execOp, ok := dag.inputs[0].AsExec()
+	execOp, ok := dag.Inputs[0].AsExec()
 	if !ok {
 		return nil, fmt.Errorf("service container must be result of withExec")
 	}
@@ -1942,47 +1926,3 @@ const (
 	OCIMediaTypes    ImageMediaTypes = "OCIMediaTypes"
 	DockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 )
-
-// Metadata passed to an exec that doesn't count towards the cache key.
-// This should be used with great caution; only for metadata that is
-// safe to be de-duplicated across execs.
-//
-// Currently, this uses the FTPProxy LLB option to pass without becoming
-// part of the cache key. This is a hack that, while ugly to look at,
-// is simple and robust. Alternatives would be to use secrets or sockets,
-// but they are more complicated, or to create a custom buildkit
-// worker/executor, which is MUCH more complicated.
-//
-// If a need to add ftp proxy support arises, then we can just also embed
-// the "real" ftp proxy setting in here too and have the shim handle
-// leaving only that set in the actual env var.
-type ContainerExecUncachedMetadata struct {
-	ParentClientIDs   []string      `json:"parentClientIDs,omitempty"`
-	ServerID          string        `json:"serverID,omitempty"`
-	ProgSockPath      string        `json:"progSockPath,omitempty"`
-	EnvironmentDigest digest.Digest `json:"environmentDigest,omitempty"`
-}
-
-func (md ContainerExecUncachedMetadata) ToLLBRunOpt() (llb.RunOption, error) {
-	b, err := json.Marshal(md)
-	if err != nil {
-		return nil, err
-	}
-
-	return llb.WithProxy(llb.ProxyEnv{
-		// no one uses FTP anymore right?
-		FTPProxy: string(b),
-	}), nil
-}
-
-func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
-	_, val, ok := strings.Cut(envKV, "ftp_proxy=")
-	if !ok {
-		return false, nil
-	}
-	err := json.Unmarshal([]byte(val), md)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}

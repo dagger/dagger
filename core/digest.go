@@ -207,7 +207,7 @@ func digestMapInto(rv reflect.Value, dest io.Writer) error {
 // data so that it may be used as a cache key that is stable across sessions.
 func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 	def.Source = nil // discard source map
-	dag, err := defToDAG(def)
+	dag, err := buildkit.DefToDAG(def)
 	if err != nil {
 		return nil, err
 	}
@@ -224,11 +224,12 @@ func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 	sort.Slice(def.Def, func(i, j int) bool {
 		return bytes.Compare(def.Def[i], def.Def[j]) < 0
 	})
+	def.Metadata = nil // discard metadata, which has arbitrary names that may include client id
 
 	return def, nil
 }
 
-func stabilizeOp(op *opDAG) error {
+func stabilizeOp(op *buildkit.OpDAG) error {
 	if src := op.GetSource(); src != nil {
 		for k := range src.Attrs {
 			switch k {
