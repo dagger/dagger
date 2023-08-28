@@ -111,4 +111,6 @@ Once the workflow has successfully completed, run it again with `argo submit -n 
 
 ## Conclusion
 
-This example demonstrated a very basic way to run Dagger with Argo Workflows. In real world environments, Argo Workflows is often coupled with ArgoCD and Argo Events to create a fully featured CI/CD platform. Read more about that [here](https://medium.com/atlantbh/implementing-ci-cd-pipeline-using-argo-workflows-and-argo-events-6417dd157566).
+This example demonstrated how to integrate Dagger with Argo Workflows. However, this is a basic example and it's likely that you will want to also integrate Argo Workflows and Argo Events into your CI/CD pipeline. These topics are outside the scope of this guide, but you can find numerous third-party tutorials on these topics, such as this [guide on implementing CI/CD pipeline using Argo Workflows and Argo Events](https://medium.com/atlantbh/implementing-ci-cd-pipeline-using-argo-workflows-and-argo-events-6417dd157566).
+
+To learn more about Dagger, use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References. For more information on Argo Workflows, refer to the [official documentation](https://argoproj.github.io/argo-workflows/#documentation).
