@@ -15,18 +15,17 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 
 	"dagger.io/dagger/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/iancoleman/strcase"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 var (
 	errorT      = reflect.TypeOf((*error)(nil)).Elem()
+	stringT     = reflect.TypeOf((*string)(nil)).Elem()
 	marshallerT = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 	contextT    = reflect.TypeOf((*context.Context)(nil)).Elem()
 )
@@ -108,10 +107,11 @@ func Serve(r *Environment) {
 			result = input.Parent[fieldName]
 		}
 	} else {
-		result, err = fn.call(ctx, input.Parent, input.Args)
+		res, err := fn.call(ctx, input.Parent, input.Args)
 		if err != nil {
 			writeErrorf(err)
 		}
+		result = res
 	}
 	if result == nil {
 		result = make(map[string]any)
@@ -133,7 +133,6 @@ func WithCheck(r *Environment, in any) *Environment {
 	}
 	flag.Parse()
 
-	// TODO: dedupe huge chunks of code
 	typ := reflect.TypeOf(in)
 	if typ.Kind() != reflect.Func {
 		writeErrorf(fmt.Errorf("expected func, got %v", typ))
@@ -154,14 +153,86 @@ func WithCheck(r *Environment, in any) *Environment {
 			typ: inputParam,
 		})
 	}
+
 	for i := 0; i < fn.typ.NumOut(); i++ {
 		outputParam := fn.typ.Out(i)
 		fn.returns = append(fn.returns, &goParam{
 			typ: outputParam,
 		})
 	}
-	if len(fn.returns) > 2 {
+	if len(fn.returns) == 0 || len(fn.returns) > 2 {
 		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
+	}
+
+	// handle sugar for different return value types
+	fn.resultWrapper = func(returns []reflect.Value) (any, error) {
+		if len(returns) == 1 {
+			rtVal := returns[0]
+			switch rtVal.Type() {
+			case stringT:
+				// only returned a string, so assume success because we didn't panic
+				// and return a check result with the string as output
+				rtStr, ok := rtVal.Interface().(string)
+				if !ok {
+					return nil, fmt.Errorf("expected string, got %T", rtVal.Interface())
+				}
+				return dag.StaticCheckResult(true, StaticCheckResultOpts{
+					Output: rtStr,
+				}), nil
+			case errorT:
+				if rtVal.IsNil() {
+					// only returned a nil error, so assume success, no output
+					return dag.StaticCheckResult(true), nil
+				} else {
+					// only returned a non-nil error, so assume failure and return
+					// a check result with the output set to the error value
+					rtErr, ok := rtVal.Interface().(error)
+					if !ok {
+						return nil, fmt.Errorf("expected error, got %T", rtVal.Interface())
+					}
+					return dag.StaticCheckResult(false, StaticCheckResultOpts{
+						Output: rtErr.Error(),
+					}), nil
+				}
+			default:
+				return rtVal.Interface(), nil
+			}
+		}
+
+		var rt any
+		switch returns[0].Type() {
+		case stringT:
+			rt = returns[0].Interface()
+		default:
+			if !returns[0].IsNil() {
+				rt = returns[0].Interface()
+			}
+		}
+
+		var rtErr error
+		if !returns[1].IsNil() {
+			var ok bool
+			rtErr, ok = returns[1].Interface().(error)
+			if !ok {
+				return nil, fmt.Errorf("expected error, got %T", returns[1].Interface())
+			}
+		}
+
+		switch rt := rt.(type) {
+		case string:
+			// returned (string, error), so assume success if error is nil, set output
+			// from the string and, if err is non-nil, append it to the output
+			output := rt
+			success := rtErr == nil
+			if !success {
+				output += "\nError: " + rtErr.Error()
+			}
+			return dag.StaticCheckResult(success, StaticCheckResultOpts{
+				Output: output,
+			}), nil
+		default:
+			return rt, rtErr
+		}
 	}
 
 	filePath, lineNum := fn.srcPathAndLine()
@@ -211,18 +282,15 @@ func WithCheck(r *Environment, in any) *Environment {
 		return true
 	})
 
-	check := dag.Check()
 	resolvers[lowerCamelCase(fn.name)] = fn
 
 	if !getEnv {
 		return r
 	}
 
-	check = check.
+	return r.WithCheck(dag.Check().
 		WithName(strcase.ToLowerCamel(fn.name)).
-		WithDescription(fn.doc)
-
-	return r.WithCheck(check)
+		WithDescription(fn.doc))
 }
 
 type goTypes struct {
@@ -250,15 +318,14 @@ type goField struct {
 type goFunc struct {
 	name string
 	// args are args to the function, except for the receiver
-	// (if it's a method) and for the dagger.Context arg.
-	args    []*goParam
-	returns []*goParam
-	typ     reflect.Type
-	val     reflect.Value
-	// TODO:
-	// receiver *goStruct // only set for methods
-	hasReceiver bool
-	doc         string
+	// (if it's a method) and for the Context arg.
+	args          []*goParam
+	returns       []*goParam
+	typ           reflect.Type
+	val           reflect.Value
+	hasReceiver   bool
+	doc           string
+	resultWrapper func([]reflect.Value) (any, error)
 }
 
 type goParam struct {
@@ -321,18 +388,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 	}
 
 	reflectOutputs := fn.val.Call(callArgs)
-	var returnVal any
-	var returnErr error
-	for _, output := range reflectOutputs {
-		if output.Type() == errorT {
-			if !output.IsNil() {
-				returnErr = output.Interface().(error)
-			}
-		} else {
-			returnVal = output.Interface()
-		}
-	}
-	return returnVal, returnErr
+	return fn.resultWrapper(reflectOutputs)
 }
 
 func init() {
@@ -349,63 +405,6 @@ func lowerCamelCase(s string) string {
 
 func inputName(name string) string {
 	return name + "Input"
-}
-
-func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error) {
-	// Handle types that implement the GraphQL serializer
-	if t.Implements(marshallerT) {
-		typ := reflect.New(t.Elem())
-		var typeName string
-		if isInput {
-			result := typ.MethodByName(querybuilder.GraphQLMarshallerIDType).Call([]reflect.Value{})
-			typeName = result[0].String()
-		} else {
-			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-			typeName = result[0].String()
-		}
-		return ast.NonNullNamedType(typeName, nil), nil
-	}
-
-	switch t.Kind() {
-	case reflect.String:
-		// /* TODO:(sipsma)
-		// Huge hack: handle any scalar type from the go SDK (i.e. DirectoryID/ContainerID)
-		// The much cleaner approach will come when we integrate this code w/ the
-		// in-progress codegen work.
-		// */
-		// if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger") {
-		// 	return ast.NonNullNamedType(t.Name(), nil), nil
-		// }
-		return ast.NonNullNamedType("String", nil), nil
-	case reflect.Int:
-		return ast.NonNullNamedType("Int", nil), nil
-	case reflect.Float32, reflect.Float64:
-		// TODO:(sipsma) does this actually handle both float32 and float64?
-		return ast.NonNullNamedType("Float", nil), nil
-	case reflect.Bool:
-		return ast.NonNullNamedType("Boolean", nil), nil
-	case reflect.Slice:
-		elementType, err := goReflectTypeToGraphqlType(t.Elem(), isInput)
-		if err != nil {
-			return nil, err
-		}
-		return ast.NonNullListType(elementType, nil), nil
-	case reflect.Struct:
-		if isInput {
-			return ast.NonNullNamedType(inputName(t.Name()), nil), nil
-		}
-		return ast.NonNullNamedType(t.Name(), nil), nil // TODO:(sipsma) doesn't handle anything from another package (besides the sdk)
-	case reflect.Pointer:
-		nonNullType, err := goReflectTypeToGraphqlType(t.Elem(), isInput)
-		if err != nil {
-			return nil, err
-		}
-		nonNullType.NonNull = false
-		return nonNullType, nil
-	default:
-		// TODO: return nil, fmt.Errorf("unsupported type %s", t.Kind())
-		return nil, fmt.Errorf("unsupported type %s %s %s", t.Kind(), t.Name(), string(debug.Stack()))
-	}
 }
 
 // TODO: doc, basically inverse of convertResult

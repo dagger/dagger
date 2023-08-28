@@ -112,7 +112,7 @@ func (c *Client) LocalImport(
 	}
 	cachedRes, err := resultProxy.Result(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get result: %s", err)
+		return nil, wrapError(ctx, err, c.ID())
 	}
 	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
 	if !ok {

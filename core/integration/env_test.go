@@ -190,6 +190,13 @@ func TestEnvChecks(t *testing.T) {
 		"sad-composite-check-from-explicit-dep",
 		"cool-composite-check-from-dynamic-dep",
 		"sad-composite-check-from-dynamic-dep",
+		"cool-check-only-return",
+		"cool-check-result-only-return",
+		"cool-string-only-return",
+		"cool-error-only-return",
+		"sad-error-only-return",
+		"cool-string-error-return",
+		"sad-string-error-return",
 	}
 	compositeCheckToSubcheckNames := map[string][]string{
 		"cool-composite-check": {
@@ -260,6 +267,11 @@ func TestEnvChecks(t *testing.T) {
 				"another-cool-static-check",
 				"cool-composite-check-from-explicit-dep",
 				"cool-composite-check-from-dynamic-dep",
+				"cool-check-only-return",
+				"cool-check-result-only-return",
+				"cool-string-only-return",
+				"cool-error-only-return",
+				"cool-string-error-return",
 			},
 		},
 		{
@@ -273,6 +285,8 @@ func TestEnvChecks(t *testing.T) {
 				"another-sad-static-check",
 				"sad-composite-check-from-explicit-dep",
 				"sad-composite-check-from-dynamic-dep",
+				"sad-error-only-return",
+				"sad-string-error-return",
 			},
 		},
 		{
@@ -318,6 +332,10 @@ func TestEnvChecks(t *testing.T) {
 						if ok {
 							nextChecks = append(nextChecks, subChecks...)
 						} else {
+							// special case for successful error only check, doesn't have output
+							if checkName == "cool-error-only-return" {
+								continue
+							}
 							require.Contains(t, stderr, checkOutput(checkName))
 						}
 					}

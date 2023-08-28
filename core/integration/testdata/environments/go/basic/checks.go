@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/iancoleman/strcase"
 )
@@ -19,7 +20,14 @@ func checkTests(env *Environment) *Environment {
 		WithCheck(CoolCompositeCheckFromExplicitDep).
 		WithCheck(SadCompositeCheckFromExplicitDep).
 		WithCheck(CoolCompositeCheckFromDynamicDep).
-		WithCheck(SadCompositeCheckFromDynamicDep)
+		WithCheck(SadCompositeCheckFromDynamicDep).
+		WithCheck(CoolCheckOnlyReturn).
+		WithCheck(CoolCheckResultOnlyReturn).
+		WithCheck(CoolStringOnlyReturn).
+		WithCheck(CoolErrorOnlyReturn).
+		WithCheck(SadErrorOnlyReturn).
+		WithCheck(CoolStringErrorReturn).
+		WithCheck(SadStringErrorReturn)
 }
 
 func checkOutput(name string) string {
@@ -105,4 +113,34 @@ func SadCompositeCheckFromDynamicDep(ctx context.Context) (*Check, error) {
 		WithSubcheck(dynamicDep.Check("yetAnotherSadStaticCheck")).
 		WithSubcheck(dynamicDep.Check("yetAnotherSadContainerCheck")).
 		WithSubcheck(dynamicDep.Check("yetAnotherSadCompositeCheck")), nil
+}
+
+func CoolCheckOnlyReturn(ctx context.Context) *Check {
+	return containerCheck("CoolCheckOnlyReturn", true)
+}
+
+func CoolCheckResultOnlyReturn(ctx context.Context) *CheckResult {
+	return dag.StaticCheckResult(true, StaticCheckResultOpts{
+		Output: checkOutput("CoolCheckResultOnlyReturn"),
+	})
+}
+
+func CoolStringOnlyReturn(ctx context.Context) string {
+	return checkOutput("CoolStringOnlyReturn")
+}
+
+func CoolErrorOnlyReturn(ctx context.Context) error {
+	return nil
+}
+
+func SadErrorOnlyReturn(ctx context.Context) error {
+	return fmt.Errorf(checkOutput("SadErrorOnlyReturn"))
+}
+
+func CoolStringErrorReturn(ctx context.Context) (string, error) {
+	return checkOutput("CoolStringErrorReturn"), nil
+}
+
+func SadStringErrorReturn(ctx context.Context) (string, error) {
+	return "", fmt.Errorf(checkOutput("SadStringErrorReturn"))
 }
