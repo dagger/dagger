@@ -223,12 +223,17 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 			}
 		}()
 
+		schema, err := srv.schema.Schema(clientMetadata.EnvironmentDigest)
+		if err != nil {
+			panic(err)
+		}
+
 		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
 		mux := http.NewServeMux()
 		mux.Handle("/query", NewHandler(&HandlerConfig{
-			Schema: srv.schema.Schema(),
+			Schema: schema,
 		}))
 		mux.ServeHTTP(w, req)
 	})

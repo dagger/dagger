@@ -2,14 +2,18 @@ package schema
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/envconfig"
+	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
+	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -18,7 +22,7 @@ type environmentSchema struct {
 	envCache *core.EnvironmentCache
 
 	// NOTE: this should only be used to dedupe environment install specifically
-	installedEnvCache *core.CacheMap[core.EnvironmentID, *core.Environment]
+	installedEnvCache *core.CacheMap[uint64, *core.Environment]
 }
 
 var _ ExecutableSchema = &environmentSchema{}
@@ -125,42 +129,60 @@ func (s *environmentSchema) installEnvironment(ctx *core.Context, _ *core.Query,
 		return false, err
 	}
 
-	// TODO: there might be weird corner cases here unless we do an actual topological sort (i.e. when you directly
-	// register a dep's entrypoint in your own environment initialization and you have a direct dep that is itself
-	// a dep of another one of your direct deps)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	err = s.installEnvironmentForDigest(ctx, env, clientMetadata.EnvironmentDigest)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *environmentSchema) installEnvironmentForDigest(ctx context.Context, depEnv *core.Environment, dependerEnvDigest digest.Digest) error {
+	envID, err := depEnv.ID()
+	if err != nil {
+		return err
+	}
+
+	hash := xxh3.New()
+	fmt.Fprintln(hash, envID)
+	fmt.Fprintln(hash, dependerEnvDigest)
+	cacheKey := hash.Sum64()
+
+	_, err = s.installedEnvCache.GetOrInitialize(cacheKey, func() (*core.Environment, error) {
+		executableSchema, err := s.envToSchema(ctx, depEnv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
+		}
+		if err := s.addSchemas(dependerEnvDigest, executableSchema); err != nil {
+			return nil, fmt.Errorf("failed to install environment schema: %w", err)
+		}
+		return depEnv, nil
+	})
+	return err
+}
+
+func (s *environmentSchema) installDepsCallback(ctx context.Context, env *core.Environment) error {
+	envDigest, err := env.Digest()
+	if err != nil {
+		return err
+	}
+
 	var eg errgroup.Group
 	for _, dep := range env.Dependencies {
 		dep := dep
 		eg.Go(func() error {
-			depID, err := dep.ID()
-			if err != nil {
-				return fmt.Errorf("failed to get environment dependency %q ID: %w", dep.Name, err)
-			}
-			_, err = s.installEnvironment(ctx, nil, installArgs{ID: depID})
+			err = s.installEnvironmentForDigest(ctx, dep, envDigest)
 			if err != nil {
 				return fmt.Errorf("failed to install environment dependency %q: %w", dep.Name, err)
 			}
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
-		return false, err
-	}
-
-	_, err = s.installedEnvCache.GetOrInitialize(args.ID, func() (*core.Environment, error) {
-		executableSchema, err := s.envToSchema(ctx, env)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
-		}
-		if err := s.addSchemas(executableSchema); err != nil {
-			return nil, fmt.Errorf("failed to install environment schema: %w", err)
-		}
-		return env, nil
-	})
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	return eg.Wait()
 }
 
 func gqlObjectName(env *core.Environment) string {
@@ -168,7 +190,7 @@ func gqlObjectName(env *core.Environment) string {
 	return strings.ToUpper(env.Name[:1]) + env.Name[1:]
 }
 
-func (s *environmentSchema) envToSchema(ctx *core.Context, env *core.Environment) (ExecutableSchema, error) {
+func (s *environmentSchema) envToSchema(ctx context.Context, env *core.Environment) (ExecutableSchema, error) {
 	objName := gqlObjectName(env)
 
 	schemaDoc := &ast.SchemaDocument{}
@@ -254,7 +276,7 @@ func (s *environmentSchema) environmentFrom(ctx *core.Context, env *core.Environ
 		}
 		deps = append(deps, dep)
 	}
-	return env.From(ctx, s.bk, s.progSockPath, s.envCache, args.Name, sourceDir, args.SourceDirectorySubpath, args.SDK, deps)
+	return env.From(ctx, s.bk, s.progSockPath, s.envCache, s.installDepsCallback, args.Name, sourceDir, args.SourceDirectorySubpath, args.SDK, deps)
 }
 
 type environmentFromConfigArgs struct {
@@ -267,7 +289,7 @@ func (s *environmentSchema) environmentFromConfig(ctx *core.Context, env *core.E
 	if err != nil {
 		return nil, err
 	}
-	return env.FromConfig(ctx, s.bk, s.progSockPath, s.envCache, sourceDir, args.ConfigPath)
+	return env.FromConfig(ctx, s.bk, s.progSockPath, s.envCache, s.installDepsCallback, sourceDir, args.ConfigPath)
 }
 
 type withWorkdirArgs struct {
@@ -372,12 +394,12 @@ func (s *environmentSchema) withCheckContainer(ctx *core.Context, check *core.Ch
 
 func (s *environmentSchema) subchecks(ctx *core.Context, check *core.Check, _ any) ([]*core.Check, error) {
 	// TODO: set real pipeline
-	return check.GetSubchecks(ctx, s.bk, s.progSockPath, nil, s.envCache)
+	return check.GetSubchecks(ctx, s.bk, s.progSockPath, nil, s.envCache, s.installDepsCallback)
 }
 
 func (s *environmentSchema) evaluateCheckResult(ctx *core.Context, check *core.Check, _ any) (*core.CheckResult, error) {
 	// TODO: set real pipeline
-	return check.Result(ctx, s.bk, s.progSockPath, nil, s.envCache)
+	return check.Result(ctx, s.bk, s.progSockPath, nil, s.envCache, s.installDepsCallback)
 }
 
 func (s *environmentSchema) checkResultID(ctx *core.Context, checkResult *core.CheckResult, args any) (core.CheckResultID, error) {

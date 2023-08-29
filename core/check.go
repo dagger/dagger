@@ -21,7 +21,9 @@ func (env *Environment) WithCheck(
 ) (*Environment, error) {
 	env = env.Clone()
 	check = check.Clone()
-	check.ReturnType = returnType
+	if returnType != "" {
+		check.ReturnType = returnType
+	}
 	env.Checks = append(env.Checks, check)
 	return env, env.updateEnv()
 }
@@ -39,7 +41,7 @@ type Check struct {
 
 	// If this check is evaluated via an environment entrypoint, this is the
 	// return type of the entrypoint.
-	ReturnType CheckEntrypointReturnType
+	ReturnType CheckEntrypointReturnType `json:"returnType"`
 }
 
 func (check *Check) PBDefinitions() ([]*pb.Definition, error) {
@@ -131,6 +133,7 @@ func (check *Check) GetSubchecks(
 	progSock string,
 	pipeline pipeline.Path,
 	envCache *EnvironmentCache,
+	installDeps InstallDepsCallback,
 ) (_ []*Check, rerr error) {
 	if len(check.Subchecks) > 0 {
 		return check.Subchecks, nil
@@ -159,7 +162,7 @@ func (check *Check) GetSubchecks(
 			if err != nil {
 				return nil, fmt.Errorf("failed to get cache exit code for check %q: %w", check.Name, err)
 			}
-			resource, _, _, err := env.execEnvironment(ctx, bk, progSock, envCache, check.Name, nil, cacheExitCode)
+			resource, _, _, err := env.execEnvironment(ctx, bk, progSock, envCache, installDeps, check.Name, nil, cacheExitCode)
 			if err != nil {
 				return nil, fmt.Errorf("failed to exec check environment container: %w", err)
 			}
@@ -167,9 +170,9 @@ func (check *Check) GetSubchecks(
 			if !ok {
 				return nil, fmt.Errorf("unexpected check result type %T", resource)
 			}
-			return recursiveCheck.GetSubchecks(ctx, bk, progSock, pipeline, envCache)
+			return recursiveCheck.GetSubchecks(ctx, bk, progSock, pipeline, envCache, installDeps)
 		default:
-			return nil, fmt.Errorf("unhandled check return type %q", check.ReturnType)
+			return nil, fmt.Errorf("unhandled check return type %q for check %q", check.ReturnType, check.Name)
 		}
 	}
 
@@ -182,6 +185,7 @@ func (check *Check) Result(
 	progSock string,
 	pipeline pipeline.Path,
 	envCache *EnvironmentCache,
+	installDeps InstallDepsCallback,
 ) (*CheckResult, error) {
 	if len(check.Subchecks) > 0 {
 		// This is a composite check, evaluate it by evaluating each subcheck
@@ -191,7 +195,7 @@ func (check *Check) Result(
 		for _, subcheck := range check.Subchecks {
 			subcheck := subcheck
 			eg.Go(func() error {
-				subresult, err := subcheck.Result(ctx, bk, progSock, pipeline, envCache)
+				subresult, err := subcheck.Result(ctx, bk, progSock, pipeline, envCache, installDeps)
 				if err != nil {
 					return fmt.Errorf("failed to get subcheck result for %q: %w", subcheck.Name, err)
 				}
@@ -259,7 +263,7 @@ func (check *Check) Result(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache exit code for check %q: %w", check.Name, err)
 	}
-	resource, outputBytes, exitCode, err := env.execEnvironment(ctx, bk, progSock, envCache, check.Name, nil, cacheExitCode)
+	resource, outputBytes, exitCode, err := env.execEnvironment(ctx, bk, progSock, envCache, installDeps, check.Name, nil, cacheExitCode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec check environment container: %w", err)
 	}
@@ -268,7 +272,7 @@ func (check *Check) Result(
 	case CheckReturnTypeVoid:
 		return &CheckResult{
 			Success: exitCode == 0,
-			// TODO: could attempt to get stdout/stderr of entrypoint exec here?
+			Output:  string(outputBytes),
 		}, nil
 	case CheckReturnTypeString:
 		return &CheckResult{
@@ -286,7 +290,7 @@ func (check *Check) Result(
 		if !ok {
 			return nil, fmt.Errorf("unexpected check result type %T", resource)
 		}
-		res, err := recursiveCheck.Result(ctx, bk, progSock, pipeline, envCache)
+		res, err := recursiveCheck.Result(ctx, bk, progSock, pipeline, envCache, installDeps)
 		if err != nil {
 			return nil, fmt.Errorf("failed to evaluate recursive check: %w", err)
 		}

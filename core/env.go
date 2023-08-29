@@ -140,6 +140,7 @@ func (env *Environment) From(
 	bk *buildkit.Client,
 	progSock string,
 	envCache *EnvironmentCache,
+	installDeps InstallDepsCallback,
 	name string,
 	sourceDir *Directory,
 	sourceDirSubpath string,
@@ -162,7 +163,7 @@ func (env *Environment) From(
 		return nil, fmt.Errorf("failed to get runtime container: %w", err)
 	}
 
-	resource, _, _, err := env.execEnvironment(ctx, bk, progSock, envCache, "", nil, 0)
+	resource, _, _, err := env.execEnvironment(ctx, bk, progSock, envCache, installDeps, "", nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec environment: %w", err)
 	}
@@ -181,6 +182,7 @@ func (env *Environment) FromConfig(
 	bk *buildkit.Client,
 	progSock string,
 	envCache *EnvironmentCache,
+	installDeps InstallDepsCallback,
 	sourceDir *Directory,
 	configPath string,
 ) (*Environment, error) {
@@ -205,7 +207,7 @@ func (env *Environment) FromConfig(
 		i, depPath := i, depPath
 		eg.Go(func() error {
 			depConfigPath := filepath.Join("/", filepath.Dir(configPath), depPath)
-			depEnv, err := env.FromConfig(ctx, bk, progSock, envCache, sourceDir, depConfigPath)
+			depEnv, err := env.FromConfig(ctx, bk, progSock, envCache, installDeps, sourceDir, depConfigPath)
 			if err != nil {
 				return fmt.Errorf("failed to get dependency env from config %q: %w", depPath, err)
 			}
@@ -229,7 +231,7 @@ func (env *Environment) FromConfig(
 		}
 	}
 
-	return env.From(ctx, bk, progSock, envCache, cfg.Name, sourceDir, filepath.Dir(configPath), cfg.SDK, deps)
+	return env.From(ctx, bk, progSock, envCache, installDeps, cfg.Name, sourceDir, filepath.Dir(configPath), cfg.SDK, deps)
 }
 
 func (env *Environment) WithWorkdir(
@@ -313,15 +315,22 @@ func (env *Environment) ReturnEntrypointValue(ctx context.Context, valStr string
 	return bk.IOReaderExport(ctx, bytes.NewReader([]byte(valStr)), filepath.Join(envMetaDirPath, envMetaOutputPath), 0600)
 }
 
+type InstallDepsCallback func(context.Context, *Environment) error
+
 func (env *Environment) execEnvironment(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
 	envCache *EnvironmentCache,
+	installDeps InstallDepsCallback,
 	entrypointName string,
 	args any,
 	cacheExitCode uint32,
 ) (any, []byte, uint32, error) {
+	if err := installDeps(ctx, env); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to install deps: %w", err)
+	}
+
 	ctx, err := envCache.ContextWithCachedEnv(ctx, env)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("failed to set environment in context: %w", err)

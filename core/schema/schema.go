@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
 	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -30,42 +31,21 @@ type InitializeArgs struct {
 
 func New(params InitializeArgs) (*MergedSchemas, error) {
 	merged := &MergedSchemas{
-		bk:              params.BuildkitClient,
-		platform:        params.Platform,
-		progSockPath:    params.ProgSockPath,
-		auth:            params.Auth,
-		secrets:         params.Secrets,
-		separateSchemas: map[string]ExecutableSchema{},
-	}
-	host := core.NewHost()
-	buildCache := core.NewCacheMap[uint64, *core.Container]()
-	err := merged.addSchemas(
-		&querySchema{merged},
-		&directorySchema{merged, host, buildCache},
-		&fileSchema{merged, host},
-		&gitSchema{merged},
-		&containerSchema{
-			merged,
-			host,
-			params.OCIStore,
-			params.LeaseManager,
-			buildCache,
-			core.NewCacheMap[uint64, *specs.Descriptor](),
-		},
-		&cacheSchema{merged},
-		&secretSchema{merged},
-		&hostSchema{merged, host},
-		&environmentSchema{
-			MergedSchemas:     merged,
-			envCache:          core.NewEnvironmentCache(),
-			installedEnvCache: core.NewCacheMap[core.EnvironmentID, *core.Environment](),
-		},
-		&httpSchema{merged},
-		&platformSchema{merged},
-		&socketSchema{merged, host},
-	)
-	if err != nil {
-		return nil, err
+		bk:           params.BuildkitClient,
+		platform:     params.Platform,
+		progSockPath: params.ProgSockPath,
+		auth:         params.Auth,
+		secrets:      params.Secrets,
+		ociStore:     params.OCIStore,
+		leaseManager: params.LeaseManager,
+		host:         core.NewHost(),
+
+		buildCache:        core.NewCacheMap[uint64, *core.Container](),
+		importCache:       core.NewCacheMap[uint64, *specs.Descriptor](),
+		envCache:          core.NewEnvironmentCache(),
+		installedEnvCache: core.NewCacheMap[uint64, *core.Environment](),
+
+		envSchemas: map[digest.Digest]*envSchema{},
 	}
 	return merged, nil
 }
@@ -76,22 +56,115 @@ type MergedSchemas struct {
 	progSockPath string
 	auth         *auth.RegistryAuthProvider
 	secrets      *core.SecretStore
+	ociStore     content.Store
+	leaseManager *leaseutil.Manager
+	host         *core.Host
 
-	schemaMu        sync.RWMutex
+	buildCache        *core.CacheMap[uint64, *core.Container]
+	importCache       *core.CacheMap[uint64, *specs.Descriptor]
+	envCache          *core.EnvironmentCache
+	installedEnvCache *core.CacheMap[uint64, *core.Environment]
+
+	mu sync.RWMutex
+	// map of env digest -> schema presented to env
+	// for the original client not in an env, digest is just ""
+	envSchemas map[digest.Digest]*envSchema
+}
+
+// requires s.mu write lock held
+func (s *MergedSchemas) initializeEnvSchema(envDigest digest.Digest) (*envSchema, error) {
+	es := &envSchema{
+		separateSchemas: map[string]ExecutableSchema{},
+	}
+
+	err := es.addSchemas(
+		&querySchema{s},
+		&directorySchema{s, s.host, s.buildCache},
+		&fileSchema{s, s.host},
+		&gitSchema{s},
+		&containerSchema{
+			s,
+			s.host,
+			s.ociStore,
+			s.leaseManager,
+			s.buildCache,
+			s.importCache,
+		},
+		&cacheSchema{s},
+		&secretSchema{s},
+		&hostSchema{s, s.host},
+		&environmentSchema{
+			MergedSchemas:     s,
+			envCache:          s.envCache,
+			installedEnvCache: s.installedEnvCache,
+		},
+		&httpSchema{s},
+		&platformSchema{s},
+		&socketSchema{s, s.host},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	s.envSchemas[envDigest] = es
+	return es, nil
+}
+
+func (s *MergedSchemas) getEnvSchema(envDigest digest.Digest) (*envSchema, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	es, ok := s.envSchemas[envDigest]
+	if !ok {
+		var err error
+		es, err = s.initializeEnvSchema(envDigest)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return es, nil
+}
+
+func (s *MergedSchemas) Schema(envDigest digest.Digest) (*graphql.Schema, error) {
+	es, err := s.getEnvSchema(envDigest)
+	if err != nil {
+		return nil, err
+	}
+	return es.schema(), nil
+}
+
+func (s *MergedSchemas) addSchemas(envDigest digest.Digest, schemasToAdd ...ExecutableSchema) error {
+	es, err := s.getEnvSchema(envDigest)
+	if err != nil {
+		return err
+	}
+	return es.addSchemas(schemasToAdd...)
+}
+
+func (s *MergedSchemas) resolvers(envDigest digest.Digest) (Resolvers, error) {
+	es, err := s.getEnvSchema(envDigest)
+	if err != nil {
+		return nil, err
+	}
+	return es.resolvers(), nil
+}
+
+type envSchema struct {
+	mu              sync.RWMutex
+	digest          digest.Digest
 	separateSchemas map[string]ExecutableSchema
 	mergedSchema    ExecutableSchema
 	compiledSchema  *graphql.Schema
 }
 
-func (s *MergedSchemas) Schema() *graphql.Schema {
-	s.schemaMu.RLock()
-	defer s.schemaMu.RUnlock()
+func (s *envSchema) schema() *graphql.Schema {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.compiledSchema
 }
 
-func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
-	s.schemaMu.Lock()
-	defer s.schemaMu.Unlock()
+func (s *envSchema) addSchemas(schemasToAdd ...ExecutableSchema) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// make a copy of the current schemas
 	separateSchemas := map[string]ExecutableSchema{}
@@ -145,9 +218,9 @@ func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	return nil
 }
 
-func (s *MergedSchemas) resolvers() Resolvers {
-	s.schemaMu.Lock()
-	defer s.schemaMu.Unlock()
+func (s *envSchema) resolvers() Resolvers {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.mergedSchema.Resolvers()
 }
 
