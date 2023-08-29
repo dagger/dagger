@@ -45,6 +45,10 @@ class SecretID(Scalar):
     """A unique identifier for a secret."""
 
 
+class ServiceID(Scalar):
+    """A unique service identifier."""
+
+
 class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
@@ -114,6 +118,20 @@ class PipelineLabel(Input):
 
     value: str
     """Label value."""
+
+
+@dataclass(slots=True)
+class PortForward(Input):
+    """Port forwarding rules for tunneling network traffic."""
+
+    backend: int
+    """Destination port for traffic."""
+
+    frontend: Optional[int] = None
+    """Port to expose to clients. If unspecified, a default will be chosen."""
+
+    protocol: Optional[NetworkProtocol] = None
+    """Protocol to use for traffic."""
 
 
 class CacheVolume(Type):
@@ -230,52 +248,6 @@ class Container(Type):
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
-
-    @typecheck
-    async def endpoint(
-        self,
-        *,
-        port: Optional[int] = None,
-        scheme: Optional[str] = None,
-    ) -> str:
-        """Retrieves an endpoint that clients can use to reach this container.
-
-        If no port is specified, the first exposed port is used. If none exist
-        an error is returned.
-
-        If a scheme is specified, a URL is returned. Otherwise, a host:port
-        pair is returned.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
-
-        Parameters
-        ----------
-        port:
-            The exposed port number for the endpoint
-        scheme:
-            Return a URL with the given scheme, eg. http for http://
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("port", port, None),
-            Arg("scheme", scheme, None),
-        ]
-        _ctx = self._select("endpoint", _args)
-        return await _ctx.execute(str)
 
     @typecheck
     async def entrypoint(self) -> Optional[list[str]]:
@@ -406,9 +378,6 @@ class Container(Type):
 
         This includes ports already exposed by the image, even if not
         explicitly added with dagger.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
         """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
@@ -452,32 +421,6 @@ class Container(Type):
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
-
-    @typecheck
-    async def hostname(self) -> str:
-        """Retrieves a hostname which can be used by clients to reach this
-        container.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("hostname", _args)
-        return await _ctx.execute(str)
 
     @typecheck
     async def id(self) -> ContainerID:
@@ -740,6 +683,13 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    def service(self) -> "Service":
+        """Retrieves a service that will run the container."""
+        _args: list[Arg] = []
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
 
     @typecheck
     async def stderr(self) -> str:
@@ -1012,9 +962,6 @@ class Container(Type):
         Exposed ports serve two purposes:
           - For health checks and introspection, when running services
           - For setting the EXPOSE OCI field when publishing the container
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
 
         Parameters
         ----------
@@ -1342,7 +1289,7 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_service_binding(self, alias: str, service: "Container") -> "Container":
+    def with_service_binding(self, alias: str, service: "Service") -> "Container":
         """Establish a runtime dependency on a service.
 
         The service will be started automatically when needed and detached
@@ -1354,9 +1301,6 @@ class Container(Type):
 
         The service dependency will also convey to any files or directories
         produced by the container.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
 
         Parameters
         ----------
@@ -1456,9 +1400,6 @@ class Container(Type):
         protocol: Optional[NetworkProtocol] = None,
     ) -> "Container":
         """Unexpose a previously exposed port.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
 
         Parameters
         ----------
@@ -2310,6 +2251,35 @@ class Host(Type):
         return File(_ctx)
 
     @typecheck
+    def service(
+        self,
+        ports: Sequence[PortForward],
+        *,
+        host: Optional[str] = "localhost",
+    ) -> "Service":
+        """Creates a service that forwards traffic to a specified address via the
+        host.
+
+        Parameters
+        ----------
+        ports:
+            Ports to expose via the service, forwarding through the host
+            network.
+            If a port's frontend is unspecified or 0, it defaults to the same
+            as the
+            backend port.
+            An empty set of ports is not valid; an error will be returned.
+        host:
+            Upstream host to forward traffic to.
+        """
+        _args = [
+            Arg("ports", ports),
+            Arg("host", host, "localhost"),
+        ]
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
+
+    @typecheck
     def set_secret_file(self, name: str, path: str) -> "Secret":
         """Sets a secret given a user-defined name and the file path on the host,
         and returns the secret.
@@ -2328,6 +2298,45 @@ class Host(Type):
         ]
         _ctx = self._select("setSecretFile", _args)
         return Secret(_ctx)
+
+    @typecheck
+    def tunnel(
+        self,
+        service: "Service",
+        *,
+        native: Optional[bool] = False,
+        ports: Optional[Sequence[PortForward]] = None,
+    ) -> "Service":
+        """Creates a tunnel that forwards traffic from the host to a service.
+
+        Parameters
+        ----------
+        service:
+            Service to send traffic from the tunnel.
+        native:
+            Map each service port to the same port on the host, as if the
+            service were
+            running natively.
+            Note: enabling may result in port conflicts.
+        ports:
+            Configure explicit port forwarding rules for the tunnel.
+            If a port's frontend is unspecified or 0, a random port will be
+            chosen by
+            the host.
+            If no ports are given, all of the service's ports are forwarded.
+            If native
+            is true, each port maps to the same port on the host. If native is
+            false,
+            each port maps to a random port chosen by the host.
+            If ports are given and native is true, the ports are additive.
+        """
+        _args = [
+            Arg("service", service),
+            Arg("native", native, False),  # noqa: FBT003
+            Arg("ports", ports, None),
+        ]
+        _ctx = self._select("tunnel", _args)
+        return Service(_ctx)
 
     @typecheck
     def unix_socket(self, path: str) -> "Socket":
@@ -2898,7 +2907,7 @@ class Client(Root):
         url: str,
         *,
         keep_git_dir: Optional[bool] = None,
-        experimental_service_host: Optional[Container] = None,
+        experimental_service_host: Optional["Service"] = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -2934,7 +2943,7 @@ class Client(Root):
         self,
         url: str,
         *,
-        experimental_service_host: Optional[Container] = None,
+        experimental_service_host: Optional["Service"] = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -3009,6 +3018,15 @@ class Client(Root):
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
+
+    @typecheck
+    def service(self, id: ServiceID) -> "Service":
+        """Loads a service from ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
 
     @typecheck
     def set_secret(self, name: str, plaintext: str) -> "Secret":
@@ -3106,6 +3124,154 @@ class Secret(Type):
         return await _ctx.execute(str)
 
 
+class Service(Type):
+    @typecheck
+    async def endpoint(
+        self,
+        *,
+        port: Optional[int] = None,
+        scheme: Optional[str] = None,
+    ) -> str:
+        """Retrieves an endpoint that clients can use to reach this container.
+
+        If no port is specified, the first exposed port is used. If none exist
+        an error is returned.
+
+        If a scheme is specified, a URL is returned. Otherwise, a host:port
+        pair is returned.
+
+        Parameters
+        ----------
+        port:
+            The exposed port number for the endpoint
+        scheme:
+            Return a URL with the given scheme, eg. http for http://
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("port", port, None),
+            Arg("scheme", scheme, None),
+        ]
+        _ctx = self._select("endpoint", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def hostname(self) -> str:
+        """Retrieves a hostname which can be used by clients to reach this
+        container.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hostname", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def id(self) -> ServiceID:
+        """A unique identifier for this service.
+
+        Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ServiceID
+            A unique service identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ServiceID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return ServiceID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "service"
+
+    @typecheck
+    async def ports(self) -> list[Port]:
+        """Retrieves the list of ports provided by the service."""
+        _args: list[Arg] = []
+        _ctx = self._select("ports", _args)
+        _ctx = Port(_ctx)._select_multiple(
+            _description="description",
+            _port="port",
+            _protocol="protocol",
+        )
+        return await _ctx.execute(list[Port])
+
+    @typecheck
+    async def start(self) -> "Service":
+        """Start the service and wait for its health checks to succeed.
+
+        Services bound to a Container do not need to be manually started.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("start", _args)
+        _id = await _ctx.execute(ServiceID)
+        _ctx = Client.from_context(_ctx)._select("service", [Arg("id", _id)])
+        return Service(_ctx)
+
+    @typecheck
+    async def stop(self) -> "Service":
+        """Stop the service.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("stop", _args)
+        _id = await _ctx.execute(ServiceID)
+        _ctx = Client.from_context(_ctx)._select("service", [Arg("id", _id)])
+        return Service(_ctx)
+
+
 class Socket(Type):
     @typecheck
     async def id(self) -> SocketID:
@@ -3163,6 +3329,7 @@ __all__ = [
     "PipelineLabel",
     "Platform",
     "Port",
+    "PortForward",
     "Project",
     "ProjectCommand",
     "ProjectCommandFlag",
@@ -3170,6 +3337,8 @@ __all__ = [
     "ProjectID",
     "Secret",
     "SecretID",
+    "Service",
+    "ServiceID",
     "Socket",
     "SocketID",
 ]

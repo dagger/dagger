@@ -6,7 +6,7 @@ defmodule Dagger.Service do
   defstruct [:selection, :client]
 
   (
-    @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
+    @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
     @spec endpoint(t(), keyword()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def endpoint(%__MODULE__{} = service, optional_args \\ []) do
       selection = select(service.selection, "endpoint")
@@ -30,7 +30,7 @@ defmodule Dagger.Service do
   )
 
   (
-    @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    @doc "Retrieves a hostname which can be used by clients to reach this container."
     @spec hostname(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def hostname(%__MODULE__{} = service) do
       selection = select(service.selection, "hostname")
@@ -44,6 +44,19 @@ defmodule Dagger.Service do
     def id(%__MODULE__{} = service) do
       selection = select(service.selection, "id")
       execute(selection, service.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the list of ports provided by the service."
+    @spec ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
+    def ports(%__MODULE__{} = service) do
+      selection = select(service.selection, "ports")
+      selection = select(selection, "description port protocol")
+
+      with {:ok, data} <- execute(selection, service.client) do
+        Nestru.decode_from_list_of_maps(data, Dagger.Port)
+      end
     end
   )
 

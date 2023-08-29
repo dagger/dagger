@@ -106,8 +106,7 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:experimental_service_host]) do
           selection
         else
-          {:ok, id} = Dagger.Container.id(optional_args[:experimental_service_host])
-          arg(selection, "experimentalServiceHost", id)
+          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
         end
 
       %Dagger.GitRepository{selection: selection, client: query.client}
@@ -134,8 +133,7 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:experimental_service_host]) do
           selection
         else
-          {:ok, id} = Dagger.Container.id(optional_args[:experimental_service_host])
-          arg(selection, "experimentalServiceHost", id)
+          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
         end
 
       %Dagger.File{selection: selection, client: query.client}
@@ -210,6 +208,16 @@ defmodule Dagger.Client do
       selection = select(query.selection, "secret")
       selection = arg(selection, "id", secret)
       %Dagger.Secret{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Loads a service from ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec service(t(), Dagger.Service.t()) :: Dagger.Service.t()
+    def service(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "service")
+      selection = arg(selection, "id", id)
+      %Dagger.Service{selection: selection, client: query.client}
     end
   )
 

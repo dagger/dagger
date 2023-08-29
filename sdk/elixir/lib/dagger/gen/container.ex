@@ -76,30 +76,6 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
-    @spec endpoint(t(), keyword()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def endpoint(%__MODULE__{} = container, optional_args \\ []) do
-      selection = select(container.selection, "endpoint")
-
-      selection =
-        if is_nil(optional_args[:port]) do
-          selection
-        else
-          arg(selection, "port", optional_args[:port])
-        end
-
-      selection =
-        if is_nil(optional_args[:scheme]) do
-          selection
-        else
-          arg(selection, "scheme", optional_args[:scheme])
-        end
-
-      execute(selection, container.client)
-    end
-  )
-
-  (
     @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
     @spec entrypoint(t()) :: {:ok, [Dagger.String.t()] | nil} | {:error, term()}
     def entrypoint(%__MODULE__{} = container) do
@@ -173,7 +149,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of exposed ports.\n\nThis includes ports already exposed by the image, even if not\nexplicitly added with dagger.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    @doc "Retrieves the list of exposed ports.\n\nThis includes ports already exposed by the image, even if not\nexplicitly added with dagger."
     @spec exposed_ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
@@ -202,15 +178,6 @@ defmodule Dagger.Container do
       selection = select(container.selection, "from")
       selection = arg(selection, "address", address)
       %Dagger.Container{selection: selection, client: container.client}
-    end
-  )
-
-  (
-    @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
-    @spec hostname(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def hostname(%__MODULE__{} = container) do
-      selection = select(container.selection, "hostname")
-      execute(selection, container.client)
     end
   )
 
@@ -366,6 +333,15 @@ defmodule Dagger.Container do
     def rootfs(%__MODULE__{} = container) do
       selection = select(container.selection, "rootfs")
       %Dagger.Directory{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves a service that will run the container."
+    @spec service(t()) :: Dagger.Service.t()
+    def service(%__MODULE__{} = container) do
+      selection = select(container.selection, "service")
+      %Dagger.Service{selection: selection, client: container.client}
     end
   )
 
@@ -548,7 +524,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n  - For health checks and introspection, when running services\n  - For setting the EXPOSE OCI field when publishing the container\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description"
+    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n  - For health checks and introspection, when running services\n  - For setting the EXPOSE OCI field when publishing the container\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description"
     @spec with_exposed_port(t(), Dagger.Int.t(), keyword()) :: Dagger.Container.t()
     def with_exposed_port(%__MODULE__{} = container, port, optional_args \\ []) do
       selection = select(container.selection, "withExposedPort")
@@ -825,18 +801,12 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Establish a runtime dependency on a service.\n\nThe service will be started automatically when needed and detached when it is\nno longer needed, executing the default command if none is set.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container"
-    @spec with_service_binding(t(), Dagger.String.t(), Dagger.Container.t()) ::
-            Dagger.Container.t()
+    @doc "Establish a runtime dependency on a service.\n\nThe service will be started automatically when needed and detached when it is\nno longer needed, executing the default command if none is set.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container"
+    @spec with_service_binding(t(), Dagger.String.t(), Dagger.Service.t()) :: Dagger.Container.t()
     def with_service_binding(%__MODULE__{} = container, alias, service) do
       selection = select(container.selection, "withServiceBinding")
       selection = arg(selection, "alias", alias)
-
-      (
-        {:ok, id} = Dagger.Container.id(service)
-        selection = arg(selection, "service", id)
-      )
-
+      selection = arg(selection, "service", service)
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -896,7 +866,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Unexpose a previously exposed port.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `port` - Port number to unexpose\n\n## Optional Arguments\n\n* `protocol` - Port protocol to unexpose"
+    @doc "Unexpose a previously exposed port.\n\n## Required Arguments\n\n* `port` - Port number to unexpose\n\n## Optional Arguments\n\n* `protocol` - Port protocol to unexpose"
     @spec without_exposed_port(t(), Dagger.Int.t(), keyword()) :: Dagger.Container.t()
     def without_exposed_port(%__MODULE__{} = container, port, optional_args \\ []) do
       selection = select(container.selection, "withoutExposedPort")
