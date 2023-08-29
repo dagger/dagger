@@ -709,8 +709,6 @@ type Container {
   Exposed ports serve two purposes:
     - For health checks and introspection, when running services
     - For setting the EXPOSE OCI field when publishing the container
-
-  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   withExposedPort(
     "Port number to expose"
@@ -723,8 +721,6 @@ type Container {
 
   """
   Unexpose a previously exposed port.
-
-  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   withoutExposedPort(
     "Port number to unexpose"
@@ -738,8 +734,6 @@ type Container {
 
   This includes ports already exposed by the image, even if not
   explicitly added with dagger.
-
-  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   exposedPorts: [Port!]!
 
@@ -752,8 +746,6 @@ type Container {
   The service will be reachable from the container via the provided hostname alias.
 
   The service dependency will also convey to any files or directories produced by the container.
-
-  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   withServiceBinding(
     "A name that can be used to reach the service from the container"

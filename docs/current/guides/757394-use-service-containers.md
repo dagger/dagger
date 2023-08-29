@@ -25,10 +25,6 @@ Some common use cases for service containers are:
 
 This tutorial teaches you the basics of using service containers in Dagger.
 
-:::tip
-The service containers feature changes Dagger's entire network stack. If you find that this feature breaks something, you can disable it by setting the following environment variable prior to running the Dagger Engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`. Please also [open an issue](https://github.com/dagger/dagger/issues) for further investigation in this case.
-:::
-
 ## Requirements
 
 This tutorial assumes that:

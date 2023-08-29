@@ -14,8 +14,6 @@ type Service {
 
   """
   Retrieves a hostname which can be used by clients to reach this container.
-
-  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   hostname: String!
 
@@ -28,8 +26,6 @@ type Service {
   If no port is specified, the first exposed port is used. If none exist an error is returned.
 
   If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-
-  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   endpoint(
     "The exposed port number for the endpoint"

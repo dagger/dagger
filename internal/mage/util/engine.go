@@ -31,7 +31,6 @@ const (
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	ServicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh

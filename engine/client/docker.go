@@ -19,7 +19,6 @@ const (
 	// NOTE: this needs to be consistent with engineDefaultStateDir in internal/mage/engine.go
 	DefaultStateDir = "/var/lib/dagger"
 
-	ServicesDNSEnvName    = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 
 	// trim image digests to 16 characters to makeoutput more readable
@@ -92,7 +91,6 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
-		"-e", ServicesDNSEnvName,
 		"-e", DaggerCloudCacheToken,
 		"-v", DefaultStateDir,
 		"--privileged",
