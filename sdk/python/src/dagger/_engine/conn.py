@@ -31,6 +31,13 @@ class Engine(SyncResourceManager):
             msg = "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
             raise dagger.ProvisionError(msg)
         try:
+            if self.cfg.workdir != "":
+                msg = (
+                    "cannot configure workdir for existing session "
+                    "(please use - -workdir or host.directory "
+                    "with absolute paths instead)"
+                )
+                raise dagger.ProvisionError(msg)
             return ConnectParams(port=int(port), session_token=token)
         except ValueError as e:
             # only port is validated
