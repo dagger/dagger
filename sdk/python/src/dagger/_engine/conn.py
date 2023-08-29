@@ -34,7 +34,7 @@ class Engine(SyncResourceManager):
             if self.cfg.workdir != "":
                 msg = (
                     "cannot configure workdir for existing session "
-                    "(please use - -workdir or host.directory "
+                    "(please use --workdir or host.directory "
                     "with absolute paths instead)"
                 )
                 raise dagger.ProvisionError(msg)
