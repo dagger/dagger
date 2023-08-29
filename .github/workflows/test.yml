@@ -34,11 +34,12 @@ jobs:
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # It's OK for this one to fail, it's more of an advisory
-  engine-in-engine-dev:
-    uses: ./.github/workflows/_hack_make.yml
-    with:
-      mage-targets: engine:test
-      dev-engine: true
+  # TODO(vito): re-enable after we ship services v2
+  # engine-in-engine-dev:
+  #   uses: ./.github/workflows/_hack_make.yml
+  #   with:
+  #     mage-targets: engine:test
+  #     dev-engine: true
 
   sdk-go:
     name: "sdk / go"
