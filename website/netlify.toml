@@ -1,7 +1,7 @@
 [build]
   publish = "build/"
   command = "yarn run graphql-docs && yarn run docusaurus build"
-  environment = { NODE_VERSION = "16.14" }
+  environment = { NODE_VERSION = "18.17" }
 
 [context.production]
   ignore = "false"
