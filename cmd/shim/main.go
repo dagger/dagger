@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,8 @@ const (
 	exitCodePath  = metaMountPath + "/exitCode"
 	runcPath      = "/usr/local/bin/runc"
 	shimPath      = "/_shim"
+
+	errorExitCode = 125
 )
 
 var (
@@ -55,6 +58,13 @@ There are two "subcommands" of this binary:
     capture the exit code, etc.
 */
 func main() {
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Fprintf(os.Stderr, "panic: %v %s\n", err, string(debug.Stack()))
+			os.Exit(errorExitCode)
+		}
+	}()
+
 	if os.Args[0] == shimPath {
 		if _, found := internalEnv("_DAGGER_INTERNAL_COMMAND"); found {
 			os.Exit(internalCommand())
@@ -73,7 +83,7 @@ func main() {
 func internalCommand() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <command> [<args>]\n", os.Args[0])
-		return 1
+		return errorExitCode
 	}
 
 	cmd := os.Args[1]
@@ -83,12 +93,12 @@ func internalCommand() int {
 	case "check":
 		if err := check(args); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return errorExitCode
 		}
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		return 1
+		return errorExitCode
 	}
 }
 
@@ -153,12 +163,26 @@ func pollForPort(network, addr string) (string, error) {
 	return reached, nil
 }
 
-func shim() int {
+func shim() (returnExitCode int) {
+	cacheExitCodeStr, found := internalEnv("_DAGGER_CACHE_EXIT_CODE")
+	if found {
+		cacheExitCodeUint64, err := strconv.ParseUint(cacheExitCodeStr, 10, 32)
+		if err != nil {
+			panic(fmt.Errorf("cannot parse cache exit code: %w", err))
+		}
+		cacheExitCode := uint32(cacheExitCodeUint64)
+		defer func() {
+			if returnExitCode == int(cacheExitCode) {
+				returnExitCode = 0
+			}
+		}()
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
-		return 1
+		return errorExitCode
 	}
 
 	name := os.Args[1]
@@ -262,7 +286,7 @@ func shim() int {
 
 	exitCode := 0
 	if err := runWithNesting(ctx, cmd); err != nil {
-		exitCode = 1
+		exitCode = errorExitCode
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			exitCode = exiterr.ExitCode()
 		} else {
@@ -299,13 +323,13 @@ func setupBundle() int {
 	configBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		fmt.Printf("Error reading config.json: %v\n", err)
-		return 1
+		return errorExitCode
 	}
 
 	var spec specs.Spec
 	if err := json.Unmarshal(configBytes, &spec); err != nil {
 		fmt.Printf("Error parsing config.json: %v\n", err)
-		return 1
+		return errorExitCode
 	}
 
 	// Check to see if this is a dagger exec, currently by using
@@ -332,12 +356,12 @@ func setupBundle() int {
 		selfPath, err := os.Executable()
 		if err != nil {
 			fmt.Printf("Error getting self path: %v\n", err)
-			return 1
+			return errorExitCode
 		}
 		selfPath, err = filepath.EvalSymlinks(selfPath)
 		if err != nil {
 			fmt.Printf("Error getting self path: %v\n", err)
-			return 1
+			return errorExitCode
 		}
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: shimPath,
@@ -355,7 +379,7 @@ func setupBundle() int {
 		found, err := execMetadata.FromEnv(env)
 		if err != nil {
 			fmt.Printf("Error parsing env: %v\n", err)
-			return 1
+			return errorExitCode
 		}
 		if found {
 			// remove the ftp_proxy env var from being set in the container
@@ -410,7 +434,7 @@ func setupBundle() int {
 			// provide the server id to connect back to
 			if execMetadata.ServerID == "" {
 				fmt.Fprintln(os.Stderr, "missing server id")
-				return 1
+				return errorExitCode
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 			keepEnv = append(keepEnv, "_DAGGER_ENVIRONMENT_DIGEST="+execMetadata.EnvironmentDigest.String())
@@ -425,7 +449,7 @@ func setupBundle() int {
 			// also need the progsock path for forwarding progress
 			if execMetadata.ProgSockPath == "" {
 				fmt.Fprintln(os.Stderr, "missing progsock path")
-				return 1
+				return errorExitCode
 			}
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.progrock.sock",
@@ -440,7 +464,7 @@ func setupBundle() int {
 
 			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
-				return 1
+				return errorExitCode
 			}
 		default:
 			keepEnv = append(keepEnv, env)
@@ -452,11 +476,11 @@ func setupBundle() int {
 	configBytes, err = json.Marshal(spec)
 	if err != nil {
 		fmt.Printf("Error marshaling config.json: %v\n", err)
-		return 1
+		return errorExitCode
 	}
 	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
 		fmt.Printf("Error writing config.json: %v\n", err)
-		return 1
+		return errorExitCode
 	}
 
 	// Run the actual runc binary as a child process with the (possibly updated) config
@@ -480,7 +504,7 @@ func setupBundle() int {
 		signal.Notify(sigCh)
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("Error starting runc: %v", err)
-			exitCodeCh <- 1
+			exitCodeCh <- errorExitCode
 			return
 		}
 		go func() {
@@ -493,14 +517,14 @@ func setupBundle() int {
 				if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 					exitcode := waitStatus.ExitStatus()
 					if exitcode < 0 {
-						exitcode = 255 // 255 is "unknown exit code"
+						exitcode = errorExitCode
 					}
 					exitCodeCh <- exitcode
 					return
 				}
 			}
 			fmt.Printf("Error waiting for runc: %v", err)
-			exitCodeCh <- 1
+			exitCodeCh <- errorExitCode
 			return
 		}
 	}()
@@ -557,7 +581,7 @@ func execRunc() int {
 	args = append(args, os.Args[1:]...)
 	if err := unix.Exec(runcPath, args, os.Environ()); err != nil {
 		fmt.Printf("Error execing runc: %v\n", err)
-		return 1
+		return errorExitCode
 	}
 	panic("congratulations: you've reached unreachable code, please report a bug!")
 }

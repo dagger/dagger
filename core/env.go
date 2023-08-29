@@ -1,13 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"path"
 	"path/filepath"
-	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core/envconfig"
@@ -24,61 +23,59 @@ import (
 )
 
 const (
-	inputMountPath = "/inputs"
-	inputFile      = "/dagger.json"
+	envMetaDirPath     = "/.daggerenv"
+	envMetaInputPath   = "input.json"
+	envMetaOutputPath  = "output.json"
+	envMetaDepsDirPath = "deps"
 
-	outputMountPath = "/outputs"
-	outputFile      = "/dagger.json"
-
-	envMetaDirPath = "/env"
-	envIDFileName  = "id"
-	EnvIDFile      = envMetaDirPath + "/" + envIDFileName
-
-	envDepsPath = "/.deps"
+	envSourceDirPath      = "/src"
+	envWorkdirPath        = "/wd"
+	runtimeExecutablePath = "/runtime"
 )
-
-func (id EnvironmentID) Decode() (*Environment, error) {
-	env, err := resourceid.ID[Environment](id).Decode()
-	if err != nil {
-		return nil, err
-	}
-	if err := env.setEntrypointEnvs(id); err != nil {
-		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
-	}
-	return env, nil
-}
 
 type Environment struct {
 	// The environment's source code root directory
-	Directory *Directory `json:"directory"`
-	// Path to the environment's config file relative to the source root directory
-	ConfigPath string `json:"configPath"`
+	SourceDirectory *Directory `json:"sourceDirectory"`
+
+	// If set, the subdir of the SourceDirectory that contains the environment's source code
+	SourceDirectorySubpath string `json:"sourceDirectorySubpath"`
+
 	// The directory in which environment code executes as its current working directory
 	Workdir *Directory `json:"workdir"`
 
-	// The parsed environment config
-	Config *envconfig.Config `json:"config"`
+	// The name of the environment
+	Name string `json:"name"`
 
-	// The environment's platform
-	Platform specs.Platform `json:"platform,omitempty"`
+	// The SDK of the environment
+	SDK envconfig.SDK `json:"sdk"`
 
-	// TODO: doc, not in public api
-	Runtime *Container `json:"runtime,omitempty"`
+	// Dependencies of the environment
+	Dependencies []*Environment `json:"dependencies"`
 
 	// The environment's checks
 	Checks []*Check `json:"checks,omitempty"`
+
+	// (Not in public API) The container used to execute the environment's entrypoint code,
+	// derived from the SDK, source directory, and workdir.
+	Runtime *Container `json:"runtime,omitempty"`
+
+	// (Not in public API) The environment's platform
+	Platform specs.Platform `json:"platform,omitempty"`
+
+	// (Not in public API) The pipeline in which the environment was created
+	Pipeline pipeline.Path `json:"pipeline,omitempty"`
 }
 
 func (env *Environment) PBDefinitions() ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if env.Directory != nil {
-		dirDefs, err := env.Directory.PBDefinitions()
+	if env.SourceDirectory != nil {
+		dirDefs, err := env.SourceDirectory.PBDefinitions()
 		if err != nil {
 			return nil, err
 		}
 		defs = append(defs, dirDefs...)
 	}
-	if env.Workdir != nil {
+	if env.Workdir != nil && env.Workdir != env.SourceDirectory {
 		workdirDefs, err := env.Workdir.PBDefinitions()
 		if err != nil {
 			return nil, err
@@ -92,6 +89,13 @@ func (env *Environment) PBDefinitions() ([]*pb.Definition, error) {
 		}
 		defs = append(defs, ctrDefs...)
 	}
+	for _, dep := range env.Dependencies {
+		depDefs, err := dep.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, depDefs...)
+	}
 	for _, check := range env.Checks {
 		checkDefs, err := check.PBDefinitions()
 		if err != nil {
@@ -104,8 +108,8 @@ func (env *Environment) PBDefinitions() ([]*pb.Definition, error) {
 
 func (env Environment) Clone() *Environment {
 	cp := env
-	if env.Directory != nil {
-		cp.Directory = env.Directory.Clone()
+	if env.SourceDirectory != nil {
+		cp.SourceDirectory = env.SourceDirectory.Clone()
 	}
 	if env.Workdir != nil {
 		cp.Workdir = env.Workdir.Clone()
@@ -113,21 +117,379 @@ func (env Environment) Clone() *Environment {
 	if env.Runtime != nil {
 		cp.Runtime = env.Runtime.Clone()
 	}
-	if env.Config != nil {
-		cp.Config = &envconfig.Config{
-			Root:         env.Config.Root,
-			Name:         env.Config.Name,
-			SDK:          env.Config.SDK,
-			Include:      cloneSlice(env.Config.Include),
-			Exclude:      cloneSlice(env.Config.Exclude),
-			Dependencies: cloneSlice(env.Config.Dependencies),
-		}
+	cp.Dependencies = make([]*Environment, len(env.Dependencies))
+	for i, dep := range env.Dependencies {
+		cp.Dependencies[i] = dep.Clone()
 	}
 	cp.Checks = make([]*Check, len(env.Checks))
 	for i, check := range env.Checks {
 		cp.Checks[i] = check.Clone()
 	}
 	return &cp
+}
+
+func NewEnvironment(platform specs.Platform, pipeline pipeline.Path) *Environment {
+	return &Environment{
+		Platform: platform,
+		Pipeline: pipeline,
+	}
+}
+
+func (env *Environment) From(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	envCache *EnvironmentCache,
+	name string,
+	sourceDir *Directory,
+	sourceDirSubpath string,
+	sdk envconfig.SDK,
+	deps []*Environment,
+) (*Environment, error) {
+	env = &Environment{
+		SourceDirectory:        sourceDir,
+		SourceDirectorySubpath: sourceDirSubpath,
+		Workdir:                sourceDir, // defaults to root of source dir, can be changed via WithWorkdir
+		Name:                   name,
+		SDK:                    sdk,
+		Dependencies:           deps,
+		Platform:               env.Platform,
+		Pipeline:               env.Pipeline,
+	}
+
+	err := env.recalcRuntime(ctx, bk, progSock)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get runtime container: %w", err)
+	}
+
+	resource, _, _, err := env.execEnvironment(ctx, bk, progSock, envCache, "", nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec environment: %w", err)
+	}
+
+	var ok bool
+	env, ok = resource.(*Environment)
+	if !ok {
+		return nil, fmt.Errorf("environment initialization returned non-environment result")
+	}
+
+	return env, env.updateEnv()
+}
+
+func (env *Environment) FromConfig(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	envCache *EnvironmentCache,
+	sourceDir *Directory,
+	configPath string,
+) (*Environment, error) {
+	configPath = envconfig.NormalizeConfigPath(configPath)
+	configFile, err := sourceDir.File(ctx, bk, configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config file: %w", err)
+	}
+	configBytes, err := configFile.Contents(ctx, bk)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	var cfg envconfig.Config
+	if err := json.Unmarshal(configBytes, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	var eg errgroup.Group
+	deps := make([]*Environment, len(cfg.Dependencies))
+	// TODO: support more than just relative local paths for dependencies
+	for i, depPath := range cfg.Dependencies {
+		i, depPath := i, depPath
+		eg.Go(func() error {
+			depConfigPath := filepath.Join("/", filepath.Dir(configPath), depPath)
+			depEnv, err := env.FromConfig(ctx, bk, progSock, envCache, sourceDir, depConfigPath)
+			if err != nil {
+				return fmt.Errorf("failed to get dependency env from config %q: %w", depPath, err)
+			}
+			deps[i] = depEnv
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	if cfg.Root != "" {
+		rootPath := filepath.Join("/", filepath.Dir(configPath), cfg.Root)
+		if rootPath != "/" {
+			var err error
+			sourceDir, err = sourceDir.Directory(ctx, bk, rootPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get root directory: %w", err)
+			}
+			configPath = filepath.Join("/", strings.TrimPrefix(configPath, rootPath))
+		}
+	}
+
+	return env.From(ctx, bk, progSock, envCache, cfg.Name, sourceDir, filepath.Dir(configPath), cfg.SDK, deps)
+}
+
+func (env *Environment) WithWorkdir(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	workdir *Directory,
+) (*Environment, error) {
+	env = env.Clone()
+	env.Workdir = workdir
+	return env, env.recalcRuntime(ctx, bk, progSock)
+}
+
+// recalculate the definition of the runtime based on the current state of the environment
+func (env *Environment) recalcRuntime(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+) error {
+	var runtime *Container
+	var err error
+	switch env.SDK {
+	case envconfig.SDKGo:
+		runtime, err = env.goRuntime(
+			ctx,
+			bk,
+			progSock,
+			env.SourceDirectory,
+			env.SourceDirectorySubpath,
+			env.Workdir,
+		)
+	case envconfig.SDKPython:
+		runtime, err = env.pythonRuntime(
+			ctx,
+			bk,
+			progSock,
+			env.SourceDirectory,
+			env.SourceDirectorySubpath,
+			env.Workdir,
+		)
+	default:
+		return fmt.Errorf("unknown sdk %q", env.SDK)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get base runtime for sdk %s: %w", env.SDK, err)
+	}
+
+	env.Runtime = runtime
+	return env.updateEnv()
+}
+
+type EntrypointInput struct {
+	// The name of the entrypoint to invoke. If unset, then the environment
+	// definition should be returned.
+	Name string `json:"name"`
+
+	// The arguments to pass to the entrypoint, serialized as json. The json
+	// object maps argument names to argument values.
+	Args string `json:"args"`
+}
+
+func (env *Environment) EntrypointInput(ctx context.Context, bk *buildkit.Client) (*EntrypointInput, error) {
+	// TODO: error out if not coming from an env
+
+	// TODO: doc, a bit silly looking but actually works out nicely
+	inputBytes, err := bk.ReadCallerHostFile(ctx, filepath.Join(envMetaDirPath, envMetaInputPath))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read entrypoint input file: %w", err)
+	}
+	var input EntrypointInput
+	if err := json.Unmarshal(inputBytes, &input); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal entrypoint input: %w", err)
+	}
+	return &input, nil
+}
+
+func (env *Environment) ReturnEntrypointValue(ctx context.Context, valStr string, bk *buildkit.Client) error {
+	// TODO: error out if not coming from an env
+
+	// TODO: doc, a bit silly looking but actually works out nicely
+	return bk.IOReaderExport(ctx, bytes.NewReader([]byte(valStr)), filepath.Join(envMetaDirPath, envMetaOutputPath), 0600)
+}
+
+func (env *Environment) execEnvironment(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	envCache *EnvironmentCache,
+	entrypointName string,
+	args any,
+	cacheExitCode uint32,
+) (any, []byte, uint32, error) {
+	ctx, err := envCache.ContextWithCachedEnv(ctx, env)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to set environment in context: %w", err)
+	}
+
+	argsBytes, err := json.Marshal(args)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to marshal args: %w", err)
+	}
+
+	ctr := env.Runtime
+
+	metaDir := NewScratchDirectory(env.Pipeline, env.Platform)
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, envMetaDirPath, metaDir, "", false)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to mount env metadata directory: %w", err)
+	}
+
+	input := EntrypointInput{
+		Name: entrypointName,
+		Args: string(argsBytes),
+	}
+	inputBytes, err := json.Marshal(input)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to marshal input: %w", err)
+	}
+	inputFileDir, err := NewScratchDirectory(env.Pipeline, env.Platform).WithNewFile(ctx, envMetaInputPath, inputBytes, 0600, nil)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to create input file: %w", err)
+	}
+	inputFile, err := inputFileDir.File(ctx, bk, envMetaInputPath)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to get input file: %w", err)
+	}
+	ctr, err = ctr.WithMountedFile(ctx, bk, filepath.Join(envMetaDirPath, envMetaInputPath), inputFile, "", true)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to mount input file: %w", err)
+	}
+
+	// Mount in read-only dep env filesystems to ensure that if they change, this env's cache is
+	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
+	for _, dep := range env.Dependencies {
+		dirMntPath := filepath.Join(envMetaDirPath, envMetaDepsDirPath, dep.Name, "dir")
+		ctr, err = ctr.WithMountedDirectory(ctx, bk, dirMntPath, dep.SourceDirectory, "", true)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to mount dep directory: %w", err)
+		}
+		workdirMntPath := filepath.Join(envMetaDirPath, envMetaDepsDirPath, dep.Name, "workdir")
+		ctr, err = ctr.WithMountedDirectory(ctx, bk, workdirMntPath, dep.Workdir, "", true)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to mount dep workdir: %w", err)
+		}
+	}
+
+	ctr, err = ctr.WithExec(ctx, bk, progSock, env.Platform, ContainerExecOpts{
+		ExperimentalPrivilegedNesting: true,
+		CacheExitCode:                 cacheExitCode,
+	})
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to exec entrypoint: %w", err)
+	}
+	ctrOutputDir, err := ctr.Directory(ctx, bk, envMetaDirPath)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to get entrypoint output directory: %w", err)
+	}
+
+	result, err := ctrOutputDir.Evaluate(ctx, bk)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to evaluate entrypoint: %w", err)
+	}
+	if result == nil {
+		return nil, nil, 0, fmt.Errorf("entrypoint returned nil result")
+	}
+
+	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
+	// we can end up in a state where we have a cached result with a dependency blob that we don't
+	// guarantee the continued existence of...
+
+	exitCodeStr, err := ctr.MetaFileContents(ctx, bk, progSock, "exitCode")
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to read entrypoint exit code: %w", err)
+	}
+	exitCodeUint64, err := strconv.ParseUint(exitCodeStr, 10, 32)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to parse entrypoint exit code: %w", err)
+	}
+	exitCode := uint32(exitCodeUint64)
+
+	outputBytes, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
+		Filename: envMetaOutputPath,
+	})
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to read entrypoint output file: %w", err)
+	}
+
+	var rawOutput any
+	if err := json.Unmarshal(outputBytes, &rawOutput); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to unmarshal result: %s", err)
+	}
+
+	strOutput, ok := rawOutput.(string)
+	if !ok {
+		// not a resource ID, nothing to do
+		return nil, outputBytes, exitCode, nil
+	}
+
+	resource, err := ResourceFromID(strOutput)
+	if err != nil {
+		// not a resource ID, nothing to do
+		// TODO: check actual error type
+		return nil, outputBytes, exitCode, nil
+	}
+
+	pbDefinitioner, ok := resource.(HasPBDefinitions)
+	if !ok {
+		// no dependency blobs to handle
+		return resource, outputBytes, exitCode, nil
+	}
+
+	pbDefs, err := pbDefinitioner.PBDefinitions()
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to get pb definitions: %w", err)
+	}
+	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
+	for _, pbDef := range pbDefs {
+		dag, err := buildkit.DefToDAG(pbDef)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to convert pb definition to dag: %w", err)
+		}
+		blobs, err := dag.BlobDependencies()
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to get blob dependencies: %w", err)
+		}
+		for k, v := range blobs {
+			dependencyBlobs[k] = v
+		}
+	}
+
+	if err := result.Ref.AddDependencyBlobs(ctx, dependencyBlobs); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to add dependency blob: %w", err)
+	}
+
+	return resource, outputBytes, exitCode, nil
+}
+
+// TODO: doc various subtleties below
+
+// update existing entrypoints with the current state of their environment
+func (env *Environment) updateEnv() error {
+	envID, err := env.ID()
+	if err != nil {
+		return fmt.Errorf("failed to get environment ID: %w", err)
+	}
+	if err := env.setEntrypointEnvs(envID); err != nil {
+		return fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
+	return nil
+}
+
+func (id EnvironmentID) Decode() (*Environment, error) {
+	env, err := resourceid.ID[Environment](id).Decode()
+	if err != nil {
+		return nil, err
+	}
+	if err := env.setEntrypointEnvs(id); err != nil {
+		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
+	}
+	return env, nil
 }
 
 func (env *Environment) ID() (EnvironmentID, error) {
@@ -142,7 +504,6 @@ func (env *Environment) ID() (EnvironmentID, error) {
 	return EnvironmentID(id), nil
 }
 
-// TODO: doc subtleties
 func (env *Environment) Digest() (digest.Digest, error) {
 	env = env.Clone()
 	if err := env.setEntrypointEnvs(""); err != nil {
@@ -166,7 +527,7 @@ func (env *Environment) setEntrypointEnvs(id EnvironmentID) error {
 			if err != nil {
 				return fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
 			}
-			if checkEnv.Config.Name == env.Config.Name {
+			if checkEnv.Name == env.Name {
 				check.EnvironmentID = id
 			}
 		}
@@ -214,526 +575,4 @@ func (cache *EnvironmentCache) CachedEnvFromContext(ctx context.Context) (*Envir
 	return cache.cacheMap().GetOrInitialize(clientMetadata.EnvironmentDigest, func() (*Environment, error) {
 		return nil, fmt.Errorf("environment %s not found in cache", clientMetadata.EnvironmentDigest)
 	})
-}
-
-// Just load the config without actually getting the schema, useful for checking env metadata
-// in an inexpensive way.
-func LoadEnvironmentConfig(
-	ctx context.Context,
-	bk *buildkit.Client,
-	rootDir *Directory,
-	configPath string,
-) (*envconfig.Config, error) {
-	configPath = normalizeConfigPath(configPath)
-
-	configFile, err := rootDir.File(ctx, bk, configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load environment config at path %q: %w", configPath, err)
-	}
-	cfgBytes, err := configFile.Contents(ctx, bk)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read environment config at path %q: %w", configPath, err)
-	}
-	var cfg envconfig.Config
-	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal environment config: %w", err)
-	}
-	return &cfg, nil
-}
-
-func LoadEnvironment(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	envCache *EnvironmentCache,
-	pipeline pipeline.Path,
-	platform specs.Platform,
-	deps []*Environment,
-	rootDir *Directory,
-	configPath string,
-) (*Environment, error) {
-	configPath = normalizeConfigPath(configPath)
-	cfg, err := LoadEnvironmentConfig(ctx, bk, rootDir, configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load environment config: %w", err)
-	}
-
-	env := &Environment{
-		Directory:  rootDir,
-		ConfigPath: configPath,
-		Workdir:    rootDir, // TODO: make this actually configurable + enforced + better default
-		Config:     cfg,
-		Platform:   platform,
-	}
-
-	// add the base env to the context so CurrentEnvironment works in the exec below
-	ctx, err = envCache.ContextWithCachedEnv(ctx, env)
-	if err != nil {
-		return nil, fmt.Errorf("failed to set environment in context: %w", err)
-	}
-
-	ctr, err := env.runtime(ctx, bk, progSock, pipeline)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get runtime container: %w", err)
-	}
-
-	// Mount in read-only dep env filesystems to ensure that if they change, this env's cache is
-	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
-	for _, dep := range deps {
-		dirMntPath := filepath.Join(envDepsPath, dep.Config.Name, "dir")
-		ctr, err = ctr.WithMountedDirectory(ctx, bk, dirMntPath, dep.Directory, "", true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to mount dep directory: %w", err)
-		}
-		workdirMntPath := filepath.Join(envDepsPath, dep.Config.Name, "workdir")
-		ctr, err = ctr.WithMountedDirectory(ctx, bk, workdirMntPath, dep.Workdir, "", true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to mount dep workdir: %w", err)
-		}
-	}
-
-	envMetaDir := NewScratchDirectory(pipeline, platform)
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, envMetaDirPath, envMetaDir, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount env metadata directory: %w", err)
-	}
-
-	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
-		Args:                          []string{"-env"},
-		ExperimentalPrivilegedNesting: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec env command: %w", err)
-	}
-	f, err := ctr.File(ctx, bk, EnvIDFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get envid file: %w", err)
-	}
-	envID, err := f.Contents(ctx, bk)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read envid file: %w", err)
-	}
-	env, err = EnvironmentID(envID).Decode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode envid: %w", err)
-	}
-
-	// finalize the environment's container where entrypoint code executes
-	ctr, err = ctr.WithoutMount(ctx, envMetaDirPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmount env metadata directory: %w", err)
-	}
-	env.Runtime = ctr
-
-	finalEnvID, err := env.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get environment ID: %w", err)
-	}
-	if err := env.setEntrypointEnvs(finalEnvID); err != nil {
-		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
-	}
-
-	return env, nil
-}
-
-// figure out if we were passed a path to a dagger.json file or a parent dir that may contain such a file
-func normalizeConfigPath(configPath string) string {
-	baseName := path.Base(configPath)
-	if baseName == "dagger.json" {
-		return configPath
-	}
-	return path.Join(configPath, "dagger.json")
-}
-
-func (env *Environment) runtime(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-) (*Container, error) {
-	switch env.Config.SDK {
-	case envconfig.SDKGo:
-		return goRuntime(ctx, bk, progSock, pipeline, env.Platform, env.Directory, env.ConfigPath)
-	case envconfig.SDKPython:
-		return pythonRuntime(ctx, bk, progSock, pipeline, env.Platform, env.Directory, env.ConfigPath)
-	default:
-		return nil, fmt.Errorf("unknown sdk %q", env.Config.SDK)
-	}
-}
-
-func execEntrypoint(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-	envCache *EnvironmentCache,
-	env *Environment,
-	entrypointName string,
-	args any,
-) (any, []byte, error) {
-	ctx, err := envCache.ContextWithCachedEnv(ctx, env)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to set environment in context: %w", err)
-	}
-
-	inputMap := map[string]any{
-		// TODO: remember to tell Helder that this is a small breaking change, need to tweak python sdk code.
-		// "resolver" used to be in form <parent>.<field>, now its just the name of the entrypoint (i.e. check
-		// name, artifact name, etc.)
-		"resolver": entrypointName,
-		"args":     args,
-		"parent":   nil, // for now, could support parent data in future for user-defined chainable types
-	}
-	inputBytes, err := json.Marshal(inputMap)
-	if err != nil {
-		return nil, nil, err
-	}
-	ctr, err := env.Runtime.WithNewFile(ctx, bk, filepath.Join(inputMountPath, inputFile), inputBytes, 0644, "")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to mount entrypoint input file: %w", err)
-	}
-
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, ctr.Platform), "", false)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to mount entrypoint output directory: %w", err)
-	}
-
-	ctr, err = ctr.WithExec(ctx, bk, progSock, ctr.Platform, ContainerExecOpts{
-		ExperimentalPrivilegedNesting: true,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to exec entrypoint: %w", err)
-	}
-	ctrOutputDir, err := ctr.Directory(ctx, bk, outputMountPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get entrypoint output directory: %w", err)
-	}
-
-	result, err := ctrOutputDir.Evaluate(ctx, bk)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to evaluate entrypoint: %w", err)
-	}
-	if result == nil {
-		return nil, nil, fmt.Errorf("entrypoint returned nil result")
-	}
-
-	entrypointOutput, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: outputFile,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read entrypoint output file: %w", err)
-	}
-
-	resource, err := handleEntrypointResult(ctx, result, entrypointOutput)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to handle entrypoint result: %w", err)
-	}
-	return resource, entrypointOutput, nil
-}
-
-func handleEntrypointResult(ctx context.Context, result *buildkit.Result, outputBytes []byte) (any, error) {
-	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
-	// we can end up in a state where we have a cached result with a dependency blob that we don't
-	// guarantee the continued existence of...
-
-	var rawOutput any
-	if err := json.Unmarshal(outputBytes, &rawOutput); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
-	}
-
-	strOutput, ok := rawOutput.(string)
-	if !ok {
-		// not a resource ID, nothing to do
-		return nil, nil
-	}
-
-	resource, err := ResourceFromID(strOutput)
-	if err != nil {
-		// not a resource ID, nothing to do
-		// TODO: check actual error type
-		return nil, nil
-	}
-
-	pbDefinitioner, ok := resource.(HasPBDefinitions)
-	if !ok {
-		// no dependency blobs to handle
-		return resource, nil
-	}
-
-	pbDefs, err := pbDefinitioner.PBDefinitions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pb definitions: %w", err)
-	}
-	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
-	for _, pbDef := range pbDefs {
-		dag, err := buildkit.DefToDAG(pbDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert pb definition to dag: %w", err)
-		}
-		blobs, err := dag.BlobDependencies()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get blob dependencies: %w", err)
-		}
-		for k, v := range blobs {
-			dependencyBlobs[k] = v
-		}
-	}
-
-	if err := result.Ref.AddDependencyBlobs(ctx, dependencyBlobs); err != nil {
-		return nil, fmt.Errorf("failed to add dependency blob: %w", err)
-	}
-
-	return resource, nil
-}
-
-func (env *Environment) WithCheck(check *Check, envCache *EnvironmentCache) (*Environment, error) {
-	env = env.Clone()
-	env.Checks = append(env.Checks, check)
-	envID, err := env.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get environment ID: %w", err)
-	}
-	if err := env.setEntrypointEnvs(envID); err != nil {
-		return nil, fmt.Errorf("failed to set entrypoint envs: %w", err)
-	}
-	return env, nil
-}
-
-type Check struct {
-	EnvironmentID EnvironmentID `json:"environmentId,omitempty"`
-
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Subchecks   []*Check `json:"subchecks"`
-
-	// The container to exec if the check's success+output is being resolved
-	// from a user-defined container via the Check.withContainer API
-	UserContainer *Container `json:"user_container"`
-}
-
-func (check *Check) PBDefinitions() ([]*pb.Definition, error) {
-	var defs []*pb.Definition
-	if check.UserContainer != nil {
-		ctrDefs, err := check.UserContainer.PBDefinitions()
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, ctrDefs...)
-	}
-	for _, subcheck := range check.Subchecks {
-		subcheckDefs, err := subcheck.PBDefinitions()
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, subcheckDefs...)
-	}
-	return defs, nil
-}
-
-func (check *Check) ID() (CheckID, error) {
-	return resourceid.Encode(check)
-}
-
-func (check *Check) Digest() (digest.Digest, error) {
-	return stableDigest(check)
-}
-
-func (check Check) Clone() *Check {
-	cp := Check{
-		Name:          check.Name,
-		Description:   check.Description,
-		Subchecks:     make([]*Check, len(check.Subchecks)),
-		EnvironmentID: check.EnvironmentID,
-	}
-	for i, subcheck := range check.Subchecks {
-		cp.Subchecks[i] = subcheck.Clone()
-	}
-	if check.UserContainer != nil {
-		cp.UserContainer = check.UserContainer.Clone()
-	}
-	return &cp
-}
-
-func (check *Check) WithName(name string) *Check {
-	check = check.Clone()
-	check.Name = name
-	return check
-}
-
-func (check *Check) WithDescription(description string) *Check {
-	check = check.Clone()
-	check.Description = description
-	return check
-}
-
-func (check *Check) WithSubcheck(subcheck *Check) *Check {
-	check = check.Clone()
-	check.Subchecks = append(check.Subchecks, subcheck)
-	return check
-}
-
-func (check *Check) WithUserContainer(ctr *Container) *Check {
-	check = check.Clone()
-	check.UserContainer = ctr
-	return check
-}
-
-func (check *Check) GetSubchecks(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-	envCache *EnvironmentCache,
-) (_ []*Check, rerr error) {
-	// TODO:
-	// TODO:
-	// TODO:
-	defer func() {
-		if err := recover(); err != nil {
-			rerr = fmt.Errorf("panic in GetSubchecks: %v %s", err, string(debug.Stack()))
-		}
-	}()
-
-	if len(check.Subchecks) > 0 {
-		return check.Subchecks, nil
-	}
-
-	if check.EnvironmentID != "" {
-		env, err := check.EnvironmentID.Decode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
-		}
-		resource, _, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
-		}
-
-		if resource == nil {
-			// not a recursive check, there are no subchecks
-			return nil, nil
-		}
-		recursiveCheck, ok := resource.(*Check)
-		if !ok {
-			// not a recursive check, there are no subchecks
-			return nil, nil
-		}
-		return recursiveCheck.GetSubchecks(ctx, bk, progSock, pipeline, envCache)
-	}
-
-	return nil, nil
-}
-
-func (check *Check) Result(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-	envCache *EnvironmentCache,
-) (*CheckResult, error) {
-	if len(check.Subchecks) > 0 {
-		// This is a composite check, evaluate it by evaluating each subcheck
-		var eg errgroup.Group
-		success := true
-		var output string
-		for _, subcheck := range check.Subchecks {
-			subcheck := subcheck
-			eg.Go(func() error {
-				subresult, err := subcheck.Result(ctx, bk, progSock, pipeline, envCache)
-				if err != nil {
-					return fmt.Errorf("failed to get subcheck result for %q: %w", subcheck.Name, err)
-				}
-				if !subresult.Success {
-					success = false
-					output += fmt.Sprintf("Subcheck %q failed:\n%s\n", subcheck.Name, subresult.Output)
-				} else {
-					output += fmt.Sprintf("Subcheck %q succeeded:\n%s\n", subcheck.Name, subresult.Output)
-				}
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return nil, err
-		}
-		return &CheckResult{
-			Success: success,
-			Output:  "",
-		}, nil
-	}
-
-	if check.UserContainer != nil {
-		// check will be evaluated by exec'ing this container, with success based on exit code
-		ctr := check.UserContainer
-		success := true
-		var output string
-		_, evalErr := ctr.Evaluate(ctx, bk)
-		var execErr *buildkit.ExecError
-		switch {
-		case errors.As(evalErr, &execErr):
-			success = false
-			// TODO: really need combined stdout/stderr now
-			output = strings.Join([]string{evalErr.Error(), execErr.Stdout, execErr.Stderr}, "\n\n")
-		case evalErr != nil:
-			return nil, fmt.Errorf("failed to exec check user container: %w", evalErr)
-		default:
-			stdout, err := ctr.MetaFileContents(ctx, bk, progSock, "stdout")
-			if err != nil {
-				return nil, fmt.Errorf("failed to get stdout from check user container: %w", err)
-			}
-			stderr, err := ctr.MetaFileContents(ctx, bk, progSock, "stderr")
-			if err != nil {
-				return nil, fmt.Errorf("failed to get stderr from check user container: %w", err)
-			}
-			// TODO: really need combined stdout/stderr now
-			output = strings.Join([]string{stdout, stderr}, "\n\n")
-		}
-		return &CheckResult{
-			Success: success,
-			Output:  output,
-		}, nil
-	}
-
-	if check.EnvironmentID != "" {
-		// check will be evaluated by exec'ing the environment's resolver
-		env, err := check.EnvironmentID.Decode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode environment for check %q: %w", check.Name, err)
-		}
-		resource, _, err := execEntrypoint(ctx, bk, progSock, pipeline, envCache, env, check.Name, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
-		}
-		switch resource := resource.(type) {
-		case *Check:
-			res, err := resource.Result(ctx, bk, progSock, pipeline, envCache)
-			if err != nil {
-				return nil, fmt.Errorf("failed to evaluate recursive check: %w", err)
-			}
-			return res, nil
-		case *CheckResult:
-			return resource, nil
-		default:
-			// TODO: could probably accept Container here too?
-			return nil, fmt.Errorf("unhandled check result type %T", resource)
-		}
-	}
-
-	return nil, fmt.Errorf("invalid empty check %q", check.Name)
-}
-
-type CheckResult struct {
-	Success bool   `json:"success"`
-	Output  string `json:"output"`
-}
-
-func (checkResult *CheckResult) ID() (CheckResultID, error) {
-	return resourceid.Encode(checkResult)
-}
-
-func (checkResult *CheckResult) Digest() (digest.Digest, error) {
-	return stableDigest(checkResult)
-}
-
-func (checkResult CheckResult) Clone() *CheckResult {
-	cp := checkResult
-	return &cp
 }

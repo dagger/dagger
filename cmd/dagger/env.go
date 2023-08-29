@@ -359,14 +359,29 @@ type environmentFlagConfig struct {
 }
 
 func (p environmentFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.Environment, error) {
+	var env *dagger.Environment
+	var err error
 	switch {
 	case p.local != nil:
-		return p.local.load(c)
+		env, err = p.local.load(c)
 	case p.git != nil:
-		return p.git.load(ctx, c)
+		env, err = p.git.load(ctx, c)
 	default:
 		panic("invalid environment")
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load environment: %w", err)
+	}
+	// install the env schema too
+	// TODO: fix codegen, it's requiring EnvironmentID rather than *Environment for some reason
+	envID, err := env.ID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment ID: %w", err)
+	}
+	if _, err := c.InstallEnvironment(ctx, envID); err != nil {
+		return nil, fmt.Errorf("failed to install environment: %w", err)
+	}
+	return env, nil
 }
 
 func (p environmentFlagConfig) config(ctx context.Context, c *dagger.Client) (*envconfig.Config, error) {
@@ -404,13 +419,16 @@ func (p environmentFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) (
 	}
 
 	var eg errgroup.Group
-	// TODO: hack to unlazy env load
 	for _, depEnv := range depEnvs {
 		depEnv := depEnv
 		eg.Go(func() error {
-			_, err := depEnv.ID(ctx)
+			depEnvID, err := depEnv.ID(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to load dependency environment %w", err)
+				return fmt.Errorf("failed to get dependency environment id %w", err)
+			}
+			_, err = c.InstallEnvironment(ctx, depEnvID)
+			if err != nil {
+				return fmt.Errorf("failed to install dependency environment %w", err)
 			}
 			return nil
 		})
@@ -457,7 +475,9 @@ func (p localEnvironment) load(c *dagger.Client) (*dagger.Environment, error) {
 		Include: cfg.Include,
 		Exclude: cfg.Exclude,
 	})
-	return c.Environment().Load(hostDir, subdirRelPath), nil
+	return c.Environment().FromConfig(hostDir, dagger.EnvironmentFromConfigOpts{
+		ConfigPath: subdirRelPath,
+	}), nil
 }
 
 func (p localEnvironment) rootDir() (string, error) {
@@ -502,7 +522,10 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 	if strings.HasPrefix(subdirRelPath, "..") {
 		return nil, fmt.Errorf("environment config path %q is not under environment root %q", p.subpath, rootPath)
 	}
-	return c.Environment().Load(c.Git(p.repo).Branch(p.ref).Tree().Directory(rootPath), subdirRelPath), nil
+	return c.Environment().FromConfig(
+		c.Git(p.repo).Branch(p.ref).Tree().Directory(rootPath), dagger.EnvironmentFromConfigOpts{
+			ConfigPath: subdirRelPath,
+		}), nil
 }
 
 func loadEnvCmdWrapper(

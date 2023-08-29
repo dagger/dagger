@@ -91,11 +91,9 @@ func SadCompositeCheckFromExplicitDep(ctx context.Context) (*Check, error) {
 }
 
 func CoolCompositeCheckFromDynamicDep(ctx context.Context) (*Check, error) {
-	// TODO: also cover dynamically adding a check to this environment and calling that
-	dynamicDep := dag.Environment().Load(
-		dag.Host().Directory("."),
-		"./core/integration/testdata/environments/go/basic/dynamicdep",
-	)
+	dynamicDep := dag.Environment().FromConfig(dag.Host().Directory("."), EnvironmentFromConfigOpts{
+		ConfigPath: "./core/integration/testdata/environments/go/basic/dynamicdep",
+	})
 
 	return dag.Check().
 		WithSubcheck(dynamicDep.Check("yetAnotherCoolStaticCheck")).
@@ -104,10 +102,9 @@ func CoolCompositeCheckFromDynamicDep(ctx context.Context) (*Check, error) {
 }
 
 func SadCompositeCheckFromDynamicDep(ctx context.Context) (*Check, error) {
-	dynamicDep := dag.Environment().Load(
-		dag.Host().Directory("."),
-		"./core/integration/testdata/environments/go/basic/dynamicdep",
-	)
+	dynamicDep := dag.Environment().FromConfig(dag.Host().Directory("."), EnvironmentFromConfigOpts{
+		ConfigPath: "./core/integration/testdata/environments/go/basic/dynamicdep",
+	})
 
 	return dag.Check().
 		WithSubcheck(dynamicDep.Check("yetAnotherSadStaticCheck")).

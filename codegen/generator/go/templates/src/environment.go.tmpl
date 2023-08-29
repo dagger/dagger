@@ -12,13 +12,18 @@ type DAG struct {
 var dag *DAG
 
 func init() {
-	flag.BoolVar(&getEnv, "env", false, "build and return the environment definition rather than executing an entrypoint")
-
   gqlClient, q := getClientParams()
 	dag = &DAG{
 		c: gqlClient,
 		q: q,
 	}
+
+	input := dag.CurrentEnvironment().EntrypointInput()
+	entrypointName, err := input.Name(context.Background())
+	if err != nil {
+		writeErrorf(err)
+	}
+  getEnv = entrypointName == ""
 }
 
 func (r *Environment) Serve() {

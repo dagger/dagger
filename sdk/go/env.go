@@ -13,6 +13,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -21,11 +22,19 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
+const (
+	entrypointErrorExitCode = 1
+	internalErrorExitCode   = 2
+)
+
 var (
-	errorT      = reflect.TypeOf((*error)(nil)).Elem()
-	stringT     = reflect.TypeOf((*string)(nil)).Elem()
-	marshallerT = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-	contextT    = reflect.TypeOf((*context.Context)(nil)).Elem()
+	errorT   = reflect.TypeOf((*error)(nil)).Elem()
+	stringT  = reflect.TypeOf((*string)(nil)).Elem()
+	contextT = reflect.TypeOf((*context.Context)(nil)).Elem()
+
+	marshallerT  = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
+	checkT       = reflect.TypeOf((*Check)(nil))
+	checkResultT = reflect.TypeOf((*CheckResult)(nil))
 )
 
 var resolvers = map[string]*goFunc{}
@@ -67,61 +76,62 @@ func getClientParams() (graphql.Client, *querybuilder.Selection) {
 
 func Serve(r *Environment) {
 	ctx := context.Background()
-	if getEnv {
-		id, err := r.ID(ctx)
-		if err != nil {
-			writeErrorf(err)
+
+	defer func() {
+		if err := recover(); err != nil {
+			writeErrorf(fmt.Errorf("panic: %v %s", err, string(debug.Stack())))
 		}
-		err = os.WriteFile("/env/id", []byte(id), 0644)
+	}()
+
+	input := dag.CurrentEnvironment().EntrypointInput()
+	entrypointName, err := input.Name(ctx)
+	if err != nil {
+		writeErrorf(err)
+	}
+	argsString, err := input.Args(ctx)
+	if err != nil {
+		writeErrorf(err)
+	}
+	args := make(map[string]any)
+	if err := json.Unmarshal([]byte(argsString), &args); err != nil {
+		writeErrorf(fmt.Errorf("unable to unmarshal args: %w", err))
+	}
+
+	if entrypointName == "" {
+		returnBytes, err := json.Marshal(r)
 		if err != nil {
-			writeErrorf(err)
+			writeErrorf(fmt.Errorf("unable to marshal environment: %w", err))
+		}
+		if _, err := dag.CurrentEnvironment().ReturnEntrypointValue(ctx, string(returnBytes)); err != nil {
+			writeErrorf(fmt.Errorf("unable to return environment: %w", err))
 		}
 		return
 	}
 
-	inputBytes, err := os.ReadFile("/inputs/dagger.json")
-	if err != nil {
-		writeErrorf(fmt.Errorf("unable to open request file: %w", err))
-	}
-	var input struct {
-		Resolver string
-		Parent   map[string]any
-		Args     map[string]any
-	}
-	if err := json.Unmarshal(inputBytes, &input); err != nil {
-		writeErrorf(fmt.Errorf("unable to parse request file: %w", err))
-	}
+	fn := resolvers[entrypointName]
 
-	if input.Resolver == "" {
-		writeErrorf(fmt.Errorf("missing resolver"))
-	}
-	fieldName := input.Resolver
-	fn := resolvers[fieldName]
-
-	var result any
 	if fn == nil {
-		// trivial resolver
-		if input.Parent != nil {
-			result = input.Parent[fieldName]
-		}
-	} else {
-		res, err := fn.call(ctx, input.Parent, input.Args)
-		if err != nil {
-			writeErrorf(err)
-		}
-		result = res
+		writeErrorf(fmt.Errorf("unable to find entrypoint %q", entrypointName))
 	}
+
+	result, exitCode, err := fn.call(ctx, args)
+	if err != nil {
+		writeErrorf(err)
+	}
+
 	if result == nil {
 		result = make(map[string]any)
 	}
 
-	output, err := json.Marshal(result)
+	returnBytes, err := json.Marshal(result)
 	if err != nil {
 		writeErrorf(fmt.Errorf("unable to marshal response: %v", err))
 	}
-	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
-		writeErrorf(fmt.Errorf("unable to write response file: %v", err))
+	if _, err := dag.CurrentEnvironment().ReturnEntrypointValue(ctx, string(returnBytes)); err != nil {
+		writeErrorf(fmt.Errorf("unable to return environment: %w", err))
 	}
+
+	os.Exit(int(exitCode))
 }
 
 func WithCheck(r *Environment, in any) *Environment {
@@ -162,43 +172,54 @@ func WithCheck(r *Environment, in any) *Environment {
 		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
 	}
 
-	// handle sugar for different return value types
-	fn.resultWrapper = func(returns []reflect.Value) (any, error) {
-		if len(returns) == 1 {
-			rtVal := returns[0]
-			switch rtVal.Type() {
-			case stringT:
-				// only returned a string, so assume success because we didn't panic
-				// and return a check result with the string as output
-				rtStr, ok := rtVal.Interface().(string)
+	if len(fn.returns) == 2 {
+		// the second return must be of type error
+		if fn.returns[1].typ != errorT {
+			writeErrorf(fmt.Errorf("expected second return to be of type error, got %v", fn.returns[1].typ))
+		}
+	}
+
+	var checkReturnType CheckEntrypointReturnType
+	switch fn.returns[0].typ {
+	case stringT:
+		checkReturnType = Checkentrypointreturnstring
+	case errorT:
+		if len(fn.returns) != 1 {
+			writeErrorf(fmt.Errorf("first return type cannot be error if there are two return values"))
+		}
+		checkReturnType = Checkentrypointreturnvoid
+	case checkT:
+		checkReturnType = Checkentrypointreturncheck
+	case checkResultT:
+		checkReturnType = Checkentrypointreturncheckresult
+	default:
+		writeErrorf(fmt.Errorf("unhandled return type %v", fn.returns[0].typ))
+	}
+
+	fn.resultWrapper = func(returns []reflect.Value) (any, uint32, error) {
+		if len(returns) == 2 {
+			// the second return must be of type error
+			if !returns[1].IsNil() {
+				var ok bool
+				rtErr, ok := returns[1].Interface().(error)
 				if !ok {
-					return nil, fmt.Errorf("expected string, got %T", rtVal.Interface())
+					return nil, 0, fmt.Errorf("expected error, got %T", returns[1].Interface())
 				}
-				return dag.StaticCheckResult(true, StaticCheckResultOpts{
-					Output: rtStr,
-				}), nil
-			case errorT:
-				if rtVal.IsNil() {
-					// only returned a nil error, so assume success, no output
-					return dag.StaticCheckResult(true), nil
-				} else {
-					// only returned a non-nil error, so assume failure and return
-					// a check result with the output set to the error value
-					rtErr, ok := rtVal.Interface().(error)
-					if !ok {
-						return nil, fmt.Errorf("expected error, got %T", rtVal.Interface())
-					}
-					return dag.StaticCheckResult(false, StaticCheckResultOpts{
-						Output: rtErr.Error(),
-					}), nil
-				}
-			default:
-				return rtVal.Interface(), nil
+				return rtErr.Error(), entrypointErrorExitCode, nil
 			}
 		}
 
 		var rt any
 		switch returns[0].Type() {
+		case errorT:
+			if !returns[0].IsNil() {
+				var ok bool
+				rtErr, ok := returns[0].Interface().(error)
+				if !ok {
+					return nil, 0, fmt.Errorf("expected error, got %T", returns[0].Interface())
+				}
+				return rtErr.Error(), entrypointErrorExitCode, nil
+			}
 		case stringT:
 			rt = returns[0].Interface()
 		default:
@@ -206,31 +227,7 @@ func WithCheck(r *Environment, in any) *Environment {
 				rt = returns[0].Interface()
 			}
 		}
-
-		var rtErr error
-		if !returns[1].IsNil() {
-			var ok bool
-			rtErr, ok = returns[1].Interface().(error)
-			if !ok {
-				return nil, fmt.Errorf("expected error, got %T", returns[1].Interface())
-			}
-		}
-
-		switch rt := rt.(type) {
-		case string:
-			// returned (string, error), so assume success if error is nil, set output
-			// from the string and, if err is non-nil, append it to the output
-			output := rt
-			success := rtErr == nil
-			if !success {
-				output += "\nError: " + rtErr.Error()
-			}
-			return dag.StaticCheckResult(success, StaticCheckResultOpts{
-				Output: output,
-			}), nil
-		default:
-			return rt, rtErr
-		}
+		return rt, 0, nil
 	}
 
 	filePath, lineNum := fn.srcPathAndLine()
@@ -286,9 +283,10 @@ func WithCheck(r *Environment, in any) *Environment {
 		return r
 	}
 
-	return r.WithCheck(dag.Check().
+	check := dag.Check().
 		WithName(strcase.ToLowerCamel(fn.name)).
-		WithDescription(fn.doc))
+		WithDescription(fn.doc)
+	return r.WithCheck(check, EnvironmentWithCheckOpts{ReturnType: checkReturnType})
 }
 
 type goTypes struct {
@@ -323,7 +321,7 @@ type goFunc struct {
 	val           reflect.Value
 	hasReceiver   bool
 	doc           string
-	resultWrapper func([]reflect.Value) (any, error)
+	resultWrapper func([]reflect.Value) (any, uint32, error)
 }
 
 type goParam struct {
@@ -339,7 +337,7 @@ func (fn *goFunc) srcPathAndLine() (string, int) {
 	return fun.FileLine(pc)
 }
 
-func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (any, error) {
+func (fn *goFunc) call(ctx context.Context, rawArgs map[string]any) (any, uint32, error) {
 	var callArgs []reflect.Value
 	if fn.hasReceiver {
 		callArgs = append(callArgs, reflect.New(fn.args[0].typ).Elem())
@@ -362,7 +360,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 				if optPresent {
 					optVal, err := convertInput(rawArg, field.Type)
 					if err != nil {
-						return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
+						return nil, 0, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
 					}
 					opts.Elem().Field(i).Set(reflect.ValueOf(optVal))
 				}
@@ -375,11 +373,11 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 		case argValuePresent:
 			argVal, err := convertInput(rawArg, arg.typ)
 			if err != nil {
-				return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
+				return nil, 0, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
 			}
 			callArgs = append(callArgs, reflect.ValueOf(argVal))
 		case !arg.optional:
-			return nil, fmt.Errorf("missing required argument %s", arg.name)
+			return nil, 0, fmt.Errorf("missing required argument %s", arg.name)
 		default:
 			callArgs = append(callArgs, reflect.New(arg.typ).Elem())
 		}
@@ -508,7 +506,7 @@ func convertInput(input any, desiredType reflect.Type) (any, error) {
 
 func writeErrorf(err error) {
 	fmt.Println(err.Error())
-	os.Exit(1)
+	os.Exit(internalErrorExitCode)
 }
 
 // TODO: pollutes namespace, move to non internal package in dagger.io/dagger

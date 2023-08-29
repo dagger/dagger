@@ -2042,6 +2042,51 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
+// Internal-only.
+//
+// The input provided to an SDK entrypoint invocation.
+type EntrypointInput struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	args *string
+	name *string
+}
+
+// Internal-only.
+//
+// The json-serialized arguments to pass to the entrypoint. The json
+// object is a map of argument names to argument values.
+func (r *EntrypointInput) Args(ctx context.Context) (string, error) {
+
+	if r.args != nil {
+		return *r.args, nil
+	}
+	q := r.q.Select("args")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Internal-only.
+//
+// The name of the entrypoint to invoke. If not set, then the sdk
+// is expected to return the environment definition.
+func (r *EntrypointInput) Name(ctx context.Context) (string, error) {
+
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A simple key value object that represents an environment variable.
 type EnvVariable struct {
 	q *querybuilder.Selection
@@ -2084,10 +2129,10 @@ type Environment struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	exportEnvironmentResult *bool
-	id                      *EnvironmentID
-	name                    *string
-	workdir                 *DirectoryID
+	id                    *EnvironmentID
+	name                  *string
+	returnEntrypointValue *bool
+	sdk                   *string
 }
 type WithEnvironmentFunc func(r *Environment) *Environment
 
@@ -2142,19 +2187,108 @@ func (r *Environment) Checks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
-// TODO: hide from docs, possibly standard codegen too
-func (r *Environment) ExportEnvironmentResult(ctx context.Context, result string) (bool, error) {
+// Other environments that this environment depends on. If this environment is installed,
+// all dependencies will be (recursively) installed too.
+func (r *Environment) Dependencies(ctx context.Context) ([]Environment, error) {
 
-	if r.exportEnvironmentResult != nil {
-		return *r.exportEnvironmentResult, nil
+	q := r.q.Select("dependencies")
+
+	q = q.Select("id")
+
+	type dependencies struct {
+		Id EnvironmentID
 	}
-	q := r.q.Select("exportEnvironmentResult")
-	q = q.Arg("result", result)
 
-	var response bool
+	convert := func(fields []dependencies) []Environment {
+		out := []Environment{}
+
+		for i := range fields {
+			out = append(out, Environment{id: &fields[i].Id})
+		}
+
+		return out
+	}
+	var response []dependencies
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Internal only.
+//
+// The input for the current entrypoint invocation.
+func (r *Environment) EntrypointInput() *EntrypointInput {
+
+	q := r.q.Select("entrypointInput")
+
+	return &EntrypointInput{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentFromOpts contains options for Environment.From
+type EnvironmentFromOpts struct {
+	SourceDirectorySubpath string
+
+	Dependencies []*Environment
+}
+
+// The environment initialized with the given name, sourceDirectory, sdk and dependencies.
+//
+// If set, sourceDirectorySubpath should point to the subpath of sourceDirectory that
+// contains the environment code. If unset, it will default to the root of the sourceDirectory.
+func (r *Environment) From(name string, sourceDirectory *Directory, sdk string, opts ...EnvironmentFromOpts) *Environment {
+
+	q := r.q.Select("from")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sourceDirectorySubpath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDirectorySubpath) {
+			q = q.Arg("sourceDirectorySubpath", opts[i].SourceDirectorySubpath)
+		}
+		// `dependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dependencies) {
+			q = q.Arg("dependencies", opts[i].Dependencies)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("sourceDirectory", sourceDirectory)
+	q = q.Arg("sdk", sdk)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentFromConfigOpts contains options for Environment.FromConfig
+type EnvironmentFromConfigOpts struct {
+	ConfigPath string
+}
+
+// The environment initialized with the sourceDirectory and environment configuration file path.
+// If configPath is not set, it defaults to the root of the sourceDirectory.
+func (r *Environment) FromConfig(sourceDirectory *Directory, opts ...EnvironmentFromConfigOpts) *Environment {
+
+	q := r.q.Select("fromConfig")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `configPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ConfigPath) {
+			q = q.Arg("configPath", opts[i].ConfigPath)
+		}
+	}
+	q = q.Arg("sourceDirectory", sourceDirectory)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A unique identifier for this environment.
@@ -2198,21 +2332,6 @@ func (r *Environment) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Initialize this environment from its source. The full context needed to execute
-// the environment is provided as environmentDirectory, with the environment's configuration
-// file located at configPath.
-func (r *Environment) Load(environmentDirectory *Directory, configPath string) *Environment {
-
-	q := r.q.Select("load")
-	q = q.Arg("environmentDirectory", environmentDirectory)
-	q = q.Arg("configPath", configPath)
-
-	return &Environment{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Name of the environment
 func (r *Environment) Name(ctx context.Context) (string, error) {
 
@@ -2227,10 +2346,67 @@ func (r *Environment) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// This environment plus the given check
-func (r *Environment) WithCheck(id *Check) *Environment {
+// Internal only.
+//
+// Return the given value as the result of the current entrypoint invocation.
+// The value is expected to be the json-serialized representation of the return.
+func (r *Environment) ReturnEntrypointValue(ctx context.Context, value string) (bool, error) {
+
+	if r.returnEntrypointValue != nil {
+		return *r.returnEntrypointValue, nil
+	}
+	q := r.q.Select("returnEntrypointValue")
+	q = q.Arg("value", value)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The SDK that this environment will be executed with
+func (r *Environment) SDK(ctx context.Context) (string, error) {
+
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
+	q := r.q.Select("sdk")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The directory containing all the source needed to execute this environment's code
+func (r *Environment) SourceDirectory() *Directory {
+
+	q := r.q.Select("sourceDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentWithCheckOpts contains options for Environment.WithCheck
+type EnvironmentWithCheckOpts struct {
+	ReturnType CheckEntrypointReturnType
+}
+
+// Internal only.
+//
+// This environment with the given check. It is an error to call this outside
+// of environment initialization code.
+func (r *Environment) WithCheck(id *Check, opts ...EnvironmentWithCheckOpts) *Environment {
 
 	q := r.q.Select("withCheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnType) {
+			q = q.Arg("returnType", opts[i].ReturnType)
+		}
+	}
 	q = q.Arg("id", id)
 
 	return &Environment{
@@ -2240,10 +2416,10 @@ func (r *Environment) WithCheck(id *Check) *Environment {
 }
 
 // This environment with the given workdir
-func (r *Environment) WithWorkdir(workdir *Directory) *Environment {
+func (r *Environment) WithWorkdir(id *Directory) *Environment {
 
 	q := r.q.Select("withWorkdir")
-	q = q.Arg("workdir", workdir)
+	q = q.Arg("id", id)
 
 	return &Environment{
 		q: q,
@@ -2251,18 +2427,16 @@ func (r *Environment) WithWorkdir(workdir *Directory) *Environment {
 	}
 }
 
-// The directory the environment code will execute in as its current working directory.
-func (r *Environment) Workdir(ctx context.Context) (DirectoryID, error) {
+// The directory that the environment code will execute in as its current working directory.
+// If not set explicitly, it will default to the root of the sourceDirectory.
+func (r *Environment) Workdir() *Directory {
 
-	if r.workdir != nil {
-		return *r.workdir, nil
-	}
 	q := r.q.Select("workdir")
 
-	var response DirectoryID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A file.
@@ -2667,7 +2841,7 @@ type CheckOpts struct {
 	ID CheckID
 }
 
-// Load a environment check from ID.
+// The check initialized from the given ID.
 func (r *Client) Check(opts ...CheckOpts) *Check {
 
 	q := r.q.Select("check")
@@ -2689,7 +2863,7 @@ type CheckResultOpts struct {
 	ID CheckResultID
 }
 
-// Load a environment check result from ID.
+// The check result initialized from the given ID.
 func (r *Client) CheckResult(opts ...CheckResultOpts) *CheckResult {
 
 	q := r.q.Select("checkResult")
@@ -2750,7 +2924,7 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
-// Return the current environment being executed in.
+// The environment the requester is being executed in (or an error if none).
 func (r *Client) CurrentEnvironment() *Environment {
 
 	q := r.q.Select("currentEnvironment")
@@ -2799,7 +2973,7 @@ type EnvironmentOpts struct {
 	ID EnvironmentID
 }
 
-// Load a environment from ID.
+// The environment initialized from the given ID.
 func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
 
 	q := r.q.Select("environment")
@@ -2893,6 +3067,25 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// Install the given environment into this graphql API. Its schema will be
+// stitched into the schema of this server, making those APIs available for
+// subsequent queries.
+//
+// If an environment with the same ID has already been installed, this is a no-op.
+//
+// If there are any conflicts between the environment's schema and any existing
+// schemas, an error will be returned.
+func (r *Client) InstallEnvironment(ctx context.Context, id EnvironmentID) (bool, error) {
+
+	q := r.q.Select("installEnvironment")
+	q = q.Arg("id", id)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // PipelineOpts contains options for Client.Pipeline
 type PipelineOpts struct {
 	// Pipeline description.
@@ -2976,7 +3169,7 @@ type StaticCheckResultOpts struct {
 	Output string
 }
 
-// Create a check result with the given success and output.
+// A check result initialized with the given success and output.
 func (r *Client) StaticCheckResult(success bool, opts ...StaticCheckResultOpts) *CheckResult {
 
 	q := r.q.Select("staticCheckResult")
@@ -3112,6 +3305,15 @@ const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
 	Shared  CacheSharingMode = "SHARED"
+)
+
+type CheckEntrypointReturnType string
+
+const (
+	Checkentrypointreturncheck       CheckEntrypointReturnType = "CheckEntrypointReturnCheck"
+	Checkentrypointreturncheckresult CheckEntrypointReturnType = "CheckEntrypointReturnCheckResult"
+	Checkentrypointreturnstring      CheckEntrypointReturnType = "CheckEntrypointReturnString"
+	Checkentrypointreturnvoid        CheckEntrypointReturnType = "CheckEntrypointReturnVoid"
 )
 
 type ImageLayerCompression string

@@ -3,71 +3,87 @@ package core
 import (
 	"context"
 	"fmt"
-	"path"
+	"path/filepath"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func goRuntime(
+func (env *Environment) goRuntime(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
-	pipeline pipeline.Path,
-	platform specs.Platform,
-	rootDir *Directory,
-	configPath string,
+	sourceDir *Directory,
+	sourceDirSubpath string,
+	workdir *Directory,
 ) (*Container, error) {
-	ctr, err := NewContainer("", pipeline, platform)
+	baseCtr, err := NewContainer("", env.Pipeline, env.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
-	ctr, err = ctr.From(ctx, bk, "golang:1.20-alpine")
+	baseCtr, err = baseCtr.From(ctx, bk, "golang:1.20-alpine")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
-	workdir := "/src"
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = absPath(cfg.WorkingDir, workdir)
+	buildEnvCtr, err := baseCtr.WithMountedDirectory(ctx, bk, envSourceDirPath, sourceDir, "", false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount env source directory: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = filepath.Join(envSourceDirPath, sourceDirSubpath)
 		cfg.Cmd = nil
 		return cfg
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, rootDir, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount workdir directory: %w", err)
-	}
-
-	ctr, err = ctr.WithMountedCache(ctx, bk, "/go/pkg/mod", NewCache("gomodcache"), nil, CacheSharingModeShared, "")
+	buildEnvCtr, err = buildEnvCtr.WithMountedCache(ctx, bk, "/go/pkg/mod", NewCache("envgomodcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount gomodcache: %w", err)
 	}
-	ctr, err = ctr.WithMountedCache(ctx, bk, "/root/.cache/go-build", NewCache("gobuildcache"), nil, CacheSharingModeShared, "")
+	buildEnvCtr, err = buildEnvCtr.WithMountedCache(ctx, bk, "/root/.cache/go-build", NewCache("envgobuildcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount gobuildcache: %w", err)
 	}
-
-	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
+	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, env.Platform, ContainerExecOpts{
 		Args: []string{
-			"go", "build", "-o", "/entrypoint", "-ldflags", "-s -d -w",
-			path.Join(workdir, path.Dir(configPath)),
+			"go", "build",
+			"-o", runtimeExecutablePath,
+			"-ldflags", "-s -d -w",
+			".",
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec go build: %w", err)
+		return nil, fmt.Errorf("failed to exec env go build: %w", err)
+	}
+	runtimeBin, err := buildEnvCtr.File(ctx, bk, runtimeExecutablePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get runtime binary: %w", err)
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"/entrypoint"}
+	// source dir is ro, workdir is rw
+	finalEnvCtr, err := baseCtr.WithMountedDirectory(ctx, bk, envSourceDirPath, sourceDir, "", true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount env source directory: %w", err)
+	}
+	finalEnvCtr, err = finalEnvCtr.WithMountedDirectory(ctx, bk, envWorkdirPath, workdir, "", false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount env workdir: %w", err)
+	}
+	finalEnvCtr, err = finalEnvCtr.WithMountedFile(ctx, bk, runtimeExecutablePath, runtimeBin, "", true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount runtime binary: %w", err)
+	}
+	finalEnvCtr, err = finalEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = envWorkdirPath
+		cfg.Cmd = nil
+		cfg.Entrypoint = []string{runtimeExecutablePath}
 		return cfg
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
-	return ctr, nil
+	return finalEnvCtr, nil
 }

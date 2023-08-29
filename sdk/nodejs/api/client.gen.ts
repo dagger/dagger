@@ -90,6 +90,69 @@ export enum CacheSharingMode {
   Shared,
 }
 /**
+ * Internal-only.
+ *
+ * The handled return types for a check entrypoint.
+ */
+export enum CheckEntrypointReturnType {
+  /**
+   * Internal-only.
+   *
+   * The entrypoint returns a check. In this case, the check's result will be
+   * determined by (recursively) evaluating the returned check.
+   *
+   * A non-zero entrypoint exit code will be treated as an internal error and
+   * result in the entrypoint execution not being cached.
+   */
+  Checkentrypointreturncheck,
+
+  /**
+   * Internal-only.
+   *
+   * The entrypoint returns a check result. In this case, the check's result will
+   * be set to this return value.
+   *
+   * A non-zero entrypoint exit code will be treated as an internal error and
+   * result in the entrypoint execution not being cached.
+   */
+  Checkentrypointreturncheckresult,
+
+  /**
+   * Internal-only.
+   *
+   * The entrypoint returns a string. In this case, the check's output will be
+   * set to that string and the check's success based on the entrypoint exit code.
+   *
+   * Exit code 0 will result in a successful check.
+   *
+   * Exiting with exit code 1 will result in a failed check, but the entrypoint
+   * execution will be cached.
+   *
+   * Exiting with any other exit code will be treated an internal error and not
+   * result in the entrypoint execution being cached. This error will be forwarded
+   * to any clients querying the check result.
+   */
+  Checkentrypointreturnstring,
+
+  /**
+   * Internal-only.
+   *
+   * The entrypoint does not return any value.
+   *
+   * In this case, the check's result is based on whether the entrypoint exit code.
+   *
+   * Exit code 0 will result in a successful check.
+   *
+   * Exiting with exit code 1 will result in a failed check, but the entrypoint
+   * execution will be cached.
+   *
+   * Exiting with any other exit code will be treated an internal error and not
+   * result in the entrypoint execution being cached. This error will be forwarded
+   * to any clients querying the check result.
+   */
+  Checkentrypointreturnvoid,
+}
+/**
  * A unique environment check identifier.
  */
 export type CheckID = string & { __CheckID: never }
@@ -515,6 +578,19 @@ export type DirectoryWithNewFileOpts = {
  * A content-addressed directory identifier.
  */
 export type DirectoryID = string & { __DirectoryID: never }
+
+export type EnvironmentFromOpts = {
+  sourceDirectorySubpath?: string
+  dependencies?: Environment[]
+}
+
+export type EnvironmentFromConfigOpts = {
+  configPath?: string
+}
+
+export type EnvironmentWithCheckOpts = {
+  returnType?: CheckEntrypointReturnType
+}
 
 /**
  * A unique environment identifier.
@@ -2787,6 +2863,78 @@ export class Directory extends BaseClient {
 }
 
 /**
+ * Internal-only.
+ *
+ * The input provided to an SDK entrypoint invocation.
+ */
+export class EntrypointInput extends BaseClient {
+  private readonly _args?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _args?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._args = _args
+    this._name = _name
+  }
+
+  /**
+   * Internal-only.
+   *
+   * The json-serialized arguments to pass to the entrypoint. The json
+   * object is a map of argument names to argument values.
+   */
+  async args(): Promise<string> {
+    if (this._args) {
+      return this._args
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "args",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Internal-only.
+   *
+   * The name of the entrypoint to invoke. If not set, then the sdk
+   * is expected to return the environment definition.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
  * A simple key value object that represents an environment variable.
  */
 export class EnvVariable extends BaseClient {
@@ -2854,27 +3002,27 @@ export class EnvVariable extends BaseClient {
  * A group of Dagger entrypoints that can be queried and/or invoked.
  */
 export class Environment extends BaseClient {
-  private readonly _exportEnvironmentResult?: boolean = undefined
   private readonly _id?: EnvironmentID = undefined
   private readonly _name?: string = undefined
-  private readonly _workdir?: DirectoryID = undefined
+  private readonly _returnEntrypointValue?: boolean = undefined
+  private readonly _sdk?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _exportEnvironmentResult?: boolean,
     _id?: EnvironmentID,
     _name?: string,
-    _workdir?: DirectoryID
+    _returnEntrypointValue?: boolean,
+    _sdk?: string
   ) {
     super(parent)
 
-    this._exportEnvironmentResult = _exportEnvironmentResult
     this._id = _id
     this._name = _name
-    this._workdir = _workdir
+    this._returnEntrypointValue = _returnEntrypointValue
+    this._sdk = _sdk
   }
 
   /**
@@ -2929,25 +3077,102 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * TODO: hide from docs, possibly standard codegen too
+   * Other environments that this environment depends on. If this environment is installed,
+   * all dependencies will be (recursively) installed too.
    */
-  async exportEnvironmentResult(result: string): Promise<boolean> {
-    if (this._exportEnvironmentResult) {
-      return this._exportEnvironmentResult
+  async dependencies(): Promise<Environment[]> {
+    type dependencies = {
+      id: EnvironmentID
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<dependencies[]> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "exportEnvironmentResult",
-          args: { result },
+          operation: "dependencies",
+        },
+        {
+          operation: "id",
         },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new Environment(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * Internal only.
+   *
+   * The input for the current entrypoint invocation.
+   */
+  entrypointInput(): EntrypointInput {
+    return new EntrypointInput({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "entrypointInput",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * The environment initialized with the given name, sourceDirectory, sdk and dependencies.
+   *
+   * If set, sourceDirectorySubpath should point to the subpath of sourceDirectory that
+   * contains the environment code. If unset, it will default to the root of the sourceDirectory.
+   */
+  from(
+    name: string,
+    sourceDirectory: Directory,
+    sdk: string,
+    opts?: EnvironmentFromOpts
+  ): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "from",
+          args: { name, sourceDirectory, sdk, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * The environment initialized with the sourceDirectory and environment configuration file path.
+   * If configPath is not set, it defaults to the root of the sourceDirectory.
+   */
+  fromConfig(
+    sourceDirectory: Directory,
+    opts?: EnvironmentFromConfigOpts
+  ): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "fromConfig",
+          args: { sourceDirectory, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -2972,25 +3197,6 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * Initialize this environment from its source. The full context needed to execute
-   * the environment is provided as environmentDirectory, with the environment's configuration
-   * file located at configPath.
-   */
-  load(environmentDirectory: Directory, configPath: string): Environment {
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "load",
-          args: { environmentDirectory, configPath },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Name of the environment
    */
   async name(): Promise<string> {
@@ -3012,15 +3218,80 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * This environment plus the given check
+   * Internal only.
+   *
+   * Return the given value as the result of the current entrypoint invocation.
+   * The value is expected to be the json-serialized representation of the return.
    */
-  withCheck(id: Check): Environment {
+  async returnEntrypointValue(value: string): Promise<boolean> {
+    if (this._returnEntrypointValue) {
+      return this._returnEntrypointValue
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "returnEntrypointValue",
+          args: { value },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The SDK that this environment will be executed with
+   */
+  async sdk(): Promise<string> {
+    if (this._sdk) {
+      return this._sdk
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sdk",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The directory containing all the source needed to execute this environment's code
+   */
+  sourceDirectory(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceDirectory",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Internal only.
+   *
+   * This environment with the given check. It is an error to call this outside
+   * of environment initialization code.
+   */
+  withCheck(id: Check, opts?: EnvironmentWithCheckOpts): Environment {
     return new Environment({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withCheck",
-          args: { id },
+          args: { id, ...opts },
         },
       ],
       host: this.clientHost,
@@ -3031,13 +3302,13 @@ export class Environment extends BaseClient {
   /**
    * This environment with the given workdir
    */
-  withWorkdir(workdir: Directory): Environment {
+  withWorkdir(id: Directory): Environment {
     return new Environment({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withWorkdir",
-          args: { workdir },
+          args: { id },
         },
       ],
       host: this.clientHost,
@@ -3046,24 +3317,20 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * The directory the environment code will execute in as its current working directory.
+   * The directory that the environment code will execute in as its current working directory.
+   * If not set explicitly, it will default to the root of the sourceDirectory.
    */
-  async workdir(): Promise<DirectoryID> {
-    if (this._workdir) {
-      return this._workdir
-    }
-
-    const response: Awaited<DirectoryID> = await computeQuery(
-      [
+  workdir(): Directory {
+    return new Directory({
+      queryTree: [
         ...this._queryTree,
         {
           operation: "workdir",
         },
       ],
-      this.client
-    )
-
-    return response
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -3591,6 +3858,7 @@ export class Port extends BaseClient {
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
+  private readonly _installEnvironment?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3598,12 +3866,14 @@ export class Client extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _checkVersionCompatibility?: boolean,
-    _defaultPlatform?: Platform
+    _defaultPlatform?: Platform,
+    _installEnvironment?: boolean
   ) {
     super(parent)
 
     this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
+    this._installEnvironment = _installEnvironment
   }
 
   /**
@@ -3625,7 +3895,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a environment check from ID.
+   * The check initialized from the given ID.
    */
   check(opts?: ClientCheckOpts): Check {
     return new Check({
@@ -3642,7 +3912,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a environment check result from ID.
+   * The check result initialized from the given ID.
    */
   checkResult(opts?: ClientCheckResultOpts): CheckResult {
     return new CheckResult({
@@ -3699,7 +3969,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Return the current environment being executed in.
+   * The environment the requester is being executed in (or an error if none).
    */
   currentEnvironment(): Environment {
     return new Environment({
@@ -3749,7 +4019,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a environment from ID.
+   * The environment initialized from the given ID.
    */
   environment(opts?: ClientEnvironmentOpts): Environment {
     return new Environment({
@@ -3840,6 +4110,31 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Install the given environment into this graphql API. Its schema will be
+   * stitched into the schema of this server, making those APIs available for
+   * subsequent queries.
+   *
+   * If an environment with the same ID has already been installed, this is a no-op.
+   *
+   * If there are any conflicts between the environment's schema and any existing
+   * schemas, an error will be returned.
+   */
+  async installEnvironment(id: EnvironmentID): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "installEnvironment",
+          args: { id },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Creates a named sub-pipeline.
    * @param name Pipeline name.
    * @param opts.description Pipeline description.
@@ -3914,7 +4209,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a check result with the given success and output.
+   * A check result initialized with the given success and output.
    */
   staticCheckResult(
     success: boolean,

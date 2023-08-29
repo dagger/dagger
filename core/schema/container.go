@@ -474,7 +474,7 @@ func (s *containerSchema) withMountedFile(ctx *core.Context, parent *core.Contai
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner)
+	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner, false)
 }
 
 type containerWithMountedCacheArgs struct {

@@ -22,13 +22,21 @@ import (
 	"dagger.io/dagger/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/iancoleman/strcase"
-	"github.com/vektah/gqlparser/v2/ast"
+)
+
+const (
+	entrypointErrorExitCode = 1
+	internalErrorExitCode   = 2
 )
 
 var (
-	errorT      = reflect.TypeOf((*error)(nil)).Elem()
-	marshallerT = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-	contextT    = reflect.TypeOf((*context.Context)(nil)).Elem()
+	errorT   = reflect.TypeOf((*error)(nil)).Elem()
+	stringT  = reflect.TypeOf((*string)(nil)).Elem()
+	contextT = reflect.TypeOf((*context.Context)(nil)).Elem()
+
+	marshallerT  = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
+	checkT       = reflect.TypeOf((*Check)(nil))
+	checkResultT = reflect.TypeOf((*CheckResult)(nil))
 )
 
 var resolvers = map[string]*goFunc{}
@@ -70,60 +78,62 @@ func getClientParams() (graphql.Client, *querybuilder.Selection) {
 
 func Serve(r *Environment) {
 	ctx := context.Background()
-	if getEnv {
-		id, err := r.ID(ctx)
-		if err != nil {
-			writeErrorf(err)
+
+	defer func() {
+		if err := recover(); err != nil {
+			writeErrorf(fmt.Errorf("panic: %v %s", err, string(debug.Stack())))
 		}
-		err = os.WriteFile("/env/id", []byte(id), 0644)
+	}()
+
+	input := dag.CurrentEnvironment().EntrypointInput()
+	entrypointName, err := input.Name(ctx)
+	if err != nil {
+		writeErrorf(err)
+	}
+	argsString, err := input.Args(ctx)
+	if err != nil {
+		writeErrorf(err)
+	}
+	args := make(map[string]any)
+	if err := json.Unmarshal([]byte(argsString), &args); err != nil {
+		writeErrorf(fmt.Errorf("unable to unmarshal args: %w", err))
+	}
+
+	if entrypointName == "" {
+		returnBytes, err := json.Marshal(r)
 		if err != nil {
-			writeErrorf(err)
+			writeErrorf(fmt.Errorf("unable to marshal environment: %w", err))
+		}
+		if _, err := dag.CurrentEnvironment().ReturnEntrypointValue(ctx, string(returnBytes)); err != nil {
+			writeErrorf(fmt.Errorf("unable to return environment: %w", err))
 		}
 		return
 	}
 
-	inputBytes, err := os.ReadFile("/inputs/dagger.json")
-	if err != nil {
-		writeErrorf(fmt.Errorf("unable to open request file: %w", err))
-	}
-	var input struct {
-		Resolver string
-		Parent   map[string]any
-		Args     map[string]any
-	}
-	if err := json.Unmarshal(inputBytes, &input); err != nil {
-		writeErrorf(fmt.Errorf("unable to parse request file: %w", err))
-	}
+	fn := resolvers[entrypointName]
 
-	if input.Resolver == "" {
-		writeErrorf(fmt.Errorf("missing resolver"))
-	}
-	fieldName := input.Resolver
-	fn := resolvers[fieldName]
-
-	var result any
 	if fn == nil {
-		// trivial resolver
-		if input.Parent != nil {
-			result = input.Parent[fieldName]
-		}
-	} else {
-		result, err = fn.call(ctx, input.Parent, input.Args)
-		if err != nil {
-			writeErrorf(err)
-		}
+		writeErrorf(fmt.Errorf("unable to find entrypoint %q", entrypointName))
 	}
+
+	result, exitCode, err := fn.call(ctx, args)
+	if err != nil {
+		writeErrorf(err)
+	}
+
 	if result == nil {
 		result = make(map[string]any)
 	}
 
-	output, err := json.Marshal(result)
+	returnBytes, err := json.Marshal(result)
 	if err != nil {
 		writeErrorf(fmt.Errorf("unable to marshal response: %v", err))
 	}
-	if err := os.WriteFile("/outputs/dagger.json", output, 0600); err != nil {
-		writeErrorf(fmt.Errorf("unable to write response file: %v", err))
+	if _, err := dag.CurrentEnvironment().ReturnEntrypointValue(ctx, string(returnBytes)); err != nil {
+		writeErrorf(fmt.Errorf("unable to return environment: %w", err))
 	}
+
+	os.Exit(int(exitCode))
 }
 
 func WithCheck(r *Environment, in any) *Environment {
@@ -133,7 +143,6 @@ func WithCheck(r *Environment, in any) *Environment {
 	}
 	flag.Parse()
 
-	// TODO: dedupe huge chunks of code
 	typ := reflect.TypeOf(in)
 	if typ.Kind() != reflect.Func {
 		writeErrorf(fmt.Errorf("expected func, got %v", typ))
@@ -154,14 +163,73 @@ func WithCheck(r *Environment, in any) *Environment {
 			typ: inputParam,
 		})
 	}
+
 	for i := 0; i < fn.typ.NumOut(); i++ {
 		outputParam := fn.typ.Out(i)
 		fn.returns = append(fn.returns, &goParam{
 			typ: outputParam,
 		})
 	}
-	if len(fn.returns) > 2 {
+	if len(fn.returns) == 0 || len(fn.returns) > 2 {
 		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
+	}
+
+	if len(fn.returns) == 2 {
+		// the second return must be of type error
+		if fn.returns[1].typ != errorT {
+			writeErrorf(fmt.Errorf("expected second return to be of type error, got %v", fn.returns[1].typ))
+		}
+	}
+
+	var checkReturnType CheckEntrypointReturnType
+	switch fn.returns[0].typ {
+	case stringT:
+		checkReturnType = Checkentrypointreturnstring
+	case errorT:
+		if len(fn.returns) != 1 {
+			writeErrorf(fmt.Errorf("first return type cannot be error if there are two return values"))
+		}
+		checkReturnType = Checkentrypointreturnvoid
+	case checkT:
+		checkReturnType = Checkentrypointreturncheck
+	case checkResultT:
+		checkReturnType = Checkentrypointreturncheckresult
+	default:
+		writeErrorf(fmt.Errorf("unhandled return type %v", fn.returns[0].typ))
+	}
+
+	fn.resultWrapper = func(returns []reflect.Value) (any, uint32, error) {
+		if len(returns) == 2 {
+			// the second return must be of type error
+			if !returns[1].IsNil() {
+				var ok bool
+				rtErr, ok := returns[1].Interface().(error)
+				if !ok {
+					return nil, 0, fmt.Errorf("expected error, got %T", returns[1].Interface())
+				}
+				return rtErr.Error(), entrypointErrorExitCode, nil
+			}
+		}
+
+		var rt any
+		switch returns[0].Type() {
+		case errorT:
+			if !returns[0].IsNil() {
+				var ok bool
+				rtErr, ok := returns[0].Interface().(error)
+				if !ok {
+					return nil, 0, fmt.Errorf("expected error, got %T", returns[0].Interface())
+				}
+				return rtErr.Error(), entrypointErrorExitCode, nil
+			}
+		case stringT:
+			rt = returns[0].Interface()
+		default:
+			if !returns[0].IsNil() {
+				rt = returns[0].Interface()
+			}
+		}
+		return rt, 0, nil
 	}
 
 	filePath, lineNum := fn.srcPathAndLine()
@@ -211,18 +279,16 @@ func WithCheck(r *Environment, in any) *Environment {
 		return true
 	})
 
-	check := dag.Check()
 	resolvers[lowerCamelCase(fn.name)] = fn
 
 	if !getEnv {
 		return r
 	}
 
-	check = check.
+	check := dag.Check().
 		WithName(strcase.ToLowerCamel(fn.name)).
 		WithDescription(fn.doc)
-
-	return r.WithCheck(check)
+	return r.WithCheck(check, EnvironmentWithCheckOpts{ReturnType: checkReturnType})
 }
 
 type goTypes struct {
@@ -250,15 +316,14 @@ type goField struct {
 type goFunc struct {
 	name string
 	// args are args to the function, except for the receiver
-	// (if it's a method) and for the dagger.Context arg.
-	args    []*goParam
-	returns []*goParam
-	typ     reflect.Type
-	val     reflect.Value
-	// TODO:
-	// receiver *goStruct // only set for methods
-	hasReceiver bool
-	doc         string
+	// (if it's a method) and for the Context arg.
+	args          []*goParam
+	returns       []*goParam
+	typ           reflect.Type
+	val           reflect.Value
+	hasReceiver   bool
+	doc           string
+	resultWrapper func([]reflect.Value) (any, uint32, error)
 }
 
 type goParam struct {
@@ -274,7 +339,7 @@ func (fn *goFunc) srcPathAndLine() (string, int) {
 	return fun.FileLine(pc)
 }
 
-func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (any, error) {
+func (fn *goFunc) call(ctx context.Context, rawArgs map[string]any) (any, uint32, error) {
 	var callArgs []reflect.Value
 	if fn.hasReceiver {
 		callArgs = append(callArgs, reflect.New(fn.args[0].typ).Elem())
@@ -297,7 +362,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 				if optPresent {
 					optVal, err := convertInput(rawArg, field.Type)
 					if err != nil {
-						return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
+						return nil, 0, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
 					}
 					opts.Elem().Field(i).Set(reflect.ValueOf(optVal))
 				}
@@ -310,29 +375,18 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 		case argValuePresent:
 			argVal, err := convertInput(rawArg, arg.typ)
 			if err != nil {
-				return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
+				return nil, 0, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
 			}
 			callArgs = append(callArgs, reflect.ValueOf(argVal))
 		case !arg.optional:
-			return nil, fmt.Errorf("missing required argument %s", arg.name)
+			return nil, 0, fmt.Errorf("missing required argument %s", arg.name)
 		default:
 			callArgs = append(callArgs, reflect.New(arg.typ).Elem())
 		}
 	}
 
 	reflectOutputs := fn.val.Call(callArgs)
-	var returnVal any
-	var returnErr error
-	for _, output := range reflectOutputs {
-		if output.Type() == errorT {
-			if !output.IsNil() {
-				returnErr = output.Interface().(error)
-			}
-		} else {
-			returnVal = output.Interface()
-		}
-	}
-	return returnVal, returnErr
+	return fn.resultWrapper(reflectOutputs)
 }
 
 func init() {
@@ -349,63 +403,6 @@ func lowerCamelCase(s string) string {
 
 func inputName(name string) string {
 	return name + "Input"
-}
-
-func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error) {
-	// Handle types that implement the GraphQL serializer
-	if t.Implements(marshallerT) {
-		typ := reflect.New(t.Elem())
-		var typeName string
-		if isInput {
-			result := typ.MethodByName(querybuilder.GraphQLMarshallerIDType).Call([]reflect.Value{})
-			typeName = result[0].String()
-		} else {
-			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-			typeName = result[0].String()
-		}
-		return ast.NonNullNamedType(typeName, nil), nil
-	}
-
-	switch t.Kind() {
-	case reflect.String:
-		// /* TODO:(sipsma)
-		// Huge hack: handle any scalar type from the go SDK (i.e. DirectoryID/ContainerID)
-		// The much cleaner approach will come when we integrate this code w/ the
-		// in-progress codegen work.
-		// */
-		// if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger") {
-		// 	return ast.NonNullNamedType(t.Name(), nil), nil
-		// }
-		return ast.NonNullNamedType("String", nil), nil
-	case reflect.Int:
-		return ast.NonNullNamedType("Int", nil), nil
-	case reflect.Float32, reflect.Float64:
-		// TODO:(sipsma) does this actually handle both float32 and float64?
-		return ast.NonNullNamedType("Float", nil), nil
-	case reflect.Bool:
-		return ast.NonNullNamedType("Boolean", nil), nil
-	case reflect.Slice:
-		elementType, err := goReflectTypeToGraphqlType(t.Elem(), isInput)
-		if err != nil {
-			return nil, err
-		}
-		return ast.NonNullListType(elementType, nil), nil
-	case reflect.Struct:
-		if isInput {
-			return ast.NonNullNamedType(inputName(t.Name()), nil), nil
-		}
-		return ast.NonNullNamedType(t.Name(), nil), nil // TODO:(sipsma) doesn't handle anything from another package (besides the sdk)
-	case reflect.Pointer:
-		nonNullType, err := goReflectTypeToGraphqlType(t.Elem(), isInput)
-		if err != nil {
-			return nil, err
-		}
-		nonNullType.NonNull = false
-		return nonNullType, nil
-	default:
-		// TODO: return nil, fmt.Errorf("unsupported type %s", t.Kind())
-		return nil, fmt.Errorf("unsupported type %s %s %s", t.Kind(), t.Name(), string(debug.Stack()))
-	}
 }
 
 // TODO: doc, basically inverse of convertResult
@@ -511,7 +508,7 @@ func convertInput(input any, desiredType reflect.Type) (any, error) {
 
 func writeErrorf(err error) {
 	fmt.Println(err.Error())
-	os.Exit(1)
+	os.Exit(internalErrorExitCode)
 }
 
 // TODO: pollutes namespace, move to non internal package in dagger.io/dagger
@@ -529,13 +526,18 @@ type DAG struct {
 var dag *DAG
 
 func init() {
-	flag.BoolVar(&getEnv, "env", false, "build and return the environment definition rather than executing an entrypoint")
-
 	gqlClient, q := getClientParams()
 	dag = &DAG{
 		c: gqlClient,
 		q: q,
 	}
+
+	input := dag.CurrentEnvironment().EntrypointInput()
+	entrypointName, err := input.Name(context.Background())
+	if err != nil {
+		writeErrorf(err)
+	}
+	getEnv = entrypointName == ""
 }
 
 func (r *Environment) Serve() {
@@ -2574,6 +2576,51 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
+// Internal-only.
+//
+// The input provided to an SDK entrypoint invocation.
+type EntrypointInput struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	args *string
+	name *string
+}
+
+// Internal-only.
+//
+// The json-serialized arguments to pass to the entrypoint. The json
+// object is a map of argument names to argument values.
+func (r *EntrypointInput) Args(ctx context.Context) (string, error) {
+
+	if r.args != nil {
+		return *r.args, nil
+	}
+	q := r.q.Select("args")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Internal-only.
+//
+// The name of the entrypoint to invoke. If not set, then the sdk
+// is expected to return the environment definition.
+func (r *EntrypointInput) Name(ctx context.Context) (string, error) {
+
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A simple key value object that represents an environment variable.
 type EnvVariable struct {
 	q *querybuilder.Selection
@@ -2616,9 +2663,10 @@ type Environment struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id      *EnvironmentID
-	name    *string
-	workdir *DirectoryID
+	id                    *EnvironmentID
+	name                  *string
+	returnEntrypointValue *bool
+	sdk                   *string
 }
 type WithEnvironmentFunc func(r *Environment) *Environment
 
@@ -2673,6 +2721,110 @@ func (r *Environment) Checks(ctx context.Context) ([]Check, error) {
 	return convert(response), nil
 }
 
+// Other environments that this environment depends on. If this environment is installed,
+// all dependencies will be (recursively) installed too.
+func (r *Environment) Dependencies(ctx context.Context) ([]Environment, error) {
+
+	q := r.q.Select("dependencies")
+
+	q = q.Select("id")
+
+	type dependencies struct {
+		Id EnvironmentID
+	}
+
+	convert := func(fields []dependencies) []Environment {
+		out := []Environment{}
+
+		for i := range fields {
+			out = append(out, Environment{id: &fields[i].Id})
+		}
+
+		return out
+	}
+	var response []dependencies
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Internal only.
+//
+// The input for the current entrypoint invocation.
+func (r *Environment) EntrypointInput() *EntrypointInput {
+
+	q := r.q.Select("entrypointInput")
+
+	return &EntrypointInput{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentFromOpts contains options for Environment.From
+type EnvironmentFromOpts struct {
+	SourceDirectorySubpath string
+
+	Dependencies []*Environment
+}
+
+// The environment initialized with the given name, sourceDirectory, sdk and dependencies.
+//
+// If set, sourceDirectorySubpath should point to the subpath of sourceDirectory that
+// contains the environment code. If unset, it will default to the root of the sourceDirectory.
+func (r *Environment) From(name string, sourceDirectory *Directory, sdk string, opts ...EnvironmentFromOpts) *Environment {
+
+	q := r.q.Select("from")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sourceDirectorySubpath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceDirectorySubpath) {
+			q = q.Arg("sourceDirectorySubpath", opts[i].SourceDirectorySubpath)
+		}
+		// `dependencies` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dependencies) {
+			q = q.Arg("dependencies", opts[i].Dependencies)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("sourceDirectory", sourceDirectory)
+	q = q.Arg("sdk", sdk)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentFromConfigOpts contains options for Environment.FromConfig
+type EnvironmentFromConfigOpts struct {
+	ConfigPath string
+}
+
+// The environment initialized with the sourceDirectory and environment configuration file path.
+// If configPath is not set, it defaults to the root of the sourceDirectory.
+func (r *Environment) FromConfig(sourceDirectory *Directory, opts ...EnvironmentFromConfigOpts) *Environment {
+
+	q := r.q.Select("fromConfig")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `configPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ConfigPath) {
+			q = q.Arg("configPath", opts[i].ConfigPath)
+		}
+	}
+	q = q.Arg("sourceDirectory", sourceDirectory)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A unique identifier for this environment.
 func (r *Environment) ID(ctx context.Context) (EnvironmentID, error) {
 
@@ -2714,21 +2866,6 @@ func (r *Environment) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Initialize this environment from its source. The full context needed to execute
-// the environment is provided as environmentDirectory, with the environment's configuration
-// file located at configPath.
-func (r *Environment) Load(environmentDirectory *Directory, configPath string) *Environment {
-
-	q := r.q.Select("load")
-	q = q.Arg("environmentDirectory", environmentDirectory)
-	q = q.Arg("configPath", configPath)
-
-	return &Environment{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Name of the environment
 func (r *Environment) Name(ctx context.Context) (string, error) {
 
@@ -2743,14 +2880,71 @@ func (r *Environment) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// This environment plus the given check
-func (r *Environment) WithCheck(id any) *Environment {
+// Internal only.
+//
+// Return the given value as the result of the current entrypoint invocation.
+// The value is expected to be the json-serialized representation of the return.
+func (r *Environment) ReturnEntrypointValue(ctx context.Context, value string) (bool, error) {
+
+	if r.returnEntrypointValue != nil {
+		return *r.returnEntrypointValue, nil
+	}
+	q := r.q.Select("returnEntrypointValue")
+	q = q.Arg("value", value)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The SDK that this environment will be executed with
+func (r *Environment) SDK(ctx context.Context) (string, error) {
+
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
+	q := r.q.Select("sdk")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The directory containing all the source needed to execute this environment's code
+func (r *Environment) SourceDirectory() *Directory {
+
+	q := r.q.Select("sourceDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentWithCheckOpts contains options for Environment.WithCheck
+type EnvironmentWithCheckOpts struct {
+	ReturnType CheckEntrypointReturnType
+}
+
+// Internal only.
+//
+// This environment with the given check. It is an error to call this outside
+// of environment initialization code.
+func (r *Environment) WithCheck(id any, opts ...EnvironmentWithCheckOpts) *Environment {
 	res := WithCheck(r, id)
 	if res != nil {
 		return res
 	}
 
 	q := r.q.Select("withCheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `returnType` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ReturnType) {
+			q = q.Arg("returnType", opts[i].ReturnType)
+		}
+	}
 	q = q.Arg("id", id)
 
 	return &Environment{
@@ -2760,10 +2954,10 @@ func (r *Environment) WithCheck(id any) *Environment {
 }
 
 // This environment with the given workdir
-func (r *Environment) WithWorkdir(workdir *Directory) *Environment {
+func (r *Environment) WithWorkdir(id any) *Environment {
 
 	q := r.q.Select("withWorkdir")
-	q = q.Arg("workdir", workdir)
+	q = q.Arg("id", id)
 
 	return &Environment{
 		q: q,
@@ -2771,18 +2965,16 @@ func (r *Environment) WithWorkdir(workdir *Directory) *Environment {
 	}
 }
 
-// The directory the environment code will execute in as its current working directory.
-func (r *Environment) Workdir(ctx context.Context) (DirectoryID, error) {
+// The directory that the environment code will execute in as its current working directory.
+// If not set explicitly, it will default to the root of the sourceDirectory.
+func (r *Environment) Workdir() *Directory {
 
-	if r.workdir != nil {
-		return *r.workdir, nil
-	}
 	q := r.q.Select("workdir")
 
-	var response DirectoryID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A file.
@@ -3187,7 +3379,7 @@ type CheckOpts struct {
 	ID CheckID
 }
 
-// Load a environment check from ID.
+// The check initialized from the given ID.
 func (r *DAG) Check(opts ...CheckOpts) *Check {
 
 	q := r.q.Select("check")
@@ -3209,7 +3401,7 @@ type CheckResultOpts struct {
 	ID CheckResultID
 }
 
-// Load a environment check result from ID.
+// The check result initialized from the given ID.
 func (r *DAG) CheckResult(opts ...CheckResultOpts) *CheckResult {
 
 	q := r.q.Select("checkResult")
@@ -3270,7 +3462,7 @@ func (r *DAG) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
-// Return the current environment being executed in.
+// The environment the requester is being executed in (or an error if none).
 func (r *DAG) CurrentEnvironment() *Environment {
 
 	q := r.q.Select("currentEnvironment")
@@ -3319,7 +3511,7 @@ type EnvironmentOpts struct {
 	ID EnvironmentID
 }
 
-// Load a environment from ID.
+// The environment initialized from the given ID.
 func (r *DAG) Environment(opts ...EnvironmentOpts) *Environment {
 
 	q := r.q.Select("environment")
@@ -3413,6 +3605,25 @@ func (r *DAG) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// Install the given environment into this graphql API. Its schema will be
+// stitched into the schema of this server, making those APIs available for
+// subsequent queries.
+//
+// If an environment with the same ID has already been installed, this is a no-op.
+//
+// If there are any conflicts between the environment's schema and any existing
+// schemas, an error will be returned.
+func (r *DAG) InstallEnvironment(ctx context.Context, id EnvironmentID) (bool, error) {
+
+	q := r.q.Select("installEnvironment")
+	q = q.Arg("id", id)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // PipelineOpts contains options for DAG.Pipeline
 type PipelineOpts struct {
 	// Pipeline description.
@@ -3496,7 +3707,7 @@ type StaticCheckResultOpts struct {
 	Output string
 }
 
-// Create a check result with the given success and output.
+// A check result initialized with the given success and output.
 func (r *DAG) StaticCheckResult(success bool, opts ...StaticCheckResultOpts) *CheckResult {
 
 	q := r.q.Select("staticCheckResult")
@@ -3632,6 +3843,15 @@ const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
 	Shared  CacheSharingMode = "SHARED"
+)
+
+type CheckEntrypointReturnType string
+
+const (
+	Checkentrypointreturncheck       CheckEntrypointReturnType = "CheckEntrypointReturnCheck"
+	Checkentrypointreturncheckresult CheckEntrypointReturnType = "CheckEntrypointReturnCheckResult"
+	Checkentrypointreturnstring      CheckEntrypointReturnType = "CheckEntrypointReturnString"
+	Checkentrypointreturnvoid        CheckEntrypointReturnType = "CheckEntrypointReturnVoid"
 )
 
 type ImageLayerCompression string

@@ -68,6 +68,63 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class CheckEntrypointReturnType(Enum):
+    """Internal-only.  The handled return types for a check entrypoint."""
+
+    CheckEntrypointReturnCheck = "CheckEntrypointReturnCheck"
+    """Internal-only.
+
+    The entrypoint returns a check. In this case, the check's result will be
+    determined by (recursively) evaluating the returned check.
+
+    A non-zero entrypoint exit code will be treated as an internal error and
+    result in the entrypoint execution not being cached.
+    """
+
+    CheckEntrypointReturnCheckResult = "CheckEntrypointReturnCheckResult"
+    """Internal-only.
+
+    The entrypoint returns a check result. In this case, the check's result will
+    be set to this return value.
+
+    A non-zero entrypoint exit code will be treated as an internal error and
+    result in the entrypoint execution not being cached.
+    """
+
+    CheckEntrypointReturnString = "CheckEntrypointReturnString"
+    """Internal-only.
+
+    The entrypoint returns a string. In this case, the check's output will be
+    set to that string and the check's success based on the entrypoint exit code.
+
+    Exit code 0 will result in a successful check.
+
+    Exiting with exit code 1 will result in a failed check, but the entrypoint
+    execution will be cached.
+
+    Exiting with any other exit code will be treated an internal error and not
+    result in the entrypoint execution being cached. This error will be forwarded
+    to any clients querying the check result.
+    """
+
+    CheckEntrypointReturnVoid = "CheckEntrypointReturnVoid"
+    """Internal-only.
+
+    The entrypoint does not return any value.
+
+    In this case, the check's result is based on whether the entrypoint exit code.
+
+    Exit code 0 will result in a successful check.
+
+    Exiting with exit code 1 will result in a failed check, but the entrypoint
+    execution will be cached.
+
+    Exiting with any other exit code will be treated an internal error and not
+    result in the entrypoint execution being cached. This error will be forwarded
+    to any clients querying the check result.
+    """
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -2209,6 +2266,60 @@ class Directory(Type):
         return cb(self)
 
 
+class EntrypointInput(Type):
+    """Internal-only.  The input provided to an SDK entrypoint invocation."""
+
+    @typecheck
+    async def args(self) -> str:
+        """Internal-only.
+
+        The json-serialized arguments to pass to the entrypoint. The json
+        object is a map of argument names to argument values.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("args", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def name(self) -> Optional[str]:
+        """Internal-only.
+
+        The name of the entrypoint to invoke. If not set, then the sdk
+        is expected to return the environment definition.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(Optional[str])
+
+
 class EnvVariable(Type):
     """A simple key value object that represents an environment
     variable."""
@@ -2274,6 +2385,16 @@ class Environment(Type):
     """A group of Dagger entrypoints that can be queried and/or
     invoked."""
 
+    __slots__ = (
+        "_name",
+        "_return_entrypoint_value",
+        "_sdk",
+    )
+
+    _name: Optional[str]
+    _return_entrypoint_value: Optional[bool]
+    _sdk: Optional[str]
+
     @typecheck
     def check(self, name: str) -> Check:
         """The check in this environment with the given name, if any"""
@@ -2295,26 +2416,76 @@ class Environment(Type):
         return await _ctx.execute(list[Check])
 
     @typecheck
-    async def export_environment_result(self, result: str) -> bool:
-        """TODO: hide from docs, possibly standard codegen too
+    async def dependencies(self) -> list["Environment"]:
+        """Other environments that this environment depends on. If this
+        environment is installed,
+        all dependencies will be (recursively) installed too.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        _ctx = Environment(_ctx)._select_multiple(
+            _name="name",
+            _return_entrypoint_value="returnEntrypointValue",
+            _sdk="sdk",
+        )
+        return await _ctx.execute(list[Environment])
 
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
+    @typecheck
+    def entrypoint_input(self) -> EntrypointInput:
+        """Internal only.
 
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        The input for the current entrypoint invocation.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("entrypointInput", _args)
+        return EntrypointInput(_ctx)
+
+    @typecheck
+    def from_(
+        self,
+        name: str,
+        source_directory: Directory,
+        sdk: str,
+        *,
+        source_directory_subpath: Optional[str] = None,
+        dependencies: Optional[Sequence["Environment"]] = None,
+    ) -> "Environment":
+        """The environment initialized with the given name, sourceDirectory, sdk
+        and dependencies.
+
+        If set, sourceDirectorySubpath should point to the subpath of
+        sourceDirectory that
+        contains the environment code. If unset, it will default to the root
+        of the sourceDirectory.
         """
         _args = [
-            Arg("result", result),
+            Arg("name", name),
+            Arg("sourceDirectory", source_directory),
+            Arg("sdk", sdk),
+            Arg("sourceDirectorySubpath", source_directory_subpath, None),
+            Arg("dependencies", dependencies, None),
         ]
-        _ctx = self._select("exportEnvironmentResult", _args)
-        return await _ctx.execute(bool)
+        _ctx = self._select("from", _args)
+        return Environment(_ctx)
+
+    @typecheck
+    def from_config(
+        self,
+        source_directory: Directory,
+        *,
+        config_path: Optional[str] = None,
+    ) -> "Environment":
+        """The environment initialized with the sourceDirectory and environment
+        configuration file path.
+        If configPath is not set, it defaults to the root of the
+        sourceDirectory.
+        """
+        _args = [
+            Arg("sourceDirectory", source_directory),
+            Arg("configPath", config_path, None),
+        ]
+        _ctx = self._select("fromConfig", _args)
+        return Environment(_ctx)
 
     @typecheck
     async def id(self) -> EnvironmentID:
@@ -2349,27 +2520,61 @@ class Environment(Type):
         return "environment"
 
     @typecheck
-    def load(
-        self,
-        environment_directory: Directory,
-        config_path: str,
-    ) -> "Environment":
-        """Initialize this environment from its source. The full context needed
-        to execute
-        the environment is provided as environmentDirectory, with the
-        environment's configuration
-        file located at configPath.
+    async def name(self) -> Optional[str]:
+        """Name of the environment
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
-        _args = [
-            Arg("environmentDirectory", environment_directory),
-            Arg("configPath", config_path),
-        ]
-        _ctx = self._select("load", _args)
-        return Environment(_ctx)
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(Optional[str])
 
     @typecheck
-    async def name(self) -> str:
-        """Name of the environment
+    async def return_entrypoint_value(self, value: str) -> bool:
+        """Internal only.
+
+        Return the given value as the result of the current entrypoint
+        invocation.
+        The value is expected to be the json-serialized representation of the
+        return.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_return_entrypoint_value"):
+            return self._return_entrypoint_value
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("returnEntrypointValue", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
+    async def sdk(self) -> str:
+        """The SDK that this environment will be executed with
 
         Returns
         -------
@@ -2385,48 +2590,60 @@ class Environment(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_sdk"):
+            return self._sdk
         _args: list[Arg] = []
-        _ctx = self._select("name", _args)
+        _ctx = self._select("sdk", _args)
         return await _ctx.execute(str)
 
     @typecheck
-    def with_check(self, id: Check) -> "Environment":
-        """This environment plus the given check"""
+    def source_directory(self) -> Directory:
+        """The directory containing all the source needed to execute this
+        environment's code
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceDirectory", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def with_check(
+        self,
+        id: Check,
+        *,
+        return_type: Optional[CheckEntrypointReturnType] = None,
+    ) -> "Environment":
+        """Internal only.
+
+        This environment with the given check. It is an error to call this
+        outside
+        of environment initialization code.
+        """
         _args = [
             Arg("id", id),
+            Arg("returnType", return_type, None),
         ]
         _ctx = self._select("withCheck", _args)
         return Environment(_ctx)
 
     @typecheck
-    def with_workdir(self, workdir: Directory) -> "Environment":
+    def with_workdir(self, id: Directory) -> "Environment":
         """This environment with the given workdir"""
         _args = [
-            Arg("workdir", workdir),
+            Arg("id", id),
         ]
         _ctx = self._select("withWorkdir", _args)
         return Environment(_ctx)
 
     @typecheck
-    async def workdir(self) -> DirectoryID:
-        """The directory the environment code will execute in as its current
+    def workdir(self) -> Directory:
+        """The directory that the environment code will execute in as its current
         working directory.
-
-        Returns
-        -------
-        DirectoryID
-            A content-addressed directory identifier.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        If not set explicitly, it will default to the root of the
+        sourceDirectory.
         """
         _args: list[Arg] = []
         _ctx = self._select("workdir", _args)
-        return await _ctx.execute(DirectoryID)
+        return Directory(_ctx)
 
     def with_(self, cb: Callable[["Environment"], "Environment"]) -> "Environment":
         """Call the provided callable with current Environment.
@@ -2912,7 +3129,7 @@ class Client(Root):
 
     @typecheck
     def check(self, *, id: Optional[CheckID] = None) -> Check:
-        """Load a environment check from ID."""
+        """The check initialized from the given ID."""
         _args = [
             Arg("id", id, None),
         ]
@@ -2925,7 +3142,7 @@ class Client(Root):
         *,
         id: Optional[CheckResultID] = None,
     ) -> CheckResult:
-        """Load a environment check result from ID."""
+        """The check result initialized from the given ID."""
         _args = [
             Arg("id", id, None),
         ]
@@ -2983,7 +3200,9 @@ class Client(Root):
 
     @typecheck
     def current_environment(self) -> Environment:
-        """Return the current environment being executed in."""
+        """The environment the requester is being executed in (or an error if
+        none).
+        """
         _args: list[Arg] = []
         _ctx = self._select("currentEnvironment", _args)
         return Environment(_ctx)
@@ -3029,7 +3248,7 @@ class Client(Root):
         *,
         id: Optional[EnvironmentID] = None,
     ) -> Environment:
-        """Load a environment from ID."""
+        """The environment initialized from the given ID."""
         _args = [
             Arg("id", id, None),
         ]
@@ -3106,6 +3325,39 @@ class Client(Root):
         return File(_ctx)
 
     @typecheck
+    async def install_environment(self, id: Environment) -> bool:
+        """Install the given environment into this graphql API. Its schema will
+        be
+        stitched into the schema of this server, making those APIs available
+        for
+        subsequent queries.
+
+        If an environment with the same ID has already been installed, this is
+        a no-op.
+
+        If there are any conflicts between the environment's schema and any
+        existing
+        schemas, an error will be returned.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("installEnvironment", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
     def pipeline(
         self,
         name: str,
@@ -3177,7 +3429,7 @@ class Client(Root):
         *,
         output: Optional[str] = None,
     ) -> CheckResult:
-        """Create a check result with the given success and output."""
+        """A check result initialized with the given success and output."""
         _args = [
             Arg("success", success),
             Arg("output", output, None),
@@ -3292,6 +3544,7 @@ __all__ = [
     "CacheSharingMode",
     "CacheVolume",
     "Check",
+    "CheckEntrypointReturnType",
     "CheckID",
     "CheckResult",
     "CheckResultID",
@@ -3300,6 +3553,7 @@ __all__ = [
     "ContainerID",
     "Directory",
     "DirectoryID",
+    "EntrypointInput",
     "EnvVariable",
     "Environment",
     "EnvironmentID",

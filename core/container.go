@@ -564,10 +564,10 @@ func (container *Container) WithMountedDirectory(ctx context.Context, bk *buildk
 	return container.withMounted(ctx, bk, target, dir.LLB, dir.Dir, dir.Services, owner, readonly)
 }
 
-func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Client, target string, file *File, owner string) (*Container, error) {
+func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Client, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner, false)
+	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner, readonly)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
@@ -1066,6 +1066,10 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
+	}
+
+	if opts.CacheExitCode != 0 {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_CACHE_EXIT_CODE", strconv.FormatUint(uint64(opts.CacheExitCode), 10)))
 	}
 
 	// because the shim might run as non-root, we need to make a world-writable
@@ -1847,6 +1851,11 @@ type ContainerExecOpts struct {
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool
+
+	// (Internal-only for now) An exit code that will be caught by the shim, written to
+	// the exec meta mount, but then result in the shim still exiting with 0 so that
+	// the exec is cached.
+	CacheExitCode uint32
 }
 
 type BuildArg struct {

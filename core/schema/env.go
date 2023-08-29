@@ -3,10 +3,10 @@ package schema
 import (
 	"bytes"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/envconfig"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
@@ -17,9 +17,8 @@ type environmentSchema struct {
 	*MergedSchemas
 	envCache *core.EnvironmentCache
 
-	// NOTE: this should only be used to dedupe environment load by name
-	// TODO: doc subtleties and difference from below cache
-	loadedEnvCache *core.CacheMap[string, *core.Environment] // env name -> env
+	// NOTE: this should only be used to dedupe environment install specifically
+	installedEnvCache *core.CacheMap[core.EnvironmentID, *core.Environment]
 }
 
 var _ ExecutableSchema = &environmentSchema{}
@@ -45,6 +44,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 		"CheckResultID": checkResultIDResolver,
 		"Query": ObjectResolver{
 			"environment":        ToResolver(s.environment),
+			"installEnvironment": ToResolver(s.installEnvironment),
 			"check":              ToResolver(s.check),
 			"checkResult":        ToResolver(s.checkResult),
 			"staticCheckResult":  ToResolver(s.staticCheckResult),
@@ -52,12 +52,14 @@ func (s *environmentSchema) Resolvers() Resolvers {
 		},
 		"Environment": ToIDableObjectResolver(core.EnvironmentID.Decode, ObjectResolver{
 			"id":          ToResolver(s.environmentID),
-			"name":        ToResolver(s.environmentName),
-			"load":        ToResolver(s.load),
+			"from":        ToResolver(s.environmentFrom),
+			"fromConfig":  ToResolver(s.environmentFromConfig),
 			"withWorkdir": ToResolver(s.withWorkdir),
-			"withCheck":   ToResolver(s.withCheck),
 			"check":       ToResolver(s.checkByName),
-			"checks":      ToResolver(s.checks),
+			// internal apis
+			"withCheck":             ToResolver(s.withCheck),
+			"entrypointInput":       ToResolver(s.entrypointInput),
+			"returnEntrypointValue": ToResolver(s.returnEntrypointValue),
 		}),
 		"Check": ToIDableObjectResolver(core.CheckID.Decode, ObjectResolver{
 			"id":              ToResolver(s.checkID),
@@ -82,7 +84,10 @@ type environmentArgs struct {
 	ID core.EnvironmentID
 }
 
-func (s *environmentSchema) environment(ctx *core.Context, _ *core.Query, args environmentArgs) (*core.Environment, error) {
+func (s *environmentSchema) environment(ctx *core.Context, query *core.Query, args environmentArgs) (*core.Environment, error) {
+	if args.ID == "" {
+		return core.NewEnvironment(s.platform, query.PipelinePath()), nil
+	}
 	return args.ID.Decode()
 }
 
@@ -106,58 +111,43 @@ func (s *environmentSchema) staticCheckResult(ctx *core.Context, _ *core.Query, 
 	return &args, nil
 }
 
-func (s *environmentSchema) currentEnvironment(ctx *core.Context, _ *core.Query, args any) (*core.Environment, error) {
+func (s *environmentSchema) currentEnvironment(ctx *core.Context, _ *core.Query, _ any) (*core.Environment, error) {
 	return s.envCache.CachedEnvFromContext(ctx)
 }
 
-func (s *environmentSchema) environmentID(ctx *core.Context, env *core.Environment, args any) (core.EnvironmentID, error) {
-	return env.ID()
+type installArgs struct {
+	ID core.EnvironmentID
 }
 
-func (s *environmentSchema) environmentName(ctx *core.Context, env *core.Environment, args any) (string, error) {
-	return env.Config.Name, nil
-}
-
-type loadArgs struct {
-	EnvironmentDirectory core.DirectoryID
-	ConfigPath           string
-}
-
-func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args loadArgs) (*core.Environment, error) {
-	rootDir, err := args.EnvironmentDirectory.Decode()
+func (s *environmentSchema) installEnvironment(ctx *core.Context, _ *core.Query, args installArgs) (bool, error) {
+	env, err := args.ID.Decode()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load env root directory: %w", err)
+		return false, err
 	}
 
-	envCfg, err := core.LoadEnvironmentConfig(ctx, s.bk, rootDir, args.ConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load environment config: %w", err)
-	}
-
+	// TODO: there might be weird corner cases here unless we do an actual topological sort (i.e. when you directly
+	// register a dep's entrypoint in your own environment initialization and you have a direct dep that is itself
+	// a dep of another one of your direct deps)
 	var eg errgroup.Group
-	deps := make([]*core.Environment, len(envCfg.Dependencies))
-	for i, dep := range envCfg.Dependencies {
-		i, dep := i, dep
-		// TODO: currently just assuming that all deps are local and that they all share the same root
-		depConfigPath := filepath.Join(filepath.Dir(args.ConfigPath), dep)
+	for _, dep := range env.Dependencies {
+		dep := dep
 		eg.Go(func() error {
-			depEnv, err := s.load(ctx, nil, loadArgs{EnvironmentDirectory: args.EnvironmentDirectory, ConfigPath: depConfigPath})
+			depID, err := dep.ID()
 			if err != nil {
-				return fmt.Errorf("failed to load environment dependency %q: %w", dep, err)
+				return fmt.Errorf("failed to get environment dependency %q ID: %w", dep.Name, err)
 			}
-			deps[i] = depEnv
+			_, err = s.installEnvironment(ctx, nil, installArgs{ID: depID})
+			if err != nil {
+				return fmt.Errorf("failed to install environment dependency %q: %w", dep.Name, err)
+			}
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load environment dependencies: %w", err)
+		return false, err
 	}
 
-	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, s.envCache, rootDir.Pipeline, s.platform, deps, rootDir, args.ConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load environment: %w", err)
-		}
+	_, err = s.installedEnvCache.GetOrInitialize(args.ID, func() (*core.Environment, error) {
 		executableSchema, err := s.envToSchema(ctx, env)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
@@ -167,11 +157,15 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 		}
 		return env, nil
 	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func gqlObjectName(env *core.Environment) string {
 	// gql object name is capitalized env name
-	return strings.ToUpper(env.Config.Name[:1]) + env.Config.Name[1:]
+	return strings.ToUpper(env.Name[:1]) + env.Name[1:]
 }
 
 func (s *environmentSchema) envToSchema(ctx *core.Context, env *core.Environment) (ExecutableSchema, error) {
@@ -206,7 +200,7 @@ func (s *environmentSchema) envToSchema(ctx *core.Context, env *core.Environment
 	// will have fields for all the different entrypoints
 	resolvers := Resolvers{
 		"Query": ObjectResolver{
-			env.Config.Name: PassthroughResolver,
+			env.Name: PassthroughResolver,
 		},
 		objName: objResolver,
 	}
@@ -214,8 +208,7 @@ func (s *environmentSchema) envToSchema(ctx *core.Context, env *core.Environment
 		Name: "Query",
 		Kind: ast.Object,
 		Fields: ast.FieldList{&ast.FieldDefinition{
-			// field is just the env name, object type is the capitalized env name (objName)
-			Name: env.Config.Name,
+			Name: env.Name,
 			// TODO: Description
 			Type: &ast.Type{
 				NamedType: objName,
@@ -230,10 +223,51 @@ func (s *environmentSchema) envToSchema(ctx *core.Context, env *core.Environment
 	schemaStr := buf.String()
 
 	return StaticSchema(StaticSchemaParams{
-		Name:      env.Config.Name,
+		Name:      env.Name,
 		Schema:    schemaStr,
 		Resolvers: resolvers,
 	}), nil
+}
+
+func (s *environmentSchema) environmentID(ctx *core.Context, env *core.Environment, args any) (core.EnvironmentID, error) {
+	return env.ID()
+}
+
+type environmentFromArgs struct {
+	Name                   string
+	SourceDirectory        core.DirectoryID
+	SDK                    envconfig.SDK `json:"sdk"`
+	SourceDirectorySubpath string
+	Dependencies           []core.EnvironmentID
+}
+
+func (s *environmentSchema) environmentFrom(ctx *core.Context, env *core.Environment, args environmentFromArgs) (*core.Environment, error) {
+	sourceDir, err := args.SourceDirectory.Decode()
+	if err != nil {
+		return nil, err
+	}
+	var deps []*core.Environment
+	for _, dep := range args.Dependencies {
+		dep, err := dep.Decode()
+		if err != nil {
+			return nil, err
+		}
+		deps = append(deps, dep)
+	}
+	return env.From(ctx, s.bk, s.progSockPath, s.envCache, args.Name, sourceDir, args.SourceDirectorySubpath, args.SDK, deps)
+}
+
+type environmentFromConfigArgs struct {
+	SourceDirectory core.DirectoryID
+	ConfigPath      string
+}
+
+func (s *environmentSchema) environmentFromConfig(ctx *core.Context, env *core.Environment, args environmentFromConfigArgs) (*core.Environment, error) {
+	sourceDir, err := args.SourceDirectory.Decode()
+	if err != nil {
+		return nil, err
+	}
+	return env.FromConfig(ctx, s.bk, s.progSockPath, s.envCache, sourceDir, args.ConfigPath)
 }
 
 type withWorkdirArgs struct {
@@ -245,21 +279,7 @@ func (s *environmentSchema) withWorkdir(ctx *core.Context, env *core.Environment
 	if err != nil {
 		return nil, err
 	}
-	env = env.Clone()
-	env.Workdir = workdir
-	return env, nil
-}
-
-type withCheckArgs struct {
-	ID core.CheckID
-}
-
-func (s *environmentSchema) withCheck(ctx *core.Context, env *core.Environment, args withCheckArgs) (_ *core.Environment, rerr error) {
-	check, err := args.ID.Decode()
-	if err != nil {
-		return nil, err
-	}
-	return env.WithCheck(check, s.envCache)
+	return env.WithWorkdir(ctx, s.bk, s.progSockPath, workdir)
 }
 
 type checkByNameArgs struct {
@@ -277,8 +297,33 @@ func (s *environmentSchema) checkByName(ctx *core.Context, env *core.Environment
 	return nil, fmt.Errorf("no check named %q", args.Name)
 }
 
-func (s *environmentSchema) checks(ctx *core.Context, env *core.Environment, _ any) ([]*core.Check, error) {
-	return env.Checks, nil
+type withCheckArgs struct {
+	ID         core.CheckID
+	ReturnType core.CheckEntrypointReturnType
+}
+
+func (s *environmentSchema) withCheck(ctx *core.Context, env *core.Environment, args withCheckArgs) (_ *core.Environment, rerr error) {
+	check, err := args.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	return env.WithCheck(check, args.ReturnType, s.envCache)
+}
+
+func (s *environmentSchema) entrypointInput(ctx *core.Context, env *core.Environment, _ any) (*core.EntrypointInput, error) {
+	return env.EntrypointInput(ctx, s.bk)
+}
+
+type returnEntrypointValueArgs struct {
+	Value string
+}
+
+func (s *environmentSchema) returnEntrypointValue(ctx *core.Context, env *core.Environment, args returnEntrypointValueArgs) (bool, error) {
+	err := env.ReturnEntrypointValue(ctx, args.Value, s.bk)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *environmentSchema) checkID(ctx *core.Context, check *core.Check, args any) (core.CheckID, error) {
