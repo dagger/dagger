@@ -158,33 +158,6 @@ The exclusion pattern overrides the inclusion pattern, but not vice-versa. The f
 </TabItem>
 </Tabs>
 
-## Mount a host directory in a container
-
-A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. It is necessary to provide the mount point in the container and the directory to be mounted as method arguments.
-
-The following example shows how to mount a host directory in a container at the `/host` container path and then execute a command in the container referencing the mounted directory:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/work-with-host-filesystem/mount-dir/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./snippets/work-with-host-filesystem/mount-dir/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/work-with-host-filesystem/mount-dir/main.py
-```
-
-</TabItem>
-</Tabs>
-
 ## Export a directory from a container to the host
 
 A directory can be exported to a different path. The destination path is supplied to the method as an argument.
@@ -207,6 +180,60 @@ The following example creates a file in a container's `/tmp` directory and then 
 <TabItem value="Python">
 
 ```python file=./snippets/work-with-host-filesystem/export-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+## Mount a host directory in a container
+
+A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. It is necessary to provide the mount point in the container and the directory to be mounted as method arguments.
+
+The following example shows how to mount a host directory in a container at the `/host` container path and then read the contents of the mounted directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/work-with-host-filesystem/mount-dir/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./snippets/work-with-host-filesystem/mount-dir/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/work-with-host-filesystem/mount-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+:::note
+Modifications made to a host directory mounted in a container do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
+:::
+
+The following example shows how to mount a host directory in a container at the `/host` container path, write a file to it, and then export the modified directory back to the host:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/work-with-host-filesystem/mount-dir-export/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./snippets/work-with-host-filesystem/mount-dir-export/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/work-with-host-filesystem/mount-dir-export/main.py
 ```
 
 </TabItem>

@@ -24,5 +24,11 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
                 $(t.name.pipe(|n| format_name(n)))(self.clone())
             }
         }
+
+        impl $(t.name.pipe(|n| format_name(n))) {
+            fn quote(&self) -> String {
+                format!(r#""{}""#, self.0.clone())
+            }
+        }
     })
 }

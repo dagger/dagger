@@ -34,7 +34,7 @@ func init() {
 
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	if err := withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+	if err := withEngineAndTUI(ctx, client.Params{SecretToken: os.Getenv("DAGGER_SESSION_TOKEN")}, func(ctx context.Context, engineClient *client.Client) error {
 		rec := progrock.RecorderFromContext(ctx)
 
 		var stderr io.Writer

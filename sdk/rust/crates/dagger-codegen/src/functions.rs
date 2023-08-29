@@ -125,9 +125,6 @@ impl CommonFunctions {
             };
         }
 
-        println!("rep: {}", representation);
-        println!("{:?}", t);
-
         representation
     }
 }
@@ -241,6 +238,22 @@ pub fn type_ref_is_list(type_ref: &TypeRef) -> bool {
     type_ref
         .kind
         .pipe(|k| *k == __TypeKind::LIST)
+        .unwrap_or(false)
+}
+
+pub fn type_ref_is_id(type_ref: &TypeRef) -> bool {
+    let mut type_ref = type_ref.clone();
+    if type_ref
+        .kind
+        .pipe(|k| *k == __TypeKind::NON_NULL)
+        .unwrap_or(false)
+    {
+        type_ref = *type_ref.of_type.unwrap().clone();
+    }
+
+    type_ref
+        .name
+        .map(|n| n.to_lowercase().ends_with("id"))
         .unwrap_or(false)
 }
 
