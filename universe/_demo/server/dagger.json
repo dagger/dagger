@@ -2,5 +2,10 @@
   "root": "../../..",
   "name": "demoServer",
   "sdk": "go",
-  "exclude": [".git/", "bin/", "docs/", "universe/universe.tar", "sdk/cue", "sdk/dotnet", "sdk/elixer", "sdk/nodejs", "sdk/rust", "universe/_demo/client", "universe/_demo/main.go", "universe/_demo/dagger.gen.go", "universe/_demo/dagger.json"]
+  "include": [
+    "go.mod",
+    "go.sum",
+    "sdk/go",
+    "universe/_demo/server"
+  ]
 }

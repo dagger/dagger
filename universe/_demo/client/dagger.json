@@ -2,5 +2,8 @@
   "name": "demoClient",
   "sdk": "python",
   "root": "../../../",
-  "exclude": [".git/", "bin/", "docs/", "universe/universe.tar", "sdk/cue", "sdk/dotnet", "sdk/elixter", "sdk/nodejs", "sdk/rust", "universe/_demo/server", "universe/_demo/main.go", "universe/_demo/dagger.gen.go", "universe/_demo/dagger.json"]
+  "include": [
+    "sdk/python",
+    "universe/_demo/client"
+  ]
 }

@@ -2,16 +2,12 @@
   "root": "../..",
   "name": "demo",
   "sdk": "go",
-  "exclude": [
-    ".git/",
-    "bin/",
-    "docs/",
-    "universe/universe.tar",
-    "sdk/cue",
-    "sdk/dotnet",
-    "sdk/elixer",
-    "sdk/nodejs",
-    "sdk/rust"
+  "include": [
+    "go.mod",
+    "go.sum",
+    "sdk/go",
+    "sdk/python",
+    "universe/_demo"
   ],
   "dependencies": [
     "./server",
