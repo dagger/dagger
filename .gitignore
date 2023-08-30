@@ -38,6 +38,7 @@ __pycache__
 # Local environment variables, usually secrets
 .env
 .envrc
+!universe/.envrc
 
 # go workspaces (useful for go linter on VSCode)
 go.work
