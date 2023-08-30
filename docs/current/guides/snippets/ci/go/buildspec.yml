@@ -1,7 +1,12 @@
 version: 0.2
 
 phases:
+  pre_build:
+    commands:
+      - echo "Installing Dagger CLI"
+      - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - go run main.go
+      - dagger run go run main.go

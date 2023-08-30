@@ -28,6 +28,7 @@ This tutorial assumes that:
 - You have a basic understanding of the AWS CodeCommit, AWS CodeBuild and AWS CodePipeline service. If not, learn about [AWS CodeCommit](https://docs.aws.amazon.com/codecommit/latest/userguide/welcome.html), [AWS CodeBuild](https://docs.aws.amazon.com/codebuild/latest/userguide/welcome.html) and [AWS CodePipeline](https://docs.aws.amazon.com/codepipeline/latest/userguide/welcome.html).
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have an account with a container registry, such as Docker Hub, and privileges to push images to it. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
 - You have an AWS account with appropriate privileges to create and manage AWS CodeBuild and AWS CodePipeline resources. If not, [register for an AWS account](https://aws.amazon.com/).
 - You have an AWS CodeCommit repository containing a Node.js Web application. This repository should also be cloned locally in your development environment. If not, follow the steps in Appendix A to [create and populate a local and AWS CodeCommit repository with an example Express application](#appendix-a-create-an-aws-codecommit-repository-with-an-example-express-application).
@@ -209,10 +210,11 @@ AWS CodeBuild relies on a [build specification file](https://docs.aws.amazon.com
   </TabItem>
   </Tabs>
 
-  This build specification defines three steps, as below:
+  This build specification defines four steps, as below:
     - The first step installs the Dagger SDK on the CI runner.
-    - The second step executes the Dagger pipeline.
-    - The third step displays a message with the date and time of build completion.
+    - The second step installs the Dagger CLI on the CI runner.
+    - The third step executes the Dagger pipeline.
+    - The fourth step displays a message with the date and time of build completion.
 
 1. Commit the Dagger pipeline and build specification file to the repository:
 

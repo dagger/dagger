@@ -86,7 +86,7 @@ Now, add the SSH key to the authentication agent on the host and try again:
 ```shell
 ➜ ssh-add
 Identity added: xxxxx
-go run .
+dagger run go run .
 readme #
 ```
 
@@ -96,7 +96,7 @@ readme #
 ```shell
 ➜ ssh-add
 Identity added: xxxxx
-➜ node --loader ts-node/esm clone.ts
+➜ dagger run node --loader ts-node/esm clone.ts
 readme #
 ```
 
@@ -106,7 +106,7 @@ readme #
 ```shell
 ➜ ssh-add
 Identity added: xxxxx
-➜ python clone.py
+➜ dagger run python clone.py
 readme #
 ```
 

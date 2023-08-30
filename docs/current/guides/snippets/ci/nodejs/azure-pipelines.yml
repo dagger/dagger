@@ -13,5 +13,8 @@ steps:
 - script: npm ci
   displayName: 'Install dependencies'
 
-- script: node index.mjs
+- script: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+  displayName: 'Install Dagger CLI'
+
+- script: dagger run node index.mjs
   displayName: 'Run Dagger'
