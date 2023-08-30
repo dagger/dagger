@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"runtime"
 
 	"gopkg.in/yaml.v3"
@@ -14,29 +13,19 @@ func main() {
 		Serve()
 }
 
-type cfg map[string]any
-
-var baseConfig = cfg{
-	"cmd": "/bin/sh",
-	"environment": cfg{
-		"PATH": "/usr/sbin:/sbin:/usr/bin:/bin",
-	},
-	"archs": []string{runtime.GOARCH},
-}
-
-func Alpine(ctx context.Context, packages []string) *Container {
-	ic := baseConfig
+func Alpine(packages []string) (*Container, error) {
+	ic := baseConfig()
 	ic["contents"] = cfg{
 		"repositories": []string{
 			"https://dl-cdn.alpinelinux.org/alpine/edge/main",
 		},
 		"packages": append([]string{"alpine-base"}, packages...),
 	}
-	return apko(ctx, ic)
+	return apko(ic)
 }
 
-func Wolfi(ctx context.Context, packages []string) *Container {
-	ic := baseConfig
+func Wolfi(packages []string) (*Container, error) {
+	ic := baseConfig()
 	ic["contents"] = cfg{
 		"repositories": []string{
 			"https://packages.wolfi.dev/os",
@@ -46,13 +35,25 @@ func Wolfi(ctx context.Context, packages []string) *Container {
 		},
 		"packages": append([]string{"wolfi-base"}, packages...),
 	}
-	return apko(ctx, ic)
+	return apko(ic)
 }
 
-func apko(ctx context.Context, ic any) *Container {
-	config, err := yaml.Marshal(ic)
+type cfg map[string]any
+
+func baseConfig() cfg {
+	return cfg{
+		"cmd": "/bin/sh",
+		"environment": cfg{
+			"PATH": "/usr/sbin:/sbin:/usr/bin:/bin",
+		},
+		"archs": []string{runtime.GOARCH},
+	}
+}
+
+func apko(cfg any) (*Container, error) {
+	cfgYAML, err := yaml.Marshal(cfg)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return dag.Container().Import(
@@ -61,7 +62,7 @@ func apko(ctx context.Context, ic any) *Container {
 			WithMountedFile(
 				"/config.yml",
 				dag.Directory().
-					WithNewFile("config.yml", string(config)).
+					WithNewFile("config.yml", string(cfgYAML)).
 					File("config.yml"),
 			).
 			WithDirectory("/layout", dag.Directory()).
@@ -72,5 +73,5 @@ func apko(ctx context.Context, ic any) *Container {
 				"/config.yml", "latest", "/layout.tar",
 			}).
 			File("/layout.tar"),
-	)
+	), nil
 }
