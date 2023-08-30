@@ -531,18 +531,7 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 func loadEnvCmdWrapper(
 	fn func(context.Context, *client.Client, *dagger.Client, *dagger.Environment, *cobra.Command, []string) error,
 ) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
-		flags.SetInterspersed(false) // stop parsing at first possible dynamic subcommand
-		flags.AddFlagSet(cmd.Flags())
-		flags.AddFlagSet(cmd.PersistentFlags())
-		err := flags.Parse(args)
-		if err != nil {
-			return fmt.Errorf("failed to parse top-level flags: %w", err)
-		}
-		dynamicCmdArgs := flags.Args()
-
-		focus = doFocus
+	return func(cmd *cobra.Command, cmdArgs []string) error {
 		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
@@ -562,47 +551,7 @@ func loadEnvCmdWrapper(
 				return err
 			}
 
-			return fn(ctx, engineClient, c, loadedEnv, cmd, dynamicCmdArgs)
-		})
-	}
-}
-
-// TODO: dedupe w/ above where possible
-func loadEnvDepsCmdWrapper(
-	fn func(context.Context, *client.Client, *dagger.Client, *envconfig.Config, []*dagger.Environment, *cobra.Command, []string) error,
-) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
-		flags.SetInterspersed(false) // stop parsing at first possible dynamic subcommand
-		flags.AddFlagSet(cmd.Flags())
-		flags.AddFlagSet(cmd.PersistentFlags())
-		err := flags.Parse(args)
-		if err != nil {
-			return fmt.Errorf("failed to parse top-level flags: %w", err)
-		}
-		dynamicCmdArgs := flags.Args()
-
-		focus = doFocus
-		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			rec := progrock.RecorderFromContext(ctx)
-			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
-			defer func() { vtx.Done(err) }()
-
-			connect := vtx.Task("connecting to Dagger")
-			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
-			connect.Done(err)
-			if err != nil {
-				return fmt.Errorf("connect to dagger: %w", err)
-			}
-
-			load := vtx.Task("loading environment")
-			envConfig, depEnvs, err := loadEnvDeps(ctx, c)
-			load.Done(err)
-			if err != nil {
-				return err
-			}
-
-			return fn(ctx, engineClient, c, envConfig, depEnvs, cmd, dynamicCmdArgs)
+			return fn(ctx, engineClient, c, loadedEnv, cmd, cmdArgs)
 		})
 	}
 }
@@ -625,21 +574,4 @@ func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error)
 	}
 
 	return loadedEnv, nil
-}
-
-func loadEnvDeps(ctx context.Context, c *dagger.Client) (*envconfig.Config, []*dagger.Environment, error) {
-	env, err := getEnvironmentFlagConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get environment config: %w", err)
-	}
-
-	cfg, err := env.config(ctx, c)
-	if err != nil {
-		return nil, nil, err
-	}
-	deps, err := env.loadDeps(ctx, c)
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, deps, nil
 }

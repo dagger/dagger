@@ -17,20 +17,15 @@ import (
 )
 
 var checkCmd = &cobra.Command{
-	Use:                "checks [suite]",
-	DisableFlagParsing: true,
-	Long:               `Query the status of your environment's checks.`,
-	RunE:               loadEnvCmdWrapper(RunCheck),
+	Use:  "checks [suite]",
+	Long: `Query the status of your environment's checks.`,
+	RunE: loadEnvCmdWrapper(RunCheck),
 }
-
-var (
-	doFocus bool
-)
 
 func init() {
 	rootCmd.AddCommand(checkCmd)
 
-	checkCmd.PersistentFlags().BoolVar(&doFocus, "focus", true, "Only show output for focused commands.")
+	checkCmd.PersistentFlags().BoolVar(&focus, "focus", true, "Only show output for focused commands.")
 
 	checkCmd.AddCommand(
 		&cobra.Command{
