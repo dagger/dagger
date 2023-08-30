@@ -19,9 +19,10 @@ type GoGenerator struct {
 
 func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema) ([]byte, error) {
 	generator.SetSchema(schema)
-	isForEnv := g.Config.EnvironmentName != ""
 
-	// TODO: ugly, trim the first line because it has `package dagger` in order to be compilable
+	funcs := templates.GoTemplateFuncs(g.Config.EnvironmentName)
+
+	// Trim the first line because it has `package dagger` in order to be compilable in the context of the go sdk
 	_, envCode, ok := strings.Cut(dagger.EnvironmentCode, "\n")
 	if !ok {
 		return nil, fmt.Errorf("unexpected format for environment code")
@@ -40,17 +41,12 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	var render []string
 
 	var header bytes.Buffer
-	if isForEnv {
-		// TODO: ...
-		generator.QueryStructClientName = "DAG"
-		templates.EvilGlobalVarToTriggerEnvSpecificCodegen = true
-		templates.EvilGlobalVarWithEnvironmentName = g.Config.EnvironmentName
-
-		if err := templates.Environment.Execute(&header, headerData); err != nil {
+	if g.Config.EnvironmentName != "" {
+		if err := templates.Environment(funcs).Execute(&header, headerData); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := templates.Header.Execute(&header, headerData); err != nil {
+		if err := templates.Header(funcs).Execute(&header, headerData); err != nil {
 			return nil, err
 		}
 	}
@@ -59,14 +55,14 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	err := schema.Visit(introspection.VisitHandlers{
 		Scalar: func(t *introspection.Type) error {
 			var out bytes.Buffer
-			if err := templates.Scalar.Execute(&out, t); err != nil {
+			if err := templates.Scalar(funcs).Execute(&out, t); err != nil {
 				return err
 			}
 			render = append(render, out.String())
 			return nil
 		},
 		Object: func(t *introspection.Type) error {
-			objectTmpl := templates.Object
+			objectTmpl := templates.Object(funcs)
 
 			// don't create methods on query for the env itself, only its deps
 			// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
@@ -95,7 +91,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		},
 		Enum: func(t *introspection.Type) error {
 			var out bytes.Buffer
-			if err := templates.Enum.Execute(&out, t); err != nil {
+			if err := templates.Enum(funcs).Execute(&out, t); err != nil {
 				return err
 			}
 			render = append(render, out.String())
@@ -103,7 +99,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		},
 		Input: func(t *introspection.Type) error {
 			var out bytes.Buffer
-			if err := templates.Input.Execute(&out, t); err != nil {
+			if err := templates.Input(funcs).Execute(&out, t); err != nil {
 				return err
 			}
 			render = append(render, out.String())

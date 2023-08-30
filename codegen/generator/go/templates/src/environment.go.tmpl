@@ -4,16 +4,16 @@ package {{ .Package }}
 
 {{ .EnvironmentCode }}
 
-type DAG struct {
+type Client struct {
 	c graphql.Client
 	q *querybuilder.Selection
 }
 
-var dag *DAG
+var dag *Client
 
 func init() {
   gqlClient, q := getClientParams()
-	dag = &DAG{
+	dag = &Client{
 		c: gqlClient,
 		q: q,
 	}

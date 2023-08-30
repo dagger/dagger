@@ -518,16 +518,16 @@ func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 	return fn(req)
 }
 
-type DAG struct {
+type Client struct {
 	c graphql.Client
 	q *querybuilder.Selection
 }
 
-var dag *DAG
+var dag *Client
 
 func init() {
 	gqlClient, q := getClientParams()
-	dag = &DAG{
+	dag = &Client{
 		c: gqlClient,
 		q: q,
 	}
@@ -3418,16 +3418,16 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-type WithDAGFunc func(r *DAG) *DAG
+type WithClientFunc func(r *Client) *Client
 
-// With calls the provided function with current DAG.
+// With calls the provided function with current Client.
 //
 // This is useful for reusability and readability by not breaking the calling chain.
-func (r *DAG) With(f WithDAGFunc) *DAG {
+func (r *Client) With(f WithClientFunc) *Client {
 	return f(r)
 }
 
-func (r *DAG) BasicExplicitdep() *BasicExplicitdep {
+func (r *Client) BasicExplicitdep() *BasicExplicitdep {
 
 	q := r.q.Select("basic_explicitdep")
 
@@ -3438,7 +3438,7 @@ func (r *DAG) BasicExplicitdep() *BasicExplicitdep {
 }
 
 // Constructs a cache volume for a given cache key.
-func (r *DAG) CacheVolume(key string) *CacheVolume {
+func (r *Client) CacheVolume(key string) *CacheVolume {
 
 	q := r.q.Select("cacheVolume")
 	q = q.Arg("key", key)
@@ -3449,13 +3449,13 @@ func (r *DAG) CacheVolume(key string) *CacheVolume {
 	}
 }
 
-// CheckOpts contains options for DAG.Check
+// CheckOpts contains options for Client.Check
 type CheckOpts struct {
 	ID CheckID
 }
 
 // The check initialized from the given ID.
-func (r *DAG) Check(opts ...CheckOpts) *Check {
+func (r *Client) Check(opts ...CheckOpts) *Check {
 
 	q := r.q.Select("check")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3471,13 +3471,13 @@ func (r *DAG) Check(opts ...CheckOpts) *Check {
 	}
 }
 
-// CheckResultOpts contains options for DAG.CheckResult
+// CheckResultOpts contains options for Client.CheckResult
 type CheckResultOpts struct {
 	ID CheckResultID
 }
 
 // The check result initialized from the given ID.
-func (r *DAG) CheckResult(opts ...CheckResultOpts) *CheckResult {
+func (r *Client) CheckResult(opts ...CheckResultOpts) *CheckResult {
 
 	q := r.q.Select("checkResult")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3494,7 +3494,7 @@ func (r *DAG) CheckResult(opts ...CheckResultOpts) *CheckResult {
 }
 
 // Checks if the current Dagger Engine is compatible with an SDK's required version.
-func (r *DAG) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
+func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
 
 	q := r.q.Select("checkVersionCompatibility")
 	q = q.Arg("version", version)
@@ -3505,7 +3505,7 @@ func (r *DAG) CheckVersionCompatibility(ctx context.Context, version string) (bo
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerOpts contains options for DAG.Container
+// ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
 	ID ContainerID
 
@@ -3517,7 +3517,7 @@ type ContainerOpts struct {
 // Null ID returns an empty container (scratch).
 // Optional platform argument initializes new containers to execute and publish as that platform.
 // Platform defaults to that of the builder's host.
-func (r *DAG) Container(opts ...ContainerOpts) *Container {
+func (r *Client) Container(opts ...ContainerOpts) *Container {
 
 	q := r.q.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3538,7 +3538,7 @@ func (r *DAG) Container(opts ...ContainerOpts) *Container {
 }
 
 // The environment the requester is being executed in (or an error if none).
-func (r *DAG) CurrentEnvironment() *Environment {
+func (r *Client) CurrentEnvironment() *Environment {
 
 	q := r.q.Select("currentEnvironment")
 
@@ -3549,7 +3549,7 @@ func (r *DAG) CurrentEnvironment() *Environment {
 }
 
 // The default platform of the builder.
-func (r *DAG) DefaultPlatform(ctx context.Context) (Platform, error) {
+func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 	q := r.q.Select("defaultPlatform")
 
@@ -3559,13 +3559,13 @@ func (r *DAG) DefaultPlatform(ctx context.Context) (Platform, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// DirectoryOpts contains options for DAG.Directory
+// DirectoryOpts contains options for Client.Directory
 type DirectoryOpts struct {
 	ID DirectoryID
 }
 
 // Load a directory by ID. No argument produces an empty directory.
-func (r *DAG) Directory(opts ...DirectoryOpts) *Directory {
+func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 
 	q := r.q.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3581,13 +3581,13 @@ func (r *DAG) Directory(opts ...DirectoryOpts) *Directory {
 	}
 }
 
-// EnvironmentOpts contains options for DAG.Environment
+// EnvironmentOpts contains options for Client.Environment
 type EnvironmentOpts struct {
 	ID EnvironmentID
 }
 
 // The environment initialized from the given ID.
-func (r *DAG) Environment(opts ...EnvironmentOpts) *Environment {
+func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
 
 	q := r.q.Select("environment")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3604,7 +3604,7 @@ func (r *DAG) Environment(opts ...EnvironmentOpts) *Environment {
 }
 
 // Loads a file by ID.
-func (r *DAG) File(id FileID) *File {
+func (r *Client) File(id FileID) *File {
 
 	q := r.q.Select("file")
 	q = q.Arg("id", id)
@@ -3615,7 +3615,7 @@ func (r *DAG) File(id FileID) *File {
 	}
 }
 
-// GitOpts contains options for DAG.Git
+// GitOpts contains options for Client.Git
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
@@ -3624,7 +3624,7 @@ type GitOpts struct {
 }
 
 // Queries a git repository.
-func (r *DAG) Git(url string, opts ...GitOpts) *GitRepository {
+func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 
 	q := r.q.Select("git")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3646,7 +3646,7 @@ func (r *DAG) Git(url string, opts ...GitOpts) *GitRepository {
 }
 
 // Queries the host environment.
-func (r *DAG) Host() *Host {
+func (r *Client) Host() *Host {
 
 	q := r.q.Select("host")
 
@@ -3656,14 +3656,14 @@ func (r *DAG) Host() *Host {
 	}
 }
 
-// HTTPOpts contains options for DAG.HTTP
+// HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
 	ExperimentalServiceHost *Container
 }
 
 // Returns a file containing an http remote url content.
-func (r *DAG) HTTP(url string, opts ...HTTPOpts) *File {
+func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 
 	q := r.q.Select("http")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3688,7 +3688,7 @@ func (r *DAG) HTTP(url string, opts ...HTTPOpts) *File {
 //
 // If there are any conflicts between the environment's schema and any existing
 // schemas, an error will be returned.
-func (r *DAG) InstallEnvironment(ctx context.Context, id EnvironmentID) (bool, error) {
+func (r *Client) InstallEnvironment(ctx context.Context, id EnvironmentID) (bool, error) {
 
 	q := r.q.Select("installEnvironment")
 	q = q.Arg("id", id)
@@ -3699,7 +3699,7 @@ func (r *DAG) InstallEnvironment(ctx context.Context, id EnvironmentID) (bool, e
 	return response, q.Execute(ctx, r.c)
 }
 
-// PipelineOpts contains options for DAG.Pipeline
+// PipelineOpts contains options for Client.Pipeline
 type PipelineOpts struct {
 	// Pipeline description.
 	Description string
@@ -3708,7 +3708,7 @@ type PipelineOpts struct {
 }
 
 // Creates a named sub-pipeline.
-func (r *DAG) Pipeline(name string, opts ...PipelineOpts) *DAG {
+func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 
 	q := r.q.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3723,14 +3723,14 @@ func (r *DAG) Pipeline(name string, opts ...PipelineOpts) *DAG {
 	}
 	q = q.Arg("name", name)
 
-	return &DAG{
+	return &Client{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Loads a secret from its ID.
-func (r *DAG) Secret(id SecretID) *Secret {
+func (r *Client) Secret(id SecretID) *Secret {
 
 	q := r.q.Select("secret")
 	q = q.Arg("id", id)
@@ -3743,7 +3743,7 @@ func (r *DAG) Secret(id SecretID) *Secret {
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 // The plaintext value is limited to a size of 128000 bytes.
-func (r *DAG) SetSecret(name string, plaintext string) *Secret {
+func (r *Client) SetSecret(name string, plaintext string) *Secret {
 
 	q := r.q.Select("setSecret")
 	q = q.Arg("name", name)
@@ -3755,13 +3755,13 @@ func (r *DAG) SetSecret(name string, plaintext string) *Secret {
 	}
 }
 
-// SocketOpts contains options for DAG.Socket
+// SocketOpts contains options for Client.Socket
 type SocketOpts struct {
 	ID SocketID
 }
 
 // Loads a socket by its ID.
-func (r *DAG) Socket(opts ...SocketOpts) *Socket {
+func (r *Client) Socket(opts ...SocketOpts) *Socket {
 
 	q := r.q.Select("socket")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3777,13 +3777,13 @@ func (r *DAG) Socket(opts ...SocketOpts) *Socket {
 	}
 }
 
-// StaticCheckResultOpts contains options for DAG.StaticCheckResult
+// StaticCheckResultOpts contains options for Client.StaticCheckResult
 type StaticCheckResultOpts struct {
 	Output string
 }
 
 // A check result initialized with the given success and output.
-func (r *DAG) StaticCheckResult(success bool, opts ...StaticCheckResultOpts) *CheckResult {
+func (r *Client) StaticCheckResult(success bool, opts ...StaticCheckResultOpts) *CheckResult {
 
 	q := r.q.Select("staticCheckResult")
 	for i := len(opts) - 1; i >= 0; i-- {
