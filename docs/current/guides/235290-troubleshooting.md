@@ -45,7 +45,6 @@ You should now be able to re-run your Dagger pipeline successfully.
 If you have custom-provisioned the Dagger Engine, please adjust the above commands to your environment.
 :::
 
-
 ## Dagger pipeline is unable to resolve host names after network configuration changes
 
 If the network configuration of the host changes after the Dagger Engine container starts, the Dagger Engine is not notified of the change. This may cause Dagger pipelines to fail with network-related errors.
@@ -64,7 +63,7 @@ To resolve this error, you must stop and remove the Dagger Engine container afte
 
 1. Restart the Dagger Engine container by re-running your Dagger pipeline, or by running a simple Dagger API query like the one below:
 
-  ```
+  ```shell
   dagger query <<EOF
   {
     container {
