@@ -15,7 +15,7 @@ import (
 func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any) (*progrock.VertexRecorder, error) {
 	dig, err := queryDigest(fieldName, parent, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute query digest: %w", err)
+		return nil, fmt.Errorf("failed to compute query digest for field %s parent %+v: %w", fieldName, parent, err)
 	}
 
 	var inputs []digest.Digest
@@ -85,6 +85,14 @@ func queryDigest(fieldName string, parent, args any) (digest.Digest, error) {
 		Source any
 		Field  string
 		Args   any
+	}
+
+	if v, ok := parent.(core.Digestible); ok {
+		d, err := v.Digest()
+		if err != nil {
+			return "", fmt.Errorf("failed to compute digest for parent: %w", err)
+		}
+		parent = d
 	}
 
 	payload, err := json.Marshal(subset{

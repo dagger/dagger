@@ -79,10 +79,6 @@ type Container struct {
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
 	Focused bool `json:"focused"`
-
-	// TODO: doc, if this is left in
-	// TODO: actually provide this during WithExec
-	EnvironmentName string `json:"environment_name,omitempty"`
 }
 
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
@@ -1074,9 +1070,10 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	}
 
 	uncachedExecMetadataOpt, err := ContainerExecUncachedMetadata{
-		ParentClientIDs: clientMetadata.ClientIDs(),
-		ServerID:        clientMetadata.ServerID,
-		ProgSockPath:    progSock,
+		ParentClientIDs:   clientMetadata.ClientIDs(),
+		ServerID:          clientMetadata.ServerID,
+		ProgSockPath:      progSock,
+		EnvironmentDigest: clientMetadata.EnvironmentDigest,
 	}.ToLLBRunOpt()
 	if err != nil {
 		return nil, err
@@ -1629,7 +1626,7 @@ func (container *Container) Import(
 		return resolveIndex(ctx, store, desc, container.Platform, tag)
 	}
 
-	// TODO: seems ineffecient to recompute for each platform, but do need to get platform-specific manifest stil..
+	// TODO: seems inefficient to recompute for each platform, but do need to get platform-specific manifest stil..
 	key := cacheKey(
 		file,
 		tag,
@@ -1957,9 +1954,10 @@ const (
 // the "real" ftp proxy setting in here too and have the shim handle
 // leaving only that set in the actual env var.
 type ContainerExecUncachedMetadata struct {
-	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
-	ServerID        string   `json:"serverID,omitempty"`
-	ProgSockPath    string   `json:"progSockPath,omitempty"`
+	ParentClientIDs   []string `json:"parentClientIDs,omitempty"`
+	ServerID          string   `json:"serverID,omitempty"`
+	ProgSockPath      string   `json:"progSockPath,omitempty"`
+	EnvironmentDigest uint64   `json:"environmentDigest,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToLLBRunOpt() (llb.RunOption, error) {

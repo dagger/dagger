@@ -8,22 +8,27 @@ import (
 )
 
 const (
-	QueryStructName       = "Query"
-	QueryStructClientName = "Client"
+	QueryStructName = "Query"
+	// TODO:
+	// QueryStructClientName = "DAG"
 )
+
+// TODO: hack to allow env and prexisting codegen to use different name
+var QueryStructClientName = "Client"
 
 // CustomScalar registers custom Dagger type.
 // TODO: This may done it dynamically later instead of a static
 // map.
 var CustomScalar = map[string]string{
-	"ContainerID":      "Container",
-	"FileID":           "File",
-	"DirectoryID":      "Directory",
-	"SecretID":         "Secret",
-	"SocketID":         "Socket",
-	"CacheID":          "CacheVolume",
-	"ProjectID":        "Project",
-	"ProjectCommandID": "ProjectCommand",
+	"ContainerID":   "Container",
+	"FileID":        "File",
+	"DirectoryID":   "Directory",
+	"SecretID":      "Secret",
+	"SocketID":      "Socket",
+	"CacheID":       "CacheVolume",
+	"EnvironmentID": "Environment",
+	"CheckID":       "Check",
+	"CheckResultID": "CheckResult",
 }
 
 // FormatTypeFuncs is an interface to format any GraphQL type.
@@ -102,12 +107,21 @@ func (c *CommonFunctions) GetArrayField(f *introspection.Field) []*introspection
 	}
 
 	var fields []*introspection.Field
+	var idField *introspection.Field
 	// Only include scalar fields for now
 	// TODO: include subtype too
 	for _, typeField := range schemaType.Fields {
 		if typeField.TypeRef.IsScalar() {
 			fields = append(fields, typeField)
 		}
+		// TODO: hack to fix requesting all fields from list of id-able objects, need better solution
+		if typeField.Name == "id" {
+			idField = typeField
+			break
+		}
+	}
+	if idField != nil {
+		return []*introspection.Field{idField}
 	}
 
 	return fields

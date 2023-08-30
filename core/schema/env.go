@@ -2,14 +2,12 @@ package schema
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/graphql"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 	"golang.org/x/sync/errgroup"
@@ -17,10 +15,13 @@ import (
 
 type environmentSchema struct {
 	*MergedSchemas
-	// NOTE: this should only be used for environment load; the With methods on Environment
-	// don't change the name so it's not safe to assume the cache entry for the name is what
-	// you want
+
+	// NOTE: this should only be used to dedupe environment load by name
+	// TODO: doc subtleties and difference from below cache
 	loadedEnvCache *core.CacheMap[string, *core.Environment] // env name -> env
+
+	// TODO: doc subtleties
+	envDigestCache *core.CacheMap[uint64, *core.Environment] // env digest -> env
 }
 
 var _ ExecutableSchema = &environmentSchema{}
@@ -53,8 +54,8 @@ func (s *environmentSchema) Resolvers() Resolvers {
 		},
 		"Environment": ToIDableObjectResolver(core.EnvironmentID.ToEnvironment, ObjectResolver{
 			"id":          ToResolver(s.environmentID),
-			"load":        ToResolver(s.load),
 			"name":        ToResolver(s.environmentName),
+			"load":        ToResolver(s.load),
 			"withWorkdir": ToResolver(s.withWorkdir),
 			"withCheck":   ToResolver(s.withCheck),
 			"check":       ToResolver(s.checkByName),
@@ -65,10 +66,10 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withDescription": ToResolver(s.withCheckDescription),
 			"withSubcheck":    ToResolver(s.withSubcheck),
 			"withContainer":   ToResolver(s.withCheckContainer),
+			"result":          ToResolver(s.evaluateCheckResult),
 		}),
-		"CheckResult": ToIDableObjectResolver(core.CheckID.ToCheck, ObjectResolver{
-			"id":       ToResolver(s.resultID),
-			"withName": ToResolver(s.withResultName),
+		"CheckResult": ToIDableObjectResolver(core.CheckResultID.ToCheckResult, ObjectResolver{
+			"id": ToResolver(s.checkResultID),
 		}),
 	}
 }
@@ -81,54 +82,51 @@ type environmentArgs struct {
 	ID core.EnvironmentID
 }
 
-func (s *environmentSchema) environment(ctx *core.Context, parent *core.Query, args environmentArgs) (*core.Environment, error) {
-	return core.NewEnvironment(args.ID)
+func (s *environmentSchema) environment(ctx *core.Context, _ *core.Query, args environmentArgs) (*core.Environment, error) {
+	return args.ID.ToEnvironment()
 }
 
 type checkArgs struct {
 	ID core.CheckID
 }
 
-func (s *environmentSchema) check(ctx *core.Context, parent *core.Query, args checkArgs) (*core.Check, error) {
-	return core.NewCheck(args.ID)
+func (s *environmentSchema) check(ctx *core.Context, _ *core.Query, args checkArgs) (*core.Check, error) {
+	return args.ID.ToCheck()
 }
 
 type checkResultArgs struct {
 	ID core.CheckResultID
 }
 
-func (s *environmentSchema) checkResult(ctx *core.Context, parent *core.Query, args checkResultArgs) (*core.CheckResult, error) {
-	return core.NewCheckResult(args.ID)
+func (s *environmentSchema) checkResult(ctx *core.Context, _ *core.Query, args checkResultArgs) (*core.CheckResult, error) {
+	return args.ID.ToCheckResult()
 }
 
-type staticCheckResultArgs struct {
-	Name    string
-	Success bool
-	Output  string
+func (s *environmentSchema) staticCheckResult(ctx *core.Context, _ *core.Query, args core.CheckResult) (*core.CheckResult, error) {
+	return &args, nil
 }
 
-func (s *environmentSchema) staticCheckResult(ctx *core.Context, parent *core.Query, args staticCheckResultArgs) (*core.CheckResult, error) {
-	return core.NewStaticCheckResult(args.Name, args.Success, args.Output), nil
-}
-
-func (s *environmentSchema) currentEnvironment(ctx *core.Context, parent *core.Query, args any) (*core.Environment, error) {
+func (s *environmentSchema) currentEnvironment(ctx *core.Context, _ *core.Query, args any) (*core.Environment, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: this is broken, using the env name as cache key gives you the original environment before any With* calls
-	// Change to pass around the EnvironmentID instead
-	return s.loadedEnvCache.GetOrInitialize(clientMetadata.EnvironmentName, func() (*core.Environment, error) {
-		return nil, fmt.Errorf("no such environment %s", clientMetadata.EnvironmentName)
+	if clientMetadata.EnvironmentDigest == 0 {
+		return nil, fmt.Errorf("not executing in an environment")
+	}
+
+	// TODO: doc subtleties
+	return s.envDigestCache.GetOrInitialize(clientMetadata.EnvironmentDigest, func() (*core.Environment, error) {
+		return nil, fmt.Errorf("environment with digest %d not found", clientMetadata.EnvironmentDigest)
 	})
 }
 
-func (s *environmentSchema) environmentID(ctx *core.Context, parent *core.Environment, args any) (core.EnvironmentID, error) {
-	return parent.ID()
+func (s *environmentSchema) environmentID(ctx *core.Context, env *core.Environment, args any) (core.EnvironmentID, error) {
+	return env.ID()
 }
 
-func (s *environmentSchema) environmentName(ctx *core.Context, parent *core.Environment, args any) (string, error) {
-	return parent.Config.Name, nil
+func (s *environmentSchema) environmentName(ctx *core.Context, env *core.Environment, args any) (string, error) {
+	return env.Config.Name, nil
 }
 
 type loadArgs struct {
@@ -165,7 +163,7 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	}
 
 	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+		env, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, s.envDigestCache, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load environment: %w", err)
 		}
@@ -251,35 +249,34 @@ type withWorkdirArgs struct {
 	Workdir core.DirectoryID
 }
 
-func (s *environmentSchema) withWorkdir(ctx *core.Context, parent *core.Environment, args withWorkdirArgs) (*core.Environment, error) {
+func (s *environmentSchema) withWorkdir(ctx *core.Context, env *core.Environment, args withWorkdirArgs) (*core.Environment, error) {
 	workdir, err := args.Workdir.ToDirectory()
 	if err != nil {
 		return nil, err
 	}
-	parent = parent.Clone()
-	parent.Workdir = workdir
-	return parent, nil
+	env = env.Clone()
+	env.Workdir = workdir
+	return env, nil
 }
 
 type withCheckArgs struct {
 	ID core.CheckID
 }
 
-func (s *environmentSchema) withCheck(ctx *core.Context, parent *core.Environment, args withCheckArgs) (*core.Environment, error) {
+func (s *environmentSchema) withCheck(ctx *core.Context, env *core.Environment, args withCheckArgs) (_ *core.Environment, rerr error) {
 	check, err := args.ID.ToCheck()
 	if err != nil {
 		return nil, err
 	}
-	// TODO: set real pipeline
-	return parent.WithCheck(ctx, s.bk, s.progSockPath, nil, check)
+	return env.WithCheck(check, s.envDigestCache)
 }
 
 type checkByNameArgs struct {
 	Name string
 }
 
-func (s *environmentSchema) checkByName(ctx *core.Context, parent *core.Environment, args checkByNameArgs) (*core.Check, error) {
-	for _, check := range parent.Checks {
+func (s *environmentSchema) checkByName(ctx *core.Context, env *core.Environment, args checkByNameArgs) (*core.Check, error) {
+	for _, check := range env.Checks {
 		if check.Name == args.Name {
 			return check, nil
 		}
@@ -287,91 +284,55 @@ func (s *environmentSchema) checkByName(ctx *core.Context, parent *core.Environm
 	return nil, fmt.Errorf("no check named %q", args.Name)
 }
 
-func (s *environmentSchema) checkID(ctx *core.Context, parent *core.Check, args any) (core.CheckID, error) {
-	return parent.ID()
+func (s *environmentSchema) checkID(ctx *core.Context, check *core.Check, args any) (core.CheckID, error) {
+	return check.ID()
 }
 
 type withCheckNameArgs struct {
 	Name string
 }
 
-func (s *environmentSchema) withCheckName(ctx *core.Context, parent *core.Check, args withCheckNameArgs) (*core.Check, error) {
-	return parent.WithName(args.Name), nil
+func (s *environmentSchema) withCheckName(ctx *core.Context, check *core.Check, args withCheckNameArgs) (*core.Check, error) {
+	return check.WithName(args.Name), nil
 }
 
 type withCheckDescriptionArgs struct {
 	Description string
 }
 
-func (s *environmentSchema) withCheckDescription(ctx *core.Context, parent *core.Check, args withCheckDescriptionArgs) (*core.Check, error) {
-	return parent.WithDescription(args.Description), nil
+func (s *environmentSchema) withCheckDescription(ctx *core.Context, check *core.Check, args withCheckDescriptionArgs) (*core.Check, error) {
+	return check.WithDescription(args.Description), nil
 }
 
 type withSubcheckArgs struct {
 	ID core.CheckID
 }
 
-func (s *environmentSchema) withSubcheck(ctx *core.Context, parent *core.Check, args withSubcheckArgs) (*core.Check, error) {
-	return parent.WithSubcheck(args.ID)
+func (s *environmentSchema) withSubcheck(ctx *core.Context, check *core.Check, args withSubcheckArgs) (*core.Check, error) {
+	subcheck, err := args.ID.ToCheck()
+	if err != nil {
+		return nil, err
+	}
+	return check.WithSubcheck(subcheck), nil
 }
 
 type withCheckContainerArgs struct {
 	ID core.ContainerID
 }
 
-func (s *environmentSchema) withCheckContainer(ctx *core.Context, parent *core.Check, args withCheckContainerArgs) (*core.Check, error) {
-	return parent.WithContainer(args.ID)
+func (s *environmentSchema) withCheckContainer(ctx *core.Context, check *core.Check, args withCheckContainerArgs) (*core.Check, error) {
+	ctr, err := args.ID.ToContainer()
+	if err != nil {
+		return nil, err
+	}
+	return check.WithUserContainer(ctr), nil
 }
 
-func (s *environmentSchema) resultID(ctx *core.Context, result *core.CheckResult, _ any) (core.CheckResultID, error) {
-	return result.ID()
+func (s *environmentSchema) evaluateCheckResult(ctx *core.Context, check *core.Check, _ any) (*core.CheckResult, error) {
+	// TODO: set real pipeline
+	return check.Result(ctx, s.bk, s.progSockPath, nil, s.envDigestCache)
 }
 
-func (s *environmentSchema) withResultName(
-	ctx *core.Context,
-	result *core.CheckResult,
-	args struct{ Name string },
-) (*core.CheckResult, error) {
-	result = result.Clone()
-	result.Name = args.Name
-	return result, nil
-}
-
-func (s *environmentSchema) getEnvFieldResolver(ctx context.Context, envName, fieldName string) (graphql.FieldResolveFn, *graphql.ResolveParams, error) {
-	// TODO: don't hardcode
-	envObjName := strings.ToUpper(envName[:1]) + envName[1:]
-
-	var resolver Resolver
-	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == envObjName {
-			resolver = possibleResolver
-		}
-	}
-	if resolver == nil {
-		return nil, nil, fmt.Errorf("no resolver for %s", envObjName)
-	}
-	objResolver, ok := resolver.(ObjectResolver)
-	if !ok {
-		return nil, nil, fmt.Errorf("resolver for %s is not an object resolver", envObjName)
-	}
-	var fieldResolver graphql.FieldResolveFn
-	for possibleFieldName, possibleFieldResolver := range objResolver {
-		if possibleFieldName == fieldName {
-			fieldResolver = possibleFieldResolver
-		}
-	}
-	if fieldResolver == nil {
-		return nil, nil, fmt.Errorf("no field resolver for %s.%s", envObjName, fieldName)
-	}
-
-	return fieldResolver, &graphql.ResolveParams{
-		Context: ctx,
-		Source:  struct{}{}, // TODO: could support data fields too
-		Args:    map[string]any{},
-		Info: graphql.ResolveInfo{
-			FieldName:  fieldName,
-			ParentType: s.MergedSchemas.Schema().Type(envObjName),
-			// TODO: we don't currently use any of the other resolve info fields, but that could change
-		},
-	}, nil
+func (s *environmentSchema) checkResultID(ctx *core.Context, checkResult *core.CheckResult, args any) (core.CheckResultID, error) {
+	return checkResult.ID()
 }

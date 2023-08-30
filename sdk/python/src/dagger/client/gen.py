@@ -243,7 +243,7 @@ class Check(Type):
 
     @typecheck
     def result(self) -> "CheckResult":
-        """The result of this check."""
+        """The result of evaluating this check."""
         _args: list[Arg] = []
         _ctx = self._select("result", _args)
         return CheckResult(_ctx)
@@ -263,10 +263,9 @@ class Check(Type):
     def with_container(self, id: "Container") -> "Check":
         """This check with the given container used to determine the check's
         result.
-        If set, the container will be executed and the check result will be
-        set to
-        success if the container exits with a zero exit code, failure
-        otherwise.
+        If set, the container will be executed and the check success will be
+        true
+        if the container exits with a zero exit code, false otherwise.
         """
         _args = [
             Arg("id", id),
@@ -310,8 +309,6 @@ class Check(Type):
 
 
 class CheckResult(Type):
-    """The result of an environment's check."""
-
     @typecheck
     async def id(self) -> CheckResultID:
         """A unique identifier for this check result.
@@ -340,31 +337,13 @@ class CheckResult(Type):
     def _id_type(cls) -> type[Scalar]:
         return CheckResultID
 
-    @typecheck
-    async def name(self) -> str:
-        """The name of the check result.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
+    @classmethod
+    def _from_id_query_field(cls):
+        return "checkResult"
 
     @typecheck
     async def output(self) -> str:
-        """Any output associated with this check result.
+        """Any output obtained from evaluating the check's success.
 
         Returns
         -------
@@ -386,7 +365,7 @@ class CheckResult(Type):
 
     @typecheck
     async def success(self) -> bool:
-        """Whether this check result was successful.
+        """Whether the check was successful.
 
         Returns
         -------
@@ -2922,14 +2901,14 @@ class Client(Root):
     def check_result(
         self,
         *,
-        id: Optional[CheckResult] = None,
-    ) -> Check:
+        id: Optional[CheckResultID] = None,
+    ) -> CheckResult:
         """Load a environment check result from ID."""
         _args = [
             Arg("id", id, None),
         ]
         _ctx = self._select("checkResult", _args)
-        return Check(_ctx)
+        return CheckResult(_ctx)
 
     @typecheck
     async def check_version_compatibility(self, version: str) -> bool:
@@ -3174,13 +3153,11 @@ class Client(Root):
         self,
         success: bool,
         *,
-        name: Optional[str] = None,
         output: Optional[str] = None,
     ) -> CheckResult:
-        """Create a check result with the given name, success and output."""
+        """Create a check result with the given success and output."""
         _args = [
             Arg("success", success),
-            Arg("name", name, None),
             Arg("output", output, None),
         ]
         _ctx = self._select("staticCheckResult", _args)

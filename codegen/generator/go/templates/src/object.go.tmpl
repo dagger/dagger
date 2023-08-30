@@ -50,6 +50,8 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- end }}
 {{- $convertID := $field | ConvertID }}
 {{ $field | FieldFunction }} {
+    {{ $field | EnvironmentWithMethodPreamble }}
+
     {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
     if r.{{ $field.Name }} != nil {
         return *r.{{ $field.Name }}, nil

@@ -14,15 +14,6 @@ export type QueryTree = {
   args?: Record<string, unknown>
 }
 
-/**
- * @hidden
- */
-export type Metadata = {
-  [key: string]: {
-    is_enum?: boolean
-  }
-}
-
 interface ClientConfig {
   queryTree?: QueryTree[]
   host?: string
@@ -86,17 +77,17 @@ export enum CacheSharingMode {
    * Shares the cache volume amongst many build pipelines,
    * but will serialize the writes
    */
-  Locked = "LOCKED",
+  Locked,
 
   /**
    * Keeps a cache volume for a single build pipeline
    */
-  Private = "PRIVATE",
+  Private,
 
   /**
    * Shares the cache volume amongst many build pipelines
    */
-  Shared = "SHARED",
+  Shared,
 }
 /**
  * A unique environment check identifier.
@@ -569,17 +560,17 @@ export type ID = string & { __ID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  Estargz = "EStarGZ",
-  Gzip = "Gzip",
-  Uncompressed = "Uncompressed",
-  Zstd = "Zstd",
+  Estargz,
+  Gzip,
+  Uncompressed,
+  Zstd,
 }
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Dockermediatypes = "DockerMediaTypes",
-  Ocimediatypes = "OCIMediaTypes",
+  Dockermediatypes,
+  Ocimediatypes,
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -588,12 +579,12 @@ export enum NetworkProtocol {
   /**
    * TCP (Transmission Control Protocol)
    */
-  Tcp = "TCP",
+  Tcp,
 
   /**
    * UDP (User Datagram Protocol)
    */
-  Udp = "UDP",
+  Udp,
 }
 export type PipelineLabel = {
   /**
@@ -671,8 +662,6 @@ export type ClientSocketOpts = {
 }
 
 export type ClientStaticCheckResultOpts = {
-  name?: string
-  success: boolean
   output?: string
 }
 
@@ -818,7 +807,7 @@ export class Check extends BaseClient {
   }
 
   /**
-   * The result of this check.
+   * The result of evaluating this check.
    */
   result(): CheckResult {
     return new CheckResult({
@@ -838,9 +827,7 @@ export class Check extends BaseClient {
    */
   async subchecks(): Promise<Check[]> {
     type subchecks = {
-      description: string
       id: CheckID
-      name: string
     }
 
     const response: Awaited<subchecks[]> = await computeQuery(
@@ -850,7 +837,7 @@ export class Check extends BaseClient {
           operation: "subchecks",
         },
         {
-          operation: "description id name",
+          operation: "id",
         },
       ],
       this.client
@@ -864,17 +851,15 @@ export class Check extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.id,
-          r.name
+          r.id
         )
     )
   }
 
   /**
    * This check with the given container used to determine the check's result.
-   * If set, the container will be executed and the check result will be set to
-   * success if the container exits with a zero exit code, failure otherwise.
+   * If set, the container will be executed and the check success will be true
+   * if the container exits with a zero exit code, false otherwise.
    */
   withContainer(id: Container): Check {
     return new Check({
@@ -927,7 +912,7 @@ export class Check extends BaseClient {
   /**
    * This check with the given subcheck
    */
-  withSubcheck(id: CheckID): Check {
+  withSubcheck(id: Check): Check {
     return new Check({
       queryTree: [
         ...this._queryTree,
@@ -951,12 +936,8 @@ export class Check extends BaseClient {
   }
 }
 
-/**
- * The result of an environment's check.
- */
 export class CheckResult extends BaseClient {
   private readonly _id?: CheckResultID = undefined
-  private readonly _name?: string = undefined
   private readonly _output?: string = undefined
   private readonly _success?: boolean = undefined
 
@@ -966,14 +947,12 @@ export class CheckResult extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _id?: CheckResultID,
-    _name?: string,
     _output?: string,
     _success?: boolean
   ) {
     super(parent)
 
     this._id = _id
-    this._name = _name
     this._output = _output
     this._success = _success
   }
@@ -1000,28 +979,7 @@ export class CheckResult extends BaseClient {
   }
 
   /**
-   * The name of the check result.
-   */
-  async name(): Promise<string> {
-    if (this._name) {
-      return this._name
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "name",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Any output associated with this check result.
+   * Any output obtained from evaluating the check's success.
    */
   async output(): Promise<string> {
     if (this._output) {
@@ -1042,7 +1000,7 @@ export class CheckResult extends BaseClient {
   }
 
   /**
-   * Whether this check result was successful.
+   * Whether the check was successful.
    */
   async success(): Promise<boolean> {
     if (this._success) {
@@ -1316,17 +1274,12 @@ export class Container extends BaseClient {
       return this._export
     }
 
-    const metadata: Metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
-    }
-
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "export",
-          args: { path, ...opts, __metadata: metadata },
+          args: { path, ...opts },
         },
       ],
       this.client
@@ -1646,17 +1599,12 @@ export class Container extends BaseClient {
       return this._publish
     }
 
-    const metadata: Metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
-    }
-
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "publish",
-          args: { address, ...opts, __metadata: metadata },
+          args: { address, ...opts },
         },
       ],
       this.client
@@ -1906,16 +1854,12 @@ export class Container extends BaseClient {
     port: number,
     opts?: ContainerWithExposedPortOpts
   ): Container {
-    const metadata: Metadata = {
-      protocol: { is_enum: true },
-    }
-
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExposedPort",
-          args: { port, ...opts, __metadata: metadata },
+          args: { port, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2011,16 +1955,12 @@ export class Container extends BaseClient {
     cache: CacheVolume,
     opts?: ContainerWithMountedCacheOpts
   ): Container {
-    const metadata: Metadata = {
-      sharing: { is_enum: true },
-    }
-
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withMountedCache",
-          args: { path, cache, ...opts, __metadata: metadata },
+          args: { path, cache, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2339,16 +2279,12 @@ export class Container extends BaseClient {
     port: number,
     opts?: ContainerWithoutExposedPortOpts
   ): Container {
-    const metadata: Metadata = {
-      protocol: { is_enum: true },
-    }
-
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withoutExposedPort",
-          args: { port, ...opts, __metadata: metadata },
+          args: { port, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2960,9 +2896,7 @@ export class Environment extends BaseClient {
    */
   async checks(): Promise<Check[]> {
     type checks = {
-      description: string
       id: CheckID
-      name: string
     }
 
     const response: Awaited<checks[]> = await computeQuery(
@@ -2972,7 +2906,7 @@ export class Environment extends BaseClient {
           operation: "checks",
         },
         {
-          operation: "description id name",
+          operation: "id",
         },
       ],
       this.client
@@ -2986,9 +2920,7 @@ export class Environment extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.description,
-          r.id,
-          r.name
+          r.id
         )
     )
   }
@@ -3057,7 +2989,7 @@ export class Environment extends BaseClient {
   /**
    * This environment plus the given check
    */
-  withCheck(id: CheckID): Environment {
+  withCheck(id: Check): Environment {
     return new Environment({
       queryTree: [
         ...this._queryTree,
@@ -3687,8 +3619,8 @@ export class Client extends BaseClient {
   /**
    * Load a environment check result from ID.
    */
-  checkResult(opts?: ClientCheckResultOpts): Check {
-    return new Check({
+  checkResult(opts?: ClientCheckResultOpts): CheckResult {
+    return new CheckResult({
       queryTree: [
         ...this._queryTree,
         {
@@ -3957,15 +3889,18 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a check result with the given name, success and output.
+   * Create a check result with the given success and output.
    */
-  staticCheckResult(opts?: ClientStaticCheckResultOpts): CheckResult {
+  staticCheckResult(
+    success: boolean,
+    opts?: ClientStaticCheckResultOpts
+  ): CheckResult {
     return new CheckResult({
       queryTree: [
         ...this._queryTree,
         {
           operation: "staticCheckResult",
-          args: { ...opts },
+          args: { success, ...opts },
         },
       ],
       host: this.clientHost,

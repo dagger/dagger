@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core/envconfig"
 	"github.com/dagger/dagger/core/pipeline"
@@ -24,6 +25,10 @@ const (
 
 	outputMountPath = "/outputs"
 	outputFile      = "/dagger.json"
+
+	envMetaDirPath = "/env"
+	envIDFileName  = "id"
+	EnvIDFile      = envMetaDirPath + "/" + envIDFileName
 )
 
 type EnvironmentID string
@@ -33,14 +38,14 @@ func (id EnvironmentID) String() string {
 }
 
 func (id EnvironmentID) ToEnvironment() (*Environment, error) {
-	var environment Environment
+	env := new(Environment)
 	if id == "" {
-		return &environment, nil
+		return env, nil
 	}
-	if err := resourceid.Decode(&environment, id); err != nil {
+	if err := resourceid.Decode(env, id); err != nil {
 		return nil, err
 	}
-	return &environment, nil
+	return env, nil
 }
 
 type Environment struct {
@@ -57,16 +62,11 @@ type Environment struct {
 	// The environment's platform
 	Platform specs.Platform `json:"platform,omitempty"`
 
+	// TODO: doc, not in public api
+	Runtime *Container `json:"runtime,omitempty"`
+
 	// The environment's checks
 	Checks []*Check `json:"checks,omitempty"`
-}
-
-func NewEnvironment(id EnvironmentID) (*Environment, error) {
-	environment, err := id.ToEnvironment()
-	if err != nil {
-		return nil, err
-	}
-	return environment, nil
 }
 
 func (env *Environment) ID() (EnvironmentID, error) {
@@ -77,6 +77,12 @@ func (env *Environment) Clone() *Environment {
 	cp := *env
 	if env.Directory != nil {
 		cp.Directory = env.Directory.Clone()
+	}
+	if env.Workdir != nil {
+		cp.Workdir = env.Workdir.Clone()
+	}
+	if env.Runtime != nil {
+		cp.Runtime = env.Runtime.Clone()
 	}
 	if env.Config != nil {
 		env.Config = &envconfig.Config{
@@ -123,6 +129,7 @@ func LoadEnvironment(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
+	envCache *CacheMap[uint64, *Environment],
 	pipeline pipeline.Path,
 	platform specs.Platform,
 	rootDir *Directory,
@@ -134,54 +141,106 @@ func LoadEnvironment(
 		return nil, fmt.Errorf("failed to load environment config: %w", err)
 	}
 
+	env := &Environment{
+		Directory:  rootDir,
+		ConfigPath: configPath,
+		Workdir:    rootDir, // TODO: make this actually configurable + enforced + better default
+		Config:     cfg,
+		Platform:   platform,
+	}
+
+	// cache the base env so CurrentEnvironment works in the exec below
+	baseEnvDigest := cacheKey(env)
+	_, err = envCache.GetOrInitialize(baseEnvDigest, func() (*Environment, error) {
+		return env, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or initialize environment digest cache: %w", err)
+	}
+
+	ctr, err := env.runtime(ctx, bk, progSock, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get runtime container: %w", err)
+	}
+
+	envMetaDir := NewScratchDirectory(pipeline, platform)
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, envMetaDirPath, envMetaDir, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount env metadata directory: %w", err)
+	}
+
+	// ask the environment for its definition (checks, commands, etc.)
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	clientMetadata.EnvironmentName = cfg.Name
-	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
+	clientMetadata.EnvironmentDigest = baseEnvDigest
 
-	envRuntime, err := runtime(ctx, bk, progSock, pipeline, platform, cfg.Name, cfg.SDK, rootDir, configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get runtime container: %w", err)
-	}
-	ctr, err := envRuntime.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(pipeline, platform), "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount output directory: %w", err)
-	}
-
-	// ask the environment for its base config (commands, etc.)
-	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
+	ctr, err = ctr.WithExec(engine.ContextWithClientMetadata(ctx, clientMetadata), bk, progSock, platform, ContainerExecOpts{
 		Args:                          []string{"-env"},
 		ExperimentalPrivilegedNesting: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec schema command: %w", err)
+		return nil, fmt.Errorf("failed to exec env command: %w", err)
 	}
-	f, err := ctr.File(ctx, bk, "/outputs/envid")
+	f, err := ctr.File(ctx, bk, EnvIDFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get envid file: %w", err)
 	}
-	newEnvID, err := f.Contents(ctx, bk)
+	envID, err := f.Contents(ctx, bk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read envid file: %w", err)
 	}
-	env, err := EnvironmentID(newEnvID).ToEnvironment()
+	env, err = EnvironmentID(envID).ToEnvironment()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode envid: %w", err)
 	}
 
-	// fill in the other stuff we know about the environment
-	env.Directory = rootDir
-	env.ConfigPath = configPath
-	env.Workdir = rootDir // TODO: make this actually configurable + enforced + better default
-	env.Config = cfg
-	env.Platform = platform
+	// finalize the environment's container where resolvers execute
+	ctr, err = ctr.WithoutMount(ctx, envMetaDirPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build schema: %w", err)
+		return nil, fmt.Errorf("failed to unmount env metadata directory: %w", err)
 	}
+	env.Runtime = ctr
 
-	return env, nil
+	return env.cached(envCache)
+}
+
+// TODO: doc subtleties
+func (env *Environment) cached(cache *CacheMap[uint64, *Environment]) (*Environment, error) {
+	envDigest := cacheKey(env)
+	return cache.GetOrInitialize(envDigest, func() (*Environment, error) {
+		// TODO: consider per-entrypoint-type methods for this, to reduce mess once more are added
+		var setCheckEnv func(*Check) error
+		setCheckEnv = func(check *Check) error {
+			if len(check.Subchecks) > 0 {
+				for _, subcheck := range check.Subchecks {
+					if err := setCheckEnv(subcheck); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			if check.UserContainer != nil {
+				return nil
+			}
+			if check.EnvironmentDigest == 0 {
+				check.EnvironmentDigest = envDigest
+				check.EnvironmentName = env.Config.Name
+				return nil
+			}
+			if check.EnvironmentName == env.Config.Name {
+				check.EnvironmentDigest = envDigest
+			}
+			return nil
+		}
+		for _, check := range env.Checks {
+			if err := setCheckEnv(check); err != nil {
+				return nil, err
+			}
+		}
+		return env, nil
+	})
 }
 
 // figure out if we were passed a path to a dagger.json file or a parent dir that may contain such a file
@@ -193,43 +252,43 @@ func normalizeConfigPath(configPath string) string {
 	return path.Join(configPath, "dagger.json")
 }
 
-func runtime(
+func (env *Environment) runtime(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
 	pipeline pipeline.Path,
-	platform specs.Platform,
-	envName string,
-	sdk envconfig.SDK,
-	rootDir *Directory,
-	configPath string,
 ) (*Container, error) {
-	var ctr *Container
-	var err error
-	switch envconfig.SDK(sdk) {
+	switch env.Config.SDK {
 	case envconfig.SDKGo:
-		ctr, err = goRuntime(ctx, bk, progSock, pipeline, platform, rootDir, configPath)
+		return goRuntime(ctx, bk, progSock, pipeline, env.Platform, env.Directory, env.ConfigPath)
 	case envconfig.SDKPython:
-		ctr, err = pythonRuntime(ctx, bk, progSock, pipeline, platform, rootDir, configPath)
+		return pythonRuntime(ctx, bk, progSock, pipeline, env.Platform, env.Directory, env.ConfigPath)
 	default:
-		return nil, fmt.Errorf("unknown sdk %q", sdk)
+		return nil, fmt.Errorf("unknown sdk %q", env.Config.SDK)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get runtime container: %w", err)
-	}
-	ctr.EnvironmentName = envName
-	return ctr, nil
 }
 
-func execResolverContainer(
+func execResolver(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
 	pipeline pipeline.Path,
-	ctr *Container,
+	envCache *CacheMap[uint64, *Environment],
+	envDigest uint64,
 	entrypointName string,
 	args any,
-) (resolverOutput []byte, stdout, stderr string, rerr error) {
+) ([]byte, error) {
+	// TODO: doc subtleties
+	env, err := envCache.GetOrInitialize(envDigest, func() (*Environment, error) {
+		return nil, fmt.Errorf("environment %d not found", envDigest)
+	})
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	clientMetadata.EnvironmentDigest = envDigest
+	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
+
 	inputMap := map[string]any{
 		// TODO: remember to tell Helder that this is a small breaking change, need to tweak python sdk code.
 		// "resolver" used to be in form <parent>.<field>, now its just the name of the entrypoint (i.e. check
@@ -240,84 +299,46 @@ func execResolverContainer(
 	}
 	inputBytes, err := json.Marshal(inputMap)
 	if err != nil {
-		return nil, "", "", err
+		return nil, err
 	}
-	ctr, err = ctr.WithNewFile(ctx, bk, filepath.Join(inputMountPath, inputFile), inputBytes, 0644, "")
+	ctr, err := env.Runtime.WithNewFile(ctx, bk, filepath.Join(inputMountPath, inputFile), inputBytes, 0644, "")
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to mount resolver input file: %w", err)
+		return nil, fmt.Errorf("failed to mount resolver input file: %w", err)
 	}
 
 	ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(nil, ctr.Platform), "")
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to mount resolver output directory: %w", err)
+		return nil, fmt.Errorf("failed to mount resolver output directory: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, ctr.Platform, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
 	})
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to exec resolver: %w", err)
+		return nil, fmt.Errorf("failed to exec resolver: %w", err)
 	}
 	err = ctr.Evaluate(ctx, bk)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to exec resolver: %w", err)
+		return nil, fmt.Errorf("failed to evaluate resolver: %w", err)
 	}
 
 	outputFile, err := ctr.File(ctx, bk, filepath.Join(outputMountPath, outputFile))
-	if err == nil {
-		// TODO: would be better to check "file not found" error specifically
-		resolverOutput, err = outputFile.Contents(ctx, bk)
-		if err != nil {
-			return nil, "", "", fmt.Errorf("failed to read resolver output file: %w", err)
-		}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get resolver output file: %w", err)
 	}
 
-	stdout, err = ctr.MetaFileContents(ctx, bk, progSock, "stdout")
+	resolverOutput, err := outputFile.Contents(ctx, bk)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to read resolver stdout: %w", err)
+		return nil, fmt.Errorf("failed to read resolver output file: %w", err)
 	}
-	stderr, err = ctr.MetaFileContents(ctx, bk, progSock, "stderr")
-	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to read resolver stderr: %w", err)
-	}
-	return resolverOutput, stdout, stderr, nil
+
+	return resolverOutput, nil
 }
 
-func (env *Environment) WithCheck(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-	check *Check,
-) (*Environment, error) {
+func (env *Environment) WithCheck(check *Check, envCache *CacheMap[uint64, *Environment]) (*Environment, error) {
 	env = env.Clone()
-	if check.Result == "" {
-		// by default, determine the check result by executing the environment resolver
-		ctr, err := runtime(
-			ctx,
-			bk,
-			progSock,
-			pipeline,
-			env.Platform,
-			env.Config.Name,
-			env.Config.SDK,
-			env.Directory,
-			env.ConfigPath,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build runtime: %w", err)
-		}
-		ctrID, err := ctr.ID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get runtime container ID: %w", err)
-		}
-		check, err = check.WithContainer(ctrID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to set check container ID: %w", err)
-		}
-	}
 	env.Checks = append(env.Checks, check)
-	return env, nil
+	return env.cached(envCache)
 }
 
 type CheckID string
@@ -334,7 +355,173 @@ func (id CheckID) ToCheck() (*Check, error) {
 	if err := resourceid.Decode(&check, id); err != nil {
 		return nil, err
 	}
+	if !check.IsCheck {
+		return nil, fmt.Errorf("resource %q is not a check", id)
+	}
 	return &check, nil
+}
+
+type Check struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Subchecks   []*Check `json:"subchecks"`
+
+	// The container to exec if the check's success+output is being resolved
+	// from a user-defined container via the Check.withContainer API
+	UserContainer *Container `json:"user_container"`
+
+	// TODO: doc subtleties
+	EnvironmentName   string `json:"environment_name"`
+	EnvironmentDigest uint64 `json:"environment_digest"`
+
+	// TODO: backport generalize polymorphic safety checks
+	IsCheck bool `json:"is_check"`
+}
+
+func (check *Check) ID() (CheckID, error) {
+	check.IsCheck = true
+	return resourceid.Encode[CheckID](check)
+}
+
+func (check *Check) Digest() (digest.Digest, error) {
+	return stableDigest(check)
+}
+
+func (check Check) Clone() *Check {
+	cp := check
+	if cp.UserContainer != nil {
+		cp.UserContainer = check.UserContainer.Clone()
+	}
+	cp.Subchecks = make([]*Check, len(check.Subchecks))
+	for i, subcheck := range check.Subchecks {
+		cp.Subchecks[i] = subcheck.Clone()
+	}
+	return &cp
+}
+
+func (check *Check) WithName(name string) *Check {
+	check = check.Clone()
+	check.Name = name
+	return check
+}
+
+func (check *Check) WithDescription(description string) *Check {
+	check = check.Clone()
+	check.Description = description
+	return check
+}
+
+func (check *Check) WithSubcheck(subcheck *Check) *Check {
+	check = check.Clone()
+	check.Subchecks = append(check.Subchecks, subcheck)
+	return check
+}
+
+func (check *Check) WithUserContainer(ctr *Container) *Check {
+	check = check.Clone()
+	check.UserContainer = ctr
+	return check
+}
+
+func (check *Check) Result(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	pipeline pipeline.Path,
+	envCache *CacheMap[uint64, *Environment],
+) (*CheckResult, error) {
+	if len(check.Subchecks) > 0 {
+		// This is a composite check, evaluate it by evaluating each subcheck
+		var eg errgroup.Group
+		success := true
+		var output string
+		for _, subcheck := range check.Subchecks {
+			subcheck := subcheck
+			eg.Go(func() error {
+				subresult, err := subcheck.Result(ctx, bk, progSock, pipeline, envCache)
+				if err != nil {
+					return fmt.Errorf("failed to get subcheck result for %q: %w", subcheck.Name, err)
+				}
+				if !subresult.Success {
+					success = false
+					output += fmt.Sprintf("Subcheck %q failed:\n%s\n", subcheck.Name, subresult.Output)
+				} else {
+					output += fmt.Sprintf("Subcheck %q succeeded:\n%s\n", subcheck.Name, subresult.Output)
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		return &CheckResult{
+			Success: success,
+			Output:  "",
+		}, nil
+	}
+
+	if check.UserContainer != nil {
+		// check will be evaluated by exec'ing this container, with success based on exit code
+		ctr := check.UserContainer
+		success := true
+		var output string
+		evalErr := ctr.Evaluate(ctx, bk)
+		var execErr *buildkit.ExecError
+		switch {
+		case errors.As(evalErr, &execErr):
+			success = false
+			// TODO: really need combined stdout/stderr now
+			output = strings.Join([]string{evalErr.Error(), execErr.Stdout, execErr.Stderr}, "\n\n")
+		case evalErr != nil:
+			return nil, fmt.Errorf("failed to exec check user container: %w", evalErr)
+		default:
+			stdout, err := ctr.MetaFileContents(ctx, bk, progSock, "stdout")
+			if err != nil {
+				return nil, fmt.Errorf("failed to get stdout from check user container: %w", err)
+			}
+			stderr, err := ctr.MetaFileContents(ctx, bk, progSock, "stderr")
+			if err != nil {
+				return nil, fmt.Errorf("failed to get stderr from check user container: %w", err)
+			}
+			// TODO: really need combined stdout/stderr now
+			output = strings.Join([]string{stdout, stderr}, "\n\n")
+		}
+		return &CheckResult{
+			Success: success,
+			Output:  output,
+		}, nil
+	}
+
+	if check.EnvironmentDigest != 0 {
+		// check will be evaluated by exec'ing the environment's resolver
+		resolverOutput, err := execResolver(ctx, bk, progSock, pipeline, envCache, check.EnvironmentDigest, check.Name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exec check environment container: %w", err)
+		}
+
+		// TODO: comments once finalized, also backport polymorphic safety checks
+		var id string
+		if err := json.Unmarshal(resolverOutput, &id); err != nil {
+			return nil, fmt.Errorf("failed to decode check result from environment container: %w", err)
+		}
+
+		checkResult, err := CheckResultID(id).ToCheckResult()
+		if err == nil {
+			return checkResult, nil
+		}
+
+		recursiveCheck, err := CheckID(id).ToCheck()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode check from environment container: %w", err)
+		}
+		res, err := recursiveCheck.Result(ctx, bk, progSock, pipeline, envCache)
+		if err != nil {
+			return nil, fmt.Errorf("failed to evaluate recursive check: %w", err)
+		}
+		return res, nil
+	}
+
+	return nil, fmt.Errorf("invalid empty check %q", check.Name)
 }
 
 type CheckResultID string
@@ -351,225 +538,29 @@ func (id CheckResultID) ToCheckResult() (*CheckResult, error) {
 	if err := resourceid.Decode(&checkResult, id); err != nil {
 		return nil, err
 	}
+	if !checkResult.IsCheckResult {
+		return nil, fmt.Errorf("invalid check result ID %q", id)
+	}
 	return &checkResult, nil
 }
 
-type Check struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Subchecks   []CheckID `json:"subchecks"`
-
-	// The result, lazily represented as an id
-	Result CheckResultID `json:"result"`
-}
-
-func NewCheck(id CheckID) (*Check, error) {
-	check, err := id.ToCheck()
-	if err != nil {
-		return nil, err
-	}
-	return check, nil
-}
-
-func (check *Check) ID() (CheckID, error) {
-	return resourceid.Encode[CheckID](check)
-}
-
-func (check *Check) Digest() (digest.Digest, error) {
-	return stableDigest(check)
-}
-
-func (check Check) Clone() *Check {
-	cp := check
-	cp.Subchecks = cloneSlice(check.Subchecks)
-	return &cp
-}
-
-func (check *Check) WithName(name string) *Check {
-	check = check.Clone()
-	check.Name = name
-	return check
-}
-
-func (check *Check) WithDescription(description string) *Check {
-	check = check.Clone()
-	check.Description = description
-	return check
-}
-
-func (check *Check) WithSubcheck(subcheckID CheckID) (*Check, error) {
-	check = check.Clone()
-	check.Subchecks = append(check.Subchecks, subcheckID)
-
-	// update the result to include the subcheck result so it knows to
-	// include it in the final result when evaluated
-	result, err := check.Result.ToCheckResult()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode check result in withContainer: %w", err)
-	}
-	subcheck, err := subcheckID.ToCheck()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode subcheck in withContainer: %w", err)
-	}
-	result.Subresults = append(result.Subresults, subcheck.Result)
-	resultID, err := result.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode check result in withContainer: %w", err)
-	}
-	check.Result = resultID
-
-	return check, nil
-}
-
-func (check *Check) WithContainer(containerID ContainerID) (*Check, error) {
-	check = check.Clone()
-	result, err := check.Result.ToCheckResult()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode check result in withContainer: %w", err)
-	}
-	result.Container = containerID
-	resultID, err := result.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode check result in withContainer: %w", err)
-	}
-	check.Result = resultID
-	return check, nil
-}
-
 type CheckResult struct {
-	// The name of the check this result is for
-	// TODO: a content addressed ID would be better, but need to update SDKs to handle that
-	Name string `json:"name"`
-
-	// If this result is statically defined (i.e. not evaluated in a container)
-	// StaticSuccess is the success value of the result
-	StaticSuccess bool `json:"success"`
-
-	// If this result is statically defined (i.e. not evaluated in a container)
-	// StaticOutput is the output value of the result
-	StaticOutput string `json:"output"`
-
-	// If set, the container that will be exec'd to evaluate the result
-	Container ContainerID `json:"container"`
-
-	// If set, the result will be evaluated by evaluating each of the subresults
-	// NOTE: this is only used internally, not part of public API
-	Subresults []CheckResultID `json:"subresults"`
+	Success bool   `json:"success"`
+	Output  string `json:"output"`
+	// TODO: backport generalize polymorphic safety checks
+	IsCheckResult bool `json:"is_check_result"`
 }
 
-func NewCheckResult(id CheckResultID) (*CheckResult, error) {
-	checkRes, err := id.ToCheckResult()
-	if err != nil {
-		return nil, err
-	}
-	return checkRes, nil
+func (checkResult *CheckResult) ID() (CheckResultID, error) {
+	checkResult.IsCheckResult = true
+	return resourceid.Encode[CheckResultID](checkResult)
 }
 
-func NewStaticCheckResult(name string, success bool, output string) *CheckResult {
-	return &CheckResult{
-		Name:          name,
-		StaticSuccess: success,
-		StaticOutput:  output,
-	}
+func (checkResult *CheckResult) Digest() (digest.Digest, error) {
+	return stableDigest(checkResult)
 }
 
-func (result *CheckResult) ID() (CheckResultID, error) {
-	return resourceid.Encode[CheckResultID](result)
-}
-
-func (result *CheckResult) Clone() *CheckResult {
-	cp := *result
+func (checkResult CheckResult) Clone() *CheckResult {
+	cp := checkResult
 	return &cp
-}
-
-func (result *CheckResult) Success(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-) (bool, error) {
-	success, _, err := result.evaluate(ctx, bk, progSock, pipeline)
-	return success, err
-}
-
-func (result *CheckResult) Output(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-) (string, error) {
-	_, output, err := result.evaluate(ctx, bk, progSock, pipeline)
-	return output, err
-}
-
-func (result *CheckResult) evaluate(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	pipeline pipeline.Path,
-) (bool, string, error) {
-	if len(result.Subresults) > 0 {
-		// this is a composite result, evaluate it by evaluating each subresult
-		var eg errgroup.Group
-		// TODO: trying to combine output is gonna be a mess, it's currently up to the
-		// clients (i.e. cli, webui) to instead get subchecks and display them nicely
-		success := true
-		for _, subresultID := range result.Subresults {
-			subresultID := subresultID
-			eg.Go(func() error {
-				subresult, err := subresultID.ToCheckResult()
-				if err != nil {
-					return fmt.Errorf("failed to decode subresult in evaluate: %w", err)
-				}
-				subsuccess, _, err := subresult.evaluate(ctx, bk, progSock, pipeline)
-				if err != nil {
-					return err
-				}
-				if !subsuccess {
-					success = false
-				}
-				return nil
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return false, "", err
-		}
-		return success, "", nil
-	}
-
-	if result.Container == "" {
-		// result is statically defined
-		return result.StaticSuccess, result.StaticOutput, nil
-	}
-
-	// result will come from exec'ing a container
-	ctr, err := result.Container.ToContainer()
-	if err != nil {
-		return false, "", fmt.Errorf("failed to decode container in check result evaluate: %w", err)
-	}
-	resolverOutput, stdout, stderr, err := execResolverContainer(ctx, bk, progSock, pipeline, ctr, result.Name, nil)
-	var execErr *buildkit.ExecError
-	switch {
-	case errors.As(err, &execErr):
-		stdout = execErr.Stdout
-		stderr = execErr.Stderr
-	case err != nil:
-		return false, "", fmt.Errorf("failed to exec resolver container: %w", err)
-	}
-
-	if resolverOutput != nil {
-		// The result is being returned from an env resolver as a serialized CheckResult.
-		// Deserialize and get its result.
-		res, err := CheckResultID(resolverOutput).ToCheckResult()
-		if err != nil {
-			return false, "", fmt.Errorf("failed to decode check result resolver output: %w", err)
-		}
-		return res.evaluate(ctx, bk, progSock, pipeline)
-	}
-
-	// The container didn't give us a result, so we'll just use the exit code and stdout/stderr
-	if execErr == nil {
-		return true, stdout, nil // TODO: should we combine stdout/stderr somehow?
-	}
-	return false, stderr, nil // TODO: should we combine stdout/stderr somehow?
 }

@@ -37,6 +37,8 @@ func init() {
 		versionCmd,
 		queryCmd,
 		runCmd,
+		environmentCmd,
+		checkCmd,
 		sessionCmd(),
 	)
 }

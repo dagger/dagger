@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -220,4 +222,27 @@ func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
 
 func (p progrockFileWriter) Close() error {
 	return p.c.Close()
+}
+
+func EngineConn(engineClient *client.Client) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		req.SetBasicAuth(engineClient.SecretToken, "")
+		resp := httptest.NewRecorder()
+		engineClient.ServeHTTP(resp, req)
+		return resp.Result(), nil
+	}
+}
+
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f DirectConn) Host() string {
+	return ":mem:"
+}
+
+func (f DirectConn) Close() error {
+	return nil
 }

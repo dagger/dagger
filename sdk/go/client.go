@@ -11,7 +11,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/internal/engineconn"
-	"dagger.io/dagger/internal/querybuilder"
+	"dagger.io/dagger/querybuilder"
 )
 
 // Client is the Dagger Engine Client

@@ -411,6 +411,7 @@ func setupBundle() int {
 				return 1
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
+			keepEnv = append(keepEnv, "_DAGGER_ENVIRONMENT_DIGEST="+strconv.FormatUint(execMetadata.EnvironmentDigest, 10))
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -604,20 +605,28 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("missing _DAGGER_SERVER_ID")
 	}
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
-	sessParams := client.Params{
+	clientParams := client.Params{
 		ServerID:        serverID,
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
+	}
+	environmentDigestStr, ok := internalEnv("_DAGGER_ENVIRONMENT_DIGEST")
+	if ok {
+		environmentDigest, err := strconv.ParseUint(environmentDigestStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("error parsing environment digest: %w", err)
+		}
+		clientParams.EnvironmentDigest = environmentDigest
 	}
 
 	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
 	if err != nil {
 		return fmt.Errorf("error connecting to progrock: %w", err)
 	}
-	sessParams.ProgrockWriter = progW
+	clientParams.ProgrockWriter = progW
 
-	sess, ctx, err := client.Connect(ctx, sessParams)
+	sess, ctx, err := client.Connect(ctx, clientParams)
 	if err != nil {
 		return fmt.Errorf("error connecting to engine: %w", err)
 	}

@@ -63,6 +63,9 @@ type Params struct {
 	ProgrockWriter     progrock.Writer
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
+
+	// TODO: doc if this stays in
+	EnvironmentDigest uint64
 }
 
 type Client struct {
@@ -231,6 +234,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ClientHostname:    c.hostname,
 		Labels:            c.labels,
 		ParentClientIDs:   c.ParentClientIDs,
+		EnvironmentDigest: c.EnvironmentDigest,
 	})
 
 	// progress
@@ -263,6 +267,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ClientHostname:      hostname,
 				UpstreamCacheConfig: c.upstreamCacheOptions,
 				Labels:              c.labels,
+				EnvironmentDigest:   c.EnvironmentDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -393,6 +398,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error)
 		ClientHostname:    c.hostname,
 		ParentClientIDs:   c.ParentClientIDs,
 		Labels:            c.labels,
+		EnvironmentDigest: c.EnvironmentDigest,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err
