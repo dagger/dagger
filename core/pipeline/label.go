@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -45,7 +46,13 @@ func LoadVCSLabels(workdir string) []Label {
 	if gitlabLabels, err := LoadGitLabLabels(); err == nil {
 		labels = append(labels, gitlabLabels...)
 	} else {
-		logrus.Warnf("failed to collect GitHub labels: %s", err)
+		logrus.Warnf("failed to collect Gitlab labels: %s", err)
+	}
+
+	if CircleCILabels, err := LoadCircleCILabels(); err == nil {
+		labels = append(labels, CircleCILabels...)
+	} else {
+		logrus.Warnf("failed to collect CircleCI labels: %s", err)
 	}
 
 	return labels
@@ -139,8 +146,87 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 	return labels, nil
 }
 
+func LoadCircleCILabels() ([]Label, error) {
+	if os.Getenv("CIRCLECI") != "true" { // nolint:goconst
+		return []Label{}, nil
+	}
+
+	labels := []Label{
+		{
+			Name:  "dagger.io/vcs.change.branch",
+			Value: os.Getenv("CIRCLE_BRANCH"),
+		},
+		{
+			Name:  "dagger.io/vcs.change.head_sha",
+			Value: os.Getenv("CIRCLE_SHA1"),
+		},
+		{
+			Name:  "dagger.io/vcs.job.name",
+			Value: os.Getenv("CIRCLE_JOB"),
+		},
+	}
+
+	appendLabel := func(label string, envVar []string, labels []Label) []Label {
+		for _, envVar := range envVar {
+			triggererLogin := os.Getenv(envVar)
+			if triggererLogin != "" {
+				return append(labels, Label{
+					Name:  label,
+					Value: triggererLogin,
+				})
+			}
+		}
+		return labels
+	}
+
+	// environment variables beginning with "CIRCLE_PIPELINE_"  are set in `.circle-ci` pipeline config
+	pipelineNumber := []string{
+		"CIRCLE_PIPELINE_NUMBER",
+	}
+	labels = appendLabel("dagger.io/vcs.change.number", pipelineNumber, labels)
+
+	triggererLabels := []string{
+		"CIRCLE_USERNAME",               // all, but account needs to exist on circleCI
+		"CIRCLE_PROJECT_USERNAME",       // github / bitbucket
+		"CIRCLE_PIPELINE_TRIGGER_LOGIN", // gitlab
+	}
+	labels = appendLabel("dagger.io/vcs.triggerer.login", triggererLabels, labels)
+
+	repoNameLabels := []string{
+		"CIRCLE_PROJECT_REPONAME",        // github / bitbucket
+		"CIRCLE_PIPELINE_REPO_FULL_NAME", // gitlab
+	}
+	labels = appendLabel("dagger.io/vcs.repo.full_name", repoNameLabels, labels)
+
+	vcsChangeURL := []string{
+		"CIRCLE_PULL_REQUEST", // github / bitbucket, only from forks
+	}
+	labels = appendLabel("dagger.io/vcs.change.url", vcsChangeURL, labels)
+
+	pipelineRepoURL := os.Getenv("CIRCLE_PIPELINE_REPO_URL")
+	repositoryURL := os.Getenv("CIRCLE_REPOSITORY_URL")
+	if pipelineRepoURL != "" { // gitlab
+		labels = append(labels, Label{
+			Name:  "dagger.io/vcs.repo.url",
+			Value: pipelineRepoURL,
+		})
+	} else if repositoryURL != "" { // github / bitbucket (returns the remote)
+		transformedURL := repositoryURL
+		if strings.Contains(repositoryURL, "@") { // from ssh to https
+			re := regexp.MustCompile(`git@(.*?):(.*?)/(.*)\.git`)
+			transformedURL = re.ReplaceAllString(repositoryURL, "https://$1/$2/$3")
+		}
+		labels = append(labels, Label{
+			Name:  "dagger.io/vcs.repo.url",
+			Value: transformedURL,
+		})
+	}
+
+	return labels, nil
+}
+
 func LoadGitLabLabels() ([]Label, error) {
-	if os.Getenv("GITLAB_CI") != "true" {
+	if os.Getenv("GITLAB_CI") != "true" { // nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -221,7 +307,7 @@ func LoadGitLabLabels() ([]Label, error) {
 }
 
 func LoadGitHubLabels() ([]Label, error) {
-	if os.Getenv("GITHUB_ACTIONS") != "true" {
+	if os.Getenv("GITHUB_ACTIONS") != "true" { // nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -313,7 +399,6 @@ func LoadGitHubLabels() ([]Label, error) {
 				Name:  "dagger.io/vcs.change.label",
 				Value: pr.GetHead().GetLabel(),
 			})
-
 		}
 	}
 

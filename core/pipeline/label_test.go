@@ -339,6 +339,61 @@ func TestLoadGitLabLabels(t *testing.T) {
 	}
 }
 
+func TestLoadCircleCILabels(t *testing.T) {
+	type Example struct {
+		Name   string
+		Env    map[string]string
+		Labels []pipeline.Label
+	}
+
+	for _, example := range []Example{
+		{
+			Name: "CircleCI",
+			Env: map[string]string{
+				"CIRCLECI":                      "true",
+				"CIRCLE_BRANCH":                 "main",
+				"CIRCLE_SHA1":                   "abc123",
+				"CIRCLE_JOB":                    "build",
+				"CIRCLE_PIPELINE_NUMBER":        "42",
+				"CIRCLE_PIPELINE_TRIGGER_LOGIN": "circle-user",
+				"CIRCLE_REPOSITORY_URL":         "git@github.com:user/repo.git",
+				"CIRCLE_PROJECT_REPONAME":       "repo",
+				"CIRCLE_PULL_REQUEST":           "https://github.com/circle/repo/pull/1",
+			},
+			Labels: []pipeline.Label{
+				{Name: "dagger.io/vcs.change.branch", Value: "main"},
+				{Name: "dagger.io/vcs.change.head_sha", Value: "abc123"},
+				{Name: "dagger.io/vcs.job.name", Value: "build"},
+				{Name: "dagger.io/vcs.change.number", Value: "42"},
+				{Name: "dagger.io/vcs.triggerer.login", Value: "circle-user"},
+				{Name: "dagger.io/vcs.repo.url", Value: "https://github.com/user/repo"},
+				{Name: "dagger.io/vcs.repo.full_name", Value: "repo"},
+				{Name: "dagger.io/vcs.change.url", Value: "https://github.com/circle/repo/pull/1"},
+			},
+		},
+	} {
+		example := example
+		t.Run(example.Name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range example.Env {
+				os.Setenv(k, v)
+			}
+
+			// Run the function and collect the result
+			labels, err := pipeline.LoadCircleCILabels()
+
+			// Clean up environment variables
+			for k := range example.Env {
+				os.Unsetenv(k)
+			}
+
+			// Make assertions
+			require.NoError(t, err)
+			require.ElementsMatch(t, example.Labels, labels)
+		})
+	}
+}
+
 func run(t *testing.T, exe string, args ...string) string { // nolint: unparam
 	t.Helper()
 	cmd := exec.Command(exe, args...)
