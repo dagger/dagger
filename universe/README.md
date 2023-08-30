@@ -2,16 +2,13 @@
 
 In order to run dagger with Zenith functionality, you will need to build a Dagger CLI off this branch and build a Dagger Engine off this branch.
 
-Our existing command for doing this is `./hack/dev`. That script will:
+To do that, just run this from the dagger repo root:
 
-1. Build the Dagger CLI and export it to `./bin/dagger`
-1. Build the Dagger Engine and run it in your local docker installation in a container named `dagger-engine.dev`
-
-In order to ensure you are using the dev CLI+Engine; it's suggested to set these environment variables after running `./hack/dev`:
-
-- `_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev`
-- `$PATH=$(pwd)/bin:$PATH`
-  - This assumes `$(pwd)` points to the root of the dagger repo, replace it with the actual root if that's not the case
+```console
+./hack/dev
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+export PATH=$(pwd)/bin:$PATH
+```
 
 ## Creating an Environment
 
