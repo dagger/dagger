@@ -29,7 +29,7 @@ type recordingGateway struct {
 // ResolveImageConfig records the image config resolution vertex as a member of
 // the current progress group, and calls the inner ResolveImageConfig.
 func (g recordingGateway) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	// HACK(vito): this is how Buildkit determines the vertex digest. Keep this
 	// in sync with Buildkit until a better way to do this arrives. It hasn't
@@ -49,7 +49,7 @@ func (g recordingGateway) ResolveImageConfig(ctx context.Context, ref string, op
 // Solve records the vertexes of the definition and frontend inputs as members
 // of the current progress group, and calls the inner Solve.
 func (g recordingGateway) Solve(ctx context.Context, req frontend.SolveRequest, sessionID string) (*frontend.Result, error) {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	if req.Definition != nil {
 		RecordVertexes(rec, req.Definition)

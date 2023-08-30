@@ -70,15 +70,13 @@ require (
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.18
 	github.com/moby/sys/mount v0.3.3
-	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.7
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
-	github.com/vito/progrock v0.9.1-0.20230815145556-518f2dcd6e2f
-	github.com/vito/vt100 v0.1.2
+	github.com/vito/progrock v0.10.0
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.11.0
 )
@@ -174,6 +172,7 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
+	github.com/muesli/termenv v0.15.1 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
@@ -190,6 +189,7 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tonistiigi/go-actions-cache v0.0.0-20220404170428-0bdeb6e1eac7 // indirect
 	github.com/tonistiigi/go-archvariant v1.0.0 // indirect
+	github.com/vito/midterm v0.1.4 // indirect
 	github.com/weaveworks/promrus v1.2.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yuin/goldmark v1.5.4 // indirect
