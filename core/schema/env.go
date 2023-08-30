@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
 	"github.com/moby/buildkit/identity"
@@ -724,6 +725,19 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 			}
 			output, err := ctr.Stdout(ctx, s.bk, s.progSockPath) // TODO(vito): combined output
 			if err != nil {
+				if execErr, ok := err.(*buildkit.ExecError); ok {
+					return &core.EnvironmentCheckResult{
+						Name:    check.EnvironmentName + "." + check.Name,
+						Success: false,
+						Output: fmt.Sprintf(
+							"%s\nStdout:\n%s\nStderr:\n%s",
+							execErr.Error(),
+							execErr.Stdout,
+							execErr.Stderr,
+						),
+					}, nil
+				}
+
 				return &core.EnvironmentCheckResult{
 					Name:    check.EnvironmentName + "." + check.Name,
 					Success: false,
