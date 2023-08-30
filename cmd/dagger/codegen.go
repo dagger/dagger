@@ -74,46 +74,47 @@ func RunCodegen(
 
 	if output == "" || output == "-" {
 		cmd.Println(string(generated))
-	} else {
-		parentDir := filepath.Dir(output)
-		_, parentDirStatErr := os.Stat(parentDir)
-		switch {
-		case parentDirStatErr == nil:
-			// already exists, nothing to do
-		case os.IsNotExist(parentDirStatErr):
-			// make the parent dir, but if something goes wrong, clean it up in the defer
-			if err := os.MkdirAll(parentDir, 0755); err != nil {
-				return fmt.Errorf("failed to create parent directory: %w", err)
-			}
-			defer func() {
-				if rerr != nil {
-					os.RemoveAll(parentDir)
-				}
-			}()
-		default:
-			return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
-		}
-
-		if err := os.WriteFile(output, generated, 0o600); err != nil {
-			return err
-		}
-		defer func() {
-			if rerr != nil {
-				os.Remove(output)
-			}
-		}()
-
-		gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
-		gitAttributesPath := path.Join(filepath.Dir(output), ".gitattributes")
-		if err := os.WriteFile(gitAttributesPath, []byte(gitAttributes), 0o600); err != nil {
-			return err
-		}
-		defer func() {
-			if rerr != nil {
-				os.Remove(gitAttributesPath)
-			}
-		}()
+		return
 	}
+
+	parentDir := filepath.Dir(output)
+	_, parentDirStatErr := os.Stat(parentDir)
+	switch {
+	case parentDirStatErr == nil:
+		// already exists, nothing to do
+	case os.IsNotExist(parentDirStatErr):
+		// make the parent dir, but if something goes wrong, clean it up in the defer
+		if err := os.MkdirAll(parentDir, 0755); err != nil {
+			return fmt.Errorf("failed to create parent directory: %w", err)
+		}
+		defer func() {
+			if rerr != nil {
+				os.RemoveAll(parentDir)
+			}
+		}()
+	default:
+		return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
+	}
+
+	if err := os.WriteFile(output, generated, 0o600); err != nil {
+		return err
+	}
+	defer func() {
+		if rerr != nil {
+			os.Remove(output)
+		}
+	}()
+
+	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
+	gitAttributesPath := path.Join(filepath.Dir(output), ".gitattributes")
+	if err := os.WriteFile(gitAttributesPath, []byte(gitAttributes), 0o600); err != nil {
+		return err
+	}
+	defer func() {
+		if rerr != nil {
+			os.Remove(gitAttributesPath)
+		}
+	}()
 
 	return nil
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -125,11 +124,12 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, env *dagg
 		}
 	}
 
-	path := []string{}
 	var eg errgroup.Group
 	for _, check := range selectedChecks {
 		check := check
-		runCheckHierarchy(ctx, c, rec, path, &eg, check)
+		if err := runCheckHierarchy(ctx, c, rec, &eg, check); err != nil {
+			return err
+		}
 	}
 	return eg.Wait()
 }
@@ -138,7 +138,6 @@ func runCheckHierarchy(
 	ctx context.Context,
 	c *dagger.Client,
 	rec *progrock.Recorder,
-	path []string,
 	eg *errgroup.Group,
 	check *dagger.Check,
 ) error {
@@ -159,10 +158,11 @@ func runCheckHierarchy(
 	}
 	name = strcase.ToKebab(name)
 
-	path = append([]string{}, path...)
-	path = append(path, name)
-	fullPathName := strings.Join(path, "->")
-	digest := digest.FromString(fullPathName)
+	checkID, err := check.ID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get check id: %w", err)
+	}
+	digest := digest.FromString(string(checkID))
 
 	eg.Go(func() (rerr error) {
 		subChecks, err := check.Subchecks(ctx)
@@ -215,7 +215,7 @@ func runCheckHierarchy(
 				return fmt.Errorf("failed to get check id: %w", err)
 			}
 			subCheck = *c.Check(dagger.CheckOpts{ID: subCheckID})
-			err = runCheckHierarchy(ctx, c, rec, path, eg, &subCheck)
+			err = runCheckHierarchy(ctx, c, rec, eg, &subCheck)
 			if err != nil {
 				return err
 			}

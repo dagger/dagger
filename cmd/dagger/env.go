@@ -295,7 +295,7 @@ func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
 	environmentURI := environmentURI
 	if environmentURI == "" || environmentURI == environmentURIDefault {
 		// it's unset or default value, use env if present
-		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
+		if v, ok := os.LookupEnv("DAGGER_ENV"); ok {
 			environmentURI = v
 		}
 	}
