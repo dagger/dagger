@@ -16,7 +16,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a environment check from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @doc "The check initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
     @spec check(t(), keyword()) :: Dagger.Check.t()
     def check(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "check")
@@ -33,8 +33,8 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a environment check result from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec check_result(t(), keyword()) :: Dagger.Check.t()
+    @doc "The check result initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec check_result(t(), keyword()) :: Dagger.CheckResult.t()
     def check_result(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "checkResult")
 
@@ -45,7 +45,7 @@ defmodule Dagger.Client do
           arg(selection, "id", optional_args[:id])
         end
 
-      %Dagger.Check{selection: selection, client: query.client}
+      %Dagger.CheckResult{selection: selection, client: query.client}
     end
   )
 
@@ -86,7 +86,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Return the current environment being executed in."
+    @doc "The environment the requester is being executed in (or an error if none)."
     @spec current_environment(t()) :: Dagger.Environment.t()
     def current_environment(%__MODULE__{} = query) do
       selection = select(query.selection, "currentEnvironment")
@@ -122,7 +122,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a environment from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @doc "The environment initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
     @spec environment(t(), keyword()) :: Dagger.Environment.t()
     def environment(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "environment")
@@ -203,6 +203,17 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Install the given environment into this graphql API. Its schema will be\nstitched into the schema of this server, making those APIs available for\nsubsequent queries.\n\nIf an environment with the same ID has already been installed, this is a no-op.\n\nIf there are any conflicts between the environment's schema and any existing\nschemas, an error will be returned.\n\n## Required Arguments\n\n* `id` -"
+    @spec install_environment(t(), Dagger.Environment.t()) ::
+            {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def install_environment(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "installEnvironment")
+      selection = arg(selection, "id", id)
+      execute(selection, query.client)
+    end
+  )
+
+  (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
     @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Client.t()
     def pipeline(%__MODULE__{} = query, name, optional_args \\ []) do
@@ -267,18 +278,11 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Create a check result with the given name, success and output.\n\n## Required Arguments\n\n* `success` - \n\n## Optional Arguments\n\n* `name` - \n* `output` -"
+    @doc "A check result initialized with the given success and output.\n\n## Required Arguments\n\n* `success` - \n\n## Optional Arguments\n\n* `output` -"
     @spec static_check_result(t(), Dagger.Boolean.t(), keyword()) :: Dagger.CheckResult.t()
     def static_check_result(%__MODULE__{} = query, success, optional_args \\ []) do
       selection = select(query.selection, "staticCheckResult")
       selection = arg(selection, "success", success)
-
-      selection =
-        if is_nil(optional_args[:name]) do
-          selection
-        else
-          arg(selection, "name", optional_args[:name])
-        end
 
       selection =
         if is_nil(optional_args[:output]) do

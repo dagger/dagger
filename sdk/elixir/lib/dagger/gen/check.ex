@@ -33,7 +33,7 @@ defmodule Dagger.Check do
   )
 
   (
-    @doc "The result of this check."
+    @doc "The result of evaluating this check."
     @spec result(t()) :: Dagger.CheckResult.t()
     def result(%__MODULE__{} = check) do
       selection = select(check.selection, "result")
@@ -51,7 +51,7 @@ defmodule Dagger.Check do
   )
 
   (
-    @doc "This check with the given container used to determine the check's result.\nIf set, the container will be executed and the check result will be set to\nsuccess if the container exits with a zero exit code, failure otherwise.\n\n## Required Arguments\n\n* `id` -"
+    @doc "This check with the given container used to determine the check's result.\nIf set, the container will be executed and the check success will be true\nif the container exits with a zero exit code, false otherwise.\n\n## Required Arguments\n\n* `id` -"
     @spec with_container(t(), Dagger.Container.t()) :: Dagger.Check.t()
     def with_container(%__MODULE__{} = check, container) do
       selection = select(check.selection, "withContainer")

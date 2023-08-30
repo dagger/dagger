@@ -112,7 +112,7 @@ class CheckEntrypointReturnType(Enum):
 
     The entrypoint does not return any value.
 
-    In this case, the check's result is based on whether the entrypoint exit code.
+    In this case, the check's result is based on the entrypoint exit code.
 
     Exit code 0 will result in a successful check.
 

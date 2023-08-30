@@ -14,6 +14,15 @@ export type QueryTree = {
   args?: Record<string, unknown>
 }
 
+/**
+ * @hidden
+ */
+export type Metadata = {
+  [key: string]: {
+    is_enum?: boolean
+  }
+}
+
 interface ClientConfig {
   queryTree?: QueryTree[]
   host?: string
@@ -77,17 +86,17 @@ export enum CacheSharingMode {
    * Shares the cache volume amongst many build pipelines,
    * but will serialize the writes
    */
-  Locked,
+  Locked = "LOCKED",
 
   /**
    * Keeps a cache volume for a single build pipeline
    */
-  Private,
+  Private = "PRIVATE",
 
   /**
    * Shares the cache volume amongst many build pipelines
    */
-  Shared,
+  Shared = "SHARED",
 }
 /**
  * Internal-only.
@@ -104,7 +113,7 @@ export enum CheckEntrypointReturnType {
    * A non-zero entrypoint exit code will be treated as an internal error and
    * result in the entrypoint execution not being cached.
    */
-  Checkentrypointreturncheck,
+  Checkentrypointreturncheck = "CheckEntrypointReturnCheck",
 
   /**
    * Internal-only.
@@ -115,7 +124,7 @@ export enum CheckEntrypointReturnType {
    * A non-zero entrypoint exit code will be treated as an internal error and
    * result in the entrypoint execution not being cached.
    */
-  Checkentrypointreturncheckresult,
+  Checkentrypointreturncheckresult = "CheckEntrypointReturnCheckResult",
 
   /**
    * Internal-only.
@@ -132,14 +141,14 @@ export enum CheckEntrypointReturnType {
    * result in the entrypoint execution being cached. This error will be forwarded
    * to any clients querying the check result.
    */
-  Checkentrypointreturnstring,
+  Checkentrypointreturnstring = "CheckEntrypointReturnString",
 
   /**
    * Internal-only.
    *
    * The entrypoint does not return any value.
    *
-   * In this case, the check's result is based on whether the entrypoint exit code.
+   * In this case, the check's result is based on the entrypoint exit code.
    *
    * Exit code 0 will result in a successful check.
    *
@@ -150,7 +159,7 @@ export enum CheckEntrypointReturnType {
    * result in the entrypoint execution being cached. This error will be forwarded
    * to any clients querying the check result.
    */
-  Checkentrypointreturnvoid,
+  Checkentrypointreturnvoid = "CheckEntrypointReturnVoid",
 }
 /**
  * A unique environment check identifier.
@@ -636,17 +645,17 @@ export type ID = string & { __ID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  Estargz,
-  Gzip,
-  Uncompressed,
-  Zstd,
+  Estargz = "EStarGZ",
+  Gzip = "Gzip",
+  Uncompressed = "Uncompressed",
+  Zstd = "Zstd",
 }
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Dockermediatypes,
-  Ocimediatypes,
+  Dockermediatypes = "DockerMediaTypes",
+  Ocimediatypes = "OCIMediaTypes",
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -655,12 +664,12 @@ export enum NetworkProtocol {
   /**
    * TCP (Transmission Control Protocol)
    */
-  Tcp,
+  Tcp = "TCP",
 
   /**
    * UDP (User Datagram Protocol)
    */
-  Udp,
+  Udp = "UDP",
 }
 export type PipelineLabel = {
   /**
@@ -1350,12 +1359,17 @@ export class Container extends BaseClient {
       return this._export
     }
 
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "export",
-          args: { path, ...opts },
+          args: { path, ...opts, __metadata: metadata },
         },
       ],
       this.client
@@ -1675,12 +1689,17 @@ export class Container extends BaseClient {
       return this._publish
     }
 
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "publish",
-          args: { address, ...opts },
+          args: { address, ...opts, __metadata: metadata },
         },
       ],
       this.client
@@ -1930,12 +1949,16 @@ export class Container extends BaseClient {
     port: number,
     opts?: ContainerWithExposedPortOpts
   ): Container {
+    const metadata: Metadata = {
+      protocol: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExposedPort",
-          args: { port, ...opts },
+          args: { port, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
@@ -2031,12 +2054,16 @@ export class Container extends BaseClient {
     cache: CacheVolume,
     opts?: ContainerWithMountedCacheOpts
   ): Container {
+    const metadata: Metadata = {
+      sharing: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withMountedCache",
-          args: { path, cache, ...opts },
+          args: { path, cache, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
@@ -2355,12 +2382,16 @@ export class Container extends BaseClient {
     port: number,
     opts?: ContainerWithoutExposedPortOpts
   ): Container {
+    const metadata: Metadata = {
+      protocol: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withoutExposedPort",
-          args: { port, ...opts },
+          args: { port, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
@@ -3286,12 +3317,16 @@ export class Environment extends BaseClient {
    * of environment initialization code.
    */
   withCheck(id: Check, opts?: EnvironmentWithCheckOpts): Environment {
+    const metadata: Metadata = {
+      returnType: { is_enum: true },
+    }
+
     return new Environment({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withCheck",
-          args: { id, ...opts },
+          args: { id, ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,

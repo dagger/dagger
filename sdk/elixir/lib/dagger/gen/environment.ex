@@ -30,6 +30,79 @@ defmodule Dagger.Environment do
   )
 
   (
+    @doc "Other environments that this environment depends on. If this environment is installed,\nall dependencies will be (recursively) installed too."
+    @spec dependencies(t()) :: {:ok, [Dagger.Environment.t()] | nil} | {:error, term()}
+    def dependencies(%__MODULE__{} = environment) do
+      selection = select(environment.selection, "dependencies")
+      execute(selection, environment.client)
+    end
+  )
+
+  (
+    @doc "Internal only.\n\nThe input for the current entrypoint invocation."
+    @spec entrypoint_input(t()) :: Dagger.EntrypointInput.t()
+    def entrypoint_input(%__MODULE__{} = environment) do
+      selection = select(environment.selection, "entrypointInput")
+      %Dagger.EntrypointInput{selection: selection, client: environment.client}
+    end
+  )
+
+  (
+    @doc "The environment initialized with the given name, sourceDirectory, sdk and dependencies.\n\nIf set, sourceDirectorySubpath should point to the subpath of sourceDirectory that\ncontains the environment code. If unset, it will default to the root of the sourceDirectory.\n\n## Required Arguments\n\n* `name` - \n* `source_directory` - \n* `sdk` - \n\n## Optional Arguments\n\n* `source_directory_subpath` - \n* `dependencies` -"
+    @spec from(t(), Dagger.String.t(), Dagger.Directory.t(), Dagger.String.t(), keyword()) ::
+            Dagger.Environment.t()
+    def from(%__MODULE__{} = environment, name, source_directory, sdk, optional_args \\ []) do
+      selection = select(environment.selection, "from")
+      selection = arg(selection, "name", name)
+
+      (
+        {:ok, id} = Dagger.Directory.id(source_directory)
+        selection = arg(selection, "sourceDirectory", id)
+      )
+
+      selection = arg(selection, "sdk", sdk)
+
+      selection =
+        if is_nil(optional_args[:source_directory_subpath]) do
+          selection
+        else
+          arg(selection, "sourceDirectorySubpath", optional_args[:source_directory_subpath])
+        end
+
+      selection =
+        if is_nil(optional_args[:dependencies]) do
+          selection
+        else
+          arg(selection, "dependencies", optional_args[:dependencies])
+        end
+
+      %Dagger.Environment{selection: selection, client: environment.client}
+    end
+  )
+
+  (
+    @doc "The environment initialized with the sourceDirectory and environment configuration file path.\nIf configPath is not set, it defaults to the root of the sourceDirectory.\n\n## Required Arguments\n\n* `source_directory` - \n\n## Optional Arguments\n\n* `config_path` -"
+    @spec from_config(t(), Dagger.Directory.t(), keyword()) :: Dagger.Environment.t()
+    def from_config(%__MODULE__{} = environment, source_directory, optional_args \\ []) do
+      selection = select(environment.selection, "fromConfig")
+
+      (
+        {:ok, id} = Dagger.Directory.id(source_directory)
+        selection = arg(selection, "sourceDirectory", id)
+      )
+
+      selection =
+        if is_nil(optional_args[:config_path]) do
+          selection
+        else
+          arg(selection, "configPath", optional_args[:config_path])
+        end
+
+      %Dagger.Environment{selection: selection, client: environment.client}
+    end
+  )
+
+  (
     @doc "A unique identifier for this environment."
     @spec id(t()) :: {:ok, Dagger.EnvironmentID.t()} | {:error, term()}
     def id(%__MODULE__{} = environment) do
@@ -39,24 +112,8 @@ defmodule Dagger.Environment do
   )
 
   (
-    @doc "Initialize this environment from its source. The full context needed to execute\nthe environment is provided as environmentDirectory, with the environment's configuration\nfile located at configPath.\n\n## Required Arguments\n\n* `environment_directory` - \n* `config_path` -"
-    @spec load(t(), Dagger.Directory.t(), Dagger.String.t()) :: Dagger.Environment.t()
-    def load(%__MODULE__{} = environment, environment_directory, config_path) do
-      selection = select(environment.selection, "load")
-
-      (
-        {:ok, id} = Dagger.Directory.id(environment_directory)
-        selection = arg(selection, "environmentDirectory", id)
-      )
-
-      selection = arg(selection, "configPath", config_path)
-      %Dagger.Environment{selection: selection, client: environment.client}
-    end
-  )
-
-  (
     @doc "Name of the environment"
-    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    @spec name(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def name(%__MODULE__{} = environment) do
       selection = select(environment.selection, "name")
       execute(selection, environment.client)
@@ -64,24 +121,61 @@ defmodule Dagger.Environment do
   )
 
   (
-    @doc "This environment plus the given check\n\n## Required Arguments\n\n* `id` -"
-    @spec with_check(t(), Dagger.Check.t()) :: Dagger.Environment.t()
-    def with_check(%__MODULE__{} = environment, id) do
+    @doc "Internal only.\n\nReturn the given value as the result of the current entrypoint invocation.\nThe value is expected to be the json-serialized representation of the return.\n\n## Required Arguments\n\n* `value` -"
+    @spec return_entrypoint_value(t(), Dagger.String.t()) ::
+            {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def return_entrypoint_value(%__MODULE__{} = environment, value) do
+      selection = select(environment.selection, "returnEntrypointValue")
+      selection = arg(selection, "value", value)
+      execute(selection, environment.client)
+    end
+  )
+
+  (
+    @doc "The SDK that this environment will be executed with"
+    @spec sdk(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def sdk(%__MODULE__{} = environment) do
+      selection = select(environment.selection, "sdk")
+      execute(selection, environment.client)
+    end
+  )
+
+  (
+    @doc "The directory containing all the source needed to execute this environment's code"
+    @spec source_directory(t()) :: Dagger.Directory.t()
+    def source_directory(%__MODULE__{} = environment) do
+      selection = select(environment.selection, "sourceDirectory")
+      %Dagger.Directory{selection: selection, client: environment.client}
+    end
+  )
+
+  (
+    @doc "Internal only.\n\nThis environment with the given check. It is an error to call this outside\nof environment initialization code.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments\n\n* `return_type` -"
+    @spec with_check(t(), Dagger.Check.t(), keyword()) :: Dagger.Environment.t()
+    def with_check(%__MODULE__{} = environment, id, optional_args \\ []) do
       selection = select(environment.selection, "withCheck")
       selection = arg(selection, "id", id)
+
+      selection =
+        if is_nil(optional_args[:return_type]) do
+          selection
+        else
+          arg(selection, "returnType", optional_args[:return_type])
+        end
+
       %Dagger.Environment{selection: selection, client: environment.client}
     end
   )
 
   (
-    @doc "This environment with the given workdir\n\n## Required Arguments\n\n* `workdir` -"
+    @doc "This environment with the given workdir\n\n## Required Arguments\n\n* `id` -"
     @spec with_workdir(t(), Dagger.Directory.t()) :: Dagger.Environment.t()
-    def with_workdir(%__MODULE__{} = environment, workdir) do
+    def with_workdir(%__MODULE__{} = environment, directory) do
       selection = select(environment.selection, "withWorkdir")
 
       (
-        {:ok, id} = Dagger.Directory.id(workdir)
-        selection = arg(selection, "workdir", id)
+        {:ok, id} = Dagger.Directory.id(directory)
+        selection = arg(selection, "id", id)
       )
 
       %Dagger.Environment{selection: selection, client: environment.client}
@@ -89,11 +183,11 @@ defmodule Dagger.Environment do
   )
 
   (
-    @doc "The directory the environment code will execute in as its current working directory."
-    @spec workdir(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+    @doc "The directory that the environment code will execute in as its current working directory.\nIf not set explicitly, it will default to the root of the sourceDirectory."
+    @spec workdir(t()) :: Dagger.Directory.t()
     def workdir(%__MODULE__{} = environment) do
       selection = select(environment.selection, "workdir")
-      execute(selection, environment.client)
+      %Dagger.Directory{selection: selection, client: environment.client}
     end
   )
 end
