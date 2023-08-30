@@ -20,11 +20,14 @@ var checkCmd = &cobra.Command{
 	RunE:               loadEnvCmdWrapper(RunCheck),
 }
 
+var revealErrs bool
+
 func init() {
 	rootCmd.AddCommand(checkCmd)
 
 	checkCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the environment's root directory when using a environment loaded from a local dir.")
 	checkCmd.PersistentFlags().BoolVar(&doFocus, "focus", true, "Only show output for focused commands.")
+	checkCmd.PersistentFlags().BoolVar(&revealErrs, "reveal-errors", false, "Only show output for focused commands.")
 
 	checkCmd.AddCommand(
 		&cobra.Command{
@@ -34,7 +37,6 @@ func init() {
 			RunE:         loadEnvCmdWrapper(ListChecks),
 		},
 	)
-
 }
 
 func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {

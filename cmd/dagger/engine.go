@@ -45,6 +45,10 @@ func init() {
 // show only focused vertices. enabled by default for dagger do.
 var focus bool
 
+// expect errors and allow them to be hidden in focus mode since they'll be
+// displayed in a higher level way (e.g. dagger checks)
+var expectErrs bool
+
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
 type runClientCallback func(context.Context, *client.Client) error
@@ -152,6 +156,7 @@ func inlineTUI(
 	tape := progrock.NewTape()
 	tape.ShowInternal(debug)
 	tape.Focus(focus)
+	tape.RevealErrored(!expectErrs)
 
 	progW, engineErr := progrockTee(tape)
 	if engineErr != nil {
