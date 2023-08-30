@@ -38,7 +38,7 @@ func init() {
 
 }
 
-func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+func ListChecks(ctx context.Context, engineClient *client.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
 	vtx := rec.Vertex("cmd-list-checks", "list checks", progrock.Focused())
 	defer func() { vtx.Done(err) }()
@@ -78,7 +78,7 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, env *da
 			return fmt.Errorf("failed to get check id: %w", err)
 		}
 
-		check = *c.Check(dagger.CheckOpts{ID: checkID})
+		check = *engineClient.Dagger().Check(dagger.CheckOpts{ID: checkID})
 		err = printCheck(&check)
 		if err != nil {
 			return err
@@ -88,7 +88,8 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, env *da
 	return tw.Flush()
 }
 
-func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+func RunCheck(ctx context.Context, engineClient *client.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+	c := engineClient.Dagger()
 	rec := progrock.RecorderFromContext(ctx)
 
 	// TODO(vito): this is pretty confusing, but we need to initialize a root

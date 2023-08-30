@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/docker/cli/cli/config"
@@ -81,9 +83,14 @@ type Client struct {
 
 	Recorder *progrock.Recorder
 
-	httpClient           *http.Client
-	bkClient             *bkclient.Client
-	bkSession            *bksession.Session
+	httpClient *http.Client
+	bkClient   *bkclient.Client
+	bkSession  *bksession.Session
+
+	// A client for the dagger API that is directly hooked up to this engine client.
+	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
+	daggerClient *dagger.Client
+
 	upstreamCacheOptions []*controlapi.CacheOptionsEntry
 
 	hostname string
@@ -306,6 +313,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.CloudURLCallback(cloudURL)
 	}
 
+	c.daggerClient, err = dagger.Connect(ctx, dagger.WithConn(EngineConn(c)))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
 	return c, ctx, nil
 }
 
@@ -333,6 +345,10 @@ func (c *Client) Close() (rerr error) {
 
 	if c.internalCancel != nil {
 		c.internalCancel()
+	}
+
+	if c.daggerClient != nil {
+		c.eg.Go(c.daggerClient.Close)
 	}
 
 	if c.httpClient != nil {
@@ -529,6 +545,11 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// A client to the Dagger API hooked up directly with this engine client.
+func (c *Client) Dagger() *dagger.Client {
+	return c.daggerClient
+}
+
 // Local dir imports
 type AnyDirSource struct{}
 
@@ -723,4 +744,27 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 		req.Header[k] = v
 	}
 	return d.inner.Do(req)
+}
+
+func EngineConn(engineClient *Client) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		req.SetBasicAuth(engineClient.SecretToken, "")
+		resp := httptest.NewRecorder()
+		engineClient.ServeHTTP(resp, req)
+		return resp.Result(), nil
+	}
+}
+
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f DirectConn) Host() string {
+	return ":mem:"
+}
+
+func (f DirectConn) Close() error {
+	return nil
 }

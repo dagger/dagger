@@ -74,13 +74,8 @@ var environmentCmd = &cobra.Command{
 			}
 		case env.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
-			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, sess *client.Client) error {
-				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(sess)))
-				if err != nil {
-					return fmt.Errorf("failed to connect to dagger: %w", err)
-				}
-				defer c.Close()
-				cfg, err = env.git.config(ctx, c)
+			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+				cfg, err = env.git.config(ctx, engineClient.Dagger())
 				if err != nil {
 					return fmt.Errorf("failed to get git environment config: %w", err)
 				}
@@ -214,12 +209,8 @@ func updateEnvironmentConfig(
 					return fmt.Errorf("failed to connect to engine: %w", err)
 				}
 			}
-			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
-			if err != nil {
-				return fmt.Errorf("failed to connect to engine: %w", err)
-			}
 			envFlagCfg := &environmentFlagConfig{local: &localEnvironment{path: path}}
-			deps, err := envFlagCfg.loadDeps(ctx, c)
+			deps, err := envFlagCfg.loadDeps(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to load dependencies: %w", err)
 			}
@@ -529,7 +520,7 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 }
 
 func loadEnvCmdWrapper(
-	fn func(context.Context, *client.Client, *dagger.Client, *dagger.Environment, *cobra.Command, []string) error,
+	fn func(context.Context, *client.Client, *dagger.Environment, *cobra.Command, []string) error,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
 		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -537,21 +528,14 @@ func loadEnvCmdWrapper(
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 
-			connect := vtx.Task("connecting to Dagger")
-			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
-			connect.Done(err)
-			if err != nil {
-				return fmt.Errorf("connect to dagger: %w", err)
-			}
-
 			load := vtx.Task("loading environment")
-			loadedEnv, err := loadEnv(ctx, c)
+			loadedEnv, err := loadEnv(ctx, engineClient.Dagger())
 			load.Done(err)
 			if err != nil {
 				return err
 			}
 
-			return fn(ctx, engineClient, c, loadedEnv, cmd, cmdArgs)
+			return fn(ctx, engineClient, loadedEnv, cmd, cmdArgs)
 		})
 	}
 }
