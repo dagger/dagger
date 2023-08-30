@@ -725,23 +725,26 @@ func (s *environmentSchema) checkResultInner(ctx *core.Context, dig digest.Diges
 			}
 			output, err := ctr.Stdout(ctx, s.bk, s.progSockPath) // TODO(vito): combined output
 			if err != nil {
+				var out string
 				if execErr, ok := err.(*buildkit.ExecError); ok {
-					return &core.EnvironmentCheckResult{
-						Name:    check.EnvironmentName + "." + check.Name,
-						Success: false,
-						Output: fmt.Sprintf(
-							"%s\nStdout:\n%s\nStderr:\n%s",
-							execErr.Error(),
-							execErr.Stdout,
-							execErr.Stderr,
-						),
-					}, nil
+					switch {
+					case execErr.Stdout == "" && execErr.Stderr == "":
+						out = err.Error()
+					case execErr.Stdout == "":
+						out = execErr.Stderr
+					case execErr.Stderr == "":
+						out = execErr.Stdout
+					default:
+						out = fmt.Sprintf("Stdout:\n%s\nStderr:%s\n", execErr.Stdout, execErr.Stderr)
+					}
+				} else {
+					out = err.Error()
 				}
 
 				return &core.EnvironmentCheckResult{
 					Name:    check.EnvironmentName + "." + check.Name,
 					Success: false,
-					Output:  err.Error(),
+					Output:  out,
 				}, nil
 			}
 			return &core.EnvironmentCheckResult{
