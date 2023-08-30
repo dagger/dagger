@@ -538,6 +538,10 @@ The following code listing demonstrates how to invalidate the Dagger cache and t
 This is a temporary workaround until cache invalidation support is officially added to Dagger.
 :::
 
+:::note
+Changes in mounted volumes do not invalidate the Dagger cache.
+:::
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
