@@ -156,7 +156,6 @@ func (t Engine) test(ctx context.Context, race bool) error {
 			`registry."registry:5000"`:        "http = true",
 			`registry."privateregistry:5000"`: "http = true",
 		},
-		Name: "engine-test" + identity.NewID(),
 	}
 	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, "", util.DefaultDevEngineOpts, opts)[0]
 
@@ -189,7 +188,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
