@@ -1,22 +1,10 @@
-# Playing With Zenith
-
-In order to run dagger with Zenith functionality, you will need to build a Dagger CLI off this branch and build a Dagger Engine off this branch.
-
-To do that, just run this from the dagger repo root:
-
-```console
-./hack/dev
-export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
-export PATH=$(pwd)/bin:$PATH
-```
-
-## Creating an Environment
+# Zenith Examples
 
 For now, environments are easiest to setup as subdirectories in the dagger repo. This is just due to the requirements to use development versions of SDKs, not a permanent feature.
 
 For these examples, we'll create new environments in the dagger repo.
 
-### Go Environment
+## Go Environment
 
 After running `mkdir -p ./goexample && cd ./goexample`, you need to initialize your environment:
 
@@ -51,7 +39,7 @@ dagger env sync
 
 to bring it up to date.
 
-### Python Environment
+## Python Environment
 
 After running `mkdir -p ./pythonexample && cd ./pythonexample`, you need to initialize your environment:
 

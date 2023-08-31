@@ -27,13 +27,18 @@ The Dagger Engine is developed in the open, and Project Zenith is no exception.
 
 ## How to test it
 
-As of August 24 2023, the latest source code for Project Zenith is available as a development branch on the Dagger Engine repository.
+In order to run dagger with Zenith functionality, you will need to build a Dagger CLI off this branch and build a Dagger Engine off this branch.
 
-To get started:
+To do that, just run this from the dagger repo root:
 
-1. Visit the [draft pull request](https://github.com/dagger/dagger/pull/5443)
-2. Checkout the corresponding branch
-3. Follow the instructions in `./universe/README.md`
-4. Please ask questions and share feedback on the discord channel, we love to hear from you, and there are no stupid questions!
+```console
+./hack/dev
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+export PATH=$(pwd)/bin:$PATH
+```
 
-Thanks and happy testing.
+Then browse our [examples](EXAMPLES.md) for inspiration.
+
+For now, environments are easiest to setup as subdirectories in the dagger repo. This is just due to the requirements to use development versions of SDKs, not a permanent feature.
+
+For these examples, we'll create new environments in the dagger repo.
