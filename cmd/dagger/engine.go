@@ -42,7 +42,7 @@ func init() {
 	)
 }
 
-// show only focused vertices. enabled by default for dagger do.
+// show only focused vertices
 var focus bool
 
 // expect errors and allow them to be hidden in focus mode since they'll be

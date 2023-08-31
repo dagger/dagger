@@ -13,7 +13,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/environmentconfig"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -36,6 +35,8 @@ const (
 
 func init() {
 	environmentFlags.StringVarP(&environmentURI, "env", "e", environmentURIDefault, "Path to dagger.json config file for the environment or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
+	environmentFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands.")
+
 	environmentCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	doCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	checkCmd.PersistentFlags().AddFlagSet(environmentFlags)
@@ -127,7 +128,7 @@ var environmentInitCmd = &cobra.Command{
 			Root: environmentRoot,
 		}
 
-		return updateEnvironmentConfig(ctx, env.local.path, cfg, cmd, nil)
+		return updateEnvironmentConfig(ctx, env.local.path, cfg, cmd)
 	},
 }
 
@@ -171,7 +172,7 @@ var environmentExtendCmd = &cobra.Command{
 		}
 		sort.Strings(envCfg.Dependencies)
 
-		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, nil)
+		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd)
 	},
 }
 
@@ -192,7 +193,7 @@ var environmentSyncCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get environment config: %w", err)
 		}
-		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd, nil)
+		return updateEnvironmentConfig(ctx, envFlagCfg.local.path, envCfg, cmd)
 	},
 }
 
@@ -201,7 +202,6 @@ func updateEnvironmentConfig(
 	path string,
 	newEnvCfg *environmentconfig.Config,
 	cmd *cobra.Command,
-	engineClient *client.Client,
 ) (rerr error) {
 	runCodegenFunc := func() error {
 		return nil
@@ -209,25 +209,27 @@ func updateEnvironmentConfig(
 	switch environmentconfig.SDK(newEnvCfg.SDK) {
 	case environmentconfig.SDKGo:
 		runCodegenFunc = func() error {
-			if engineClient == nil {
-				var err error
-				engineClient, ctx, err = client.Connect(ctx, client.Params{
-					RunnerHost: engine.RunnerHost(),
-				})
+			return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+				rec := progrock.RecorderFromContext(ctx)
+				vtx := rec.Vertex("env-update", strings.Join(os.Args, " "))
+				defer func() { vtx.Done(err) }()
+
+				loadDeps := vtx.Task("loading environment dependencies")
+				envFlagCfg := &environmentFlagConfig{local: &localEnvironment{path: path}}
+				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
 				if err != nil {
 					return fmt.Errorf("failed to connect to engine: %w", err)
 				}
-			}
-			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
-			if err != nil {
-				return fmt.Errorf("failed to connect to engine: %w", err)
-			}
-			envFlagCfg := &environmentFlagConfig{local: &localEnvironment{path: path}}
-			deps, err := envFlagCfg.loadDeps(ctx, c)
-			if err != nil {
-				return fmt.Errorf("failed to load dependencies: %w", err)
-			}
-			return RunCodegen(ctx, engineClient, nil, newEnvCfg, deps, cmd, nil)
+				deps, err := envFlagCfg.loadDeps(ctx, c)
+				loadDeps.Done(err)
+				if err != nil {
+					return fmt.Errorf("failed to load dependencies: %w", err)
+				}
+				runCodegenTask := vtx.Task("generating environment code")
+				err = RunCodegen(ctx, engineClient, nil, newEnvCfg, deps, cmd, nil)
+				runCodegenTask.Done(err)
+				return err
+			})
 		}
 	case environmentconfig.SDKPython:
 	default:
