@@ -1227,7 +1227,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         optional:
-            Set secret as optional
+            Set secret as optional.
             Default: false.
         mode:
             Permission given to the mounted secret (e.g., 0600).

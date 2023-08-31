@@ -370,7 +370,7 @@ export type ContainerWithMountedSecretOpts = {
   owner?: string
 
   /**
-   * Set secret as optional
+   * Set secret as optional.
    *
    * Default: false.
    */
@@ -1759,7 +1759,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.optional Set secret as optional
+   * @param opts.optional Set secret as optional.
    *
    * Default: false.
    * @param opts.mode Permission given to the mounted secret (e.g., 0600).

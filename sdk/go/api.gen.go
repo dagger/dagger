@@ -1053,7 +1053,7 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Set secret as optional
+	// Set secret as optional.
 	//
 	// Default: false.
 	Optional bool

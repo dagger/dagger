@@ -383,7 +383,7 @@ pub struct ContainerWithMountedSecretOpts<'a> {
     /// Default: 0644.
     #[builder(setter(into, strip_option), default)]
     pub mode: Option<isize>,
-    /// Set secret as optional
+    /// Set secret as optional.
     /// Default: false.
     #[builder(setter(into, strip_option), default)]
     pub optional: Option<bool>,
