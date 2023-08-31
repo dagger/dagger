@@ -21,6 +21,50 @@ Refer to the documentation for information on how to install the [Dagger CLI](./
 [Learn more about compatibility between the Dagger Engine, the Dagger CLI and Dagger SDKs](#what-compatibility-is-there-between-the-dagger-engine-dagger-sdks-and-dagger-cli-versions).
 :::
 
+### What is the Dagger Engine?
+
+Dagger Engine is composed of two parts: an API router, and a runner.
+
+- The API router serves GraphQL API queries and dispatches individual operations to the runner.
+- The runner talks to your Open Container Initiative (OCI) runtime to execute operations. This is basically a Buildkit daemon with some glue code.
+
+Currently, both the router and the runner are executed on the client machine. In the near-term, we expect the runner to move to worker machines.
+
+```mermaid
+graph LR;
+
+subgraph clientMachineA["Client machine"]
+  clientA["client library or CLI"]
+  routerA["API router"]
+ clientA --> routerA
+end
+
+subgraph clientMachineB["Client machine"]
+  clientB["client library or CLI"]
+  routerB["API router"]
+ clientB --> routerB
+end
+
+subgraph clientMachineC["Client machine"]
+  clientC["client library or CLI"]
+  routerC["API router"]
+  clientC --> routerC
+end
+
+subgraph workerMachine["Worker machine"]
+runner["Runner"]
+oci["OCI runtime"]
+end
+
+routerA & routerB & routerC -..-> runner --> oci
+```
+
+### How do Dagger SDKs interact with the Dagger Engine?
+
+A Dagger SDK takes care of running both router and runner.
+
+However, it is also possible to provide your [own buildkit runner](https://docs.dagger.io/541047/alternative-runtimes#run-the-dagger-engine-container-manually) manually.
+
 #### CLI
 
 To install a Dagger CLI that matches your OS & architecture, run the following next to the `bin` directory where `dagger` is currently installed, e.g. `/usr/local`:
