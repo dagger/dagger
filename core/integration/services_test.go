@@ -19,11 +19,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/network"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -593,19 +596,13 @@ func TestContainerExecServicesChained(t *testing.T) {
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
-// NB: currently maxes out around 8-9 due to 256 character limit on DNS
-// search domain config
-//
-// 4 is the effective limit in GitHub actions, since a) after bootstrapping
-// on 0.8 the outer Dagger adds domains of its own, and b) GitHub adds a
-// quite long (52-char) domain to begin with
-const nestingLimit = 4
-
 func TestContainerExecServicesNestedExec(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 	defer c.Close()
+
+	nestingLimit := calculateNestingLimit(ctx, c, t)
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -639,6 +636,8 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 
 	c, ctx := connect(t)
 	defer c.Close()
+
+	nestingLimit := calculateNestingLimit(ctx, c, t)
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -675,6 +674,8 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 
 	c, ctx := connect(t)
 	defer c.Close()
+
+	nestingLimit := calculateNestingLimit(ctx, c, t)
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -1248,4 +1249,42 @@ git daemon --verbose --export-all --base-path=/root/srv
 	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
 
 	return gitDaemon, repoURL
+}
+
+var nestingLimitOnce = &sync.Once{}
+var calculatedNestingLimit int
+
+// search domains cap out at 256 chars, and these tests have to run in
+// environments that may have some pre-configured (k8s) or may already be
+// nested (dagger-in-dagger), so we need to calculate how deeply we can nest.
+func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testing.T) int {
+	nestingLimitOnce.Do(func() {
+		baseSearch, err := c.Container().
+			From(alpineImage).
+			WithExec([]string{"grep", `^search\s`, "/etc/resolv.conf"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		t.Logf("initial search domains list: %s", strings.TrimSpace(baseSearch))
+
+		// first, lop off the prefix and strip any remaining whitespace
+		baseSearchLen := len(strings.TrimSpace(strings.TrimPrefix(baseSearch, "search")))
+
+		// next, calculate the length each additional domain will consume
+		domainLen := len(network.ClientDomain("dummy")) + 1 // account for space
+
+		// finally, divide the available space by the amount needed for each domain
+		calculatedNestingLimit = (256 - baseSearchLen) / domainLen
+
+		t.Logf("nesting limit: %d (256-%d)/%d",
+			calculatedNestingLimit,
+			baseSearchLen,
+			domainLen)
+	})
+
+	if calculatedNestingLimit < 1 {
+		t.Skipf("too many search domains; unable to test nesting")
+	}
+
+	return calculatedNestingLimit
 }
