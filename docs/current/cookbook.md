@@ -994,7 +994,7 @@ The following code listing demonstrates how to add multiple environment variable
 </TabItem>
 </Tabs>
 
-### Organize pipeline code into modules or packages
+### Organize pipeline code into modules
 
 The following code listing demonstrates how to organize Dagger pipeline code into independent modules (or functions/packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between modules.
 
