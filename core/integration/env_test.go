@@ -63,6 +63,66 @@ func TestEnvCmd(t *testing.T) {
 	}
 }
 
+func TestEnvCmdHelps(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+	t.Cleanup(func() {
+		c.Close()
+	})
+	baseCtr := CLITestContainer(ctx, t, c).WithHelpArg(true)
+
+	// test with no env specified
+	noEnvCtr := baseCtr
+	// test with a valid local env
+	validLocalEnvCtr := baseCtr.WithLoadedEnv("core/integration/testdata/environments/go/basic", false)
+	// test with a broken local env (this helps ensure that we aren't actually running the entrypoints, if we did we'd get an error)
+	brokenLocalEnvCtr := baseCtr.WithLoadedEnv("core/integration/testdata/environments/go/broken", false)
+
+	for _, ctr := range []*DaggerCLIContainer{noEnvCtr, validLocalEnvCtr, brokenLocalEnvCtr} {
+		type testCase struct {
+			testName       string
+			cmdCtr         *DaggerCLIContainer
+			expectedOutput string
+		}
+		for _, tc := range []testCase{
+			{
+				testName:       "dagger env/" + ctr.EnvArg,
+				cmdCtr:         ctr.CallEnv(),
+				expectedOutput: "Usage:\n  dagger environment [flags]\n\nAliases:\n  environment, env",
+			},
+			{
+				testName:       "dagger env init/" + ctr.EnvArg,
+				cmdCtr:         ctr.CallEnvInit(),
+				expectedOutput: "Usage:\n  dagger environment init",
+			},
+			{
+				testName:       "dagger env sync/" + ctr.EnvArg,
+				cmdCtr:         ctr.CallEnvSync(),
+				expectedOutput: "Usage:\n  dagger environment sync",
+			},
+			{
+				testName:       "dagger env extend/" + ctr.EnvArg,
+				cmdCtr:         ctr.CallEnvExtend("./fake/dep"),
+				expectedOutput: "Usage:\n  dagger environment extend",
+			},
+			{
+				testName:       "dagger checks/" + ctr.EnvArg,
+				cmdCtr:         ctr.CallChecks(),
+				expectedOutput: "Usage:\n  dagger checks",
+			},
+		} {
+			tc := tc
+			t.Run(tc.testName, func(t *testing.T) {
+				t.Parallel()
+				stdout, err := tc.cmdCtr.Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, stdout, tc.expectedOutput)
+			})
+		}
+	}
+
+}
+
 func TestEnvCmdInit(t *testing.T) {
 	t.Parallel()
 

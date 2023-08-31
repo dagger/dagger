@@ -255,7 +255,8 @@ type DaggerCLIContainer struct {
 	c   *dagger.Client
 
 	// common
-	EnvArg string
+	EnvArg  string
+	HelpArg bool
 
 	// "env init"
 	SDKArg  string
@@ -314,14 +315,22 @@ func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
 	return &ctr
 }
 
+func (ctr DaggerCLIContainer) WithHelpArg(help bool) *DaggerCLIContainer {
+	ctr.HelpArg = help
+	return &ctr
+}
+
 func (ctr DaggerCLIContainer) CallChecks(selectedChecks ...string) *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--debug", "--progress=plain"}
+	args := []string{testCLIBinPath, "--progress=plain"}
 	if ctr.EnvArg != "" {
 		args = append(args, "--env", ctr.EnvArg)
 	}
 	args = append(args, "checks")
 	if len(selectedChecks) > 0 {
 		args = append(args, selectedChecks...)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
 	}
 	ctr.Container = ctr.Container.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
@@ -331,6 +340,9 @@ func (ctr DaggerCLIContainer) CallEnv() *DaggerCLIContainer {
 	args := []string{testCLIBinPath, "env"}
 	if ctr.EnvArg != "" {
 		args = append(args, "--env", ctr.EnvArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
@@ -349,6 +361,36 @@ func (ctr DaggerCLIContainer) CallEnvInit() *DaggerCLIContainer {
 	}
 	if ctr.RootArg != "" {
 		args = append(args, "--root", ctr.RootArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallEnvExtend(extensions ...string) *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env", "extend"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
+	}
+	for _, ext := range extensions {
+		args = append(args, ext)
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallEnvSync() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env", "sync"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
