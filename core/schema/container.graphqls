@@ -370,14 +370,14 @@ type Container {
 
     Default: false.
     """
-    Optional: Boolean
+    optional: Boolean
 
     """
     Permission given to the mounted secret (e.g., 0600).
 
     Default: 0644.
     """
-    Mode: Int
+    mode: Int
   ): Container!
 
   """
