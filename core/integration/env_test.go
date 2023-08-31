@@ -120,7 +120,6 @@ func TestEnvCmdHelps(t *testing.T) {
 			})
 		}
 	}
-
 }
 
 func TestEnvCmdInit(t *testing.T) {
