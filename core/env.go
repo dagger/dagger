@@ -253,7 +253,7 @@ func LoadEnvironment(
 	rootDir *Directory,
 	configPath string,
 ) (*Environment, error) {
-	configPath = normalizeConfigPath(configPath)
+	configPath = environmentconfig.NormalizeConfigPath(configPath)
 	cfg, err := LoadEnvironmentConfig(ctx, bk, rootDir, configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load environment config: %w", err)

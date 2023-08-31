@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -79,13 +79,18 @@ var environmentCmd = &cobra.Command{
 			}
 		case env.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
-			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, sess *client.Client) error {
-				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(sess)))
+			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
 				if err != nil {
 					return fmt.Errorf("failed to connect to dagger: %w", err)
 				}
 				defer c.Close()
+				rec := progrock.RecorderFromContext(ctx)
+				vtx := rec.Vertex("get-env-config", strings.Join(os.Args, " "))
+				defer func() { vtx.Done(err) }()
+				readConfigTask := vtx.Task("reading git environment config")
 				cfg, err = env.git.config(ctx, c)
+				readConfigTask.Done(err)
 				if err != nil {
 					return fmt.Errorf("failed to get git environment config: %w", err)
 				}
@@ -143,7 +148,7 @@ var environmentExtendCmd = &cobra.Command{
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
 		if envFlagCfg.git != nil {
-			return fmt.Errorf("environment init is not supported for git environments")
+			return fmt.Errorf("environment extend is not supported for git environments")
 		}
 		envCfg, err := envFlagCfg.config(ctx, nil)
 		if err != nil {
@@ -159,11 +164,20 @@ var environmentExtendCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get environment: %w", err)
 			}
-			depPath, err := filepath.Rel(filepath.Dir(envFlagCfg.local.path), filepath.Dir(depEnvFlagCfg.local.path))
-			if err != nil {
-				return fmt.Errorf("failed to get relative path for dependency: %w", err)
+			switch {
+			case depEnvFlagCfg.local != nil:
+				depPath, err := filepath.Rel(filepath.Dir(envFlagCfg.local.path), filepath.Dir(depEnvFlagCfg.local.path))
+				if err != nil {
+					return fmt.Errorf("failed to get relative path for dependency: %w", err)
+				}
+				depSet[depPath] = struct{}{}
+			case depEnvFlagCfg.git != nil:
+				gitURI, err := depEnvFlagCfg.git.urlString()
+				if err != nil {
+					return fmt.Errorf("failed to get git url for dependency: %w", err)
+				}
+				depSet[gitURI] = struct{}{}
 			}
-			depSet[depPath] = struct{}{}
 		}
 
 		envCfg.Dependencies = nil
@@ -187,7 +201,7 @@ var environmentSyncCmd = &cobra.Command{
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
 		if envFlagCfg.git != nil {
-			return fmt.Errorf("environment init is not supported for git environments")
+			return fmt.Errorf("environment sync is not supported for git environments")
 		}
 		envCfg, err := envFlagCfg.config(ctx, nil)
 		if err != nil {
@@ -236,10 +250,16 @@ func updateEnvironmentConfig(
 		return fmt.Errorf("unsupported environment SDK: %s", sdk)
 	}
 
-	cfgBytes, err := json.MarshalIndent(newEnvCfg, "", "  ")
-	if err != nil {
+	// Go's json.Marshal* functions decide to always URL escape every string... so we use an encoder without that setting
+	var cfgBuffer bytes.Buffer
+	enc := json.NewEncoder(&cfgBuffer)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(newEnvCfg); err != nil {
 		return fmt.Errorf("failed to marshal environment config: %w", err)
 	}
+	cfgBytes := cfgBuffer.Bytes()
+
 	parentDir := filepath.Dir(path)
 	_, parentDirStatErr := os.Stat(parentDir)
 	switch {
@@ -301,7 +321,7 @@ func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
 	environmentURI := environmentURI
 	if environmentURI == "" || environmentURI == environmentURIDefault {
 		// it's unset or default value, use env if present
-		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
+		if v, ok := os.LookupEnv("DAGGER_ENV"); ok {
 			environmentURI = v
 		}
 	}
@@ -309,51 +329,27 @@ func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
 }
 
 func getEnvironmentFlagConfigFromURI(environmentURI string) (*environmentFlagConfig, error) {
-	url, err := url.Parse(environmentURI)
+	parsedURI, err := environmentconfig.ParseEnvURL(environmentURI)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse config path: %w", err)
+		return nil, fmt.Errorf("failed to parse environment URI: %w", err)
 	}
-	switch url.Scheme {
-	case "", "local": // local path
-		envPath, err := filepath.Abs(url.Host + url.Path)
+	switch {
+	case parsedURI.Local != nil:
+		localPath, err := filepath.Abs(parsedURI.Local.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get environment absolute path: %w", err)
 		}
-
-		if filepath.Base(envPath) != "dagger.json" {
-			envPath = filepath.Join(envPath, "dagger.json")
-		}
-
 		return &environmentFlagConfig{local: &localEnvironment{
-			path: envPath,
+			path: localPath,
 		}}, nil
-	case "git":
-		repo := url.Host + url.Path
-
-		// options for git environments are set via query params
-		subpath := url.Query().Get("subpath")
-		if path.Base(subpath) != "dagger.json" {
-			subpath = path.Join(subpath, "dagger.json")
-		}
-
-		gitRef := url.Query().Get("ref")
-		if gitRef == "" {
-			gitRef = "main"
-		}
-
-		gitProtocol := url.Query().Get("protocol")
-		if gitProtocol != "" {
-			repo = gitProtocol + "://" + repo
-		}
-
-		p := &gitEnvironment{
-			subpath: subpath,
-			repo:    repo,
-			ref:     gitRef,
-		}
-		return &environmentFlagConfig{git: p}, nil
+	case parsedURI.Git != nil:
+		return &environmentFlagConfig{git: &gitEnvironment{
+			repo:    parsedURI.Git.Repo,
+			ref:     parsedURI.Git.Ref,
+			subpath: parsedURI.Git.ConfigPath,
+		}}, nil
 	default:
-		return nil, fmt.Errorf("unsupported environment URI scheme: %s", url.Scheme)
+		return nil, fmt.Errorf("unsupported environment URI: %q", environmentURI)
 	}
 }
 
@@ -387,26 +383,41 @@ func (p environmentFlagConfig) config(ctx context.Context, c *dagger.Client) (*e
 }
 
 func (p environmentFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*dagger.Environment, error) {
-	if p.local == nil {
-		return nil, fmt.Errorf("TODO: implement non-local environment dependency loading")
-	}
-
 	cfg, err := p.config(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment config: %w", err)
 	}
 
 	var depEnvs []*dagger.Environment
-	for _, dep := range cfg.Dependencies {
-		depPath := filepath.Join(filepath.Dir(p.local.path), dep)
-		if filepath.Base(depPath) != "dagger.json" {
-			depPath = filepath.Join(depPath, "dagger.json")
-		}
-		depEnv, err := localEnvironment{path: depPath}.load(c)
+	for _, depURL := range cfg.Dependencies {
+		parsedURL, err := environmentconfig.ParseEnvURL(depURL)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load dependency environment: %w", err)
+			return nil, fmt.Errorf("failed to parse dependency URL: %w", err)
 		}
-		depEnvs = append(depEnvs, depEnv)
+		switch {
+		case parsedURL.Local != nil:
+			localPath, err := filepath.Abs(parsedURL.Local.ConfigPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get dependency absolute path: %w", err)
+			}
+			depEnv, err := localEnvironment{path: localPath}.load(c)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load dependency environment %q: %w", depURL, err)
+			}
+			depEnvs = append(depEnvs, depEnv)
+		case parsedURL.Git != nil:
+			depEnv, err := gitEnvironment{
+				repo:    parsedURL.Git.Repo,
+				ref:     parsedURL.Git.Ref,
+				subpath: parsedURL.Git.ConfigPath,
+			}.load(ctx, c)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load dependency environment %q: %w", depURL, err)
+			}
+			depEnvs = append(depEnvs, depEnv)
+		default:
+			return nil, fmt.Errorf("unsupported dependency URL: %q", depURL)
+		}
 	}
 
 	var eg errgroup.Group
@@ -509,6 +520,31 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 		return nil, fmt.Errorf("environment config path %q is not under environment root %q", p.subpath, rootPath)
 	}
 	return c.Environment().Load(c.Git(p.repo).Branch(p.ref).Tree().Directory(rootPath), subdirRelPath), nil
+}
+
+// convert back to url string (with normalization after previous parsing)
+func (p gitEnvironment) urlString() (string, error) {
+	repoURI, err := url.Parse(p.repo)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse repo url: %w", err)
+	}
+
+	gitURI := url.URL{
+		Scheme: "git",
+		Host:   repoURI.Host,
+		Path:   repoURI.Path,
+	}
+	queryParams := gitURI.Query()
+	if p.ref != "" {
+		queryParams.Set("ref", p.ref)
+	}
+	if p.subpath != "" {
+		queryParams.Set("subdir", p.subpath)
+	}
+	if len(queryParams) > 0 {
+		gitURI.RawQuery = queryParams.Encode()
+	}
+	return gitURI.String(), nil
 }
 
 func loadEnvCmdWrapper(

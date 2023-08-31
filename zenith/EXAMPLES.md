@@ -27,7 +27,7 @@ If at any point you want to add a dependency on another environment, you can run
 dagger env extend <./path/to/other/env>
 ```
 
-- Currently, dependencies must be relative paths to other environment directories on the local filesystem. Support for `git://` envs is easy to add once requested 🙂
+- Dependencies can be relative local paths or git paths. See the later section "Referencing Environments in Git" for the `git://` format to use when specifying those
 
 That command, if successful, will update `dagger.gen.go` with the new bindings for the environment you just extended with.
 
@@ -55,3 +55,26 @@ After that, you will see a `dagger.json` file in your current dir. That holds yo
 - Custom codegen for Python envs, similar to what's described for Go envs above, has not yet been implemented
 
 To implement environment code, you need to create a `main.py` file and a `pyproject.toml` file in your current dir. See the `universe/_demo/client` dir for an example to help get started.
+
+## Referencing Environments in Git
+
+Environments can be specified as code in local paths or as references to code in a git repository.
+
+For example, you can run this to execute the current demo:
+
+```console
+dagger checks -e 'git://github.com/sipsma/dagger?ref=zenith&subdir=universe/_demo'
+```
+
+Or you can execute this to add a dependency on the demo server environment:
+
+```console
+dagger env extend 'git://github.com/sipsma/dagger?ref=zenith&subdir=universe/_demo/server'
+```
+
+In general, the `git://` URL format is not something we're especially happy with and intend to improve, but the idea is:
+
+- always prefaced with `git://<url of the repo>`
+- everything else is an optional parameter, currently encoded w/ query params
+  - `ref=<git ref>` lets you choose a branch, tag or commit from the repo. Defaults to `main`
+  - `subdir=<path in the repo to dir containing dagger.json>` lets you select a subdir. Defaults to the root of the repo (`/`)
