@@ -366,7 +366,7 @@ type Container {
     owner: String
 
     """
-    Set secret as optional
+    Set secret as optional.
 
     Default: false.
     """
