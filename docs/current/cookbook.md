@@ -994,6 +994,40 @@ The following code listing demonstrates how to add multiple environment variable
 </TabItem>
 </Tabs>
 
+### Organize pipeline code into modules or packages
+
+The following code listing demonstrates how to organize Dagger pipeline code into independent units (functions, modules and/or packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between units.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/main.go
+```
+
+```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/index.mts
+```
+
+```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/pipelines.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/main.py
+```
+
+```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/pipelines.py
+```
+
+</TabItem>
+</Tabs>
+
 ## Integrations
 
 ### Docker Engine
