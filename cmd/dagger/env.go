@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,7 +20,7 @@ import (
 )
 
 var (
-	environmentURI   string
+	environmentURL   string
 	environmentFlags = pflag.NewFlagSet("environment", pflag.ContinueOnError)
 
 	sdk             string
@@ -30,11 +29,11 @@ var (
 )
 
 const (
-	environmentURIDefault = "."
+	environmentURLDefault = "."
 )
 
 func init() {
-	environmentFlags.StringVarP(&environmentURI, "env", "e", environmentURIDefault, "Path to dagger.json config file for the environment or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
+	environmentFlags.StringVarP(&environmentURL, "env", "e", environmentURLDefault, "Path to dagger.json config file for the environment or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
 	environmentFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands.")
 
 	environmentCmd.PersistentFlags().AddFlagSet(environmentFlags)
@@ -75,8 +74,13 @@ var environmentCmd = &cobra.Command{
 			}
 		case env.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
-			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+				rec := progrock.RecorderFromContext(ctx)
+				vtx := rec.Vertex("get-env-config", strings.Join(os.Args, " "))
+				defer func() { vtx.Done(err) }()
+				readConfigTask := vtx.Task("reading git environment config")
 				cfg, err = env.git.config(ctx, engineClient.Dagger())
+				readConfigTask.Done(err)
 				if err != nil {
 					return fmt.Errorf("failed to get git environment config: %w", err)
 				}
@@ -136,7 +140,7 @@ var environmentExtendCmd = &cobra.Command{
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
 		if envFlagCfg.git != nil {
-			return fmt.Errorf("environment init is not supported for git environments")
+			return fmt.Errorf("environment extend is not supported for git environments")
 		}
 		envCfg, err := envFlagCfg.config(ctx, nil)
 		if err != nil {
@@ -148,15 +152,24 @@ var environmentExtendCmd = &cobra.Command{
 			depSet[dep] = struct{}{}
 		}
 		for _, newDep := range extraArgs {
-			depEnvFlagCfg, err := getEnvironmentFlagConfigFromURI(newDep)
+			depEnvFlagCfg, err := getEnvironmentFlagConfigFromURL(newDep)
 			if err != nil {
 				return fmt.Errorf("failed to get environment: %w", err)
 			}
-			depPath, err := filepath.Rel(filepath.Dir(envFlagCfg.local.path), filepath.Dir(depEnvFlagCfg.local.path))
-			if err != nil {
-				return fmt.Errorf("failed to get relative path for dependency: %w", err)
+			switch {
+			case depEnvFlagCfg.local != nil:
+				depPath, err := filepath.Rel(filepath.Dir(envFlagCfg.local.path), filepath.Dir(depEnvFlagCfg.local.path))
+				if err != nil {
+					return fmt.Errorf("failed to get relative path for dependency: %w", err)
+				}
+				depSet[depPath] = struct{}{}
+			case depEnvFlagCfg.git != nil:
+				gitURL, err := depEnvFlagCfg.git.urlString()
+				if err != nil {
+					return fmt.Errorf("failed to get git url for dependency: %w", err)
+				}
+				depSet[gitURL] = struct{}{}
 			}
-			depSet[depPath] = struct{}{}
 		}
 
 		envCfg.Dependencies = nil
@@ -180,7 +193,7 @@ var environmentSyncCmd = &cobra.Command{
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
 		if envFlagCfg.git != nil {
-			return fmt.Errorf("environment init is not supported for git environments")
+			return fmt.Errorf("environment sync is not supported for git environments")
 		}
 		envCfg, err := envFlagCfg.config(ctx, nil)
 		if err != nil {
@@ -287,62 +300,38 @@ func updateEnvironmentConfig(
 }
 
 func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
-	environmentURI := environmentURI
-	if environmentURI == "" || environmentURI == environmentURIDefault {
+	environmentURL := environmentURL
+	if environmentURL == "" || environmentURL == environmentURLDefault {
 		// it's unset or default value, use env if present
 		if v, ok := os.LookupEnv("DAGGER_ENV"); ok {
-			environmentURI = v
+			environmentURL = v
 		}
 	}
-	return getEnvironmentFlagConfigFromURI(environmentURI)
+	return getEnvironmentFlagConfigFromURL(environmentURL)
 }
 
-func getEnvironmentFlagConfigFromURI(environmentURI string) (*environmentFlagConfig, error) {
-	url, err := url.Parse(environmentURI)
+func getEnvironmentFlagConfigFromURL(environmentURL string) (*environmentFlagConfig, error) {
+	parsedURL, err := envconfig.ParseEnvURL(environmentURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse config path: %w", err)
+		return nil, fmt.Errorf("failed to parse environment URL: %w", err)
 	}
-	switch url.Scheme {
-	case "", "local": // local path
-		envPath, err := filepath.Abs(url.Host + url.Path)
+	switch {
+	case parsedURL.Local != nil:
+		localPath, err := filepath.Abs(parsedURL.Local.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get environment absolute path: %w", err)
 		}
-
-		if filepath.Base(envPath) != "dagger.json" {
-			envPath = filepath.Join(envPath, "dagger.json")
-		}
-
 		return &environmentFlagConfig{local: &localEnvironment{
-			path: envPath,
+			path: localPath,
 		}}, nil
-	case "git":
-		repo := url.Host + url.Path
-
-		// options for git environments are set via query params
-		subpath := url.Query().Get("subpath")
-		if path.Base(subpath) != "dagger.json" {
-			subpath = path.Join(subpath, "dagger.json")
-		}
-
-		gitRef := url.Query().Get("ref")
-		if gitRef == "" {
-			gitRef = "main"
-		}
-
-		gitProtocol := url.Query().Get("protocol")
-		if gitProtocol != "" {
-			repo = gitProtocol + "://" + repo
-		}
-
-		p := &gitEnvironment{
-			subpath: subpath,
-			repo:    repo,
-			ref:     gitRef,
-		}
-		return &environmentFlagConfig{git: p}, nil
+	case parsedURL.Git != nil:
+		return &environmentFlagConfig{git: &gitEnvironment{
+			repo:    parsedURL.Git.Repo,
+			ref:     parsedURL.Git.Ref,
+			subpath: parsedURL.Git.ConfigPath,
+		}}, nil
 	default:
-		return nil, fmt.Errorf("unsupported environment URI scheme: %s", url.Scheme)
+		return nil, fmt.Errorf("unsupported environment URL: %q", environmentURL)
 	}
 }
 
@@ -546,10 +535,35 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 }
 
 func (p gitEnvironment) envExists(ctx context.Context, c *dagger.Client) (bool, error) {
-	_, err := c.Git(p.repo).Branch(p.ref).Tree().Sync(ctx)
+	_, err := c.Git(p.repo).Branch(p.ref).Tree().File(p.subpath).Sync(ctx)
 	// TODO: this could technically fail for other reasons, but is okay enough for now, it will
 	// still fail later if something else went wrong
 	return err == nil, nil
+}
+
+// convert back to url string (with normalization after previous parsing)
+func (p gitEnvironment) urlString() (string, error) {
+	repoURL, err := url.Parse(p.repo)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse repo url: %w", err)
+	}
+
+	gitURL := url.URL{
+		Scheme: "git",
+		Host:   repoURL.Host,
+		Path:   repoURL.Path,
+	}
+	var queryParams []string
+	if p.ref != "" {
+		queryParams = append(queryParams, "ref="+p.ref)
+	}
+	if p.subpath != "" {
+		queryParams = append(queryParams, "subpath="+p.subpath)
+	}
+	if len(queryParams) > 0 {
+		gitURL.RawQuery = strings.Join(queryParams, "&")
+	}
+	return gitURL.String(), nil
 }
 
 func loadEnvCmdWrapper(

@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -187,6 +188,7 @@ func (env *Environment) FromConfig(
 	configPath string,
 ) (*Environment, error) {
 	configPath = envconfig.NormalizeConfigPath(configPath)
+
 	configFile, err := sourceDir.File(ctx, bk, configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config file: %w", err)
@@ -202,14 +204,38 @@ func (env *Environment) FromConfig(
 
 	var eg errgroup.Group
 	deps := make([]*Environment, len(cfg.Dependencies))
-	// TODO: support more than just relative local paths for dependencies
-	for i, depPath := range cfg.Dependencies {
-		i, depPath := i, depPath
+	for i, depURL := range cfg.Dependencies {
+		i, depURL := i, depURL
 		eg.Go(func() error {
-			depConfigPath := filepath.Join("/", filepath.Dir(configPath), depPath)
-			depEnv, err := env.FromConfig(ctx, bk, progSock, envCache, installDeps, sourceDir, depConfigPath)
+			parsedURL, err := envconfig.ParseEnvURL(depURL)
 			if err != nil {
-				return fmt.Errorf("failed to get dependency env from config %q: %w", depPath, err)
+				return fmt.Errorf("failed to parse dependency url %q: %w", depURL, err)
+			}
+
+			// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
+			// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
+			// May need to have `dagger env extend` and `dagger env sync` automatically include dependency include/exclude filters in
+			// dagger.json.
+			var depSourceDir *Directory
+			var depConfigPath string
+			switch {
+			case parsedURL.Local != nil:
+				depSourceDir = sourceDir
+				depConfigPath = filepath.Join("/", filepath.Dir(configPath), parsedURL.Local.ConfigPath)
+			case parsedURL.Git != nil:
+				var err error
+				depSourceDir, err = NewDirectorySt(ctx, llb.Git(parsedURL.Git.Repo, parsedURL.Git.Ref), "", env.Pipeline, env.Platform, nil)
+				if err != nil {
+					return fmt.Errorf("failed to create git directory: %w", err)
+				}
+				depConfigPath = parsedURL.Git.ConfigPath
+			default:
+				return fmt.Errorf("invalid dependency url from %q", depURL)
+			}
+
+			depEnv, err := env.FromConfig(ctx, bk, progSock, envCache, installDeps, depSourceDir, depConfigPath)
+			if err != nil {
+				return fmt.Errorf("failed to get dependency env from config %q: %w", depURL, err)
 			}
 			deps[i] = depEnv
 			return nil

@@ -17,9 +17,10 @@ import (
 )
 
 var checkCmd = &cobra.Command{
-	Use:  "checks [suite]",
-	Long: `Query the status of your environment's checks.`,
-	RunE: loadEnvCmdWrapper(RunCheck, "", false),
+	Use:    "checks [suite]",
+	Long:   `Query the status of your environment's checks.`,
+	RunE:   loadEnvCmdWrapper(RunCheck, "", false),
+	Hidden: true,
 }
 
 func init() {
@@ -33,6 +34,7 @@ func init() {
 			Long:         `List your environment's checks without updating their status.`,
 			SilenceUsage: true,
 			RunE:         loadEnvCmdWrapper(ListChecks, "", false),
+			Hidden:       true,
 		},
 	)
 

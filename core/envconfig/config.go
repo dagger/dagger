@@ -1,6 +1,11 @@
 package envconfig
 
-import "path"
+import (
+	"fmt"
+	"net/url"
+	"path"
+	"path/filepath"
+)
 
 type SDK string
 
@@ -16,6 +21,59 @@ type Config struct {
 	Include      []string `json:"include,omitempty"`
 	Exclude      []string `json:"exclude,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
+}
+
+func ParseEnvURL(urlStr string) (*ParsedEnvURL, error) {
+	url, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse config path: %w", err)
+	}
+	switch url.Scheme {
+	case "", "local":
+		return &ParsedEnvURL{Local: &LocalEnv{
+			ConfigPath: NormalizeConfigPath(filepath.Join(url.Host, url.Path)),
+		}}, nil
+	case "git":
+		repo := url.Host + url.Path
+
+		// options for git environments are set via query params
+		subpath := url.Query().Get("subpath")
+		subpath = NormalizeConfigPath(subpath)
+
+		gitRef := url.Query().Get("ref")
+		if gitRef == "" {
+			gitRef = "main"
+		}
+
+		gitProtocol := url.Query().Get("protocol")
+		if gitProtocol != "" {
+			repo = gitProtocol + "://" + repo
+		}
+
+		return &ParsedEnvURL{Git: &GitEnv{
+			Repo:       repo,
+			Ref:        gitRef,
+			ConfigPath: subpath,
+		}}, nil
+	default:
+		return nil, fmt.Errorf("unsupported environment URL scheme: %s", url.Scheme)
+	}
+}
+
+type ParsedEnvURL struct {
+	// Only one of these will be set
+	Local *LocalEnv
+	Git   *GitEnv
+}
+
+type LocalEnv struct {
+	ConfigPath string
+}
+
+type GitEnv struct {
+	Repo       string
+	Ref        string
+	ConfigPath string
 }
 
 func NormalizeConfigPath(configPath string) string {
