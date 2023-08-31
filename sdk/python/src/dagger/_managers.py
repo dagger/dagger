@@ -1,7 +1,10 @@
 import contextlib
 import typing
 
+import anyio
 from typing_extensions import Self
+
+asyncify = anyio.to_thread.run_sync
 
 
 class ResourceManager(contextlib.AbstractAsyncContextManager):
@@ -17,22 +20,34 @@ class ResourceManager(contextlib.AbstractAsyncContextManager):
 
     # For type checker as inherited method isn't typed.
     async def __aenter__(self) -> Self:
+        await self.start()
         return self
 
     async def __aexit__(self, *_) -> None:
+        await self.close()
+
+    async def start(self) -> None:
+        ...
+
+    async def close(self) -> None:
         await self.stack.aclose()
 
+    # For compatibility with contextlib.aclosing.
+    async def aclose(self) -> None:
+        await self.close()
 
-class SyncResourceManager(contextlib.AbstractContextManager):
-    def __init__(self):
-        super().__init__()
-        self.sync_stack = contextlib.ExitStack()
 
-    @contextlib.contextmanager
-    def get_sync_stack(self) -> typing.Iterator[contextlib.ExitStack]:
-        with self.sync_stack as stack:
-            yield stack
-            self.sync_stack = stack.pop_all()
+T = typing.TypeVar("T")
 
-    def __exit__(self, *_) -> None:
-        self.sync_stack.close()
+
+class SyncResource(contextlib.AbstractAsyncContextManager[T], typing.Generic[T]):
+    """Wrap a blocking sync context manager in a non-blocking async context manager."""
+
+    def __init__(self, cm: typing.ContextManager[T]):
+        self.sync_cm = cm
+
+    async def __aenter__(self) -> T:
+        return await asyncify(self.sync_cm.__enter__)
+
+    async def __aexit__(self, *exc_details) -> None:
+        await asyncify(self.sync_cm.__exit__, *exc_details)

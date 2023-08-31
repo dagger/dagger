@@ -1,55 +1,84 @@
+from __future__ import annotations
+
+import contextlib
 import logging
 import os
+import warnings
 
-import anyio
+from typing_extensions import Self
 
 import dagger
-from dagger._managers import SyncResourceManager
-from dagger.client._session import ConnectParams
+from dagger.client._session import (
+    ConnectConfig,
+    ConnectParams,
+    SharedConnection,
+    SingleConnection,
+)
 
 from ._version import CLI_VERSION
 from .download import Downloader
 from .progress import Progress
-from .session import CLISession
+from .session import start_cli_session
 
 logger = logging.getLogger(__name__)
 
 
-class Engine(SyncResourceManager):
-    """Start engine, provisioning if needed."""
+@contextlib.asynccontextmanager
+async def provision_engine(cfg: dagger.Config):
+    """Provision a new engine session."""
+    async with contextlib.AsyncExitStack() as stack:
+        logger.debug("Provisioning engine")
+        yield await Engine(cfg, stack).provision()
+        logger.debug("Closing engine provisioning")
 
-    def __init__(self, cfg: dagger.Config, progress: Progress) -> None:
+
+class Engine:
+    """Start engine session, provisioning if needed."""
+
+    def __init__(self, cfg: dagger.Config, stack: contextlib.AsyncExitStack) -> None:
         super().__init__()
         self.cfg = cfg
-        self.progress = progress
+        self.stack = stack
+        self.progress = Progress(cfg.console)
+        self.connect_params = None
+        self.connect_config = None
         self.version_mismatch_msg = ""
+        self.has_provisioned = False
 
-    def from_env(self) -> ConnectParams | None:
-        if not (port := os.environ.get("DAGGER_SESSION_PORT")):
-            return None
-        if not (token := os.environ.get("DAGGER_SESSION_TOKEN")):
-            msg = "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
+    async def provision(self) -> Self:
+        connect_params = ConnectParams.from_env()
+
+        if connect_params and self.cfg.workdir:
+            msg = (
+                "Cannot configure workdir for existing session "
+                "(please use --workdir or host.directory "
+                "with absolute paths instead)."
+            )
             raise dagger.ProvisionError(msg)
-        try:
-            if self.cfg.workdir != "":
-                msg = (
-                    "cannot configure workdir for existing session "
-                    "(please use --workdir or host.directory "
-                    "with absolute paths instead)"
-                )
-                raise dagger.ProvisionError(msg)
-            return ConnectParams(port=int(port), session_token=token)
-        except ValueError as e:
-            # only port is validated
-            msg = f"Invalid DAGGER_SESSION_PORT: {port}"
-            raise dagger.ProvisionError(msg) from e
 
-    def from_cli(self) -> ConnectParams:
-        # Only start progress if we are provisioning, not on active sessions
-        # like `dagger run`.
-        self.progress.start("Provisioning engine")
+        if not connect_params:
+            self.has_provisioned = True
+            # Only start progress if we are provisioning, not on active sessions
+            # like `dagger run`.
+            await self.progress.start("Provisioning engine")
+            cli_bin = await self.get_cli()
 
-        if cli_bin := os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN"):
+            await self.progress.update("Creating new Engine session")
+            connect_params = await self.stack.enter_async_context(
+                start_cli_session(self.cfg, cli_bin)
+            )
+
+        self.connect_params = connect_params
+        self.connect_config = ConnectConfig(
+            timeout=self.cfg.timeout,
+            retry=self.cfg.retry,
+        )
+
+        return self
+
+    async def get_cli(self) -> str:
+        """Get path to CLI."""
+        if cli_bin := os.getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"):
             # Warn if engine version is incompatible only if an explicit
             # binary is provided. It's already done by the API when
             # using the TUI, and using the Downloader ensures the correct
@@ -57,20 +86,51 @@ class Engine(SyncResourceManager):
             self.version_mismatch_msg = (
                 f'Dagger CLI version mismatch (required {CLI_VERSION}): "{cli_bin}"'
             )
+
+            return cli_bin
+
+        # Get from cache or download.
+        return await Downloader(progress=self.progress)
+
+    async def shared_client_connection(self) -> SharedConnection:
+        await self.progress.update("Establishing global connection to Engine")
+        return await self.stack.enter_async_context(self.get_shared_client_connection())
+
+    async def client_connection(self) -> SingleConnection:
+        await self.progress.update("Establishing connection to Engine")
+        return await self.stack.enter_async_context(self.get_client_connection())
+
+    def get_shared_client_connection(self) -> SharedConnection:
+        assert self.connect_params
+        assert self.connect_config
+        return (
+            SharedConnection()
+            .with_params(self.connect_params)
+            .with_config(self.connect_config)
+        )
+
+    def get_client_connection(self) -> SingleConnection:
+        assert self.connect_params
+        assert self.connect_config
+        return SingleConnection(
+            self.connect_params,
+            self.connect_config,
+        )
+
+    async def verify(self, client: dagger.Client) -> dagger.Client:
+        """Check if the Dagger CLI version is compatible with the engine."""
+        await self.progress.update("Checking version compatibility")
+        try:
+            msg = self.version_mismatch_msg
+            if not await client.check_version_compatibility(CLI_VERSION) and msg:
+                warnings.warn(msg, dagger.VersionMismatch, stacklevel=2)
+        except dagger.QueryError as e:
+            logger.warning("Failed to check Dagger engine version compatibility: %s", e)
+
+        # If log_output is set, we don't need to show any more progress.
+        if self.cfg.log_output:
+            await self.progress.stop()
         else:
-            cli_bin = Downloader().get(self.progress)
+            await self.progress.update("Running pipelines")
 
-        self.progress.update("Creating new Engine session")
-        with self.get_sync_stack() as stack:
-            return stack.enter_context(CLISession(self.cfg, cli_bin))
-
-    def start(self) -> ConnectParams:
-        return self.from_env() or self.from_cli()
-
-    async def __aenter__(self) -> ConnectParams:
-        # TODO: Create proper async provisioning.
-        return await anyio.to_thread.run_sync(self.start)
-
-    async def __aexit__(self, *exc_details) -> None:
-        # TODO: Create proper async provisioning.
-        await anyio.to_thread.run_sync(self.__exit__, *exc_details)
+        return client

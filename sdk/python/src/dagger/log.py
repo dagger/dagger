@@ -21,7 +21,7 @@ def configure_logging(level: int | str = logging.INFO):
                 "handlers": ["console"],
                 "level": level,
             },
-            "dagger.transport": {
+            "dagger.client._transport": {
                 "level": "WARNING",
                 "propagate": False,
             },

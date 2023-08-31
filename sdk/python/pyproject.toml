@@ -163,6 +163,8 @@ ignore = [
     "ARG002",
     # Black can handle trailing commas automatically.
     "COM812",
+    # Can't control using a library with boolean arguments.
+    "FBT",
     # TODO: prefix everything internal with an underscore and document
     # what's left (public).
     "D1",
