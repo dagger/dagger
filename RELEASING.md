@@ -186,11 +186,6 @@ cd ../elixir
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5657"
 changie batch patch
 changie merge
-
-cd ../rust
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5657"
-changie batch patch
-changie merge
 ```
 
 - [ ] Commit and push the changes
