@@ -43,7 +43,7 @@ func ListChecks(ctx context.Context, engineClient *client.Client, env *dagger.En
 		return fmt.Errorf("no environment specified and no default environment found in current directory")
 	}
 
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 	vtx := rec.Vertex("cmd-list-checks", "list checks", progrock.Focused())
 	defer func() { vtx.Done(err) }()
 
@@ -98,12 +98,7 @@ func RunCheck(ctx context.Context, engineClient *client.Client, env *dagger.Envi
 	}
 
 	c := engineClient.Dagger()
-	rec := progrock.RecorderFromContext(ctx)
-
-	// TODO(vito): this is pretty confusing, but we need to initialize a root
-	// group for subsequent groups + vertices
-	rec = rec.WithGroup(progrock.RootGroup)
-	ctx = progrock.RecorderToContext(ctx, rec)
+	rec := progrock.FromContext(ctx)
 
 	var selectedChecks []*dagger.Check
 	if len(cmdArgs) > 0 {
