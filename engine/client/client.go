@@ -525,7 +525,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	resp, err := c.httpClient.Do(&http.Request{
+	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
 			Scheme: "http",
@@ -534,7 +534,9 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		Header: r.Header,
 		Body:   r.Body,
-	})
+	}
+	proxyReq = proxyReq.WithContext(ctx)
+	resp, err := c.httpClient.Do(proxyReq)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("http do: " + err.Error()))
