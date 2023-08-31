@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
+	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
 )
 
@@ -155,6 +156,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 			`registry."registry:5000"`:        "http = true",
 			`registry."privateregistry:5000"`: "http = true",
 		},
+		Name: "engine-test" + identity.NewID(),
 	}
 	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, "", util.DefaultDevEngineOpts, opts)[0]
 
