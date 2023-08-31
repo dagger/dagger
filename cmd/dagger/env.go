@@ -105,13 +105,15 @@ var environmentInitCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
-		if env.git != nil {
-			return fmt.Errorf("environment init is not supported for git environments")
+		if env != nil {
+			if env.git != nil {
+				return fmt.Errorf("environment init is not supported for git environments")
+			}
+			if _, err := os.Stat(env.local.path); err == nil {
+				return fmt.Errorf("environment init config path already exists: %s", env.local.path)
+			}
 		}
 
-		if _, err := os.Stat(env.local.path); err == nil {
-			return fmt.Errorf("environment init config path already exists: %s", env.local.path)
-		}
 		cfg := &envconfig.Config{
 			Name: environmentName,
 			SDK:  envconfig.SDK(sdk),
@@ -358,7 +360,7 @@ func (p environmentFlagConfig) load(ctx context.Context, c *dagger.Client) (*dag
 	case p.git != nil:
 		env, err = p.git.load(ctx, c)
 	default:
-		panic("invalid environment")
+		return nil, fmt.Errorf("invalid environment")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to load environment: %w", err)
@@ -430,6 +432,17 @@ func (p environmentFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) (
 	return depEnvs, nil
 }
 
+func (p environmentFlagConfig) envExists(ctx context.Context, c *dagger.Client) (bool, error) {
+	switch {
+	case p.local != nil:
+		return p.local.envExists()
+	case p.git != nil:
+		return p.git.envExists(ctx, c)
+	default:
+		return false, fmt.Errorf("invalid environment")
+	}
+}
+
 type localEnvironment struct {
 	path string
 }
@@ -479,6 +492,17 @@ func (p localEnvironment) rootDir() (string, error) {
 	return filepath.Clean(filepath.Join(filepath.Dir(p.path), cfg.Root)), nil
 }
 
+func (p localEnvironment) envExists() (bool, error) {
+	_, err := os.Stat(p.path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("failed to stat environment config: %w", err)
+}
+
 type gitEnvironment struct {
 	subpath string
 	repo    string
@@ -519,20 +543,35 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 		}), nil
 }
 
+func (p gitEnvironment) envExists(ctx context.Context, c *dagger.Client) (bool, error) {
+	_, err := c.Git(p.repo).Branch(p.ref).Tree().Sync(ctx)
+	// TODO: this could technically fail for other reasons, but is okay enough for now, it will
+	// still fail later if something else went wrong
+	return err == nil, nil
+}
+
 func loadEnvCmdWrapper(
 	fn func(context.Context, *client.Client, *dagger.Environment, *cobra.Command, []string) error,
+	presetSecretToken string,
+	envIsOptional bool,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
-		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngineAndTUI(cmd.Context(), client.Params{
+			SecretToken: presetSecretToken,
+		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 
 			load := vtx.Task("loading environment")
-			loadedEnv, err := loadEnv(ctx, engineClient.Dagger())
+			loadedEnv, err := loadEnv(ctx, engineClient.Dagger(), envIsOptional)
 			load.Done(err)
 			if err != nil {
 				return err
+			}
+
+			if !envIsOptional && loadedEnv == nil {
+				return fmt.Errorf("no environment specified and no default environment found in current directory")
 			}
 
 			return fn(ctx, engineClient, loadedEnv, cmd, cmdArgs)
@@ -540,10 +579,20 @@ func loadEnvCmdWrapper(
 	}
 }
 
-func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error) {
+func loadEnv(ctx context.Context, c *dagger.Client, envIsOptional bool) (*dagger.Environment, error) {
 	env, err := getEnvironmentFlagConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment config: %w", err)
+	}
+	envExists, err := env.envExists(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if environment exists: %w", err)
+	}
+	if !envExists {
+		if envIsOptional {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("environment does not exist")
 	}
 
 	loadedEnv, err := env.load(ctx, c)

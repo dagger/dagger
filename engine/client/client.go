@@ -155,6 +155,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				DisableKeepAlives: true,
 			},
 		}
+
+		c.daggerClient, err = dagger.Connect(ctx, dagger.WithConn(EngineConn(c)))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+		}
+
 		return c, ctx, nil
 	}
 

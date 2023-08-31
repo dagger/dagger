@@ -19,7 +19,7 @@ import (
 var checkCmd = &cobra.Command{
 	Use:  "checks [suite]",
 	Long: `Query the status of your environment's checks.`,
-	RunE: loadEnvCmdWrapper(RunCheck),
+	RunE: loadEnvCmdWrapper(RunCheck, "", false),
 }
 
 func init() {
@@ -32,13 +32,17 @@ func init() {
 			Use:          "list",
 			Long:         `List your environment's checks without updating their status.`,
 			SilenceUsage: true,
-			RunE:         loadEnvCmdWrapper(ListChecks),
+			RunE:         loadEnvCmdWrapper(ListChecks, "", false),
 		},
 	)
 
 }
 
-func ListChecks(ctx context.Context, engineClient *client.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+func ListChecks(ctx context.Context, engineClient *client.Client, env *dagger.Environment, cmd *cobra.Command, cmdArgs []string) (err error) {
+	if env == nil {
+		return fmt.Errorf("no environment specified and no default environment found in current directory")
+	}
+
 	rec := progrock.RecorderFromContext(ctx)
 	vtx := rec.Vertex("cmd-list-checks", "list checks", progrock.Focused())
 	defer func() { vtx.Done(err) }()
@@ -88,7 +92,11 @@ func ListChecks(ctx context.Context, engineClient *client.Client, env *dagger.En
 	return tw.Flush()
 }
 
-func RunCheck(ctx context.Context, engineClient *client.Client, env *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+func RunCheck(ctx context.Context, engineClient *client.Client, env *dagger.Environment, cmd *cobra.Command, cmdArgs []string) (err error) {
+	if env == nil {
+		return fmt.Errorf("no environment specified and no default environment found in current directory")
+	}
+
 	c := engineClient.Dagger()
 	rec := progrock.RecorderFromContext(ctx)
 
@@ -98,8 +106,8 @@ func RunCheck(ctx context.Context, engineClient *client.Client, env *dagger.Envi
 	ctx = progrock.RecorderToContext(ctx, rec)
 
 	var selectedChecks []*dagger.Check
-	if len(dynamicCmdArgs) > 0 {
-		for _, checkName := range dynamicCmdArgs {
+	if len(cmdArgs) > 0 {
+		for _, checkName := range cmdArgs {
 			// we accept check names in both kebab-case and lowerCamelCase
 			checkName = strcase.ToLowerCamel(checkName)
 			selectedChecks = append(selectedChecks, env.Check(checkName))

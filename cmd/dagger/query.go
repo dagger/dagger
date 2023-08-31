@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -38,12 +39,11 @@ dagger query <<EOF
 }
 EOF
 `,
-	Run:  Query,
+	RunE: loadEnvCmdWrapper(Query, "", true),
 	Args: cobra.MaximumNArgs(1), // operation can be specified
 }
 
-func Query(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Environment, _ *cobra.Command, args []string) error {
 	var operation string
 	if len(args) > 0 {
 		operation = args[0]
@@ -52,8 +52,7 @@ func Query(cmd *cobra.Command, args []string) {
 	vars := make(map[string]interface{})
 	if len(queryVarsJSONInput) > 0 {
 		if err := json.Unmarshal([]byte(queryVarsJSONInput), &vars); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 	} else {
 		vars = getKVInput(queryVarsInput)
@@ -66,42 +65,29 @@ func Query(cmd *cobra.Command, args []string) {
 	if queryFile != "" {
 		inBytes, err := os.ReadFile(queryFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		operations = string(inBytes)
 	} else if !term.IsTerminal(int(os.Stdin.Fd())) {
 		inBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		operations = string(inBytes)
 	}
 
-	result, err := doQuery(ctx, operations, operation, vars)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("%s\n", result)
-}
-
-func doQuery(ctx context.Context, query, op string, vars map[string]interface{}) ([]byte, error) {
 	res := make(map[string]interface{})
-	err := withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-		err := engineClient.Do(ctx, query, op, vars, &res)
-		return err
-	})
+	err := engineClient.Do(ctx, operations, operation, vars, &res)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	result, err := json.MarshalIndent(res, "", "    ")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return result, nil
+
+	fmt.Printf("%s\n", result)
+	return nil
 }
 
 func getKVInput(kvs []string) map[string]interface{} {
