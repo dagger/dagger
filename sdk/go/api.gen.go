@@ -1071,13 +1071,13 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
 		}
-		// `Optional` optional argument
+		// `optional` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Optional) {
-			q = q.Arg("Optional", opts[i].Optional)
+			q = q.Arg("optional", opts[i].Optional)
 		}
-		// `Mode` optional argument
+		// `mode` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Mode) {
-			q = q.Arg("Mode", opts[i].Mode)
+			q = q.Arg("mode", opts[i].Mode)
 		}
 	}
 	q = q.Arg("path", path)

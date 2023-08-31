@@ -1237,8 +1237,8 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, None),
-            Arg("Optional", optional, None),
-            Arg("Mode", mode, None),
+            Arg("optional", optional, None),
+            Arg("mode", mode, None),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)

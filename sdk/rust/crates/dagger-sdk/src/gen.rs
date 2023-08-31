@@ -1408,10 +1408,10 @@ impl Container {
             query = query.arg("owner", owner);
         }
         if let Some(optional) = opts.optional {
-            query = query.arg("Optional", optional);
+            query = query.arg("optional", optional);
         }
         if let Some(mode) = opts.mode {
-            query = query.arg("Mode", mode);
+            query = query.arg("mode", mode);
         }
         return Container {
             proc: self.proc.clone(),

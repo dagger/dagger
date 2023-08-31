@@ -733,14 +733,14 @@ defmodule Dagger.Container do
         if is_nil(optional_args[:optional]) do
           selection
         else
-          arg(selection, "Optional", optional_args[:optional])
+          arg(selection, "optional", optional_args[:optional])
         end
 
       selection =
         if is_nil(optional_args[:mode]) do
           selection
         else
-          arg(selection, "Mode", optional_args[:mode])
+          arg(selection, "mode", optional_args[:mode])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
