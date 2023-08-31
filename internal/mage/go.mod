@@ -17,6 +17,8 @@ require (
 	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/moby/buildkit v0.12.2 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.8 // indirect
 	golang.org/x/sys v0.11.0 // indirect
 )
