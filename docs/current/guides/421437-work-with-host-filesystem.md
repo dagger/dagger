@@ -27,6 +27,7 @@ This guide assumes that:
 
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md) or [Node.js](../sdk/nodejs/835948-install.md) SDK.
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## List directory contents
@@ -58,29 +59,6 @@ The `host` type provides information about the host's execution environment. Its
 ```
 
 The `host` type provides information about the host's execution environment. Its `directory()` method accepts a path and returns a reference to the corresponding host directory as a `Directory` object. Entries in the directory can be obtained via the `directory.entries()` function.
-
-</TabItem>
-</Tabs>
-
-When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory. The following example revises the previous one, setting the parent directory as the working directory and listing its contents:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/work-with-host-filesystem/list-dir-parent/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./snippets/work-with-host-filesystem/list-dir-parent/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/work-with-host-filesystem/list-dir-parent/main.py
-```
 
 </TabItem>
 </Tabs>
