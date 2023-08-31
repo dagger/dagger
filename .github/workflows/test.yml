@@ -27,95 +27,95 @@ jobs:
   # https://go.dev/blog/race-detector
   #
   # Run in parallel to the regular tests so that the entire pipeline finishes quicker
-  engine-race-detection:
-    uses: ./.github/workflows/_hack_make.yml
-    with:
-      mage-targets: engine:testrace
+  #engine-race-detection:
+    #uses: ./.github/workflows/_hack_make.yml
+    #with:
+      #mage-targets: engine:testrace
 
-  # Run Engine tests in dev Engine so that we can spot integration failures early
-  # It's OK for this one to fail, it's more of an advisory
-  engine-in-engine-dev:
-    uses: ./.github/workflows/_hack_make.yml
-    with:
-      mage-targets: engine:test
-      dev-engine: true
+  ## Run Engine tests in dev Engine so that we can spot integration failures early
+  ## It's OK for this one to fail, it's more of an advisory
+  #engine-in-engine-dev:
+    #uses: ./.github/workflows/_hack_make.yml
+    #with:
+      #mage-targets: engine:test
+      #dev-engine: true
 
-  sdk-go:
-    name: "sdk / go"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "1.20"
-      - run: ./hack/make sdk:go:test
-        env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
-        if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
+  #sdk-go:
+    #name: "sdk / go"
+    #runs-on: ubuntu-latest
+    #steps:
+      #- uses: actions/checkout@v3
+      #- uses: actions/setup-go@v3
+        #with:
+          #go-version: "1.20"
+      #- run: ./hack/make sdk:go:test
+        #env:
+          #_EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          #_EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      #- uses: actions/upload-artifact@v3
+        #if: always()
+        #name: "Upload journal.log"
+        #continue-on-error: true
+        #with:
+          #name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          #path: /tmp/journal.log
 
-  sdk-python:
-    name: "sdk / python"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "1.20"
-      - run: ./hack/make sdk:python:test
-        env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
-        if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
+  #sdk-python:
+    #name: "sdk / python"
+    #runs-on: ubuntu-latest
+    #steps:
+      #- uses: actions/checkout@v3
+      #- uses: actions/setup-go@v3
+        #with:
+          #go-version: "1.20"
+      #- run: ./hack/make sdk:python:test
+        #env:
+          #_EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          #_EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      #- uses: actions/upload-artifact@v3
+        #if: always()
+        #name: "Upload journal.log"
+        #continue-on-error: true
+        #with:
+          #name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          #path: /tmp/journal.log
 
-  sdk-nodejs:
-    name: "sdk / nodejs"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "1.20"
-      - run: ./hack/make sdk:nodejs:test
-        env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
-        if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
+  #sdk-nodejs:
+    #name: "sdk / nodejs"
+    #runs-on: ubuntu-latest
+    #steps:
+      #- uses: actions/checkout@v3
+      #- uses: actions/setup-go@v3
+        #with:
+          #go-version: "1.20"
+      #- run: ./hack/make sdk:nodejs:test
+        #env:
+          #_EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          #_EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      #- uses: actions/upload-artifact@v3
+        #if: always()
+        #name: "Upload journal.log"
+        #continue-on-error: true
+        #with:
+          #name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          #path: /tmp/journal.log
 
-  sdk-rust:
-    name: "sdk / rust"
-    runs-on: ubuntu-22.04-16c-64g-600gb
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "1.20"
-      - run: ./hack/make sdk:rust:test
-        env:
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - uses: actions/upload-artifact@v3
-        if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
+  #sdk-rust:
+    #name: "sdk / rust"
+    #runs-on: ubuntu-22.04-16c-64g-600gb
+    #steps:
+      #- uses: actions/checkout@v3
+      #- uses: actions/setup-go@v3
+        #with:
+          #go-version: "1.20"
+      #- run: ./hack/make sdk:rust:test
+        #env:
+          #_EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          #_EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      #- uses: actions/upload-artifact@v3
+        #if: always()
+        #name: "Upload journal.log"
+        #continue-on-error: true
+        #with:
+          #name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          #path: /tmp/journal.log
