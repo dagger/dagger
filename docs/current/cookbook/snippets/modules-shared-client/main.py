@@ -1,8 +1,10 @@
-import anyio
 import sys
+
+import anyio
+from pipelines import version
+
 import dagger
 
-from pipelines import version
 
 # initialize Dagger client
 # pass client to method imported from another module

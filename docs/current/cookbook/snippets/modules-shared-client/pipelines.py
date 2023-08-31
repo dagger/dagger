@@ -1,8 +1,10 @@
 import dagger
 
+
 # get base image
 def base(client: dagger.Client):
     return client.container().from_("alpine:latest")
+
 
 # run command in base image
 async def version(client: dagger.Client):
