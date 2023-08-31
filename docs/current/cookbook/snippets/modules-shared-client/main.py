@@ -1,7 +1,7 @@
 import sys
 
 import anyio
-from pipelines import version
+from .pipelines import version
 
 import dagger
 
