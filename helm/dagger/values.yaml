@@ -42,6 +42,6 @@ engine:
     successThreshold: 1
     failureThreshold: 10
 magicache:
-  enabled: true
+  enabled: false
   url: https://api.dagger.cloud/magicache
   # token: <token>
