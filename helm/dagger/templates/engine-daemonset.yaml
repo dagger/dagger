@@ -48,13 +48,6 @@ spec:
         runAsGroup: 1001
         fsGroup: 1001
         fsGroupChangePolicy: "OnRootMismatch"
-      initContainers:
-        - name: download-bin
-          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
-          command: ["sh", "-c", "wget https://github.com/moby/buildkit/releases/download/v0.11.6/buildkit-v0.11.6.linux-amd64.tar.gz -O /shared-bin/buildkit.tar.gz && tar -xvzf /shared-bin/buildkit.tar.gz --strip-components 1 bin/buildctl -C /shared-bin"]
-          volumeMounts:
-          - name: shared-bin
-            mountPath: /shared-bin
       containers:
         - name: dagger-engine
           image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
@@ -78,7 +71,7 @@ spec:
           resources: {{- toYaml .Values.engine.resources | nindent 12 }}
           readinessProbe:
             exec:
-              command: ["/shared-bin/buildctl", "debug", "workers"]
+              command: ["buildctl", "debug", "workers"]
             {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
@@ -87,8 +80,6 @@ spec:
               mountPath: /var/lib/dagger
             - name: varrundagger
               mountPath: /var/run/buildkit
-            - name: shared-bin
-              mountPath: /shared-bin
             {{- if .Values.engine.config }}
             - name: dagger-engine-config
               mountPath: /etc/dagger/engine.toml
@@ -96,8 +87,6 @@ spec:
             {{- end }}
       terminationGracePeriodSeconds: 300
       volumes:
-        - name: shared-bin
-          emptyDir: {}
         - name: varlibdagger
           hostPath:
             path: /var/lib/dagger
