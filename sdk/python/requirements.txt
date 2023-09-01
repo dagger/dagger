@@ -70,7 +70,7 @@ platformdirs==3.10.0
     #   black
 pluggy==1.2.0
     # via pytest
-pygments==2.15.1
+pygments==2.16.1
     # via rich
 pytest==7.4.0
     # via
