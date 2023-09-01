@@ -2,6 +2,9 @@
 
 set -e -u -x
 
+export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0
+export _EXPERIMENTAL_DAGGER_GPU_SUPPORT=1
+
 DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
 
