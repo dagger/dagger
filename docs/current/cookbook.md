@@ -998,6 +998,10 @@ The following code listing demonstrates how to add multiple environment variable
 
 The following code listing demonstrates how to organize Dagger pipeline code into independent modules (or functions/packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between modules.
 
+:::note
+Reusing the Dagger client, instead of creating a new client in each module, is a recommended practice.
+:::
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
