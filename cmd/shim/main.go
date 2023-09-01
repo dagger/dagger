@@ -382,6 +382,19 @@ func setupBundle() int {
 			Options:     []string{"rbind", "ro"},
 		})
 
+		spec.Hooks = &specs.Hooks{}
+		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled != "" {
+			spec.Hooks.Prestart = []specs.Hook{
+				{
+					Args: []string{
+						"nvidia-container-runtime-hook",
+						"prestart",
+					},
+					Path: "/usr/bin/nvidia-container-runtime-hook",
+				},
+			}
+		}
+
 		// update the args to specify the shim as the init process
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
@@ -437,6 +450,7 @@ func setupBundle() int {
 		}
 	}
 
+	var gpuParams string
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
@@ -486,11 +500,18 @@ func setupBundle() int {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return errorExitCode
 			}
+		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS"):
+			splits := strings.Split(env, "=")
+			gpuParams = splits[1]
 		default:
 			keepEnv = append(keepEnv, env)
 		}
 	}
 	spec.Process.Env = keepEnv
+
+	if gpuParams != "" {
+		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s", gpuParams))
+	}
 
 	// write the updated config
 	configBytes, err = json.Marshal(spec)
