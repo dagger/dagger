@@ -173,15 +173,15 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
 
-	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
+	cacheConfigs, err := cacheConfigFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
-	if cacheConfigType != "" {
-		c.upstreamCacheOptions = []*controlapi.CacheOptionsEntry{{
-			Type:  cacheConfigType,
-			Attrs: cacheConfigAttrs,
-		}}
+	for _, cfg := range cacheConfigs {
+		c.upstreamCacheOptions = append(c.upstreamCacheOptions, &controlapi.CacheOptionsEntry{
+			Type:  cfg.typeName,
+			Attrs: cfg.attrs,
+		})
 	}
 
 	remote, err := url.Parse(c.RunnerHost)
@@ -742,31 +742,51 @@ const (
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 )
 
-func cacheConfigFromEnv() (string, map[string]string, error) {
+type cacheConfig struct {
+	typeName string
+	attrs    map[string]string
+}
+
+// env is in form k1=v1,k2=v2;k3=v3... with ';' used to separate multiple cache configs.
+// any value that itself needs ';' can use '\;' to escape it.
+func cacheConfigFromEnv() ([]cacheConfig, error) {
 	envVal, ok := os.LookupEnv(cacheConfigEnvName)
 	if !ok {
-		return "", nil, nil
+		return nil, nil
+	}
+	configKVs := strings.Split(envVal, ";")
+	for i := len(configKVs) - 2; i >= 0; i-- {
+		if strings.HasSuffix(configKVs[i], `\`) {
+			configKVs[i] = configKVs[i][:len(configKVs[i])-1] + ";" + configKVs[i+1]
+			configKVs = append(configKVs[:i+1], configKVs[i+2:]...)
+		}
 	}
 
-	// env is in form k1=v1,k2=v2,...
-	kvs := strings.Split(envVal, ",")
-	if len(kvs) == 0 {
-		return "", nil, nil
-	}
-	attrs := make(map[string]string)
-	for _, kv := range kvs {
-		parts := strings.SplitN(kv, "=", 2)
-		if len(parts) != 2 {
-			return "", nil, fmt.Errorf("invalid form for cache config %q", kv)
+	var cacheConfigs []cacheConfig
+	for _, kvsStr := range configKVs {
+		kvs := strings.Split(kvsStr, ",")
+		if len(kvs) == 0 {
+			continue
 		}
-		attrs[parts[0]] = parts[1]
+		attrs := make(map[string]string)
+		for _, kv := range kvs {
+			parts := strings.SplitN(kv, "=", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid form for cache config %q", kv)
+			}
+			attrs[parts[0]] = parts[1]
+		}
+		typeVal, ok := attrs["type"]
+		if !ok {
+			return nil, fmt.Errorf("missing type in cache config: %q", envVal)
+		}
+		delete(attrs, "type")
+		cacheConfigs = append(cacheConfigs, cacheConfig{
+			typeName: typeVal,
+			attrs:    attrs,
+		})
 	}
-	typeVal, ok := attrs["type"]
-	if !ok {
-		return "", nil, fmt.Errorf("missing type in cache config: %q", envVal)
-	}
-	delete(attrs, "type")
-	return typeVal, attrs, nil
+	return cacheConfigs, nil
 }
 
 type doerWithHeaders struct {

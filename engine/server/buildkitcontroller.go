@@ -224,6 +224,13 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 				e.serverMu.Unlock()
 				return fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
 			}
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			bklog.G(ctx).Debugf("CACHE CONFIG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %s, %+v", cacheImportCfg.Type, cacheImportCfg.Attrs)
+
 			cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
 				Type:  cacheImportCfg.Type,
 				Attrs: cacheImportCfg.Attrs,
@@ -332,6 +339,7 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 
 	cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(req.Cache.Exports))
 	for i, cacheExportCfg := range req.Cache.Exports {
+		cacheExportCfg := cacheExportCfg
 		exporterFunc, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
 		if !ok {
 			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
