@@ -24,6 +24,7 @@ const (
 
 	golangVersion = "1.21.3"
 	alpineVersion = "3.18"
+	ubuntuVersion = "20.04"
 	runcVersion   = "v1.1.9"
 	cniVersion    = "v1.3.0"
 	qemuBinImage  = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
@@ -32,9 +33,11 @@ const (
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	EngineDefaultStateDir = "/var/lib/dagger"
 
-	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
+	engineEntrypointPath  = "/usr/local/bin/dagger-entrypoint.sh"
+	nvidiaSetupHelperPath = "/usr/local/bin/nvidia-helper.sh"
 
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	GPUSupportEnvName  = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh
@@ -63,6 +66,17 @@ insecure-entitlements = ["security.insecure"]
 [{{ $key }}]
 {{ index $.ConfigEntries $key }}
 {{ end -}}
+`
+
+// nvidiaSetupHelper provides the required steps to setup nvidia-container-toolkit:
+const nvidiaSetupHelper = `
+#!/bin/sh
+
+export distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/experimental/$distribution/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+apt-get update
+apt-get install nvidia-container-toolkit -y
 `
 
 // DevEngineOpts are options for the dev engine
@@ -202,10 +216,11 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 	if err != nil {
 		panic(err)
 	}
-	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+
+	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("alpine:"+alpineVersion).
 		WithExec([]string{
-			"apk", "add", "--no-cache",
+			"apk", "add",
 			// for Buildkit
 			"git", "openssh", "pigz", "xz",
 			// for CNI
@@ -221,7 +236,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
-		WithDirectory("/", cniPlugins(c, arch)).
+		WithDirectory("/", cniPlugins(c, arch, false)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
@@ -230,8 +245,8 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineEntrypoint,
 			Permissions: 0o755,
-		}).
-		WithEntrypoint([]string{"dagger-entrypoint.sh"})
+		})
+	return container.WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
 
 func devEngineContainers(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
