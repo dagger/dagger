@@ -218,19 +218,12 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		authProvider := auth.NewRegistryAuthProvider()
 
 		var cacheImporterCfgs []bkgw.CacheOptionsEntry
-		for _, cacheImportCfg := range opts.UpstreamCacheConfig {
+		for _, cacheImportCfg := range opts.UpstreamCacheImportConfig {
 			_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
 			if !ok {
 				e.serverMu.Unlock()
 				return fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
 			}
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			bklog.G(ctx).Debugf("CACHE CONFIG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! %s, %+v", cacheImportCfg.Type, cacheImportCfg.Attrs)
-
 			cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
 				Type:  cacheImportCfg.Type,
 				Attrs: cacheImportCfg.Attrs,

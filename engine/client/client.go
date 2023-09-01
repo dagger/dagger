@@ -92,7 +92,8 @@ type Client struct {
 	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
 	daggerClient *dagger.Client
 
-	upstreamCacheOptions []*controlapi.CacheOptionsEntry
+	upstreamCacheImportOptions []*controlapi.CacheOptionsEntry
+	upstreamCacheExportOptions []*controlapi.CacheOptionsEntry
 
 	hostname string
 
@@ -173,15 +174,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
 
-	cacheConfigs, err := cacheConfigFromEnv()
+	var err error
+	c.upstreamCacheImportOptions, c.upstreamCacheExportOptions, err = allCacheConfigsFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
-	}
-	for _, cfg := range cacheConfigs {
-		c.upstreamCacheOptions = append(c.upstreamCacheOptions, &controlapi.CacheOptionsEntry{
-			Type:  cfg.typeName,
-			Attrs: cfg.attrs,
-		})
 	}
 
 	remote, err := url.Parse(c.RunnerHost)
@@ -274,16 +270,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.eg.Go(func() error {
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
-				RegisterClient:        true,
-				ClientID:              c.ID(),
-				ClientSecretToken:     c.SecretToken,
-				ServerID:              c.ServerID,
-				ParentClientIDs:       c.ParentClientIDs,
-				ClientHostname:        hostname,
-				UpstreamCacheConfig:   c.upstreamCacheOptions,
-				Labels:                c.labels,
-				ModuleDigest:          c.ModuleDigest,
-				FunctionContextDigest: c.FunctionContextDigest,
+				RegisterClient:            true,
+				ClientID:                  c.ID(),
+				ClientSecretToken:         c.SecretToken,
+				ServerID:                  c.ServerID,
+				ParentClientIDs:           c.ParentClientIDs,
+				ClientHostname:            hostname,
+				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
+				Labels:                    c.labels,
+				ModuleDigest:              c.ModuleDigest,
+				FunctionContextDigest:     c.FunctionContextDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -354,12 +350,12 @@ func (c *Client) Close() (rerr error) {
 	default:
 	}
 
-	if len(c.upstreamCacheOptions) > 0 {
+	if len(c.upstreamCacheExportOptions) > 0 {
 		cacheExportCtx, cacheExportCancel := context.WithTimeout(c.internalCtx, 600*time.Second)
 		defer cacheExportCancel()
 		_, err := c.bkClient.ControlClient().Solve(cacheExportCtx, &controlapi.SolveRequest{
 			Cache: controlapi.CacheOptions{
-				Exports: c.upstreamCacheOptions,
+				Exports: c.upstreamCacheExportOptions,
 			},
 		})
 		rerr = errors.Join(rerr, err)
@@ -739,22 +735,24 @@ func (a progRockAttachable) Register(srv *grpc.Server) {
 }
 
 const (
+	// cache configs that should be applied to be import and export
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	// cache configs for imports only
+	cacheImportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG"
+	// cache configs for exports only
+	cacheExportsConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG"
 )
-
-type cacheConfig struct {
-	typeName string
-	attrs    map[string]string
-}
 
 // env is in form k1=v1,k2=v2;k3=v3... with ';' used to separate multiple cache configs.
 // any value that itself needs ';' can use '\;' to escape it.
-func cacheConfigFromEnv() ([]cacheConfig, error) {
-	envVal, ok := os.LookupEnv(cacheConfigEnvName)
+func cacheConfigFromEnv(envName string) ([]*controlapi.CacheOptionsEntry, error) {
+	envVal, ok := os.LookupEnv(envName)
 	if !ok {
 		return nil, nil
 	}
 	configKVs := strings.Split(envVal, ";")
+	// handle '\;' as an escape in case ';' needs to be used in a cache config setting rather than as
+	// a delimiter between multiple cache configs
 	for i := len(configKVs) - 2; i >= 0; i-- {
 		if strings.HasSuffix(configKVs[i], `\`) {
 			configKVs[i] = configKVs[i][:len(configKVs[i])-1] + ";" + configKVs[i+1]
@@ -762,7 +760,7 @@ func cacheConfigFromEnv() ([]cacheConfig, error) {
 		}
 	}
 
-	var cacheConfigs []cacheConfig
+	cacheConfigs := make([]*controlapi.CacheOptionsEntry, 0, len(configKVs))
 	for _, kvsStr := range configKVs {
 		kvs := strings.Split(kvsStr, ",")
 		if len(kvs) == 0 {
@@ -781,12 +779,38 @@ func cacheConfigFromEnv() ([]cacheConfig, error) {
 			return nil, fmt.Errorf("missing type in cache config: %q", envVal)
 		}
 		delete(attrs, "type")
-		cacheConfigs = append(cacheConfigs, cacheConfig{
-			typeName: typeVal,
-			attrs:    attrs,
+		cacheConfigs = append(cacheConfigs, &controlapi.CacheOptionsEntry{
+			Type:  typeVal,
+			Attrs: attrs,
 		})
 	}
 	return cacheConfigs, nil
+}
+
+func allCacheConfigsFromEnv() (cacheImportConfigs []*controlapi.CacheOptionsEntry, cacheExportConfigs []*controlapi.CacheOptionsEntry, rerr error) {
+	// cache import only configs
+	cacheImportConfigs, err := cacheConfigFromEnv(cacheImportsConfigEnvName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cache import config from env: %w", err)
+	}
+
+	// cache export only configs
+	cacheExportConfigs, err = cacheConfigFromEnv(cacheExportsConfigEnvName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cache export config from env: %w", err)
+	}
+
+	// this env sets configs for both imports and exports
+	cacheConfigs, err := cacheConfigFromEnv(cacheConfigEnvName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cache config from env: %w", err)
+	}
+	for _, cfg := range cacheConfigs {
+		cacheImportConfigs = append(cacheImportConfigs, cfg)
+		cacheExportConfigs = append(cacheExportConfigs, cfg)
+	}
+
+	return cacheImportConfigs, cacheExportConfigs, nil
 }
 
 type doerWithHeaders struct {
