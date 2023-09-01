@@ -48,6 +48,8 @@ type Container struct {
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
 
+	GPUConfig string `json:"gpu_config"`
+
 	// Pipeline
 	Pipeline pipeline.Path `json:"pipeline"`
 
@@ -1012,6 +1014,16 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 	return container, nil
 }
 
+type ContainerGPUOpts struct {
+	Devices string
+}
+
+func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpts) (*Container, error) {
+	container = container.Clone()
+	container.GPUConfig = gpuOpts.Devices
+	return container, nil
+}
+
 func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, progSock string, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	container = container.Clone()
 
@@ -1091,6 +1103,14 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		}
 
 		runOpts = append(runOpts, llb.AddEnv(name, val))
+	}
+
+	// if GPU parameters are set for this container pass them over:
+	if container.GPUConfig != "" {
+		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {
+			return nil, fmt.Errorf("GPU support is not enabled, set _EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+		}
+		runOpts = append(runOpts, llb.AddEnv("_EXPERIMENTAL_DAGGER_GPU_PARAMS", container.GPUConfig))
 	}
 
 	secretsToScrub := SecretToScrubInfo{}

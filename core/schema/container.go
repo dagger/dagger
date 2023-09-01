@@ -105,6 +105,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withFocus":            ToResolver(s.withFocus),
 		"withoutFocus":         ToResolver(s.withoutFocus),
 		"shellEndpoint":        ToResolver(s.shellEndpoint),
+		"withGPU":              ToResolver(s.withGPU),
 	})
 
 	return rs
@@ -216,6 +217,14 @@ func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ 
 
 func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ any) (string, error) {
 	return parent.MetaFileContents(ctx, s.bk, s.svcs, s.progSockPath, "stderr")
+}
+
+type containerGpuArgs struct {
+	core.ContainerGPUOpts
+}
+
+func (s *containerSchema) withGPU(ctx *core.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
+	return parent.WithGPU(ctx, args.ContainerGPUOpts)
 }
 
 type containerWithEntrypointArgs struct {

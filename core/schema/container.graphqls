@@ -532,6 +532,13 @@ type Container {
   withoutFocus: Container!
 
   """
+  Sets GPU access parameters for the given container, currently works for Nvidia only.
+  """
+  withGPU(
+    devices: String
+  ): Container!
+
+  """
   Retrieves this container after executing the specified command inside it.
   """
   withExec(
