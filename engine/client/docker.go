@@ -22,6 +22,7 @@ const (
 
 	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 	DaggerCloudToken      = "DAGGER_CLOUD_TOKEN"
+	GPUSupportEnvName     = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
@@ -120,6 +121,8 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		"-d",
 		"--restart", "always",
 		"-e", cloudToken,
+		"-e", DaggerCloudCacheToken,
+		"-e", GPUSupportEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
 	}
