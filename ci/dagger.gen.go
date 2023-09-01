@@ -1020,6 +1020,27 @@ func (r *Container) WithFocus() *Container {
 	}
 }
 
+// ContainerWithGPUOpts contains options for Container.WithGPU
+type ContainerWithGPUOpts struct {
+	Devices string
+}
+
+// Sets GPU access parameters for the given container
+func (r *Container) WithGPU(opts ...ContainerWithGPUOpts) *Container {
+	q := r.q.Select("withGPU")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `devices` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Devices) {
+			q = q.Arg("devices", opts[i].Devices)
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
 	q := r.q.Select("withLabel")
