@@ -68,7 +68,7 @@ platformdirs==3.10.0
     # via
     #   -r -
     #   black
-pluggy==1.2.0
+pluggy==1.3.0
     # via pytest
 pygments==2.15.1
     # via rich
