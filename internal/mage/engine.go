@@ -245,14 +245,22 @@ func (t Engine) Dev(ctx context.Context) error {
 	runArgs := []string{
 		"run",
 		"-d",
-		// "--rm",
+	}
+
+	// Make all GPUs visible to the engine container if the GPU support flag is set:
+	if gpuSupportEnabled := os.Getenv(util.GPUSupportEnvName); gpuSupportEnabled != "" {
+		runArgs = append(runArgs, []string{"--gpus", "all"}...)
+	}
+	runArgs = append(runArgs, []string{
 		"-e", util.CacheConfigEnvName,
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
+		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + util.EngineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
-	}
+	}...)
+
 	runArgs = append(runArgs, imageName, "--debug")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
