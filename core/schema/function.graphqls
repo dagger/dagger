@@ -1,0 +1,10 @@
+extend type Query {
+    "Load or function by ID, or create a new one"
+    function(id: FunctionID): Function!
+}
+
+type Function {
+    id: FunctionID!
+
+    // FIXME @sipsma: function constructors go here
+}

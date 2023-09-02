@@ -1,35 +1,32 @@
 ## What is Dagger?
 
-Dagger is a programmable CI/CD engine that runs your pipelines in containers.
+Dagger is a tool that lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
 
-### Programmable
+1. Encapsulate all your project's tasks and workflows into simple functions, written in your programming language of choice
+2. Dagger packages your functions into a custom GraphQL API
+3. Run your functions from the CLI, your language interpreter, or a custom HTTP client
+4. Package your functions into a module, to reuse in your next project or share with the community
+5. Search the Daggerverse for existing modules, and import them into yours. All Dagger modules can reuse each other's functions - across language.
 
-Develop your CI/CD pipelines as code, in the same programming language as your application.
+## Benefits to app teams
 
-### Runs your pipelines in containers
+* Reduce complexity: even complex builds can be expressed as a few simple functions
+* No more "push and pray": everything CI can do, your dev environment can do too
+* Use the same language to develop your app and its scripts
+* Easy onboarding of new developers: if you can build, test and deploy - they can too.
+* Everything is cached by default: expect 2x to 10x speedups
+* Parity between dev and CI environments
+* Cross-team collaboration: reuse another team's workflows without learning their stack
 
-Dagger executes your pipelines entirely as [standard OCI containers](https://opencontainers.org/). This has several benefits:
+## Benefits to platform teams
 
-* **Instant local testing**
-* **Portability**: the same pipeline can run on your local machine, a CI runner, a dedicated server, or any container hosting service.
-* **Superior caching**: every operation is cached by default, and caching works the same everywhere
-* **Compatibility** with the Docker ecosystem: if it runs in a container, you can add it to your pipeline.
-* **Cross-language instrumentation**: teams can use each other's tools without learning each other's language.
-
-## Who is it for?
-
-Dagger may be a good fit if you are...
-
-* A developer wishing your CI pipelines were code instead of YAML
-* Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful
-* A platform engineer writing custom tooling, with the goal of unifying continuous delivery across organizational silos
-* A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice
+* Reduce CI lock-in. Dagger functions run on all major CI platforms - no proprietary DSL needed.
+* Don't be a bottleneck. Let app teams write their own functions. Enable standardization by providing them a library of reusable components.
+* Faster CI runs. CI pipelines that are "Daggerized" typically run 2x to 10x faster, thanks to caching and concurrency. This means developers waste less time waiting for CI, and you spend less money on CI compute.
+* A viable platform strategy. App teams need flexibility, and you need control. Dagger gives you a way to reconcile the two, in an incremental way that leverages the stack you already have.
 
 ## Learn more
 
-* [How does it work?](https://docs.dagger.io/#how-does-it-work)
-* [Getting started](https://docs.dagger.io/#getting-started)
-* [Examples](https://github.com/dagger/dagger/tree/main/examples)
 * [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
 * [Follow us on Twitter](https://twitter.com/dagger_io)
 * Join a [Dagger community call](https://dagger.io/events).

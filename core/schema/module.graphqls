@@ -1,0 +1,15 @@
+type Module {
+    """
+    Serve a module's API in the current session.
+        Note: this can only be called once per session.
+        In the future, it could return a stream or service to remove the side effect.
+    """
+    serve(workdir: Directory, environment: [String!]): Void!
+
+    withFunction(id: FunctionID!): Module!
+}
+
+extend type Directory {
+    "Load the directory as a Dagger module"
+    asModule: Module!
+}
