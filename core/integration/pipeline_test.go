@@ -1,33 +1,14 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
 )
-
-type safeBuffer struct {
-	bu bytes.Buffer
-	mu sync.Mutex
-}
-
-func (s *safeBuffer) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Write(p)
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.String()
-}
 
 func TestPipeline(t *testing.T) {
 	t.Parallel()
