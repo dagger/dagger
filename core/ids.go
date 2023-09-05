@@ -17,11 +17,9 @@ type FileID = resourceid.ID[File]
 
 type SecretID = resourceid.ID[Secret]
 
-type EnvironmentID resourceid.ID[Environment]
+type ModuleID resourceid.ID[Module]
 
-type CheckID = resourceid.ID[Check]
-
-type CheckResultID = resourceid.ID[CheckResult]
+type FunctionID = resourceid.ID[Function]
 
 // SocketID is in the socket package (to avoid circular imports)
 
@@ -42,12 +40,10 @@ func ResourceFromID(id string) (any, error) {
 		return FileID(id).Decode()
 	case SecretID.ResourceTypeName(""):
 		return SecretID(id).Decode()
-	case resourceid.ID[Environment].ResourceTypeName(""):
-		return EnvironmentID(id).Decode()
-	case CheckID.ResourceTypeName(""):
-		return CheckID(id).Decode()
-	case CheckResultID.ResourceTypeName(""):
-		return CheckResultID(id).Decode()
+	case resourceid.ID[Module].ResourceTypeName(""):
+		return ModuleID(id).Decode()
+	case FunctionID.ResourceTypeName(""):
+		return FunctionID(id).Decode()
 	case socket.ID.ResourceTypeName(""):
 		return socket.ID(id).Decode()
 	}

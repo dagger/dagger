@@ -27,10 +27,10 @@ func (s *secretSchema) Resolvers() Resolvers {
 			"secret":    ToResolver(s.secret),
 			"setSecret": ToResolver(s.setSecret),
 		},
-		"Secret": ObjectResolver{
+		"Secret": ToIDableObjectResolver(core.SecretID.Decode, ObjectResolver{
 			"id":        ToResolver(s.id),
 			"plaintext": ToResolver(s.plaintext),
-		},
+		}),
 	}
 }
 

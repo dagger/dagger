@@ -37,7 +37,7 @@ type ClientMetadata struct {
 	ClientSecretToken string `json:"client_secret_token"`
 
 	// ServerID is the id of the server that a client and any of its nested
-	// environment clients connect to
+	// module clients connect to
 	ServerID string `json:"server_id"`
 
 	// If RegisterClient is true, then a call to Session will initialize the
@@ -65,7 +65,7 @@ type ClientMetadata struct {
 	UpstreamCacheConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_config"`
 
 	// TODO: doc if stays in
-	EnvironmentDigest digest.Digest `json:"environment_digest"`
+	ModuleDigest digest.Digest `json:"module_digest"`
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

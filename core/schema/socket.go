@@ -29,9 +29,9 @@ func (s *socketSchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"socket": ToResolver(s.socket),
 		},
-		"Socket": ObjectResolver{
+		"Socket": ToIDableObjectResolver(socket.ID.Decode, ObjectResolver{
 			"id": ToResolver(s.id),
-		},
+		}),
 	}
 }
 

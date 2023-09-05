@@ -28,6 +28,8 @@ func (s *querySchema) Schema() string {
 
 func (s *querySchema) Resolvers() Resolvers {
 	return Resolvers{
+		"JSON": jsonResolver,
+		"Void": voidScalarResolver,
 		"Query": ObjectResolver{
 			"pipeline":                  ToResolver(s.pipeline),
 			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),

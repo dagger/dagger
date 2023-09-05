@@ -1,4 +1,4 @@
-package envconfig
+package moduleconfig
 
 import (
 	"fmt"
@@ -23,20 +23,20 @@ type Config struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 
-func ParseEnvURL(urlStr string) (*ParsedEnvURL, error) {
+func ParseModuleURL(urlStr string) (*ParsedModuleURL, error) {
 	url, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config path: %w", err)
 	}
 	switch url.Scheme {
 	case "", "local":
-		return &ParsedEnvURL{Local: &LocalEnv{
+		return &ParsedModuleURL{Local: &LocalModule{
 			ConfigPath: NormalizeConfigPath(filepath.Join(url.Host, url.Path)),
 		}}, nil
 	case "git":
 		repo := url.Host + url.Path
 
-		// options for git environments are set via query params
+		// options for git modules are set via query params
 		subpath := url.Query().Get("subpath")
 		subpath = NormalizeConfigPath(subpath)
 
@@ -50,7 +50,7 @@ func ParseEnvURL(urlStr string) (*ParsedEnvURL, error) {
 			repo = gitProtocol + "://" + repo
 		}
 
-		return &ParsedEnvURL{Git: &GitEnv{
+		return &ParsedModuleURL{Git: &GitModule{
 			Repo:       repo,
 			Ref:        gitRef,
 			ConfigPath: subpath,
@@ -60,17 +60,17 @@ func ParseEnvURL(urlStr string) (*ParsedEnvURL, error) {
 	}
 }
 
-type ParsedEnvURL struct {
+type ParsedModuleURL struct {
 	// Only one of these will be set
-	Local *LocalEnv
-	Git   *GitEnv
+	Local *LocalModule
+	Git   *GitModule
 }
 
-type LocalEnv struct {
+type LocalModule struct {
 	ConfigPath string
 }
 
-type GitEnv struct {
+type GitModule struct {
 	Repo       string
 	Ref        string
 	ConfigPath string
