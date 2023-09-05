@@ -105,7 +105,6 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			c, ctx := connect(t)
 			hosts[hostname(ctx, c)]++
-			c.Close()
 		}
 
 		require.Len(t, hosts, 1)
@@ -165,7 +164,6 @@ func TestServicePorts(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv := c.Container().
 		From("python").
@@ -1177,7 +1175,6 @@ func TestServiceStartStop(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 
@@ -1249,7 +1246,6 @@ func TestServiceHostToContainer(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	content := identity.NewID()
 
@@ -1464,7 +1460,6 @@ func TestServiceContainerToHost(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	t.Cleanup(func() { _ = c.Close() })
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"context"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
