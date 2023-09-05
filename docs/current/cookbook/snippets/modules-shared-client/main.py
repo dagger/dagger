@@ -1,9 +1,10 @@
 import sys
 
 import anyio
-from .pipelines import version
 
 import dagger
+
+from .pipelines import version
 
 
 # initialize Dagger client
