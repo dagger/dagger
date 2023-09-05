@@ -13,7 +13,7 @@ def test_getting_connect_params(fp: FakeProcess):
         ["dagger", "session", fp.any()],
         stdout=['{"port":50004,"session_token":"abc"}', ""],
     )
-    with session.CLISession(dagger.Config(), "dagger") as conn:
+    with session.start_cli_session_sync(dagger.Config(), "dagger") as conn:
         assert conn.url == httpx.URL("http://127.0.0.1:50004/query")
         assert conn.port == 50004
         assert conn.session_token == "abc"
@@ -48,7 +48,7 @@ def test_cli_exec_errors(config_args: dict, call_kwargs: dict, fp: FakeProcess):
             dagger.ProvisionError,
             match="Failed to start Dagger engine session",
         ),
-        session.CLISession(
+        session.start_cli_session_sync(
             dagger.Config(**config_args),
             "dagger",
         ),
@@ -67,7 +67,7 @@ def test_stderr(fp: FakeProcess):
             dagger.ProvisionError,
             match="buildkit failed to respond",
         ),
-        session.CLISession(
+        session.start_cli_session_sync(
             dagger.Config(),
             "dagger",
         ),

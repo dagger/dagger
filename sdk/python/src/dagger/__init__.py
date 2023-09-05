@@ -1,4 +1,5 @@
 # Make sure to place exceptions first as they're dependencies of other imports.
+import contextlib
 from ._exceptions import VersionMismatch as VersionMismatch
 from ._exceptions import DaggerError as DaggerError
 from ._exceptions import ProvisionError as ProvisionError
@@ -12,14 +13,21 @@ from ._exceptions import InvalidQueryError as InvalidQueryError
 from ._exceptions import QueryError as QueryError
 from ._exceptions import ExecError as ExecError
 
-# We need the star import since this is a generated module.
-from .client.gen import *
-
 # Make sure Config is first as it's a dependency in Connection.
 from ._config import Config as Config
+from ._config import Retry as Retry
+from ._config import Timeout as Timeout
+
+# We need the star import since this is a generated module.
+from .client.gen import *
 from ._connection import Connection as Connection
+from ._connection import connection as connection
+from ._connection import connect as connect
+from ._connection import close as close
+from ._connection import closing as closing
 
 # Re-export imports so they look like they live directly in this package.
 for _value in list(locals().values()):
     if getattr(_value, "__module__", "").startswith("dagger."):
-        _value.__module__ = __name__
+        with contextlib.suppress(AttributeError):
+            _value.__module__ = __name__
