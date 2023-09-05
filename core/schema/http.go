@@ -12,6 +12,8 @@ var _ ExecutableSchema = &httpSchema{}
 
 type httpSchema struct {
 	*MergedSchemas
+
+	svcs *core.Services
 }
 
 func (s *httpSchema) Name() string {
@@ -35,8 +37,8 @@ func (s *httpSchema) Dependencies() []ExecutableSchema {
 }
 
 type httpArgs struct {
-	URL                     string            `json:"url"`
-	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
+	URL                     string          `json:"url"`
+	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
 }
 
 func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) (*core.File, error) {
@@ -48,7 +50,18 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		svcs[*args.ExperimentalServiceHost] = nil
+		svc, err := args.ExperimentalServiceHost.ToService()
+		if err != nil {
+			return nil, err
+		}
+		host, err := svc.Hostname(ctx, s.svcs)
+		if err != nil {
+			return nil, err
+		}
+		svcs = append(svcs, core.ServiceBinding{
+			Service:  svc,
+			Hostname: host,
+		})
 	}
 
 	opts := []llb.HTTPOption{

@@ -98,6 +98,7 @@ type Resolver func(ctx *Context, parent any, args any) (any, error)
 func (p *Project) Load(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	progSock string,
 	pipeline pipeline.Path,
 	source *Directory,
@@ -109,11 +110,11 @@ func (p *Project) Load(
 	configPath = p.normalizeConfigPath(configPath)
 	p.ConfigPath = configPath
 
-	configFile, err := source.File(ctx, bk, p.ConfigPath)
+	configFile, err := source.File(ctx, bk, svcs, p.ConfigPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load project config at path %q: %w", configPath, err)
 	}
-	cfgBytes, err := configFile.Contents(ctx, bk)
+	cfgBytes, err := configFile.Contents(ctx, bk, svcs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read project config at path %q: %w", configPath, err)
 	}
@@ -121,12 +122,12 @@ func (p *Project) Load(
 		return nil, nil, fmt.Errorf("failed to unmarshal project config: %w", err)
 	}
 
-	p.Schema, err = p.getSchema(ctx, bk, progSock, pipeline)
+	p.Schema, err = p.getSchema(ctx, bk, svcs, progSock, pipeline)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get schema: %w", err)
 	}
 
-	resolver, err := p.getResolver(ctx, bk, progSock, pipeline)
+	resolver, err := p.getResolver(ctx, bk, svcs, progSock, pipeline)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get resolvers: %w", err)
 	}
@@ -208,7 +209,7 @@ func (p *Project) schemaToCommand(field *ast.FieldDefinition, schemaTypes map[st
 	return &cmd, nil
 }
 
-func (p *Project) getSchema(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (string, error) {
+func (p *Project) getSchema(ctx context.Context, bk *buildkit.Client, svcs *Services, progSock string, pipeline pipeline.Path) (string, error) {
 	ctr, err := p.runtime(ctx, bk, progSock, pipeline)
 	if err != nil {
 		return "", fmt.Errorf("failed to get runtime container for schema: %w", err)
@@ -223,11 +224,11 @@ func (p *Project) getSchema(ctx context.Context, bk *buildkit.Client, progSock s
 	if err != nil {
 		return "", fmt.Errorf("failed to exec schema command: %w", err)
 	}
-	schemaFile, err := ctr.File(ctx, bk, path.Join(outputMountPath, schemaPath))
+	schemaFile, err := ctr.File(ctx, bk, svcs, path.Join(outputMountPath, schemaPath))
 	if err != nil {
 		return "", fmt.Errorf("failed to get schema file: %w", err)
 	}
-	newSchema, err := schemaFile.Contents(ctx, bk)
+	newSchema, err := schemaFile.Contents(ctx, bk, svcs)
 	if err != nil {
 		return "", fmt.Errorf("failed to read schema file: %w", err)
 	}
@@ -245,7 +246,7 @@ func (p *Project) runtime(ctx context.Context, bk *buildkit.Client, progSock str
 	}
 }
 
-func (p *Project) getResolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
+func (p *Project) getResolver(ctx context.Context, bk *buildkit.Client, svcs *Services, progSock string, pipeline pipeline.Path) (Resolver, error) {
 	ctr, err := p.runtime(ctx, bk, progSock, pipeline)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime container for resolver: %w", err)
@@ -280,11 +281,11 @@ func (p *Project) getResolver(ctx context.Context, bk *buildkit.Client, progSock
 			return "", fmt.Errorf("failed to exec resolver: %w", err)
 		}
 
-		outputFile, err := ctr.File(ctx, bk, path.Join(outputMountPath, outputFile))
+		outputFile, err := ctr.File(ctx, bk, svcs, path.Join(outputMountPath, outputFile))
 		if err != nil {
 			return "", fmt.Errorf("failed to get resolver output file: %w", err)
 		}
-		outputBytes, err := outputFile.Contents(ctx, bk)
+		outputBytes, err := outputFile.Contents(ctx, bk, svcs)
 		if err != nil {
 			return "", fmt.Errorf("failed to read resolver output file: %w", err)
 		}
