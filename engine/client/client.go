@@ -251,10 +251,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 
 	// host=>container networking
-	progMessages := progrock.NewPassthroughRecorder(progMultiW)
-	c.Recorder = progMessages
-	ctx = progrock.RecorderToContext(ctx, c.Recorder)
-	bkSession.Allow(session.NewTunnelListenerAttachable(progMessages))
+	c.Recorder = progrock.NewRecorder(progMultiW)
+	bkSession.Allow(session.NewTunnelListenerAttachable(c.Recorder))
+	ctx = progrock.ToContext(ctx, c.Recorder)
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started

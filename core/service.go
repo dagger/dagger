@@ -555,11 +555,11 @@ func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client,
 		return nil, err
 	}
 
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-	svcCtx = progrock.RecorderToContext(svcCtx, rec)
+	svcCtx = progrock.ToContext(svcCtx, rec)
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
 

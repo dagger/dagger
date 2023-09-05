@@ -25,7 +25,7 @@ type c2hTunnel struct {
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	scratchDef, err := llb.Scratch().Marshal(ctx)
 	if err != nil {
