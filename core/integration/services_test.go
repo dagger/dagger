@@ -614,7 +614,7 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 	require.NoError(t, err)
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
-		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
+		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	content := identity.NewID()
@@ -627,7 +627,7 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
 		WithExec([]string{
-			"go", "run", "./core/integration/testdata/nested/",
+			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"exec", strconv.Itoa(nestingLimit), svcURL,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
@@ -648,7 +648,7 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 	require.NoError(t, err)
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
-		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
+		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	content := identity.NewID()
@@ -664,7 +664,7 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
-			"go", "run", "./core/integration/testdata/nested/",
+			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"http", strconv.Itoa(nestingLimit), svcURL,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
@@ -685,7 +685,7 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 	require.NoError(t, err)
 
 	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
-		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
+		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	content := identity.NewID()
@@ -701,7 +701,7 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
-			"go", "run", "./core/integration/testdata/nested/",
+			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"git", strconv.Itoa(nestingLimit), svcURL,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,

@@ -71,14 +71,14 @@ func main() {
 
 func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode string, svcURLs []string) {
 	code := c.Host().Directory(".", dagger.HostDirectoryOpts{
-		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
+		Include: []string{"core/integration/testdata/nested-c2c/", "sdk/go/", "go.mod", "go.sum"},
 	})
 
 	previous := svcURLs[len(svcURLs)-1]
 	mirrorSvc, mirrorURL := mirror(ctx, c, mode, previous)
 
 	args := []string{
-		"go", "run", "./core/integration/testdata/nested/",
+		"go", "run", "./core/integration/testdata/nested-c2c/",
 		mode, strconv.Itoa(depth - 1),
 	}
 	args = append(args, svcURLs...)
