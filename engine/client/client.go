@@ -39,8 +39,6 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
-const OCIStoreName = "dagger-oci"
-
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.

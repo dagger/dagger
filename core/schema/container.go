@@ -723,12 +723,12 @@ func (s *containerSchema) imageRef(ctx *core.Context, parent *core.Container, ar
 }
 
 func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	parent, err := s.withDefaultExec(ctx, parent)
+	svc, err := parent.Service(ctx, s.bk, s.progSockPath)
 	if err != nil {
 		return "", err
 	}
 
-	return parent.HostnameOrErr()
+	return svc.Hostname(ctx, s.svcs)
 }
 
 type containerEndpointArgs struct {
@@ -737,12 +737,12 @@ type containerEndpointArgs struct {
 }
 
 func (s *containerSchema) endpoint(ctx *core.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	parent, err := s.withDefaultExec(ctx, parent)
+	svc, err := parent.Service(ctx, s.bk, s.progSockPath)
 	if err != nil {
 		return "", err
 	}
 
-	return parent.Endpoint(s.bk, args.Port, args.Scheme)
+	return svc.Endpoint(ctx, s.svcs, args.Port, args.Scheme)
 }
 
 type containerWithServiceDependencyArgs struct {
@@ -751,17 +751,17 @@ type containerWithServiceDependencyArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	svc, err := args.Service.ToContainer()
+	ctr, err := args.Service.ToContainer()
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err = s.withDefaultExec(ctx, svc)
+	svc, err := ctr.Service(ctx, s.bk, s.progSockPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(s.bk, svc, args.Alias)
+	return parent.WithServiceBinding(ctx, s.svcs, svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {

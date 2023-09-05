@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/core"

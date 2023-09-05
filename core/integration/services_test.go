@@ -352,7 +352,7 @@ func TestContainerPortOCIConfig(t *testing.T) {
 	require.ElementsMatch(t, []string{"8000/tcp", "5432/udp"}, ports)
 }
 
-func TestContainerExecServices(t *testing.T) {
+func TestContainerExecServicesSimple(t *testing.T) {
 	t.Parallel()
 
 	t.Run("happy path", func(t *testing.T) {

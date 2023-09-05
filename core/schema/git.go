@@ -59,9 +59,9 @@ type gitRef struct {
 }
 
 type gitArgs struct {
-	URL                     string          `json:"url"`
-	KeepGitDir              bool            `json:"keepGitDir"`
-	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
+	URL                     string            `json:"url"`
+	KeepGitDir              bool              `json:"keepGitDir"`
+	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
 }
 
 func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
@@ -71,7 +71,14 @@ func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gi
 		Pipeline:   parent.PipelinePath(),
 	}
 	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.ToService()
+		ctr, err := args.ExperimentalServiceHost.ToContainer()
+		if err != nil {
+			return gitRepository{}, err
+		}
+		svc, err := ctr.Service(ctx, s.bk, s.progSockPath)
+		if err != nil {
+			return gitRepository{}, err
+		}
 		if err != nil {
 			return gitRepository{}, nil
 		}
