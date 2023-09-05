@@ -63,7 +63,6 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 
 	t.Run("hostnames are different for different services", func(t *testing.T) {
 		c, ctx := connect(t)
-		defer c.Close()
 
 		srv1 := c.Container().
 			From("python").
@@ -85,7 +84,6 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 
 	t.Run("hostnames are stable within a session", func(t *testing.T) {
 		c, ctx := connect(t)
-		defer c.Close()
 
 		hosts := map[string]int{}
 		for i := 0; i < 10; i++ {
@@ -112,7 +110,6 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	t.Run("hostname is same as endpoint", func(t *testing.T) {
 		srv := c.Container().
@@ -179,7 +176,6 @@ func TestContainerPortLifecycle(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	withPorts := c.Container().
 		From("python").
@@ -300,7 +296,6 @@ func TestContainerPortOCIConfig(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	withPorts := c.Container().
 		From("python").
@@ -363,7 +358,6 @@ func TestContainerExecServices(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
-		defer c.Close()
 
 		srv, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -391,7 +385,6 @@ func TestContainerExecServices(t *testing.T) {
 	t.Run("not an exec", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
-		defer c.Close()
 
 		srv, _ := httpService(ctx, t, c, "Hello, world!")
 		srv = srv.WithNewFile("/foo")
@@ -409,7 +402,6 @@ func TestContainerExecServicesError(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv := c.Container().
 		From(alpineImage).
@@ -433,7 +425,6 @@ func TestContainerServiceNoExec(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv := c.Container().
 		From(alpineImage).
@@ -463,7 +454,6 @@ func TestContainerExecUDPServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv := c.Container().
 		From("golang:1.18.2-alpine").
@@ -497,7 +487,6 @@ func TestContainerExecServiceAlias(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv, _ := httpService(ctx, t, c, "Hello, world!")
 
@@ -526,7 +515,6 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv := c.Container().
 		From("golang:1.18.2-alpine").
@@ -562,7 +550,6 @@ func TestContainerExecServicesChained(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	srv, _ := httpService(ctx, t, c, "0\n")
 
@@ -600,7 +587,6 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
@@ -635,7 +621,6 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
@@ -673,7 +658,6 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
@@ -711,7 +695,6 @@ func TestContainerExportServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, content)
@@ -731,7 +714,6 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
@@ -758,7 +740,6 @@ func TestServicesContainerPublish(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -783,7 +764,6 @@ func TestContainerRootFSServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -805,7 +785,6 @@ func TestContainerWithRootFSServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -839,7 +818,6 @@ func TestContainerDirectoryServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -885,7 +863,6 @@ func TestContainerFileServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -905,7 +882,6 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	response := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, response)
@@ -953,7 +929,6 @@ func TestDirectoryServiceEntries(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 
@@ -974,7 +949,6 @@ func TestDirectoryServiceSync(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
-		defer c.Close()
 
 		content := identity.NewID()
 		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
@@ -989,7 +963,6 @@ func TestDirectoryServiceSync(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
-		defer c.Close()
 
 		content := identity.NewID()
 		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
@@ -1009,7 +982,6 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
@@ -1032,7 +1004,6 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 
@@ -1057,7 +1028,6 @@ func TestDirectoryServiceExport(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 
@@ -1081,7 +1051,6 @@ func TestFileServiceContents(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 
@@ -1103,7 +1072,6 @@ func TestFileServiceSync(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
-		defer c.Close()
 
 		content := identity.NewID()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
@@ -1120,7 +1088,6 @@ func TestFileServiceSync(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
-		defer c.Close()
 
 		content := identity.NewID()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
@@ -1140,7 +1107,6 @@ func TestFileServiceExport(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 
@@ -1166,7 +1132,6 @@ func TestFileServiceTimestamp(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	content := identity.NewID()
 

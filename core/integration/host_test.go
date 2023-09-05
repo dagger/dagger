@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
@@ -22,10 +21,7 @@ func TestHostWorkdir(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0600)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(dir))
 
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
@@ -61,10 +57,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "sub-file"), []byte("goodbye"), 0600))
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir), dagger.WithLogOutput(os.Stderr))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(dir))
 
 	t.Run("exclude", func(t *testing.T) {
 		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
@@ -146,10 +139,7 @@ func TestHostDirectoryRelative(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0600))
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(dir))
 
 	t.Run(". is same as workdir", func(t *testing.T) {
 		wdID1, err := c.Host().Directory(".").ID(ctx)
@@ -194,10 +184,7 @@ func TestHostSetSecretFile(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte(data), 0600))
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(dir))
 
 	t.Run("non utf8 binary data is properly set as secret", func(t *testing.T) {
 		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
@@ -224,10 +211,7 @@ func TestHostDirectoryAbsolute(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0600))
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir), dagger.WithLogOutput(os.Stderr))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(dir))
 
 	entries, err := c.Host().Directory(filepath.Join(dir, "some-dir")).Entries(ctx)
 	require.NoError(t, err)
@@ -247,7 +231,6 @@ func TestHostDirectoryExcludeInclude(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "f.txt.rar"), []byte("3"), 0600))
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	t.Run("exclude", func(t *testing.T) {
 		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{
@@ -293,7 +276,6 @@ func TestHostFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "d.txt"), []byte("hello world"), 0600))
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	t.Run("get simple file", func(t *testing.T) {
 		content, err := c.Host().File(filepath.Join(dir, "a.txt")).Contents(ctx)

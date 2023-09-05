@@ -121,9 +121,7 @@ func TestFileExport(t *testing.T) {
 	wd := t.TempDir()
 	targetDir := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(wd))
 
 	file := c.Container().From(alpineImage).File("/etc/alpine-release")
 
@@ -227,7 +225,6 @@ func TestFileExport(t *testing.T) {
 func TestFileWithTimestamps(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	defer c.Close()
 
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
@@ -250,7 +247,6 @@ func TestFileWithTimestamps(t *testing.T) {
 func TestFileContents(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	defer c.Close()
 
 	// Set three types of file sizes for test data,
 	// the third one uses a size larger than the max chunk size:
@@ -303,7 +299,6 @@ func TestFileSync(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	t.Run("triggers error", func(t *testing.T) {
 		_, err := c.Directory().File("baz").Sync(ctx)

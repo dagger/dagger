@@ -75,7 +75,6 @@ func TestCacheVolume(t *testing.T) {
 func TestCacheVolumeWithSubmount(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	t.Run("file mount", func(t *testing.T) {
 		t.Parallel()
@@ -139,15 +138,9 @@ func TestLocalImportCacheReuse(t *testing.T) {
 	}
 
 	c1, ctx1 := connect(t)
-	defer c1.Close()
-	ctx1, cancel1 := context.WithCancel(ctx1)
-	defer cancel1()
 	out1 := runExec(ctx1, t, c1)
 
 	c2, ctx2 := connect(t)
-	defer c2.Close()
-	ctx2, cancel2 := context.WithCancel(ctx2)
-	defer cancel2()
 	out2 := runExec(ctx2, t, c2)
 
 	require.Equal(t, out1, out2)

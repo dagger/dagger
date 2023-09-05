@@ -68,7 +68,6 @@ func TestGitSSHAuthSock(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	gitSSH := c.Container().
 		From(alpineImage).
@@ -175,18 +174,16 @@ sleep infinity
 func TestGitKeepGitDir(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	client, _ := dagger.Connect(ctx)
-	defer client.Close()
+	c, ctx := connect(t)
 
 	t.Run("git dir is present", func(t *testing.T) {
-		dir := client.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
+		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
 		ent, _ := dir.Entries(ctx)
 		require.Contains(t, ent, ".git")
 	})
 
 	t.Run("git dir is not present", func(t *testing.T) {
-		dir := client.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
 		ent, _ := dir.Entries(ctx)
 		require.NotContains(t, ent, ".git")
 	})
@@ -211,10 +208,6 @@ func TestGitServiceStableDigest(t *testing.T) {
 	}
 
 	c1, ctx1 := connect(t)
-	defer c1.Close()
-
 	c2, ctx2 := connect(t)
-	defer c2.Close()
-
 	require.Equal(t, hostname(ctx1, c1), hostname(ctx2, c2))
 }
