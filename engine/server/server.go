@@ -223,7 +223,7 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 			}
 		}()
 
-		schema, err := srv.schema.Schema(clientMetadata.EnvironmentDigest)
+		schema, err := srv.schema.Schema(clientMetadata.ModuleDigest)
 		if err != nil {
 			panic(err)
 		}

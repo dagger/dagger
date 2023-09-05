@@ -26,12 +26,12 @@ func (mod *Module) pythonRuntime(
 		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
-	buildEnvCtr, err := baseCtr.WithMountedDirectory(ctx, bk, modSourceDirPath, sourceDir, "", false)
+	buildEnvCtr, err := baseCtr.WithMountedDirectory(ctx, bk, ModSourceDirPath, sourceDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod source directory: %w", err)
 	}
 	buildEnvCtr, err = buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = filepath.Join(modSourceDirPath, sourceDirSubpath)
+		cfg.WorkingDir = filepath.Join(ModSourceDirPath, sourceDirSubpath)
 		cfg.Cmd = nil
 		return cfg
 	})
@@ -62,7 +62,7 @@ func (mod *Module) pythonRuntime(
 	}
 
 	finalEnvCtr, err := buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = modSourceDirPath
+		cfg.WorkingDir = ModSourceDirPath
 		cfg.Cmd = nil
 		cfg.Entrypoint = []string{runtimeExecutablePath}
 		return cfg

@@ -15,7 +15,7 @@ import (
 	gogenerator "github.com/dagger/dagger/codegen/generator/go"
 	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/core/envconfig"
+	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -36,8 +36,8 @@ func RunCodegen(
 	ctx context.Context,
 	engineClient *client.Client,
 	_ *dagger.Client,
-	envCfg *envconfig.Config,
-	depEnvs []*dagger.Environment,
+	moduleCfg *moduleconfig.Config,
+	depModules []*dagger.Module,
 	cmd *cobra.Command,
 	_ []string,
 ) (rerr error) {
@@ -47,7 +47,7 @@ func RunCodegen(
 		}
 	}
 
-	pkg, err := getPackage(envCfg.SDK)
+	pkg, err := getPackage(moduleCfg.SDK)
 	if err != nil {
 		return err
 	}
@@ -57,26 +57,10 @@ func RunCodegen(
 		return err
 	}
 
-	generated, err := generate(ctx, introspectionSchema, generator.Config{
-		Package:                pkg,
-		Lang:                   generator.SDKLang(envCfg.SDK),
-		EnvironmentName:        envCfg.Name,
-		DependencyEnvironments: depEnvs,
-	})
+	output, err := getOutput(moduleCfg.SDK)
 	if err != nil {
 		return err
 	}
-
-	output, err := getOutput(envCfg.SDK)
-	if err != nil {
-		return err
-	}
-
-	if output == "" || output == "-" {
-		cmd.Println(string(generated))
-		return
-	}
-
 	parentDir := filepath.Dir(output)
 	_, parentDirStatErr := os.Stat(parentDir)
 	switch {
@@ -94,6 +78,22 @@ func RunCodegen(
 		}()
 	default:
 		return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
+	}
+
+	generated, err := generate(ctx, introspectionSchema, generator.Config{
+		Package:             pkg,
+		Lang:                generator.SDKLang(moduleCfg.SDK),
+		ModuleName:          moduleCfg.Name,
+		DependencyModules:   depModules,
+		SourceDirectoryPath: parentDir,
+	})
+	if err != nil {
+		return err
+	}
+
+	if output == "" || output == "-" {
+		cmd.Println(string(generated))
+		return
 	}
 
 	if err := os.WriteFile(output, generated, 0o600); err != nil {
@@ -119,13 +119,13 @@ func RunCodegen(
 	return nil
 }
 
-func getOutput(sdk envconfig.SDK) (string, error) {
+func getOutput(sdk moduleconfig.SDK) (string, error) {
 	if codegenOutput != "" {
 		return codegenOutput, nil
 	}
 
 	// TODO:
-	if sdk != envconfig.SDKGo {
+	if sdk != moduleconfig.SDKGo {
 		return codegenOutput, nil
 	}
 	envCfg, err := getEnvironmentFlagConfig()
@@ -138,7 +138,7 @@ func getOutput(sdk envconfig.SDK) (string, error) {
 	return filepath.Join(filepath.Dir(envCfg.local.path), "dagger.gen.go"), nil
 }
 
-func getPackage(sdk envconfig.SDK) (string, error) {
+func getPackage(sdk moduleconfig.SDK) (string, error) {
 	// If a package name was provided as a flag, use it
 	if codegenPkg != "" {
 		return codegenPkg, nil

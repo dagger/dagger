@@ -68,7 +68,8 @@ type Params struct {
 	CloudURLCallback   func(string)
 
 	// TODO: doc if this stays in
-	EnvironmentDigest digest.Digest
+	ModuleDigest          digest.Digest
+	FunctionContextDigest digest.Digest
 }
 
 type Client struct {
@@ -243,13 +244,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
-		ClientID:          c.ID(),
-		ClientSecretToken: c.SecretToken,
-		ServerID:          c.ServerID,
-		ClientHostname:    c.hostname,
-		Labels:            c.labels,
-		ParentClientIDs:   c.ParentClientIDs,
-		EnvironmentDigest: c.EnvironmentDigest,
+		ClientID:              c.ID(),
+		ClientSecretToken:     c.SecretToken,
+		ServerID:              c.ServerID,
+		ClientHostname:        c.hostname,
+		Labels:                c.labels,
+		ParentClientIDs:       c.ParentClientIDs,
+		ModuleDigest:          c.ModuleDigest,
+		FunctionContextDigest: c.FunctionContextDigest,
 	})
 
 	// progress
@@ -274,15 +276,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.eg.Go(func() error {
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
-				RegisterClient:      true,
-				ClientID:            c.ID(),
-				ClientSecretToken:   c.SecretToken,
-				ServerID:            c.ServerID,
-				ParentClientIDs:     c.ParentClientIDs,
-				ClientHostname:      hostname,
-				UpstreamCacheConfig: c.upstreamCacheOptions,
-				Labels:              c.labels,
-				EnvironmentDigest:   c.EnvironmentDigest,
+				RegisterClient:        true,
+				ClientID:              c.ID(),
+				ClientSecretToken:     c.SecretToken,
+				ServerID:              c.ServerID,
+				ParentClientIDs:       c.ParentClientIDs,
+				ClientHostname:        hostname,
+				UpstreamCacheConfig:   c.upstreamCacheOptions,
+				Labels:                c.labels,
+				ModuleDigest:          c.ModuleDigest,
+				FunctionContextDigest: c.FunctionContextDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -416,13 +419,14 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error)
 		return nil, err
 	}
 	conn, err := grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID:          c.ID(),
-		ClientSecretToken: c.SecretToken,
-		ServerID:          c.ServerID,
-		ClientHostname:    c.hostname,
-		ParentClientIDs:   c.ParentClientIDs,
-		Labels:            c.labels,
-		EnvironmentDigest: c.EnvironmentDigest,
+		ClientID:              c.ID(),
+		ClientSecretToken:     c.SecretToken,
+		ServerID:              c.ServerID,
+		ClientHostname:        c.hostname,
+		ParentClientIDs:       c.ParentClientIDs,
+		Labels:                c.labels,
+		ModuleDigest:          c.ModuleDigest,
+		FunctionContextDigest: c.FunctionContextDigest,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err

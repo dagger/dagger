@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -117,12 +116,6 @@ type containerArgs struct {
 }
 
 func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
-	defer func() {
-		if err := recover(); err != nil {
-			rerr = fmt.Errorf("SHIT %v %s", err, string(debug.Stack()))
-		}
-	}()
-
 	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
 		if args.ID != "" {

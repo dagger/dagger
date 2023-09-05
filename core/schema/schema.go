@@ -40,10 +40,10 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		leaseManager: params.LeaseManager,
 		host:         core.NewHost(),
 
-		buildCache:        core.NewCacheMap[uint64, *core.Container](),
-		importCache:       core.NewCacheMap[uint64, *specs.Descriptor](),
-		envCache:          core.NewEnvironmentCache(),
-		installedEnvCache: core.NewCacheMap[uint64, *core.Environment](),
+		buildCache:           core.NewCacheMap[uint64, *core.Container](),
+		importCache:          core.NewCacheMap[uint64, *specs.Descriptor](),
+		functionContextCache: NewFunctionContextCache(),
+		moduleCache:          core.NewCacheMap[digest.Digest, *core.Module](),
 
 		envSchemas: map[digest.Digest]*envSchema{},
 	}
@@ -60,10 +60,10 @@ type MergedSchemas struct {
 	leaseManager *leaseutil.Manager
 	host         *core.Host
 
-	buildCache        *core.CacheMap[uint64, *core.Container]
-	importCache       *core.CacheMap[uint64, *specs.Descriptor]
-	envCache          *core.EnvironmentCache
-	installedEnvCache *core.CacheMap[uint64, *core.Environment]
+	buildCache           *core.CacheMap[uint64, *core.Container]
+	importCache          *core.CacheMap[uint64, *specs.Descriptor]
+	functionContextCache *FunctionContextCache
+	moduleCache          *core.CacheMap[digest.Digest, *core.Module]
 
 	mu sync.RWMutex
 	// map of env digest -> schema presented to env
@@ -93,10 +93,10 @@ func (s *MergedSchemas) initializeEnvSchema(envDigest digest.Digest) (*envSchema
 		&cacheSchema{s},
 		&secretSchema{s},
 		&hostSchema{s, s.host},
-		&environmentSchema{
-			MergedSchemas:     s,
-			envCache:          s.envCache,
-			installedEnvCache: s.installedEnvCache,
+		&moduleSchema{
+			MergedSchemas:        s,
+			functionContextCache: s.functionContextCache,
+			moduleCache:          s.moduleCache,
 		},
 		&httpSchema{s},
 		&platformSchema{s},

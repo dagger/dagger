@@ -437,7 +437,8 @@ func setupBundle() int {
 				return errorExitCode
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
-			keepEnv = append(keepEnv, "_DAGGER_ENVIRONMENT_DIGEST="+execMetadata.EnvironmentDigest.String())
+			keepEnv = append(keepEnv, "_DAGGER_MODULE_DIGEST="+execMetadata.ModuleDigest.String())
+			keepEnv = append(keepEnv, "_DAGGER_FUNCTION_CONTEXT_DIGEST="+execMetadata.FunctionContextDigest.String())
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -637,9 +638,13 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
 	}
-	environmentDigest, ok := internalEnv("_DAGGER_ENVIRONMENT_DIGEST")
+	moduleDigest, ok := internalEnv("_DAGGER_MODULE_DIGEST")
 	if ok {
-		clientParams.EnvironmentDigest = digest.Digest(environmentDigest)
+		clientParams.ModuleDigest = digest.Digest(moduleDigest)
+	}
+	functionContextDigest, ok := internalEnv("_DAGGER_FUNCTION_CONTEXT_DIGEST")
+	if ok {
+		clientParams.FunctionContextDigest = digest.Digest(functionContextDigest)
 	}
 
 	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")

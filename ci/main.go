@@ -9,10 +9,7 @@ import (
 	"strings"
 )
 
-func main() {
-	dag.CurrentEnvironment().
-		WithCheck(EngineTests).
-		Serve()
+type DaggerCI struct {
 }
 
 const (
@@ -31,7 +28,19 @@ const (
 	devEngineListenPort   = 1234
 )
 
-func EngineTests(ctx context.Context) (*Check, error) {
+func (*DaggerCI) CLI(ctx context.Context, version string, debug bool) (*File, error) {
+}
+
+type EngineOpts struct {
+	Version               string
+	TraceLogs             bool
+	PrivilegedExecEnabled bool
+}
+
+func (*DaggerCI) EngineContainer(ctx context.Context, opts *EngineOpts) (*Container, error) {
+}
+
+func (*DaggerCI) EngineTests(ctx context.Context) error {
 	devEngine := devEngineContainer()
 
 	// This creates an engine.tar container file that can be used by the integration tests.
@@ -41,13 +50,13 @@ func EngineTests(ctx context.Context) (*Check, error) {
 	// run dagger queries.
 	tmpDir, err := os.MkdirTemp("", "dagger-dev-engine-*")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	engineTarPath := filepath.Join(tmpDir, "engine.tar")
 	_, err = devEngine.Export(ctx, engineTarPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to export dev engine: %w", err)
+		return fmt.Errorf("failed to export dev engine: %w", err)
 	}
 
 	testEngineUtils := dag.Host().Directory(tmpDir, HostDirectoryOpts{
@@ -68,7 +77,7 @@ func EngineTests(ctx context.Context) (*Check, error) {
 
 	endpoint, err := devEngine.Endpoint(ctx, ContainerEndpointOpts{Port: devEngineListenPort, Scheme: "tcp"})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dev engine endpoint: %w", err)
+		return fmt.Errorf("failed to get dev engine endpoint: %w", err)
 	}
 
 	cgoEnabledEnv := "0"
@@ -95,7 +104,7 @@ func EngineTests(ctx context.Context) (*Check, error) {
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
-	testCtr := goBase().
+	_, err = goBase().
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.10.0"}).
 		WithMountedDirectory("/app", dag.Host().Directory(".")). // need all the source for extension tests
 		WithMountedDirectory(utilDirPath, testEngineUtils).
@@ -109,9 +118,9 @@ func EngineTests(ctx context.Context) (*Check, error) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithExec(args).
 		WithFocus().
-		WithExec([]string{"gotestsum", "tool", "slowest", "--jsonfile=./tests.log", "--threshold=1s"})
-
-	return dag.Check().WithContainer(testCtr), nil
+		WithExec([]string{"gotestsum", "tool", "slowest", "--jsonfile=./tests.log", "--threshold=1s"}).
+		Sync(ctx)
+	return err
 }
 
 func daggerCLI() *File {

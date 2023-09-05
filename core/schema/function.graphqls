@@ -42,7 +42,7 @@ type FunctionArg {
   "The type of the argument"
   typeDef: TypeDef!
 
-  "A default value to use for this argument if not explicitly set by the caller, if any"
+  "A default value to use for this argument when not explicitly set by the caller, if any"
   defaultValue: JSON
 }
 
@@ -63,18 +63,18 @@ type TypeDef {
   "The kind of type this is (e.g. primitive, list, object)"
   kind: TypeDefKind
 
-  "Whether this type can be set to null"
-  optional: Boolean
+  "Whether this type can be set to null. Defaults to false."
+  optional: Boolean!
 
   """
   If kind is LIST, the list-specific type definition.
-  If kind is not LIST, this will be null."
+  If kind is not LIST, this will be null.
   """
   asList: ListTypeDef
 
   """
   If kind is OBJECT, the object-specific type definition.
-  If kind is not OBJECT, this will be null."
+  If kind is not OBJECT, this will be null.
   """
   asObject: ObjectTypeDef
 }
@@ -114,13 +114,13 @@ type FieldTypeDef {
 
 type ListTypeDef {
   "The type of the elements in the list"
-  elementType: TypeDef!
+  elementTypeDef: TypeDef!
 }
 
 enum TypeDefKind {
-  STRING
-  INTEGER
-  BOOLEAN
-  LIST
-  OBJECT
+  String
+  Integer
+  Boolean
+  List
+  Object
 }

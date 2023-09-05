@@ -61,6 +61,7 @@ require (
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/charmbracelet/lipgloss v0.7.1
+	github.com/dave/jennifer v1.7.0
 	github.com/ettle/strcase v0.1.1
 	github.com/go-git/go-git/v5 v5.8.1
 	github.com/google/go-github/v50 v50.2.0

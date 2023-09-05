@@ -13,7 +13,7 @@ import (
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
 
-// TODO: de-dupe this with environment api
+// TODO: de-dupe this with moduleconfig api
 type SDKLang string
 
 const (
@@ -24,12 +24,14 @@ const (
 
 type Config struct {
 	Lang SDKLang
+
 	// Package is the target package that is generated.
 	// Not used for the SDKLangNodeJS.
 	Package string
-	// TODO:
-	EnvironmentName        string
-	DependencyEnvironments []*dagger.Environment
+
+	ModuleName          string
+	DependencyModules   []*dagger.Module
+	SourceDirectoryPath string
 }
 
 type Generator interface {

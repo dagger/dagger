@@ -16,15 +16,14 @@ const (
 // TODO: This may done it dynamically later instead of a static
 // map.
 var CustomScalar = map[string]string{
-	"ContainerID":   "Container",
-	"FileID":        "File",
-	"DirectoryID":   "Directory",
-	"SecretID":      "Secret",
-	"SocketID":      "Socket",
-	"CacheID":       "CacheVolume",
-	"EnvironmentID": "Environment",
-	"CheckID":       "Check",
-	"CheckResultID": "CheckResult",
+	"ContainerID": "Container",
+	"FileID":      "File",
+	"DirectoryID": "Directory",
+	"SecretID":    "Secret",
+	"SocketID":    "Socket",
+	"CacheID":     "CacheVolume",
+	"ModuleID":    "Module",
+	"FunctionID":  "Function",
 }
 
 // FormatTypeFuncs is an interface to format any GraphQL type.
@@ -36,8 +35,8 @@ type FormatTypeFuncs interface {
 	FormatKindScalarFloat(representation string) string
 	FormatKindScalarBoolean(representation string) string
 	FormatKindScalarDefault(representation string, refName string, input bool) string
-	FormatKindObject(representation string, refName string) string
-	FormatKindInputObject(representation string, refName string) string
+	FormatKindObject(representation string, refName string, input bool) string
+	FormatKindInputObject(representation string, refName string, input bool) string
 	FormatKindEnum(representation string, refName string) string
 }
 
@@ -192,9 +191,9 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (repr
 				return c.formatTypeFuncs.FormatKindScalarDefault(representation, ref.Name, input)
 			}
 		case introspection.TypeKindObject:
-			return c.formatTypeFuncs.FormatKindObject(representation, ref.Name)
+			return c.formatTypeFuncs.FormatKindObject(representation, ref.Name, input)
 		case introspection.TypeKindInputObject:
-			return c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name)
+			return c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name, input)
 		case introspection.TypeKindEnum:
 			return c.formatTypeFuncs.FormatKindEnum(representation, ref.Name)
 		}

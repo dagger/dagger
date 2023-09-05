@@ -1,14 +1,10 @@
 package core
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -17,9 +13,10 @@ type Function struct {
 	Description string         `json:"description"`
 	Args        []*FunctionArg `json:"functionArgs"`
 	ReturnType  *TypeDef       `json:"returnType"`
-	IsStatic    bool           `json:"isStatic"`
 
 	// (Not in public API) Used to invoke function in the context of its module.
+	// We don't use *Module directly because it causes JSON serialization to fail
+	// due to circular references.
 	ModuleID ModuleID `json:"moduleID,omitempty"`
 }
 
@@ -47,34 +44,6 @@ func (fn Function) Clone() (*Function, error) {
 		return nil, fmt.Errorf("failed to clone return type: %w", err)
 	}
 	return &cp, nil
-}
-
-func (fn *Function) Call(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	modCache *ModuleCache,
-	installDeps InstallDepsCallback,
-	parent any,
-	input map[string]any,
-) (any, error) {
-	// TODO: if return type non-null, assert on that here
-	// TODO: handle setting default values, they won't be set when going through "dynamic call" codepath
-
-	if fn.ModuleID == "" {
-		return nil, fmt.Errorf("invalid function with unset module %q", fn.Name)
-	}
-
-	mod, err := fn.ModuleID.Decode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode module for function %q: %w", fn.Name, err)
-	}
-
-	// TODO: re-incorporate support for caching certain exit codes (maybe simplify a bit too)
-	resource, outputBytes, _, err := mod.execModule(ctx, bk, progSock, modCache, installDeps, check.Name, nil, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec check module container: %w", err)
-	}
 }
 
 type FunctionArg struct {
@@ -105,44 +74,112 @@ func (arg FunctionArg) Clone() (*FunctionArg, error) {
 }
 
 type TypeDef struct {
-	Kind TypeDefKind `json:"kind"`
-
-	// only valid for kind NON_NULL and LIST
-	ElementType *TypeDef `json:"elementType"`
-
-	// only valid for kind OBJECT
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Fields      []*Function `json:"fields"`
+	Kind     TypeDefKind    `json:"kind"`
+	Optional bool           `json:"optional"`
+	AsList   *ListTypeDef   `json:"asList"`
+	AsObject *ObjectTypeDef `json:"asObject"`
 }
 
 func (typeDef TypeDef) Clone() (*TypeDef, error) {
 	cp := typeDef
-	if typeDef.ElementType != nil {
+	if typeDef.AsList != nil {
 		var err error
-		cp.ElementType, err = typeDef.ElementType.Clone()
+		cp.AsList, err = typeDef.AsList.Clone()
 		if err != nil {
-			return nil, fmt.Errorf("failed to clone element type: %w", err)
+			return nil, fmt.Errorf("failed to clone typedef list definition: %w", err)
 		}
 	}
-	cp.Fields = make([]*Function, len(typeDef.Fields))
-	for i, fn := range typeDef.Fields {
+	if typeDef.AsObject != nil {
 		var err error
-		cp.Fields[i], err = fn.Clone()
+		cp.AsObject, err = typeDef.AsObject.Clone()
 		if err != nil {
-			return nil, fmt.Errorf("failed to clone function %q: %w", fn.Name, err)
+			return nil, fmt.Errorf("failed to clone typedef object definition: %w", err)
 		}
 	}
 	return &cp, nil
 }
 
-func (typeDef TypeDef) FieldByName(name string) (*Function, bool) {
-	for _, fn := range typeDef.Fields {
+type ObjectTypeDef struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Fields      []*FieldTypeDef `json:"fields"`
+	Functions   []*Function     `json:"functions"`
+}
+
+func (typeDef ObjectTypeDef) Clone() (*ObjectTypeDef, error) {
+	cp := typeDef
+
+	cp.Fields = make([]*FieldTypeDef, len(typeDef.Fields))
+	for i, field := range typeDef.Fields {
+		var err error
+		cp.Fields[i], err = field.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("failed to clone field %q: %w", field.Name, err)
+		}
+	}
+
+	cp.Functions = make([]*Function, len(typeDef.Functions))
+	for i, fn := range typeDef.Functions {
+		var err error
+		cp.Functions[i], err = fn.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("failed to clone function %q: %w", fn.Name, err)
+		}
+	}
+
+	return &cp, nil
+}
+
+func (typeDef ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
+	for _, field := range typeDef.Fields {
+		if field.Name == name {
+			return field, true
+		}
+	}
+	return nil, false
+}
+
+func (typeDef ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
+	for _, fn := range typeDef.Functions {
 		if fn.Name == name {
 			return fn, true
 		}
 	}
 	return nil, false
+}
+
+type FieldTypeDef struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	TypeDef     *TypeDef `json:"typeDef"`
+}
+
+func (typeDef FieldTypeDef) Clone() (*FieldTypeDef, error) {
+	cp := typeDef
+	if typeDef.TypeDef != nil {
+		var err error
+		cp.TypeDef, err = typeDef.TypeDef.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("failed to clone field typedef: %w", err)
+		}
+	}
+	return &cp, nil
+}
+
+type ListTypeDef struct {
+	ElementTypeDef *TypeDef `json:"elementTypeDef"`
+}
+
+func (typeDef ListTypeDef) Clone() (*ListTypeDef, error) {
+	cp := typeDef
+	if typeDef.ElementTypeDef != nil {
+		var err error
+		cp.ElementTypeDef, err = typeDef.ElementTypeDef.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("failed to clone list element typedef: %w", err)
+		}
+	}
+	return &cp, nil
 }
 
 type TypeDefKind string
@@ -155,46 +192,22 @@ const (
 	TypeDefKindString  TypeDefKind = "String"
 	TypeDefKindInteger TypeDefKind = "Integer"
 	TypeDefKindBoolean TypeDefKind = "Boolean"
-	TypeDefKindNonNull TypeDefKind = "NonNull"
 	TypeDefKindList    TypeDefKind = "List"
 	TypeDefKindObject  TypeDefKind = "Object"
 )
 
 type FunctionCall struct {
-	Name string `json:"name"`
+	Name       string       `json:"name"`
+	ParentName string       `json:"parentName"`
+	Parent     any          `json:"parent"`
+	InputArgs  []*CallInput `json:"inputArgs"`
 }
 
-func (fnCall *FunctionCall) ReturnValue() error {
+func (fnCall *FunctionCall) Digest() (digest.Digest, error) {
+	return stableDigest(fnCall)
 }
 
-func (fnCall *FunctionCall) ReturnValue() error {
-	// TODO: error out if not coming from a mod
-
-	// TODO: doc, a bit silly looking but actually works out nicely
-	return bk.IOReaderExport(ctx, bytes.NewReader([]byte(valStr)), filepath.Join(modMetaDirPath, modMetaOutputPath), 0600)
-}
-
-type FunctionInput struct {
-	// The name of the entrypoint to invoke. If unset, then the module
-	// definition should be returned.
-	Name string `json:"name"`
-
-	// The arguments to pass to the entrypoint, serialized as json. The json
-	// object maps argument names to argument values.
-	Args string `json:"args"`
-}
-
-func (mod *Module) FunctionInput(ctx context.Context, bk *buildkit.Client) (*FunctionInput, error) {
-	// TODO: error out if not coming from an mod
-
-	// TODO: doc, a bit silly looking but actually works out nicely
-	inputBytes, err := bk.ReadCallerHostFile(ctx, filepath.Join(modMetaDirPath, modMetaInputPath))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read entrypoint input file: %w", err)
-	}
-	var input FunctionInput
-	if err := json.Unmarshal(inputBytes, &input); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal entrypoint input: %w", err)
-	}
-	return &input, nil
+type CallInput struct {
+	Name  string `json:"name"`
+	Value any    `json:"value"`
 }

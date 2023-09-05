@@ -5,16 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -22,12 +19,12 @@ import (
 )
 
 const (
-	modMetaDirPath     = "/.daggermod"
-	modMetaInputPath   = "input.json"
-	modMetaOutputPath  = "output.json"
-	modMetaDepsDirPath = "deps"
+	ModMetaDirPath     = "/.daggermod"
+	ModMetaInputPath   = "input.json"
+	ModMetaOutputPath  = "output.json"
+	ModMetaDepsDirPath = "deps"
 
-	modSourceDirPath      = "/src"
+	ModSourceDirPath      = "/src"
 	runtimeExecutablePath = "/runtime"
 )
 
@@ -40,6 +37,9 @@ type Module struct {
 
 	// The name of the module
 	Name string `json:"name"`
+
+	// The doc string of the module, if any
+	Description string `json:"description"`
 
 	// The SDK of the module
 	SDK moduleconfig.SDK `json:"sdk"`
@@ -125,8 +125,6 @@ func (mod *Module) FromConfig(
 	ctx context.Context,
 	bk *buildkit.Client,
 	progSock string,
-	modCache *ModuleCache,
-	installDeps InstallDepsCallback,
 	sourceDir *Directory,
 	configPath string,
 ) (*Module, error) {
@@ -176,7 +174,7 @@ func (mod *Module) FromConfig(
 				return fmt.Errorf("invalid dependency url from %q", depURL)
 			}
 
-			depMod, err := mod.FromConfig(ctx, bk, progSock, modCache, installDeps, depSourceDir, depConfigPath)
+			depMod, err := mod.FromConfig(ctx, bk, progSock, depSourceDir, depConfigPath)
 			if err != nil {
 				return fmt.Errorf("failed to get dependency mod from config %q: %w", depURL, err)
 			}
@@ -200,51 +198,14 @@ func (mod *Module) FromConfig(
 		}
 	}
 
-	return mod.From(ctx, bk, progSock, modCache, installDeps, cfg.Name, sourceDir, filepath.Dir(configPath), cfg.SDK, deps)
+	if err := mod.recalcRuntime(ctx, bk, progSock); err != nil {
+		return nil, fmt.Errorf("failed to set runtime container: %w", err)
+	}
+
+	return mod, nil
 }
 
-func (mod *Module) From(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	modCache *ModuleCache,
-	installDeps InstallDepsCallback,
-	name string,
-	sourceDir *Directory,
-	sourceDirSubpath string,
-	sdk moduleconfig.SDK,
-	deps []*Module,
-) (*Module, error) {
-	mod = &Module{
-		SourceDirectory:        sourceDir,
-		SourceDirectorySubpath: sourceDirSubpath,
-		Name:                   name,
-		SDK:                    sdk,
-		Dependencies:           deps,
-		Platform:               mod.Platform,
-		Pipeline:               mod.Pipeline,
-	}
-
-	err := mod.recalcRuntime(ctx, bk, progSock)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get runtime container: %w", err)
-	}
-
-	resource, _, _, err := mod.execModule(ctx, bk, progSock, modCache, installDeps, "", nil, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec module: %w", err)
-	}
-
-	var ok bool
-	mod, ok = resource.(*Module)
-	if !ok {
-		return nil, fmt.Errorf("module initialization returned non-module result")
-	}
-
-	return mod, mod.updateMod()
-}
-
-func (mod *Module) WithFunction(fn *Function, modCache *ModuleCache) (*Module, error) {
+func (mod *Module) WithFunction(fn *Function) (*Module, error) {
 	mod, err := mod.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone module: %w", err)
@@ -291,165 +252,6 @@ func (mod *Module) recalcRuntime(
 
 	mod.Runtime = runtime
 	return mod.updateMod()
-}
-
-// TODO: I think now that there's only Function and not a bunch of stuff, you could probably just
-// do the callback in the schema package now rather than pass everywhere
-type InstallDepsCallback func(context.Context, *Module) error
-
-// TODO: This entire method feels like it might be movable to the schema package now...
-func (mod *Module) execModule(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-	modCache *ModuleCache,
-	installDeps InstallDepsCallback,
-	entrypointName string,
-	args any,
-	cacheExitCode uint32,
-) (any, []byte, uint32, error) {
-	if err := installDeps(ctx, mod); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to install deps: %w", err)
-	}
-
-	ctx, err := modCache.ContextWithCachedMod(ctx, mod)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to set module in context: %w", err)
-	}
-
-	argsBytes, err := json.Marshal(args)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to marshal args: %w", err)
-	}
-
-	ctr := mod.Runtime
-
-	metaDir := NewScratchDirectory(mod.Pipeline, mod.Platform)
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, modMetaDirPath, metaDir, "", false)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to mount mod metadata directory: %w", err)
-	}
-
-	input := FunctionInput{
-		Name: entrypointName,
-		Args: string(argsBytes),
-	}
-	inputBytes, err := json.Marshal(input)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to marshal input: %w", err)
-	}
-	inputFileDir, err := NewScratchDirectory(mod.Pipeline, mod.Platform).WithNewFile(ctx, modMetaInputPath, inputBytes, 0600, nil)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to create input file: %w", err)
-	}
-	inputFile, err := inputFileDir.File(ctx, bk, modMetaInputPath)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to get input file: %w", err)
-	}
-	ctr, err = ctr.WithMountedFile(ctx, bk, filepath.Join(modMetaDirPath, modMetaInputPath), inputFile, "", true)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to mount input file: %w", err)
-	}
-
-	// Mount in read-only dep mod filesystems to ensure that if they change, this mod's cache is
-	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
-	for _, dep := range mod.Dependencies {
-		dirMntPath := filepath.Join(modMetaDirPath, modMetaDepsDirPath, dep.Name, "dir")
-		ctr, err = ctr.WithMountedDirectory(ctx, bk, dirMntPath, dep.SourceDirectory, "", true)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("failed to mount dep directory: %w", err)
-		}
-	}
-
-	ctr, err = ctr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
-		ExperimentalPrivilegedNesting: true,
-		CacheExitCode:                 cacheExitCode,
-	})
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to exec entrypoint: %w", err)
-	}
-	ctrOutputDir, err := ctr.Directory(ctx, bk, modMetaDirPath)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to get entrypoint output directory: %w", err)
-	}
-
-	result, err := ctrOutputDir.Evaluate(ctx, bk)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to evaluate entrypoint: %w", err)
-	}
-	if result == nil {
-		return nil, nil, 0, fmt.Errorf("entrypoint returned nil result")
-	}
-
-	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
-	// we can end up in a state where we have a cached result with a dependency blob that we don't
-	// guarantee the continued existence of...
-
-	exitCodeStr, err := ctr.MetaFileContents(ctx, bk, progSock, "exitCode")
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to read entrypoint exit code: %w", err)
-	}
-	exitCodeUint64, err := strconv.ParseUint(exitCodeStr, 10, 32)
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to parse entrypoint exit code: %w", err)
-	}
-	exitCode := uint32(exitCodeUint64)
-
-	outputBytes, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: modMetaOutputPath,
-	})
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to read entrypoint output file: %w", err)
-	}
-
-	var rawOutput any
-	if err := json.Unmarshal(outputBytes, &rawOutput); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to unmarshal result: %s", err)
-	}
-
-	strOutput, ok := rawOutput.(string)
-	if !ok {
-		// not a resource ID, nothing to do
-		return nil, outputBytes, exitCode, nil
-	}
-
-	resource, err := ResourceFromID(strOutput)
-	if err != nil {
-		// not a resource ID, nothing to do
-		// TODO: check actual error type
-		return nil, outputBytes, exitCode, nil
-	}
-
-	pbDefinitioner, ok := resource.(HasPBDefinitions)
-	if !ok {
-		// no dependency blobs to handle
-		return resource, outputBytes, exitCode, nil
-	}
-
-	pbDefs, err := pbDefinitioner.PBDefinitions()
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to get pb definitions: %w", err)
-	}
-	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
-	for _, pbDef := range pbDefs {
-		dag, err := buildkit.DefToDAG(pbDef)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("failed to convert pb definition to dag: %w", err)
-		}
-		blobs, err := dag.BlobDependencies()
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("failed to get blob dependencies: %w", err)
-		}
-		for k, v := range blobs {
-			dependencyBlobs[k] = v
-		}
-	}
-
-	if err := result.Ref.AddDependencyBlobs(ctx, dependencyBlobs); err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to add dependency blob: %w", err)
-	}
-
-	return resource, outputBytes, exitCode, nil
 }
 
 // TODO: doc various subtleties below
@@ -519,45 +321,4 @@ func (mod *Module) setFunctionMods(id ModuleID) error {
 		}
 	}
 	return nil
-}
-
-type ModuleCache CacheMap[digest.Digest, *Module]
-
-func NewModuleCache() *ModuleCache {
-	return (*ModuleCache)(NewCacheMap[digest.Digest, *Module]())
-}
-
-func (cache *ModuleCache) cacheMap() *CacheMap[digest.Digest, *Module] {
-	return (*CacheMap[digest.Digest, *Module])(cache)
-}
-
-func (cache *ModuleCache) ContextWithCachedMod(ctx context.Context, mod *Module) (context.Context, error) {
-	modDigest, err := mod.Digest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module digest: %w", err)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	clientMetadata.ModuleDigest = modDigest
-
-	_, err = cache.cacheMap().GetOrInitialize(modDigest, func() (*Module, error) {
-		return mod, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to cache module: %w", err)
-	}
-	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
-}
-
-func (cache *ModuleCache) CachedModFromContext(ctx context.Context) (*Module, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	return cache.cacheMap().GetOrInitialize(clientMetadata.ModuleDigest, func() (*Module, error) {
-		return nil, fmt.Errorf("module %s not found in cache", clientMetadata.ModuleDigest)
-	})
 }

@@ -13,16 +13,20 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
-func GoTemplateFuncs(envName string) template.FuncMap {
+func GoTemplateFuncs(moduleName string, sourceDirectoryPath string, schema *introspection.Schema) template.FuncMap {
 	return goTemplateFuncs{
-		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
-		envName:         envName,
+		CommonFunctions:     generator.NewCommonFunctions(&FormatTypeFunc{}),
+		moduleName:          moduleName,
+		sourceDirectoryPath: sourceDirectoryPath,
+		schema:              schema,
 	}.FuncMap()
 }
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	envName string
+	moduleName          string
+	sourceDirectoryPath string
+	schema              *introspection.Schema
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
@@ -39,17 +43,17 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsSelfChainable":  funcs.IsSelfChainable,
 
 		// go specific
-		"Comment":                       funcs.comment,
-		"FormatDeprecation":             funcs.formatDeprecation,
-		"FormatName":                    formatName,
-		"FormatEnum":                    funcs.formatEnum,
-		"SortEnumFields":                funcs.sortEnumFields,
-		"FieldOptionsStructName":        funcs.fieldOptionsStructName,
-		"FieldFunction":                 funcs.fieldFunction,
-		"IsEnum":                        funcs.isEnum,
-		"FormatArrayField":              funcs.formatArrayField,
-		"FormatArrayToSingleType":       funcs.formatArrayToSingleType,
-		"EnvironmentWithMethodPreamble": funcs.environmentWithMethodPreamble,
+		"Comment":                 funcs.comment,
+		"FormatDeprecation":       funcs.formatDeprecation,
+		"FormatName":              formatName,
+		"FormatEnum":              funcs.formatEnum,
+		"SortEnumFields":          funcs.sortEnumFields,
+		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
+		"FieldFunction":           funcs.fieldFunction,
+		"IsEnum":                  funcs.isEnum,
+		"FormatArrayField":        funcs.formatArrayField,
+		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
+		"ModuleMainSrc":           funcs.moduleMainSrc,
 	}
 }
 
@@ -146,8 +150,8 @@ func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field) strin
 func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 	// don't create methods on query for the env itself,
 	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
-	if envName := funcs.envName; envName != "" {
-		if f.ParentObject.Name == generator.QueryStructName && f.Name == envName {
+	if moduleName := funcs.moduleName; moduleName != "" {
+		if f.ParentObject.Name == generator.QueryStructName && f.Name == moduleName {
 			return ""
 		}
 	}
@@ -170,8 +174,6 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 		// scalar (DirectoryID) rather than an object (*Directory).
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, funcs.FormatOutputType(arg.TypeRef)))
-		} else if funcs.envName != "" && formatName(f.ParentObject.Name) == "Environment" && arg.Name == "id" {
-			args = append(args, fmt.Sprintf("%s any", arg.Name))
 		} else {
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, funcs.FormatInputType(arg.TypeRef)))
 		}
@@ -195,18 +197,4 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 	signature += " " + retType
 
 	return signature
-}
-
-func (funcs goTemplateFuncs) environmentWithMethodPreamble(f introspection.Field) string {
-	if funcs.envName == "" || f.ParentObject.Name != "Environment" || !strings.HasPrefix(f.Name, "with") {
-		return ""
-	}
-	if f.Name == "withWorkdir" {
-		return ""
-	}
-	return fmt.Sprintf(`res := %s(r, id)
-if res != nil {
-	return res
-}
-`, formatName(f.Name))
 }

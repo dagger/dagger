@@ -66,6 +66,9 @@ type ClientMetadata struct {
 
 	// TODO: doc if stays in
 	ModuleDigest digest.Digest `json:"module_digest"`
+
+	// TODO: doc if stays in
+	FunctionContextDigest digest.Digest `json:"function_context_digest"`
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/envconfig"
+	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -65,7 +65,7 @@ var environmentCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get environment: %w", err)
 		}
-		var cfg *envconfig.Config
+		var cfg *moduleconfig.Config
 		switch {
 		case env.local != nil:
 			cfg, err = env.local.config()
@@ -119,9 +119,9 @@ var environmentInitCmd = &cobra.Command{
 			}
 		}
 
-		cfg := &envconfig.Config{
+		cfg := &moduleconfig.Config{
 			Name: environmentName,
-			SDK:  envconfig.SDK(sdk),
+			SDK:  moduleconfig.SDK(sdk),
 			Root: environmentRoot,
 		}
 
@@ -206,14 +206,14 @@ var environmentSyncCmd = &cobra.Command{
 func updateEnvironmentConfig(
 	ctx context.Context,
 	path string,
-	newEnvCfg *envconfig.Config,
+	newEnvCfg *moduleconfig.Config,
 	cmd *cobra.Command,
 ) (rerr error) {
 	runCodegenFunc := func() error {
 		return nil
 	}
-	switch envconfig.SDK(newEnvCfg.SDK) {
-	case envconfig.SDKGo:
+	switch moduleconfig.SDK(newEnvCfg.SDK) {
+	case moduleconfig.SDKGo:
 		runCodegenFunc = func() error {
 			return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 				rec := progrock.RecorderFromContext(ctx)
@@ -233,7 +233,7 @@ func updateEnvironmentConfig(
 				return err
 			})
 		}
-	case envconfig.SDKPython:
+	case moduleconfig.SDKPython:
 	default:
 		return fmt.Errorf("unsupported environment SDK: %s", sdk)
 	}
@@ -311,7 +311,7 @@ func getEnvironmentFlagConfig() (*environmentFlagConfig, error) {
 }
 
 func getEnvironmentFlagConfigFromURL(environmentURL string) (*environmentFlagConfig, error) {
-	parsedURL, err := envconfig.ParseEnvURL(environmentURL)
+	parsedURL, err := moduleconfig.ParseModuleURL(environmentURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse environment URL: %w", err)
 	}
@@ -368,7 +368,7 @@ func (p environmentFlagConfig) load(ctx context.Context, c *dagger.Client) (*dag
 	return env, nil
 }
 
-func (p environmentFlagConfig) config(ctx context.Context, c *dagger.Client) (*envconfig.Config, error) {
+func (p environmentFlagConfig) config(ctx context.Context, c *dagger.Client) (*moduleconfig.Config, error) {
 	switch {
 	case p.local != nil:
 		return p.local.config()
@@ -438,12 +438,12 @@ type localEnvironment struct {
 	path string
 }
 
-func (p localEnvironment) config() (*envconfig.Config, error) {
+func (p localEnvironment) config() (*moduleconfig.Config, error) {
 	configBytes, err := os.ReadFile(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read local config file: %w", err)
 	}
-	var cfg envconfig.Config
+	var cfg moduleconfig.Config
 	if err := json.Unmarshal(configBytes, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse local config file: %w", err)
 	}
@@ -500,7 +500,7 @@ type gitEnvironment struct {
 	ref     string
 }
 
-func (p gitEnvironment) config(ctx context.Context, c *dagger.Client) (*envconfig.Config, error) {
+func (p gitEnvironment) config(ctx context.Context, c *dagger.Client) (*moduleconfig.Config, error) {
 	if c == nil {
 		return nil, fmt.Errorf("cannot load git environment config with nil dagger client")
 	}
@@ -508,7 +508,7 @@ func (p gitEnvironment) config(ctx context.Context, c *dagger.Client) (*envconfi
 	if err != nil {
 		return nil, fmt.Errorf("failed to read git config file: %w", err)
 	}
-	var cfg envconfig.Config
+	var cfg moduleconfig.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse git config file: %w", err)
 	}

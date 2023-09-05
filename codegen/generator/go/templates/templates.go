@@ -26,9 +26,9 @@ var (
 	enumSource string
 	enum       *template.Template
 
-	//go:embed src/environment.go.tmpl
-	environmentSource string
-	environment       *template.Template
+	//go:embed src/module.go.tmpl
+	moduleSource string
+	module       *template.Template
 )
 
 func Header(funcs template.FuncMap) *template.Template {
@@ -86,13 +86,13 @@ func Enum(funcs template.FuncMap) *template.Template {
 	return enum
 }
 
-func Environment(funcs template.FuncMap) *template.Template {
-	if environment == nil {
+func Module(funcs template.FuncMap) *template.Template {
+	if module == nil {
 		var err error
-		environment, err = template.New("environment").Funcs(funcs).Parse(environmentSource)
+		module, err = template.New("module").Funcs(funcs).Parse(moduleSource)
 		if err != nil {
 			panic(err)
 		}
 	}
-	return environment
+	return module
 }

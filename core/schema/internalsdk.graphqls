@@ -64,13 +64,13 @@ input FunctionDef {
 
 input FunctionArgDef {
   "The name of the argument"
-  name: String
+  name: String!
 
   "A doc string for the argument, if any"
   description: String
 
   "The type of the argument"
-  typeDef: TypeDef!
+  typeDef: TypeDefInput!
 
   "A default value to use for this argument if not explicitly set by the caller, if any"
   defaultValue: JSON
@@ -81,7 +81,7 @@ A definition of a type used in a Module as an argument, return type or object fi
 """
 input TypeDefInput {
   "The kind of type this is (e.g. primitive, list, object)"
-  kind: TypeDefKind
+  kind: TypeDefKind!
 
   "Whether this type can be set to null"
   optional: Boolean
@@ -134,5 +134,5 @@ input FieldTypeDefInput {
 
 input ListTypeDefInput {
   "The type of the elements in the list"
-  elementType: TypeDefInput!
+  elementTypeDef: TypeDefInput!
 }
