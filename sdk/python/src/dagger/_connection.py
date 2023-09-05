@@ -96,7 +96,9 @@ async def connection(config: Config | None = None):
     logger.debug("Establishing connection with shared client")
     async with provision_engine(config or Config()) as engine:
         conn = await engine.shared_client_connection()
-        await engine.verify(dagger.client())
+        # When called in codegen the generated module could be empty.
+        if hasattr(dagger, "default_client"):
+            await engine.verify(dagger.default_client())
         yield conn
         logger.debug("Closing connection with shared client")
 

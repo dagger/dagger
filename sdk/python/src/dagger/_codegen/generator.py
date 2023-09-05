@@ -300,11 +300,11 @@ def render_default_client(
     defined.update(names)
 
     yield textwrap.dedent('''\
-        def client() -> Client:
+        def default_client() -> Client:
             """Return the default client instance."""
             return _client
         ''')
-    defined.add("client")
+    defined.add("default_client")
 
 
 @dataclass(slots=True)

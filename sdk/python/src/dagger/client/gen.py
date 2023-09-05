@@ -3158,7 +3158,7 @@ set_secret = _client.set_secret
 socket = _client.socket
 
 
-def client() -> Client:
+def default_client() -> Client:
     """Return the default client instance."""
     return _client
 
@@ -3197,8 +3197,8 @@ __all__ = [
     "SocketID",
     "cache_volume",
     "check_version_compatibility",
-    "client",
     "container",
+    "default_client",
     "default_platform",
     "directory",
     "file",
