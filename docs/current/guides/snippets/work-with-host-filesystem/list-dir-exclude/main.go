@@ -5,20 +5,18 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"dagger.io/dagger"
 )
 
 func main() {
-	dir := os.TempDir()
-	os.WriteFile(filepath.Join(dir, "foo.txt"), []byte("1"), 0600)
-	os.WriteFile(filepath.Join(dir, "bar.txt"), []byte("2"), 0600)
-	os.WriteFile(filepath.Join(dir, "baz.rar"), []byte("3"), 0600)
+	os.WriteFile("foo.txt", []byte("1"), 0600)
+	os.WriteFile("bar.txt", []byte("2"), 0600)
+	os.WriteFile("baz.rar", []byte("3"), 0600)
 
 	ctx := context.Background()
 
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr), dagger.WithWorkdir(dir))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		log.Println(err)
 		return
