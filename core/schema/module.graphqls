@@ -1,15 +1,57 @@
-type Module {
-    """
-    Serve a module's API in the current session.
-        Note: this can only be called once per session.
-        In the future, it could return a stream or service to remove the side effect.
-    """
-    serve(workdir: Directory, environment: [String!]): Void!
+scalar ModuleID
 
-    withFunction(id: FunctionID!): Module!
+extend type Query {
+  """
+  Load a module by ID, or create a new one if id is unset.
+  """
+  module(id: ModuleID): Module!
+
+  """
+  The module currently being served in the session, if any.
+  """
+  currentModule: Module
+}
+
+type Module {
+  id: ModuleID!
+
+  "The name of the module"
+  name: String!
+
+  "The doc string of the module, if any"
+  description: String
+
+  "Functions served by this module"
+  functions: [Function!]
+
+  "This module plus the given Function associated with it"
+  withFunction(id: FunctionID!): Module!
+
+  """
+  Serve a module's API in the current session.
+      Note: this can only be called once per session.
+      In the future, it could return a stream or service to remove the side effect.
+  """
+  serve(environment: [ModuleEnvironmentVariable!]): Void!
 }
 
 extend type Directory {
-    "Load the directory as a Dagger module"
-    asModule: Module!
+  """
+  Load the directory as a Dagger module
+
+  sourceSubpath is an optional parameter that, if set, points to a subpath of this
+  directory that contains the module's source code. This is needed when the module
+  code is in a subdirectory but requires parent directories to be loaded in order
+  to execute. For example, the module source code may need a go.mod, project.toml,
+  package.json, etc. file from a parent directory.
+
+  If sourceSubpath is not set, the module source code is loaded from the root of
+  the directory.
+  """
+  asModule(sourceSubpath: String): Module!
+}
+
+input ModuleEnvironmentVariable {
+  name: String!
+  value: String
 }

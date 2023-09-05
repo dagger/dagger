@@ -1,3 +1,7 @@
+scalar Void
+
+scalar JSON
+
 type Query {
   "Creates a named sub-pipeline."
   pipeline(

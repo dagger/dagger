@@ -1,10 +1,126 @@
+scalar FunctionID
+
 extend type Query {
-    "Load or function by ID, or create a new one"
-    function(id: FunctionID): Function!
+  "Load a function by ID"
+  function(id: FunctionID!): Function!
 }
 
 type Function {
-    id: FunctionID!
+  id: FunctionID!
 
-    // FIXME @sipsma: function constructors go here
+  "The name of the function"
+  name: String!
+
+  "A doc string for the function, if any"
+  description: String
+
+  "Arguments accepted by this function, if any"
+  args: [FunctionArg!]
+
+  "The type returned by this function"
+  returnType: TypeDef!
+
+  """
+  Execute this function using dynamic input+output types.
+
+  Typically, it's preferable to invoke a function using a type
+  safe graphql query rather than using this call field. However,
+  call is useful for some advanced use cases where dynamically
+  loading arbitrary modules and invoking functions in them is
+  required.
+  """
+  call(input: [FunctionCallInput!]): JSON!
+}
+
+type FunctionArg {
+  "The name of the argument"
+  name: String
+
+  "A doc string for the argument, if any"
+  description: String
+
+  "The type of the argument"
+  typeDef: TypeDef!
+
+  "A default value to use for this argument if not explicitly set by the caller, if any"
+  defaultValue: JSON
+}
+
+input FunctionCallInput {
+  "The name of the argument to the function"
+  name: String!
+
+  """
+  The value of the argument to the function, representing as a JSON-serialized string.
+  """
+  value: JSON!
+}
+
+"""
+A definition of a parameter or return type in a Module.
+"""
+type TypeDef {
+  "The kind of type this is (e.g. primitive, list, object)"
+  kind: TypeDefKind
+
+  "Whether this type can be set to null"
+  optional: Boolean
+
+  """
+  If kind is LIST, the list-specific type definition.
+  If kind is not LIST, this will be null."
+  """
+  asList: ListTypeDef
+
+  """
+  If kind is OBJECT, the object-specific type definition.
+  If kind is not OBJECT, this will be null."
+  """
+  asObject: ObjectTypeDef
+}
+
+"""
+A definition of a custom object defined in a Module.
+"""
+type ObjectTypeDef {
+  "The name of the object"
+  name: String!
+
+  "The doc string for the object, if any"
+  description: String
+
+  "Static fields defined on this object, if any"
+  fields: [FieldTypeDef!]
+
+  "Functions defined on this object, if any"
+  functions: [Function!]
+}
+
+"""
+A definition of a field on a custom object defined in a Module.
+A field on an object has a static value, as opposed to a function on an
+object whose value is computed by invoking code (and can accept arguments).
+"""
+type FieldTypeDef {
+  "The name of the field in the object"
+  name: String!
+
+  "A doc string for the field, if any"
+  description: String
+
+  "The type of the field"
+  typeDef: TypeDef!
+}
+
+type ListTypeDef {
+  "The type of the elements in the list"
+  elementType: TypeDef!
+}
+
+enum TypeDefKind {
+  STRING
+  INTEGER
+  BOOLEAN
+  LIST
+  OBJECT
 }
