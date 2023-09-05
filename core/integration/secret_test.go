@@ -102,7 +102,6 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 func TestSecretSet(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	defer c.Close()
 
 	secretValue := "very-secret-text"
 
@@ -122,7 +121,6 @@ func TestSecretSet(t *testing.T) {
 func TestSecretWhitespaceScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	defer c.Close()
 
 	secretValue := "very\nsecret\ntext\n"
 
@@ -140,7 +138,6 @@ func TestSecretWhitespaceScrubbed(t *testing.T) {
 func TestSecretBigScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	defer c.Close()
 	secretKeyReader := bytes.NewReader(secretKeyBytes)
 	secretValue, err := io.ReadAll(secretKeyReader)
 	require.NoError(t, err)

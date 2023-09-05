@@ -22,33 +22,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMain(m *testing.M) {
-	// start with fresh test registries once per suite; they're an engine-global
-	// dependency
-	// startRegistry()
-	// startPrivateRegistry()
-	os.Exit(m.Run())
-}
+func connect(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
-func connect(t *testing.T) (*dagger.Client, context.Context) {
 	tw := newTWriter(t)
 	t.Cleanup(tw.Flush)
-	return connectWithLogOutput(t, tw)
-}
 
-func connectWithBufferedLogs(t *testing.T) (*dagger.Client, context.Context, *safeBuffer) {
-	tw := newTWriter(t)
-	t.Cleanup(tw.Flush)
-	output := &safeBuffer{}
-	c, ctx := connectWithLogOutput(t, io.MultiWriter(tw, output))
-	return c, ctx, output
-}
+	opts = append([]dagger.ClientOpt{dagger.WithLogOutput(tw)}, opts...)
 
-func connectWithLogOutput(t *testing.T, logOutput io.Writer) (*dagger.Client, context.Context) {
-	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(logOutput))
+	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
+
 	return client, ctx
 }
 

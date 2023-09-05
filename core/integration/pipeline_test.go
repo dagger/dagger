@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -13,19 +12,15 @@ import (
 func TestPipeline(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("container pipeline", func(t *testing.T) {
 		t.Parallel()
 
 		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
-		_, err = c.
+		_, err := c.
 			Container().
 			Pipeline("container pipeline").
 			From(alpineImage).
@@ -43,9 +38,7 @@ func TestPipeline(t *testing.T) {
 		t.Parallel()
 
 		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		contents, err := c.
 			Directory().
@@ -66,9 +59,7 @@ func TestPipeline(t *testing.T) {
 		t.Parallel()
 
 		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		srv, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -93,22 +84,18 @@ func TestPipeline(t *testing.T) {
 func TestInternalVertexes(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("merge pipeline", func(t *testing.T) {
 		t.Parallel()
 
 		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		dirA := c.Directory().WithNewFile("/foo", "foo")
 		dirB := c.Directory().WithNewFile("/bar", "bar")
 
-		_, err = c.
+		_, err := c.
 			Container().
 			From(alpineImage).
 			WithDirectory("/foo", dirA).

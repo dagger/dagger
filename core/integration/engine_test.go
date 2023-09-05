@@ -47,7 +47,6 @@ func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, 
 
 func TestEngineExitsZeroOnSignal(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -78,7 +77,6 @@ func TestClientWaitsForEngine(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	devEngine := devEngineContainer(c)
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
@@ -111,7 +109,6 @@ func TestClientWaitsForEngine(t *testing.T) {
 
 func TestEngineSetsNameFromEnv(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	engineName := "my-special-engine"
 	devEngine := devEngineContainer(c).
@@ -138,7 +135,6 @@ func TestDaggerRun(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	devEngine := devEngineContainer(c).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
@@ -173,7 +169,6 @@ func TestDaggerRun(t *testing.T) {
 
 func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	devEngine := devEngineContainer(c).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
