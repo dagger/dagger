@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -70,6 +71,27 @@ func NewServices(bk *buildkit.Client) *Services {
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
 	}
+}
+
+func (ss *Services) Shutdown(ctx context.Context) error {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+
+	eg := new(errgroup.Group)
+	for _, svc := range ss.running {
+		svc := svc
+		eg.Go(func() error {
+			log.Println("!!! STOPPING", svc.Host)
+			if err := svc.Stop(ctx); err != nil {
+				return fmt.Errorf("stop %s: %w", svc.Host, err)
+			}
+			return nil
+		})
+	}
+
+	defer log.Println("!!! DONE SHUTTING DOWN")
+
+	return eg.Wait()
 }
 
 // Get returns the running service for the given service. If the service is

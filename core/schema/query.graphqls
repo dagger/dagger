@@ -14,6 +14,15 @@ type Query {
     "The SDK's required version."
     version: String!
   ): Boolean!
+
+  """
+  Stops all running resources.
+
+  Experimental. This should be called by the SDK prior to closing the
+  underlying connection. It helps ensure that the client receives progress for
+  everything shutting down (e.g. services).
+  """
+  stop: Boolean!
 }
 
 """

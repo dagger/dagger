@@ -69,7 +69,7 @@ func NewDaggerServer(
 
 	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", serverID)
 	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
-		&progrock.RPCWriter{Conn: clientConn, Updates: progUpdates},
+		progrock.NewRPCWriter(clientConn, progUpdates),
 		buildkit.ProgrockLogrusWriter{},
 	})
 	if err != nil {

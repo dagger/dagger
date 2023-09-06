@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -10,15 +12,12 @@ import (
 )
 
 func TestPipeline(t *testing.T) {
-	t.Parallel()
-
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("container pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c, ctx, logs := connectWithLogs(t)
 
 		_, err := c.
 			Container().
@@ -37,8 +36,7 @@ func TestPipeline(t *testing.T) {
 	t.Run("directory pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c, ctx, logs := connectWithLogs(t)
 
 		contents, err := c.
 			Directory().
@@ -58,8 +56,7 @@ func TestPipeline(t *testing.T) {
 	t.Run("service pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c, ctx, logs := connectWithLogs(t)
 
 		srv, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -77,7 +74,7 @@ func TestPipeline(t *testing.T) {
 
 		require.NoError(t, c.Close()) // close + flush logs
 
-		require.Contains(t, logs.String(), "service "+hostname)
+		require.Contains(t, logs.String(), "service "+hostname+" DONE")
 	})
 }
 
@@ -89,8 +86,7 @@ func TestInternalVertexes(t *testing.T) {
 	t.Run("merge pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c, ctx, logs := connectWithLogs(t)
 
 		dirA := c.Directory().WithNewFile("/foo", "foo")
 		dirB := c.Directory().WithNewFile("/bar", "bar")
@@ -108,4 +104,11 @@ func TestInternalVertexes(t *testing.T) {
 		require.NoError(t, c.Close()) // close + flush logs
 		require.NotContains(t, logs.String(), "merge")
 	})
+}
+
+func connectWithLogs(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Context, *safeBuffer) {
+	var logs safeBuffer
+	out := io.MultiWriter(&logs, newTWriter(t))
+	c, ctx := connect(t, append(opts, dagger.WithLogOutput(out))...)
+	return c, ctx, &logs
 }

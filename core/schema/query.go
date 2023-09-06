@@ -14,6 +14,8 @@ import (
 
 type querySchema struct {
 	*MergedSchemas
+
+	services *core.Services
 }
 
 var _ ExecutableSchema = &querySchema{}
@@ -31,6 +33,7 @@ func (s *querySchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"pipeline":                  ToResolver(s.pipeline),
 			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),
+			"stop":                      ToResolver(s.stop),
 		},
 	}
 }
@@ -104,6 +107,14 @@ func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query
 	// If the Engine is a minor version newer, warn
 	if engineVersion.Minor > sdkVersion.Minor {
 		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is newer than the SDK's required version (%s). Consider updating your SDK.", engineVersion, sdkVersion))
+	}
+
+	return true, nil
+}
+
+func (s *querySchema) stop(ctx *core.Context, _ *core.Query, _ any) (bool, error) {
+	if err := s.services.Shutdown(ctx); err != nil {
+		return false, fmt.Errorf("shutdown services: %w", err)
 	}
 
 	return true, nil
