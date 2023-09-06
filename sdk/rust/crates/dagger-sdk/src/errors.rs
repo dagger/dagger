@@ -16,6 +16,8 @@ pub enum DaggerError {
     Query(#[source] crate::core::graphql_client::GraphQLError),
     #[error("failed to unpack response")]
     Unpack(#[source] DaggerUnpackError),
+    #[error("failed to download client")]
+    DownloadClient(#[source] eyre::Error),
 }
 
 #[derive(Error, Debug)]
