@@ -74,7 +74,8 @@ func TestPipeline(t *testing.T) {
 
 		require.NoError(t, c.Close()) // close + flush logs
 
-		require.Contains(t, logs.String(), "service "+hostname+" DONE")
+		require.Contains(t, logs.String(), "service "+hostname)
+		require.Regexp(t, `start python -m http.server.*DONE`, logs.String())
 	})
 }
 
