@@ -7,9 +7,7 @@ import TabItem from "@theme/TabItem";
 
 # FAQ
 
-### What language SDKs are available for Dagger?
-
-We currently offer technical previews of a [Go SDK](/sdk/go), a [Node.js SDK](/sdk/nodejs) and a [Python SDK](/sdk/python). Waiting for your favorite language to be supported? [Let us know which one](https://airtable.com/shrzABOn1wCk5yBF4), and we'll notify you when it's ready.
+## General
 
 ### How do I install Dagger?
 
@@ -149,12 +147,24 @@ Follow these steps:
     - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
   :::
 
+### I am stuck. How can I get help?
+
+Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
+
+## Dagger SDKs
+
+### What language SDKs are available for Dagger?
+
+We currently offer technical previews of a [Go SDK](/sdk/go), a [Node.js SDK](/sdk/nodejs) and a [Python SDK](/sdk/python). Waiting for your favorite language to be supported? [Let us know which one](https://airtable.com/shrzABOn1wCk5yBF4), and we'll notify you when it's ready.
+
 ### How do I log in to a container registry using a Dagger SDK?
 
 There are two options available:
 
 1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK ([example](./guides/723462-use-secrets.md#use-secrets-with-dagger-sdk-methods)).
 1. Dagger SDKs can use your existing Docker credentials without requiring separate authentication. Simply execute `docker login` against your container registry on the host where your Dagger pipelines are running.
+
+## Dagger API
 
 ### What API query language does Dagger use?
 
@@ -167,7 +177,3 @@ No. You only need to know one of Dagger's supported SDKs languages to use Dagger
 ### There's no SDK for &lt;language&gt; yet. Can I still use Dagger?
 
 Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/) ([example](./api/254103-build-custom-client.md)) or from the [Dagger CLI](./cli/index.md).
-
-### I am stuck. How can I get help?
-
-Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
