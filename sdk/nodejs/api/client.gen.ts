@@ -661,6 +661,13 @@ export type ClientSocketOpts = {
   id?: SocketID
 }
 
+export type ClientStopOpts = {
+  /**
+   * Seconds to wait before giving up.
+   */
+  timeout?: number
+}
+
 /**
  * A unique identifier for a secret.
  */
@@ -3756,18 +3763,22 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Stops all running resources.
+   * Stops all resources, with an optional timeout.
+   *
+   * Returns true if all resources were stopped.
    *
    * Experimental. This should be called by the SDK prior to closing the
    * underlying connection. It helps ensure that the client receives progress for
    * everything shutting down (e.g. services).
+   * @param opts.timeout Seconds to wait before giving up.
    */
-  async stop(): Promise<boolean> {
+  async stop(opts?: ClientStopOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "stop",
+          args: { ...opts },
         },
       ],
       this.client

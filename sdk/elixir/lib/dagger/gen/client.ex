@@ -243,10 +243,18 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Stops all running resources.\n\nExperimental. This should be called by the SDK prior to closing the\nunderlying connection. It helps ensure that the client receives progress for\neverything shutting down (e.g. services)."
-    @spec stop(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
-    def stop(%__MODULE__{} = query) do
+    @doc "Stops all resources, with an optional timeout.\n\nReturns true if all resources were stopped.\n\nExperimental. This should be called by the SDK prior to closing the\nunderlying connection. It helps ensure that the client receives progress for\neverything shutting down (e.g. services).\n\n\n\n## Optional Arguments\n\n* `timeout` - Seconds to wait before giving up."
+    @spec stop(t(), keyword()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def stop(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "stop")
+
+      selection =
+        if is_nil(optional_args[:timeout]) do
+          selection
+        else
+          arg(selection, "timeout", optional_args[:timeout])
+        end
+
       execute(selection, query.client)
     end
   )

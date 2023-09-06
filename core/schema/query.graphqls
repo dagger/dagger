@@ -16,13 +16,18 @@ type Query {
   ): Boolean!
 
   """
-  Stops all running resources.
+  Stops all resources, with an optional timeout.
+
+  Returns true if all resources were stopped.
 
   Experimental. This should be called by the SDK prior to closing the
   underlying connection. It helps ensure that the client receives progress for
   everything shutting down (e.g. services).
   """
-  stop: Boolean!
+  stop(
+    "Seconds to wait before giving up."
+    timeout: Int
+  ): Boolean!
 }
 
 """

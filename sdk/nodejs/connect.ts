@@ -82,6 +82,7 @@ export async function connect(
   }
 
   await cb(client).finally(async () => {
+    await client.stop()
     if (close) {
       close()
     }

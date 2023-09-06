@@ -3040,13 +3040,20 @@ class Client(Root):
         return Socket(_ctx)
 
     @typecheck
-    async def stop(self) -> bool:
-        """Stops all running resources.
+    async def stop(self, *, timeout: Optional[int] = None) -> bool:
+        """Stops all resources, with an optional timeout.
+
+        Returns true if all resources were stopped.
 
         Experimental. This should be called by the SDK prior to closing the
         underlying connection. It helps ensure that the client receives
         progress for
         everything shutting down (e.g. services).
+
+        Parameters
+        ----------
+        timeout:
+            Seconds to wait before giving up.
 
         Returns
         -------
@@ -3060,7 +3067,9 @@ class Client(Root):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("timeout", timeout, None),
+        ]
         _ctx = self._select("stop", _args)
         return await _ctx.execute(bool)
 
