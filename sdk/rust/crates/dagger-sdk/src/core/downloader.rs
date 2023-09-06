@@ -7,7 +7,7 @@ use std::{
 
 use eyre::Context;
 use flate2::read::GzDecoder;
-use platform_info::Uname;
+use platform_info::{PlatformInfoAPI, UNameAPI};
 use sha2::Digest;
 use tar::Archive;
 use tempfile::tempfile;
@@ -21,9 +21,10 @@ pub struct Platform {
 
 impl Platform {
     pub fn from_system() -> eyre::Result<Self> {
-        let platform = platform_info::PlatformInfo::new()?;
-        let os_name = platform.sysname();
-        let arch = platform.machine().to_lowercase();
+        let platform = platform_info::PlatformInfo::new()
+            .expect("Unable to determine platform information, use `dagger run <app> instead`");
+        let os_name = platform.sysname().to_string_lossy().to_lowercase();
+        let arch = platform.machine().to_string_lossy().to_lowercase();
         let normalize_arch = match arch.as_str() {
             "x86_64" => "amd64",
             "aarch" => "arm64",
@@ -32,7 +33,7 @@ impl Platform {
         };
 
         Ok(Self {
-            os: os_name.to_lowercase(),
+            os: os_name,
             arch: normalize_arch.into(),
         })
     }

@@ -9,8 +9,6 @@ description = "A dagger sdk for rust, written in rust"
 repository = "https://github.com/dagger/dagger"
 publish = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 eyre = { workspace = true }
 tokio = { workspace = true }
@@ -22,29 +20,29 @@ thiserror.workspace = true
 
 futures = "0.3.28"
 derive_builder = "0.12.0"
-base64 = "0.21.0"
-dirs = "4.0.0"
-flate2 = { version = "1.0.25", features = ["rust_backend"] }
-graphql_client = { version = "0.12.0", features = [
+base64 = "0.21.3"
+dirs = "5.0.1"
+flate2 = { version = "1.0.27", features = ["rust_backend"] }
+graphql_client = { version = "0.13.0", features = [
   "reqwest-rustls",
   "graphql_query_derive",
 ], default-features = false }
 hex = "0.4.3"
-hex-literal = "0.3.4"
-platform-info = "1.0.2"
-reqwest = { version = "0.11.14", features = [
+hex-literal = "0.3.1"
+platform-info = "2.0.2"
+reqwest = { version = "0.11.20", features = [
   "stream",
   "rustls-tls",
 ], default-features = false }
 
-sha2 = "0.10.6"
-tar = "0.4.38"
-tempfile = "3.3.0"
-async-trait = "0.1.67"
+sha2 = "0.10.7"
+tar = "0.4.40"
+tempfile = "3.8.0"
+async-trait = "0.1.73"
 
 
 [dev-dependencies]
-pretty_assertions = "1.3.0"
+pretty_assertions = "1.4.0"
 rand = "0.8.5"
 tracing-test = "0.2.4"
 
