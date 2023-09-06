@@ -82,9 +82,10 @@ export async function connect(
   }
 
   await cb(client).finally(async () => {
-    await client.stop({ timeout: 10 })
-    if (close) {
-      close()
-    }
+    client.stop({ timeout: 10 }).finally(() => {
+      if (close) {
+        close()
+      }
+    })
   })
 }
