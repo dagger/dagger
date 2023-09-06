@@ -3190,6 +3190,7 @@ project_command = _client.project_command
 secret = _client.secret
 set_secret = _client.set_secret
 socket = _client.socket
+stop = _client.stop
 
 
 def default_client() -> Client:
@@ -3245,4 +3246,5 @@ __all__ = [
     "secret",
     "set_secret",
     "socket",
+    "stop",
 ]
