@@ -10,17 +10,17 @@ This tutorial teaches you the basic of using Dagger in Elixir. You will learn ho
 
 - Install Elixir SDK
 - Create an Elixir CI task to test an application
-- Improve the Python CI tool to test the application against multiple Elixir and OTP versions
+- Improve the Elixir CI tool to test the application against multiple Elixir and OTP versions
 
 ## Requirements
 
 This tutorial assumes that:
 
 - You have a basic understanding of the Elixir programming language. If not, [read the Elixir learning](https://elixir-lang.org/learning.html).
-- You have a Elixir development environment with Elixir 1.14 or later and Erlang/OTP 25 or later. If not, install [Elixir](https://elixir-lang.org/install.html) and [Erlang/OTP](https://www.erlang.org/downloads).
+- You have an Elixir development environment with Elixir 1.14 or later and Erlang/OTP 25 or later. If not, install [Elixir](https://elixir-lang.org/install.html) and [Erlang/OTP](https://www.erlang.org/downloads).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
-## Step 1: Create an Elixir application
+## Step 1: Create an Elixir project
 
 Create an Elixir project with `mix`:
 
@@ -75,13 +75,13 @@ Replace the `lib/mix/tasks/a_project.test.ex` file from the previous step with t
 ```elixir file=snippets/get-started/step4/a_project.test.ex
 ```
 
-In this version has additional support for test and building against multiple Elixir and Erlang/OTP versions.
+This version has additional support for testing and building against multiple Elixir and Erlang/OTP versions.
 
-- It defines the test matrix, by defining a list of Elixir and Erlang/OTP version pair.
+- It defines the test matrix, by defining a list of Elixir and Erlang/OTP version pairs.
 - It pass through the `Task.async_strem/3` to run test in each version concurrently.
 
 ## Conclusion
 
-This turorial introduced you to the Dagger Elixir SDK. It explaned how to install the SDK and use it with an Elixir application.  It also provided a working example of the a tool powered by the SDK, demonstrating how to test an application against multiple Elixir and Erlang/OTP versions in parallel.
+This tutorial introduced you to the Dagger Elixir SDK. It explaned how to install the SDK and use it with an Elixir application.  It also provided a working example of a CI tool powered by the SDK, demonstrating how to test an application against multiple Elixir and Erlang/OTP versions in parallel.
 
-Use the [HexDocs SDK Reference](https://hexdocs.pm/dagger/Dagger.html) to learn more abount the Dagger Elixir SDK.
+Use the [HexDocs SDK Reference](https://hexdocs.pm/dagger/Dagger.html) to learn more about the Dagger Elixir SDK.

@@ -19,7 +19,7 @@ This SDK contains:
 
 The Dagger Elixir SDK may be a good fit if you are...
 
-* A Elixir developer wishing your CI pipelines were Elixir code instead of YAML.
+* An Elixir developer wishing your CI pipelines were Elixir code instead of YAML.
 * A developer who needs CI/CD, and is looking for an excuse to learn Elixir.
 * Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
 * A platform engineer writing custom Elixir tooling, with the goal of unifying continuous delivery across organizational silos.
