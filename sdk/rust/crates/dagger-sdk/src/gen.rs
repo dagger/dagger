@@ -3103,6 +3103,14 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Stops all running resources.
+    /// Experimental. This should be called by the SDK prior to closing the
+    /// underlying connection. It helps ensure that the client receives progress for
+    /// everything shutting down (e.g. services).
+    pub async fn stop(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("stop");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Secret {

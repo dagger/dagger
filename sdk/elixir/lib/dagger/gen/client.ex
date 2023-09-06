@@ -241,4 +241,13 @@ defmodule Dagger.Client do
       %Dagger.Socket{selection: selection, client: query.client}
     end
   )
+
+  (
+    @doc "Stops all running resources.\n\nExperimental. This should be called by the SDK prior to closing the\nunderlying connection. It helps ensure that the client receives progress for\neverything shutting down (e.g. services)."
+    @spec stop(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def stop(%__MODULE__{} = query) do
+      selection = select(query.selection, "stop")
+      execute(selection, query.client)
+    end
+  )
 end

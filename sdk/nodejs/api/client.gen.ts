@@ -3463,6 +3463,7 @@ export class ProjectCommandFlag extends BaseClient {
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
+  private readonly _stop?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3470,12 +3471,14 @@ export class Client extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _checkVersionCompatibility?: boolean,
-    _defaultPlatform?: Platform
+    _defaultPlatform?: Platform,
+    _stop?: boolean
   ) {
     super(parent)
 
     this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
+    this._stop = _stop
   }
 
   /**
@@ -3750,6 +3753,27 @@ export class Client extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Stops all running resources.
+   *
+   * Experimental. This should be called by the SDK prior to closing the
+   * underlying connection. It helps ensure that the client receives progress for
+   * everything shutting down (e.g. services).
+   */
+  async stop(): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "stop",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**

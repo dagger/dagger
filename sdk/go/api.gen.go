@@ -2640,6 +2640,20 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 }
 
+// Stops all running resources.
+//
+// Experimental. This should be called by the SDK prior to closing the
+// underlying connection. It helps ensure that the client receives progress for
+// everything shutting down (e.g. services).
+func (r *Client) Stop(ctx context.Context) (bool, error) {
+	q := r.q.Select("stop")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
 	q *querybuilder.Selection
