@@ -3993,8 +3993,10 @@ func TestContainerWithMountedSecretMode(t *testing.T) {
 	ctr := c.Container().From("alpine:3.18.2").WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
 		Mode:     0o666,
 		Optional: true,
+		Owner:    "root:root",
 	})
 
-	_, err := ctr.WithExec([]string{"sh", "-c", "test $(cat /secret) = 'secret'"}).Sync(ctx)
+	perms, err := ctr.WithExec([]string{"sh", "-c", "stat /secret "}).Stdout(ctx)
+	require.Contains(t, perms, "0666/-rw-rw-rw-")
 	require.NoError(t, err)
 }

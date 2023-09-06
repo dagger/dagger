@@ -380,7 +380,8 @@ pub struct ContainerWithMountedFileOpts<'a> {
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
     /// Permission given to the mounted secret (e.g., 0600).
-    /// Default: 0644.
+    /// This option requires an owner to be set to be active.
+    /// Default: 0400.
     #[builder(setter(into, strip_option), default)]
     pub mode: Option<isize>,
     /// Set secret as optional.

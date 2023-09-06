@@ -1231,7 +1231,8 @@ class Container(Type):
             Default: false.
         mode:
             Permission given to the mounted secret (e.g., 0600).
-            Default: 0644.
+            This option requires an owner to be set to be active.
+            Default: 0400.
         """
         _args = [
             Arg("path", path),

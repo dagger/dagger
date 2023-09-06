@@ -378,8 +378,9 @@ export type ContainerWithMountedSecretOpts = {
 
   /**
    * Permission given to the mounted secret (e.g., 0600).
+   * This option requires an owner to be set to be active.
    *
-   * Default: 0644.
+   * Default: 0400.
    */
   mode?: number
 }
@@ -1763,8 +1764,9 @@ export class Container extends BaseClient {
    *
    * Default: false.
    * @param opts.mode Permission given to the mounted secret (e.g., 0600).
+   * This option requires an owner to be set to be active.
    *
-   * Default: 0644.
+   * Default: 0400.
    */
   withMountedSecret(
     path: string,
