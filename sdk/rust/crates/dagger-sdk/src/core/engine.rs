@@ -12,7 +12,7 @@ impl Engine {
     }
 
     async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
-        let cli = Downloader::new(DAGGER_ENGINE_VERSION.into())?
+        let cli = Downloader::new(DAGGER_ENGINE_VERSION.into())
             .get_cli()
             .await?;
 

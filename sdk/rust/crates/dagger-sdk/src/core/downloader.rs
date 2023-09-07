@@ -12,6 +12,8 @@ use sha2::Digest;
 use tar::Archive;
 use tempfile::tempfile;
 
+use crate::errors::DaggerError;
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct Platform {
@@ -20,7 +22,7 @@ pub struct Platform {
 }
 
 impl Platform {
-    pub fn from_system() -> eyre::Result<Self> {
+    pub fn from_system() -> Platform {
         let platform = platform_info::PlatformInfo::new()
             .expect("Unable to determine platform information, use `dagger run <app> instead`");
         let os_name = platform.sysname().to_string_lossy().to_lowercase();
@@ -32,10 +34,10 @@ impl Platform {
             arch => arch,
         };
 
-        Ok(Self {
+        Self {
             os: os_name,
             arch: normalize_arch.into(),
-        })
+        }
     }
 }
 
@@ -79,11 +81,11 @@ const CLI_BASE_URL: &str = "https://dl.dagger.io/dagger/releases";
 
 #[allow(dead_code)]
 impl Downloader {
-    pub fn new(version: CliVersion) -> eyre::Result<Self> {
-        Ok(Self {
+    pub fn new(version: CliVersion) -> Self {
+        Self {
             version,
-            platform: Platform::from_system()?,
-        })
+            platform: Platform::from_system(),
+        }
     }
 
     pub fn archive_url(&self) -> String {
@@ -121,9 +123,9 @@ impl Downloader {
         Ok(path)
     }
 
-    pub async fn get_cli(&self) -> eyre::Result<PathBuf> {
+    pub async fn get_cli(&self) -> Result<PathBuf, DaggerError> {
         let version = &self.version;
-        let mut cli_bin_path = self.cache_dir()?;
+        let mut cli_bin_path = self.cache_dir().map_err(DaggerError::DownloadClient)?;
         cli_bin_path.push(format!("{CLI_BIN_PREFIX}{version}"));
         if self.platform.os == "windows" {
             cli_bin_path = cli_bin_path.with_extension("exe")
@@ -133,7 +135,8 @@ impl Downloader {
             cli_bin_path = self
                 .download(cli_bin_path)
                 .await
-                .context("failed to download CLI from archive")?;
+                .context("failed to download CLI from archive")
+                .map_err(DaggerError::DownloadClient)?;
         }
 
         Ok(cli_bin_path)
@@ -228,11 +231,7 @@ mod test {
 
     #[tokio::test]
     async fn download() {
-        let cli_path = Downloader::new("0.3.10".into())
-            .unwrap()
-            .get_cli()
-            .await
-            .unwrap();
+        let cli_path = Downloader::new("0.3.10".into()).get_cli().await.unwrap();
 
         assert_eq!(
             Some("dagger-0.3.10"),
