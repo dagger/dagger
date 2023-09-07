@@ -1,7 +1,6 @@
 import contextlib
 import logging
 
-import dagger
 from dagger import Config
 
 from ._engine.conn import Engine, provision_engine
@@ -48,11 +47,12 @@ class Connection(ResourceManager):
         logger.debug("Establishing connection with isolated client")
         async with self.get_stack() as stack:
             engine = await Engine(self.cfg, stack).provision()
-            conn = await engine.client_connection()
-            client = dagger.Client.from_connection(conn)
-            await engine.verify(client)
-            logger.debug("Closing connection with isolated client")
-            return client
+            conn = engine.get_client_connection()
+            return await engine.setup_client(conn)
+
+    async def close(self):
+        logger.debug("Closing connection with isolated client")
+        await super().close()
 
 
 @contextlib.asynccontextmanager
@@ -95,10 +95,8 @@ async def connection(config: Config | None = None):
     """
     logger.debug("Establishing connection with shared client")
     async with provision_engine(config or Config()) as engine:
-        conn = await engine.shared_client_connection()
-        # When called in codegen the generated module could be empty.
-        if hasattr(dagger, "default_client"):
-            await engine.verify(dagger.default_client())
+        conn = engine.get_shared_client_connection()
+        await engine.setup_client(conn)
         yield conn
         logger.debug("Closing connection with shared client")
 
