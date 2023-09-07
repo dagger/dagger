@@ -123,6 +123,7 @@ func (ss *Services) Get(ctx context.Context, svc *Service) (*RunningService, err
 	running, isRunning := ss.running[key]
 	switch {
 	case !isStarting && !isRunning:
+		ss.l.Unlock()
 		return nil, notRunningErr
 	case isRunning:
 		ss.l.Unlock()
@@ -212,36 +213,31 @@ func (ss *Services) Start(ctx context.Context, svc *Service) (*RunningService, e
 		ClientID: clientMetadata.ClientID,
 	}
 
-	ss.l.Lock()
-	starting, isStarting := ss.starting[key]
-	running, isRunning := ss.running[key]
-	switch {
-	case !isStarting && !isRunning:
-		// not starting or running; start it
-		starting = new(sync.WaitGroup)
-		starting.Add(1)
-		defer starting.Done()
-		ss.starting[key] = starting
-	case isRunning:
-		// already running; increment binding count and return
-		ss.bindings[key]++
-		ss.l.Unlock()
-		return running, nil
-	case isStarting:
-		// already starting; wait for the attempt to finish and check if it
-		// succeeded
-		ss.l.Unlock()
-		starting.Wait()
+dance:
+	for {
 		ss.l.Lock()
-		running, didStart := ss.running[key]
-		if didStart {
-			// starting succeeded as normal; return the isntance
+		starting, isStarting := ss.starting[key]
+		running, isRunning := ss.running[key]
+		switch {
+		case isRunning:
+			// already running; increment binding count and return
+			ss.bindings[key]++
 			ss.l.Unlock()
 			return running, nil
+		case isStarting:
+			// already starting; wait for the attempt to finish and try again
+			ss.l.Unlock()
+			starting.Wait()
+		default:
+			// not starting or running; start it
+			starting = new(sync.WaitGroup)
+			starting.Add(1)
+			defer starting.Done()
+			ss.starting[key] = starting
+			ss.l.Unlock()
+			break dance // :skeleton:
 		}
-		// starting didn't work; give it another go (this might just error again)
 	}
-	ss.l.Unlock()
 
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
@@ -249,7 +245,7 @@ func (ss *Services) Start(ctx context.Context, svc *Service) (*RunningService, e
 		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 	}
 
-	running, err = svc.Start(svcCtx, ss.bk, ss)
+	running, err := svc.Start(svcCtx, ss.bk, ss)
 	if err != nil {
 		stop()
 		ss.l.Lock()
@@ -293,17 +289,17 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 	running, isRunning := ss.running[key]
 	switch {
 	case isRunning:
-		// already running; increment binding count and return
+		// running; stop it
 		return ss.stop(ctx, running)
 	case isStarting:
-		// already starting; wait for the attempt to finish and then stop it
+		// starting; wait for the attempt to finish and then stop it
 		ss.l.Unlock()
 		starting.Wait()
 		ss.l.Lock()
 
 		running, didStart := ss.running[key]
 		if didStart {
-			// starting succeeded as normal; return the isntance
+			// starting succeeded as normal; now stop it
 			return ss.stop(ctx, running)
 		}
 
