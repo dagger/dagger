@@ -118,28 +118,20 @@ func (ss *Services) Get(ctx context.Context, svc *Service) (*RunningService, err
 
 	notRunningErr := fmt.Errorf("service %s is not running", network.HostHash(dig))
 
-	ss.l.Lock()
-	starting, isStarting := ss.starting[key]
-	running, isRunning := ss.running[key]
-	switch {
-	case !isStarting && !isRunning:
-		ss.l.Unlock()
-		return nil, notRunningErr
-	case isRunning:
-		ss.l.Unlock()
-		return running, nil
-	case isStarting:
-		ss.l.Unlock()
-		starting.Wait()
+	for {
 		ss.l.Lock()
-		running, isRunning = ss.running[key]
+		starting, isStarting := ss.starting[key]
+		running, isRunning := ss.running[key]
 		ss.l.Unlock()
-		if isRunning {
+
+		switch {
+		case isRunning:
 			return running, nil
+		case isStarting:
+			starting.Wait()
+		default:
+			return nil, notRunningErr
 		}
-		return nil, notRunningErr
-	default:
-		return nil, fmt.Errorf("internal error: unexpected state")
 	}
 }
 
