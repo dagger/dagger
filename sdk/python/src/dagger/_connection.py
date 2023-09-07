@@ -49,15 +49,10 @@ class Connection(ResourceManager):
         async with self.get_stack() as stack:
             engine = await Engine(self.cfg, stack).provision()
             conn = await engine.client_connection()
-            self.client = dagger.Client.from_connection(conn)
-            await engine.verify(self.client)
+            client = dagger.Client.from_connection(conn)
+            await engine.verify(client)
             logger.debug("Closing connection with isolated client")
-            return self.client
-
-    async def __aexit__(self, *args):
-        logger.debug("Stopping client session")
-        await self.client.stop(timeout=self.cfg.stop_timeout)
-        await super().__aexit__(*args)
+            return client
 
 
 @contextlib.asynccontextmanager
@@ -105,8 +100,6 @@ async def connection(config: Config | None = None):
         if hasattr(dagger, "default_client"):
             await engine.verify(dagger.default_client())
         yield conn
-        if hasattr(dagger, "default_client"):
-            await dagger.default_client().stop(timeout=engine.cfg.stop_timeout)
         logger.debug("Closing connection with shared client")
 
 
