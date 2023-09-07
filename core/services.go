@@ -3,13 +3,13 @@ package core
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
@@ -73,23 +73,25 @@ func NewServices(bk *buildkit.Client) *Services {
 	}
 }
 
-func (ss *Services) Shutdown(ctx context.Context) error {
+func (ss *Services) StopClient(ctx context.Context, client *engine.ClientMetadata) error {
 	ss.l.Lock()
 	defer ss.l.Unlock()
 
 	eg := new(errgroup.Group)
 	for _, svc := range ss.running {
+		if svc.Key.ClientID != client.ClientID {
+			continue
+		}
+
 		svc := svc
 		eg.Go(func() error {
-			log.Println("!!! STOPPING", svc.Host)
+			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
 			if err := svc.Stop(ctx); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil
 		})
 	}
-
-	defer log.Println("!!! DONE SHUTTING DOWN")
 
 	return eg.Wait()
 }

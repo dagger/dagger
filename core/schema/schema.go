@@ -9,6 +9,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
@@ -90,8 +91,8 @@ func (s *MergedSchemas) Schema() *graphql.Schema {
 	return s.compiledSchema
 }
 
-func (s *MergedSchemas) Shutdown(ctx context.Context) error {
-	return s.services.Shutdown(ctx)
+func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
+	return s.services.StopClient(ctx, client)
 }
 
 func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {

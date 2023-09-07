@@ -302,8 +302,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 }
 
 func (c *Client) Close() (rerr error) {
+	// shutdown happens outside of c.closeMu, since it requires a connection
+	if err := c.shutdownServer(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	}
+
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
+
 	select {
 	case <-c.closeCtx.Done():
 		// already closed
@@ -321,8 +327,6 @@ func (c *Client) Close() (rerr error) {
 		})
 		rerr = errors.Join(rerr, err)
 	}
-
-	c.shutdownServer()
 
 	c.closeRequests()
 
@@ -363,14 +367,14 @@ func (c *Client) shutdownServer() error {
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("new request: %w", err)
 	}
 
 	req.SetBasicAuth(c.SecretToken, "")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("do shutdown: %w", err)
 	}
 
 	return resp.Body.Close()

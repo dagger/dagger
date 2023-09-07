@@ -232,7 +232,11 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 			Schema: srv.schema.Schema(),
 		}))
 		mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			srv.schema.Shutdown(req.Context())
+			ctx := req.Context()
+			bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
+			if err := srv.schema.ShutdownClient(ctx, clientMetadata); err != nil {
+				bklog.G(ctx).WithError(err).Error("failed to shutdown")
+			}
 		}))
 		mux.ServeHTTP(w, req)
 	})
