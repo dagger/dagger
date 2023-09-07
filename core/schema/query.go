@@ -1,11 +1,8 @@
 package schema
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/blang/semver"
 	"github.com/vito/progrock"
@@ -36,7 +33,6 @@ func (s *querySchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"pipeline":                  ToResolver(s.pipeline),
 			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),
-			"stop":                      ToResolver(s.stop),
 		},
 	}
 }
@@ -113,29 +109,4 @@ func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query
 	}
 
 	return true, nil
-}
-
-type stopArgs struct {
-	Timeout int
-}
-
-func (s *querySchema) stop(ctx *core.Context, _ *core.Query, args stopArgs) (bool, error) {
-	if args.Timeout > 0 {
-		dur := time.Duration(args.Timeout) * time.Second
-
-		var cancel func()
-		ctx.Context, cancel = context.WithTimeout(ctx.Context, dur)
-		defer cancel()
-	}
-
-	var canceled bool
-	if err := s.services.Shutdown(ctx); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			canceled = false
-		} else {
-			return false, fmt.Errorf("shutdown services: %w", err)
-		}
-	}
-
-	return canceled, nil
 }

@@ -310,6 +310,7 @@ func (c *Client) Close() (rerr error) {
 		return nil
 	default:
 	}
+
 	if len(c.upstreamCacheOptions) > 0 {
 		cacheExportCtx, cacheExportCancel := context.WithTimeout(c.internalCtx, 600*time.Second)
 		defer cacheExportCancel()
@@ -320,6 +321,8 @@ func (c *Client) Close() (rerr error) {
 		})
 		rerr = errors.Join(rerr, err)
 	}
+
+	c.shutdownServer()
 
 	c.closeRequests()
 
@@ -352,6 +355,25 @@ func (c *Client) Close() (rerr error) {
 	}
 
 	return rerr
+}
+
+func (c *Client) shutdownServer() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
+	if err != nil {
+		return err
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	return resp.Body.Close()
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {

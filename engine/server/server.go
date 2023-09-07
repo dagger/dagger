@@ -231,6 +231,9 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		mux.Handle("/query", NewHandler(&HandlerConfig{
 			Schema: srv.schema.Schema(),
 		}))
+		mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			srv.schema.Shutdown(req.Context())
+		}))
 		mux.ServeHTTP(w, req)
 	})
 }

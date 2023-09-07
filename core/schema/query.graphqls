@@ -14,20 +14,6 @@ type Query {
     "The SDK's required version."
     version: String!
   ): Boolean!
-
-  """
-  Stops all resources, with an optional timeout.
-
-  Returns true if all resources were stopped.
-
-  Experimental. This should be called by the SDK prior to closing the
-  underlying connection. It helps ensure that the client receives progress for
-  everything shutting down (e.g. services).
-  """
-  stop(
-    "Seconds to wait before giving up."
-    timeout: Int
-  ): Boolean!
 }
 
 """
