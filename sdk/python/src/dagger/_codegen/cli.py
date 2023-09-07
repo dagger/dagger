@@ -21,7 +21,7 @@ async def generate(output: anyio.Path | None = None):
     """Generate a client for the Dagger API."""
     import dagger
 
-    async with await dagger.connect() as conn:
+    async with dagger.connection() as conn:
         schema = await conn.session.get_schema()
 
     code = generator.generate(schema)

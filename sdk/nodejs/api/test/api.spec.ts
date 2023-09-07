@@ -341,7 +341,7 @@ describe("NodeJS SDK api", function () {
 
     await connect(
       async (client) => {
-        const seededPlatformVariants: Array<Container> = []
+        const seededPlatformVariants = []
 
         for (const platform in platforms) {
           const name = platforms[platform]
@@ -364,7 +364,7 @@ describe("NodeJS SDK api", function () {
           platformVariants: seededPlatformVariants,
         })
 
-        fs.unlinkSync(exportID)
+        await fs.unlinkSync(exportID)
         assert.strictEqual(isSuccess, true)
       },
       { LogOutput: process.stderr }
@@ -392,7 +392,7 @@ describe("NodeJS SDK api", function () {
 
     await connect(
       async (client) => {
-        const ctr = client
+        const ctr = await client
           .container()
           .from("alpine:3.16.2")
           .withEnvVariable("FOO", "BAR")

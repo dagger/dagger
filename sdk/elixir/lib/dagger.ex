@@ -43,18 +43,7 @@ defmodule Dagger do
   @doc """
   Disconnecting Dagger.
   """
-  def close(%Dagger.Client{client: inner} = client) do
-    case Dagger.Client.stop(client, timeout: 10) do
-      {:ok, true} ->
-        :ok
-
-      {:ok, false} ->
-        IO.warn("timed out while stopping")
-
-      error ->
-        IO.warn("failed to stop client: #{inspect(error)}")
-    end
-
-    Dagger.Internal.Client.close(inner)
+  def close(%Dagger.Client{client: client}) do
+    Dagger.Internal.Client.close(client)
   end
 end

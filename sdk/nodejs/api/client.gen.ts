@@ -661,13 +661,6 @@ export type ClientSocketOpts = {
   id?: SocketID
 }
 
-export type ClientStopOpts = {
-  /**
-   * Seconds to wait before giving up.
-   */
-  timeout?: number
-}
-
 /**
  * A unique identifier for a secret.
  */
@@ -3470,7 +3463,6 @@ export class ProjectCommandFlag extends BaseClient {
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
-  private readonly _stop?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3478,14 +3470,12 @@ export class Client extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _checkVersionCompatibility?: boolean,
-    _defaultPlatform?: Platform,
-    _stop?: boolean
+    _defaultPlatform?: Platform
   ) {
     super(parent)
 
     this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
-    this._stop = _stop
   }
 
   /**
@@ -3760,31 +3750,6 @@ export class Client extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Stops all resources, with an optional timeout.
-   *
-   * Returns true if all resources were stopped.
-   *
-   * Experimental. This should be called by the SDK prior to closing the
-   * underlying connection. It helps ensure that the client receives progress for
-   * everything shutting down (e.g. services).
-   * @param opts.timeout Seconds to wait before giving up.
-   */
-  async stop(opts?: ClientStopOpts): Promise<boolean> {
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "stop",
-          args: { ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**

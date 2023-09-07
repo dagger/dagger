@@ -91,11 +91,6 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 
 // Close the engine connection
 func (c *Client) Close() error {
-	if _, err := c.Stop(context.Background(), StopOpts{
-		Timeout: 10, // seconds
-	}); err != nil {
-		return err
-	}
 	if c.conn != nil {
 		return c.conn.Close()
 	}

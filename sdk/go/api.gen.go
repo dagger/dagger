@@ -2640,34 +2640,6 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 }
 
-// StopOpts contains options for Client.Stop
-type StopOpts struct {
-	// Seconds to wait before giving up.
-	Timeout int
-}
-
-// Stops all resources, with an optional timeout.
-//
-// Returns true if all resources were stopped.
-//
-// Experimental. This should be called by the SDK prior to closing the
-// underlying connection. It helps ensure that the client receives progress for
-// everything shutting down (e.g. services).
-func (r *Client) Stop(ctx context.Context, opts ...StopOpts) (bool, error) {
-	q := r.q.Select("stop")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `timeout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Timeout) {
-			q = q.Arg("timeout", opts[i].Timeout)
-		}
-	}
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
 	q *querybuilder.Selection

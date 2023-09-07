@@ -2749,12 +2749,6 @@ pub struct QuerySocketOpts {
     #[builder(setter(into, strip_option), default)]
     pub id: Option<SocketId>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct QueryStopOpts {
-    /// Seconds to wait before giving up.
-    #[builder(setter(into, strip_option), default)]
-    pub timeout: Option<isize>,
-}
 impl Query {
     /// Constructs a cache volume for a given cache key.
     ///
@@ -3108,35 +3102,6 @@ impl Query {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
-    }
-    /// Stops all resources, with an optional timeout.
-    /// Returns true if all resources were stopped.
-    /// Experimental. This should be called by the SDK prior to closing the
-    /// underlying connection. It helps ensure that the client receives progress for
-    /// everything shutting down (e.g. services).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn stop(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("stop");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Stops all resources, with an optional timeout.
-    /// Returns true if all resources were stopped.
-    /// Experimental. This should be called by the SDK prior to closing the
-    /// underlying connection. It helps ensure that the client receives progress for
-    /// everything shutting down (e.g. services).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn stop_opts(&self, opts: QueryStopOpts) -> Result<bool, DaggerError> {
-        let mut query = self.selection.select("stop");
-        if let Some(timeout) = opts.timeout {
-            query = query.arg("timeout", timeout);
-        }
-        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]

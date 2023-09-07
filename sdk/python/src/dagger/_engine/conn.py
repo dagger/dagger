@@ -9,7 +9,6 @@ from typing_extensions import Self
 
 import dagger
 from dagger.client._session import (
-    BaseConnection,
     ConnectConfig,
     ConnectParams,
     SharedConnection,
@@ -93,31 +92,15 @@ class Engine:
         # Get from cache or download.
         return await Downloader(progress=self.progress)
 
-    async def setup_client(self, conn: BaseConnection) -> dagger.Client:
-        """Setup client instance from connection."""
-        await self.progress.update("Establishing connection to the API server")
-        conn = await self.stack.enter_async_context(conn)
+    async def shared_client_connection(self) -> SharedConnection:
+        await self.progress.update("Establishing global connection to Engine")
+        return await self.stack.enter_async_context(self.get_shared_client_connection())
 
-        client = dagger.Client.from_connection(conn)
-        self.stack.push_async_callback(self.progress.update, "Disconnecting")
-        self.stack.push_async_callback(self.stop, client)
-
-        return await self.verify(client)
-
-    async def stop(self, client: dagger.Client) -> bool:
-        """Stop all API resources."""
-        await self.progress.update("Stopping all resources")
-        cfg = self.connect_config
-
-        # Use same timeout as the one used to connect.
-        timeout = None
-        if cfg and cfg.timeout and cfg.timeout.connect is not None:
-            timeout = int(cfg.timeout.connect)
-
-        return await client.stop(timeout=timeout)
+    async def client_connection(self) -> SingleConnection:
+        await self.progress.update("Establishing connection to Engine")
+        return await self.stack.enter_async_context(self.get_client_connection())
 
     def get_shared_client_connection(self) -> SharedConnection:
-        """Global client connection to the GraphQL server."""
         assert self.connect_params
         assert self.connect_config
         return (
@@ -127,7 +110,6 @@ class Engine:
         )
 
     def get_client_connection(self) -> SingleConnection:
-        """Isolated client connection to the GraphQL server."""
         assert self.connect_params
         assert self.connect_config
         return SingleConnection(
