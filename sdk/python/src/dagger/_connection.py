@@ -49,10 +49,15 @@ class Connection(ResourceManager):
         async with self.get_stack() as stack:
             engine = await Engine(self.cfg, stack).provision()
             conn = await engine.client_connection()
-            client = dagger.Client.from_connection(conn)
-            await engine.verify(client)
+            self.client = dagger.Client.from_connection(conn)
+            await engine.verify(self.client)
             logger.debug("Closing connection with isolated client")
-            return client
+            return self.client
+
+    async def __aexit__(self, *args):
+        logger.debug("Stopping client session")
+        await self.client.stop(timeout=self.cfg.stop_timeout)
+        await super().__aexit__(*args)
 
 
 @contextlib.asynccontextmanager

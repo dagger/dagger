@@ -61,12 +61,16 @@ class Config(ConnectConfig):
         The maximum time in seconds for the execution of a request before an
         ExecuteTimeoutError is raised. Passing None results in waiting forever for a
         response (default).
+    stop_timeout:
+        The maximum time in seconds for stopping the engine and releasing resources
+        before client close, or None to disable. Defaults to 10 seconds.
     """
 
     workdir: PathLike[str] | str = ""
     config_path: PathLike[str] | str = ""
     log_output: TextIO | None = None
     execute_timeout: Any = UNSET
+    stop_timeout: int = 10
     console: Console = field(init=False)
 
     def __post_init__(self):
