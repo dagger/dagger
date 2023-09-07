@@ -166,42 +166,50 @@ func LoadCircleCILabels() ([]Label, error) {
 		},
 	}
 
-	appendLabel := func(label string, envVar []string, labels []Label) []Label {
+	firstEnvLabel := func(label string, envVar []string) (Label, bool) {
 		for _, envVar := range envVar {
 			triggererLogin := os.Getenv(envVar)
 			if triggererLogin != "" {
-				return append(labels, Label{
+				return Label{
 					Name:  label,
 					Value: triggererLogin,
-				})
+				}, true
 			}
 		}
-		return labels
+		return Label{}, false
 	}
 
 	// environment variables beginning with "CIRCLE_PIPELINE_"  are set in `.circle-ci` pipeline config
 	pipelineNumber := []string{
 		"CIRCLE_PIPELINE_NUMBER",
 	}
-	labels = appendLabel("dagger.io/vcs.change.number", pipelineNumber, labels)
+	if label, found := firstEnvLabel("dagger.io/vcs.change.number", pipelineNumber); found {
+		labels = append(labels, label)
+	}
 
 	triggererLabels := []string{
 		"CIRCLE_USERNAME",               // all, but account needs to exist on circleCI
 		"CIRCLE_PROJECT_USERNAME",       // github / bitbucket
 		"CIRCLE_PIPELINE_TRIGGER_LOGIN", // gitlab
 	}
-	labels = appendLabel("dagger.io/vcs.triggerer.login", triggererLabels, labels)
+	if label, found := firstEnvLabel("dagger.io/vcs.triggerer.login", triggererLabels); found {
+		labels = append(labels, label)
+	}
 
 	repoNameLabels := []string{
 		"CIRCLE_PROJECT_REPONAME",        // github / bitbucket
 		"CIRCLE_PIPELINE_REPO_FULL_NAME", // gitlab
 	}
-	labels = appendLabel("dagger.io/vcs.repo.full_name", repoNameLabels, labels)
+	if label, found := firstEnvLabel("dagger.io/vcs.repo.full_name", repoNameLabels); found {
+		labels = append(labels, label)
+	}
 
 	vcsChangeURL := []string{
 		"CIRCLE_PULL_REQUEST", // github / bitbucket, only from forks
 	}
-	labels = appendLabel("dagger.io/vcs.change.url", vcsChangeURL, labels)
+	if label, found := firstEnvLabel("dagger.io/vcs.change.url", vcsChangeURL); found {
+		labels = append(labels, label)
+	}
 
 	pipelineRepoURL := os.Getenv("CIRCLE_PIPELINE_REPO_URL")
 	repositoryURL := os.Getenv("CIRCLE_REPOSITORY_URL")
