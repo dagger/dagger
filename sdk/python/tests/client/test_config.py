@@ -31,3 +31,13 @@ def test_connect_and_execute_timeout():
     assert cfg.timeout.connect == 15
     assert cfg.timeout.read == 3600
     assert cfg.timeout.write == 3600
+
+
+def test_stop_timeout():
+    cfg = dagger.Config(stop_timeout=42)
+    assert cfg.stop_timeout == 42
+
+
+def test_stop_timeout_default():
+    cfg = dagger.Config()
+    assert cfg.stop_timeout == 10

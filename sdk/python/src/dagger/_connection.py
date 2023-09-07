@@ -105,6 +105,8 @@ async def connection(config: Config | None = None):
         if hasattr(dagger, "default_client"):
             await engine.verify(dagger.default_client())
         yield conn
+        if hasattr(dagger, "default_client"):
+            await dagger.default_client().stop(timeout=engine.cfg.stop_timeout)
         logger.debug("Closing connection with shared client")
 
 
