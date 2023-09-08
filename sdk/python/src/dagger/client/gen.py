@@ -174,7 +174,13 @@ class Container(Type):
             Target build stage to build.
         secrets:
             Secrets to pass to the build.
-            They will be mounted at /run/secrets/[secret-name].
+            They will be mounted at /run/secrets/[secret-name] in the build
+            container
+            They can be accessed in the Dockerfile using the "secret" mount
+            type
+            and mount path /run/secrets/[secret-name]
+            e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat
+            /run/secrets/my-secret)"
         """
         _args = [
             Arg("context", context),
@@ -3134,6 +3140,29 @@ class Socket(Type):
         return "socket"
 
 
+_client = Client()
+cache_volume = _client.cache_volume
+check_version_compatibility = _client.check_version_compatibility
+container = _client.container
+default_platform = _client.default_platform
+directory = _client.directory
+file = _client.file
+git = _client.git
+host = _client.host
+http = _client.http
+pipeline = _client.pipeline
+project = _client.project
+project_command = _client.project_command
+secret = _client.secret
+set_secret = _client.set_secret
+socket = _client.socket
+
+
+def default_client() -> Client:
+    """Return the default client instance."""
+    return _client
+
+
 __all__ = [
     "BuildArg",
     "CacheID",
@@ -3166,4 +3195,20 @@ __all__ = [
     "SecretID",
     "Socket",
     "SocketID",
+    "cache_volume",
+    "check_version_compatibility",
+    "container",
+    "default_client",
+    "default_platform",
+    "directory",
+    "file",
+    "git",
+    "host",
+    "http",
+    "pipeline",
+    "project",
+    "project_command",
+    "secret",
+    "set_secret",
+    "socket",
 ]

@@ -1344,14 +1344,14 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 
 	// annotate the container as a service so they can be treated differently
 	// in the UI
-	rec := progrock.RecorderFromContext(ctx).
+	rec := progrock.FromContext(ctx).
 		WithGroup(
 			fmt.Sprintf("service %s", hostname),
 			progrock.Weak(),
 		)
 
 	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = progrock.RecorderToContext(svcCtx, rec)
+	svcCtx = progrock.ToContext(svcCtx, rec)
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
 	checked := make(chan error, 1)

@@ -127,15 +127,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		cloudURL = tel.URL()
 		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
-	// NB(vito): use a _passthrough_ recorder at this layer, since we don't want
-	// to initialize a group; that's handled by the other side.
-	//
-	// TODO: this is pretty confusing and could probably be refactored. afaict
-	// it's split up this way because we need the engine name to be part of the
-	// root group labels, but maybe that could be handled differently.
-	recorder := progrock.NewPassthroughRecorder(progMultiW)
-	c.Recorder = recorder
-	ctx = progrock.RecorderToContext(ctx, c.Recorder)
+	c.Recorder = progrock.NewRecorder(progMultiW)
+	ctx = progrock.ToContext(ctx, c.Recorder)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
@@ -154,7 +147,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	initGroup := progrock.RecorderFromContext(ctx).WithGroup("init", progrock.Weak())
+	initGroup := progrock.FromContext(ctx).WithGroup("init", progrock.Weak())
 
 	loader := initGroup.Vertex("starting-engine", "connect")
 	defer func() {
@@ -292,7 +285,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		defer cancel()
 		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 		if innerErr != nil {
-			recorder.Debug("Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+			c.Recorder.Debug("Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
 		}
 		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))

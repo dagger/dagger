@@ -231,4 +231,29 @@ defmodule Dagger.ClientTest do
 
     assert {:ok, "spam\n"} = Container.stdout(container)
   end
+
+  test "calling id before passing constructing arg", %{client: client} do
+    dockerfile = """
+    FROM alpine
+    RUN --mount=type=secret,id=the-secret echo "hello ${THE_SECRET}"
+    """
+
+    Elixir.File.write!("Dockerfile", dockerfile)
+
+    secret =
+      client
+      |> Client.set_secret("the-secret", "abcd")
+
+    assert {:ok, _} =
+             client
+             |> Client.host()
+             |> Host.directory(".")
+             |> Directory.docker_build(dockerfile: "Dockerfile", secrets: [secret])
+             |> Sync.sync()
+
+    Elixir.File.rm_rf!("Dockerfile")
+
+    container = Client.container(client)
+    assert %Container{} = Client.container(client, id: container)
+  end
 end

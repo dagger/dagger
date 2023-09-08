@@ -43,10 +43,10 @@ This Go program imports the Dagger SDK and defines a `main()` function for the p
 Run the pipeline by executing the command below from the application directory:
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
-Dagger resolves the pipeline and outputs a string similar to the one below.
+Dagger performs the operations defined in the pipeline script, logging each operation to the console. Once the pipeline is resolved, it outputs a string similar to the one below.
 
 ```shell
 Hello from Dagger and go version go1.19.5 linux/amd64
@@ -69,10 +69,10 @@ This Node.js script imports the Dagger SDK and defines an asynchronous function.
 Run the pipeline by executing the command below from the application directory:
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
-Dagger resolves the pipeline and outputs a string similar to the one below.
+Dagger performs the operations defined in the pipeline script, logging each operation to the console. Once the pipeline is resolved, it outputs a string similar to the one below.
 
 ```shell
 Hello from Dagger and Node v16.18.1
@@ -95,10 +95,10 @@ This Python script imports the Dagger SDK and defines an asynchronous function. 
 Run the pipeline by executing the command below from the application directory:
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
-Dagger resolves the pipeline and outputs a string similar to the one below.
+Dagger performs the operations defined in the pipeline script, logging each operation to the console. Once the pipeline is resolved, it outputs a string similar to the one below.
 
 ```shell
 Hello from Dagger and Python v3.11.1

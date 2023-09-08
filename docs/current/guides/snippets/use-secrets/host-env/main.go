@@ -11,6 +11,11 @@ import (
 func main() {
 	// initialize Dagger client
 	ctx := context.Background()
+
+	if os.Getenv("GH_SECRET") == "" {
+		panic("Environment variable GH_SECRET is not set")
+	}
+
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		panic(err)

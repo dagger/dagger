@@ -29,6 +29,7 @@ This tutorial assumes that:
 - You have a basic understanding of Azure DevOps and Azure Container Instances. If not, learn about [Azure DevOps](https://learn.microsoft.com/en-us/azure/devops) and [Azure Container Instances](https://azure.microsoft.com/en-us/products/container-instances).
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have the Azure CLI installed. If not, [install the Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
 - You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
 - You have an Azure subscription with "Owner" (or higher) privileges. If not, [register for an Azure account](https://azure.microsoft.com/en-us/free/).
@@ -195,21 +196,21 @@ Once credentials are configured, test the Dagger pipeline by running the command
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>
@@ -285,10 +286,10 @@ This also means that it's very easy to move your Dagger pipeline from your local
   </TabItem>
   </Tabs>
 
-  This Azure Pipeline runs on every commit to the repository `master` branch. It consists of a single job with three steps, as below:
+  This Azure Pipeline runs on every commit to the repository `master` branch. It consists of a single job with four steps, as below:
     - The first step uses a language-specific task to download and install the programing language on the CI runner.
-    - The second step downloads and installs the required dependencies (such as the Dagger SDK and the Azure SDK) on the CI runner.
-    - The third step adds executes the Dagger pipeline. It also explicity adds those variables defined as secret to the CI runner environment (other variables are automatically injected by Azure Pipelines).
+    - The second and third steps download and install the required dependencies (such as the Dagger SDK, the Azure SDK and the Dagger CLI) on the CI runner.
+    - The fourth step adds executes the Dagger pipeline. It also explicity adds those variables defined as secret to the CI runner environment (other variables are automatically injected by Azure Pipelines).
 
   :::tip
   Azure Pipelines automatically transfers pipeline variables to the CI runner environment, except for those marked as secret. Secret variables need to be explicitly defined in the Azure Pipelines configuration file.

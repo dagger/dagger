@@ -54,7 +54,7 @@ def get_root(module: types.ModuleType) -> type | None:
 def create_type(
     name: str,
     fields: list[StrawberryField],
-    extend=False,  # noqa: FBT002
+    extend=False,
 ) -> type:
     """Create a strawberry type dynamically."""
     namespace = {}

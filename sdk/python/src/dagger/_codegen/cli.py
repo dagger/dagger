@@ -1,10 +1,6 @@
-import contextlib
 import sys
 
 import anyio
-from graphql import GraphQLSchema
-
-import dagger
 
 from . import generator
 
@@ -23,7 +19,11 @@ def main():
 
 async def generate(output: anyio.Path | None = None):
     """Generate a client for the Dagger API."""
-    schema = await _get_schema()
+    import dagger
+
+    async with dagger.connection() as conn:
+        schema = await conn.session.get_schema()
+
     code = generator.generate(schema)
 
     if output:
@@ -32,16 +32,6 @@ async def generate(output: anyio.Path | None = None):
         sys.stdout.write(f"Client generated successfully to {output}\n")
     else:
         sys.stdout.write(f"{code}\n")
-
-
-async def _get_schema() -> GraphQLSchema:
-    # Get session because codegen is generating the client.
-    async with contextlib.aclosing(dagger.Connection()) as connection:
-        session = await connection.start()
-        if not session.client.schema:
-            msg = "Schema not initialized. Make sure the dagger engine is running."
-            raise dagger.DaggerError(msg)
-        return session.client.schema
 
 
 async def _update_gitattributes(output: anyio.Path) -> None:

@@ -12,9 +12,10 @@
 .dagger:
   extends: [.docker]
   before_script:
-    - apk add docker-cli
+    - apk add docker-cli curl
+    - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 build:
   extends: [.dagger]
   script:
     - pip install .
-    - python main.py
+    - dagger run python main.py

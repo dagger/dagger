@@ -18,6 +18,11 @@ impl Into<CacheId> for String {
         CacheId(self.clone())
     }
 }
+impl CacheId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ContainerId(pub String);
 impl Into<ContainerId> for &str {
@@ -28,6 +33,11 @@ impl Into<ContainerId> for &str {
 impl Into<ContainerId> for String {
     fn into(self) -> ContainerId {
         ContainerId(self.clone())
+    }
+}
+impl ContainerId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -42,6 +52,11 @@ impl Into<DirectoryId> for String {
         DirectoryId(self.clone())
     }
 }
+impl DirectoryId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FileId(pub String);
 impl Into<FileId> for &str {
@@ -52,6 +67,11 @@ impl Into<FileId> for &str {
 impl Into<FileId> for String {
     fn into(self) -> FileId {
         FileId(self.clone())
+    }
+}
+impl FileId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -66,6 +86,11 @@ impl Into<Platform> for String {
         Platform(self.clone())
     }
 }
+impl Platform {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ProjectCommandId(pub String);
 impl Into<ProjectCommandId> for &str {
@@ -76,6 +101,11 @@ impl Into<ProjectCommandId> for &str {
 impl Into<ProjectCommandId> for String {
     fn into(self) -> ProjectCommandId {
         ProjectCommandId(self.clone())
+    }
+}
+impl ProjectCommandId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -90,6 +120,11 @@ impl Into<ProjectId> for String {
         ProjectId(self.clone())
     }
 }
+impl ProjectId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(pub String);
 impl Into<SecretId> for &str {
@@ -102,6 +137,11 @@ impl Into<SecretId> for String {
         SecretId(self.clone())
     }
 }
+impl SecretId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SocketId(pub String);
 impl Into<SocketId> for &str {
@@ -112,6 +152,11 @@ impl Into<SocketId> for &str {
 impl Into<SocketId> for String {
     fn into(self) -> SocketId {
         SocketId(self.clone())
+    }
+}
+impl SocketId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
     }
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -152,7 +197,10 @@ pub struct ContainerBuildOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
     /// Secrets to pass to the build.
-    /// They will be mounted at /run/secrets/[secret-name].
+    /// They will be mounted at /run/secrets/[secret-name] in the build container
+    /// They can be accessed in the Dockerfile using the "secret" mount type
+    /// and mount path /run/secrets/[secret-name]
+    /// e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)"
     #[builder(setter(into, strip_option), default)]
     pub secrets: Option<Vec<SecretId>>,
     /// Target build stage to build.
@@ -373,9 +421,15 @@ impl Container {
     ///
     /// * `context` - Directory context used by the Dockerfile.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn build(&self, context: DirectoryId) -> Container {
+    pub fn build(&self, context: Directory) -> Container {
         let mut query = self.selection.select("build");
-        query = query.arg("context", context);
+        query = query.arg_lazy(
+            "context",
+            Box::new(move || {
+                let context = context.clone();
+                Box::pin(async move { context.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -388,9 +442,15 @@ impl Container {
     ///
     /// * `context` - Directory context used by the Dockerfile.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn build_opts<'a>(&self, context: DirectoryId, opts: ContainerBuildOpts<'a>) -> Container {
+    pub fn build_opts<'a>(&self, context: Directory, opts: ContainerBuildOpts<'a>) -> Container {
         let mut query = self.selection.select("build");
-        query = query.arg("context", context);
+        query = query.arg_lazy(
+            "context",
+            Box::new(move || {
+                let context = context.clone();
+                Box::pin(async move { context.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(dockerfile) = opts.dockerfile {
             query = query.arg("dockerfile", dockerfile);
         }
@@ -594,9 +654,15 @@ impl Container {
     ///
     /// * `source` - File to read the container from.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn import(&self, source: FileId) -> Container {
+    pub fn import(&self, source: File) -> Container {
         let mut query = self.selection.select("import");
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -611,9 +677,15 @@ impl Container {
     ///
     /// * `source` - File to read the container from.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn import_opts<'a>(&self, source: FileId, opts: ContainerImportOpts<'a>) -> Container {
+    pub fn import_opts<'a>(&self, source: File, opts: ContainerImportOpts<'a>) -> Container {
         let mut query = self.selection.select("import");
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(tag) = opts.tag {
             query = query.arg("tag", tag);
         }
@@ -799,10 +871,16 @@ impl Container {
     /// * `path` - Location of the written directory (e.g., "/tmp/directory").
     /// * `directory` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_directory(&self, path: impl Into<String>, directory: DirectoryId) -> Container {
+    pub fn with_directory(&self, path: impl Into<String>, directory: Directory) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg("directory", directory);
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -819,12 +897,18 @@ impl Container {
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        directory: DirectoryId,
+        directory: Directory,
         opts: ContainerWithDirectoryOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg("directory", directory);
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(exclude) = opts.exclude {
             query = query.arg("exclude", exclude);
         }
@@ -1023,10 +1107,16 @@ impl Container {
     /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_file(&self, path: impl Into<String>, source: FileId) -> Container {
+    pub fn with_file(&self, path: impl Into<String>, source: File) -> Container {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1043,12 +1133,18 @@ impl Container {
     pub fn with_file_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: FileId,
+        source: File,
         opts: ContainerWithFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
@@ -1094,10 +1190,16 @@ impl Container {
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_cache(&self, path: impl Into<String>, cache: CacheId) -> Container {
+    pub fn with_mounted_cache(&self, path: impl Into<String>, cache: CacheVolume) -> Container {
         let mut query = self.selection.select("withMountedCache");
         query = query.arg("path", path.into());
-        query = query.arg("cache", cache);
+        query = query.arg_lazy(
+            "cache",
+            Box::new(move || {
+                let cache = cache.clone();
+                Box::pin(async move { cache.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1114,12 +1216,18 @@ impl Container {
     pub fn with_mounted_cache_opts<'a>(
         &self,
         path: impl Into<String>,
-        cache: CacheId,
+        cache: CacheVolume,
         opts: ContainerWithMountedCacheOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedCache");
         query = query.arg("path", path.into());
-        query = query.arg("cache", cache);
+        query = query.arg_lazy(
+            "cache",
+            Box::new(move || {
+                let cache = cache.clone();
+                Box::pin(async move { cache.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(source) = opts.source {
             query = query.arg("source", source);
         }
@@ -1142,14 +1250,16 @@ impl Container {
     /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
     /// * `source` - Identifier of the mounted directory.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_directory(
-        &self,
-        path: impl Into<String>,
-        source: DirectoryId,
-    ) -> Container {
+    pub fn with_mounted_directory(&self, path: impl Into<String>, source: Directory) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1166,12 +1276,18 @@ impl Container {
     pub fn with_mounted_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: DirectoryId,
+        source: Directory,
         opts: ContainerWithMountedDirectoryOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -1188,10 +1304,16 @@ impl Container {
     /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the mounted file.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_file(&self, path: impl Into<String>, source: FileId) -> Container {
+    pub fn with_mounted_file(&self, path: impl Into<String>, source: File) -> Container {
         let mut query = self.selection.select("withMountedFile");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1208,12 +1330,18 @@ impl Container {
     pub fn with_mounted_file_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: FileId,
+        source: File,
         opts: ContainerWithMountedFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedFile");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -1230,10 +1358,16 @@ impl Container {
     /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
     /// * `source` - Identifier of the secret to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_secret(&self, path: impl Into<String>, source: SecretId) -> Container {
+    pub fn with_mounted_secret(&self, path: impl Into<String>, source: Secret) -> Container {
         let mut query = self.selection.select("withMountedSecret");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1250,12 +1384,18 @@ impl Container {
     pub fn with_mounted_secret_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: SecretId,
+        source: Secret,
         opts: ContainerWithMountedSecretOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedSecret");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -1334,12 +1474,18 @@ impl Container {
         &self,
         address: impl Into<String>,
         username: impl Into<String>,
-        secret: SecretId,
+        secret: Secret,
     ) -> Container {
         let mut query = self.selection.select("withRegistryAuth");
         query = query.arg("address", address.into());
         query = query.arg("username", username.into());
-        query = query.arg("secret", secret);
+        query = query.arg_lazy(
+            "secret",
+            Box::new(move || {
+                let secret = secret.clone();
+                Box::pin(async move { secret.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1347,9 +1493,15 @@ impl Container {
         };
     }
     /// Initializes this container from this DirectoryID.
-    pub fn with_rootfs(&self, directory: DirectoryId) -> Container {
+    pub fn with_rootfs(&self, directory: Directory) -> Container {
         let mut query = self.selection.select("withRootfs");
-        query = query.arg("directory", directory);
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1362,10 +1514,16 @@ impl Container {
     ///
     /// * `name` - The name of the secret variable (e.g., "API_SECRET").
     /// * `secret` - The identifier of the secret value.
-    pub fn with_secret_variable(&self, name: impl Into<String>, secret: SecretId) -> Container {
+    pub fn with_secret_variable(&self, name: impl Into<String>, secret: Secret) -> Container {
         let mut query = self.selection.select("withSecretVariable");
         query = query.arg("name", name.into());
-        query = query.arg("secret", secret);
+        query = query.arg_lazy(
+            "secret",
+            Box::new(move || {
+                let secret = secret.clone();
+                Box::pin(async move { secret.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1383,14 +1541,16 @@ impl Container {
     ///
     /// * `alias` - A name that can be used to reach the service from the container
     /// * `service` - Identifier of the service container
-    pub fn with_service_binding(
-        &self,
-        alias: impl Into<String>,
-        service: ContainerId,
-    ) -> Container {
+    pub fn with_service_binding(&self, alias: impl Into<String>, service: Container) -> Container {
         let mut query = self.selection.select("withServiceBinding");
         query = query.arg("alias", alias.into());
-        query = query.arg("service", service);
+        query = query.arg_lazy(
+            "service",
+            Box::new(move || {
+                let service = service.clone();
+                Box::pin(async move { service.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1404,10 +1564,16 @@ impl Container {
     /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
     /// * `source` - Identifier of the socket to forward.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_unix_socket(&self, path: impl Into<String>, source: SocketId) -> Container {
+    pub fn with_unix_socket(&self, path: impl Into<String>, source: Socket) -> Container {
         let mut query = self.selection.select("withUnixSocket");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1424,12 +1590,18 @@ impl Container {
     pub fn with_unix_socket_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: SocketId,
+        source: Socket,
         opts: ContainerWithUnixSocketOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withUnixSocket");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
@@ -1671,9 +1843,15 @@ impl Directory {
     /// # Arguments
     ///
     /// * `other` - Identifier of the directory to compare.
-    pub fn diff(&self, other: DirectoryId) -> Directory {
+    pub fn diff(&self, other: Directory) -> Directory {
         let mut query = self.selection.select("diff");
-        query = query.arg("other", other);
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.id().await.unwrap().quote() })
+            }),
+        );
         return Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -1840,10 +2018,16 @@ impl Directory {
     /// * `path` - Location of the written directory (e.g., "/src/").
     /// * `directory` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_directory(&self, path: impl Into<String>, directory: DirectoryId) -> Directory {
+    pub fn with_directory(&self, path: impl Into<String>, directory: Directory) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg("directory", directory);
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.id().await.unwrap().quote() })
+            }),
+        );
         return Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -1860,12 +2044,18 @@ impl Directory {
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        directory: DirectoryId,
+        directory: Directory,
         opts: DirectoryWithDirectoryOpts<'a>,
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
-        query = query.arg("directory", directory);
+        query = query.arg_lazy(
+            "directory",
+            Box::new(move || {
+                let directory = directory.clone();
+                Box::pin(async move { directory.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(exclude) = opts.exclude {
             query = query.arg("exclude", exclude);
         }
@@ -1885,10 +2075,16 @@ impl Directory {
     /// * `path` - Location of the copied file (e.g., "/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_file(&self, path: impl Into<String>, source: FileId) -> Directory {
+    pub fn with_file(&self, path: impl Into<String>, source: File) -> Directory {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         return Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -1905,12 +2101,18 @@ impl Directory {
     pub fn with_file_opts(
         &self,
         path: impl Into<String>,
-        source: FileId,
+        source: File,
         opts: DirectoryWithFileOpts,
     ) -> Directory {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
@@ -2404,9 +2606,15 @@ impl Project {
         query.execute(self.graphql_client.clone()).await
     }
     /// Initialize this project from the given directory and config path
-    pub fn load(&self, source: DirectoryId, config_path: impl Into<String>) -> Project {
+    pub fn load(&self, source: Directory, config_path: impl Into<String>) -> Project {
         let mut query = self.selection.select("load");
-        query = query.arg("source", source);
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
+            }),
+        );
         query = query.arg("configPath", config_path.into());
         return Project {
             proc: self.proc.clone(),
@@ -2642,9 +2850,15 @@ impl Query {
         };
     }
     /// Loads a file by ID.
-    pub fn file(&self, id: FileId) -> File {
+    pub fn file(&self, id: File) -> File {
         let mut query = self.selection.select("file");
-        query = query.arg("id", id);
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
         return File {
             proc: self.proc.clone(),
             selection: query,
@@ -2828,9 +3042,15 @@ impl Query {
         };
     }
     /// Loads a secret from its ID.
-    pub fn secret(&self, id: SecretId) -> Secret {
+    pub fn secret(&self, id: Secret) -> Secret {
         let mut query = self.selection.select("secret");
-        query = query.arg("id", id);
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
         return Secret {
             proc: self.proc.clone(),
             selection: query,

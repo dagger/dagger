@@ -1,0 +1,35 @@
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+versionFormat: '## sdk/rust/{{.Version}} - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+changeFormat: '- {{.Body}} by @{{.Custom.Author}} in https://github.com/dagger/dagger/pull/{{.Custom.PR}}'
+custom:
+  - key: PR
+    label: GitHub PR
+    type: int
+  - key: Author
+    label: GitHub Author
+    type: string
+kinds:
+  - label: Added
+  - label: Changed
+  - label: Deprecated
+  - label: Fixed
+  - label: Dependencies
+headerFormat: |
+  This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`.[See what changed in that release]](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
+  ⬢ https://crates.io/crates/dagger-sdk/{{ trimPrefix "v" .Version }}
+  📒 https://docs.rs/dagger-sdk/{{ trimPrefix "v" .Version }}/dagger-sdk
+footerFormat: |
+  ### What to do next
+  - Join our [Discord server](https://discord.gg/dagger-io)
+  - Follow us on [Twitter](https://twitter.com/dagger_io)
+newlines:
+  afterChangelogHeader: 3
+  afterVersion: 1
+  beforeKind: 1
+  beforeFooterTemplate: 1
+envPrefix: CHANGIE_

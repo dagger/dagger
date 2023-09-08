@@ -224,7 +224,7 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 			}
 		}()
 
-		req = req.WithContext(progrock.RecorderToContext(req.Context(), srv.recorder))
+		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
 		mux := http.NewServeMux()

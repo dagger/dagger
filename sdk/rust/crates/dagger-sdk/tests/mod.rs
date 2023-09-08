@@ -52,8 +52,7 @@ async fn test_git() {
     let readme = readme_file.contents().await.unwrap();
     assert_eq!(true, readme.find("Dagger").is_some());
 
-    let readme_id = readme_file.id().await.unwrap();
-    let other_readme = c.file(readme_id).contents().await.unwrap();
+    let other_readme = c.file(readme_file).contents().await.unwrap();
 
     assert_eq!(readme, other_readme);
 }

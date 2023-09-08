@@ -36,7 +36,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:id]) do
           selection
         else
-          arg(selection, "id", optional_args[:id])
+          {:ok, id} = Dagger.Container.id(optional_args[:id])
+          arg(selection, "id", id)
         end
 
       selection =
@@ -69,7 +70,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:id]) do
           selection
         else
-          arg(selection, "id", optional_args[:id])
+          {:ok, id} = Dagger.Directory.id(optional_args[:id])
+          arg(selection, "id", id)
         end
 
       %Dagger.Directory{selection: selection, client: query.client}
@@ -104,7 +106,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:experimental_service_host]) do
           selection
         else
-          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
+          {:ok, id} = Dagger.Container.id(optional_args[:experimental_service_host])
+          arg(selection, "experimentalServiceHost", id)
         end
 
       %Dagger.GitRepository{selection: selection, client: query.client}
@@ -131,7 +134,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:experimental_service_host]) do
           selection
         else
-          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
+          {:ok, id} = Dagger.Container.id(optional_args[:experimental_service_host])
+          arg(selection, "experimentalServiceHost", id)
         end
 
       %Dagger.File{selection: selection, client: query.client}
@@ -173,7 +177,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:id]) do
           selection
         else
-          arg(selection, "id", optional_args[:id])
+          {:ok, id} = Dagger.Project.id(optional_args[:id])
+          arg(selection, "id", id)
         end
 
       %Dagger.Project{selection: selection, client: query.client}
@@ -190,7 +195,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:id]) do
           selection
         else
-          arg(selection, "id", optional_args[:id])
+          {:ok, id} = Dagger.ProjectCommand.id(optional_args[:id])
+          arg(selection, "id", id)
         end
 
       %Dagger.ProjectCommand{selection: selection, client: query.client}
@@ -228,7 +234,8 @@ defmodule Dagger.Client do
         if is_nil(optional_args[:id]) do
           selection
         else
-          arg(selection, "id", optional_args[:id])
+          {:ok, id} = Dagger.Socket.id(optional_args[:id])
+          arg(selection, "id", id)
         end
 
       %Dagger.Socket{selection: selection, client: query.client}

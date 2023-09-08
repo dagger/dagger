@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
+	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
 )
 
@@ -118,7 +119,7 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	defer c.Close()
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
-	_, err = c.Container().Export(ctx, "./engine.tar.gz", dagger.ContainerExportOpts{
+	_, err = c.Container().Export(ctx, "./engine.tar", dagger.ContainerExportOpts{
 		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, ""),
 	})
 	return err
@@ -187,7 +188,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})

@@ -18,7 +18,10 @@ steps:
     go get github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2
   displayName: 'Install Dagger Go SDK and related'
 
-- script: go run ci/main.go
+- script: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+  displayName: 'Install Dagger CLI'
+
+- script: dagger run go run ci/main.go
   displayName: 'Run Dagger'
   env:
     DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)

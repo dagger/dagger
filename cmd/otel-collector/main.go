@@ -99,9 +99,7 @@ func loadEvents(journal string) *telemetry.Pipeliner {
 			panic(err)
 		}
 
-		if err := pl.WriteStatus(&entry); err != nil {
-			panic(err)
-		}
+		pl.TrackUpdate(&entry)
 	}
 
 	return pl

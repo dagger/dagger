@@ -64,7 +64,7 @@ func (ScalarResolver) _resolver() {}
 // into a graphql resolver graphql.FieldResolveFn.
 func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
-		recorder := progrock.RecorderFromContext(p.Context)
+		recorder := progrock.FromContext(p.Context)
 
 		var args A
 		argBytes, err := json.Marshal(p.Args)
@@ -88,7 +88,7 @@ func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) gra
 
 		if pipelineable, ok := p.Source.(pipeline.Pipelineable); ok {
 			recorder = pipelineable.PipelinePath().RecorderGroup(recorder)
-			p.Context = progrock.RecorderToContext(p.Context, recorder)
+			p.Context = progrock.ToContext(p.Context, recorder)
 		}
 
 		vtx, err := queryVertex(recorder, p.Info.FieldName, p.Source, args)

@@ -1,5 +1,11 @@
 import { connect } from "@dagger.io/dagger"
 
+// check for required environment variable
+if (!process.env["GH_SECRET"]) {
+  console.log(`GH_SECRET variable must be set`)
+  process.exit()
+}
+
 // initialize Dagger client
 connect(
   async (client) => {

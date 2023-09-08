@@ -117,7 +117,7 @@ func run(ctx context.Context, args []string) error {
 
 		var cmdErr error
 		if !silent {
-			rec := progrock.RecorderFromContext(ctx)
+			rec := progrock.FromContext(ctx)
 
 			cmdline := strings.Join(subCmd.Args, " ")
 			cmdVtx := rec.Vertex(tui.RootVertex, cmdline)

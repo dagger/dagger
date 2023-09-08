@@ -5,13 +5,16 @@ defmodule Dagger.EngineConn do
 
   defstruct [:port, :token, :session_pid]
 
-  @dagger_cli_version "0.8.3"
+  @dagger_cli_version "0.8.4"
 
   @doc false
   def get(opts) do
     case from_session_env(opts) do
       {:ok, conn} ->
         {:ok, conn}
+
+      {:error, :workdir_configure_on_session} = error ->
+        error
 
       _otherwise ->
         case from_local_cli(opts) do
@@ -23,14 +26,18 @@ defmodule Dagger.EngineConn do
   end
 
   @doc false
-  def from_session_env(_opts) do
+  def from_session_env(opts) do
     with {:ok, port} <- System.fetch_env("DAGGER_SESSION_PORT"),
-         {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN") do
+         {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN"),
+         false <- Keyword.has_key?(opts, :workdir) do
       {:ok,
        %__MODULE__{
          port: port,
          token: token
        }}
+    else
+      true -> {:error, :workdir_configure_on_session}
+      :error -> {:error, :no_session}
     end
   end
 
@@ -41,6 +48,7 @@ defmodule Dagger.EngineConn do
          bin_path when is_binary(bin_path) <- System.find_executable(bin) do
       start_cli_session(bin_path, opts)
     else
+      :error -> {:error, :no_executable}
       nil -> {:error, :no_executable}
       otherwise -> otherwise
     end

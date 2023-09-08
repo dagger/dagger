@@ -34,58 +34,6 @@ The following code listing obtains a reference to the host working directory and
 </TabItem>
 </Tabs>
 
-When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory.
-
-The following listing revises the previous one, obtaining a reference to the parent directory on the host and listing its contents.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-parent/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.py
-```
-
-</TabItem>
-</Tabs>
-
-[Learn more](./guides/421437-work-with-host-filesystem.md)
-
-### Mount host directory in container
-
-The following code listing mounts a host directory in a container at the `/host` container path and then executes a command in the container referencing the mounted directory.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/work-with-host-filesystem/mount-dir/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./guides/snippets/work-with-host-filesystem/mount-dir/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/work-with-host-filesystem/mount-dir/main.py
-```
-
-</TabItem>
-</Tabs>
-
 [Learn more](./guides/421437-work-with-host-filesystem.md)
 
 ### Get host directory with filters
@@ -154,6 +102,62 @@ The following code listing obtains a reference to the host working directory con
 <TabItem value="Python">
 
 ```python file=./guides/snippets/work-with-host-filesystem/list-dir-exclude-include/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/421437-work-with-host-filesystem.md)
+
+### Mount and read host directory in container
+
+The following code listing mounts a host directory in a container at the `/host` container path and then reads the contents of the mounted directory.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/work-with-host-filesystem/mount-dir/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/mount-dir/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/mount-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Mount and write to host directory from container
+
+The following code listing shows how to mount a host directory in a container at the `/host` container path, write a file to it, and then export the modified directory back to the host:
+
+:::note
+Modifications made to a host directory mounted in a container do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/work-with-host-filesystem/mount-dir-export/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/mount-dir-export/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/mount-dir-export/main.py
 ```
 
 </TabItem>
@@ -345,7 +349,7 @@ The following code listing builds a single image for different CPU architectures
 
 ### Build image from Dockerfile
 
-The following code listing builds an image using an existing Dockerfile.
+The following code listing builds an image from a Dockerfile in the current working directory on the host.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -363,6 +367,33 @@ The following code listing builds an image using an existing Dockerfile.
 <TabItem value="Python">
 
 ```python file=./quickstart/snippets/build-dockerfile/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./quickstart/429462-build-dockerfile.mdx)
+
+### Build image from Dockerfile using different build context
+
+The following code listing builds an image from a Dockerfile using a build context directory in a different location than the current working directory.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/build-dockerfile/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/build-dockerfile/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/build-dockerfile/main.py
 ```
 
 </TabItem>
@@ -476,10 +507,14 @@ The following code listing creates a temporary MariaDB database service and bind
 
 ### Invalidate cache
 
-The following code listing demonstrates how to invalidate the Dagger cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
+The following code listing demonstrates how to invalidate the Dagger pipeline operations cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
 
 :::note
 This is a temporary workaround until cache invalidation support is officially added to Dagger.
+:::
+
+:::note
+Changes in mounted cache volumes do not invalidate the Dagger pipeline operations cache.
 :::
 
 <Tabs groupId="language">
@@ -652,6 +687,38 @@ The following code listing demonstrates how to inject a file in a container as a
 
 </TabItem>
 </Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
+### Use secret in Dockerfile build
+
+The following code listing demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-secrets/dockerfile/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/use-secrets/dockerfile/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-secrets/dockerfile/main.py
+```
+
+</TabItem>
+</Tabs>
+
+The sample Dockerfile below demonstrates the process of mounting the secret using a [`secret` filesystem mount type](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret) and using it in the Dockerfile build process:
+
+```dockerfile file=./guides/snippets/use-secrets/dockerfile/Dockerfile
+```
 
 [Learn more](./guides/723462-use-secrets.md)
 
@@ -888,19 +955,57 @@ The following code listing demonstrates how to add multiple environment variable
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/environment-variables/main.go
+```go file=./guides/snippets/custom-callbacks/environment-variables/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./cookbook/snippets/environment-variables/index.ts
+```javascript file=./guides/snippets/custom-callbacks/environment-variables/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/environment-variables/main.py
+```python file=./guides/snippets/custom-callbacks/environment-variables/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Organize pipeline code into modules
+
+The following code listing demonstrates how to organize Dagger pipeline code into independent modules (or functions/packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between modules.
+
+:::note
+The same Dagger client can safely be used in concurrent threads/routines. Therefore, it is recommended to reuse the Dagger client wherever possible, instead of creating a new client for each use. Initializing and using multiple Dagger clients in the same pipeline can result in unexpected behavior.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/main.go
+```
+
+```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines/pipelines.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/index.mts
+```
+
+```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/pipelines.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/main.py
+```
+
+```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/pipelines.py
 ```
 
 </TabItem>
@@ -910,11 +1015,7 @@ The following code listing demonstrates how to add multiple environment variable
 
 ### Docker Engine
 
-The following code shows different ways to integrate with the Docker Engine.
-
-#### Connecting to Docker Engine on the host
-
-This shows how to connect to a Docker Engine on the host machine, by mounting the Docker unix socket into a container, and running the `docker` CLI.
+The following code listing shows how to connect to a Docker Engine on the host machine, by mounting the Docker UNIX socket into a container, and running the `docker` CLI.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -937,7 +1038,35 @@ This shows how to connect to a Docker Engine on the host machine, by mounting th
 ```
 
 </TabItem>
+</Tabs>
 
+### Tailscale
+
+The following code listing shows how to have a container running in a Dagger pipeline access a Tailscale network using Tailscale's [userspace networking](https://tailscale.com/kb/1112/userspace-networking/).
+
+Set the `TAILSCALE_AUTHKEY` host environment variable to a [Tailscale authentication key](https://tailscale.com/kb/1085/auth-keys/) and the `TAILSCALE_SERVICE_URL` host environment variable to a URL accessibly only on the Tailscale network.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/tailscale-networking/main.go
+```
+
+</TabItem>
+
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/tailscale-networking/index.mjs
+```
+
+</TabItem>
+
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/tailscale-networking/main.py
+```
+
+</TabItem>
 </Tabs>
 
 ### AWS Cloud Development Kit

@@ -264,6 +264,56 @@ In this code listing:
 </TabItem>
 </Tabs>
 
+## Use secrets with Dockerfile builds
+
+Secrets can also be passed to Dockerfile builds performed with Dagger. Build secrets set with Dagger are automatically mounted in the build container at the default Dockerfile location of `/run/secrets/SECRET-ID`.
+
+Here's an example, which demonstrates setting a build secret in a Dagger pipeline and using that secret in a Dockerfile build:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/use-secrets/dockerfile/main.go
+```
+
+This code listing expects a host environment variable named `GH_SECRET` containing the secret value. It performs the following operations:
+
+- It reads the value of the host environment variable using the `os.Getenv()` function.
+- It creates a Dagger secret named `gh-secret` with that value using the `SetSecret()` function.
+- It uses the `DockerBuild()` function to build an image from a Dockerfile. The secret is automatically mounted in the build container at `/run/secrets/gh-secret`.
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/use-secrets/dockerfile/index.mjs
+```
+
+This code listing expects a host environment variable named `GH_SECRET` containing the secret value. It performs the following operations:
+
+- It reads the value of the host environment variable using the `process.env` object.
+- It creates a Dagger secret named `gh-secret` with that value using the `setSecret()` function.
+- It uses the `dockerBuild()` function to build an image from a Dockerfile. The secret is automatically mounted in the build container at `/run/secrets/gh-secret`.
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/use-secrets/dockerfile/main.py
+```
+
+This code listing expects a host environment variable named `GH_SECRET` containing the secret value. It performs the following operations:
+
+- It reads the value of the host environment variable using the `os.environ` object.
+- It creates a Dagger secret named `gh-secret` with that value using the `set_secret()` function.
+- It uses the `docker_build()` function to build an image from a Dockerfile. The secret is automatically mounted in the build container at `/run/secrets/gh-secret`.
+
+</TabItem>
+</Tabs>
+
+The sample Dockerfile below demonstrates the process of mounting the secret using a [`secret` filesystem mount type](https://docs.docker.com/engine/reference/builder/#run---mounttypesecret) and using it in the Dockerfile build process:
+
+```dockerfile file=./snippets/use-secrets/dockerfile/Dockerfile
+```
+
 ## Understand how Dagger secures secrets
 
 Dagger automatically scrubs secrets from its various logs and output streams. This ensures that sensitive data does not leak - for example, in the event of a crash. This applies to secrets stored in both environment variables and file mounts.

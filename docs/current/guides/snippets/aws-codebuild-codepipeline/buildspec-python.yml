@@ -5,11 +5,13 @@ phases:
     commands:
       - echo "Installing Dagger SDK for Python"
       - pip install dagger-io
+      - echo "Installing Dagger CLI"
+      - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - python ci/main.py
+      - dagger run python ci/main.py
 
   post_build:
     commands:

@@ -223,11 +223,11 @@ This also means that it's very easy to move your Dagger pipeline from your local
   </TabItem>
   </Tabs>
 
-  This workflow runs on every commit to the repository `main` branch. It consists of a single job with five steps, as below:
+  This workflow runs on every commit to the repository `main` branch. It consists of a single job with six steps, as below:
     1. The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner.
     1. The second step uses the [Docker Login action](https://github.com/marketplace/actions/docker-login) to authenticate to Docker Hub from the GitHub runner. This is necessary because [Docker rate-limits unauthenticated registry pulls](https://docs.docker.com/docker-hub/download-rate-limit/).
     1. The third step downloads and installs the required programming language on the GitHub runner.
-    1. The fourth step downloads and installs the Dagger SDK on the GitHub runner.
+    1. The fourth and fifth steps download and install the Dagger SDK and the Dagger CLI on the GitHub runner.
     1. The final step executes the Dagger pipeline.
 
 The Docker Login action and the Dagger pipeline both expect to find Docker Hub credentials in the `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` variables. Create these variables as GitHub secrets as follows:

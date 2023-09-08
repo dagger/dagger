@@ -27,6 +27,7 @@ This guide assumes that:
 
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md) or [Node.js](../sdk/nodejs/835948-install.md) SDK.
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## List directory contents
@@ -58,29 +59,6 @@ The `host` type provides information about the host's execution environment. Its
 ```
 
 The `host` type provides information about the host's execution environment. Its `directory()` method accepts a path and returns a reference to the corresponding host directory as a `Directory` object. Entries in the directory can be obtained via the `directory.entries()` function.
-
-</TabItem>
-</Tabs>
-
-When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory. The following example revises the previous one, setting the parent directory as the working directory and listing its contents:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/work-with-host-filesystem/list-dir-parent/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./snippets/work-with-host-filesystem/list-dir-parent/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/work-with-host-filesystem/list-dir-parent/main.py
-```
 
 </TabItem>
 </Tabs>
@@ -158,33 +136,6 @@ The exclusion pattern overrides the inclusion pattern, but not vice-versa. The f
 </TabItem>
 </Tabs>
 
-## Mount a host directory in a container
-
-A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. It is necessary to provide the mount point in the container and the directory to be mounted as method arguments.
-
-The following example shows how to mount a host directory in a container at the `/host` container path and then execute a command in the container referencing the mounted directory:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/work-with-host-filesystem/mount-dir/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./snippets/work-with-host-filesystem/mount-dir/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/work-with-host-filesystem/mount-dir/main.py
-```
-
-</TabItem>
-</Tabs>
-
 ## Export a directory from a container to the host
 
 A directory can be exported to a different path. The destination path is supplied to the method as an argument.
@@ -212,11 +163,65 @@ The following example creates a file in a container's `/tmp` directory and then 
 </TabItem>
 </Tabs>
 
+## Mount a host directory in a container
+
+A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. It is necessary to provide the mount point in the container and the directory to be mounted as method arguments.
+
+The following example shows how to mount a host directory in a container at the `/host` container path and then read the contents of the mounted directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/work-with-host-filesystem/mount-dir/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./snippets/work-with-host-filesystem/mount-dir/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/work-with-host-filesystem/mount-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+:::note
+Modifications made to a host directory mounted in a container do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
+:::
+
+The following example shows how to mount a host directory in a container at the `/host` container path, write a file to it, and then export the modified directory back to the host:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/work-with-host-filesystem/mount-dir-export/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./snippets/work-with-host-filesystem/mount-dir-export/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/work-with-host-filesystem/mount-dir-export/main.py
+```
+
+</TabItem>
+</Tabs>
+
 ## Important notes
 
 Using the host filesystem in your Dagger pipeline is convenient, but there are some important considerations to keep in mind:
 
-- If a file loaded from the host changes even slightly (including minor changes such as a timestamp change with the file contents left unmodified), then the Dagger cache will be invalidated. An extremely common source of invalidations occurs when loading the `.git` directory from the host filesystem, as that directory will change frequently, including when there have been no actual changes to any source code.
+- With the exception of mounted cache volumes, if a file or directory mounted from the host changes even slightly (including minor changes such as a timestamp change with the file contents left unmodified), then the Dagger pipeline operations cache will be invalidated. An extremely common source of invalidations occurs when loading the `.git` directory from the host filesystem, as that directory will change frequently, including when there have been no actual changes to any source code.
 
   :::tip
   To maximize cache re-use, it's important to use the include/exclude options for local directories to only include the files/directories needed for the pipeline. Excluding the `.git` directory is highly advisable unless there's a strong need to be able to perform Git operations on top of the loaded directory inside Dagger.

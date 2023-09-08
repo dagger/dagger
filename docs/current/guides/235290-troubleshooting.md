@@ -44,3 +44,18 @@ You should now be able to re-run your Dagger pipeline successfully.
 :::tip
 If you have custom-provisioned the Dagger Engine, please adjust the above commands to your environment.
 :::
+
+## Dagger pipeline is unable to resolve host names after network configuration changes
+
+If the network configuration of the host changes after the Dagger Engine container starts, Docker does not notify the Dagger Engine of the change. This may cause Dagger pipelines to fail with network-related errors.
+
+As an example, if the nameserver configuration of the host changes after switching to a different network connection or connecting/disconnecting a VPN result, the Dagger pipeline may fail with DNS resolution errors.
+
+To resolve this error, you must restart the Dagger Engine container after the host network configuration changes.
+
+```shell
+DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
+docker restart "$DAGGER_ENGINE_DOCKER_CONTAINER"
+```
+
+You should now be able to re-run your Dagger pipeline successfully.

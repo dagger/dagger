@@ -43,7 +43,6 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 
 func TestRemoteCacheRegistry(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
@@ -117,7 +116,6 @@ func TestRemoteCacheRegistry(t *testing.T) {
 func TestRemoteCacheS3(t *testing.T) {
 	t.Run("buildkit s3 caching", func(t *testing.T) {
 		c, ctx := connect(t)
-		defer c.Close()
 
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 

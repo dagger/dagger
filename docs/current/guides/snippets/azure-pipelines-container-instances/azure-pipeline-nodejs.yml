@@ -14,7 +14,10 @@ steps:
 - script: npm install @dagger.io/dagger @azure/arm-containerinstance @azure/identity
   displayName: 'Install Dagger and Azure SDKs'
 
-- script: node ci/index.mjs
+- script: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+  displayName: 'Install Dagger CLI'
+
+- script: dagger run node ci/index.mjs
   displayName: 'Run Dagger'
   env:
     DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)

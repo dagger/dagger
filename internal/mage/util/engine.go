@@ -4,22 +4,25 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"text/template"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"golang.org/x/exp/maps"
 )
 
 const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
+	golangVersion = "1.20.7"
 	alpineVersion = "3.18"
-	runcVersion   = "v1.1.5"
-	cniVersion    = "v1.2.0"
-	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
+	runcVersion   = "v1.1.9"
+	cniVersion    = "v1.3.0"
+	qemuBinImage  = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
@@ -168,6 +171,8 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 		cacheVolumeName = "dagger-dev-engine-state"
 	}
 
+	cacheVolumeName = cacheVolumeName + identity.NewID()
+
 	devEngine := devEngineContainer(c, runtime.GOARCH, "", engineOpts...)
 
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
@@ -210,7 +215,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
-		WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
+		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
@@ -235,24 +240,32 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 // helper functions for building the dev engine container
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
-	cniURL := fmt.Sprintf(
-		"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
-		cniVersion, "linux", arch, cniVersion,
-	)
+	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
+	// can contain CVEs in the builds on github releases
+	ctr := c.Container().
+		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		WithExec([]string{"apk", "add", "build-base", "go", "git"}).
+		WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
+		WithMountedDirectory("/src", c.Git("github.com/containernetworking/plugins").Tag(cniVersion).Tree()).
+		WithWorkdir("/src").
+		WithEnvVariable("GOARCH", arch)
 
-	return c.Container().
-		From("alpine:"+alpineVersion).
-		WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
-		WithDirectory("/opt/cni/bin", c.Directory()).
-		WithExec([]string{
-			"tar", "-xzf", "/tmp/cni-plugins.tgz",
-			"-C", "/opt/cni/bin",
-			// only unpack plugins we actually need
-			"./bridge", "./firewall", // required by dagger network stack
-			"./loopback", "./host-local", // implicitly required (container fails without them)
-		}).
-		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
-		Directory("/opt/cni/bin")
+	pluginDir := c.Directory().WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch))
+	for _, pluginPath := range []string{
+		"plugins/main/bridge",
+		"plugins/main/loopback",
+		"plugins/meta/firewall",
+		"plugins/ipam/host-local",
+	} {
+		pluginName := filepath.Base(pluginPath)
+		pluginDir = pluginDir.WithFile(filepath.Join("/opt/cni/bin", pluginName), ctr.
+			WithWorkdir(pluginPath).
+			WithExec([]string{"go", "build", "-o", pluginName, "-ldflags", "-s -w", "."}).
+			File(pluginName))
+	}
+
+	return pluginDir
 }
 
 func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
@@ -282,11 +295,24 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
-	return c.HTTP(fmt.Sprintf(
-		"https://github.com/opencontainers/runc/releases/download/%s/runc.%s",
-		runcVersion,
-		arch,
-	))
+	// We build runc from source to enable upgrades to go and other dependencies that
+	// can contain CVEs in the builds on github releases
+	return c.Container().
+		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		WithEnvVariable("GOARCH", arch).
+		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
+		WithEnvVariable("TARGETPLATFORM", "linux/"+arch).
+		WithEnvVariable("CGO_ENABLED", "1").
+		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
+		WithDirectory("/", c.Container().From("tonistiigi/xx:1.2.1").Rootfs()).
+		WithExec([]string{"xx-apk", "update"}).
+		WithExec([]string{"xx-apk", "add", "build-base", "pkgconf", "libseccomp-dev", "libseccomp-static"}).
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
+		WithMountedDirectory("/src", c.Git("github.com/opencontainers/runc").Tag(runcVersion).Tree()).
+		WithWorkdir("/src").
+		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + runcVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
+		File("runc")
 }
 
 func shimBin(c *dagger.Client, arch string) *dagger.File {

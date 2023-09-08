@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
@@ -142,11 +141,13 @@ func interactiveTUI(
 		tuiErr := <-tuiDone
 		return errors.Join(tuiErr, err)
 	}
-	defer sess.Close()
 
 	err = fn(ctx, sess)
+
+	closeErr := sess.Close()
+
 	tuiErr := <-tuiDone
-	return errors.Join(tuiErr, err)
+	return errors.Join(tuiErr, closeErr, err)
 }
 
 func inlineTUI(
@@ -168,41 +169,30 @@ func inlineTUI(
 
 	params.ProgrockWriter = progW
 
-	ctx, quit := context.WithCancel(ctx)
-	defer quit()
+	return progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) error {
+		params.CloudURLCallback = func(cloudURL string) {
+			ui.SetStatusInfo(progrock.StatusInfo{
+				Name:  "Cloud URL",
+				Value: cloudURL,
+				Order: 1,
+			})
+		}
 
-	program, stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
-	defer stop()
+		params.EngineNameCallback = func(name string) {
+			ui.SetStatusInfo(progrock.StatusInfo{
+				Name:  "Engine",
+				Value: name,
+				Order: 2,
+			})
+		}
 
-	params.CloudURLCallback = func(cloudURL string) {
-		program.Send(progrock.StatusInfoMsg{
-			Name:  "Cloud URL",
-			Value: cloudURL,
-			Order: 1,
-		})
-	}
-
-	params.EngineNameCallback = func(name string) {
-		program.Send(progrock.StatusInfoMsg{
-			Name:  "Engine",
-			Value: name,
-			Order: 2,
-		})
-	}
-
-	sess, ctx, err := client.Connect(ctx, params)
-	if err != nil {
-		return err
-	}
-	defer sess.Close()
-	before := time.Now()
-	err = fn(ctx, sess)
-	program.Send(progrock.StatusInfoMsg{
-		Name:  "Duration",
-		Value: time.Since(before).Truncate(time.Millisecond).String(),
-		Order: 3,
+		sess, ctx, err := client.Connect(ctx, params)
+		if err != nil {
+			return err
+		}
+		defer sess.Close()
+		return fn(ctx, sess)
 	})
-	return err
 }
 
 func newProgrockWriter(dest string) (progrock.Writer, error) {

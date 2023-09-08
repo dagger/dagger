@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"os"
 	"regexp"
 	"strings"
@@ -39,7 +38,7 @@ func TestScratchDirectory(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
+
 	_, err := c.Container().Directory("/").Entries(ctx)
 	require.NoError(t, err)
 	// require.ErrorContains(t, err, "no such file or directory")
@@ -197,7 +196,6 @@ func TestDirectoryWithDirectory(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	dir := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -255,7 +253,6 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	dir := c.Directory().
 		WithNewFile("a.txt", "").
@@ -320,10 +317,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 
 func TestDirectoryWithNewDirectory(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	dir := c.Directory().
 		WithNewDirectory("a").
@@ -347,10 +341,7 @@ func TestDirectoryWithNewDirectory(t *testing.T) {
 
 func TestDirectoryWithFile(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	file := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -407,10 +398,7 @@ func TestDirectoryWithFile(t *testing.T) {
 
 func TestDirectoryWithTimestamps(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
@@ -454,10 +442,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 
 func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	dir1 := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -590,14 +575,10 @@ func TestDirectoryDiff(t *testing.T) {
 func TestDirectoryExport(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(wd))
 
 	dir := c.Container().From(alpineImage).Directory("/etc/profile.d")
 
@@ -630,10 +611,7 @@ func TestDirectoryExport(t *testing.T) {
 
 func TestDirectoryDockerBuild(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	contextDir := c.Directory().
 		WithNewFile("main.go",
@@ -768,9 +746,9 @@ CMD echo "stage2"
 		require.Contains(t, output, "stage1\n")
 		require.NotContains(t, output, "stage2\n")
 	})
+
 	t.Run("with build secrets", func(t *testing.T) {
 		sec := c.SetSecret("my-secret", "barbar")
-		require.NoError(t, err)
 
 		src := contextDir.
 			WithNewFile("Dockerfile",
@@ -839,10 +817,7 @@ func TestDirectoryWithFileExceedingLength(t *testing.T) {
 
 func TestDirectoryDirectMerge(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	getDirAndInodes := func(t *testing.T, fileNames ...string) (*dagger.Directory, []string) {
 		t.Helper()
@@ -894,10 +869,7 @@ func TestDirectoryDirectMerge(t *testing.T) {
 
 func TestDirectoryFallbackMerge(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	t.Run("dest path same as src selector", func(t *testing.T) {
 		// corner case where we need to use the fallback rather than direct merge
@@ -907,7 +879,7 @@ func TestDirectoryFallbackMerge(t *testing.T) {
 		srcSubdir := srcDir.Directory("/dir")
 
 		mergedDir := c.Directory().WithDirectory("/dir", srcSubdir)
-		_, err = mergedDir.File("/dir/lowerlevel").Contents(ctx)
+		_, err := mergedDir.File("/dir/lowerlevel").Contents(ctx)
 		require.NoError(t, err)
 		_, err = mergedDir.File("/toplevel").Contents(ctx)
 		require.Error(t, err)
@@ -918,7 +890,6 @@ func TestDirectorySync(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	t.Run("empty", func(t *testing.T) {
 		dir, err := c.Directory().Sync(ctx)

@@ -19,6 +19,7 @@ class Enum(str, enum.Enum):
     __slots__ = ()
 
     def __str__(self) -> str:
+        """The string representation of the enum value."""
         return str(self.value)
 
 

@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import anyio
+import anyio.from_thread
 import httpx
 import pytest
 
@@ -106,7 +107,7 @@ async def _temporary_cli_server(monkeypatch: pytest.MonkeyPatch):
                 "checksum_url",
                 str(checksum_url.copy_with(**kwargs)),
             )
-            with anyio.start_blocking_portal() as portal:
+            with anyio.from_thread.start_blocking_portal() as portal:
                 server = portal.start_task_soon(httpd.serve_forever)
                 yield
                 httpd.shutdown()
