@@ -21,7 +21,7 @@ func build(ctx context.Context) error {
 	oses := []string{"linux", "darwin"}
 	arches := []string{"amd64", "arm64"}
 	// highlight-start
-	goVersions := []string{"1.18", "1.19"}
+	goVersions := []string{"1.20", "1.21"}
 	// highlight-end
 
 	// initialize Dagger client

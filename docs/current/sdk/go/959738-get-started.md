@@ -162,7 +162,7 @@ Use the `tree` command to see the build artifacts on the host, as shown below:
 ```shell
 tree build
 build/
-├── 1.18
+├── 1.20
 │   ├── darwin
 │   │   ├── amd64
 │   │   │   └── multibuild
@@ -173,7 +173,7 @@ build/
 │       │   └── multibuild
 │       └── arm64
 │           └── multibuild
-└── 1.19
+└── 1.21
     ├── darwin
     │   ├── amd64
     │   │   └── multibuild
