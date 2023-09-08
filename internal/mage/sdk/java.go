@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	javaSDKPath = "sdk/java"
-	javaSDKVersionPomPath = javaSDKPath + "/pom.xml"
-    javaSchemasDirPath = javaSDKPath + "/dagger-codegen-maven-plugin/src/main/resources/schemas"
+	javaSDKPath             = "sdk/java"
+	javaSDKVersionPomPath   = javaSDKPath + "/pom.xml"
+	javaSchemasDirPath      = javaSDKPath + "/dagger-codegen-maven-plugin/src/main/resources/schemas"
 	javaGeneratedSchemaPath = "target/generated-schema/schema.json"
-	javaVersion = "17"
-	mavenVersion = "3.9"
+	javaVersion             = "17"
+	mavenVersion            = "3.9"
 )
 
 var _ SDK = Java{}
@@ -39,7 +39,7 @@ func (Java) Lint(ctx context.Context) error {
 		WithExec([]string{"mvn", "fmt:check"}).
 		Sync(ctx)
 
-	return err;
+	return err
 }
 
 // Test tests the Java SDK
@@ -105,27 +105,25 @@ func (Java) Generate(ctx context.Context) error {
 		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
 		WithExec([]string{"mvn", "-N", "dagger-codegen:generateSchema"}).
 		File(javaGeneratedSchemaPath).
-        Contents(ctx)
+		Contents(ctx)
 
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 
-    engineVersion, err := javaBase(c).
-        WithServiceBinding("dagger-engine", devEngine).
-        WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-        WithMountedFile(cliBinPath, util.DaggerBinary(c)).
-        WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-        WithExec([]string{"mvn", "help:evaluate", "-q", "-DforceStdout", "-Dexpression=daggerengine.version"}).
-        Stdout(ctx)
+	engineVersion, err := javaBase(c).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"mvn", "help:evaluate", "-q", "-DforceStdout", "-Dexpression=daggerengine.version"}).
+		Stdout(ctx)
 
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 
-	return os.WriteFile(javaSchemasDirPath + fmt.Sprintf("/schema-%s.json", engineVersion), []byte(generatedSchema), 0o600)
-
-	return err
+	return os.WriteFile(javaSchemasDirPath+fmt.Sprintf("/schema-%s.json", engineVersion), []byte(generatedSchema), 0o600)
 }
 
 // Publish publishes the Java SDK
