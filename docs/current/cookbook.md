@@ -1008,7 +1008,7 @@ Using multiple Dagger clients in the same pipeline can result in unexpected beha
 ```go title="main.go" file=./cookbook/snippets/modules-shared-client/main.go
 ```
 
-```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines.go
+```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines/pipelines.go
 ```
 
 </TabItem>
