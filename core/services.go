@@ -32,9 +32,6 @@ type Services struct {
 
 // RunningService represents a service that is actively running.
 type RunningService struct {
-	// Service is the service that has been started.
-	Service *Service
-
 	// Key is the unique identifier for the service.
 	Key ServiceKey
 
@@ -100,7 +97,7 @@ func (ss *Services) StopClient(ctx context.Context, client *engine.ClientMetadat
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
 // is returned.
-func (ss *Services) Get(ctx context.Context, svc *Service) (*RunningService, error) {
+func (ss *Services) Get(ctx context.Context, svc Startable) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -135,61 +132,17 @@ func (ss *Services) Get(ctx context.Context, svc *Service) (*RunningService, err
 	}
 }
 
-// StartBindings starts each of the bound services in parallel and returns a
-// function that will detach from all of them after 10 seconds.
-func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
-	running := []*RunningService{}
-	detach := func() {
-		go func() {
-			<-time.After(DetachGracePeriod)
-			for _, svc := range running {
-				ss.Detach(ctx, svc)
-			}
-		}()
-	}
+type Startable interface {
+	Digest() (digest.Digest, error)
 
-	defer func() {
-		if err != nil {
-			detach()
-		}
-	}()
-
-	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
-	eg := new(errgroup.Group)
-
-	started := make(chan *RunningService, len(bindings))
-	for _, bnd := range bindings {
-		bnd := bnd
-		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.Service)
-			if err != nil {
-				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
-			}
-			started <- runningSvc
-			return nil
-		})
-	}
-
-	startErr := eg.Wait()
-
-	close(started)
-
-	if startErr != nil {
-		return nil, nil, startErr
-	}
-
-	for svc := range started {
-		running = append(running, svc)
-	}
-
-	return detach, running, nil
+	Start(context.Context, *buildkit.Client, *Services) (*RunningService, error)
 }
 
 // Start starts the given service, returning the running service. If the
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, svc *Service) (*RunningService, error) {
+func (ss *Services) Start(ctx context.Context, svc Startable) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -255,6 +208,56 @@ dance:
 	_ = stop // leave it running
 
 	return running, nil
+}
+
+// StartBindings starts each of the bound services in parallel and returns a
+// function that will detach from all of them after 10 seconds.
+func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
+	running := []*RunningService{}
+	detach := func() {
+		go func() {
+			<-time.After(DetachGracePeriod)
+			for _, svc := range running {
+				ss.Detach(ctx, svc)
+			}
+		}()
+	}
+
+	defer func() {
+		if err != nil {
+			detach()
+		}
+	}()
+
+	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
+	eg := new(errgroup.Group)
+
+	started := make(chan *RunningService, len(bindings))
+	for _, bnd := range bindings {
+		bnd := bnd
+		eg.Go(func() error {
+			runningSvc, err := ss.Start(ctx, bnd.Service)
+			if err != nil {
+				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
+			}
+			started <- runningSvc
+			return nil
+		})
+	}
+
+	startErr := eg.Wait()
+
+	close(started)
+
+	if startErr != nil {
+		return nil, nil, startErr
+	}
+
+	for svc := range started {
+		running = append(running, svc)
+	}
+
+	return detach, running, nil
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.

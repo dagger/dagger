@@ -333,9 +333,8 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 		}
 
 		return &RunningService{
-			Service: svc,
-			Host:    fullHost,
-			Ports:   ctr.Ports,
+			Host:  fullHost,
+			Ports: ctr.Ports,
 			Key: ServiceKey{
 				Digest:   dig,
 				ClientID: clientMetadata.ClientID,
