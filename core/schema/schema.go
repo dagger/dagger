@@ -44,7 +44,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 	host := core.NewHost()
 	buildCache := core.NewCacheMap[uint64, *core.Container]()
 	err := merged.addSchemas(
-		&querySchema{merged, svcs},
+		&querySchema{merged},
 		&directorySchema{merged, host, svcs, buildCache},
 		&fileSchema{merged, host, svcs},
 		&gitSchema{merged, svcs},
@@ -92,7 +92,7 @@ func (s *MergedSchemas) Schema() *graphql.Schema {
 }
 
 func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
-	return s.services.StopClient(ctx, client)
+	return s.services.StopClientServices(ctx, client)
 }
 
 func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {

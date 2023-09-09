@@ -14,8 +14,6 @@ import (
 
 type querySchema struct {
 	*MergedSchemas
-
-	services *core.Services
 }
 
 var _ ExecutableSchema = &querySchema{}

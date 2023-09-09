@@ -70,29 +70,6 @@ func NewServices(bk *buildkit.Client) *Services {
 	}
 }
 
-func (ss *Services) StopClient(ctx context.Context, client *engine.ClientMetadata) error {
-	ss.l.Lock()
-	defer ss.l.Unlock()
-
-	eg := new(errgroup.Group)
-	for _, svc := range ss.running {
-		if svc.Key.ClientID != client.ClientID {
-			continue
-		}
-
-		svc := svc
-		eg.Go(func() error {
-			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
-			if err := svc.Stop(ctx); err != nil {
-				return fmt.Errorf("stop %s: %w", svc.Host, err)
-			}
-			return nil
-		})
-	}
-
-	return eg.Wait()
-}
-
 // Get returns the running service for the given service. If the service is
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
@@ -304,6 +281,31 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 		// not starting or running; nothing to do
 		return nil
 	}
+}
+
+// StopClientServices stops all of the services being run by the given client.
+// It is called when a client is closing.
+func (ss *Services) StopClientServices(ctx context.Context, client *engine.ClientMetadata) error {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+
+	eg := new(errgroup.Group)
+	for _, svc := range ss.running {
+		if svc.Key.ClientID != client.ClientID {
+			continue
+		}
+
+		svc := svc
+		eg.Go(func() error {
+			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
+			if err := svc.Stop(ctx); err != nil {
+				return fmt.Errorf("stop %s: %w", svc.Host, err)
+			}
+			return nil
+		})
+	}
+
+	return eg.Wait()
 }
 
 // Detach detaches from the given service. If the service is not running, it is
