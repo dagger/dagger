@@ -1,0 +1,69 @@
+syntax = "proto3";
+package dagger;
+
+option go_package = "./idproto";
+
+// ID represents a GraphQL node of a certain type that can be constructed by
+// evaluating its contained pipeline.
+message ID {
+  // GraphQL type name.
+  string resultType = 1;
+
+  // Chain of GraphQL field selections, starting from Query.
+  //
+  // Taking a liberty with "pipeline" - alternatives welcome!
+  //
+  // TODO: how to handle frivolous queries like 'pipeline'? These are pure
+  // metadata so they probably shouldn't change object IDs -- or at least they
+  // shouldn't bust caches. Maybe this is handled by a similar mechanism to how
+  // we learn that APIs are "tainted"? (see below) Or maybe they're included at
+  // the protocol level, and you do some other operation to trim them out at
+  // publishing time? (That same operation could be made to fail if any inputs
+  // are 'tainted'.)
+  repeated Selector pipeline = 2;
+}
+
+// Selector is an individual field and arguments. Its result will either be
+// passed to the next Selector in the pipeline or returned as the final ID
+// result.
+//
+// I can't explain why, but this name feels more satisfying than the drier
+// alternatives ("field", "call", ...). Feel free to call me out and suggest
+// alternatives.
+message Selector {
+  // GraphQL field name.
+  string field = 1;
+  // GraphQL field arguments.
+  repeated Argument args = 2;
+  // If true, this Selector is not reproducible.
+  //
+  // TODO: do we need to refer to session/client IDs or anything here?
+  bool tainted = 3;
+}
+
+message Argument {
+  string name = 1;
+  Literal value = 2;
+}
+
+message Literal {
+  oneof value {
+    ID id = 1;
+    bool null = 2;
+    bool bool = 3;
+    string enum = 4;
+    int64 int = 5;
+    float float = 6;
+    string string = 7;
+    List list = 8;
+    Object object = 9;
+  }
+}
+
+message List {
+  repeated Literal values = 1;
+}
+
+message Object {
+  repeated Argument values = 1;
+}
