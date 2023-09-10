@@ -3,24 +3,20 @@ package dagger;
 
 option go_package = "./idproto";
 
-// ID represents a GraphQL node of a certain type that can be constructed by
-// evaluating its contained pipeline.
+// ID represents a GraphQL object of a certain type, constructed by evaluating
+// its contained pipeline. In other words, it represents a
+// constructor-addressed object.
+//
+// It may be binary=>base64-encoded to be used as a GraphQL ID value.
+// Alternatively it may be stored in a database and referred to via an RFC-6920
+// ni://sha-256;... URI.
 message ID {
-  // GraphQL type name.
-  string resultType = 1;
+  // The GraphQL __typename of the object.
+  string typeName = 1;
 
-  // Chain of GraphQL field selections, starting from Query.
-  //
-  // Taking a liberty with "pipeline" - alternatives welcome!
-  //
-  // TODO: how to handle frivolous queries like 'pipeline'? These are pure
-  // metadata so they probably shouldn't change object IDs -- or at least they
-  // shouldn't bust caches. Maybe this is handled by a similar mechanism to how
-  // we learn that APIs are "tainted"? (see below) Or maybe they're included at
-  // the protocol level, and you do some other operation to trim them out at
-  // publishing time? (That same operation could be made to fail if any inputs
-  // are 'tainted'.)
-  repeated Selector pipeline = 2;
+  // Chain of GraphQL field selections that construct the object, starting from
+  // Query.
+  repeated Selector constructor = 2;
 }
 
 // Selector is an individual field and arguments. Its result will either be
@@ -33,19 +29,37 @@ message ID {
 message Selector {
   // GraphQL field name.
   string field = 1;
-  // GraphQL field arguments.
+
+  // GraphQL field arguments, always in alphabetical order.
   repeated Argument args = 2;
+
   // If true, this Selector is not reproducible.
   //
-  // TODO: do we need to refer to session/client IDs or anything here?
+  // TODO: do we need to refer to session/client IDs or anything here? Or is
+  // that all internal? Forcing function is whether this is used as an
+  // in-memory query cache key. But the query cache might be made per-session
+  // or even per-client instead anyway! What buys us the most?
   bool tainted = 3;
+
+  // If true, this Selector may be omitted from the pipeline without changing
+  // the ultimate result.
+  //
+  // This is used to prevent meta-queries like 'pipeline' and 'withFocus' from
+  // busting cache keys when desired.
+  //
+  // It is worth noting that we don't store meta information at this level and
+  // continue to force metadata to be set via GraphQL queries. It makes IDs
+  // always easy to evaluate.
+  bool meta = 4;
 }
 
+// A named value passed to a GraphQL field or contained in an input object.
 message Argument {
   string name = 1;
   Literal value = 2;
 }
 
+// A value passed to an argument or contained in a list.
 message Literal {
   oneof value {
     ID id = 1;
@@ -60,10 +74,12 @@ message Literal {
   }
 }
 
+// A list of values.
 message List {
   repeated Literal values = 1;
 }
 
+// A series of named values.
 message Object {
   repeated Argument values = 1;
 }
