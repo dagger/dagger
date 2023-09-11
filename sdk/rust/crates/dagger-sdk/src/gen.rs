@@ -384,10 +384,6 @@ pub struct ContainerWithMountedSecretOpts<'a> {
     /// Default: 0400.
     #[builder(setter(into, strip_option), default)]
     pub mode: Option<isize>,
-    /// Set secret as optional.
-    /// Default: false.
-    #[builder(setter(into, strip_option), default)]
-    pub optional: Option<bool>,
     /// A user:group to set for the mounted secret.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1407,9 +1403,6 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
-        }
-        if let Some(optional) = opts.optional {
-            query = query.arg("optional", optional);
         }
         if let Some(mode) = opts.mode {
             query = query.arg("mode", mode);

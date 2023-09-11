@@ -366,13 +366,6 @@ type Container {
     owner: String
 
     """
-    Set secret as optional.
-
-    Default: false.
-    """
-    optional: Boolean
-
-    """
     Permission given to the mounted secret (e.g., 0600).
     This option requires an owner to be set to be active.
 

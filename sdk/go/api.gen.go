@@ -1053,10 +1053,6 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Set secret as optional.
-	//
-	// Default: false.
-	Optional bool
 	// Permission given to the mounted secret (e.g., 0600).
 	// This option requires an owner to be set to be active.
 	//
@@ -1071,10 +1067,6 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-		}
-		// `optional` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Optional) {
-			q = q.Arg("optional", opts[i].Optional)
 		}
 		// `mode` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Mode) {
