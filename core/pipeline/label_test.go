@@ -130,27 +130,27 @@ func TestLoadGitHubLabels(t *testing.T) {
 			},
 			Labels: []pipeline.Label{
 				{
-					Name:  "github.com/actor",
+					Name:  "dagger.io/vcs.triggerer.login",
 					Value: "vito",
 				},
 				{
-					Name:  "github.com/event.type",
+					Name:  "dagger.io/vcs.event.type",
 					Value: "workflow_dispatch",
 				},
 				{
-					Name:  "github.com/workflow.name",
+					Name:  "dagger.io/vcs.workflow.name",
 					Value: "some-workflow",
 				},
 				{
-					Name:  "github.com/workflow.job",
+					Name:  "dagger.io/vcs.job.name",
 					Value: "some-job",
 				},
 				{
-					Name:  "github.com/repo.full_name",
+					Name:  "dagger.io/vcs.repo.full_name",
 					Value: "dagger/testdata",
 				},
 				{
-					Name:  "github.com/repo.url",
+					Name:  "dagger.io/vcs.repo.url",
 					Value: "https://github.com/dagger/testdata",
 				},
 			},
@@ -167,19 +167,19 @@ func TestLoadGitHubLabels(t *testing.T) {
 			},
 			Labels: []pipeline.Label{
 				{
-					Name:  "github.com/actor",
+					Name:  "dagger.io/vcs.triggerer.login",
 					Value: "vito",
 				},
 				{
-					Name:  "github.com/event.type",
+					Name:  "dagger.io/vcs.event.type",
 					Value: "pull_request",
 				},
 				{
-					Name:  "github.com/workflow.name",
+					Name:  "dagger.io/vcs.workflow.name",
 					Value: "some-workflow",
 				},
 				{
-					Name:  "github.com/workflow.job",
+					Name:  "dagger.io/vcs.job.name",
 					Value: "some-job",
 				},
 				{
@@ -187,35 +187,35 @@ func TestLoadGitHubLabels(t *testing.T) {
 					Value: "synchronize",
 				},
 				{
-					Name:  "github.com/repo.full_name",
+					Name:  "dagger.io/vcs.repo.full_name",
 					Value: "dagger/testdata",
 				},
 				{
-					Name:  "github.com/repo.url",
+					Name:  "dagger.io/vcs.repo.url",
 					Value: "https://github.com/dagger/testdata",
 				},
 				{
-					Name:  "github.com/pr.number",
+					Name:  "dagger.io/vcs.change.number",
 					Value: "2018",
 				},
 				{
-					Name:  "github.com/pr.title",
+					Name:  "dagger.io/vcs.change.title",
 					Value: "dump env, use session binary from submodule",
 				},
 				{
-					Name:  "github.com/pr.url",
+					Name:  "dagger.io/vcs.change.url",
 					Value: "https://github.com/dagger/testdata/pull/2018",
 				},
 				{
-					Name:  "github.com/pr.head",
+					Name:  "dagger.io/vcs.change.head_sha",
 					Value: "81be07d3103b512159628bfa3aae2fbb5d255964",
 				},
 				{
-					Name:  "github.com/pr.branch",
+					Name:  "dagger.io/vcs.change.branch",
 					Value: "dump-env",
 				},
 				{
-					Name:  "github.com/pr.label",
+					Name:  "dagger.io/vcs.change.label",
 					Value: "vito:dump-env",
 				},
 			},
@@ -232,27 +232,27 @@ func TestLoadGitHubLabels(t *testing.T) {
 			},
 			Labels: []pipeline.Label{
 				{
-					Name:  "github.com/actor",
+					Name:  "dagger.io/vcs.triggerer.login",
 					Value: "vito",
 				},
 				{
-					Name:  "github.com/event.type",
+					Name:  "dagger.io/vcs.event.type",
 					Value: "push",
 				},
 				{
-					Name:  "github.com/workflow.name",
+					Name:  "dagger.io/vcs.workflow.name",
 					Value: "some-workflow",
 				},
 				{
-					Name:  "github.com/workflow.job",
+					Name:  "dagger.io/vcs.job.name",
 					Value: "some-job",
 				},
 				{
-					Name:  "github.com/repo.full_name",
+					Name:  "dagger.io/vcs.repo.full_name",
 					Value: "vito/bass",
 				},
 				{
-					Name:  "github.com/repo.url",
+					Name:  "dagger.io/vcs.repo.url",
 					Value: "https://github.com/vito/bass",
 				},
 			},
@@ -266,6 +266,128 @@ func TestLoadGitHubLabels(t *testing.T) {
 			}
 
 			labels, err := pipeline.LoadGitHubLabels()
+			require.NoError(t, err)
+			require.ElementsMatch(t, example.Labels, labels)
+		})
+	}
+}
+
+func TestLoadGitLabLabels(t *testing.T) {
+	type Example struct {
+		Name   string
+		Env    map[string]string
+		Labels []pipeline.Label
+	}
+
+	for _, example := range []Example{
+		{
+			Name: "GitLab CI",
+			Env: map[string]string{
+				"GITLAB_CI":                           "true",
+				"CI_PROJECT_URL":                      "https://gitlab.com/dagger/testdata",
+				"CI_PROJECT_PATH":                     "dagger/testdata",
+				"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME": "feature-branch",
+				"CI_MERGE_REQUEST_TITLE":              "Some title",
+				"CI_COMMIT_SHA":                       "123abc",
+				"GITLAB_USER_LOGIN":                   "gitlab-user",
+				"CI_PIPELINE_SOURCE":                  "push",
+				"CI_JOB_NAME":                         "test-job",
+				"CI_PIPELINE_NAME":                    "pipeline-name",
+				"CI_MERGE_REQUEST_LABELS":             "label1,label2",
+				"CI_JOB_ID":                           "123",
+				"GITLAB_USER_ID":                      "789",
+				"GITLAB_USER_EMAIL":                   "user@gitlab.com",
+				"GITLAB_USER_NAME":                    "Gitlab User",
+			},
+			Labels: []pipeline.Label{
+				{Name: "dagger.io/vcs.repo.url", Value: "https://gitlab.com/dagger/testdata"},
+				{Name: "dagger.io/vcs.repo.full_name", Value: "dagger/testdata"},
+				{Name: "dagger.io/vcs.change.branch", Value: "feature-branch"},
+				{Name: "dagger.io/vcs.change.title", Value: "Some title"},
+				{Name: "dagger.io/vcs.change.head_sha", Value: "123abc"},
+				{Name: "dagger.io/vcs.triggerer.login", Value: "gitlab-user"},
+				{Name: "dagger.io/vcs.event.type", Value: "push"},
+				{Name: "dagger.io/vcs.job.name", Value: "test-job"},
+				{Name: "dagger.io/vcs.workflow.name", Value: "pipeline-name"},
+				{Name: "dagger.io/vcs.change.label", Value: "label1,label2"},
+				{Name: "gitlab.com/job.id", Value: "123"},
+				{Name: "gitlab.com/triggerer.id", Value: "789"},
+				{Name: "gitlab.com/triggerer.email", Value: "user@gitlab.com"},
+				{Name: "gitlab.com/triggerer.name", Value: "Gitlab User"},
+			},
+		},
+	} {
+		example := example
+		t.Run(example.Name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range example.Env {
+				os.Setenv(k, v)
+			}
+
+			// Run the function and collect the result
+			labels, err := pipeline.LoadGitLabLabels()
+
+			// Clean up environment variables
+			for k := range example.Env {
+				os.Unsetenv(k)
+			}
+
+			// Make assertions
+			require.NoError(t, err)
+			require.ElementsMatch(t, example.Labels, labels)
+		})
+	}
+}
+
+func TestLoadCircleCILabels(t *testing.T) {
+	type Example struct {
+		Name   string
+		Env    map[string]string
+		Labels []pipeline.Label
+	}
+
+	for _, example := range []Example{
+		{
+			Name: "CircleCI",
+			Env: map[string]string{
+				"CIRCLECI":                      "true",
+				"CIRCLE_BRANCH":                 "main",
+				"CIRCLE_SHA1":                   "abc123",
+				"CIRCLE_JOB":                    "build",
+				"CIRCLE_PIPELINE_NUMBER":        "42",
+				"CIRCLE_PIPELINE_TRIGGER_LOGIN": "circle-user",
+				"CIRCLE_REPOSITORY_URL":         "git@github.com:user/repo.git",
+				"CIRCLE_PROJECT_REPONAME":       "repo",
+				"CIRCLE_PULL_REQUEST":           "https://github.com/circle/repo/pull/1",
+			},
+			Labels: []pipeline.Label{
+				{Name: "dagger.io/vcs.change.branch", Value: "main"},
+				{Name: "dagger.io/vcs.change.head_sha", Value: "abc123"},
+				{Name: "dagger.io/vcs.job.name", Value: "build"},
+				{Name: "dagger.io/vcs.change.number", Value: "42"},
+				{Name: "dagger.io/vcs.triggerer.login", Value: "circle-user"},
+				{Name: "dagger.io/vcs.repo.url", Value: "https://github.com/user/repo"},
+				{Name: "dagger.io/vcs.repo.full_name", Value: "repo"},
+				{Name: "dagger.io/vcs.change.url", Value: "https://github.com/circle/repo/pull/1"},
+			},
+		},
+	} {
+		example := example
+		t.Run(example.Name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range example.Env {
+				os.Setenv(k, v)
+			}
+
+			// Run the function and collect the result
+			labels, err := pipeline.LoadCircleCILabels()
+
+			// Clean up environment variables
+			for k := range example.Env {
+				os.Unsetenv(k)
+			}
+
+			// Make assertions
 			require.NoError(t, err)
 			require.ElementsMatch(t, example.Labels, labels)
 		})
