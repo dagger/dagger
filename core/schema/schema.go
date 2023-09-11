@@ -141,6 +141,9 @@ func (s *MergedSchemas) addSchemas(moduleDigest digest.Digest, schemasToAdd ...E
 	return ms.addSchemas(schemasToAdd...)
 }
 
+// nolint: unused
+//
+// (seems like useful scaffolding that just isn't used yet)
 func (s *MergedSchemas) resolvers(moduleDigest digest.Digest) (Resolvers, error) {
 	ms, err := s.getModuleSchemaView(moduleDigest)
 	if err != nil {
@@ -151,7 +154,6 @@ func (s *MergedSchemas) resolvers(moduleDigest digest.Digest) (Resolvers, error)
 
 type moduleSchemaView struct {
 	mu              sync.RWMutex
-	digest          digest.Digest
 	separateSchemas map[string]ExecutableSchema
 	mergedSchema    ExecutableSchema
 	compiledSchema  *graphql.Schema

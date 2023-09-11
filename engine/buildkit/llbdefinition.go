@@ -416,9 +416,9 @@ func (dag *OpDAG) AsHTTP() (*HTTPOp, bool) {
 	if pbSource == nil {
 		return nil, false
 	}
-	hasHttpScheme := strings.HasPrefix(pbSource.Identifier, srctypes.HTTPScheme+"://")
-	hasHttpsScheme := strings.HasPrefix(pbSource.Identifier, srctypes.HTTPSScheme+"://")
-	if !hasHttpScheme && !hasHttpsScheme {
+	hasHTTPScheme := strings.HasPrefix(pbSource.Identifier, srctypes.HTTPScheme+"://")
+	hasHTTPSScheme := strings.HasPrefix(pbSource.Identifier, srctypes.HTTPSScheme+"://")
+	if !hasHTTPScheme && !hasHTTPSScheme {
 		return nil, false
 	}
 	op := &HTTPOp{

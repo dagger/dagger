@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ const (
 	alpineVersion = "3.18"
 	runcVersion   = "v1.1.5"
 	cniVersion    = "v1.2.0"
-	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
+	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0" // nolint:gosec
 
 	engineDefaultStateDir = "/var/lib/dagger"
 	engineTomlPath        = "/etc/dagger/engine.toml"
@@ -29,6 +30,8 @@ const (
 )
 
 func (*DaggerCI) CLI(ctx context.Context, version string, debug bool) (*File, error) {
+	// TODO(vito)
+	return nil, errors.New("not implemented")
 }
 
 type EngineOpts struct {
@@ -38,6 +41,8 @@ type EngineOpts struct {
 }
 
 func (*DaggerCI) EngineContainer(ctx context.Context, opts *EngineOpts) (*Container, error) {
+	// TODO(vito)
+	return nil, errors.New("not implemented")
 }
 
 func (*DaggerCI) EngineTests(ctx context.Context) error {

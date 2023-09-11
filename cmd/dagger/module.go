@@ -74,7 +74,7 @@ var moduleCmd = &cobra.Command{
 		case mod.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
 			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-				rec := progrock.RecorderFromContext(ctx)
+				rec := progrock.FromContext(ctx)
 				vtx := rec.Vertex("get-mod-config", strings.Join(os.Args, " "))
 				defer func() { vtx.Done(err) }()
 				readConfigTask := vtx.Task("reading git module config")
@@ -211,11 +211,11 @@ func updateModuleConfig(
 	runCodegenFunc := func() error {
 		return nil
 	}
-	switch moduleconfig.SDK(newModCfg.SDK) {
+	switch newModCfg.SDK {
 	case moduleconfig.SDKGo:
 		runCodegenFunc = func() error {
 			return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-				rec := progrock.RecorderFromContext(ctx)
+				rec := progrock.FromContext(ctx)
 				vtx := rec.Vertex("mod-update", strings.Join(os.Args, " "))
 				defer func() { vtx.Done(err) }()
 
@@ -383,7 +383,7 @@ func (p moduleFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*da
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
 
-	var depMods []*dagger.Module
+	depMods := make([]*dagger.Module, 0, len(cfg.Dependencies))
 	for _, dep := range cfg.Dependencies {
 		depPath := filepath.Join(filepath.Dir(p.local.path), dep)
 		if filepath.Base(depPath) != "dagger.json" {
@@ -565,7 +565,7 @@ func loadModCmdWrapper(
 		return withEngineAndTUI(cmd.Context(), client.Params{
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			rec := progrock.RecorderFromContext(ctx)
+			rec := progrock.FromContext(ctx)
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 

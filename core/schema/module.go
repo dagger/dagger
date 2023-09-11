@@ -498,7 +498,7 @@ func (cache *FunctionContextCache) WithFunctionContext(ctx *core.Context, fnCtx 
 	return ctx, nil
 }
 
-var functionContextNotFoundErr = fmt.Errorf("function context not found")
+var errFunctionContextNotFound = fmt.Errorf("function context not found")
 
 func (cache *FunctionContextCache) FunctionContextFrom(ctx context.Context) (*FunctionContext, error) {
 	// TODO: make sure this errors if not from module caller
@@ -507,7 +507,7 @@ func (cache *FunctionContextCache) FunctionContextFrom(ctx context.Context) (*Fu
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 	return cache.cacheMap().GetOrInitialize(clientMetadata.FunctionContextDigest, func() (*FunctionContext, error) {
-		return nil, functionContextNotFoundErr
+		return nil, errFunctionContextNotFound
 	})
 }
 
@@ -864,7 +864,7 @@ func (s *moduleSchema) addFunctionToSchema(
 	return nil
 }
 
-// relevent ast code we need to work with here:
+// relevant ast code we need to work with here:
 // https://github.com/vektah/gqlparser/blob/35199fce1fa1b73c27f23c84f4430f47ac93329e/ast/value.go#L44
 func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 	if val == nil {

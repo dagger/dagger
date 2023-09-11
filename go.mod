@@ -68,12 +68,10 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/icholy/replace v0.6.0
 	github.com/jackpal/gateway v1.0.7
-	github.com/juju/ansiterm v1.0.0
 	github.com/koron-go/prefixw v1.0.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.18
 	github.com/moby/sys/mount v0.3.3
-	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.9
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
@@ -168,7 +166,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
-	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
@@ -177,6 +174,7 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
+	github.com/muesli/termenv v0.15.1 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
@@ -266,7 +264,7 @@ require (
 	golang.org/x/net v0.14.0
 	golang.org/x/text v0.12.0
 	golang.org/x/time v0.3.0 // indirect
-	golang.org/x/tools v0.12.0 // indirect
+	golang.org/x/tools v0.12.0
 	google.golang.org/genproto v0.0.0-20230526161137-0005af68ea54 // indirect
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1

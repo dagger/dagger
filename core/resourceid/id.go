@@ -87,7 +87,7 @@ func Encode[T any, I ID[T]](payload *T) (I, error) {
 }
 
 func TypeName(id string) (string, error) {
-	actualType, _, ok := strings.Cut(string(id), ":")
+	actualType, _, ok := strings.Cut(id, ":")
 	if !ok {
 		return "", fmt.Errorf("malformed ID: %v", id)
 	}

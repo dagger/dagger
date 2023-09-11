@@ -32,15 +32,15 @@ type blobSource struct {
 	cache cache.Accessor
 }
 
-type BlobSourceIdentifier struct {
+type SourceIdentifier struct {
 	ocispecs.Descriptor
 }
 
-func (BlobSourceIdentifier) Scheme() string {
+func (SourceIdentifier) Scheme() string {
 	return BlobScheme
 }
 
-func (id BlobSourceIdentifier) Capture(c *provenance.Capture, pin string) error {
+func (id SourceIdentifier) Capture(*provenance.Capture, string) error {
 	// TODO: safe to skip? Even if so, should fill in someday once we support provenance
 	return nil
 }
@@ -60,7 +60,7 @@ func LLB(desc ocispecs.Descriptor) llb.State {
 	).Output())
 }
 
-func IdentifierFromPB(op *pb.SourceOp) (*BlobSourceIdentifier, error) {
+func IdentifierFromPB(op *pb.SourceOp) (*SourceIdentifier, error) {
 	scheme, ref, ok := strings.Cut(op.Identifier, "://")
 	if !ok {
 		return nil, fmt.Errorf("invalid blob source identifier %q", op.Identifier)
@@ -84,7 +84,7 @@ func (bs *blobSource) Identifier(scheme, ref string, sourceAttrs map[string]stri
 	return bs.identifier(scheme, ref, sourceAttrs, p)
 }
 
-func (bs *blobSource) identifier(scheme, ref string, sourceAttrs map[string]string, _ *pb.Platform) (*BlobSourceIdentifier, error) {
+func (bs *blobSource) identifier(scheme, ref string, sourceAttrs map[string]string, _ *pb.Platform) (*SourceIdentifier, error) {
 	desc := ocispecs.Descriptor{
 		Digest:      digest.Digest(ref),
 		Annotations: map[string]string{},
@@ -103,11 +103,11 @@ func (bs *blobSource) identifier(scheme, ref string, sourceAttrs map[string]stri
 			desc.Annotations[k] = v
 		}
 	}
-	return &BlobSourceIdentifier{desc}, nil
+	return &SourceIdentifier{desc}, nil
 }
 
 func (bs *blobSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	blobIdentifier, ok := id.(*BlobSourceIdentifier)
+	blobIdentifier, ok := id.(*SourceIdentifier)
 	if !ok {
 		return nil, fmt.Errorf("invalid blob identifier %v", id)
 	}
@@ -119,16 +119,16 @@ func (bs *blobSource) Resolve(ctx context.Context, id source.Identifier, sm *ses
 }
 
 type blobSourceInstance struct {
-	id *BlobSourceIdentifier
+	id *SourceIdentifier
 	sm *session.Manager
 	*blobSource
 }
 
-func (bs *blobSourceInstance) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) {
+func (bs *blobSourceInstance) CacheKey(context.Context, session.Group, int) (string, string, solver.CacheOpts, bool, error) {
 	return bs.id.Digest.String(), bs.id.Digest.String(), nil, true, nil
 }
 
-func (bs *blobSourceInstance) Snapshot(ctx context.Context, g session.Group) (cache.ImmutableRef, error) {
+func (bs *blobSourceInstance) Snapshot(ctx context.Context, _ session.Group) (cache.ImmutableRef, error) {
 	opts := []cache.RefOption{
 		// TODO: could also include description of original blob source by passing along more metadata
 		cache.WithDescription(fmt.Sprintf("dagger blob source for %s", bs.id.Digest)),

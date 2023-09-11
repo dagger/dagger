@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	. "github.com/dave/jennifer/jen"
+	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 )
@@ -364,149 +364,153 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 			},
 		}, nil
 	case *types.Struct:
-		if named == nil {
-			return nil, fmt.Errorf("struct types must be named")
-		}
-		name := named.Obj().Name()
-		if name == "" {
-			return nil, fmt.Errorf("struct types must be named")
-		}
-		// use cache if we've already seen this type
-		if namedTypeDef, ok := ps.namedTypeDefs[name]; ok {
-			return namedTypeDef, nil
-		}
-
-		typeDef := &dagger.TypeDefInput{
-			Kind: dagger.Objectkind,
-			AsObject: &dagger.ObjectTypeDefInput{
-				Name: name,
-			},
-		}
-		// cache early to handle recursive types, e.g. objects with chainable methods that return themselves
-		ps.namedTypeDefs[name] = typeDef
-
-		tokenFile := ps.fset.File(named.Obj().Pos())
-		isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
-
-		// Fill out any Functions on the object, which are methods on the struct
-
-		// TODO: support methods defined on non-pointer receivers
-		methodSet := types.NewMethodSet(types.NewPointer(named))
-		for i := 0; i < methodSet.Len(); i++ {
-			methodObj := methodSet.At(i).Obj()
-			methodTokenFile := ps.fset.File(methodObj.Pos())
-			methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
-			if methodIsDaggerGenerated {
-				// We don't care about pre-existing methods on core types or objects from dependency modules.
-				continue
-			}
-
-			method, ok := methodObj.(*types.Func)
-			if !ok {
-				return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
-			}
-			if !method.Exported() {
-				continue
-			}
-			fnTypeDef := &dagger.FunctionDef{
-				Name: method.Name(),
-			}
-
-			funcDecl, err := ps.declForFunc(method)
-			if err != nil {
-				return nil, fmt.Errorf("failed to find decl for method %s: %w", method.Name(), err)
-			}
-			if doc := funcDecl.Doc; doc != nil {
-				fnTypeDef.Description = doc.Text()
-			}
-
-			methodSig, ok := method.Type().(*types.Signature)
-			if !ok {
-				return nil, fmt.Errorf("expected method to be a func, got %T", method.Type())
-			}
-			for i := 0; i < methodSig.Params().Len(); i++ {
-				param := methodSig.Params().At(i)
-
-				// first arg must be Context
-				if i == 0 {
-					if param.Type().String() != "context.Context" {
-						return nil, fmt.Errorf("method %s has first arg %s, expected context.Context", method.Name(), param.Type().String())
-					}
-					continue
-				}
-
-				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert param type: %w", err)
-				}
-				fnTypeDef.Args = append(fnTypeDef.Args, &dagger.FunctionArgDef{
-					Name:    param.Name(),
-					TypeDef: argTypeDef,
-				})
-			}
-			methodResults := methodSig.Results()
-			if methodResults.Len() == 0 {
-				return nil, fmt.Errorf("method %s has no return value", method.Name())
-			}
-			if methodResults.Len() > 2 {
-				return nil, fmt.Errorf("method %s has too many return values", method.Name())
-			}
-
-			// ignore error, which should be second or not present (for now, we can be more flexible later)
-			result := methodResults.At(0)
-			resultTypeDef, err := ps.goTypeToAPIType(result.Type(), nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert result type: %w", err)
-			}
-			fnTypeDef.ReturnType = resultTypeDef
-
-			typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fnTypeDef)
-		}
-
-		if isDaggerGenerated {
-			// If this object is from the core API or another dependency, we only care about any new methods
-			// being attached to it, so we're all done in this case
-			return typeDef, nil
-		}
-
-		// Fill out the Description with the comment above the struct (if any)
-		typeSpec, err := ps.typeSpecForNamedType(named)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find decl for named type %s: %w", name, err)
-		}
-		if doc := typeSpec.Doc; doc != nil {
-			typeDef.AsObject.Description = doc.Text()
-		}
-		astStructType, ok := typeSpec.Type.(*ast.StructType)
-		if !ok {
-			return nil, fmt.Errorf("expected type spec to be a struct, got %T", typeSpec.Type)
-		}
-
-		// Fill out the static fields of the struct (if any)
-		for i := 0; i < t.NumFields(); i++ {
-			field := t.Field(i)
-			if !field.Exported() {
-				continue
-			}
-			fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert field type: %w", err)
-			}
-			var description string
-			if doc := astStructType.Fields.List[i].Doc; doc != nil {
-				description = doc.Text()
-			}
-			typeDef.AsObject.Fields = append(typeDef.AsObject.Fields, &dagger.FieldTypeDefInput{
-				Name:        field.Name(),
-				Description: description,
-				TypeDef:     fieldTypeDef,
-			})
-		}
-
-		return typeDef, nil
+		return ps.goStructToAPIType(t, named)
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
+}
+
+func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*dagger.TypeDefInput, error) {
+	if named == nil {
+		return nil, fmt.Errorf("struct types must be named")
+	}
+	name := named.Obj().Name()
+	if name == "" {
+		return nil, fmt.Errorf("struct types must be named")
+	}
+	// use cache if we've already seen this type
+	if namedTypeDef, ok := ps.namedTypeDefs[name]; ok {
+		return namedTypeDef, nil
+	}
+
+	typeDef := &dagger.TypeDefInput{
+		Kind: dagger.Objectkind,
+		AsObject: &dagger.ObjectTypeDefInput{
+			Name: name,
+		},
+	}
+	// cache early to handle recursive types, e.g. objects with chainable methods that return themselves
+	ps.namedTypeDefs[name] = typeDef
+
+	tokenFile := ps.fset.File(named.Obj().Pos())
+	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
+
+	// Fill out any Functions on the object, which are methods on the struct
+
+	// TODO: support methods defined on non-pointer receivers
+	methodSet := types.NewMethodSet(types.NewPointer(named))
+	for i := 0; i < methodSet.Len(); i++ {
+		methodObj := methodSet.At(i).Obj()
+		methodTokenFile := ps.fset.File(methodObj.Pos())
+		methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
+		if methodIsDaggerGenerated {
+			// We don't care about pre-existing methods on core types or objects from dependency modules.
+			continue
+		}
+
+		method, ok := methodObj.(*types.Func)
+		if !ok {
+			return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
+		}
+		if !method.Exported() {
+			continue
+		}
+		fnTypeDef := &dagger.FunctionDef{
+			Name: method.Name(),
+		}
+
+		funcDecl, err := ps.declForFunc(method)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find decl for method %s: %w", method.Name(), err)
+		}
+		if doc := funcDecl.Doc; doc != nil {
+			fnTypeDef.Description = doc.Text()
+		}
+
+		methodSig, ok := method.Type().(*types.Signature)
+		if !ok {
+			return nil, fmt.Errorf("expected method to be a func, got %T", method.Type())
+		}
+		for i := 0; i < methodSig.Params().Len(); i++ {
+			param := methodSig.Params().At(i)
+
+			// first arg must be Context
+			if i == 0 {
+				if param.Type().String() != "context.Context" {
+					return nil, fmt.Errorf("method %s has first arg %s, expected context.Context", method.Name(), param.Type().String())
+				}
+				continue
+			}
+
+			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert param type: %w", err)
+			}
+			fnTypeDef.Args = append(fnTypeDef.Args, &dagger.FunctionArgDef{
+				Name:    param.Name(),
+				TypeDef: argTypeDef,
+			})
+		}
+		methodResults := methodSig.Results()
+		if methodResults.Len() == 0 {
+			return nil, fmt.Errorf("method %s has no return value", method.Name())
+		}
+		if methodResults.Len() > 2 {
+			return nil, fmt.Errorf("method %s has too many return values", method.Name())
+		}
+
+		// ignore error, which should be second or not present (for now, we can be more flexible later)
+		result := methodResults.At(0)
+		resultTypeDef, err := ps.goTypeToAPIType(result.Type(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result type: %w", err)
+		}
+		fnTypeDef.ReturnType = resultTypeDef
+
+		typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fnTypeDef)
+	}
+
+	if isDaggerGenerated {
+		// If this object is from the core API or another dependency, we only care about any new methods
+		// being attached to it, so we're all done in this case
+		return typeDef, nil
+	}
+
+	// Fill out the Description with the comment above the struct (if any)
+	typeSpec, err := ps.typeSpecForNamedType(named)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find decl for named type %s: %w", name, err)
+	}
+	if doc := typeSpec.Doc; doc != nil {
+		typeDef.AsObject.Description = doc.Text()
+	}
+	astStructType, ok := typeSpec.Type.(*ast.StructType)
+	if !ok {
+		return nil, fmt.Errorf("expected type spec to be a struct, got %T", typeSpec.Type)
+	}
+
+	// Fill out the static fields of the struct (if any)
+	for i := 0; i < t.NumFields(); i++ {
+		field := t.Field(i)
+		if !field.Exported() {
+			continue
+		}
+		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert field type: %w", err)
+		}
+		var description string
+		if doc := astStructType.Fields.List[i].Doc; doc != nil {
+			description = doc.Text()
+		}
+		typeDef.AsObject.Fields = append(typeDef.AsObject.Fields, &dagger.FieldTypeDefInput{
+			Name:        field.Name(),
+			Description: description,
+			TypeDef:     fieldTypeDef,
+		})
+	}
+
+	return typeDef, nil
 }
 
 // typeSpecForNamedType returns the *ast* type spec for the given Named type. This is needed

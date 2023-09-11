@@ -659,6 +659,8 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	defer sess.Close()
 
+	_ = ctx // avoid ineffasign lint
+
 	go http.Serve(l, sess) //nolint:gosec
 
 	// pass dagger session along to any SDKs that run in the container

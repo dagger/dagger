@@ -93,7 +93,7 @@ func RunCodegen(
 
 	if apiClientOutputPath == "" || apiClientOutputPath == "-" {
 		cmd.Println(string(generated.APIClientSource))
-		return
+		return nil
 	}
 
 	if err := os.WriteFile(apiClientOutputPath, generated.APIClientSource, 0o600); err != nil {

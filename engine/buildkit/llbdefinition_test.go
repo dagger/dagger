@@ -152,5 +152,4 @@ func TestDefToDAG(t *testing.T) {
 		require.Equal(t, dag.Inputs[0], execDag.Inputs[0])
 		require.Nil(t, dag.Op.Op)
 	})
-
 }
