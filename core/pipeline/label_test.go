@@ -3,12 +3,38 @@ package pipeline_test
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLoadClientLabels(t *testing.T) {
+	labels := pipeline.LoadClientLabels(engine.Version)
+
+	expected := []pipeline.Label{
+		{"dagger.io/client.os", runtime.GOOS},
+		{"dagger.io/client.arch", runtime.GOARCH},
+		{"dagger.io/client.version", engine.Version},
+	}
+
+	require.ElementsMatch(t, expected, labels)
+}
+
+func TestLoadServerLabels(t *testing.T) {
+	labels := pipeline.LoadServerLabels("0.8.4", "linux", "amd64")
+
+	expected := []pipeline.Label{
+		{"dagger.io/server.os", "linux"},
+		{"dagger.io/server.arch", "amd64"},
+		{"dagger.io/server.version", "0.8.4"},
+	}
+
+	require.ElementsMatch(t, expected, labels)
+}
 
 func TestLoadGitLabels(t *testing.T) {
 	normalRepo := setupRepo(t)

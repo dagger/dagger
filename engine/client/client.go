@@ -223,6 +223,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 
 	c.labels = pipeline.LoadVCSLabels(workdir)
+	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:          c.ID(),
@@ -580,7 +581,7 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 
 	if !opts.IsFileStream {
 		// we're writing a full directory tree, normal fsutil.Receive is good
-		if err := os.MkdirAll(opts.Path, 0700); err != nil {
+		if err := os.MkdirAll(opts.Path, 0o700); err != nil {
 			return fmt.Errorf("failed to create synctarget dest dir %s: %w", opts.Path, err)
 		}
 
@@ -641,12 +642,12 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 		finalDestPath = filepath.Join(destParentDir, fileOriginalName)
 	}
 
-	if err := os.MkdirAll(destParentDir, 0700); err != nil {
+	if err := os.MkdirAll(destParentDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
 	}
 
 	if opts.FileMode == 0 {
-		opts.FileMode = 0600
+		opts.FileMode = 0o600
 	}
 	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
 	if err != nil {
