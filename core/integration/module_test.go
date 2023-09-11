@@ -49,7 +49,6 @@ func TestEnvCmd(t *testing.T) {
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
-				defer c.Close()
 				stderr, err := CLITestContainer(ctx, t, c).
 					WithLoadedEnv(tc.environmentPath, testGitEnv).
 					CallEnv().
@@ -66,9 +65,7 @@ func TestEnvCmd(t *testing.T) {
 func TestEnvCmdHelps(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	t.Cleanup(func() {
-		c.Close()
-	})
+
 	baseCtr := CLITestContainer(ctx, t, c).WithHelpArg(true)
 
 	// test with no env specified
@@ -185,7 +182,6 @@ func TestEnvCmdInit(t *testing.T) {
 		t.Run(tc.testName, func(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
-			defer c.Close()
 			ctr := CLITestContainer(ctx, t, c).
 				WithEnvArg(tc.environmentPath).
 				WithSDKArg(tc.sdk).
@@ -222,7 +218,6 @@ func TestEnvCmdInit(t *testing.T) {
 	t.Run("error on existing environment", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
-		defer c.Close()
 		_, err := CLITestContainer(ctx, t, c).
 			WithLoadedEnv("core/integration/testdata/environments/go/basic", false).
 			WithSDKArg("go").
@@ -364,7 +359,6 @@ func TestEnvChecks(t *testing.T) {
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
-				defer c.Close()
 				stderr, err := CLITestContainer(ctx, t, c).
 					WithLoadedEnv(tc.environmentPath, testGitEnv).
 					CallChecks(tc.selectedChecks...).
