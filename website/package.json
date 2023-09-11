@@ -38,7 +38,7 @@
     "remark-code-import": "^1.2.0",
     "sass": "^1.66.1",
     "spectaql": "^2.0.5",
-    "typedoc": "^0.24.7",
+    "typedoc": "^0.25.1",
     "typedoc-plugin-markdown": "^3.16.0",
     "typescript": "^5.0.4",
     "url-loader": "^4.1.1"
