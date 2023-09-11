@@ -113,6 +113,29 @@ The following example shows how to obtain a reference to the host working direct
 </TabItem>
 </Tabs>
 
+The exclusion pattern overrides the inclusion pattern, but not vice-versa. The following example demonstrates by obtaining a reference to the host working directory containing all files except `*.rar` files:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/work-with-host-filesystem/list-dir-exclude-include/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./snippets/work-with-host-filesystem/list-dir-exclude-include/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/work-with-host-filesystem/list-dir-exclude-include/main.py
+```
+
+</TabItem>
+</Tabs>
+
 The exclusion pattern overrides the inclusion pattern, but not vice-versa. The following example demonstrates by obtaining a reference to the host working directory containing all `.rar` and `.txt` files except `.out` files using glob patterns:
 
 <Tabs groupId="language">
