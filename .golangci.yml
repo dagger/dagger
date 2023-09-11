@@ -29,17 +29,22 @@ linters:
     - stylecheck
     - typecheck
     - unconvert
-    - unparam
-    - unused
     - unused
     - whitespace
 
 issues:
   exclude-rules:
-    - path: ci
-      linters:
-        - unparam
     - path: _test\.go
       linters:
         - dupl
         - gosec
+
+linters-settings:
+  revive:
+    rules:
+    # This rule is annoying. Often you want to name the
+    # parameters for clarity because it conforms to an
+    # interface.
+    - name: unused-parameter
+      severity: warning
+      disabled: true
