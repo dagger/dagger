@@ -11,7 +11,7 @@ import (
 type Function struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
-	Args        []*FunctionArg `json:"functionArgs"`
+	Args        []*FunctionArg `json:"args"`
 	ReturnType  *TypeDef       `json:"returnType"`
 
 	// (Not in public API) Used to invoke function in the context of its module.
@@ -39,9 +39,11 @@ func (fn Function) Clone() (*Function, error) {
 			return nil, fmt.Errorf("failed to clone function arg %q: %w", arg.Name, err)
 		}
 	}
-	cp.ReturnType, err = fn.ReturnType.Clone()
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone return type: %w", err)
+	if fn.ReturnType != nil {
+		cp.ReturnType, err = fn.ReturnType.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("failed to clone return type: %w", err)
+		}
 	}
 	return &cp, nil
 }
@@ -189,11 +191,11 @@ func (k TypeDefKind) String() string {
 }
 
 const (
-	TypeDefKindString  TypeDefKind = "String"
-	TypeDefKindInteger TypeDefKind = "Integer"
-	TypeDefKindBoolean TypeDefKind = "Boolean"
-	TypeDefKindList    TypeDefKind = "List"
-	TypeDefKindObject  TypeDefKind = "Object"
+	TypeDefKindString  TypeDefKind = "StringKind"
+	TypeDefKindInteger TypeDefKind = "IntegerKind"
+	TypeDefKindBoolean TypeDefKind = "BooleanKind"
+	TypeDefKindList    TypeDefKind = "ListKind"
+	TypeDefKindObject  TypeDefKind = "ObjectKind"
 )
 
 type FunctionCall struct {

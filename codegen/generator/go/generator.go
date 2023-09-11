@@ -5,18 +5,21 @@ import (
 	"context"
 	"fmt"
 	"go/format"
+	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/generator/go/templates"
 	"github.com/dagger/dagger/codegen/introspection"
+	"github.com/iancoleman/strcase"
+	"golang.org/x/tools/imports"
 )
 
 type GoGenerator struct {
 	Config generator.Config
 }
 
-func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema) ([]byte, error) {
+func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema) (*generator.GeneratedCode, error) {
 	generator.SetSchema(schema)
 
 	funcs := templates.GoTemplateFuncs(g.Config.ModuleName, g.Config.SourceDirectoryPath, schema)
@@ -47,28 +50,8 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			return nil
 		},
 		Object: func(t *introspection.Type) error {
-			objectTmpl := templates.Object(funcs)
-
-			// don't create methods on query for the env itself, only its deps
-			// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
-			if g.Config.ModuleName != "" && t.Name == generator.QueryStructName {
-				var newFields []*introspection.Field
-				for _, f := range t.Fields {
-					if f.Name != g.Config.ModuleName {
-						newFields = append(newFields, f)
-					}
-				}
-				t.Fields = newFields
-			}
-
-			objectName := strings.ToLower(t.Name[:1]) + t.Name[1:]
-			if g.Config.ModuleName == objectName {
-				// don't generate self bindings, it's too confusing for now
-				return nil
-			}
-
 			var out bytes.Buffer
-			if err := objectTmpl.Execute(&out, t); err != nil {
+			if err := templates.Object(funcs).Execute(&out, t); err != nil {
 				return err
 			}
 			render = append(render, out.String())
@@ -117,5 +100,32 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	if err != nil {
 		return nil, fmt.Errorf("error formatting generated code: %w", err)
 	}
-	return formatted, nil
+	formatted, err = imports.Process(filepath.Join(g.Config.SourceDirectoryPath, "dummy.go"), formatted, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error formatting generated code: %w", err)
+	}
+
+	generatedCode := &generator.GeneratedCode{
+		APIClientSource: formatted,
+	}
+	if g.Config.ModuleName != "" {
+		generatedCode.StarterTemplateSource = []byte(g.baseModuleSource())
+	}
+	return generatedCode, nil
+}
+
+func (g *GoGenerator) baseModuleSource() string {
+	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
+	return fmt.Sprintf(`package main
+
+import (
+	"context"
+)
+
+type %s struct {}
+
+func (m *%s) MyFunction(ctx context.Context, stringArg string) (*Container, error) {
+	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg}).Sync(ctx)
+}
+`, moduleStructName, moduleStructName)
 }

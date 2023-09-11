@@ -45,7 +45,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		functionContextCache: NewFunctionContextCache(),
 		moduleCache:          core.NewCacheMap[digest.Digest, *core.Module](),
 
-		envSchemas: map[digest.Digest]*envSchema{},
+		moduleSchemaViews: map[digest.Digest]*moduleSchemaView{},
 	}
 	return merged, nil
 }
@@ -66,18 +66,18 @@ type MergedSchemas struct {
 	moduleCache          *core.CacheMap[digest.Digest, *core.Module]
 
 	mu sync.RWMutex
-	// map of env digest -> schema presented to env
-	// for the original client not in an env, digest is just ""
-	envSchemas map[digest.Digest]*envSchema
+	// Map of module digest -> schema presented to module.
+	// For the original client not in an module, digest is just "".
+	moduleSchemaViews map[digest.Digest]*moduleSchemaView
 }
 
 // requires s.mu write lock held
-func (s *MergedSchemas) initializeEnvSchema(envDigest digest.Digest) (*envSchema, error) {
-	es := &envSchema{
+func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*moduleSchemaView, error) {
+	ms := &moduleSchemaView{
 		separateSchemas: map[string]ExecutableSchema{},
 	}
 
-	err := es.addSchemas(
+	err := ms.addSchemas(
 		&querySchema{s},
 		&directorySchema{s, s.host, s.buildCache},
 		&fileSchema{s, s.host},
@@ -95,6 +95,7 @@ func (s *MergedSchemas) initializeEnvSchema(envDigest digest.Digest) (*envSchema
 		&hostSchema{s, s.host},
 		&moduleSchema{
 			MergedSchemas:        s,
+			currentSchemaView:    ms,
 			functionContextCache: s.functionContextCache,
 			moduleCache:          s.moduleCache,
 		},
@@ -106,49 +107,49 @@ func (s *MergedSchemas) initializeEnvSchema(envDigest digest.Digest) (*envSchema
 		return nil, err
 	}
 
-	s.envSchemas[envDigest] = es
-	return es, nil
+	s.moduleSchemaViews[moduleDigest] = ms
+	return ms, nil
 }
 
-func (s *MergedSchemas) getEnvSchema(envDigest digest.Digest) (*envSchema, error) {
+func (s *MergedSchemas) getModuleSchemaView(moduleDigest digest.Digest) (*moduleSchemaView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	es, ok := s.envSchemas[envDigest]
+	ms, ok := s.moduleSchemaViews[moduleDigest]
 	if !ok {
 		var err error
-		es, err = s.initializeEnvSchema(envDigest)
+		ms, err = s.initializeModuleSchema(moduleDigest)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return es, nil
+	return ms, nil
 }
 
-func (s *MergedSchemas) Schema(envDigest digest.Digest) (*graphql.Schema, error) {
-	es, err := s.getEnvSchema(envDigest)
+func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, error) {
+	ms, err := s.getModuleSchemaView(moduleDigest)
 	if err != nil {
 		return nil, err
 	}
-	return es.schema(), nil
+	return ms.schema(), nil
 }
 
-func (s *MergedSchemas) addSchemas(envDigest digest.Digest, schemasToAdd ...ExecutableSchema) error {
-	es, err := s.getEnvSchema(envDigest)
+func (s *MergedSchemas) addSchemas(moduleDigest digest.Digest, schemasToAdd ...ExecutableSchema) error {
+	ms, err := s.getModuleSchemaView(moduleDigest)
 	if err != nil {
 		return err
 	}
-	return es.addSchemas(schemasToAdd...)
+	return ms.addSchemas(schemasToAdd...)
 }
 
-func (s *MergedSchemas) resolvers(envDigest digest.Digest) (Resolvers, error) {
-	es, err := s.getEnvSchema(envDigest)
+func (s *MergedSchemas) resolvers(moduleDigest digest.Digest) (Resolvers, error) {
+	ms, err := s.getModuleSchemaView(moduleDigest)
 	if err != nil {
 		return nil, err
 	}
-	return es.resolvers(), nil
+	return ms.resolvers(), nil
 }
 
-type envSchema struct {
+type moduleSchemaView struct {
 	mu              sync.RWMutex
 	digest          digest.Digest
 	separateSchemas map[string]ExecutableSchema
@@ -156,13 +157,13 @@ type envSchema struct {
 	compiledSchema  *graphql.Schema
 }
 
-func (s *envSchema) schema() *graphql.Schema {
+func (s *moduleSchemaView) schema() *graphql.Schema {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.compiledSchema
 }
 
-func (s *envSchema) addSchemas(schemasToAdd ...ExecutableSchema) error {
+func (s *moduleSchemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -218,7 +219,7 @@ func (s *envSchema) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	return nil
 }
 
-func (s *envSchema) resolvers() Resolvers {
+func (s *moduleSchemaView) resolvers() Resolvers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.mergedSchema.Resolvers()

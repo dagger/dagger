@@ -118,9 +118,9 @@ type ListTypeDef {
 }
 
 enum TypeDefKind {
-  String
-  Integer
-  Boolean
-  List
-  Object
+  StringKind
+  IntegerKind
+  BooleanKind
+  ListKind
+  ObjectKind
 }

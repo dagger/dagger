@@ -93,4 +93,3 @@ func TypeName(id string) (string, error) {
 	}
 	return actualType, nil
 }
-

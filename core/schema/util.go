@@ -52,9 +52,12 @@ var jsonResolver = ScalarResolver{
 	ParseValue: func(value any) any {
 		switch v := value.(type) {
 		case string:
+			if v == "" {
+				return nil
+			}
 			var x any
 			if err := json.Unmarshal([]byte(v), &x); err != nil {
-				panic(err)
+				panic(fmt.Errorf("JSON scalar parse value error: %v", err))
 			}
 			return x
 		default:
@@ -68,9 +71,12 @@ var jsonResolver = ScalarResolver{
 			if v != nil {
 				jsonStr = v.Value
 			}
+			if jsonStr == "" {
+				return nil
+			}
 			var x any
 			if err := json.Unmarshal([]byte(jsonStr), &x); err != nil {
-				panic(err)
+				panic(fmt.Errorf("JSON scalar parse literal error: %v", err))
 			}
 			return x
 		default:

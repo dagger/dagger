@@ -31,18 +31,19 @@ var (
 	gqlMarshaller reflect.Type
 
 	// Taken from codegen/generator/functions.go
-	// Includes also Platform
 	customScalar = map[string]struct{}{
-		"ContainerID":   {},
-		"FileID":        {},
-		"DirectoryID":   {},
-		"SecretID":      {},
-		"SocketID":      {},
-		"CacheID":       {},
-		"Platform":      {},
-		"EnvironmentID": {},
-		"CheckID":       {},
-		"CheckResultID": {},
+		// IDs
+		"ContainerID": {},
+		"FileID":      {},
+		"DirectoryID": {},
+		"SecretID":    {},
+		"SocketID":    {},
+		"CacheID":     {},
+		"ModuleID":    {},
+		"FunctionID":  {},
+		// Others
+		"Platform": {},
+		"JSON":     {},
 	}
 )
 
@@ -78,7 +79,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		// Enums do not follow the unicode escape
 		_, found := customScalar[t.Name()]
 		if name != "string" && !found {
-			return fmt.Sprintf("%s", v.String()), nil //nolint:gosimple,staticcheck
+			return v.String(), nil //nolint:gosimple,staticcheck
 		}
 		return buf.String(), nil //nolint:gosimple,staticcheck
 	case reflect.Pointer:
@@ -122,14 +123,22 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 				if err != nil {
 					return err
 				}
-				elems[i] = fmt.Sprintf("%s:%s", name, m)
+				if m != `""` && m != "null" {
+					elems[i] = fmt.Sprintf("%s:%s", name, m)
+				}
 				return nil
 			})
 		}
 		if err := eg.Wait(); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("{%s}", strings.Join(elems, ",")), nil
+		nonNullElems := make([]string, 0, n)
+		for _, elem := range elems {
+			if elem != "" {
+				nonNullElems = append(nonNullElems, elem)
+			}
+		}
+		return fmt.Sprintf("{%s}", strings.Join(nonNullElems, ",")), nil
 	default:
 		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
 	}

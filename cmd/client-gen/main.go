@@ -160,7 +160,11 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 		return []byte{}, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
-	return gen.Generate(ctx, introspectionSchema)
+	generated, err := gen.Generate(ctx, introspectionSchema)
+	if err != nil {
+		return nil, err
+	}
+	return generated.APIClientSource, nil
 }
 
 func main() {

@@ -2,10 +2,12 @@ package templates
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -14,11 +16,37 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+/* TODO:
+* Handle IDable core types as inputs args+parents
+* Handle chainable methods
+   * Need to avoid circular typedef object references, json marshal fails right now
+* Handle types from 3rd party imports in the type signature
+   * Add packages.NeedImports and packages.NeedDependencies to packages.Load opts, ensure performance is okay (or deal with that by lazy loading)
+* Fix problem where changing a function signature requires running `dagger mod sync` twice (first one will result in package errors being seen, second one fixes)
+   * Use Overlays field in packages.Config to provide partial generation of dagger.gen.go, without the unupdated code we generate here
+* Handle no go.mod being present more gracefully and w/ better error messages
+* Handle automatically re-running `dagger mod sync` when invoking functions from CLI, to save users from having to always remember while developing locally
+* More flexibility around only returning error, not returning error, etc.
+* Support methods defined on non-pointer receivers
+*/
+
+/*
+moduleMainSrc generates the source code of the main func for Dagger Module code using the Go SDK.
+
+The overall idea is that users just need to create a struct with the same name as their Module and then
+add methods to that struct to implement their Module. Methods on that struct become Functions.
+
+They are also free to return custom objects from Functions, which themselves may have methods that become
+Functions too. However, only the "top-level" Module struct's Functions will be directly invokable.
+
+This is essentially just the GraphQL execution model.
+
+The implementation works by parsing the user's code and generating a main func that reads function call inputs
+from the Engine, calls the relevant function and returns the result. The generated code is mostly a giant switch/case
+on the object+function name, with each case doing json deserialization of the input arguments and calling the actual
+Go function.
+*/
 func (funcs goTemplateFuncs) moduleMainSrc() string {
-	// TODO: figure out which error case gets hit when run on empty dir, ensure there's very helpful messages
-
-	// TODO: add support for selectively recursing into external packages
-
 	fset := token.NewFileSet()
 	pkgs, err := packages.Load(&packages.Config{
 		Dir:   funcs.sourceDirectoryPath,
@@ -30,10 +58,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			packages.NeedTypesInfo,
 	}, "./...")
 	if err != nil {
-		return defaultErrorMainSrc("unloadable package")
+		return defaultErrorMainSrc(fmt.Sprintf("failed to load packages: %v", err))
 	}
-
-	// TODO: handle case where no go.mod found (curently results in only package w/ empty name)
 
 	var mainPkg *packages.Package
 	for _, pkg := range pkgs {
@@ -46,7 +72,11 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 		return defaultErrorMainSrc("no main package yet")
 	}
 	if len(mainPkg.Errors) > 0 {
-		return defaultErrorMainSrc("main package has errors")
+		var rerr error
+		for _, err := range mainPkg.Errors {
+			rerr = errors.Join(rerr, err)
+		}
+		return defaultErrorMainSrc(fmt.Sprintf("main package has errors: %v", rerr))
 	}
 
 	moduleStructName := strcase.ToCamel(funcs.moduleName)
@@ -67,12 +97,15 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 
 	objFunctionCases := map[string][]Code{}
 	if err := fillObjectFunctionCases(moduleAPITypeDef, objFunctionCases, moduleStructName); err != nil {
+		// errors indicate an internal problem rather than something w/ user code, so panic instead
 		panic(err)
 	}
 	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases)}, "\n")
 }
 
 const (
+	// The static part of the generated code. It calls out to the "invoke" func, which is the mostly
+	// dynamically generated code that actually calls the user's functions.
 	mainSrc = `func main() {
 	ctx := context.Background()
 
@@ -82,7 +115,7 @@ const (
 		fmt.Println(err.Error())
 		os.Exit(2)
 	}
-	fnName, err := fnCall.FunctionName(ctx)
+	fnName, err := fnCall.Name(ctx)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(2)
@@ -110,7 +143,7 @@ const (
 			fmt.Println(err.Error())
 			os.Exit(2)
 		}
-		inputArgs[fnArg.Name] = []byte(fnArg.Value)
+		inputArgs[argName] = []byte(argValue)
 	}
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
@@ -123,7 +156,7 @@ const (
 		fmt.Println(err.Error())
 		os.Exit(2)
 	}
-	_, err = fnCall.ReturnValue(ctx, resultBytes)
+	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(2)
@@ -137,12 +170,17 @@ const (
 	invokeFuncName = "invoke"
 )
 
+// the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
 func invokeSrc(objFunctionCases map[string][]Code) string {
+	// each `case` statement for every object name, which makes up the body of the invoke func
 	objCases := []Code{}
 	for objName, functionCases := range objFunctionCases {
 		objCases = append(objCases, Case(Lit(objName)).Block(Switch(Id(fnNameVar)).Block(functionCases...)))
 	}
-
+	// default case (return error)
+	objCases = append(objCases, Default().Block(
+		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown object %s"), Id(parentNameVar))),
+	))
 	objSwitch := Switch(Id(parentNameVar)).Block(objCases...)
 
 	// func invoke(
@@ -167,8 +205,10 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 	return fmt.Sprintf("%#v", invokeFunc)
 }
 
+// fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
+// for each function in that object
 func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Code, moduleName string) error {
-	if typeDef.Kind != dagger.Object {
+	if typeDef.Kind != dagger.Objectkind {
 		return nil
 	}
 	checkErrStatement := If(Err().Op("!=").Nil()).Block(
@@ -178,7 +218,12 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 		Qual("os", "Exit").Call(Lit(2)),
 	)
 
-	functionCases := []Code{}
+	objName := typeDef.AsObject.Name
+	if _, ok := cases[objName]; ok {
+		// handles recursive types, e.g. objects with chainable methods that return themselves
+		return nil
+	}
+
 	for _, fnDef := range typeDef.AsObject.Functions {
 		statements := []Code{
 			Var().Id("err").Error(),
@@ -186,7 +231,7 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 
 		parentVarName := "parent"
 		statements = append(statements,
-			Var().Id(parentVarName).Id(typeDef.AsObject.Name),
+			Var().Id(parentVarName).Id(objName),
 			Err().Op("=").Qual("json", "Unmarshal").Call(Id(parentJSONVar), Op("&").Id(parentVarName)),
 			checkErrStatement,
 		)
@@ -202,29 +247,31 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 				checkErrStatement,
 			)
 			switch argDef.TypeDef.Kind {
-			case dagger.String, dagger.Integer, dagger.Boolean, dagger.List:
+			case dagger.Stringkind, dagger.Integerkind, dagger.Booleankind, dagger.Listkind:
 				fnCallArgs = append(fnCallArgs, Id(argDef.Name))
-			case dagger.Object:
+			case dagger.Objectkind:
 				fnCallArgs = append(fnCallArgs, Op("&").Id(argDef.Name))
 			}
 		}
 
-		statements = append(statements, Return(Parens(Op("*").Id(typeDef.AsObject.Name)).Dot(fnDef.Name).Call(fnCallArgs...)))
+		statements = append(statements, Return(Parens(Op("*").Id(objName)).Dot(fnDef.Name).Call(fnCallArgs...)))
 
-		functionCases = append(functionCases, Case(Lit(fnDef.Name)).Block(statements...))
+		cases[objName] = append(cases[objName], Case(Lit(fnDef.Name)).Block(statements...))
 
 		if err := fillObjectFunctionCases(fnDef.ReturnType, cases, moduleName); err != nil {
 			return err
 		}
 	}
 
-	// special case for object name is module and function name is empty (return module functions)
-	if typeDef.AsObject.Name == moduleName {
+	// Special case for object name is module and function name is empty. This is called by the engine when
+	// it wants the module to return the definition of the functions it serves rather than actually invoke
+	// any of them.
+	if objName == moduleName {
 		typeDefBytes, err := json.Marshal(typeDef)
 		if err != nil {
 			return err
 		}
-		functionCases = append(functionCases, Case(Lit("")).Block(
+		cases[objName] = append(cases[objName], Case(Lit("")).Block(
 			/*
 				var err error
 				typeDefBytes := []byte(`huge json blob`)
@@ -236,7 +283,7 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 				}
 				mod := dag.CurrentModule()
 				for _, fnDef := range typeDef.AsObject.Functions {
-					mod = mod.WithFunction(fnDef)
+					mod = mod.WithFunction(dag.NewFunction(fnDef))
 				}
 				return mod, nil
 			*/
@@ -247,27 +294,31 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 			checkErrStatement,
 			Id("mod").Op(":=").Qual("dag", "CurrentModule").Call(),
 			For(List(Id("_"), Id("fnDef")).Op(":=").Range().Id("typeDef").Dot("AsObject").Dot("Functions")).Block(
-				Id("mod").Op("=").Id("mod").Dot("WithFunction").Call(Op("&").Id("fnDef")),
+				Id("mod").Op("=").Id("mod").Dot("WithFunction").Call(Qual("dag", "NewFunction").Call(Id("fnDef"))),
 			),
 			Return(Id("mod"), Nil()),
 		))
 	}
 
-	cases[typeDef.AsObject.Name] = functionCases
+	// default case (return error)
+	cases[objName] = append(cases[objName], Default().Block(
+		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown function %s"), Id(fnNameVar))),
+	))
+
 	return nil
 }
 
 func apiTypeKindToGoType(typeDef *dagger.TypeDefInput) string {
 	switch typeDef.Kind {
-	case dagger.String:
+	case dagger.Stringkind:
 		return "string"
-	case dagger.Integer:
+	case dagger.Integerkind:
 		return "int"
-	case dagger.Boolean:
+	case dagger.Booleankind:
 		return "bool"
-	case dagger.List:
+	case dagger.Listkind:
 		return "[]" + apiTypeKindToGoType(typeDef.AsList.ElementTypeDef)
-	case dagger.Object:
+	case dagger.Objectkind:
 		return typeDef.AsObject.Name
 	}
 	return ""
@@ -282,19 +333,10 @@ type parseState struct {
 func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagger.TypeDefInput, error) {
 	switch t := typ.(type) {
 	case *types.Named:
-		name := t.Obj().Name()
-		if name != "" {
-			if namedTypeDef, ok := ps.namedTypeDefs[name]; ok {
-				return namedTypeDef, nil
-			}
-		}
-
+		// Named types are any types declared like `type Foo <...>`
 		typeDef, err := ps.goTypeToAPIType(t.Underlying(), t)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert named type %s: %w", t.Obj().Name(), err)
-		}
-		if name != "" {
-			ps.namedTypeDefs[name] = typeDef
+			return nil, fmt.Errorf("failed to convert named type: %w", err)
 		}
 		return typeDef, nil
 	case *types.Pointer:
@@ -303,11 +345,11 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 		typeDef := &dagger.TypeDefInput{}
 		switch t.Info() {
 		case types.IsString:
-			typeDef.Kind = dagger.String
+			typeDef.Kind = dagger.Stringkind
 		case types.IsInteger:
-			typeDef.Kind = dagger.Integer
+			typeDef.Kind = dagger.Integerkind
 		case types.IsBoolean:
-			typeDef.Kind = dagger.Boolean
+			typeDef.Kind = dagger.Booleankind
 		}
 		return typeDef, nil
 	case *types.Slice:
@@ -316,7 +358,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 			return nil, fmt.Errorf("failed to convert slice element type: %w", err)
 		}
 		return &dagger.TypeDefInput{
-			Kind: dagger.List,
+			Kind: dagger.Listkind,
 			AsList: &dagger.ListTypeDefInput{
 				ElementTypeDef: elemTypeDef,
 			},
@@ -325,57 +367,43 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 		if named == nil {
 			return nil, fmt.Errorf("struct types must be named")
 		}
+		name := named.Obj().Name()
+		if name == "" {
+			return nil, fmt.Errorf("struct types must be named")
+		}
+		// use cache if we've already seen this type
+		if namedTypeDef, ok := ps.namedTypeDefs[name]; ok {
+			return namedTypeDef, nil
+		}
+
 		typeDef := &dagger.TypeDefInput{
-			Kind: dagger.Object,
+			Kind: dagger.Objectkind,
 			AsObject: &dagger.ObjectTypeDefInput{
-				Name: named.Obj().Name(),
+				Name: name,
 			},
 		}
+		// cache early to handle recursive types, e.g. objects with chainable methods that return themselves
+		ps.namedTypeDefs[name] = typeDef
 
 		tokenFile := ps.fset.File(named.Obj().Pos())
-		isDaggerGenerated := tokenFile.Name() == "dagger.gen.go" // TODO: don't hardcode
-		if isDaggerGenerated {
-			// acknowledge its existence but don't need to include the fields+functions
-			return typeDef, nil
-		}
+		isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
 
-		typeSpec, err := ps.typeSpecForNamedType(named)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find decl for named type %s: %w", named.Obj().Name(), err)
-		}
-		if doc := typeSpec.Doc; doc != nil {
-			typeDef.AsObject.Description = doc.Text()
-		}
-		astStructType, ok := typeSpec.Type.(*ast.StructType)
-		if !ok {
-			return nil, fmt.Errorf("expected type spec to be a struct, got %T", typeSpec.Type)
-		}
+		// Fill out any Functions on the object, which are methods on the struct
 
-		for i := 0; i < t.NumFields(); i++ {
-			field := t.Field(i)
-			if !field.Exported() {
-				continue
-			}
-			fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert field type: %w", err)
-			}
-			var description string
-			if doc := astStructType.Fields.List[i].Doc; doc != nil {
-				description = doc.Text()
-			}
-			typeDef.AsObject.Fields = append(typeDef.AsObject.Fields, &dagger.FieldTypeDefInput{
-				Name:        field.Name(),
-				Description: description,
-				TypeDef:     fieldTypeDef,
-			})
-		}
-
+		// TODO: support methods defined on non-pointer receivers
 		methodSet := types.NewMethodSet(types.NewPointer(named))
 		for i := 0; i < methodSet.Len(); i++ {
-			method, ok := methodSet.At(i).Obj().(*types.Func)
+			methodObj := methodSet.At(i).Obj()
+			methodTokenFile := ps.fset.File(methodObj.Pos())
+			methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
+			if methodIsDaggerGenerated {
+				// We don't care about pre-existing methods on core types or objects from dependency modules.
+				continue
+			}
+
+			method, ok := methodObj.(*types.Func)
 			if !ok {
-				return nil, fmt.Errorf("expected method to be a func, got %T", methodSet.At(i).Obj())
+				return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
 			}
 			if !method.Exported() {
 				continue
@@ -398,6 +426,15 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 			}
 			for i := 0; i < methodSig.Params().Len(); i++ {
 				param := methodSig.Params().At(i)
+
+				// first arg must be Context
+				if i == 0 {
+					if param.Type().String() != "context.Context" {
+						return nil, fmt.Errorf("method %s has first arg %s, expected context.Context", method.Name(), param.Type().String())
+					}
+					continue
+				}
+
 				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert param type: %w", err)
@@ -414,6 +451,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 			if methodResults.Len() > 2 {
 				return nil, fmt.Errorf("method %s has too many return values", method.Name())
 			}
+
 			// ignore error, which should be second or not present (for now, we can be more flexible later)
 			result := methodResults.At(0)
 			resultTypeDef, err := ps.goTypeToAPIType(result.Type(), nil)
@@ -421,7 +459,48 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 				return nil, fmt.Errorf("failed to convert result type: %w", err)
 			}
 			fnTypeDef.ReturnType = resultTypeDef
+
 			typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fnTypeDef)
+		}
+
+		if isDaggerGenerated {
+			// If this object is from the core API or another dependency, we only care about any new methods
+			// being attached to it, so we're all done in this case
+			return typeDef, nil
+		}
+
+		// Fill out the Description with the comment above the struct (if any)
+		typeSpec, err := ps.typeSpecForNamedType(named)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find decl for named type %s: %w", name, err)
+		}
+		if doc := typeSpec.Doc; doc != nil {
+			typeDef.AsObject.Description = doc.Text()
+		}
+		astStructType, ok := typeSpec.Type.(*ast.StructType)
+		if !ok {
+			return nil, fmt.Errorf("expected type spec to be a struct, got %T", typeSpec.Type)
+		}
+
+		// Fill out the static fields of the struct (if any)
+		for i := 0; i < t.NumFields(); i++ {
+			field := t.Field(i)
+			if !field.Exported() {
+				continue
+			}
+			fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert field type: %w", err)
+			}
+			var description string
+			if doc := astStructType.Fields.List[i].Doc; doc != nil {
+				description = doc.Text()
+			}
+			typeDef.AsObject.Fields = append(typeDef.AsObject.Fields, &dagger.FieldTypeDefInput{
+				Name:        field.Name(),
+				Description: description,
+				TypeDef:     fieldTypeDef,
+			})
 		}
 
 		return typeDef, nil
@@ -430,6 +509,9 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 	}
 }
 
+// typeSpecForNamedType returns the *ast* type spec for the given Named type. This is needed
+// because the types.Named object does not have the comments associated with the type, which
+// we want to parse.
 func (ps *parseState) typeSpecForNamedType(namedType *types.Named) (*ast.TypeSpec, error) {
 	tokenFile := ps.fset.File(namedType.Obj().Pos())
 	if tokenFile == nil {
@@ -460,6 +542,9 @@ func (ps *parseState) typeSpecForNamedType(namedType *types.Named) (*ast.TypeSpe
 	return nil, fmt.Errorf("no decl for %s", namedType.Obj().Name())
 }
 
+// declForFunc returns the *ast* func decl for the given Func type. This is needed
+// because the types.Func object does not have the comments associated with the type, which
+// we want to parse.
 func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 	tokenFile := ps.fset.File(fnType.Pos())
 	if tokenFile == nil {
@@ -482,5 +567,5 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 }
 
 func defaultErrorMainSrc(msg string) string {
-	return fmt.Sprintf("%#v", Id("panic").Call(Lit(msg)))
+	return fmt.Sprintf("%#v", Func().Id("main").Parens(nil).Block(Id("panic").Call(Lit(msg))))
 }

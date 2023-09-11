@@ -22,13 +22,13 @@ import (
 )
 
 var (
-	codegenFlags  = pflag.NewFlagSet("codegen", pflag.ContinueOnError)
-	codegenOutput string
-	codegenPkg    string
+	codegenFlags      = pflag.NewFlagSet("codegen", pflag.ContinueOnError)
+	codegenOutputFile string
+	codegenPkg        string
 )
 
 func init() {
-	codegenFlags.StringVarP(&codegenOutput, "output", "o", "", "output file")
+	codegenFlags.StringVarP(&codegenOutputFile, "output", "o", "", "output file")
 	codegenFlags.StringVar(&codegenPkg, "package", "main", "package name")
 }
 
@@ -57,11 +57,11 @@ func RunCodegen(
 		return err
 	}
 
-	output, err := getOutput(moduleCfg.SDK)
+	apiClientOutputPath, err := getAPIClientOutputPath(moduleCfg.SDK)
 	if err != nil {
 		return err
 	}
-	parentDir := filepath.Dir(output)
+	parentDir := filepath.Dir(apiClientOutputPath)
 	_, parentDirStatErr := os.Stat(parentDir)
 	switch {
 	case parentDirStatErr == nil:
@@ -91,22 +91,22 @@ func RunCodegen(
 		return err
 	}
 
-	if output == "" || output == "-" {
-		cmd.Println(string(generated))
+	if apiClientOutputPath == "" || apiClientOutputPath == "-" {
+		cmd.Println(string(generated.APIClientSource))
 		return
 	}
 
-	if err := os.WriteFile(output, generated, 0o600); err != nil {
+	if err := os.WriteFile(apiClientOutputPath, generated.APIClientSource, 0o600); err != nil {
 		return err
 	}
 	defer func() {
 		if rerr != nil {
-			os.Remove(output)
+			os.Remove(apiClientOutputPath)
 		}
 	}()
 
-	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
-	gitAttributesPath := path.Join(filepath.Dir(output), ".gitattributes")
+	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(apiClientOutputPath))
+	gitAttributesPath := path.Join(filepath.Dir(apiClientOutputPath), ".gitattributes")
 	if err := os.WriteFile(gitAttributesPath, []byte(gitAttributes), 0o600); err != nil {
 		return err
 	}
@@ -116,26 +116,59 @@ func RunCodegen(
 		}
 	}()
 
+	starterTemplateOutputPath, err := getStarterTemplateOutput(moduleCfg.SDK)
+	if err != nil {
+		return err
+	}
+	if starterTemplateOutputPath != "" {
+		if err := os.WriteFile(starterTemplateOutputPath, generated.StarterTemplateSource, 0o600); err != nil {
+			return err
+		}
+		defer func() {
+			if rerr != nil {
+				os.Remove(starterTemplateOutputPath)
+			}
+		}()
+	}
+
 	return nil
 }
 
-func getOutput(sdk moduleconfig.SDK) (string, error) {
-	if codegenOutput != "" {
-		return codegenOutput, nil
+func getAPIClientOutputPath(sdk moduleconfig.SDK) (string, error) {
+	if codegenOutputFile != "" {
+		return codegenOutputFile, nil
 	}
 
-	// TODO:
 	if sdk != moduleconfig.SDKGo {
-		return codegenOutput, nil
+		return codegenOutputFile, nil
 	}
-	envCfg, err := getEnvironmentFlagConfig()
+	modCfg, err := getModuleFlagConfig()
 	if err != nil {
 		return "", err
 	}
-	if envCfg.local == nil {
-		return codegenOutput, nil
+	if modCfg.local == nil {
+		return codegenOutputFile, nil
 	}
-	return filepath.Join(filepath.Dir(envCfg.local.path), "dagger.gen.go"), nil
+	return filepath.Join(filepath.Dir(modCfg.local.path), "dagger.gen.go"), nil
+}
+
+func getStarterTemplateOutput(sdk moduleconfig.SDK) (string, error) {
+	if sdk != moduleconfig.SDKGo {
+		return "", nil
+	}
+	modCfg, err := getModuleFlagConfig()
+	if err != nil {
+		return "", err
+	}
+	if modCfg.local == nil {
+		return "", nil
+	}
+	path := filepath.Join(filepath.Dir(modCfg.local.path), "main.go")
+	_, err = os.Stat(path)
+	if err == nil {
+		return "", nil
+	}
+	return path, nil
 }
 
 func getPackage(sdk moduleconfig.SDK) (string, error) {
@@ -145,7 +178,7 @@ func getPackage(sdk moduleconfig.SDK) (string, error) {
 	}
 
 	// Come up with a default package name
-	output, err := getOutput(sdk)
+	output, err := getAPIClientOutputPath(sdk)
 	if err != nil {
 		return "", err
 	}
@@ -173,7 +206,7 @@ func getPackage(sdk moduleconfig.SDK) (string, error) {
 	return strings.ToLower(filepath.Base(directory)), nil
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) ([]byte, error) {
+func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (*generator.GeneratedCode, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator
@@ -190,7 +223,7 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 			string(generator.SDKLangGo),
 			string(generator.SDKLangNodeJS),
 		}
-		return []byte{}, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
+		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
 	return gen.Generate(ctx, introspectionSchema)

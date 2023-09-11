@@ -49,3 +49,33 @@ func ResourceFromID(id string) (any, error) {
 	}
 	return nil, fmt.Errorf("unknown resource type: %v", typeName)
 }
+
+// ResourceToID returns the ID string corresponding to the given resource.
+func ResourceToID(r any) (string, error) {
+	var id fmt.Stringer
+	var err error
+	switch r := r.(type) {
+	case *Container:
+		id, err = r.ID()
+	case *CacheVolume:
+		id, err = r.ID()
+	case *Directory:
+		id, err = r.ID()
+	case *File:
+		id, err = r.ID()
+	case *Secret:
+		id, err = r.ID()
+	case *Module:
+		id, err = r.ID()
+	case *Function:
+		id, err = r.ID()
+	case *socket.Socket:
+		id, err = r.ID()
+	default:
+		return "", fmt.Errorf("unknown resource type: %T", r)
+	}
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
+}

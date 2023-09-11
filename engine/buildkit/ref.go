@@ -138,7 +138,7 @@ func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*o
 		return err
 	}
 
-	// Finalize ensure that there isn't an equalMutable with a different ID and thus different lease. It shouldn't
+	// Finalize ensures that there isn't an equalMutable with a different ID and thus different lease. It shouldn't
 	// be called on a ref that actually benefits from having an equalMutable, but that's really only a local dir
 	// sync ref.
 	err = cacheRef.Finalize(ctx)

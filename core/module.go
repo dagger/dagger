@@ -50,7 +50,7 @@ type Module struct {
 	// The module's functions
 	Functions []*Function `json:"functions,omitempty"`
 
-	// (Not in public API) The container used to execute the module's entrypoint code,
+	// (Not in public API) The container used to execute the module's functions,
 	// derived from the SDK, source directory, and workdir.
 	Runtime *Container `json:"runtime,omitempty"`
 
@@ -121,6 +121,7 @@ func NewModule(platform ocispecs.Platform, pipeline pipeline.Path) *Module {
 	}
 }
 
+// FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
 	ctx context.Context,
 	bk *buildkit.Client,
@@ -128,6 +129,7 @@ func (mod *Module) FromConfig(
 	sourceDir *Directory,
 	configPath string,
 ) (*Module, error) {
+	// Read the config file
 	configPath = moduleconfig.NormalizeConfigPath(configPath)
 
 	configFile, err := sourceDir.File(ctx, bk, configPath)
@@ -143,6 +145,7 @@ func (mod *Module) FromConfig(
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Recursively load the configs of all the dependencies
 	var eg errgroup.Group
 	deps := make([]*Module, len(cfg.Dependencies))
 	for i, depURL := range cfg.Dependencies {
@@ -186,6 +189,7 @@ func (mod *Module) FromConfig(
 		return nil, err
 	}
 
+	// Reposition the root of the sourceDir in case it's pointing to a subdir of current sourceDir
 	if cfg.Root != "" {
 		rootPath := filepath.Join("/", filepath.Dir(configPath), cfg.Root)
 		if rootPath != "/" {
@@ -198,6 +202,11 @@ func (mod *Module) FromConfig(
 		}
 	}
 
+	// fill in the module settings and set the runtime container
+	mod.SourceDirectory = sourceDir
+	mod.SourceDirectorySubpath = filepath.Dir(configPath)
+	mod.Name = cfg.Name
+	mod.SDK = cfg.SDK
 	if err := mod.recalcRuntime(ctx, bk, progSock); err != nil {
 		return nil, fmt.Errorf("failed to set runtime container: %w", err)
 	}
@@ -210,6 +219,7 @@ func (mod *Module) WithFunction(fn *Function) (*Module, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone module: %w", err)
 	}
+	// need to clone fn too since updateMod will mutate it
 	fn, err = fn.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone function: %w", err)
@@ -254,27 +264,62 @@ func (mod *Module) recalcRuntime(
 	return mod.updateMod()
 }
 
-// TODO: doc various subtleties below
+// DigestWithoutFunctions gives a digest after unsetting Functions, which is useful
+// as a digest of the "base" Module that's stable before+after loading Functions.
+func (mod *Module) DigestWithoutFunctions() (digest.Digest, error) {
+	mod, err := mod.Clone()
+	if err != nil {
+		return "", fmt.Errorf("failed to clone module: %w", err)
+	}
+	mod.Functions = nil
+	return stableDigest(mod)
+}
 
-// update existing entrypoints with the current state of their module
+/* The code below handles some subtleties around circular references between modules and functions.
+
+The constraints around the problems being solved are:
+1. Modules need to reference the Functions they serve.
+2. Functions need to know the Module they are from so that they can be called in the context of that Module.
+   * This creates headaches in that setting the Module of a Function changes the ID of the Function, which changes the ID of the Module, which goes full-circle and changes the ID of the Function.
+3. If a Module is mutated in any way, its Functions need to be updated to reflect that mutation.
+   * This includes the CurrentModule API needing to return the correct Module (not the Module at the time the Function was registered)
+4. We need to avoid circular references during JSON marshalling
+5. We want to support functions from one Module being registered with a different Module.
+   * This enables extending one Module with functionality from another.
+
+The solution to these problems is:
+1. Modules hold a list of *Function, but Functions hold a ModuleID (avoids circular reference during JSOM marshal)
+2. When a Module is serialized to ID, it unsets the ModuleID value of any Functions it contains that point to itself.
+   * If there is a Function from a different Module registered as part of this one, it's left alone.
+   * This means that the ModuleID set in a Function doesn't need to try to contain a circular reference to the Function.
+3. When a Module is deserialized from ID, it sets the ModuleID value of any Functions it contains that point to itself.
+   * If there is a Function from a different Module registered as part of this one, it's left alone.
+*/
+
+// update existing Functions with the current state of their module
 func (mod *Module) updateMod() error {
 	modID, err := mod.ID()
 	if err != nil {
 		return fmt.Errorf("failed to get module ID: %w", err)
 	}
 	if err := mod.setFunctionMods(modID); err != nil {
-		return fmt.Errorf("failed to set entrypoint mods: %w", err)
+		return fmt.Errorf("failed to set function mods: %w", err)
 	}
 	return nil
 }
 
+func (id ModuleID) String() string {
+	return string(id)
+}
+
 func (id ModuleID) Decode() (*Module, error) {
+	// deserialize the module and then fill in the ModuleID of its functions
 	mod, err := resourceid.ID[Module](id).Decode()
 	if err != nil {
 		return nil, err
 	}
 	if err := mod.setFunctionMods(id); err != nil {
-		return nil, fmt.Errorf("failed to set entrypoint mods: %w", err)
+		return nil, fmt.Errorf("failed to set function mods: %w", err)
 	}
 	return mod, nil
 }
@@ -284,8 +329,9 @@ func (mod *Module) ID() (ModuleID, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to clone module: %w", err)
 	}
+	// unset the ModuleID fields of any of this module's functions and use that to serialize to ID
 	if err := mod.setFunctionMods(""); err != nil {
-		return "", fmt.Errorf("failed to set entrypoint mods: %w", err)
+		return "", fmt.Errorf("failed to set function mods: %w", err)
 	}
 	id, err := resourceid.Encode(mod)
 	if err != nil {
@@ -300,24 +346,50 @@ func (mod *Module) Digest() (digest.Digest, error) {
 		return "", fmt.Errorf("failed to clone module: %w", err)
 	}
 	if err := mod.setFunctionMods(""); err != nil {
-		return "", fmt.Errorf("failed to set entrypoint mods: %w", err)
+		return "", fmt.Errorf("failed to set function mods: %w", err)
 	}
 	return stableDigest(mod)
 }
 
 func (mod *Module) setFunctionMods(id ModuleID) error {
-	// TODO: recurse to functions of other objects in the module
-	for _, fn := range mod.Functions {
+	memo := map[string]struct{}{}
+	var set func(parentName string, fn *Function) error
+	set = func(parentName string, fn *Function) error {
+		memoKey := fmt.Sprintf("%s.%s", parentName, fn.Name)
+		if _, ok := memo[memoKey]; ok {
+			return nil
+		}
+		memo[memoKey] = struct{}{}
+
+		// recurse to any subobjects
+		if fn.ReturnType.Kind == TypeDefKindObject {
+			for _, subFn := range fn.ReturnType.AsObject.Functions {
+				if err := set(fn.ReturnType.AsObject.Name, subFn); err != nil {
+					return err
+				}
+			}
+		}
+
 		if fn.ModuleID == "" {
 			fn.ModuleID = id
-			continue
+			return nil
 		}
+
+		// Check to see if this function belongs to this module by comparing the
+		// module name. If so, update the function's ModuleID to id.
 		fnMod, err := fn.ModuleID.Decode()
 		if err != nil {
 			return fmt.Errorf("failed to decode module for function %q: %w", fn.Name, err)
 		}
 		if fnMod.Name == mod.Name {
 			fn.ModuleID = id
+		}
+		return nil
+	}
+
+	for _, fn := range mod.Functions {
+		if err := set("", fn); err != nil {
+			return err
 		}
 	}
 	return nil

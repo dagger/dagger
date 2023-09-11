@@ -79,6 +79,10 @@ func stableDigestInto(value any, dest io.Writer) (err error) {
 	}()
 
 	rt := reflect.TypeOf(value)
+	if rt == nil {
+		_, err := fmt.Fprintln(dest, "nil")
+		return err
+	}
 	rv := reflect.ValueOf(value)
 	if rt.Kind() == reflect.Ptr {
 		if rv.IsNil() {

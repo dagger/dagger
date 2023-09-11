@@ -13,7 +13,7 @@ import (
 type NodeGenerator struct{}
 
 // Generate will generate the NodeJS SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) ([]byte, error) {
+func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedCode, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
@@ -28,6 +28,11 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 	tmpl := templates.New()
 	var b bytes.Buffer
 	err := tmpl.ExecuteTemplate(&b, "api", schema.Types)
+	if err != nil {
+		return nil, err
+	}
 
-	return b.Bytes(), err
+	return &generator.GeneratedCode{
+		APIClientSource: b.Bytes(),
+	}, nil
 }

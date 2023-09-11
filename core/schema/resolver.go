@@ -37,6 +37,7 @@ func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
 
 type IDableObjectResolver interface {
 	FromID(id string) (any, error)
+	ToID(any) (string, error)
 	Resolver
 }
 
@@ -51,6 +52,10 @@ type idableObjectResolver[I ~string, T any] struct {
 
 func (r idableObjectResolver[I, T]) FromID(id string) (any, error) {
 	return r.idToObject(I(id))
+}
+
+func (r idableObjectResolver[I, T]) ToID(t any) (string, error) {
+	return core.ResourceToID(t)
 }
 
 type ScalarResolver struct {

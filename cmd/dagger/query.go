@@ -39,11 +39,11 @@ dagger query <<EOF
 }
 EOF
 `,
-	RunE: loadEnvCmdWrapper(Query, "", true),
+	RunE: loadModCmdWrapper(Query, "", true),
 	Args: cobra.MaximumNArgs(1), // operation can be specified
 }
 
-func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Environment, _ *cobra.Command, args []string) error {
+func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, args []string) error {
 	var operation string
 	if len(args) > 0 {
 		operation = args[0]

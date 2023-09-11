@@ -32,7 +32,7 @@ type Module {
       Note: this can only be called once per session.
       In the future, it could return a stream or service to remove the side effect.
   """
-  serve(environment: [ModuleEnvironmentVariable!]): Void!
+  serve(environment: [ModuleEnvironmentVariable!]): Void
 }
 
 extend type Directory {

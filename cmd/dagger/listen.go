@@ -23,7 +23,7 @@ var (
 var listenCmd = &cobra.Command{
 	Use:     "listen",
 	Aliases: []string{"l"},
-	RunE:    loadEnvCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN"), true),
+	RunE:    loadModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN"), true),
 	Hidden:  true,
 	Short:   "Starts the engine server",
 }
@@ -33,7 +33,7 @@ func init() {
 	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
 }
 
-func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Environment, _ *cobra.Command, _ []string) error {
+func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, _ []string) error {
 	rec := progrock.FromContext(ctx)
 
 	var stderr io.Writer
