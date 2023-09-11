@@ -21,6 +21,7 @@ const (
 
 	ServicesDNSEnvName    = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
+	DaggerCloudToken      = "DAGGER_CLOUD_TOKEN"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
@@ -85,6 +86,13 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	}
 	id = id[:hashLen]
 
+	// add DAGGER_CLOUD_TOKEN in backwards compat way.
+	// TODO: deprecate in a future release
+	cloudToken := DaggerCloudCacheToken
+	if _, ok := os.LookupEnv(DaggerCloudToken); ok {
+		cloudToken = DaggerCloudToken
+	}
+
 	// run the container using that id in the name
 	containerName := containerNamePrefix + id
 	runArgs := []string{
@@ -93,7 +101,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		"-d",
 		"--restart", "always",
 		"-e", ServicesDNSEnvName,
-		"-e", DaggerCloudCacheToken,
+		"-e", cloudToken,
 		"-v", DefaultStateDir,
 		"--privileged",
 	}

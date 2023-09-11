@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -26,6 +27,44 @@ func EngineLabel(engineName string) Label {
 		Name:  "dagger.io/engine",
 		Value: engineName,
 	}
+}
+
+func LoadServerLabels(engineVersion, os, arch string) []Label {
+	labels := []Label{
+		{
+			Name:  "dagger.io/server.os",
+			Value: os,
+		},
+		{
+			Name:  "dagger.io/server.arch",
+			Value: arch,
+		},
+		{
+			Name:  "dagger.io/server.version",
+			Value: engineVersion,
+		},
+	}
+
+	return labels
+}
+
+func LoadClientLabels(engineVersion string) []Label {
+	labels := []Label{
+		{
+			Name:  "dagger.io/client.os",
+			Value: runtime.GOOS,
+		},
+		{
+			Name:  "dagger.io/client.arch",
+			Value: runtime.GOARCH,
+		},
+		{
+			Name:  "dagger.io/client.version",
+			Value: engineVersion,
+		},
+	}
+
+	return labels
 }
 
 func LoadVCSLabels(workdir string) []Label {
