@@ -51,7 +51,13 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		},
 		Object: func(t *introspection.Type) error {
 			var out bytes.Buffer
-			if err := templates.Object(funcs).Execute(&out, t); err != nil {
+			if err := templates.Object(funcs).Execute(&out, struct {
+				*introspection.Type
+				IsModuleCode bool
+			}{
+				Type:         t,
+				IsModuleCode: g.Config.ModuleName != "",
+			}); err != nil {
 				return err
 			}
 			render = append(render, out.String())

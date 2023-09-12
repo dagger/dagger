@@ -5,6 +5,7 @@ package {{ .Package }}
 import (
 	"context"
   "encoding/json"
+  "errors"
   "fmt"
   "net"
   "net/http"
@@ -15,3 +16,4 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"dagger.io/dagger/querybuilder"
 )
+

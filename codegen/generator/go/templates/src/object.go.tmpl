@@ -13,7 +13,7 @@ type {{ .Name | FormatName }} struct {
 {{- end }}
 
 
-{{- if . | IsSelfChainable }}
+{{- if .Type | IsSelfChainable }}
 type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
 
 // With calls the provided function with current {{ .Name | FormatName }}.
@@ -162,5 +162,47 @@ func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
   }
   return json.Marshal(id)
 }
+
+{{- if $.IsModuleCode }}
+func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
+  var id string
+  err := json.Unmarshal(bs, &id)
+  if err != nil {
+    return err
+  }
+  {{ if eq ($.Name | FormatName) "Container" }}
+    *r = *dag.Container(ContainerOpts{
+      ID: ContainerID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Directory" }}
+    *r = *dag.Directory(DirectoryOpts{
+      ID: DirectoryID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Socket" }}
+    *r = *dag.Socket(SocketOpts{
+      ID: SocketID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Module" }}
+    *r = *dag.Module(ModuleOpts{
+      ID: ModuleID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Function" }}
+    *r = *dag.Function(FunctionID(id))
+  {{ else if eq ($.Name | FormatName) "File" }}
+    *r = *dag.File(FileID(id))
+  {{ else if eq ($.Name | FormatName) "Secret" }}
+    *r = *dag.Secret(SecretID(id))
+  {{ else if eq ($.Name | FormatName) "Cache" }}
+    cacheID := CacheID(id)
+    *r = CacheVolume{
+      q:  dag.q,
+      c:  dag.c,
+      id: &cacheID,
+    }
+  {{ end }}
+  return nil
+}
+{{- end }}
+
 {{ end }}
 {{ end -}}

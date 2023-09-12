@@ -41,20 +41,20 @@ type IDableObjectResolver interface {
 	Resolver
 }
 
-func ToIDableObjectResolver[I ~string, T any](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
-	return idableObjectResolver[I, T]{idToObject, r}
+func ToIDableObjectResolver[T any, I ~string](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
+	return idableObjectResolver[T, I]{idToObject, r}
 }
 
-type idableObjectResolver[I ~string, T any] struct {
+type idableObjectResolver[T any, I ~string] struct {
 	idToObject func(I) (*T, error)
 	ObjectResolver
 }
 
-func (r idableObjectResolver[I, T]) FromID(id string) (any, error) {
+func (r idableObjectResolver[T, I]) FromID(id string) (any, error) {
 	return r.idToObject(I(id))
 }
 
-func (r idableObjectResolver[I, T]) ToID(t any) (string, error) {
+func (r idableObjectResolver[T, I]) ToID(t any) (string, error) {
 	return core.ResourceToID(t)
 }
 

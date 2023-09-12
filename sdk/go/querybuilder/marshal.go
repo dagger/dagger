@@ -3,6 +3,7 @@ package querybuilder
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,6 +20,7 @@ type GraphQLMarshaller interface {
 	XXX_GraphQLIDType() string
 	// XXX_GraphqlID is an internal function. It returns the underlying type ID
 	XXX_GraphQLID(ctx context.Context) (string, error)
+	json.Marshaler
 }
 
 const (

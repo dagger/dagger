@@ -708,14 +708,23 @@ func (s *moduleSchema) addTypeDefToSchema(
 
 		// check whether this is a pre-existing object (from core or another module) being extended
 		_, preExistingObject := s.currentSchemaView.resolvers()[objName]
-		astType, err := typeCache.GetOrInitialize(objName, func() (ast.Type, error) {
+		// also check whether it's specifically an idable object from the core API
+		idableObjectResolver, _ := s.idableObjectResolver(objName)
+
+		cacheKey := fmt.Sprintf("%s.%t", objName, isInput)
+		astType, err := typeCache.GetOrInitialize(cacheKey, func() (ast.Type, error) {
 			astDef := &ast.Definition{
 				Name:        objName,
 				Description: objTypeDef.Description,
 				Kind:        ast.Object,
 			}
 			if isInput {
-				astDef.Kind = ast.InputObject
+				if idableObjectResolver != nil {
+					astDef.Kind = ast.Scalar
+					astDef.Name = astDef.Name + "ID"
+				} else {
+					astDef.Kind = ast.InputObject
+				}
 			}
 
 			for _, field := range objTypeDef.Fields {

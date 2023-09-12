@@ -203,6 +203,15 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *CacheVolume) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // An OCI-compatible container, also known as a docker container.
 type Container struct {
@@ -561,6 +570,19 @@ func (r *Container) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Container) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.Container(ContainerOpts{
+		ID: ContainerID(id),
+	})
+
+	return nil
 }
 
 // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -1661,6 +1683,19 @@ func (r *Directory) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *Directory) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.Directory(DirectoryOpts{
+		ID: DirectoryID(id),
+	})
+
+	return nil
+}
 
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
@@ -2019,6 +2054,17 @@ func (r *File) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *File) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.File(FileID(id))
+
+	return nil
+}
 
 // Gets the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
@@ -2174,6 +2220,17 @@ func (r *Function) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Function) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.Function(FunctionID(id))
+
+	return nil
 }
 
 // The name of the function
@@ -2680,6 +2737,19 @@ func (r *Module) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Module) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.Module(ModuleOpts{
+		ID: ModuleID(id),
+	})
+
+	return nil
 }
 
 // The name of the module
@@ -3233,6 +3303,17 @@ func (r *Secret) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *Secret) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.Secret(SecretID(id))
+
+	return nil
+}
 
 // The value of this secret.
 func (r *Secret) Plaintext(ctx context.Context) (string, error) {
@@ -3292,6 +3373,19 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Socket) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+
+	*r = *dag.Socket(SocketOpts{
+		ID: SocketID(id),
+	})
+
+	return nil
 }
 
 // A definition of a parameter or return type in a Module.
@@ -3506,8 +3600,63 @@ func main() {
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (any, error) {
 	switch parentName {
+	case "CustomObj":
+		switch fnName {
+		case "SayField":
+			var err error
+			var parent CustomObj
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			return (*CustomObj).SayField(&parent, ctx)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "Container":
+		switch fnName {
+		case "Blah":
+			var err error
+			var parent Container
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			var val string
+			err = json.Unmarshal([]byte(inputArgs["val"]), &val)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			return (*Container).Blah(&parent, ctx, val)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
 	case "Basic":
 		switch fnName {
+		case "CatFile":
+			var err error
+			var parent Basic
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			var ctr Container
+			err = json.Unmarshal([]byte(inputArgs["ctr"]), &ctr)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			var f File
+			err = json.Unmarshal([]byte(inputArgs["f"]), &f)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			return (*Basic).CatFile(&parent, ctx, &ctr, &f)
 		case "GetCustomObj":
 			var err error
 			var parent Basic
@@ -3552,7 +3701,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			return (*Basic).MyFunction(&parent, ctx, stringArg, intsArg, &opt)
 		case "":
 			var err error
-			var typeDefBytes []byte = []byte("{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"GetCustomObj\",\"returnType\":{\"asObject\":{\"fields\":[{\"name\":\"CustomObjField\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"functions\":[{\"name\":\"SayField\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"CustomObj\"},\"kind\":\"ObjectKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"intsArg\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}},{\"name\":\"opt\",\"typeDef\":{\"asObject\":{\"fields\":[{\"name\":\"Foo\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"Bar\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}}],\"name\":\"InputOpt\"},\"kind\":\"ObjectKind\"}}],\"name\":\"MyFunction\",\"returnType\":{\"asObject\":{\"name\":\"Container\"},\"kind\":\"ObjectKind\"}}],\"name\":\"Basic\"},\"kind\":\"ObjectKind\"}")
+			var typeDefBytes []byte = []byte("{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"ctr\",\"typeDef\":{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"val\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"Blah\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"Container\"},\"kind\":\"ObjectKind\"}},{\"name\":\"f\",\"typeDef\":{\"asObject\":{\"name\":\"File\"},\"kind\":\"ObjectKind\"}}],\"name\":\"CatFile\",\"returnType\":{\"kind\":\"StringKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"GetCustomObj\",\"returnType\":{\"asObject\":{\"fields\":[{\"name\":\"CustomObjField\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"functions\":[{\"name\":\"SayField\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"CustomObj\"},\"kind\":\"ObjectKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"intsArg\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}},{\"name\":\"opt\",\"typeDef\":{\"asObject\":{\"fields\":[{\"name\":\"Foo\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"Bar\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}}],\"name\":\"InputOpt\"},\"kind\":\"ObjectKind\"}}],\"name\":\"MyFunction\",\"returnType\":{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"val\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"Blah\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"Container\"},\"kind\":\"ObjectKind\"}}],\"name\":\"Basic\"},\"kind\":\"ObjectKind\"}")
 			var typeDef TypeDefInput
 			err = json.Unmarshal(typeDefBytes, &typeDef)
 			if err != nil {
@@ -3564,25 +3713,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				mod = mod.WithFunction(dag.NewFunction(fnDef))
 			}
 			return mod, nil
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "CustomObj":
-		switch fnName {
-		case "SayField":
-			var err error
-			var parent CustomObj
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
-			}
-			return (*CustomObj).SayField(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "Container":
-		switch fnName {
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

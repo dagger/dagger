@@ -5,10 +5,56 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"dagger.io/dagger/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 )
+
+func (r *Client) XXX_FromGraphQLID(id string, x *querybuilder.GraphQLMarshaller) error {
+	if id == "" {
+		return errors.New("empty GraphQL ID")
+	}
+	if x == nil {
+		return errors.New("nil GraphQL marshaller")
+	}
+	graphqlType := (*x).XXX_GraphQLIDType()
+	switch graphqlType {
+	case "Container":
+		*x = r.Container(ContainerOpts{
+			ID: ContainerID(id),
+		})
+	case "Directory":
+		*x = r.Directory(DirectoryOpts{
+			ID: DirectoryID(id),
+		})
+	case "Socket":
+		*x = r.Socket(SocketOpts{
+			ID: SocketID(id),
+		})
+	case "Module":
+		*x = r.Module(ModuleOpts{
+			ID: ModuleID(id),
+		})
+	case "Function":
+		*x = r.Function(FunctionID(id))
+	case "File":
+		*x = r.File(FileID(id))
+	case "Secret":
+		*x = r.Secret(SecretID(id))
+	case "Cache":
+		cacheID := CacheID(id)
+		*x = &CacheVolume{
+			q:  r.q,
+			c:  r.c,
+			id: &cacheID,
+		}
+	default:
+		return fmt.Errorf("unhandled GraphQL marshaller type %s", graphqlType)
+	}
+	return nil
+}
 
 // A global cache volume identifier.
 type CacheID string

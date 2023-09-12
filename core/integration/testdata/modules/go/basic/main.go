@@ -20,6 +20,10 @@ func (m *Basic) MyFunction(ctx context.Context, stringArg string, intsArg []int,
 	}).Sync(ctx)
 }
 
+func (m *Basic) CatFile(ctx context.Context, ctr *Container, f *File) (string, error) {
+	return ctr.WithMountedFile("/foo", f).WithExec([]string{"cat", "/foo"}).Stdout(ctx)
+}
+
 func (m *Basic) GetCustomObj(ctx context.Context, stringArg string) (*CustomObj, error) {
 	return &CustomObj{CustomObjField: stringArg}, nil
 }
@@ -32,14 +36,14 @@ func (obj *CustomObj) SayField(ctx context.Context) (string, error) {
 	return "look: " + obj.CustomObjField, nil
 }
 
+func (container *Container) Blah(ctx context.Context, val string) (string, error) {
+	return container.WithExec([]string{"echo", val}).Stdout(ctx)
+}
+
 /* TODO: doesn't work yet
 func (obj *CustomObj) WithField(ctx context.Context, f string) (*CustomObj, error) {
 	obj.CustomObjField = f
 	return obj, nil
-}
-
-func (container *Container) Blah(ctx context.Context, val string) (string, error) {
-	return container.WithExec([]string{"echo", val}).Stdout(ctx)
 }
 
 func (container *Container) WithCustomEnv(ctx context.Context, val string) (*Container, error) {
