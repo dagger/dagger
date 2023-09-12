@@ -18,18 +18,19 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -3979,4 +3980,22 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestContainerWithMountedSecretMode(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	secret := c.SetSecret("test", "secret")
+
+	ctr := c.Container().From("alpine:3.18.2").WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
+		Mode:  0o666,
+		Owner: "root:root",
+	})
+
+	perms, err := ctr.WithExec([]string{"sh", "-c", "stat /secret "}).Stdout(ctx)
+	require.Contains(t, perms, "0666/-rw-rw-rw-")
+	require.NoError(t, err)
 }

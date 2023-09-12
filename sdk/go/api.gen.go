@@ -1053,6 +1053,11 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Permission given to the mounted secret (e.g., 0600).
+	// This option requires an owner to be set to be active.
+	//
+	// Default: 0400.
+	Mode int
 }
 
 // Retrieves this container plus a secret mounted into a file at the given path.
@@ -1062,6 +1067,10 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `mode` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Mode) {
+			q = q.Arg("mode", opts[i].Mode)
 		}
 	}
 	q = q.Arg("path", path)

@@ -1209,6 +1209,7 @@ class Container(Type):
         source: "Secret",
         *,
         owner: Optional[str] = None,
+        mode: Optional[int] = None,
     ) -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
         given path.
@@ -1224,11 +1225,16 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        mode:
+            Permission given to the mounted secret (e.g., 0600).
+            This option requires an owner to be set to be active.
+            Default: 0400.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, None),
+            Arg("mode", mode, None),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)
