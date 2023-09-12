@@ -20,7 +20,7 @@ func (mod *Module) goRuntime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
-	baseCtr, err = baseCtr.From(ctx, bk, "golang:1.20-alpine")
+	baseCtr, err = baseCtr.From(ctx, bk, "golang:1.21-alpine")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
