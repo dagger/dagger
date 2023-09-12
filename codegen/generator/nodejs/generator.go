@@ -3,17 +3,22 @@ package nodegenerator
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io/fs"
 	"sort"
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/generator/nodejs/templates"
 	"github.com/dagger/dagger/codegen/introspection"
+	"github.com/psanford/memfs"
 )
+
+const ClientGenFile = "client.gen.ts"
 
 type NodeGenerator struct{}
 
 // Generate will generate the NodeJS SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedCode, error) {
+func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (fs.FS, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
@@ -32,7 +37,16 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	return &generator.GeneratedCode{
-		APIClientSource: b.Bytes(),
-	}, nil
+	mfs := memfs.New()
+
+	if err := mfs.WriteFile(ClientGenFile, b.Bytes(), 0600); err != nil {
+		return nil, err
+	}
+
+	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", ClientGenFile)
+	if err := mfs.WriteFile(".gitattributes", []byte(gitAttributes), 0600); err != nil {
+		return nil, err
+	}
+
+	return mfs, nil
 }

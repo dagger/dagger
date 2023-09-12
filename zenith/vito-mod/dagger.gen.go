@@ -11,7 +11,8 @@ import (
 	"os"
 	"strconv"
 
-	"dagger.io/dagger/querybuilder"
+	"vito-mod/querybuilder"
+
 	"github.com/Khan/genqlient/graphql"
 )
 

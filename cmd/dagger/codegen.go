@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io"
+	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -22,13 +23,13 @@ import (
 )
 
 var (
-	codegenFlags      = pflag.NewFlagSet("codegen", pflag.ContinueOnError)
-	codegenOutputFile string
-	codegenPkg        string
+	codegenFlags     = pflag.NewFlagSet("codegen", pflag.ContinueOnError)
+	codegenOutputDir string
+	codegenPkg       string
 )
 
 func init() {
-	codegenFlags.StringVarP(&codegenOutputFile, "output", "o", "", "output file")
+	codegenFlags.StringVarP(&codegenOutputDir, "output", "o", "", "output directory")
 	codegenFlags.StringVar(&codegenPkg, "package", "main", "package name")
 }
 
@@ -57,23 +58,22 @@ func RunCodegen(
 		return err
 	}
 
-	apiClientOutputPath, err := getAPIClientOutputPath(moduleCfg.SDK)
+	outputDir, err := codegenOutDir(moduleCfg.SDK)
 	if err != nil {
 		return err
 	}
-	parentDir := filepath.Dir(apiClientOutputPath)
-	_, parentDirStatErr := os.Stat(parentDir)
+	_, parentDirStatErr := os.Stat(outputDir)
 	switch {
 	case parentDirStatErr == nil:
 		// already exists, nothing to do
 	case os.IsNotExist(parentDirStatErr):
 		// make the parent dir, but if something goes wrong, clean it up in the defer
-		if err := os.MkdirAll(parentDir, 0755); err != nil {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return fmt.Errorf("failed to create parent directory: %w", err)
 		}
 		defer func() {
 			if rerr != nil {
-				os.RemoveAll(parentDir)
+				os.RemoveAll(outputDir)
 			}
 		}()
 	default:
@@ -85,90 +85,54 @@ func RunCodegen(
 		Lang:                generator.SDKLang(moduleCfg.SDK),
 		ModuleName:          moduleCfg.Name,
 		DependencyModules:   depModules,
-		SourceDirectoryPath: parentDir,
+		SourceDirectoryPath: outputDir,
 	})
 	if err != nil {
 		return err
 	}
 
-	if apiClientOutputPath == "" || apiClientOutputPath == "-" {
-		cmd.Println(string(generated.APIClientSource))
-		return nil
-	}
-
-	if err := os.WriteFile(apiClientOutputPath, generated.APIClientSource, 0o600); err != nil {
-		return err
-	}
-	defer func() {
-		if rerr != nil {
-			os.Remove(apiClientOutputPath)
-		}
-	}()
-
-	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(apiClientOutputPath))
-	gitAttributesPath := path.Join(filepath.Dir(apiClientOutputPath), ".gitattributes")
-	if err := os.WriteFile(gitAttributesPath, []byte(gitAttributes), 0o600); err != nil {
-		return err
-	}
-	defer func() {
-		if rerr != nil {
-			os.Remove(gitAttributesPath)
-		}
-	}()
-
-	starterTemplateOutputPath, err := getStarterTemplateOutput(moduleCfg.SDK)
-	if err != nil {
-		return err
-	}
-	if starterTemplateOutputPath != "" {
-		if err := os.WriteFile(starterTemplateOutputPath, generated.StarterTemplateSource, 0o600); err != nil {
+	err = fs.WalkDir(generated, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
 			return err
 		}
-		defer func() {
-			if rerr != nil {
-				os.Remove(starterTemplateOutputPath)
-			}
-		}()
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(outputDir, path), 0755)
+		}
+		r, err := generated.Open(path)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", path, err)
+		}
+		defer r.Close()
+		w, err := os.Create(filepath.Join(outputDir, path))
+		if err != nil {
+			return fmt.Errorf("create %s: %w", path, err)
+		}
+		defer w.Close()
+		if _, err := io.Copy(w, r); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to overlay generated code: %w", err)
 	}
 
 	return nil
 }
 
-func getAPIClientOutputPath(sdk moduleconfig.SDK) (string, error) {
-	if codegenOutputFile != "" {
-		return codegenOutputFile, nil
-	}
-
-	if sdk != moduleconfig.SDKGo {
-		return codegenOutputFile, nil
+func codegenOutDir(sdk moduleconfig.SDK) (string, error) {
+	if codegenOutputDir != "" {
+		return codegenOutputDir, nil
 	}
 	modCfg, err := getModuleFlagConfig()
 	if err != nil {
 		return "", err
 	}
 	if modCfg.local == nil {
-		return codegenOutputFile, nil
+		// TODO(vito)
+		return ".", nil
 	}
-	return filepath.Join(filepath.Dir(modCfg.local.path), "dagger.gen.go"), nil
-}
-
-func getStarterTemplateOutput(sdk moduleconfig.SDK) (string, error) {
-	if sdk != moduleconfig.SDKGo {
-		return "", nil
-	}
-	modCfg, err := getModuleFlagConfig()
-	if err != nil {
-		return "", err
-	}
-	if modCfg.local == nil {
-		return "", nil
-	}
-	path := filepath.Join(filepath.Dir(modCfg.local.path), "main.go")
-	_, err = os.Stat(path)
-	if err == nil {
-		return "", nil
-	}
-	return path, nil
+	return filepath.Dir(modCfg.local.path), nil
 }
 
 func getPackage(sdk moduleconfig.SDK) (string, error) {
@@ -178,7 +142,7 @@ func getPackage(sdk moduleconfig.SDK) (string, error) {
 	}
 
 	// Come up with a default package name
-	output, err := getAPIClientOutputPath(sdk)
+	output, err := codegenOutDir(sdk)
 	if err != nil {
 		return "", err
 	}
@@ -206,7 +170,7 @@ func getPackage(sdk moduleconfig.SDK) (string, error) {
 	return strings.ToLower(filepath.Base(directory)), nil
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (*generator.GeneratedCode, error) {
+func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (fs.FS, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator

@@ -85,13 +85,13 @@ mkdir vito-mod/
 cd vito-mod/
 
 # initialize Go module
+#
+# TODO: this can be autoamted
 go mod init vito-mod
 
-# TODO this is a rough edge; the generated code still depends on a
-# yet-to-be-shipped Go package from the vanilla Dagger SDK.
-go mod edit -replace dagger.io/dagger="github.com/shykes/dagger/sdk/go@v0.0.0-20230912080048-61eaca787720"
-
 # bootstrap go.mod/go.sum
+#
+# TODO: this can be autoamted, and should pin to appropriate dependencies
 go mod tidy
 
 # initialize Dagger module

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -36,14 +37,7 @@ type Config struct {
 
 type Generator interface {
 	// Generate runs codegen and returns a map of default filename to content for that file.
-	Generate(ctx context.Context, schema *introspection.Schema) (*GeneratedCode, error)
-}
-
-type GeneratedCode struct {
-	// Generated bindings to the Dagger API (including any modules).
-	APIClientSource []byte
-	// (Optional) A base module implementation to help users get started.
-	StarterTemplateSource []byte
+	Generate(ctx context.Context, schema *introspection.Schema) (fs.FS, error)
 }
 
 // SetSchemaParents sets all the parents for the fields.
