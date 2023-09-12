@@ -83,10 +83,6 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipe
 	return NewDirectory(ctx, def.ToPB(), dir, pipeline, platform, services), nil
 }
 
-func (dir *Directory) ID() (DirectoryID, error) {
-	return resourceid.Encode(dir)
-}
-
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (dir *Directory) Clone() *Directory {

@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
@@ -63,6 +64,8 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		moduleCache:       core.NewCacheMap[digest.Digest, *core.Module](),
 		dependenciesCache: core.NewCacheMap[digest.Digest, []*core.Module](),
 
+		queryCache: core.NewCacheMap[digest.Digest, any](),
+
 		schemaViews:    map[digest.Digest]*schemaView{},
 		moduleContexts: map[digest.Digest]*moduleContext{},
 	}
@@ -84,6 +87,9 @@ type MergedSchemas struct {
 	importCache       *core.CacheMap[uint64, *specs.Descriptor]
 	moduleCache       *core.CacheMap[digest.Digest, *core.Module]
 	dependenciesCache *core.CacheMap[digest.Digest, []*core.Module]
+
+	// TODO(vito): theoretically this replaces most of above?
+	queryCache *core.CacheMap[digest.Digest, any]
 
 	mu sync.RWMutex
 	// Map of module digest -> schema presented to module.
@@ -275,6 +281,28 @@ type schemaView struct {
 	services        *core.Services
 }
 
+func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
+	return s.services.StopClientServices(ctx, client)
+}
+
+func loader[T any](cache *core.CacheMap[digest.Digest, any]) func(*idproto.ID) (*T, error) {
+	return func(id *idproto.ID) (*T, error) {
+		dig, err := id.Digest()
+		if err != nil {
+			return nil, err
+		}
+		val, err := cache.Get(dig)
+		if err != nil {
+			return nil, err
+		}
+		t, ok := val.(*T)
+		if !ok {
+			return nil, fmt.Errorf("ID refers to a %T, not a %T", val, t)
+		}
+		return t, nil
+	}
+}
+
 func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
@@ -376,10 +404,6 @@ func (s *schemaView) schemaIntrospectionJSON(ctx context.Context) (string, error
 		return "", fmt.Errorf("failed to marshal introspection result: %w", err)
 	}
 	return string(jsonBytes), nil
-}
-
-func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
-	return s.services.StopClientServices(ctx, client)
 }
 
 func (s *schemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {

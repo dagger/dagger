@@ -1,11 +1,13 @@
 package core
 
 import (
-	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/opencontainers/go-digest"
 )
 
 type GeneratedCode struct {
+	ID *idproto.ID `json:"id,omitempty"`
+
 	Code              *Directory `json:"code"`
 	VCSIgnoredPaths   []string   `json:"vcsIgnoredPaths,omitempty"`
 	VCSGeneratedPaths []string   `json:"vcsGeneratedPaths,omitempty"`
@@ -15,10 +17,6 @@ func NewGeneratedCode(code *Directory) *GeneratedCode {
 	return &GeneratedCode{
 		Code: code,
 	}
-}
-
-func (code *GeneratedCode) ID() (GeneratedCodeID, error) {
-	return resourceid.Encode(code)
 }
 
 func (code *GeneratedCode) Digest() (digest.Digest, error) {

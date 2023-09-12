@@ -3,9 +3,26 @@ package core
 import (
 	"fmt"
 
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/core/socket"
 )
+
+// Object is a value that can be referred to by ID. Within a Dagger session the
+// ID will always resolve to the same Object by means of a session-local cache.
+//
+// Objects are identified by their ID, which also doubles as a serializable
+// constructor for the object. By default, an object's ID will be the query
+// that led to it. A GraphQL resolver may choose to set an ID of its own, for
+// example to return a reproducible object from a moving reference.
+type Object[T Cloneable[T]] struct {
+	ID    *idproto.ID
+	Value *T
+}
+
+type Cloneable[T any] interface {
+	Clone() *T
+}
 
 type ContainerID = resourceid.ID[Container]
 
@@ -30,70 +47,69 @@ type GeneratedCodeID = resourceid.ID[GeneratedCode]
 // SocketID is in the socket package (to avoid circular imports)
 
 // ResourceFromID returns the resource corresponding to the given ID.
-func ResourceFromID(id string) (any, error) {
-	typeName, err := resourceid.TypeName(id)
+func ResourceFromID(idStr string) (any, error) {
+	id, err := resourceid.Decode(idStr)
 	if err != nil {
 		return nil, err
 	}
-	switch typeName {
-	case ContainerID.ResourceTypeName(""):
-		return ContainerID(id).Decode()
-	case CacheVolumeID.ResourceTypeName(""):
-		return CacheVolumeID(id).Decode()
-	case DirectoryID.ResourceTypeName(""):
-		return DirectoryID(id).Decode()
-	case FileID.ResourceTypeName(""):
-		return FileID(id).Decode()
-	case SecretID.ResourceTypeName(""):
-		return SecretID(id).Decode()
-	case ServiceID.ResourceTypeName(""):
-		return ServiceID(id).Decode()
-	case resourceid.ID[Module].ResourceTypeName(""):
-		return ModuleID(id).Decode()
-	case FunctionID.ResourceTypeName(""):
-		return FunctionID(id).Decode()
-	case socket.ID.ResourceTypeName(""):
-		return socket.ID(id).Decode()
-	case TypeDefID.ResourceTypeName(""):
-		return TypeDefID(id).Decode()
-	case GeneratedCodeID.ResourceTypeName(""):
-		return GeneratedCodeID(id).Decode()
+	switch id.TypeName {
+	case ContainerID{}.ResourceTypeName():
+		return ContainerID{ID: id}.Decode()
+	case CacheVolumeID{}.ResourceTypeName():
+		return CacheVolumeID{ID: id}.Decode()
+	case DirectoryID{}.ResourceTypeName():
+		return DirectoryID{ID: id}.Decode()
+	case FileID{}.ResourceTypeName():
+		return FileID{ID: id}.Decode()
+	case SecretID{}.ResourceTypeName():
+		return SecretID{ID: id}.Decode()
+	case ServiceID{}.ResourceTypeName():
+		return ServiceID{ID: id}.Decode()
+	case resourceid.ID[Module]{}.ResourceTypeName():
+		return ModuleID{ID: id}.Decode()
+	case FunctionID{}.ResourceTypeName():
+		return FunctionID{ID: id}.Decode()
+	case socket.ID{}.ResourceTypeName():
+		return socket.ID{ID: id}.Decode()
+	case TypeDefID{}.ResourceTypeName():
+		return TypeDefID{ID: id}.Decode()
+	case GeneratedCodeID{}.ResourceTypeName():
+		return GeneratedCodeID{ID: id}.Decode()
 	}
-	return nil, fmt.Errorf("unknown resource type: %v", typeName)
+	return nil, fmt.Errorf("unknown resource type: %v", id.TypeName)
 }
 
 // ResourceToID returns the ID string corresponding to the given resource.
-func ResourceToID(r any) (string, error) {
-	var id fmt.Stringer
-	var err error
+func ResourceToID(r any) (*idproto.ID, error) {
+	var id *idproto.ID
 	switch r := r.(type) {
 	case *Container:
-		id, err = r.ID()
+		id = r.ID
 	case *CacheVolume:
-		id, err = r.ID()
+		id = r.ID
 	case *Directory:
-		id, err = r.ID()
+		id = r.ID
 	case *File:
-		id, err = r.ID()
+		id = r.ID
 	case *Secret:
-		id, err = r.ID()
+		id = r.ID
 	case *Service:
-		id, err = r.ID()
+		id = r.ID
 	case *Module:
-		id, err = r.ID()
+		id = r.ID
 	case *Function:
-		id, err = r.ID()
+		id = r.ID
 	case *socket.Socket:
-		id, err = r.ID()
+		id = r.ID
 	case *TypeDef:
-		id, err = r.ID()
+		id = r.ID
 	case *GeneratedCode:
-		id, err = r.ID()
+		id = r.ID
 	default:
-		return "", fmt.Errorf("unknown resource type: %T", r)
+		return nil, fmt.Errorf("unknown resource type: %T", r)
 	}
-	if err != nil {
-		return "", err
+	if id == nil {
+		return nil, fmt.Errorf("%T has a null ID", r) // TODO this might be valid
 	}
-	return id.String(), nil
+	return id, nil
 }

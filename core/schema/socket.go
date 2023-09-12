@@ -34,7 +34,7 @@ func (s *socketSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[socket.Socket](rs, "Socket", ObjectResolver{})
+	ResolveIDable[socket.Socket](s.queryCache, rs, "Socket", ObjectResolver{})
 
 	return rs
 }

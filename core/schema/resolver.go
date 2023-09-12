@@ -6,9 +6,11 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/graphql"
+	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
 
@@ -36,27 +38,23 @@ func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
 	r[name] = fn
 }
 
+// TODO(vito): figure out how this changes with idproto
 type IDableObjectResolver interface {
-	FromID(id string) (any, error)
-	ToID(any) (string, error)
+	FromID(*idproto.ID) (any, error)
 	Resolver
 }
 
-func ToIDableObjectResolver[T any, I ~string](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
-	return idableObjectResolver[T, I]{idToObject, r}
+func ToIDableObjectResolver[T any](idToObject func(*idproto.ID) (*T, error), r ObjectResolver) IDableObjectResolver {
+	return idableObjectResolver[T]{idToObject, r}
 }
 
-type idableObjectResolver[T any, I ~string] struct {
-	idToObject func(I) (*T, error)
+type idableObjectResolver[T any] struct {
+	idToObject func(*idproto.ID) (*T, error)
 	ObjectResolver
 }
 
-func (r idableObjectResolver[T, I]) FromID(id string) (any, error) {
-	return r.idToObject(I(id))
-}
-
-func (r idableObjectResolver[T, I]) ToID(t any) (string, error) {
-	return core.ResourceToID(t)
+func (r idableObjectResolver[T]) FromID(id *idproto.ID) (any, error) {
+	return r.idToObject(id)
 }
 
 type ScalarResolver struct {
@@ -141,17 +139,23 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 	})
 }
 
-func ResolveIDable[T any](rs Resolvers, name string, obj ObjectResolver) {
+type IDable interface {
+	ID() *idproto.ID
+}
+
+func ResolveIDable[T core.Cloneable[T]](cache *core.CacheMap[digest.Digest, any], rs Resolvers, name string, obj ObjectResolver) {
+	load := loader[T](cache)
+
 	// Add resolver for the type.
-	rs[name] = ToIDableObjectResolver(resourceid.ID[T].Decode, obj)
+	rs[name] = ToIDableObjectResolver(load, obj)
 
 	// Add field for querying the object's ID.
-	obj["id"] = ToResolver(func(ctx context.Context, obj *T, args any) (_ resourceid.ID[T], rerr error) {
-		return resourceid.Encode(obj)
+	obj["id"] = ToResolver(func(ctx context.Context, obj core.Object[T], args any) (_ resourceid.ID[T], rerr error) {
+		return resourceid.FromProto[T](obj.ID), nil
 	})
 
 	// Add resolver for its ID type.
-	rs[name+"ID"] = stringResolver[resourceid.ID[T]]()
+	rs[name+"ID"] = idResolver[resourceid.ID[T], T]()
 
 	// Add global constructor from ID.
 	query, hasQuery := rs["Query"].(ObjectResolver)
@@ -160,7 +164,15 @@ func ResolveIDable[T any](rs Resolvers, name string, obj ObjectResolver) {
 		rs["Query"] = query
 	}
 	loaderName := fmt.Sprintf("load%sFromID", name)
-	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID resourceid.ID[T] }) (*T, error) {
-		return resourceid.ID[T].Decode(args.ID)
+	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID resourceid.ID[T] }) (core.Object[T], error) {
+		val, err := load(args.ID.ID)
+		if err != nil {
+			return core.Object[T]{}, err
+		}
+
+		return core.Object[T]{
+			ID:    args.ID.ID,
+			Value: val,
+		}, nil
 	})
 }

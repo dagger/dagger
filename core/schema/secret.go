@@ -69,12 +69,7 @@ func (s *secretSchema) setSecret(ctx context.Context, parent any, args setSecret
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args any) (string, error) {
-	id, err := parent.ID()
-	if err != nil {
-		return "", err
-	}
-
-	bytes, err := s.secrets.GetSecret(ctx, id.String())
+	bytes, err := s.secrets.GetSecret(ctx, parent.Name)
 	if err != nil {
 		return "", err
 	}

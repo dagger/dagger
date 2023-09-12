@@ -2,11 +2,13 @@ package resourceid
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/opencontainers/go-digest"
+	"google.golang.org/protobuf/proto"
 )
 
 // Digestible is any object which can return a digest of its content.
@@ -17,7 +19,19 @@ type Digestible interface {
 	Digest() (digest.Digest, error)
 }
 
-type ID[T any] string
+func New[T any](typeName string) ID[T] {
+	return ID[T]{idproto.New(typeName)}
+}
+
+func FromProto[T any](proto *idproto.ID) ID[T] {
+	return ID[T]{proto}
+}
+
+// ID is a thin wrapper around *idproto.ID that is primed to expect a
+// particular return type.
+type ID[T any] struct {
+	*idproto.ID
+}
 
 func (id ID[T]) ResourceTypeName() string {
 	var t T
@@ -25,71 +39,35 @@ func (id ID[T]) ResourceTypeName() string {
 	return strings.TrimPrefix(name, "*")
 }
 
-func (id ID[T]) String() string {
-	return string(id)
+// TODO these type hints aren't doing us any favors here, since we don't
+// actually check the embedded type.
+func Decode(id string) (*idproto.ID, error) {
+	if id == "" {
+		// TODO(vito): this is a little awkward, can we avoid
+		// it? adding initially for backwards compat, since some
+		// places compare with empty string
+		return nil, nil
+	}
+	bytes, err := base64.URLEncoding.DecodeString(id)
+	if err != nil {
+		return nil, err
+	}
+	var idproto idproto.ID
+	if err := proto.Unmarshal(bytes, &idproto); err != nil {
+		return nil, err
+	}
+	return &idproto, nil
 }
 
-func (id ID[T]) Digest() (digest.Digest, error) {
-	obj, err := id.Decode()
+func (id ID[T]) String() string {
+	proto, err := proto.Marshal(id.ID)
 	if err != nil {
-		return "", err
+		panic(err)
 	}
-	if obj == nil {
-		return digest.FromString(id.String()), nil
-	}
-	digestible, ok := any(obj).(Digestible)
-	if !ok {
-		return digest.FromString(id.String()), nil
-	}
-	return digestible.Digest()
+	return base64.URLEncoding.EncodeToString(proto)
 }
 
 // Decode base64-decodes and JSON unmarshals an ID into the object T
 func (id ID[T]) Decode() (*T, error) {
-	var payload T
-	if id == "" {
-		return &payload, nil
-	}
-
-	actualType, idEnc, ok := strings.Cut(string(id), ":")
-	if !ok {
-		return nil, fmt.Errorf("malformed ID: %v", id)
-	}
-
-	if actualType != id.ResourceTypeName() {
-		return nil, fmt.Errorf("ID type mismatch: %v != %v", actualType, id.ResourceTypeName())
-	}
-
-	jsonBytes, err := base64.StdEncoding.DecodeString(idEnc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode %T bytes: %v: %w", payload, id, err)
-	}
-
-	if err := json.Unmarshal(jsonBytes, &payload); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %T: %w", payload, err)
-	}
-	return &payload, nil
-}
-
-// Encode JSON marshals and base64-encodes an arbitrary payload.
-func Encode[T any, I ID[T]](payload *T) (I, error) {
-	jsonBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to json marshal %T: %w", payload, err)
-	}
-
-	idEnc := base64.StdEncoding.EncodeToString(jsonBytes)
-
-	var t T
-	typeName := strings.TrimPrefix(fmt.Sprintf("%T", t), "*")
-	id := I(fmt.Sprintf("%s:%s", typeName, idEnc))
-	return id, nil
-}
-
-func TypeName(id string) (string, error) {
-	actualType, _, ok := strings.Cut(id, ":")
-	if !ok {
-		return "", fmt.Errorf("malformed ID: %v", id)
-	}
-	return actualType, nil
+	return nil, errors.New("TODO replace ID.Decode with resolving the ID and asserting on the return type")
 }

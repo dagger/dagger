@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
@@ -27,6 +28,8 @@ const (
 )
 
 type Service struct {
+	ID *idproto.ID `json:"id"`
+
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
 
@@ -60,11 +63,6 @@ func NewHostService(upstream string, ports []PortForward) *Service {
 		HostUpstream: upstream,
 		HostPorts:    ports,
 	}
-}
-
-// ID marshals the service into a content-addressed ID.
-func (svc *Service) ID() (ServiceID, error) {
-	return resourceid.Encode(svc)
 }
 
 var _ pipeline.Pipelineable = (*Service)(nil)

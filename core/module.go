@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
@@ -25,6 +25,8 @@ const (
 )
 
 type Module struct {
+	ID *idproto.ID `json:"id"`
+
 	// The module's source code root directory
 	SourceDirectory *Directory `json:"sourceDirectory"`
 
@@ -57,10 +59,6 @@ type Module struct {
 
 	// The pipeline in which the module was created
 	Pipeline pipeline.Path `json:"pipeline,omitempty"`
-}
-
-func (mod *Module) ID() (ModuleID, error) {
-	return resourceid.Encode(mod)
 }
 
 func (mod *Module) Digest() (digest.Digest, error) {

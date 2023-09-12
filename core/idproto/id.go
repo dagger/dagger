@@ -5,6 +5,58 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func New(typeName string) *ID {
+	return &ID{
+		TypeName: typeName,
+	}
+}
+
+func Arg(name string, value any) *Argument {
+	return &Argument{
+		Name:  name,
+		Value: LiteralValue(value),
+	}
+}
+
+func LiteralValue(value any) *Literal {
+	switch v := value.(type) {
+	case *ID:
+		return &Literal{Value: &Literal_Id{Id: v}}
+	case int:
+		return &Literal{Value: &Literal_Int{Int: int64(v)}}
+	case int32:
+		return &Literal{Value: &Literal_Int{Int: int64(v)}}
+	case int64:
+		return &Literal{Value: &Literal_Int{Int: v}}
+	case float32:
+		return &Literal{Value: &Literal_Float{Float: v}}
+	case float64:
+		return &Literal{Value: &Literal_Float{Float: float32(v)}}
+	case string:
+		return &Literal{Value: &Literal_String_{String_: v}}
+	case bool:
+		return &Literal{Value: &Literal_Bool{Bool: v}}
+	default:
+		panic("TODO")
+	}
+}
+
+func (id *ID) Append(field string, args ...*Argument) {
+	var tainted bool
+	for _, arg := range args {
+		if arg.Tainted() {
+			tainted = true
+			break
+		}
+	}
+
+	id.Constructor = append(id.Constructor, &Selector{
+		Field:   field,
+		Args:    args,
+		Tainted: tainted,
+	})
+}
+
 // Tainted returns true if the ID contains any tainted selectors.
 func (id *ID) Tainted() bool {
 	for _, sel := range id.Constructor {
@@ -75,5 +127,33 @@ func (arg *Argument) Canonical() *Argument {
 	return &Argument{
 		Name:  arg.Name,
 		Value: arg.GetValue().Canonical(),
+	}
+}
+
+// Tainted returns true if the ID contains any tainted selectors.
+func (arg *Argument) Tainted() bool {
+	return arg.GetValue().Tainted()
+}
+
+func (lit *Literal) Tainted() bool {
+	switch v := lit.Value.(type) {
+	case *Literal_Id:
+		return v.Id.Tainted()
+	case *Literal_List:
+		for _, val := range v.List.Values {
+			if val.Tainted() {
+				return true
+			}
+		}
+		return false
+	case *Literal_Object:
+		for _, arg := range v.Object.Values {
+			if arg.Tainted() {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
 	}
 }

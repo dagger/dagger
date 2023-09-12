@@ -208,7 +208,7 @@ type moduleArgs struct {
 }
 
 func (s *moduleSchema) module(ctx context.Context, query *core.Query, args moduleArgs) (*core.Module, error) {
-	if args.ID == "" {
+	if args.ID.ID == nil {
 		return core.NewModule(s.platform, query.PipelinePath()), nil
 	}
 	return args.ID.Decode()
@@ -668,9 +668,9 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 		if !ok {
 			return nil, fmt.Errorf("expected string result, got %T", result)
 		}
-		mod, err = core.ModuleID(idStr).Decode()
+		rid, err := resourceid.Decode(idStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode module: %w", err)
+			return nil, fmt.Errorf("failed to parse module id: %w", err)
 		}
 
 		for _, obj := range mod.Objects {

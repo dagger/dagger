@@ -8,6 +8,8 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type directorySchema struct {
@@ -76,7 +78,7 @@ type directoryArgs struct {
 }
 
 func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
-	if args.ID != "" {
+	if args.ID.ID != nil {
 		return args.ID.Decode()
 	}
 	platform := s.platform
@@ -86,9 +88,9 @@ func (s *directorySchema) directory(ctx context.Context, parent *core.Query, arg
 func (s *directorySchema) sync(ctx context.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
 	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
-		return "", err
+		return core.DirectoryID{}, err
 	}
-	return parent.ID()
+	return resourceid.FromProto[core.Directory](parent.ID), nil
 }
 
 type subdirectoryArgs struct {
@@ -234,7 +236,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	if args.Platform != nil {
 		platform = *args.Platform
 	}
-	ctr, err := core.NewContainer("", parent.Pipeline, platform)
+	ctr, err := core.NewContainer(core.ContainerID{}, parent.Pipeline, platform)
 	if err != nil {
 		return ctr, err
 	}

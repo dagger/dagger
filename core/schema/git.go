@@ -116,7 +116,7 @@ type treeArgs struct {
 
 func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs treeArgs) (*core.Directory, error) {
 	res := *parent
-	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket != "" {
+	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket.ID != nil {
 		// no need for a full clone() here, we're only modifying string fields
 		res.SSHKnownHosts = treeArgs.SSHKnownHosts
 		res.SSHAuthSocket = treeArgs.SSHAuthSocket

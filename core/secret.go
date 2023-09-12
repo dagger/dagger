@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
@@ -12,6 +13,8 @@ import (
 
 // Secret is a content-addressed secret.
 type Secret struct {
+	ID *idproto.ID `json:"id"`
+
 	// Name specifies the arbitrary name/id of the secret.
 	Name string `json:"name,omitempty"`
 }
@@ -27,12 +30,8 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-func (secret *Secret) ID() (SecretID, error) {
-	return resourceid.Encode(secret)
-}
-
 func (secret *Secret) Digest() (digest.Digest, error) {
-	return stableDigest(secret)
+	return secret.ID.Digest()
 }
 
 func NewSecretStore() *SecretStore {
@@ -59,7 +58,14 @@ func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []
 	// add the plaintext to the map
 	store.secrets[secret.Name] = plaintext
 
-	return secret.ID()
+	return NewCanonicalSecret(secret.Name), nil
+}
+
+// NewCanonicalSecret returns a canonical SecretID for the given name.
+func NewCanonicalSecret(name string) SecretID {
+	var id SecretID = resourceid.New[Secret]("Secret")
+	id.Append("secret", idproto.Arg("name", name))
+	return id
 }
 
 // GetSecret returns the plaintext secret value.
@@ -71,16 +77,9 @@ func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []
 // build.
 //
 // In all other cases, a SecretID is expected.
-func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
+func (store *SecretStore) GetSecret(ctx context.Context, name string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-
-	var name string
-	if secret, err := SecretID(idOrName).Decode(); err == nil {
-		name = secret.Name
-	} else {
-		name = idOrName
-	}
 
 	plaintext, ok := store.secrets[name]
 	if !ok {

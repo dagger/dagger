@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/resourceid"
 )
 
 type fileSchema struct {
@@ -56,9 +57,9 @@ func (s *fileSchema) file(ctx context.Context, parent any, args fileArgs) (*core
 func (s *fileSchema) sync(ctx context.Context, parent *core.File, _ any) (core.FileID, error) {
 	err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
-		return "", err
+		return core.FileID{}, err
 	}
-	return parent.ID()
+	return resourceid.FromProto[core.File](parent.ID), nil
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args any) (string, error) {

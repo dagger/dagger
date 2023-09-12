@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 )
 
 type Function struct {
+	ID *idproto.ID `json:"id"`
+
 	// Name is the standardized name of the function (lowerCamelCase), as used for the resolver in the graphql schema
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
@@ -32,10 +34,6 @@ func NewFunction(name string, returnType *TypeDef) *Function {
 		ReturnType:   returnType,
 		OriginalName: name,
 	}
-}
-
-func (fn *Function) ID() (FunctionID, error) {
-	return resourceid.Encode(fn)
 }
 
 func (fn *Function) Digest() (digest.Digest, error) {
@@ -95,14 +93,12 @@ func (arg FunctionArg) Clone() *FunctionArg {
 }
 
 type TypeDef struct {
+	ID *idproto.ID `json:"id,omitempty"`
+
 	Kind     TypeDefKind    `json:"kind"`
 	Optional bool           `json:"optional"`
 	AsList   *ListTypeDef   `json:"asList"`
 	AsObject *ObjectTypeDef `json:"asObject"`
-}
-
-func (typeDef *TypeDef) ID() (TypeDefID, error) {
-	return resourceid.Encode(typeDef)
 }
 
 func (typeDef *TypeDef) Digest() (digest.Digest, error) {

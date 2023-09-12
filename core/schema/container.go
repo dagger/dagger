@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/core/socket"
 
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
@@ -126,6 +127,9 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 	}
 	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
+		if args.ID.ID != nil {
+			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
+		}
 		platform = *args.Platform
 	}
 	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
@@ -138,9 +142,9 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 func (s *containerSchema) sync(ctx context.Context, parent *core.Container, _ any) (core.ContainerID, error) {
 	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
-		return "", err
+		return core.ContainerID{}, err
 	}
-	return parent.ID()
+	return resourceid.FromProto[core.Container](parent.ID), nil
 }
 
 type containerFromArgs struct {
@@ -459,7 +463,15 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
+	variants := make([]*core.Container, len(args.PlatformVariants))
+	for i, id := range args.PlatformVariants {
+		var err error
+		variants[i], err = id.Decode()
+		if err != nil {
+			return "", err
+		}
+	}
+	return parent.Publish(ctx, s.bk, s.svcs, args.Address, variants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerWithMountedFileArgs struct {
@@ -486,7 +498,7 @@ type containerWithMountedCacheArgs struct {
 
 func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
 	var dir *core.Directory
-	if args.Source != "" {
+	if args.Source.ID != nil {
 		var err error
 		dir, err = args.Source.Decode()
 		if err != nil {
@@ -673,7 +685,15 @@ type containerExportArgs struct {
 }
 
 func (s *containerSchema) export(ctx context.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.bk, s.svcs, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
+	variants := make([]*core.Container, len(args.PlatformVariants))
+	for i, id := range args.PlatformVariants {
+		var err error
+		variants[i], err = id.Decode()
+		if err != nil {
+			return false, err
+		}
+	}
+	if err := parent.Export(ctx, s.bk, s.svcs, args.Path, variants, args.ForcedCompression, args.MediaTypes); err != nil {
 		return false, err
 	}
 

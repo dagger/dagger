@@ -5,12 +5,16 @@ import (
 	"io"
 	"net"
 
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/sshforward"
-	"github.com/opencontainers/go-digest"
 )
 
+type ID = resourceid.ID[Socket]
+
 type Socket struct {
+	ID *idproto.ID `json:"id,omitempty"`
+
 	// Unix
 	HostPath string `json:"host_path,omitempty"`
 
@@ -19,24 +23,10 @@ type Socket struct {
 	HostAddr     string `json:"host_addr,omitempty"`
 }
 
-type ID = resourceid.ID[Socket]
-
-func (socket *Socket) Digest() (digest.Digest, error) {
-	id, err := socket.ID()
-	if err != nil {
-		return "", err
-	}
-	return digest.FromString(string(id)), nil
-}
-
 func NewHostUnixSocket(absPath string) *Socket {
 	return &Socket{
 		HostPath: absPath,
 	}
-}
-
-func (socket *Socket) ID() (ID, error) {
-	return resourceid.Encode(socket)
 }
 
 func NewHostIPSocket(proto string, addr string) *Socket {
@@ -44,6 +34,10 @@ func NewHostIPSocket(proto string, addr string) *Socket {
 		HostAddr:     addr,
 		HostProtocol: proto,
 	}
+}
+
+func (socket Socket) Clone() *Socket {
+	return &socket
 }
 
 func (socket *Socket) IsHost() bool {
