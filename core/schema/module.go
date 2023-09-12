@@ -112,7 +112,34 @@ func (s *moduleSchema) newFunction(ctx *core.Context, _ *core.Query, args struct
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module ID: %w", err)
 	}
-	args.Def.ModuleID = modID
+
+	var walkTypeDef func(def *core.TypeDef)
+	var setFnModuleID func(def *core.Function)
+	walkTypeDef = func(def *core.TypeDef) {
+		switch def.Kind {
+		case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean:
+			return
+		case core.TypeDefKindList:
+			walkTypeDef(def.AsList.ElementTypeDef)
+		case core.TypeDefKindObject:
+			for _, field := range def.AsObject.Fields {
+				walkTypeDef(field.TypeDef)
+			}
+			for _, fn := range def.AsObject.Functions {
+				setFnModuleID(fn)
+			}
+		default:
+			panic(fmt.Errorf("unhandled type def kind %q", def.Kind))
+		}
+	}
+	setFnModuleID = func(fn *core.Function) {
+		fn.ModuleID = modID
+		for _, arg := range fn.Args {
+			walkTypeDef(arg.TypeDef)
+		}
+		walkTypeDef(fn.ReturnType)
+	}
+	setFnModuleID(args.Def)
 	return args.Def, nil
 }
 
@@ -631,7 +658,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 			Description: module.Description,
 			Functions:   module.Functions,
 		},
-	}, false, schemaDoc, newResolvers, core.NewCacheMap[string, ast.Type]())
+	}, false, schemaDoc, newResolvers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert module to schema: %w", err)
 	}
@@ -661,15 +688,11 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 	}), nil
 }
 
-// name -> ast type, used to dedupe walk of type DAG
-type astTypeCache = core.CacheMap[string, ast.Type]
-
 func (s *moduleSchema) addTypeDefToSchema(
 	typeDef *core.TypeDef,
 	isInput bool,
 	schemaDoc *ast.SchemaDocument,
 	newResolvers Resolvers,
-	typeCache *astTypeCache,
 ) (*ast.Type, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindString:
@@ -691,7 +714,7 @@ func (s *moduleSchema) addTypeDefToSchema(
 		if typeDef.AsList == nil {
 			return nil, fmt.Errorf("expected list type def, got nil")
 		}
-		astType, err := s.addTypeDefToSchema(typeDef.AsList.ElementTypeDef, isInput, schemaDoc, newResolvers, typeCache)
+		astType, err := s.addTypeDefToSchema(typeDef.AsList.ElementTypeDef, isInput, schemaDoc, newResolvers)
 		if err != nil {
 			return nil, err
 		}
@@ -711,64 +734,53 @@ func (s *moduleSchema) addTypeDefToSchema(
 		// also check whether it's specifically an idable object from the core API
 		idableObjectResolver, _ := s.idableObjectResolver(objName)
 
-		cacheKey := fmt.Sprintf("%s.%t", objName, isInput)
-		astType, err := typeCache.GetOrInitialize(cacheKey, func() (ast.Type, error) {
-			astDef := &ast.Definition{
-				Name:        objName,
-				Description: objTypeDef.Description,
-				Kind:        ast.Object,
-			}
-			if isInput {
-				if idableObjectResolver != nil {
-					astDef.Kind = ast.Scalar
-					astDef.Name = astDef.Name + "ID"
-				} else {
-					astDef.Kind = ast.InputObject
-				}
-			}
+		astDef := &ast.Definition{
+			Name:        objName,
+			Description: objTypeDef.Description,
+			Kind:        ast.Object,
+		}
+		if isInput && idableObjectResolver == nil {
+			astDef.Kind = ast.InputObject
+		}
 
-			for _, field := range objTypeDef.Fields {
-				fieldASTType, err := s.addTypeDefToSchema(field.TypeDef, isInput, schemaDoc, newResolvers, typeCache)
-				if err != nil {
-					return ast.Type{}, err
-				}
-				astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
-					Name:        gqlFieldName(field.Name),
-					Description: field.Description,
-					Type:        fieldASTType,
-				})
-				// no resolver to add; fields rely on the graphql "trivial resolver" where the value is just read from the parent object
+		for _, field := range objTypeDef.Fields {
+			fieldASTType, err := s.addTypeDefToSchema(field.TypeDef, isInput, schemaDoc, newResolvers)
+			if err != nil {
+				return nil, err
 			}
+			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
+				Name:        gqlFieldName(field.Name),
+				Description: field.Description,
+				Type:        fieldASTType,
+			})
+			// no resolver to add; fields rely on the graphql "trivial resolver" where the value is just read from the parent object
+		}
 
-			if !isInput {
-				// NOTE: currently, we ignore any functions defined on input objects. This simplifies SDK implementation since they
-				// don't need to do special handling if, e.g., there happens to be a method defined on some object being used as an
-				// input.
-				newObjResolver := ObjectResolver{}
-				for _, fn := range objTypeDef.Functions {
-					if err := s.addFunctionToSchema(astDef, newObjResolver, fn, schemaDoc, newResolvers, typeCache); err != nil {
-						return ast.Type{}, err
-					}
-				}
-				newResolvers[objName] = newObjResolver
+		newObjResolver := ObjectResolver{}
+		for _, fn := range objTypeDef.Functions {
+			if err := s.addFunctionToSchema(astDef, newObjResolver, fn, schemaDoc, newResolvers); err != nil {
+				return nil, err
 			}
+		}
+		if len(newObjResolver) > 0 {
+			newResolvers[objName] = newObjResolver
+		}
 
+		if len(astDef.Fields) > 0 {
 			if preExistingObject {
-				if len(astDef.Fields) > 0 {
-					// if there's any new functions added to an existing object from core or another module, include
-					// those in the schema as extensions
-					schemaDoc.Extensions = append(schemaDoc.Extensions, astDef)
-				}
+				// if there's any new functions added to an existing object from core or another module, include
+				// those in the schema as extensions
+				schemaDoc.Extensions = append(schemaDoc.Extensions, astDef)
 			} else {
 				schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
 			}
-			return ast.Type{NamedType: astDef.Name}, nil
-		})
-		if err != nil {
-			return nil, err
 		}
-		astType.NonNull = !typeDef.Optional
-		return &astType, nil
+
+		if isInput && idableObjectResolver != nil {
+			// idable types use their ID scalar as the input value
+			return &ast.Type{NamedType: astDef.Name + "ID", NonNull: !typeDef.Optional}, nil
+		}
+		return &ast.Type{NamedType: astDef.Name, NonNull: !typeDef.Optional}, nil
 	default:
 		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
 	}
@@ -780,96 +792,89 @@ func (s *moduleSchema) addFunctionToSchema(
 	fn *core.Function,
 	schemaDoc *ast.SchemaDocument,
 	newResolvers Resolvers,
-	typeCache *astTypeCache,
 ) error {
 	fnName := gqlFieldName(fn.Name)
 	objFnName := fmt.Sprintf("%s.%s", parentObj.Name, fnName)
 
-	_, err := typeCache.GetOrInitialize(objFnName, func() (ast.Type, error) {
-		returnASTType, err := s.addTypeDefToSchema(fn.ReturnType, false, schemaDoc, newResolvers, typeCache)
-		if err != nil {
-			return ast.Type{}, err
-		}
-
-		var argASTTypes ast.ArgumentDefinitionList
-		for _, fnArg := range fn.Args {
-			argASTType, err := s.addTypeDefToSchema(fnArg.TypeDef, true, schemaDoc, newResolvers, typeCache)
-			if err != nil {
-				return ast.Type{}, err
-			}
-			defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
-			if err != nil {
-				return ast.Type{}, err
-			}
-			argASTTypes = append(argASTTypes, &ast.ArgumentDefinition{
-				Name:         gqlArgName(fnArg.Name),
-				Description:  fnArg.Description,
-				Type:         argASTType,
-				DefaultValue: defaultValue,
-			})
-		}
-
-		fieldDef := &ast.FieldDefinition{
-			Name:        fnName,
-			Description: fn.Description,
-			Type:        returnASTType,
-			Arguments:   argASTTypes,
-		}
-		parentObj.Fields = append(parentObj.Fields, fieldDef)
-
-		// Our core "id-able" types are serialized as their ID over the wire, but need to be decoded into
-		// their object here. We can identify those types since their object resolvers are wrapped in
-		// ToIDableObjectResolver.
-		var returnIDableObjectResolver IDableObjectResolver
-		if fn.ReturnType.Kind == core.TypeDefKindObject {
-			returnIDableObjectResolver, _ = s.idableObjectResolver(fn.ReturnType.AsObject.Name)
-		}
-		parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name)
-
-		parentObjResolver[fnName] = ToResolver(func(ctx *core.Context, parent any, args map[string]any) (_ any, rerr error) {
-			defer func() {
-				if r := recover(); r != nil {
-					rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
-				}
-			}()
-			if parentIDableObjectResolver != nil {
-				id, err := parentIDableObjectResolver.ToID(parent)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get parent ID: %w", err)
-				}
-				parent = id
-			}
-
-			var callInput []*core.CallInput
-			for k, v := range args {
-				callInput = append(callInput, &core.CallInput{
-					Name:  k,
-					Value: v,
-				})
-			}
-			result, err := s.functionCall(ctx, fn, functionCallArgs{
-				Input:      callInput,
-				ParentName: parentObj.Name,
-				Parent:     parent,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
-			}
-			if returnIDableObjectResolver == nil {
-				return result, nil
-			}
-
-			id, ok := result.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected string ID result for %s, got %T", objFnName, result)
-			}
-			return returnIDableObjectResolver.FromID(id)
-		})
-		return ast.Type{}, nil
-	})
+	returnASTType, err := s.addTypeDefToSchema(fn.ReturnType, false, schemaDoc, newResolvers)
 	if err != nil {
 		return err
 	}
+
+	var argASTTypes ast.ArgumentDefinitionList
+	for _, fnArg := range fn.Args {
+		argASTType, err := s.addTypeDefToSchema(fnArg.TypeDef, true, schemaDoc, newResolvers)
+		if err != nil {
+			return err
+		}
+		defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
+		if err != nil {
+			return err
+		}
+		argASTTypes = append(argASTTypes, &ast.ArgumentDefinition{
+			Name:         gqlArgName(fnArg.Name),
+			Description:  fnArg.Description,
+			Type:         argASTType,
+			DefaultValue: defaultValue,
+		})
+	}
+
+	fieldDef := &ast.FieldDefinition{
+		Name:        fnName,
+		Description: fn.Description,
+		Type:        returnASTType,
+		Arguments:   argASTTypes,
+	}
+	parentObj.Fields = append(parentObj.Fields, fieldDef)
+
+	// Our core "id-able" types are serialized as their ID over the wire, but need to be decoded into
+	// their object here. We can identify those types since their object resolvers are wrapped in
+	// ToIDableObjectResolver.
+	var returnIDableObjectResolver IDableObjectResolver
+	if fn.ReturnType.Kind == core.TypeDefKindObject {
+		returnIDableObjectResolver, _ = s.idableObjectResolver(fn.ReturnType.AsObject.Name)
+	}
+	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name)
+
+	parentObjResolver[fnName] = ToResolver(func(ctx *core.Context, parent any, args map[string]any) (_ any, rerr error) {
+		defer func() {
+			if r := recover(); r != nil {
+				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
+			}
+		}()
+		if parentIDableObjectResolver != nil {
+			id, err := parentIDableObjectResolver.ToID(parent)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get parent ID: %w", err)
+			}
+			parent = id
+		}
+
+		var callInput []*core.CallInput
+		for k, v := range args {
+			callInput = append(callInput, &core.CallInput{
+				Name:  k,
+				Value: v,
+			})
+		}
+		result, err := s.functionCall(ctx, fn, functionCallArgs{
+			Input:      callInput,
+			ParentName: parentObj.Name,
+			Parent:     parent,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
+		}
+		if returnIDableObjectResolver == nil {
+			return result, nil
+		}
+
+		id, ok := result.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string ID result for %s, got %T", objFnName, result)
+		}
+		return returnIDableObjectResolver.FromID(id)
+	})
 	return nil
 }
 

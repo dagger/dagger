@@ -86,9 +86,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 	}
 
 	ps := &parseState{
-		namedTypeDefs: make(map[string]*dagger.TypeDefInput),
-		pkgs:          pkgs,
-		fset:          fset,
+		visitedStructs: make(map[string]struct{}),
+		pkgs:           pkgs,
+		fset:           fset,
 	}
 	moduleAPITypeDef, err := ps.goTypeToAPIType(moduleObj.Type(), nil)
 	if err != nil {
@@ -219,7 +219,7 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 	)
 
 	objName := typeDef.AsObject.Name
-	if _, ok := cases[objName]; ok {
+	if existingCases := cases[objName]; len(existingCases) > 0 {
 		// handles recursive types, e.g. objects with chainable methods that return themselves
 		return nil
 	}
@@ -251,6 +251,9 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 				fnCallArgs = append(fnCallArgs, Id(argDef.Name))
 			case dagger.Objectkind:
 				fnCallArgs = append(fnCallArgs, Op("&").Id(argDef.Name))
+				if err := fillObjectFunctionCases(argDef.TypeDef, cases, moduleName); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -325,9 +328,9 @@ func apiTypeKindToGoType(typeDef *dagger.TypeDefInput) string {
 }
 
 type parseState struct {
-	namedTypeDefs map[string]*dagger.TypeDefInput
-	pkgs          []*packages.Package
-	fset          *token.FileSet
+	visitedStructs map[string]struct{}
+	pkgs           []*packages.Package
+	fset           *token.FileSet
 }
 
 func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagger.TypeDefInput, error) {
@@ -378,25 +381,26 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 	if name == "" {
 		return nil, fmt.Errorf("struct types must be named")
 	}
-	// use cache if we've already seen this type
-	if namedTypeDef, ok := ps.namedTypeDefs[name]; ok {
-		return namedTypeDef, nil
+	// Return "stub" type if we've already handled this type; the full definition that includes all fields+functions
+	// only needs to appear once. Every other occurance should just have a ref to the object's name.
+	if _, ok := ps.visitedStructs[name]; ok {
+		return &dagger.TypeDefInput{
+			Kind:     dagger.Objectkind,
+			AsObject: &dagger.ObjectTypeDefInput{Name: name},
+		}, nil
 	}
+	// we only cache the type def w/ the name so that an future encounters with it just result in that stub
+	// being used rather than the whole def being included many times
+	ps.visitedStructs[name] = struct{}{}
 
 	typeDef := &dagger.TypeDefInput{
-		Kind: dagger.Objectkind,
-		AsObject: &dagger.ObjectTypeDefInput{
-			Name: name,
-		},
+		Kind:     dagger.Objectkind,
+		AsObject: &dagger.ObjectTypeDefInput{Name: name},
 	}
-	// cache early to handle recursive types, e.g. objects with chainable methods that return themselves
-	ps.namedTypeDefs[name] = typeDef
-
 	tokenFile := ps.fset.File(named.Obj().Pos())
 	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
 
 	// Fill out any Functions on the object, which are methods on the struct
-
 	// TODO: support methods defined on non-pointer receivers
 	methodSet := types.NewMethodSet(types.NewPointer(named))
 	for i := 0; i < methodSet.Len(); i++ {
@@ -431,6 +435,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		if !ok {
 			return nil, fmt.Errorf("expected method to be a func, got %T", method.Type())
 		}
+
 		for i := 0; i < methodSig.Params().Len(); i++ {
 			param := methodSig.Params().At(i)
 
@@ -451,6 +456,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 				TypeDef: argTypeDef,
 			})
 		}
+
 		methodResults := methodSig.Results()
 		if methodResults.Len() == 0 {
 			return nil, fmt.Errorf("method %s has no return value", method.Name())
@@ -458,7 +464,6 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		if methodResults.Len() > 2 {
 			return nil, fmt.Errorf("method %s has too many return values", method.Name())
 		}
-
 		// ignore error, which should be second or not present (for now, we can be more flexible later)
 		result := methodResults.At(0)
 		resultTypeDef, err := ps.goTypeToAPIType(result.Type(), nil)

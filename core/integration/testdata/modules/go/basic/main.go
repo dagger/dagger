@@ -40,7 +40,6 @@ func (container *Container) Blah(ctx context.Context, val string) (string, error
 	return container.WithExec([]string{"echo", val}).Stdout(ctx)
 }
 
-/* TODO: doesn't work yet
 func (obj *CustomObj) WithField(ctx context.Context, f string) (*CustomObj, error) {
 	obj.CustomObjField = f
 	return obj, nil
@@ -49,4 +48,3 @@ func (obj *CustomObj) WithField(ctx context.Context, f string) (*CustomObj, erro
 func (container *Container) WithCustomEnv(ctx context.Context, val string) (*Container, error) {
 	return container.WithEnvVariable("CUSTOM_ENV", val), nil
 }
-*/

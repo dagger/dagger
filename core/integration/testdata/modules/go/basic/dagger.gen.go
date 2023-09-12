@@ -3600,20 +3600,6 @@ func main() {
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (any, error) {
 	switch parentName {
-	case "CustomObj":
-		switch fnName {
-		case "SayField":
-			var err error
-			var parent CustomObj
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
-			}
-			return (*CustomObj).SayField(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
 	case "Container":
 		switch fnName {
 		case "Blah":
@@ -3631,6 +3617,26 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				os.Exit(2)
 			}
 			return (*Container).Blah(&parent, ctx, val)
+		case "WithCustomEnv":
+			var err error
+			var parent Container
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			var val string
+			err = json.Unmarshal([]byte(inputArgs["val"]), &val)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			return (*Container).WithCustomEnv(&parent, ctx, val)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "File":
+		switch fnName {
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -3701,7 +3707,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			return (*Basic).MyFunction(&parent, ctx, stringArg, intsArg, &opt)
 		case "":
 			var err error
-			var typeDefBytes []byte = []byte("{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"ctr\",\"typeDef\":{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"val\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"Blah\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"Container\"},\"kind\":\"ObjectKind\"}},{\"name\":\"f\",\"typeDef\":{\"asObject\":{\"name\":\"File\"},\"kind\":\"ObjectKind\"}}],\"name\":\"CatFile\",\"returnType\":{\"kind\":\"StringKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"GetCustomObj\",\"returnType\":{\"asObject\":{\"fields\":[{\"name\":\"CustomObjField\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"functions\":[{\"name\":\"SayField\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"CustomObj\"},\"kind\":\"ObjectKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"intsArg\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}},{\"name\":\"opt\",\"typeDef\":{\"asObject\":{\"fields\":[{\"name\":\"Foo\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"Bar\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}}],\"name\":\"InputOpt\"},\"kind\":\"ObjectKind\"}}],\"name\":\"MyFunction\",\"returnType\":{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"val\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"Blah\",\"returnType\":{\"kind\":\"StringKind\"}}],\"name\":\"Container\"},\"kind\":\"ObjectKind\"}}],\"name\":\"Basic\"},\"kind\":\"ObjectKind\"}")
+			var typeDefBytes []byte = []byte("{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"ctr\",\"typeDef\":{\"asObject\":{\"functions\":[{\"args\":[{\"name\":\"val\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"Blah\",\"returnType\":{\"kind\":\"StringKind\"}},{\"args\":[{\"name\":\"val\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"WithCustomEnv\",\"returnType\":{\"asObject\":{\"name\":\"Container\"},\"kind\":\"ObjectKind\"}}],\"name\":\"Container\"},\"kind\":\"ObjectKind\"}},{\"name\":\"f\",\"typeDef\":{\"asObject\":{\"name\":\"File\"},\"kind\":\"ObjectKind\"}}],\"name\":\"CatFile\",\"returnType\":{\"kind\":\"StringKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"GetCustomObj\",\"returnType\":{\"asObject\":{\"fields\":[{\"name\":\"CustomObjField\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"functions\":[{\"name\":\"SayField\",\"returnType\":{\"kind\":\"StringKind\"}},{\"args\":[{\"name\":\"f\",\"typeDef\":{\"kind\":\"StringKind\"}}],\"name\":\"WithField\",\"returnType\":{\"asObject\":{\"name\":\"CustomObj\"},\"kind\":\"ObjectKind\"}}],\"name\":\"CustomObj\"},\"kind\":\"ObjectKind\"}},{\"args\":[{\"name\":\"stringArg\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"intsArg\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}},{\"name\":\"opt\",\"typeDef\":{\"asObject\":{\"fields\":[{\"name\":\"Foo\",\"typeDef\":{\"kind\":\"StringKind\"}},{\"name\":\"Bar\",\"typeDef\":{\"asList\":{\"elementTypeDef\":{\"kind\":\"IntegerKind\"}},\"kind\":\"ListKind\"}}],\"name\":\"InputOpt\"},\"kind\":\"ObjectKind\"}}],\"name\":\"MyFunction\",\"returnType\":{\"asObject\":{\"name\":\"Container\"},\"kind\":\"ObjectKind\"}}],\"name\":\"Basic\"},\"kind\":\"ObjectKind\"}")
 			var typeDef TypeDefInput
 			err = json.Unmarshal(typeDefBytes, &typeDef)
 			if err != nil {
@@ -3713,6 +3719,40 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				mod = mod.WithFunction(dag.NewFunction(fnDef))
 			}
 			return mod, nil
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "CustomObj":
+		switch fnName {
+		case "SayField":
+			var err error
+			var parent CustomObj
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			return (*CustomObj).SayField(&parent, ctx)
+		case "WithField":
+			var err error
+			var parent CustomObj
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			var f string
+			err = json.Unmarshal([]byte(inputArgs["f"]), &f)
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(2)
+			}
+			return (*CustomObj).WithField(&parent, ctx, f)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "InputOpt":
+		switch fnName {
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
