@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock"
 	"golang.org/x/term"
 )
 
@@ -43,11 +44,15 @@ EOF
 	Args: cobra.MaximumNArgs(1), // operation can be specified
 }
 
-func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, args []string) error {
+func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, args []string) (rerr error) {
 	var operation string
 	if len(args) > 0 {
 		operation = args[0]
 	}
+
+	rec := progrock.FromContext(ctx)
+	vtx := rec.Vertex("query", "query", progrock.Focused())
+	defer func() { vtx.Done(rerr) }()
 
 	vars := make(map[string]interface{})
 	if len(queryVarsJSONInput) > 0 {
@@ -86,7 +91,15 @@ func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _
 		return err
 	}
 
-	fmt.Printf("%s\n", result)
+	var out io.Writer
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		out = os.Stdout
+	} else {
+		out = vtx.Stdout()
+	}
+
+	fmt.Fprintf(out, "%s\n", result)
+
 	return nil
 }
 

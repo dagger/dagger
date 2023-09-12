@@ -129,14 +129,8 @@ At this point you should have a fully functioning module. You can test it with
 `dagger query`:
 
 ```sh
-echo '{vito{helloWorld}}' | dagger query --progress=plain
+echo '{vito{helloWorld}}' | dagger query
 ```
-
-> `--progress=plain` is currently necessary; without it you'll get this error:
->
-> ```
-> Error: inappropriate ioctl for device
-> ```
 
 ## More things you can do
 
