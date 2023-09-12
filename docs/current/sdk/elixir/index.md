@@ -6,6 +6,10 @@ slug: /sdk/elixir
 
 <div class="status-badge">Experimental</div>
 
+:::warning
+The Dagger Elixir SDK is currently experimental and is subject to change.
+:::
+
 ## What is the Dagger Elixir SDK?
 
 The Dagger Elixir SDK contains everything you need to develop CI/CD pipelines in Elixir, and run them with the [Dagger Engine][dagger].

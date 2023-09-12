@@ -5,10 +5,14 @@ slug: /sdk/elixir/043817/install
 # Installation
 
 :::note
-This Dagger Elixir SDK requires Elixir 1.14 or later with Erlang OTP 23 or later. Using Erlang OTP version 25 is recommended.
+The Dagger Elixir SDK requires Elixir 1.14 or later with Erlang OTP 23 or later. Using Erlang OTP 25 is recommended.
 :::
 
-Install the Dagger Elixir SDK in your project by adding this package into `mix.exs` in `deps` function:
+:::warning
+The Dagger Elixir SDK is currently experimental and is subject to change.
+:::
+
+Install the Dagger Elixir SDK in your project by adding the package in the `deps` function in `mix.exs` :
 
 ```elixir
 def deps do
