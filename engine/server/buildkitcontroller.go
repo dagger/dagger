@@ -164,10 +164,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	}()
 
 	conn, closeCh, hijackmd := grpchijack.Hijack(stream)
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
 	// TODO: this blocks if opts.RegisterClient and an error happens
 	// TODO: ? defer conn.Close()
 	go func() {

@@ -2,7 +2,6 @@ package templates
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -70,13 +69,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 	}
 	if mainPkg == nil {
 		return defaultErrorMainSrc("no main package yet")
-	}
-	if len(mainPkg.Errors) > 0 {
-		var rerr error
-		for _, err := range mainPkg.Errors {
-			rerr = errors.Join(rerr, err)
-		}
-		return defaultErrorMainSrc(fmt.Sprintf("main package has errors: %v", rerr))
 	}
 
 	moduleStructName := strcase.ToCamel(funcs.moduleName)
