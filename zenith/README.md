@@ -27,13 +27,128 @@ The Dagger Engine is developed in the open, and Project Zenith is no exception.
 
 ## How to test it
 
-As of August 24 2023, the latest source code for Project Zenith is available as a development branch on the Dagger Engine repository.
+To get started, first clone this branch to a separate directory.
 
-To get started:
+> You could also just fetch the branch into an existing Dagger repo checkout,
+> but I've found it nice to keep them separate, since it's a bit of a
+> context-switch if you have anything else going on in your Dagger repo.
 
-1. Visit the [draft pull request](https://github.com/dagger/dagger/pull/5443)
-2. Checkout the corresponding branch
-3. Follow the instructions in `./universe/README.md`
-4. Please ask questions and share feedback on the discord channel, we love to hear from you, and there are no stupid questions!
+```sh
+git clone https://github.com/shykes/dagger --branch zenith-functions ./zenith/
+```
+
+Next, `cd` to it and build the dev `dagger` CLI and start the dev engine:
+
+```sh
+# cd into repo
+cd ./zenith/
+
+# build dev CLI and engine
+./hack/dev
+```
+
+Finally, `cd` one last time into the directory containing this README.md file.
+It contains an [`.envrc`][direnv] file that will automatically point your
+`dagger` CLI to the dev engine.
+
+Follow the [install instructions][direnv] for `direnv` if you don't have it
+already, and then run:
+
+[direnv]: https://direnv.net/
+
+```sh
+# cd into zenith subdir
+cd ./zenith/
+
+# enable .envrc (be sure to start a new shell)
+direnv allow
+```
+
+At this point you should have a fully functioning `dagger` CLI and dev engine.
+
+You can test it by running the included demo module:
+
+```sh
+cd vito-mod/
+echo '{vito{helloWorld}}' | dagger query --progress=plain
+```
+
+## Creating your first Module
+
+Create a new directory under `./zenith/` and run `dagger mod init` to
+bootstrap your first module.
+
+```sh
+cd ./zenith/ # if not there already
+
+mkdir vito-mod/
+cd vito-mod/
+
+# initialize Go module
+go mod init vito-mod
+
+# TODO this is a rough edge; the generated code still depends on a
+# yet-to-be-shipped Go package from the vanilla Dagger SDK.
+go mod edit -replace dagger.io/dagger="github.com/shykes/dagger/sdk/go@v0.0.0-20230912080048-61eaca787720"
+
+# bootstrap go.mod/go.sum
+go mod tidy
+
+# initialize Dagger module
+#
+# NOTE: currently Go is the only supported SDK.
+dagger mod init --name=vito --sdk=go
+```
+
+This will generate `dagger.gen.go`, `dagger.json`, and an empty `main.go` file.
+
+Let's write the `main.go` now. We named our module `vito`, so that means we
+need to define a `Vito` type. This type will define all of the functions
+available from our module.
+
+```go
+package main
+
+import "context"
+
+type Vito struct{}
+
+func (m *Vito) HelloWorld(context.Context) (string, error) {
+	return "hey", nil
+}
+```
+
+> Currently all methods _must_ accept a `ctx` argument and include an `error`
+> return value. These constraints will be lifted soon.
+
+Next, run `dagger mod sync`. **You will need to run this command after every
+change to your module code.** We will figure out how to automate it in the
+future.
+
+At this point you should have a fully functioning module. You can test it with
+`dagger query`:
+
+```sh
+echo '{vito{helloWorld}}' | dagger query --progress=plain
+```
+
+> `--progress=plain` is currently necessary; without it you'll get this error:
+>
+> ```
+> Error: inappropriate ioctl for device
+> ```
+
+## More things you can do
+
+TODO: flesh this out
+
+* Accept and return types like `*Container`
+* Return custom types with methods defined on them
+
+## Questions?
+
+Please ask questions and share feedback in the `#project-zenith` channel in the
+[Dagger Discord](https://discord.gg/dagger-io). We love to hear from you, and
+there are no stupid questions!
 
 Thanks and happy testing.
