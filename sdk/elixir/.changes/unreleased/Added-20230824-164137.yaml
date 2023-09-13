@@ -1,6 +1,0 @@
-kind: Added
-body: Throw error when workdir config on session
-time: 2023-08-24T16:41:37.563814+07:00
-custom:
-  Author: wingyplus
-  PR: "5689"
