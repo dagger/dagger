@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"strconv"
@@ -257,4 +258,12 @@ func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
 	res.ExposedPorts = mergeMap(dst.ExposedPorts, src.ExposedPorts)
 
 	return res
+}
+
+type nopCloser struct {
+	io.Writer
+}
+
+func (nopCloser) Close() error {
+	return nil
 }

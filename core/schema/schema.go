@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -8,6 +9,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
@@ -30,6 +32,7 @@ type InitializeArgs struct {
 }
 
 func New(params InitializeArgs) (*MergedSchemas, error) {
+	svcs := core.NewServices(params.BuildkitClient)
 	merged := &MergedSchemas{
 		bk:           params.BuildkitClient,
 		platform:     params.Platform,
@@ -38,6 +41,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		secrets:      params.Secrets,
 		ociStore:     params.OCIStore,
 		leaseManager: params.LeaseManager,
+		services:     svcs,
 		host:         core.NewHost(),
 
 		buildCache:           core.NewCacheMap[uint64, *core.Container](),
@@ -59,6 +63,7 @@ type MergedSchemas struct {
 	ociStore     content.Store
 	leaseManager *leaseutil.Manager
 	host         *core.Host
+	services     *core.Services
 
 	buildCache           *core.CacheMap[uint64, *core.Container]
 	importCache          *core.CacheMap[uint64, *specs.Descriptor]
@@ -79,12 +84,13 @@ func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*mod
 
 	err := ms.addSchemas(
 		&querySchema{s},
-		&directorySchema{s, s.host, s.buildCache},
-		&fileSchema{s, s.host},
-		&gitSchema{s},
+		&directorySchema{s, s.host, s.services, s.buildCache},
+		&fileSchema{s, s.host, s.services},
+		&gitSchema{s, s.services},
 		&containerSchema{
 			s,
 			s.host,
+			s.services,
 			s.ociStore,
 			s.leaseManager,
 			s.buildCache,
@@ -92,14 +98,14 @@ func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*mod
 		},
 		&cacheSchema{s},
 		&secretSchema{s},
-		&hostSchema{s, s.host},
+		&hostSchema{s, s.host, s.services},
 		&moduleSchema{
 			MergedSchemas:        s,
 			currentSchemaView:    ms,
 			functionContextCache: s.functionContextCache,
 			moduleCache:          s.moduleCache,
 		},
-		&httpSchema{s},
+		&httpSchema{s, s.services},
 		&platformSchema{s},
 		&socketSchema{s, s.host},
 	)
@@ -163,6 +169,10 @@ func (s *moduleSchemaView) schema() *graphql.Schema {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.compiledSchema
+}
+
+func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
+	return s.services.StopClientServices(ctx, client)
 }
 
 func (s *moduleSchemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {

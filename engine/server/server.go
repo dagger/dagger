@@ -68,7 +68,7 @@ func NewDaggerServer(
 	}
 
 	progWriter, progCleanup, err := buildkit.ProgrockForwarder(bkClient.ProgSockPath, progrock.MultiWriter{
-		&progrock.RPCWriter{Conn: clientConn, Updates: progUpdates},
+		progrock.NewRPCWriter(clientConn, progUpdates),
 		buildkit.ProgrockLogrusWriter{},
 	})
 	if err != nil {
@@ -234,6 +234,13 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		mux := http.NewServeMux()
 		mux.Handle("/query", NewHandler(&HandlerConfig{
 			Schema: schema,
+		}))
+		mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
+			if err := srv.schema.ShutdownClient(ctx, clientMetadata); err != nil {
+				bklog.G(ctx).WithError(err).Error("failed to shutdown")
+			}
 		}))
 		mux.ServeHTTP(w, req)
 	})

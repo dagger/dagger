@@ -7,6 +7,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -87,15 +88,27 @@ func TestPlatformCrossCompile(t *testing.T) {
 				WithEnvVariable("CGO_ENABLED", "0").
 				WithExec([]string{"sh", "-c", "uname -m && goxx-go build -o /out/dagger /src/cmd/dagger"})
 
+			// using require in a goroutine brings down the whole test suite, so
+			// use assert instead and return an error
+			assertErr := fmt.Errorf("assertion failed for %s", platform)
+
 			// should be running as the default (buildkit host) platform
 			ctrPlatform, err := ctr.Platform(ctx)
-			require.NoError(t, err)
-			require.Equal(t, defaultPlatform, ctrPlatform)
+			if !assert.NoError(t, err) {
+				return assertErr
+			}
+			if !assert.Equal(t, defaultPlatform, ctrPlatform) {
+				return assertErr
+			}
 
 			stdout, err := ctr.Stdout(ctx)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return assertErr
+			}
 			stdout = strings.TrimSpace(stdout)
-			require.Equal(t, platformToUname[defaultPlatform], stdout)
+			if !assert.Equal(t, platformToUname[defaultPlatform], stdout) {
+				return assertErr
+			}
 
 			out := ctr.Directory("/out")
 			variants[i] = c.Container(dagger.ContainerOpts{Platform: platform}).WithRootfs(out)

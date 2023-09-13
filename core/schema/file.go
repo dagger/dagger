@@ -8,6 +8,7 @@ type fileSchema struct {
 	*MergedSchemas
 
 	host *core.Host
+	svcs *core.Services
 }
 
 var _ ExecutableSchema = &fileSchema{}
@@ -56,7 +57,7 @@ func (s *fileSchema) id(ctx *core.Context, parent *core.File, args any) (core.Fi
 }
 
 func (s *fileSchema) sync(ctx *core.Context, parent *core.File, _ any) (core.FileID, error) {
-	err := parent.Evaluate(ctx.Context, s.bk)
+	err := parent.Evaluate(ctx.Context, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
@@ -64,7 +65,7 @@ func (s *fileSchema) sync(ctx *core.Context, parent *core.File, _ any) (core.Fil
 }
 
 func (s *fileSchema) contents(ctx *core.Context, file *core.File, args any) (string, error) {
-	content, err := file.Contents(ctx, s.bk)
+	content, err := file.Contents(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
@@ -73,7 +74,7 @@ func (s *fileSchema) contents(ctx *core.Context, file *core.File, args any) (str
 }
 
 func (s *fileSchema) size(ctx *core.Context, file *core.File, args any) (int64, error) {
-	info, err := file.Stat(ctx, s.bk)
+	info, err := file.Stat(ctx, s.bk, s.svcs)
 	if err != nil {
 		return 0, err
 	}
@@ -87,7 +88,7 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) export(ctx *core.Context, parent *core.File, args fileExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.bk, s.host, args.Path, args.AllowParentDirPath)
+	err := parent.Export(ctx, s.bk, s.host, s.svcs, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return false, err
 	}

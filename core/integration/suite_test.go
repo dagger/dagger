@@ -26,10 +26,9 @@ func connect(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Co
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	tw := newTWriter(t)
-	t.Cleanup(tw.Flush)
-
-	opts = append([]dagger.ClientOpt{dagger.WithLogOutput(tw)}, opts...)
+	opts = append([]dagger.ClientOpt{
+		dagger.WithLogOutput(newTWriter(t)),
+	}, opts...)
 
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
@@ -401,7 +400,9 @@ type tWriter struct {
 
 // newTWriter creates a new TWriter
 func newTWriter(t *testing.T) *tWriter {
-	return &tWriter{t: t}
+	tw := &tWriter{t: t}
+	t.Cleanup(tw.flush)
+	return tw
 }
 
 // Write writes data to the testing.T
@@ -431,7 +432,7 @@ func (tw *tWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func (tw *tWriter) Flush() {
+func (tw *tWriter) flush() {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 	tw.t.Log(tw.buf.String())

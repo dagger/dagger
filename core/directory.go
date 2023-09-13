@@ -96,7 +96,7 @@ func (dir *Directory) ID() (DirectoryID, error) {
 func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Pipeline = cloneSlice(cp.Pipeline)
-	cp.Services = cloneMap(cp.Services)
+	cp.Services = cloneSlice(cp.Services)
 	return &cp
 }
 
@@ -161,89 +161,102 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client) (*buildkit.Result, error) {
+func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) (*buildkit.Result, error) {
 	if dir.LLB == nil {
 		return nil, nil
 	}
-	return WithServices(ctx, bk, dir.Services, func() (*buildkit.Result, error) {
-		return bk.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: dir.LLB,
-		})
+
+	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	return bk.Solve(ctx, bkgw.SolveRequest{
+		Evaluate:   true,
+		Definition: dir.LLB,
 	})
 }
 
-func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, bk, dir.Services, func() (*fstypes.Stat, error) {
-		res, err := bk.Solve(ctx, bkgw.SolveRequest{
-			Definition: dir.LLB,
-		})
-		if err != nil {
-			return nil, err
+	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: dir.LLB,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			// fake out a reasonable response
+			return &fstypes.Stat{
+				Path: src,
+				Mode: uint32(fs.ModeDir),
+			}, nil
 		}
 
-		ref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-		// empty directory, i.e. llb.Scratch()
-		if ref == nil {
-			if clean := path.Clean(src); clean == "." || clean == "/" {
-				// fake out a reasonable response
-				return &fstypes.Stat{
-					Path: src,
-					Mode: uint32(fs.ModeDir),
-				}, nil
-			}
+		return nil, fmt.Errorf("%s: no such file or directory", src)
+	}
 
-			return nil, fmt.Errorf("%s: no such file or directory", src)
-		}
-
-		return ref.StatFile(ctx, bkgw.StatRequest{
-			Path: src,
-		})
+	return ref.StatFile(ctx, bkgw.StatRequest{
+		Path: src,
 	})
 }
 
-func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, bk, dir.Services, func() ([]string, error) {
-		res, err := bk.Solve(ctx, bkgw.SolveRequest{
-			Definition: dir.LLB,
-		})
-		if err != nil {
-			return nil, err
-		}
+	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
-		ref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-		// empty directory, i.e. llb.Scratch()
-		if ref == nil {
-			if clean := path.Clean(src); clean == "." || clean == "/" {
-				return []string{}, nil
-			}
-			return nil, fmt.Errorf("%s: no such file or directory", src)
-		}
-
-		entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-			Path: src,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		paths := []string{}
-		for _, entry := range entries {
-			paths = append(paths, entry.GetPath())
-		}
-
-		return paths, nil
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: dir.LLB,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("%s: no such file or directory", src)
+	}
+
+	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
+		Path: src,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	paths := []string{}
+	for _, entry := range entries {
+		paths = append(paths, entry.GetPath())
+	}
+
+	return paths, nil
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
@@ -286,13 +299,13 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	return dir, nil
 }
 
-func (dir *Directory) Directory(ctx context.Context, bk *buildkit.Client, subdir string) (*Directory, error) {
+func (dir *Directory) Directory(ctx context.Context, bk *buildkit.Client, svcs *Services, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 	dir.Dir = path.Join(dir.Dir, subdir)
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, ".")
+	info, err := dir.Stat(ctx, bk, svcs, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +317,7 @@ func (dir *Directory) Directory(ctx context.Context, bk *buildkit.Client, subdir
 	return dir, nil
 }
 
-func (dir *Directory) File(ctx context.Context, bk *buildkit.Client, file string) (*File, error) {
+func (dir *Directory) File(ctx context.Context, bk *buildkit.Client, svcs *Services, file string) (*File, error) {
 	err := validateFileName(file)
 	if err != nil {
 		return nil, err
@@ -312,7 +325,7 @@ func (dir *Directory) File(ctx context.Context, bk *buildkit.Client, file string
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := dir.Stat(ctx, bk, file)
+	info, err := dir.Stat(ctx, bk, svcs, file)
 	if err != nil {
 		return nil, err
 	}
@@ -566,6 +579,7 @@ func (dir *Directory) Export(
 	ctx context.Context,
 	bk *buildkit.Client,
 	host *Host,
+	svcs *Services,
 	destPath string,
 ) (rerr error) {
 	var defPB *pb.Definition
@@ -595,10 +609,13 @@ func (dir *Directory) Export(
 	)
 	defer vtx.Done(rerr)
 
-	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
-		return nil, bk.LocalDirExport(ctx, defPB, destPath)
-	})
-	return err
+	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	return bk.LocalDirExport(ctx, defPB, destPath)
 }
 
 // Root removes any relative path from the directory.
