@@ -6,7 +6,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -30,7 +29,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
-	rootCmd.Flags().StringP("output", "o", "", "output file")
+	rootCmd.Flags().StringP("output", "o", "", "output directory")
 	rootCmd.Flags().String("package", "", "package name")
 	rootCmd.Flags().String("lang", "", "language to generate in")
 }
@@ -72,23 +71,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if output == "" || output == "-" {
-		fmt.Fprint(os.Stdout, string(generated))
-	} else {
-		if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
-			return err
-		}
-		if err := os.WriteFile(output, generated, 0o600); err != nil {
-			return err
-		}
-
-		gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
-		if err := os.WriteFile(path.Join(filepath.Dir(output), ".gitattributes"), []byte(gitAttributes), 0o600); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return generator.Overlay(ctx, generated.Overlay, output)
 }
 
 func getLang(cmd *cobra.Command) (string, error) {
@@ -140,7 +123,7 @@ func getPackage(cmd *cobra.Command) (string, error) {
 	return strings.ToLower(filepath.Base(directory)), nil
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) ([]byte, error) {
+func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (*generator.GeneratedState, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator
@@ -157,14 +140,10 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 			string(generator.SDKLangGo),
 			string(generator.SDKLangNodeJS),
 		}
-		return []byte{}, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
+		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
-	generated, err := gen.Generate(ctx, introspectionSchema)
-	if err != nil {
-		return nil, err
-	}
-	return generated.APIClientSource, nil
+	return gen.Generate(ctx, introspectionSchema)
 }
 
 func main() {

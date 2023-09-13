@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,10 +95,12 @@ func RunCodegen(
 			return err
 		}
 
-		if err := writeOverlay(ctx, generated.Overlay, outputDir); err != nil {
+		if err := generator.Overlay(ctx, generated.Overlay, outputDir); err != nil {
 			return fmt.Errorf("failed to overlay generated code: %w", err)
 		}
 
+		// TODO: move this into generator package, share with cmd/client-gen/. or
+		// just delete cmd/client-gen/?
 		for _, cmd := range generated.PostCommands {
 			cli := strings.Join(cmd.Args, " ")
 
@@ -116,38 +116,6 @@ func RunCodegen(
 	}
 
 	return nil
-}
-
-func writeOverlay(ctx context.Context, overlay fs.FS, outputDir string) (rerr error) {
-	rec := progrock.FromContext(ctx)
-
-	vtx := rec.Vertex(digest.FromString(identity.NewID()), "write overlay")
-	defer func() { vtx.Done(rerr) }()
-
-	return fs.WalkDir(overlay, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			fmt.Fprintln(vtx.Stderr(), "creating directory", path)
-			return os.MkdirAll(filepath.Join(outputDir, path), 0755)
-		}
-		fmt.Fprintln(vtx.Stderr(), "writing", path)
-		r, err := overlay.Open(path)
-		if err != nil {
-			return fmt.Errorf("open %s: %w", path, err)
-		}
-		defer r.Close()
-		w, err := os.Create(filepath.Join(outputDir, path))
-		if err != nil {
-			return fmt.Errorf("create %s: %w", path, err)
-		}
-		defer w.Close()
-		if _, err := io.Copy(w, r); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
-		}
-		return nil
-	})
 }
 
 func codegenOutDir(sdk moduleconfig.SDK) (string, error) {
