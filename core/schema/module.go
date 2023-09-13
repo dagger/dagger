@@ -66,7 +66,14 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"returnValue": ToVoidResolver(s.functionCallReturnValue),
 			"parent":      ToResolver(s.functionCallParent),
 		},
+		"TypeDef": ObjectResolver{
+			"kind": ToResolver(s.typeDefKind),
+		},
 	}
+}
+
+func (s *moduleSchema) typeDefKind(ctx *core.Context, def *core.TypeDef, args any) (string, error) {
+	return def.Kind.String(), nil
 }
 
 func (s *moduleSchema) Dependencies() []ExecutableSchema {
