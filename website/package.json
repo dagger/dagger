@@ -19,7 +19,7 @@
     "@docusaurus/core": "^2.4.0",
     "@docusaurus/preset-classic": "^2.4.0",
     "@docusaurus/theme-mermaid": "^2.4.0",
-    "@svgr/webpack": "^8.0.1",
+    "@svgr/webpack": "^8.1.0",
     "chalk": "4.1.2",
     "clsx": "^2.0.0",
     "docusaurus-plugin-image-zoom": "^0.1.1",
