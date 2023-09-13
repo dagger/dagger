@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -191,35 +192,52 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 		}
 	}
 
-	var newModName string
-	if mainPkg == nil {
-		rec := progrock.FromContext(ctx)
-		rec.Warn("no main package or module found; falling back to bare module name")
-		// fallback to bare module name
-		newModName = g.Config.ModuleName
-	} else {
-		relPath, err := filepath.Rel(mainPkg.Module.Dir, srcDir)
-		if err != nil {
-			return "", false, fmt.Errorf("error getting relative path: %w", err)
-		}
-
-		// base Go module name on outer module path
-		//
-		// that is, if a repo's root level go.mod is github.com/dagger/dagger, and
-		// we're codegenning in ./zenith/foo, the resulting module will be
-		// github.com/dagger/dagger/zenith/foo.
-		newModName = path.Join(mainPkg.Module.Path, filepath.ToSlash(relPath))
-		progrock.FromContext(ctx).Warn("new mod name", progrock.Labelf("mod", newModName))
-	}
-
-	// bootstrap go.mod using dependencies from the embedded GO SDK
+	// bootstrap go.mod using dependencies from the embedded Go SDK
 	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("parse embedded go.mod: %w", err)
 	}
+
 	newMod := new(modfile.File)
-	newMod.AddModuleStmt(newModName)
-	newMod.SetRequire(sdkMod.Require)
+
+	var currentMod *modfile.File
+	if content, err := os.ReadFile(filepath.Join(srcDir, "go.mod")); err == nil {
+		currentMod, err = modfile.Parse("go.mod", content, nil)
+		if err != nil {
+			return "", false, fmt.Errorf("parse go.mod: %w", err)
+		}
+
+		newMod = currentMod
+
+		for _, req := range sdkMod.Require {
+			newMod.AddRequire(req.Mod.Path, req.Mod.Version)
+		}
+	} else {
+		var newModName string
+		if mainPkg == nil {
+			rec := progrock.FromContext(ctx)
+			rec.Warn("no main package or module found; falling back to bare module name")
+			// fallback to bare module name
+			newModName = g.Config.ModuleName
+		} else {
+			relPath, err := filepath.Rel(mainPkg.Module.Dir, srcDir)
+			if err != nil {
+				return "", false, fmt.Errorf("error getting relative path: %w", err)
+			}
+
+			// base Go module name on outer module path
+			//
+			// that is, if a repo's root level go.mod is github.com/dagger/dagger, and
+			// we're codegenning in ./zenith/foo, the resulting module will be
+			// github.com/dagger/dagger/zenith/foo.
+			newModName = path.Join(mainPkg.Module.Path, filepath.ToSlash(relPath))
+			progrock.FromContext(ctx).Warn("new mod name", progrock.Labelf("mod", newModName))
+		}
+
+		newMod.AddModuleStmt(newModName)
+		newMod.SetRequire(sdkMod.Require)
+	}
+
 	modBody, err := newMod.Format()
 	if err != nil {
 		return "", false, fmt.Errorf("format go.mod: %w", err)
@@ -231,7 +249,7 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 		return "", false, err
 	}
 
-	return newModName, true, nil
+	return newMod.Module.Mod.Path, true, nil
 }
 
 func loadPackages(dir string) ([]*packages.Package, error) {
