@@ -385,11 +385,11 @@ func (p moduleFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*da
 
 	depMods := make([]*dagger.Module, 0, len(cfg.Dependencies))
 	for _, dep := range cfg.Dependencies {
-		depPath := filepath.Join(filepath.Dir(p.local.path), dep)
-		if filepath.Base(depPath) != "dagger.json" {
-			depPath = filepath.Join(depPath, "dagger.json")
+		depModFlagCfg, err := getModuleFlagConfigFromURL(dep)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module: %w", err)
 		}
-		depMod, err := localModule{path: depPath}.load(c)
+		depMod, err := depModFlagCfg.load(ctx, c)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load dependency module: %w", err)
 		}
