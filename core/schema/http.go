@@ -50,7 +50,7 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		ctr, err := args.ExperimentalServiceHost.ToContainer()
+		ctr, err := args.ExperimentalServiceHost.Decode()
 		if err != nil {
 			return nil, err
 		}

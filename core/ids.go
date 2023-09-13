@@ -9,6 +9,8 @@ import (
 
 type ContainerID = resourceid.ID[Container]
 
+type ServiceID = resourceid.ID[Service]
+
 type CacheID = resourceid.ID[CacheVolume]
 
 type DirectoryID = resourceid.ID[Directory]

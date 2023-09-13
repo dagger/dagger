@@ -752,7 +752,7 @@ type containerWithServiceDependencyArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	ctr, err := args.Service.ToContainer()
+	ctr, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
 	}

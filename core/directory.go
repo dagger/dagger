@@ -42,11 +42,8 @@ func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
 		defs = append(defs, dir.LLB)
 	}
 	if dir.Services != nil {
-		for ctrID := range dir.Services {
-			ctr, err := ctrID.Decode()
-			if err != nil {
-				return nil, err
-			}
+		for _, bnd := range dir.Services {
+			ctr := bnd.Service.Container
 			if ctr == nil {
 				continue
 			}
@@ -168,7 +165,7 @@ func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *S
 
 	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 

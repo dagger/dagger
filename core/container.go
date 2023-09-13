@@ -89,11 +89,8 @@ func (container *Container) PBDefinitions() ([]*pb.Definition, error) {
 		}
 	}
 	if container.Services != nil {
-		for ctrID := range container.Services {
-			ctr, err := ctrID.Decode()
-			if err != nil {
-				return nil, err
-			}
+		for _, bnd := range container.Services {
+			ctr := bnd.Service.Container
 			if ctr == nil {
 				continue
 			}
@@ -1261,18 +1258,18 @@ func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client, s
 
 	detach, _, err := svcs.StartBindings(ctx, bk, container.Services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 
 	st, err := container.FSState()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(container.Platform))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	return bk.Solve(ctx, bkgw.SolveRequest{

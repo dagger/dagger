@@ -125,6 +125,7 @@ func NewModule(platform ocispecs.Platform, pipeline pipeline.Path) *Module {
 func (mod *Module) FromConfig(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	progSock string,
 	sourceDir *Directory,
 	configPath string,
@@ -132,11 +133,11 @@ func (mod *Module) FromConfig(
 	// Read the config file
 	configPath = moduleconfig.NormalizeConfigPath(configPath)
 
-	configFile, err := sourceDir.File(ctx, bk, configPath)
+	configFile, err := sourceDir.File(ctx, bk, svcs, configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config file: %w", err)
 	}
-	configBytes, err := configFile.Contents(ctx, bk)
+	configBytes, err := configFile.Contents(ctx, bk, svcs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -177,7 +178,7 @@ func (mod *Module) FromConfig(
 				return fmt.Errorf("invalid dependency url from %q", depURL)
 			}
 
-			depMod, err := mod.FromConfig(ctx, bk, progSock, depSourceDir, depConfigPath)
+			depMod, err := mod.FromConfig(ctx, bk, svcs, progSock, depSourceDir, depConfigPath)
 			if err != nil {
 				return fmt.Errorf("failed to get dependency mod from config %q: %w", depURL, err)
 			}
@@ -194,7 +195,7 @@ func (mod *Module) FromConfig(
 		rootPath := filepath.Join("/", filepath.Dir(configPath), cfg.Root)
 		if rootPath != "/" {
 			var err error
-			sourceDir, err = sourceDir.Directory(ctx, bk, rootPath)
+			sourceDir, err = sourceDir.Directory(ctx, bk, svcs, rootPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get root directory: %w", err)
 			}

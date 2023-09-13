@@ -156,7 +156,7 @@ type asModuleArgs struct {
 }
 
 func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
-	mod, err := core.NewModule(s.platform, sourceDir.Pipeline).FromConfig(ctx, s.bk, s.progSockPath, sourceDir, args.SourceSubpath)
+	mod, err := core.NewModule(s.platform, sourceDir.Pipeline).FromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
@@ -294,7 +294,7 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	if err != nil {
 		return nil, fmt.Errorf("failed to create input file: %w", err)
 	}
-	inputFile, err := inputFileDir.File(ctx, s.bk, core.ModMetaInputPath)
+	inputFile, err := inputFileDir.File(ctx, s.bk, s.services, core.ModMetaInputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get input file: %w", err)
 	}
@@ -311,12 +311,12 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
-	ctrOutputDir, err := ctr.Directory(ctx, s.bk, core.ModMetaDirPath)
+	ctrOutputDir, err := ctr.Directory(ctx, s.bk, s.services, core.ModMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function output directory: %w", err)
 	}
 
-	result, err := ctrOutputDir.Evaluate(ctx, s.bk)
+	result, err := ctrOutputDir.Evaluate(ctx, s.bk, s.services)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate function: %w", err)
 	}
