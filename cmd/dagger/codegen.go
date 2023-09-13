@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -83,25 +83,57 @@ func RunCodegen(
 		return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
 	}
 
-	generated, postCmds, err := generate(ctx, introspectionSchema, generator.Config{
-		Package:             pkg,
-		Lang:                generator.SDKLang(moduleCfg.SDK),
-		ModuleName:          moduleCfg.Name,
-		DependencyModules:   depModules,
-		SourceDirectoryPath: outputDir,
-	})
-	if err != nil {
-		return err
+	rec := progrock.FromContext(ctx)
+
+	for {
+		generated, err := generate(ctx, introspectionSchema, generator.Config{
+			Package:             pkg,
+			Lang:                generator.SDKLang(moduleCfg.SDK),
+			ModuleName:          moduleCfg.Name,
+			DependencyModules:   depModules,
+			SourceDirectoryPath: outputDir,
+		})
+		if err != nil {
+			return err
+		}
+
+		if err := writeOverlay(ctx, generated.Overlay, outputDir); err != nil {
+			return fmt.Errorf("failed to overlay generated code: %w", err)
+		}
+
+		for _, cmd := range generated.PostCommands {
+			cli := strings.Join(cmd.Args, " ")
+
+			vtx := rec.Vertex(digest.FromString(identity.NewID()), cli)
+			cmd.Stdout = vtx.Stdout()
+			cmd.Stderr = vtx.Stderr()
+			vtx.Done(cmd.Run())
+		}
+
+		if !generated.NeedRegenerate {
+			break
+		}
 	}
 
-	err = fs.WalkDir(generated, ".", func(path string, d fs.DirEntry, err error) error {
+	return nil
+}
+
+func writeOverlay(ctx context.Context, overlay fs.FS, outputDir string) (rerr error) {
+	rec := progrock.FromContext(ctx)
+
+	vtx := rec.Vertex(digest.FromString(identity.NewID()), "write overlay")
+	defer func() { vtx.Done(rerr) }()
+
+	return fs.WalkDir(overlay, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
+			fmt.Fprintln(vtx.Stderr(), "creating directory", path)
 			return os.MkdirAll(filepath.Join(outputDir, path), 0755)
 		}
-		r, err := generated.Open(path)
+		fmt.Fprintln(vtx.Stderr(), "writing", path)
+		r, err := overlay.Open(path)
 		if err != nil {
 			return fmt.Errorf("open %s: %w", path, err)
 		}
@@ -116,22 +148,6 @@ func RunCodegen(
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("failed to overlay generated code: %w", err)
-	}
-
-	rec := progrock.FromContext(ctx)
-
-	for _, cmd := range postCmds {
-		cli := strings.Join(cmd.Args, " ")
-
-		vtx := rec.Vertex(digest.FromString(cli), cli)
-		cmd.Stdout = vtx.Stdout()
-		cmd.Stderr = vtx.Stderr()
-		vtx.Done(cmd.Run())
-	}
-
-	return nil
 }
 
 func codegenOutDir(sdk moduleconfig.SDK) (string, error) {
@@ -184,7 +200,7 @@ func getPackage(sdk moduleconfig.SDK) (string, error) {
 	return strings.ToLower(filepath.Base(directory)), nil
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (fs.FS, []*exec.Cmd, error) {
+func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (*generator.GeneratedState, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator
@@ -201,7 +217,7 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 			string(generator.SDKLangGo),
 			string(generator.SDKLangNodeJS),
 		}
-		return nil, nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
+		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
 	return gen.Generate(ctx, introspectionSchema)

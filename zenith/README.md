@@ -84,31 +84,24 @@ cd ./zenith/ # if not there already
 mkdir vito-mod/
 cd vito-mod/
 
-# initialize Go module
-#
-# TODO: this can be automated
-go mod init vito-mod
-
 # initialize Dagger module
 #
 # NOTE: currently Go is the only supported SDK.
 dagger mod init --name=vito --sdk=go
-
-# bootstrap go.mod/go.sum
-#
-# TODO: this can be automated, and should pin to appropriate dependencies
-go mod tidy
-
-# run initial codegen for stubbed template
-dagger mod sync
 ```
 
 This will generate `dagger.gen.go`, `dagger.json`, and an initial `main.go`
 file.
 
-Let's write the `main.go` now. We named our module `vito`, so that means we
-need to define a `Vito` type. This type will define all of the functions
-available from our module.
+If you like, you can run the generated `main.go` like so:
+
+```sh
+echo '{vito{myFunction(stringArg:"hey"){id}}}' | dagger query
+```
+
+Let's try changing the `main.go`. We named our module `vito`, so that means all
+methods on the `Vito` type are published as functions. Let's replace the
+template with something simpler:
 
 ```go
 package main
@@ -129,12 +122,13 @@ Next, run `dagger mod sync`. **You will need to run this command after every
 change to your module code.** We will figure out how to automate it in the
 future.
 
-At this point you should have a fully functioning module. You can test it with
-`dagger query`:
+To run the new function, once again use `dagger query`:
 
 ```sh
 echo '{vito{helloWorld}}' | dagger query
 ```
+
+That's it! ...For now.
 
 ## More things you can do
 

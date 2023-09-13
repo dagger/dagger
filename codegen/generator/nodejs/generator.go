@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
-	"os/exec"
 	"sort"
 
 	"github.com/dagger/dagger/codegen/generator"
@@ -19,7 +17,7 @@ const ClientGenFile = "client.gen.ts"
 type NodeGenerator struct{}
 
 // Generate will generate the NodeJS SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (fs.FS, []*exec.Cmd, error) {
+func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
@@ -35,19 +33,21 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 	var b bytes.Buffer
 	err := tmpl.ExecuteTemplate(&b, "api", schema.Types)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	mfs := memfs.New()
 
 	if err := mfs.WriteFile(ClientGenFile, b.Bytes(), 0600); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", ClientGenFile)
 	if err := mfs.WriteFile(".gitattributes", []byte(gitAttributes), 0600); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return mfs, nil, nil
+	return &generator.GeneratedState{
+		Overlay: mfs,
+	}, nil
 }

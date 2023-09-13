@@ -38,7 +38,24 @@ type Config struct {
 
 type Generator interface {
 	// Generate runs codegen and returns a map of default filename to content for that file.
-	Generate(ctx context.Context, schema *introspection.Schema) (fs.FS, []*exec.Cmd, error)
+	Generate(ctx context.Context, schema *introspection.Schema) (*GeneratedState, error)
+}
+
+type GeneratedState struct {
+	// Overlay is the overlay filesystem that contains generated code to write
+	// over the output directory.
+	Overlay fs.FS
+
+	// PostCommands are commands that need to be run after the codegen has
+	// finished. This is used for example to run `go mod tidy` after generating
+	// Go code.
+	PostCommands []*exec.Cmd
+
+	// NeedSync indicates that the code needs to be generated again. This can
+	// happen if the codegen spat out templates that depend on generated types.
+	// In that case the codegen needs to be run again with both the templates and
+	// the initially generated types available.
+	NeedRegenerate bool
 }
 
 // SetSchemaParents sets all the parents for the fields.
