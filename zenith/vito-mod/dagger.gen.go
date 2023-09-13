@@ -11,9 +11,9 @@ import (
 	"os"
 	"strconv"
 
-	"vito-mod/querybuilder"
-
 	"github.com/Khan/genqlient/graphql"
+
+	"vito-mod/querybuilder"
 )
 
 // A global cache volume identifier.

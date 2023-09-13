@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os/exec"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -37,7 +38,7 @@ type Config struct {
 
 type Generator interface {
 	// Generate runs codegen and returns a map of default filename to content for that file.
-	Generate(ctx context.Context, schema *introspection.Schema) (fs.FS, error)
+	Generate(ctx context.Context, schema *introspection.Schema) (fs.FS, []*exec.Cmd, error)
 }
 
 // SetSchemaParents sets all the parents for the fields.

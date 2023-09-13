@@ -86,21 +86,25 @@ cd vito-mod/
 
 # initialize Go module
 #
-# TODO: this can be autoamted
+# TODO: this can be automated
 go mod init vito-mod
-
-# bootstrap go.mod/go.sum
-#
-# TODO: this can be autoamted, and should pin to appropriate dependencies
-go mod tidy
 
 # initialize Dagger module
 #
 # NOTE: currently Go is the only supported SDK.
 dagger mod init --name=vito --sdk=go
+
+# bootstrap go.mod/go.sum
+#
+# TODO: this can be automated, and should pin to appropriate dependencies
+go mod tidy
+
+# run initial codegen for stubbed template
+dagger mod sync
 ```
 
-This will generate `dagger.gen.go`, `dagger.json`, and an empty `main.go` file.
+This will generate `dagger.gen.go`, `dagger.json`, and an initial `main.go`
+file.
 
 Let's write the `main.go` now. We named our module `vito`, so that means we
 need to define a `Vito` type. This type will define all of the functions

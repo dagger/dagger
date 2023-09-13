@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -18,8 +19,10 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vito/progrock"
 )
 
 var (
@@ -80,7 +83,7 @@ func RunCodegen(
 		return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
 	}
 
-	generated, err := generate(ctx, introspectionSchema, generator.Config{
+	generated, postCmds, err := generate(ctx, introspectionSchema, generator.Config{
 		Package:             pkg,
 		Lang:                generator.SDKLang(moduleCfg.SDK),
 		ModuleName:          moduleCfg.Name,
@@ -115,6 +118,17 @@ func RunCodegen(
 	})
 	if err != nil {
 		return fmt.Errorf("failed to overlay generated code: %w", err)
+	}
+
+	rec := progrock.FromContext(ctx)
+
+	for _, cmd := range postCmds {
+		cli := strings.Join(cmd.Args, " ")
+
+		vtx := rec.Vertex(digest.FromString(cli), cli)
+		cmd.Stdout = vtx.Stdout()
+		cmd.Stderr = vtx.Stderr()
+		vtx.Done(cmd.Run())
 	}
 
 	return nil
@@ -170,7 +184,7 @@ func getPackage(sdk moduleconfig.SDK) (string, error) {
 	return strings.ToLower(filepath.Base(directory)), nil
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (fs.FS, error) {
+func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (fs.FS, []*exec.Cmd, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator
@@ -187,7 +201,7 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 			string(generator.SDKLangGo),
 			string(generator.SDKLangNodeJS),
 		}
-		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
+		return nil, nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
 	return gen.Generate(ctx, introspectionSchema)

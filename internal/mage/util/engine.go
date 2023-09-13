@@ -18,7 +18,7 @@ import (
 const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
-	golangVersion = "1.20.7"
+	golangVersion = "1.21.1"
 	alpineVersion = "3.18"
 	runcVersion   = "v1.1.9"
 	cniVersion    = "v1.3.0"

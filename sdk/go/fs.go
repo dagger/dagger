@@ -8,4 +8,7 @@ import "embed"
 var QueryBuilder embed.FS
 
 //go:embed go.mod
-var Mod []byte
+var GoMod []byte
+
+//go:embed go.sum
+var GoSum []byte

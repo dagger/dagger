@@ -57,9 +57,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			packages.NeedTypesInfo,
 	}, "./...")
 	if err != nil {
-		return defaultErrorMainSrc(fmt.Sprintf("failed to load packages: %v", err))
+		panic(fmt.Sprintf("failed to load packages: %v", err))
 	}
-
 	var mainPkg *packages.Package
 	for _, pkg := range pkgs {
 		if pkg.Name == "main" {

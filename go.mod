@@ -52,7 +52,7 @@ require (
 	golang.org/x/crypto v0.12.0
 	golang.org/x/mod v0.12.0
 	golang.org/x/sync v0.3.0
-	golang.org/x/sys v0.12.0
+	golang.org/x/sys v0.11.0
 	golang.org/x/term v0.11.0
 	google.golang.org/grpc v1.57.0
 	oss.terrastruct.com/d2 v0.4.0
@@ -62,7 +62,6 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/charmbracelet/lipgloss v0.7.1
 	github.com/dave/jennifer v1.7.0
-	github.com/dschmidt/go-layerfs v0.1.0
 	github.com/ettle/strcase v0.1.1
 	github.com/go-git/go-git/v5 v5.8.1
 	github.com/google/go-github/v50 v50.2.0
@@ -77,10 +76,9 @@ require (
 	github.com/opencontainers/runc v1.1.9
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.11.0
-	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
-	github.com/vito/progrock v0.10.2-0.20230912162600-dc166fad6276
+	github.com/vito/progrock v0.10.0
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.11.0
 )
