@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock"
 )
@@ -18,6 +19,7 @@ import (
 var (
 	listenAddress string
 	disableHostRW bool
+	allowCORS     bool
 )
 
 var listenCmd = &cobra.Command{
@@ -31,6 +33,7 @@ var listenCmd = &cobra.Command{
 func init() {
 	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", "127.0.0.1:8080", "Listen on network address ADDR")
 	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
+	listenCmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
 }
 
 func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, _ []string) error {
@@ -50,8 +53,13 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 	}
 	defer sessionL.Close()
 
+	var handler http.Handler = engineClient
+	if allowCORS {
+		handler = cors.AllowAll().Handler(handler)
+	}
+
 	srv := &http.Server{
-		Handler: engineClient,
+		Handler: handler,
 		// Gosec G112: prevent slowloris attacks
 		ReadHeaderTimeout: 10 * time.Second,
 	}
