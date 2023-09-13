@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'services: refactor to per-client instances that stop on client close'
-time: 2023-09-13T09:20:07.559147493-04:00
-custom:
-  Author: vito
-  PR: "5764"
