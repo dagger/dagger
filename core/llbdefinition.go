@@ -140,6 +140,22 @@ func (dag *opDAG) Marshal() (*pb.Definition, error) {
 	def, _, err := dag.marshal(&pb.Definition{
 		Metadata: map[digest.Digest]pb.OpMetadata{},
 	}, map[digest.Digest]digest.Digest{})
+	if dag.Op.Op != nil {
+		op := &pb.Op{
+			Inputs: []*pb.Input{
+				{Digest: *dag.opDigest, Index: dag.outputIndex},
+			},
+			Platform:    dag.Platform,
+			Constraints: dag.Constraints,
+		}
+		dt, err := op.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		dig := digest.FromBytes(dt)
+		def.Def = append(def.Def, dt)
+		def.Metadata[dig] = *dag.metadata
+	}
 	return def, err
 }
 
@@ -195,6 +211,10 @@ func (dag *opDAG) AsExec() (*execOp, bool) {
 type execOp struct {
 	*opDAG
 	*pb.ExecOp
+}
+
+func (exec *execOp) Input(i pb.InputIndex) *opDAG {
+	return exec.inputs[i]
 }
 
 func (exec *execOp) OutputMount() *pb.Mount {

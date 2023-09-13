@@ -39,8 +39,6 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
-const OCIStoreName = "dagger-oci"
-
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.
@@ -305,14 +303,21 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 }
 
 func (c *Client) Close() (rerr error) {
+	// shutdown happens outside of c.closeMu, since it requires a connection
+	if err := c.shutdownServer(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	}
+
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
+
 	select {
 	case <-c.closeCtx.Done():
 		// already closed
 		return nil
 	default:
 	}
+
 	if len(c.upstreamCacheOptions) > 0 {
 		cacheExportCtx, cacheExportCancel := context.WithTimeout(c.internalCtx, 600*time.Second)
 		defer cacheExportCancel()
@@ -355,6 +360,25 @@ func (c *Client) Close() (rerr error) {
 	}
 
 	return rerr
+}
+
+func (c *Client) shutdownServer() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("do shutdown: %w", err)
+	}
+
+	return resp.Body.Close()
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {

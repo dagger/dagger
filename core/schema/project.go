@@ -10,6 +10,8 @@ import (
 
 type projectSchema struct {
 	*MergedSchemas
+
+	svcs *core.Services
 }
 
 var _ ExecutableSchema = &projectSchema{}
@@ -76,7 +78,7 @@ func (s *projectSchema) load(ctx *core.Context, parent *core.Project, args loadA
 	if err != nil {
 		return nil, err
 	}
-	proj, resolver, err := parent.Load(ctx, s.bk, s.progSockPath, source.Pipeline, source, args.ConfigPath)
+	proj, resolver, err := parent.Load(ctx, s.bk, s.svcs, s.progSockPath, source.Pipeline, source, args.ConfigPath)
 	if err != nil {
 		return nil, err
 	}

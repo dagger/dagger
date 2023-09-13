@@ -22,6 +22,7 @@ type containerSchema struct {
 	*MergedSchemas
 
 	host         *core.Host
+	svcs         *core.Services
 	ociStore     content.Store
 	leaseManager *leaseutil.Manager
 
@@ -132,7 +133,7 @@ func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args 
 }
 
 func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any) (core.ContainerID, error) {
-	err := parent.Evaluate(ctx, s.bk)
+	err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
@@ -172,6 +173,7 @@ func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args 
 		args.Target,
 		args.Secrets,
 		s.bk,
+		s.svcs,
 		s.buildCache,
 	)
 }
@@ -210,19 +212,12 @@ func (s *containerSchema) withExec(ctx *core.Context, parent *core.Container, ar
 	return parent.WithExec(ctx, s.bk, s.progSockPath, s.MergedSchemas.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) withDefaultExec(ctx *core.Context, parent *core.Container) (*core.Container, error) {
-	if parent.Meta == nil {
-		return s.withExec(ctx, parent, containerExecArgs{})
-	}
-	return parent, nil
+func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, _ any) (string, error) {
+	return parent.MetaFileContents(ctx, s.bk, s.svcs, s.progSockPath, "stdout")
 }
 
-func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stdout")
-}
-
-func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stderr")
+func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, _ any) (string, error) {
+	return parent.MetaFileContents(ctx, s.bk, s.svcs, s.progSockPath, "stderr")
 }
 
 type containerWithEntrypointArgs struct {
@@ -453,7 +448,7 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx *core.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, s.bk, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
+	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerWithMountedFileArgs struct {
@@ -547,7 +542,7 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx *core.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.bk, args.Path)
+	return parent.Directory(ctx, s.bk, s.svcs, args.Path)
 }
 
 type containerFileArgs struct {
@@ -555,7 +550,7 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx *core.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.bk, args.Path)
+	return parent.File(ctx, s.bk, s.svcs, args.Path)
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -667,7 +662,7 @@ type containerExportArgs struct {
 }
 
 func (s *containerSchema) export(ctx *core.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.bk, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
+	if err := parent.Export(ctx, s.bk, s.svcs, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
 		return false, err
 	}
 
@@ -686,6 +681,7 @@ func (s *containerSchema) import_(ctx *core.Context, parent *core.Container, arg
 		args.Tag,
 		s.bk,
 		s.host,
+		s.svcs,
 		s.importCache,
 		s.ociStore,
 		s.leaseManager,
@@ -728,12 +724,12 @@ func (s *containerSchema) imageRef(ctx *core.Context, parent *core.Container, ar
 }
 
 func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	parent, err := s.withDefaultExec(ctx, parent)
+	svc, err := parent.Service(ctx, s.bk, s.progSockPath)
 	if err != nil {
 		return "", err
 	}
 
-	return parent.HostnameOrErr()
+	return svc.Hostname(ctx, s.svcs)
 }
 
 type containerEndpointArgs struct {
@@ -742,12 +738,12 @@ type containerEndpointArgs struct {
 }
 
 func (s *containerSchema) endpoint(ctx *core.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	parent, err := s.withDefaultExec(ctx, parent)
+	svc, err := parent.Service(ctx, s.bk, s.progSockPath)
 	if err != nil {
 		return "", err
 	}
 
-	return parent.Endpoint(s.bk, args.Port, args.Scheme)
+	return svc.Endpoint(ctx, s.svcs, args.Port, args.Scheme)
 }
 
 type containerWithServiceDependencyArgs struct {
@@ -756,17 +752,17 @@ type containerWithServiceDependencyArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	svc, err := args.Service.ToContainer()
+	ctr, err := args.Service.ToContainer()
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err = s.withDefaultExec(ctx, svc)
+	svc, err := ctr.Service(ctx, s.bk, s.progSockPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(s.bk, svc, args.Alias)
+	return parent.WithServiceBinding(ctx, s.svcs, svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {
@@ -776,7 +772,7 @@ type containerWithExposedPortArgs struct {
 }
 
 func (s *containerSchema) withExposedPort(ctx *core.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
-	return parent.WithExposedPort(core.ContainerPort{
+	return parent.WithExposedPort(core.Port{
 		Protocol:    args.Protocol,
 		Port:        args.Port,
 		Description: args.Description,

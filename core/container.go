@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
+
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -33,12 +34,9 @@ import (
 	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/network"
 )
 
 var ErrContainerNoExec = errors.New("no command has been executed")
-
-const OCIStoreName = "dagger-oci"
 
 // Container is a content-addressed container.
 type Container struct {
@@ -70,11 +68,10 @@ type Container struct {
 	ImageRef string `json:"image_ref,omitempty"`
 
 	// Ports to expose from the container.
-	Ports []ContainerPort `json:"ports,omitempty"`
+	Ports []Port `json:"ports,omitempty"`
 
 	// Services to start before running the container.
-	Services    ServiceBindings `json:"services,omitempty"`
-	HostAliases []HostAlias     `json:"host_aliases,omitempty"`
+	Services ServiceBindings `json:"services,omitempty"`
 
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
@@ -107,8 +104,7 @@ func (container *Container) Clone() *Container {
 	cp.Secrets = cloneSlice(cp.Secrets)
 	cp.Sockets = cloneSlice(cp.Sockets)
 	cp.Ports = cloneSlice(cp.Ports)
-	cp.Services = cloneMap(cp.Services)
-	cp.HostAliases = cloneSlice(cp.HostAliases)
+	cp.Services = cloneSlice(cp.Services)
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	return &cp
 }
@@ -168,11 +164,6 @@ func (container *Container) Digest() (digest.Digest, error) {
 	return stableDigest(container)
 }
 
-type HostAlias struct {
-	Alias  string `json:"alias"`
-	Target string `json:"target"`
-}
-
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
 // provided via the API. It primarily exists to distinguish an unspecified
 // ownership from UID/GID 0 (root) ownership.
@@ -203,13 +194,6 @@ type ContainerSocket struct {
 	Owner    *Ownership `json:"owner,omitempty"`
 }
 
-// ContainerPort configures a port to expose from the container.
-type ContainerPort struct {
-	Port        int             `json:"port"`
-	Protocol    NetworkProtocol `json:"protocol"`
-	Description *string         `json:"description,omitempty"`
-}
-
 // FSState returns the container's root filesystem mount state. If there is
 // none (as with an empty container ID), it returns scratch.
 func (container *Container) FSState() (llb.State, error) {
@@ -219,9 +203,6 @@ func (container *Container) FSState() (llb.State, error) {
 
 	return defToState(container.FS)
 }
-
-// metaSourcePath is a world-writable directory created and mounted to /dagger.
-const metaSourcePath = "meta"
 
 // MetaState returns the container's metadata mount state. If the container has
 // yet to run, it returns nil.
@@ -306,7 +287,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 	ref := reference.TagNameOnly(refName).String()
 
-	digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 	})
@@ -355,6 +336,7 @@ func (container *Container) Build(
 	target string,
 	secrets []SecretID,
 	bk *buildkit.Client,
+	svcs *Services,
 	buildCache *CacheMap[uint64, *Container],
 ) (*Container, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -376,7 +358,7 @@ func (container *Container) Build(
 			clientMetadata.ClientID,
 		),
 		func() (*Container, error) {
-			return container.buildUncached(ctx, bk, context, dockerfile, buildArgs, target, secrets)
+			return container.buildUncached(ctx, bk, context, dockerfile, buildArgs, target, secrets, svcs)
 		},
 	)
 }
@@ -389,6 +371,7 @@ func (container *Container) buildUncached(
 	buildArgs []BuildArg,
 	target string,
 	secrets []SecretID,
+	svcs *Services,
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -412,80 +395,84 @@ func (container *Container) buildUncached(
 	// add a weak group for the docker build vertices
 	ctx, subRecorder := progrock.WithGroup(ctx, "docker build", progrock.Weak())
 
-	return WithServices(ctx, bk, container.Services, func() (*Container, error) {
-		platform := container.Platform
+	detach, _, err := svcs.StartBindings(ctx, bk, container.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
 
-		opts := map[string]string{
-			"platform":      platforms.Format(platform),
-			"contextsubdir": context.Dir,
-		}
+	platform := container.Platform
 
-		if dockerfile != "" {
-			opts["filename"] = path.Join(context.Dir, dockerfile)
-		} else {
-			opts["filename"] = path.Join(context.Dir, defaultDockerfileName)
-		}
+	opts := map[string]string{
+		"platform":      platforms.Format(platform),
+		"contextsubdir": context.Dir,
+	}
 
-		if target != "" {
-			opts["target"] = target
-		}
+	if dockerfile != "" {
+		opts["filename"] = path.Join(context.Dir, dockerfile)
+	} else {
+		opts["filename"] = path.Join(context.Dir, defaultDockerfileName)
+	}
 
-		for _, buildArg := range buildArgs {
-			opts["build-arg:"+buildArg.Name] = buildArg.Value
-		}
+	if target != "" {
+		opts["target"] = target
+	}
 
-		inputs := map[string]*pb.Definition{
-			dockerui.DefaultLocalNameContext:    context.LLB,
-			dockerui.DefaultLocalNameDockerfile: context.LLB,
-		}
+	for _, buildArg := range buildArgs {
+		opts["build-arg:"+buildArg.Name] = buildArg.Value
+	}
 
-		res, err := bk.Solve(ctx, bkgw.SolveRequest{
-			Frontend:       "dockerfile.v0",
-			FrontendOpt:    opts,
-			FrontendInputs: inputs,
-		})
-		if err != nil {
-			return nil, err
-		}
+	inputs := map[string]*pb.Definition{
+		dockerui.DefaultLocalNameContext:    context.LLB,
+		dockerui.DefaultLocalNameDockerfile: context.LLB,
+	}
 
-		bkref, err := res.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
-		var st llb.State
-		if bkref == nil {
-			st = llb.Scratch()
-		} else {
-			st, err = bkref.ToState()
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		def, err := st.Marshal(ctx, llb.Platform(platform))
-		if err != nil {
-			return nil, err
-		}
-
-		// associate vertexes to the 'docker build' sub-pipeline
-		buildkit.RecordVertexes(subRecorder, def.ToPB())
-
-		container.FS = def.ToPB()
-		container.FS.Source = nil
-
-		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-		if found {
-			var imgSpec specs.Image
-			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-				return nil, err
-			}
-
-			container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-		}
-
-		return container, nil
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Frontend:       "dockerfile.v0",
+		FrontendOpt:    opts,
+		FrontendInputs: inputs,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	bkref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+
+	var st llb.State
+	if bkref == nil {
+		st = llb.Scratch()
+	} else {
+		st, err = bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	def, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	// associate vertexes to the 'docker build' sub-pipeline
+	buildkit.RecordVertexes(subRecorder, def.ToPB())
+
+	container.FS = def.ToPB()
+	container.FS.Source = nil
+
+	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+	if found {
+		var imgSpec specs.Image
+		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+			return nil, err
+		}
+
+		container.Config = mergeImageConfig(container.Config, imgSpec.Config)
+	}
+
+	return container, nil
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
@@ -777,7 +764,7 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, svcs *Services, dirPath string) (*Directory, error) {
 	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -785,7 +772,7 @@ func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, 
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, ".")
+	info, err := dir.Stat(ctx, bk, svcs, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -797,7 +784,7 @@ func (container *Container) Directory(ctx context.Context, bk *buildkit.Client, 
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, bk *buildkit.Client, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, bk *buildkit.Client, svcs *Services, filePath string) (*File, error) {
 	file, _, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
@@ -805,7 +792,7 @@ func (container *Container) File(ctx context.Context, bk *buildkit.Client, fileP
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := file.Stat(ctx, bk)
+	info, err := file.Stat(ctx, bk, svcs)
 	if err != nil {
 		return nil, err
 	}
@@ -1039,19 +1026,9 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		platform = defaultPlatform
 	}
 
-	args := opts.Args
-
-	if len(args) == 0 {
-		// we use the default args if no new default args are passed
-		args = cfg.Cmd
-	}
-
-	if len(cfg.Entrypoint) > 0 && !opts.SkipEntrypoint {
-		args = append(cfg.Entrypoint, args...)
-	}
-
-	if len(args) == 0 {
-		return nil, errors.New("no command has been set")
+	args, err := container.command(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	var namef string
@@ -1086,20 +1063,11 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
 	}
 
-	// because the shim might run as non-root, we need to make a world-writable
-	// directory first and then make it the base of the /dagger mount point.
-	//
-	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
-	if opts.Stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o600, []byte(opts.Stdin))
-	}
+	metaSt, metaSourcePath := metaMount(opts.Stdin)
 
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
-		llb.AddMount(buildkit.MetaMountDestPath,
-			llb.Scratch().File(meta, llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata")),
-			llb.SourcePath(buildkit.MetaSourcePath)))
+		llb.AddMount(buildkit.MetaMountDestPath, metaSt, llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", opts.RedirectStdout))
@@ -1109,8 +1077,11 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", opts.RedirectStderr))
 	}
 
-	for _, alias := range container.HostAliases {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias.Alias, alias.Target))
+	for _, bnd := range container.Services {
+		for _, alias := range bnd.Aliases {
+			runOpts = append(runOpts,
+				llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias, bnd.Hostname))
+		}
 	}
 
 	if cfg.User != "" {
@@ -1288,132 +1259,53 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) error {
+func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) error {
 	if container.FS == nil {
 		return nil
 	}
 
-	_, err := WithServices(ctx, bk, container.Services, func() (*buildkit.Result, error) {
-		st, err := container.FSState()
-		if err != nil {
-			return nil, err
-		}
+	detach, _, err := svcs.StartBindings(ctx, bk, container.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
 
-		def, err := st.Marshal(ctx, llb.Platform(container.Platform))
-		if err != nil {
-			return nil, err
-		}
+	st, err := container.FSState()
+	if err != nil {
+		return err
+	}
 
-		return bk.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: def.ToPB(),
-		})
+	def, err := st.Marshal(ctx, llb.Platform(container.Platform))
+	if err != nil {
+		return err
+	}
+
+	_, err = bk.Solve(ctx, bkgw.SolveRequest{
+		Evaluate:   true,
+		Definition: def.ToPB(),
 	})
 	return err
 }
 
-func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Service, error) {
-	container = container.Clone()
-	hostname, err := container.HostnameOrErr()
-	if err != nil {
-		return nil, err
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	hostname += "." + network.ClientDomain(clientMetadata.ClientID)
-
-	// TODO: add test for case where a container provided as service dep
-	// is an exec plus something else like fileop on top, should error
-	// Also note that this is technically a breaking change sort of but
-	// the fact that it ever worked was not intentional afaik
-	dag, err := defToDAG(container.FS)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert container def to dag: %w", err)
-	}
-	if len(dag.inputs) == 0 {
-		return nil, fmt.Errorf("service container must be result of withExec")
-	}
-	execOp, ok := dag.inputs[0].AsExec()
-	if !ok {
-		return nil, fmt.Errorf("service container must be result of withExec")
-	}
-	execOp.Meta.Hostname = hostname
-	container.FS, err = dag.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal dag: %w", err)
-	}
-
-	health := newHealth(bk, hostname, container.Ports)
-
-	// annotate the container as a service so they can be treated differently
-	// in the UI
-	rec := progrock.FromContext(ctx).
-		WithGroup(
-			fmt.Sprintf("service %s", hostname),
-			progrock.Weak(),
-		)
-
-	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = progrock.ToContext(svcCtx, rec)
-	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-
-	checked := make(chan error, 1)
-	go func() {
-		checked <- health.Check(svcCtx)
-	}()
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- container.Evaluate(svcCtx, bk)
-	}()
-
-	select {
-	case err := <-checked:
-		if err != nil {
-			stop()
-			return nil, fmt.Errorf("health check errored: %w", err)
-		}
-
-		_ = stop // leave it running
-
-		return &Service{
-			Container: container,
-			Detach:    stop,
-		}, nil
-	case err := <-exited:
-		stop() // interrupt healthcheck
-
-		if err != nil {
-			return nil, fmt.Errorf("exited: %w", err)
-		}
-
-		return nil, fmt.Errorf("service exited before healthcheck")
-	}
-}
-
-func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.Client, progSock string, filePath string) (string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.Client, svcs *Services, progSock string, filePath string) (string, error) {
 	if container.Meta == nil {
 		ctr, err := container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, bk, progSock, filePath)
+		return ctr.MetaFileContents(ctx, bk, svcs, progSock, filePath)
 	}
 
 	file := NewFile(
 		ctx,
 		container.Meta,
-		path.Join(metaSourcePath, filePath),
+		path.Join(buildkit.MetaSourcePath, filePath),
 		container.Pipeline,
 		container.Platform,
 		container.Services,
 	)
 
-	content, err := file.Contents(ctx, bk)
+	content, err := file.Contents(ctx, bk, svcs)
 	if err != nil {
 		return "", err
 	}
@@ -1424,6 +1316,7 @@ func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.C
 func (container *Container) Publish(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	ref string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
@@ -1485,9 +1378,13 @@ func (container *Container) Publish(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	resp, err := WithServices(ctx, bk, services, func() (map[string]string, error) {
-		return bk.PublishContainerImage(ctx, inputByPlatform, opts)
-	})
+	detach, _, err := svcs.StartBindings(ctx, bk, services)
+	if err != nil {
+		return "", err
+	}
+	defer detach()
+
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, opts)
 	if err != nil {
 		return "", err
 	}
@@ -1518,6 +1415,7 @@ func (container *Container) Publish(
 func (container *Container) Export(
 	ctx context.Context,
 	bk *buildkit.Client,
+	svcs *Services,
 	dest string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
@@ -1579,9 +1477,13 @@ func (container *Container) Export(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	_, err = WithServices(ctx, bk, services, func() (map[string]string, error) {
-		return bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
-	})
+	detach, _, err := svcs.StartBindings(ctx, bk, services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
 	return err
 }
 
@@ -1591,6 +1493,7 @@ func (container *Container) Import(
 	tag string,
 	bk *buildkit.Client,
 	host *Host,
+	svcs *Services,
 	importCache *CacheMap[uint64, *specs.Descriptor],
 	store content.Store,
 	lm *leaseutil.Manager,
@@ -1607,7 +1510,7 @@ func (container *Container) Import(
 
 	var release func(context.Context) error
 	loadManifest := func() (*specs.Descriptor, error) {
-		src, err := file.Open(ctx, host, bk)
+		src, err := file.Open(ctx, host, bk, svcs)
 		if err != nil {
 			return nil, err
 		}
@@ -1662,7 +1565,7 @@ func (container *Container) Import(
 
 	st := llb.OCILayout(
 		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
-		llb.OCIStore("", OCIStoreName),
+		llb.OCIStore("", buildkit.OCIStoreName),
 		llb.Platform(container.Platform),
 	)
 
@@ -1715,37 +1618,7 @@ func (container *Container) Import(
 	return container, nil
 }
 
-func (container *Container) HostnameOrErr() (string, error) {
-	dig, err := container.Digest()
-	if err != nil {
-		return "", err
-	}
-	return network.HostHash(dig), nil
-}
-
-func (container *Container) Endpoint(bk *buildkit.Client, port int, scheme string) (string, error) {
-	if port == 0 {
-		if len(container.Ports) == 0 {
-			return "", fmt.Errorf("no ports exposed")
-		}
-
-		port = container.Ports[0].Port
-	}
-
-	host, err := container.HostnameOrErr()
-	if err != nil {
-		return "", err
-	}
-
-	endpoint := fmt.Sprintf("%s:%d", host, port)
-	if scheme != "" {
-		endpoint = scheme + "://" + endpoint
-	}
-
-	return endpoint, nil
-}
-
-func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
+func (container *Container) WithExposedPort(port Port) (*Container, error) {
 	container = container.Clone()
 
 	// replace existing port to avoid duplicates
@@ -1776,7 +1649,7 @@ func (container *Container) WithExposedPort(port ContainerPort) (*Container, err
 func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
 	container = container.Clone()
 
-	filtered := []ContainerPort{}
+	filtered := []Port{}
 	filteredOCI := map[string]struct{}{}
 	for _, p := range container.Ports {
 		if p.Port != port || p.Protocol != protocol {
@@ -1792,29 +1665,26 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(bk *buildkit.Client, svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svcs *Services, svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
-	svcID, err := svc.ID()
+	host, err := svc.Hostname(ctx, svcs)
 	if err != nil {
 		return nil, err
 	}
 
-	container.Services.Merge(ServiceBindings{
-		svcID: AliasSet{alias},
-	})
-
+	var aliases AliasSet
 	if alias != "" {
-		hn, err := svc.HostnameOrErr()
-		if err != nil {
-			return nil, fmt.Errorf("get hostname: %w", err)
-		}
-
-		container.HostAliases = append(container.HostAliases, HostAlias{
-			Alias:  alias,
-			Target: hn,
-		})
+		aliases = AliasSet{alias}
 	}
+
+	container.Services.Merge(ServiceBindings{
+		{
+			Service:  svc,
+			Hostname: host,
+			Aliases:  aliases,
+		},
+	})
 
 	return container, nil
 }
@@ -1826,6 +1696,17 @@ func (container *Container) ImageRefOrErr(ctx context.Context, bk *buildkit.Clie
 	}
 
 	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+}
+
+func (container *Container) Service(ctx context.Context, bk *buildkit.Client, progSock string) (*Service, error) {
+	if container.Meta == nil {
+		var err error
+		container, err = container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return NewContainerService(container), nil
 }
 
 func (container *Container) ownership(ctx context.Context, bk *buildkit.Client, owner string) (*Ownership, error) {
@@ -1840,6 +1721,43 @@ func (container *Container) ownership(ctx context.Context, bk *buildkit.Client, 
 	}
 
 	return resolveUIDGID(ctx, fsSt, bk, container.Platform, owner)
+}
+
+func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
+	cfg := container.Config
+	args := opts.Args
+
+	if len(args) == 0 {
+		// we use the default args if no new default args are passed
+		args = cfg.Cmd
+	}
+
+	if len(cfg.Entrypoint) > 0 && !opts.SkipEntrypoint {
+		args = append(cfg.Entrypoint, args...)
+	}
+
+	if len(args) == 0 {
+		return nil, errors.New("no command has been set")
+	}
+
+	return args, nil
+}
+
+func metaMount(stdin string) (llb.State, string) {
+	// because the shim might run as non-root, we need to make a world-writable
+	// directory first and then make it the base of the /dagger mount point.
+	//
+	// TODO(vito): have the shim exec as the other user instead?
+	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
+	if stdin != "" {
+		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o600, []byte(stdin))
+	}
+
+	return llb.Scratch().File(
+			meta,
+			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
+		),
+		buildkit.MetaSourcePath
 }
 
 type ContainerExecOpts struct {
@@ -1987,4 +1905,13 @@ func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (md ContainerExecUncachedMetadata) ToEnv() ([]string, error) {
+	b, err := json.Marshal(md)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{"ftp_proxy=" + string(b)}, nil
 }

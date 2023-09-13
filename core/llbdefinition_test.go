@@ -98,24 +98,58 @@ func TestDefToDAG(t *testing.T) {
 	require.Equal(t, "/somethingmnt", fromSomethingMnt.OutputMount().Dest)
 	require.NotNil(t, fromSomethingMnt.OutputMountBase().GetSource())
 
-	// test marshalling
-	remarshalledDef, err := dag.Marshal()
-	require.NoError(t, err)
-	defDgst := digest.FromBytes(def.Def[len(def.Def)-1])
-	remarshalledDefDgst := digest.FromBytes(remarshalledDef.Def[len(remarshalledDef.Def)-1])
-	require.Equal(t, defDgst, remarshalledDefDgst)
+	t.Run("marshalling", func(t *testing.T) {
+		remarshalledDef, err := dag.Marshal()
+		require.NoError(t, err)
+		defDgst := digest.FromBytes(def.Def[len(def.Def)-1])
+		remarshalledDefDgst := digest.FromBytes(remarshalledDef.Def[len(remarshalledDef.Def)-1])
+		require.Equal(t, defDgst, remarshalledDefDgst)
+	})
 
-	// test modifications + marshalling
-	modifiedLLBDef, err := getState("b").Marshal(ctx)
-	require.NoError(t, err)
-	modifiedDef := modifiedLLBDef.ToPB()
-	modifiedDef.Source = nil
-	exec.Meta.Args = []string{"echo", "b2"}
-	execMnt.Meta.Args = []string{"echo", "b1"}
+	t.Run("modifications + marshalling", func(t *testing.T) {
+		modifiedLLBDef, err := getState("b").Marshal(ctx)
+		require.NoError(t, err)
+		modifiedDef := modifiedLLBDef.ToPB()
+		modifiedDef.Source = nil
+		exec.Meta.Args = []string{"echo", "b2"}
+		execMnt.Meta.Args = []string{"echo", "b1"}
 
-	remarshalledDef, err = dag.Marshal()
-	require.NoError(t, err)
-	modifiedDefDgst := digest.FromBytes(modifiedDef.Def[len(modifiedDef.Def)-1])
-	remarshalledDefDgst = digest.FromBytes(remarshalledDef.Def[len(remarshalledDef.Def)-1])
-	require.Equal(t, modifiedDefDgst, remarshalledDefDgst)
+		remarshalledDef, err := dag.Marshal()
+		require.NoError(t, err)
+		modifiedDefDgst := digest.FromBytes(modifiedDef.Def[len(modifiedDef.Def)-1])
+		remarshalledDefDgst := digest.FromBytes(remarshalledDef.Def[len(remarshalledDef.Def)-1])
+		require.Equal(t, modifiedDefDgst, remarshalledDefDgst)
+	})
+
+	t.Run("marshalling inputs", func(t *testing.T) {
+		llbdef, err := getState("a").Marshal(ctx)
+		require.NoError(t, err)
+		def := llbdef.ToPB()
+		def.Source = nil
+
+		dag, err := defToDAG(def)
+		require.NoError(t, err)
+
+		require.NotNil(t, dag)
+		_, isExec := dag.AsExec()
+		require.False(t, isExec)
+		require.Len(t, dag.inputs, 1)
+
+		execDag := dag.inputs[0]
+		exec, isExec := execDag.AsExec()
+		require.True(t, isExec)
+		require.NotNil(t, exec)
+		require.Equal(t, []string{"echo", "a2"}, exec.Meta.Args)
+		require.Len(t, exec.inputs, 4) // 1 for rootfs and 3 mnts
+
+		inputDef, err := exec.Input(0).Marshal()
+		require.NoError(t, err)
+		require.Len(t, inputDef.Def, 2)
+
+		dag, err = defToDAG(inputDef)
+		require.NoError(t, err)
+		require.Len(t, dag.inputs, 1)
+		require.Equal(t, dag.inputs[0], execDag.inputs[0])
+		require.Nil(t, dag.Op.Op)
+	})
 }

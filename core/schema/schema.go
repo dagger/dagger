@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -8,6 +9,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
@@ -29,24 +31,27 @@ type InitializeArgs struct {
 }
 
 func New(params InitializeArgs) (*MergedSchemas, error) {
+	svcs := core.NewServices(params.BuildkitClient)
 	merged := &MergedSchemas{
 		bk:              params.BuildkitClient,
 		platform:        params.Platform,
 		progSockPath:    params.ProgSockPath,
 		auth:            params.Auth,
 		secrets:         params.Secrets,
+		services:        svcs,
 		separateSchemas: map[string]ExecutableSchema{},
 	}
 	host := core.NewHost()
 	buildCache := core.NewCacheMap[uint64, *core.Container]()
 	err := merged.addSchemas(
 		&querySchema{merged},
-		&directorySchema{merged, host, buildCache},
-		&fileSchema{merged, host},
-		&gitSchema{merged},
+		&directorySchema{merged, host, svcs, buildCache},
+		&fileSchema{merged, host, svcs},
+		&gitSchema{merged, svcs},
 		&containerSchema{
 			merged,
 			host,
+			svcs,
 			params.OCIStore,
 			params.LeaseManager,
 			buildCache,
@@ -54,9 +59,9 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		},
 		&cacheSchema{merged},
 		&secretSchema{merged},
-		&hostSchema{merged, host},
-		&projectSchema{merged},
-		&httpSchema{merged},
+		&hostSchema{merged, host, svcs},
+		&projectSchema{merged, svcs},
+		&httpSchema{merged, svcs},
 		&platformSchema{merged},
 		&socketSchema{merged, host},
 	)
@@ -72,6 +77,7 @@ type MergedSchemas struct {
 	progSockPath string
 	auth         *auth.RegistryAuthProvider
 	secrets      *core.SecretStore
+	services     *core.Services
 
 	schemaMu        sync.RWMutex
 	separateSchemas map[string]ExecutableSchema
@@ -83,6 +89,10 @@ func (s *MergedSchemas) Schema() *graphql.Schema {
 	s.schemaMu.RLock()
 	defer s.schemaMu.RUnlock()
 	return s.compiledSchema
+}
+
+func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
+	return s.services.StopClientServices(ctx, client)
 }
 
 func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
