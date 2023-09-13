@@ -136,8 +136,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", ClientGenFile)
-	if err := mfs.WriteFile(".gitattributes", []byte(gitAttributes), 0600); err != nil {
+	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.SourceDirectoryPath); err != nil {
 		return nil, err
 	}
 

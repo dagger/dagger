@@ -133,7 +133,9 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 			Config: cfg,
 		}
 	case generator.SDKLangNodeJS:
-		gen = &nodegenerator.NodeGenerator{}
+		gen = &nodegenerator.NodeGenerator{
+			Config: cfg,
+		}
 
 	default:
 		sdks := []string{

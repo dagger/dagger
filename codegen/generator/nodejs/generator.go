@@ -3,7 +3,6 @@ package nodegenerator
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"sort"
 
 	"github.com/dagger/dagger/codegen/generator"
@@ -14,7 +13,9 @@ import (
 
 const ClientGenFile = "client.gen.ts"
 
-type NodeGenerator struct{}
+type NodeGenerator struct {
+	Config generator.Config
+}
 
 // Generate will generate the NodeJS SDK code and might modify the schema to reorder types in a alphanumeric fashion.
 func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
@@ -42,8 +43,7 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	gitAttributes := fmt.Sprintf("/%s linguist-generated=true", ClientGenFile)
-	if err := mfs.WriteFile(".gitattributes", []byte(gitAttributes), 0600); err != nil {
+	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.SourceDirectoryPath); err != nil {
 		return nil, err
 	}
 
