@@ -75,7 +75,7 @@ spec:
               mountPath: /etc/dagger/engine.toml
               subPath: engine.toml
             {{- end }}
-      terminationGracePeriodSeconds: 300
+      terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
         - name: varlibdagger
           hostPath:

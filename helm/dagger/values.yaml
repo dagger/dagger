@@ -44,6 +44,7 @@ engine:
     periodSeconds: 15
     successThreshold: 1
     failureThreshold: 10
+  terminationGracePeriodSeconds: 300
 magicache:
   enabled: false
   url: https://api.dagger.cloud/magicache
