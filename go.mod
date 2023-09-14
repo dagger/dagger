@@ -63,7 +63,6 @@ require (
 	github.com/charmbracelet/lipgloss v0.8.0
 	github.com/dave/jennifer v1.7.0
 	github.com/dschmidt/go-layerfs v0.1.0
-	github.com/ettle/strcase v0.1.1
 	github.com/go-git/go-git/v5 v5.8.1
 	github.com/google/go-github/v50 v50.2.0
 	github.com/hashicorp/go-multierror v1.1.1
@@ -78,6 +77,7 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.11.0
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
+	github.com/rs/cors v1.10.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007
@@ -185,7 +185,6 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/rs/cors v1.10.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/skeema/knownhosts v1.2.0 // indirect

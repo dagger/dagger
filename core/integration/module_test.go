@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/ettle/strcase"
+	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
