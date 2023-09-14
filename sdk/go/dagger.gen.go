@@ -5,56 +5,11 @@ package dagger
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
+
+	"github.com/Khan/genqlient/graphql"
 
 	"dagger.io/dagger/querybuilder"
-	"github.com/Khan/genqlient/graphql"
 )
-
-func (r *Client) XXX_FromGraphQLID(id string, x *querybuilder.GraphQLMarshaller) error {
-	if id == "" {
-		return errors.New("empty GraphQL ID")
-	}
-	if x == nil {
-		return errors.New("nil GraphQL marshaller")
-	}
-	graphqlType := (*x).XXX_GraphQLIDType()
-	switch graphqlType {
-	case "Container":
-		*x = r.Container(ContainerOpts{
-			ID: ContainerID(id),
-		})
-	case "Directory":
-		*x = r.Directory(DirectoryOpts{
-			ID: DirectoryID(id),
-		})
-	case "Socket":
-		*x = r.Socket(SocketOpts{
-			ID: SocketID(id),
-		})
-	case "Module":
-		*x = r.Module(ModuleOpts{
-			ID: ModuleID(id),
-		})
-	case "Function":
-		*x = r.Function(FunctionID(id))
-	case "File":
-		*x = r.File(FileID(id))
-	case "Secret":
-		*x = r.Secret(SecretID(id))
-	case "Cache":
-		cacheID := CacheID(id)
-		*x = &CacheVolume{
-			q:  r.q,
-			c:  r.c,
-			id: &cacheID,
-		}
-	default:
-		return fmt.Errorf("unhandled GraphQL marshaller type %s", graphqlType)
-	}
-	return nil
-}
 
 // A global cache volume identifier.
 type CacheID string
@@ -2635,10 +2590,12 @@ type Module struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	id          *ModuleID
-	name        *string
-	serve       *Void
+	description            *string
+	id                     *ModuleID
+	name                   *string
+	sdk                    *string
+	serve                  *Void
+	sourceDirectorySubPath *string
 }
 type WithModuleFunc func(r *Module) *Module
 
@@ -2647,6 +2604,37 @@ type WithModuleFunc func(r *Module) *Module
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *Module) With(f WithModuleFunc) *Module {
 	return f(r)
+}
+
+// Modules used by this module
+func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
+	q := r.q.Select("dependencies")
+
+	q = q.Select("id")
+
+	type dependencies struct {
+		Id ModuleID
+	}
+
+	convert := func(fields []dependencies) []Module {
+		out := []Module{}
+
+		for i := range fields {
+			out = append(out, Module{id: &fields[i].Id})
+		}
+
+		return out
+	}
+	var response []dependencies
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // The doc string of the module, if any
@@ -2693,6 +2681,7 @@ func (r *Module) Functions(ctx context.Context) ([]Function, error) {
 	return convert(response), nil
 }
 
+// The ID of the module
 func (r *Module) ID(ctx context.Context) (ModuleID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2745,6 +2734,19 @@ func (r *Module) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The SDK used by this module
+func (r *Module) SDK(ctx context.Context) (string, error) {
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
+	q := r.q.Select("sdk")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // ModuleServeOpts contains options for Module.Serve
 type ModuleServeOpts struct {
 	Environment []*ModuleEnvironmentVariable
@@ -2767,6 +2769,29 @@ func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) (Void, erro
 	}
 
 	var response Void
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The directory containing the module's source code
+func (r *Module) SourceDirectory() *Directory {
+	q := r.q.Select("sourceDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The module's subpath within the source directory
+func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
+	if r.sourceDirectorySubPath != nil {
+		return *r.sourceDirectorySubPath, nil
+	}
+	q := r.q.Select("sourceDirectorySubPath")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)

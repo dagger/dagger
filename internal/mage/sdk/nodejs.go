@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 
 	"dagger.io/dagger"
@@ -116,7 +117,7 @@ func (t Nodejs) Generate(ctx context.Context) error {
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}).
+		WithExec([]string{"client-gen", "--lang", "nodejs", "-o", path.Dir(nodejsGeneratedAPIPath)}).
 		WithExec([]string{
 			"yarn",
 			"fmt",

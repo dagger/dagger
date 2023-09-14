@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	goGeneratedAPIPath = "sdk/go/api.gen.go"
+	goGeneratedAPIPath = "sdk/go/dagger.gen.go"
 )
 
 var _ SDK = Go{}
