@@ -83,7 +83,7 @@ func RunCodegen(
 
 	rec := progrock.FromContext(ctx)
 
-	for {
+	for ctx.Err() == nil {
 		generated, err := generate(ctx, introspectionSchema, generator.Config{
 			Package:             pkg,
 			Lang:                generator.SDKLang(moduleCfg.SDK),
@@ -115,7 +115,7 @@ func RunCodegen(
 		}
 	}
 
-	return nil
+	return ctx.Err()
 }
 
 func codegenOutDir(sdk moduleconfig.SDK) (string, error) {
