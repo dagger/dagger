@@ -557,7 +557,7 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 			}
 			for _, decl := range f.Decls {
 				fnDecl, ok := decl.(*ast.FuncDecl)
-				if ok {
+				if ok && fnDecl.Name.Name == fnType.Name() {
 					return fnDecl, nil
 				}
 			}
