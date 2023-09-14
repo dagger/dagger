@@ -42,7 +42,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		return nil, fmt.Errorf("bootstrap main: %w", err)
 	}
 
-	funcs := templates.GoTemplateFuncs(g.Config.ModuleName, g.Config.SourceDirectoryPath, schema)
+	funcs := templates.GoTemplateFuncs(ctx, g.Config.ModuleName, g.Config.SourceDirectoryPath, schema)
 
 	headerData := struct {
 		Package  string

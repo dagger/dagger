@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"sort"
@@ -13,9 +14,10 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
-func GoTemplateFuncs(moduleName string, sourceDirectoryPath string, schema *introspection.Schema) template.FuncMap {
+func GoTemplateFuncs(ctx context.Context, moduleName string, sourceDirectoryPath string, schema *introspection.Schema) template.FuncMap {
 	return goTemplateFuncs{
 		CommonFunctions:     generator.NewCommonFunctions(&FormatTypeFunc{}),
+		ctx:                 ctx,
 		moduleName:          moduleName,
 		sourceDirectoryPath: sourceDirectoryPath,
 		schema:              schema,
@@ -24,6 +26,7 @@ func GoTemplateFuncs(moduleName string, sourceDirectoryPath string, schema *intr
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
+	ctx                 context.Context
 	moduleName          string
 	sourceDirectoryPath string
 	schema              *introspection.Schema

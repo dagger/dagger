@@ -48,9 +48,10 @@ Go function.
 func (funcs goTemplateFuncs) moduleMainSrc() string {
 	fset := token.NewFileSet()
 	pkgs, err := packages.Load(&packages.Config{
-		Dir:   funcs.sourceDirectoryPath,
-		Tests: false,
-		Fset:  fset,
+		Context: funcs.ctx,
+		Dir:     funcs.sourceDirectoryPath,
+		Tests:   false,
+		Fset:    fset,
 		Mode: packages.NeedName |
 			packages.NeedTypes |
 			packages.NeedSyntax |
