@@ -47,6 +47,9 @@ type Module struct {
 	// Dependencies of the module
 	Dependencies []*Module `json:"dependencies"`
 
+	// Dependencies as configured by the module
+	DependencyConfig []string `json:"dependencyConfig"`
+
 	// The module's functions
 	Functions []*Function `json:"functions,omitempty"`
 
@@ -208,6 +211,7 @@ func (mod *Module) FromConfig(
 	mod.SourceDirectorySubpath = filepath.Dir(configPath)
 	mod.Name = cfg.Name
 	mod.SDK = cfg.SDK
+	mod.DependencyConfig = cfg.Dependencies
 	if err := mod.recalcRuntime(ctx, bk, progSock); err != nil {
 		return nil, fmt.Errorf("failed to set runtime container: %w", err)
 	}

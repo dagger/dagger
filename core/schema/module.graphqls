@@ -28,6 +28,9 @@ type Module {
   "Modules used by this module"
   dependencies: [Module!]!
 
+  "The dependencies as configured by the module"
+  dependencyConfig: [String!]!
+
   "The directory containing the module's source code"
   sourceDirectory: Directory!
 
