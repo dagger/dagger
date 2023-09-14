@@ -30,6 +30,7 @@ func (mod *Module) String() string {
 type GitRef struct {
 	HTMLURL  string // HTMLURL is the URL a user can use to browse the repo.
 	CloneURL string // CloneURL is the URL to clone.
+	Commit   string // Commit is the commit to check out.
 }
 
 // TODO dedup with ResolveMovingRef
@@ -45,7 +46,11 @@ func ResolveStableRef(modQuery string) (*Module, error) {
 	// thing)
 	isGitHub := strings.HasPrefix(modPath, "github.com/")
 
-	if !hasVersion && !isGitHub {
+	if !hasVersion {
+		if isGitHub {
+			return nil, fmt.Errorf("no version provided for remote ref: %s", modQuery)
+		}
+
 		// assume local path
 		//
 		// NB(vito): HTTP URLs should be supported by taking a sha256 digest as the
@@ -72,7 +77,8 @@ func ResolveStableRef(modQuery string) (*Module, error) {
 		return nil, fmt.Errorf("no version provided for %s", modPath)
 	}
 
-	ref.Version = modVersion
+	ref.Version = modVersion    // assume commit
+	ref.Git.Commit = modVersion // assume commit
 
 	if len(segments) == 4 {
 		ref.SubPath = segments[3]
@@ -127,12 +133,13 @@ func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) 
 		}
 	}
 
-	modVersion, err := resolveGitRef(ctx, dag, ref.Git.CloneURL, modVersion)
+	gitCommit, err := resolveGitRef(ctx, dag, ref.Git.CloneURL, modVersion)
 	if err != nil {
 		return nil, fmt.Errorf("resolve git ref: %w", err)
 	}
 
-	ref.Version = modVersion
+	ref.Version = gitCommit    // TODO preserve semver here
+	ref.Git.Commit = gitCommit // but tell the truth here
 
 	if len(segments) == 4 {
 		ref.SubPath = segments[3]
