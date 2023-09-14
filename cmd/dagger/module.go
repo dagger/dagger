@@ -336,12 +336,11 @@ func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.M
 		if strings.HasPrefix(subdirRelPath, "..") {
 			return nil, fmt.Errorf("module config path %q is not under module root %q", p.Path, rootDir)
 		}
-		hostDir := c.Host().Directory(rootDir, dagger.HostDirectoryOpts{
+
+		mod = c.Host().Directory(rootDir, dagger.HostDirectoryOpts{
 			Include: cfg.Include,
 			Exclude: cfg.Exclude,
-		})
-
-		mod = hostDir.AsModule(dagger.DirectoryAsModuleOpts{
+		}).AsModule(dagger.DirectoryAsModuleOpts{
 			SourceSubpath: subdirRelPath,
 		})
 
@@ -350,9 +349,10 @@ func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.M
 		if strings.HasPrefix(rootPath, "..") {
 			return nil, fmt.Errorf("module config path %q is not under module root %q", p.SubPath, rootPath)
 		}
-		return c.Git(p.Git.CloneURL).Commit(p.Version).Tree().
+
+		mod = c.Git(p.Git.CloneURL).Commit(p.Version).Tree().
 			Directory(rootPath).
-			AsModule(), nil
+			AsModule()
 
 	default:
 		err = fmt.Errorf("invalid module")
@@ -505,6 +505,7 @@ func loadMod(ctx context.Context, c *dagger.Client, modIsOptional bool) (*dagger
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
+
 	modExists, err := mod.modExists(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if module exists: %w", err)
