@@ -238,19 +238,18 @@ func updateModuleConfig(
 	if err != nil {
 		return fmt.Errorf("failed to marshal module config: %w", err)
 	}
-	parentDir := filepath.Dir(configPath)
-	_, parentDirStatErr := os.Stat(parentDir)
+	_, parentDirStatErr := os.Stat(moduleDir)
 	switch {
 	case parentDirStatErr == nil:
 		// already exists, nothing to do
 	case os.IsNotExist(parentDirStatErr):
 		// make the parent dir, but if something goes wrong, clean it up in the defer
-		if err := os.MkdirAll(parentDir, 0755); err != nil {
+		if err := os.MkdirAll(moduleDir, 0755); err != nil {
 			return fmt.Errorf("failed to create module config directory: %w", err)
 		}
 		defer func() {
 			if rerr != nil {
-				os.RemoveAll(parentDir)
+				os.RemoveAll(moduleDir)
 			}
 		}()
 	default:
@@ -329,7 +328,7 @@ func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.M
 	var mod *dagger.Module
 	switch {
 	case p.Local:
-		rootDir := filepath.Clean(filepath.Join(filepath.Dir(p.Path), cfg.Root))
+		rootDir := filepath.Clean(filepath.Join(p.Path, cfg.Root))
 		subdirRelPath, err := filepath.Rel(rootDir, p.Path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get subdir relative path: %w", err)

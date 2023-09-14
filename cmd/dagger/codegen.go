@@ -130,7 +130,7 @@ func codegenOutDir(ctx context.Context, dag *dagger.Client, sdk moduleconfig.SDK
 		// TODO(vito)
 		return ".", nil
 	}
-	return filepath.Dir(modCfg.Path), nil
+	return modCfg.Path, nil
 }
 
 func getPackage(ctx context.Context, dag *dagger.Client, sdk moduleconfig.SDK) (string, error) {
