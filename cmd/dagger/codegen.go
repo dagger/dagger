@@ -49,7 +49,7 @@ func RunCodegen(
 		}
 	}
 
-	pkg, err := getPackage(moduleCfg.SDK)
+	pkg, err := getPackage(ctx, engineClient.Dagger(), moduleCfg.SDK)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func RunCodegen(
 		return err
 	}
 
-	outputDir, err := codegenOutDir(moduleCfg.SDK)
+	outputDir, err := codegenOutDir(ctx, engineClient.Dagger(), moduleCfg.SDK)
 	if err != nil {
 		return err
 	}
@@ -118,29 +118,29 @@ func RunCodegen(
 	return ctx.Err()
 }
 
-func codegenOutDir(sdk moduleconfig.SDK) (string, error) {
+func codegenOutDir(ctx context.Context, dag *dagger.Client, sdk moduleconfig.SDK) (string, error) {
 	if codegenOutputDir != "" {
 		return codegenOutputDir, nil
 	}
-	modCfg, err := getModuleFlagConfig()
+	modCfg, err := getModuleFlagConfig(ctx, dag)
 	if err != nil {
 		return "", err
 	}
-	if modCfg.local == nil {
+	if !modCfg.Local {
 		// TODO(vito)
 		return ".", nil
 	}
-	return filepath.Dir(modCfg.local.path), nil
+	return filepath.Dir(modCfg.Path), nil
 }
 
-func getPackage(sdk moduleconfig.SDK) (string, error) {
+func getPackage(ctx context.Context, dag *dagger.Client, sdk moduleconfig.SDK) (string, error) {
 	// If a package name was provided as a flag, use it
 	if codegenPkg != "" {
 		return codegenPkg, nil
 	}
 
 	// Come up with a default package name
-	output, err := codegenOutDir(sdk)
+	output, err := codegenOutDir(ctx, dag, sdk)
 	if err != nil {
 		return "", err
 	}

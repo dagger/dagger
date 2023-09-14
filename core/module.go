@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resolver"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
@@ -155,7 +157,7 @@ func (mod *Module) FromConfig(
 	for i, depURL := range cfg.Dependencies {
 		i, depURL := i, depURL
 		eg.Go(func() error {
-			parsedURL, err := moduleconfig.ParseModuleURL(depURL)
+			modRef, err := resolver.ResolveStableRef(depURL)
 			if err != nil {
 				return fmt.Errorf("failed to parse dependency url %q: %w", depURL, err)
 			}
@@ -167,16 +169,16 @@ func (mod *Module) FromConfig(
 			var depSourceDir *Directory
 			var depConfigPath string
 			switch {
-			case parsedURL.Local != nil:
+			case modRef.Local:
 				depSourceDir = sourceDir
-				depConfigPath = filepath.Join("/", filepath.Dir(configPath), parsedURL.Local.ConfigPath)
-			case parsedURL.Git != nil:
+				depConfigPath = moduleconfig.NormalizeConfigPath(path.Join("/", path.Dir(configPath), modRef.Path))
+			case modRef.Git != nil:
 				var err error
-				depSourceDir, err = NewDirectorySt(ctx, llb.Git(parsedURL.Git.Repo, parsedURL.Git.Ref), "", mod.Pipeline, mod.Platform, nil)
+				depSourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
 				if err != nil {
 					return fmt.Errorf("failed to create git directory: %w", err)
 				}
-				depConfigPath = parsedURL.Git.ConfigPath
+				depConfigPath = moduleconfig.NormalizeConfigPath(modRef.SubPath)
 			default:
 				return fmt.Errorf("invalid dependency url from %q", depURL)
 			}
