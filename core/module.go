@@ -159,7 +159,7 @@ func (mod *Module) FromConfig(
 
 			// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
 			// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
-			// May need to have `dagger mod extend` and `dagger mod sync` automatically include dependency include/exclude filters in
+			// May need to have `dagger mod use` and `dagger mod sync` automatically include dependency include/exclude filters in
 			// dagger.json.
 			var depSourceDir *Directory
 			var depConfigPath string

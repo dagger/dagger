@@ -15,8 +15,8 @@ import (
 )
 
 /* TODO: add coverage for
-* dagger env extend
-* dagger env sync
+* dagger mod use
+* dagger mod sync
 * that the codegen of the testdata envs are up to date (or incorporate that into a cli command)
 * if a dependency changes, then checks should re-run
  */

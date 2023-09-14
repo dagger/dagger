@@ -48,7 +48,7 @@ func init() {
 	// also include codegen flags since codegen will run on module init
 
 	moduleCmd.AddCommand(moduleInitCmd)
-	moduleCmd.AddCommand(moduleExtendCmd)
+	moduleCmd.AddCommand(moduleUseCmd)
 	moduleCmd.AddCommand(moduleSyncCmd)
 }
 
@@ -128,9 +128,9 @@ var moduleInitCmd = &cobra.Command{
 	},
 }
 
-var moduleExtendCmd = &cobra.Command{
-	Use:    "extend",
-	Short:  "Extend a dagger module with access to the entrypoints of another module",
+var moduleUseCmd = &cobra.Command{
+	Use:    "use",
+	Short:  "Add a new dependency to a dagger module",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
@@ -139,7 +139,7 @@ var moduleExtendCmd = &cobra.Command{
 			return fmt.Errorf("failed to get module: %w", err)
 		}
 		if modFlagCfg.git != nil {
-			return fmt.Errorf("module extend is not supported for git modules")
+			return fmt.Errorf("module use is not supported for git modules")
 		}
 		modCfg, err := modFlagCfg.config(ctx, nil)
 		if err != nil {
