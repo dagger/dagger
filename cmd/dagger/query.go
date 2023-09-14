@@ -16,6 +16,7 @@ import (
 )
 
 var (
+	queryFocus         bool
 	queryFile          string
 	queryVarsInput     []string
 	queryVarsJSONInput string
@@ -40,8 +41,15 @@ dagger query <<EOF
 }
 EOF
 `,
-	RunE: loadModCmdWrapper(Query, "", true),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		focus = queryFocus
+		return loadModCmdWrapper(Query, "", true)(cmd, args)
+	},
 	Args: cobra.MaximumNArgs(1), // operation can be specified
+}
+
+func init() {
+	queryCmd.Flags().BoolVar(&queryFocus, "focus", false, "Only show output for focused commands.")
 }
 
 func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, args []string) (rerr error) {
