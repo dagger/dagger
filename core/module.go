@@ -148,7 +148,7 @@ func (mod *Module) FromConfig(
 
 	// Recursively load the configs of all the dependencies
 	var eg errgroup.Group
-	deps := make([]*Module, len(cfg.Dependencies))
+	mod.Dependencies = make([]*Module, len(cfg.Dependencies))
 	for i, depURL := range cfg.Dependencies {
 		i, depURL := i, depURL
 		eg.Go(func() error {
@@ -178,11 +178,11 @@ func (mod *Module) FromConfig(
 				return fmt.Errorf("invalid dependency url from %q", depURL)
 			}
 
-			depMod, err := mod.FromConfig(ctx, bk, svcs, progSock, depSourceDir, depConfigPath)
+			depMod, err := NewModule(mod.Platform, mod.Pipeline).FromConfig(ctx, bk, svcs, progSock, depSourceDir, depConfigPath)
 			if err != nil {
 				return fmt.Errorf("failed to get dependency mod from config %q: %w", depURL, err)
 			}
-			deps[i] = depMod
+			mod.Dependencies[i] = depMod
 			return nil
 		})
 	}
