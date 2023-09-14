@@ -155,7 +155,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string, bool, error) {
 	srcDir := g.Config.SourceDirectoryPath
 
-	pkgs, err := loadPackages(srcDir)
+	pkgs, err := loadPackages(ctx, srcDir)
 	if err != nil {
 		return "", false, fmt.Errorf("error loading packages: %w", err)
 	}
@@ -181,7 +181,7 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 	}
 
 	// re-try loading main package so that we can detect outer module
-	pkgs, err = loadPackages(g.Config.SourceDirectoryPath)
+	pkgs, err = loadPackages(ctx, g.Config.SourceDirectoryPath)
 	if err != nil {
 		return "", false, fmt.Errorf("error loading packages: %w", err)
 	}
@@ -252,12 +252,13 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 	return newMod.Module.Mod.Path, true, nil
 }
 
-func loadPackages(dir string) ([]*packages.Package, error) {
+func loadPackages(ctx context.Context, dir string) ([]*packages.Package, error) {
 	fset := token.NewFileSet()
 	return packages.Load(&packages.Config{
-		Dir:   dir,
-		Tests: false,
-		Fset:  fset,
+		Context: ctx,
+		Dir:     dir,
+		Tests:   false,
+		Fset:    fset,
 		Mode: packages.NeedName |
 			packages.NeedTypes |
 			packages.NeedSyntax |
