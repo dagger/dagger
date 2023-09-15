@@ -187,10 +187,20 @@ query test {
 EOF
 ```
 
-If you push your module to a Git repository, you can reference it using `git://`.
+If you push your module to a Git repository, you can reference it by it's github URL.
 
 ```sh
-dagger query -m "git://github.com/user/repo?ref=main" << EOF
+dagger query -m "github.com/user/repo@main" << EOF
+query test {
+   ...
+}
+EOF
+```
+
+or, if your module is in a subdirectory of the Git repo:
+
+```sh
+dagger query -m "github.com/user/repo/subdirectory@main" << EOF
 query test {
    ...
 }
