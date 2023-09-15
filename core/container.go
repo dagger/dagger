@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
@@ -560,6 +561,8 @@ func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Cl
 	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner)
 }
 
+var SeenCacheKeys sync.Map
+
 func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
@@ -605,6 +608,8 @@ func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.C
 
 	// set image ref to empty string
 	container.ImageRef = ""
+
+	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
 
 	return container, nil
 }
