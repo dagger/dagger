@@ -132,9 +132,73 @@ That's it! ...For now.
 
 ## More things you can do
 
+You can add a new function to accept and return a `*Container`.
+
+```go
+package main
+
+import "context"
+
+type Vito struct{}
+
+func (m *Vito) HelloWorld(context.Context) (string, error) {
+	return "hey", nil
+}
+
+func (m *Vito) Snyk(ctx context.Context, ctr *Container) (*Container, error) {
+	return ctr, nil
+}
+
+func (ctr *Container) Snyk(ctx context.Context, token string, path string) (*Container, error) {
+	c := ctr.
+		WithWorkdir("/tmp").
+		WithExec([]string{"curl", "https://static.snyk.io/cli/latest/snyk-alpine", "-o", "snyk"}).
+		WithExec([]string{"chmod", "+x", "snyk"}).
+		WithExec([]string{"mv", "./snyk", "/usr/local/bin"}).
+		WithWorkdir(path).
+		WithEnvVariable("SNYK_TOKEN", token).
+		WithExec([]string{"snyk", "test"})
+
+	return c, nil
+}
+```
+
+Next, run `dagger mod sync`.
+
+To run the new function, once again use `dagger query` (this example requires a Snyk token):
+
+```sh
+dagger query  << EOF
+query test {
+		container {
+				from(address: "alpine") {
+						withExec(args: ["apk", "add", "curl"]) {
+								withExec(args: ["apk", "add", "git"]) {
+										withExec(args: ["git", "clone", "https://github.com/snyk/snyk-demo-todo.git", "/src"]) {
+												snyk(token: "TOKEN", path: "/src") {
+														stdout
+												}
+										}
+								}
+						}
+				}
+		}
+}
+EOF
+```
+
+If you push your module to a Git repository, you can reference it using `git://`.
+
+```sh
+dagger query -m "git://github.com/user/repo?ref=main" << EOF
+query test {
+   ...
+}
+EOF
+```
+
 TODO: flesh this out
 
-* Accept and return types like `*Container`
 * Return custom types with methods defined on them
 
 ## Questions?
