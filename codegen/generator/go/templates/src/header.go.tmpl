@@ -18,6 +18,6 @@ func assertNotNil(value any) {
 	// the value is wrapped into a type when passed as parameter.
 	// E.g., nil become (*dagger.File)(nil).
 	if reflect.ValueOf(value).IsNil() {
-		panic("unexpected nil pointer")
+		panic(fmt.Sprintf("unexpected nil pointer for argument %q", argName))
 	}
 }
