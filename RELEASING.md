@@ -127,16 +127,16 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.8.5.md` by either running `changie batch
+- [ ] Create e.g. `.changes/v0.8.6.md` by either running `changie batch
   patch` (or `changie batch minor` if this is a new minor).
 
 > **Note**
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-  `.changes/v0.8.6.md`
+  `.changes/v0.8.7.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] Submit a PR - e.g. `add-v0.8.6-release-notes` with the new release notes
+- [ ] Submit a PR - e.g. `add-v0.8.7-release-notes` with the new release notes
   so that they can be used in the new release. The merge commit is what gets
   tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -190,7 +190,7 @@ changie merge
 cd ../..
 ```
 
-- [ ] Commit and push the changes
+- [ ] Commit and push the changes with the message `Add SDK release notes`
 - [ ] `10mins` Open this draft PR in
   [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
   click on **Ready to review**.
