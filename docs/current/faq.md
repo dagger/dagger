@@ -155,7 +155,7 @@ Join us on [Discord](https://discord.com/invite/dagger-io), and ask your questio
 
 ### What language SDKs are available for Dagger?
 
-We currently offer technical previews of a [Go SDK](/sdk/go), a [Node.js SDK](/sdk/nodejs) and a [Python SDK](/sdk/python). Waiting for your favorite language to be supported? [Let us know which one](https://airtable.com/shrzABOn1wCk5yBF4), and we'll notify you when it's ready.
+We currently offer a [Go SDK](/sdk/go), a [Node.js SDK](/sdk/nodejs) and a [Python SDK](/sdk/python). Waiting for your favorite language to be supported? [Let us know which one](https://airtable.com/shrzABOn1wCk5yBF4), and we'll notify you when it's ready.
 
 ### How do I log in to a container registry using a Dagger SDK?
 
