@@ -54,6 +54,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
 		"IsEnum":                  funcs.isEnum,
+		"IsPointer":               funcs.isPointer,
 		"FormatArrayField":        funcs.formatArrayField,
 		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
@@ -93,6 +94,19 @@ func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
 		!strings.HasPrefix(t.Name, "__")
+}
+
+// isPointer returns true if value is a pointer.
+func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) bool {
+	// Ignore id since it's converted to special ID type later.
+	if t.Name == "id" {
+		return false
+	}
+
+	// Convert to a string representation to avoid code repetition.
+	representation := funcs.FormatInputType(t.TypeRef)
+
+	return strings.Index(representation, "*") == 0
 }
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent

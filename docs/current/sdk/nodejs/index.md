@@ -4,8 +4,6 @@ slug: /sdk/nodejs
 
 # Dagger Node.js SDK
 
-<div class="status-badge">Technical Preview</div>
-
 ## What is the Dagger Node.js SDK?
 
 The Dagger Node.js SDK contains everything you need to develop CI/CD pipelines in Node.js, and run them on any OCI-compatible container runtime.
