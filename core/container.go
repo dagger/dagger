@@ -561,7 +561,7 @@ func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Cl
 	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner)
 }
 
-var SeenCacheKeys sync.Map
+var SeenCacheKeys = new(sync.Map)
 
 func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
