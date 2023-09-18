@@ -4,6 +4,7 @@ package {{ .Package }}
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	"github.com/Khan/genqlient/graphql"
@@ -13,7 +14,7 @@ import (
 // assertNotNil panic if the given value is nil.
 // This function is used to validate that input with pointer type are not nil.
 // See https://github.com/dagger/dagger/issues/5696 for more context.
-func assertNotNil(value any) {
+func assertNotNil(argName string, value any) {
 	// We use reflect because just comparing value to nil is not working since
 	// the value is wrapped into a type when passed as parameter.
 	// E.g., nil become (*dagger.File)(nil).
