@@ -52,7 +52,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{ $field | FieldFunction }} {
 	{{- range $arg := $field.Args }}
 	    {{- if and (IsPointer $arg) (not $arg.TypeRef.IsOptional) }}
-        assertNotNil({{ $arg.Name }})
+        assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
         {{- end }}
     {{- end }}
 
