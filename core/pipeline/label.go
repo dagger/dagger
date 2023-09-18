@@ -277,6 +277,17 @@ func LoadGitLabLabels() ([]Label, error) {
 		return []Label{}, nil
 	}
 
+	branchName := os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME")
+	if branchName == "" {
+		// for a branch job, CI_MERGE_REQUEST_SOURCE_BRANCH_NAME is empty
+		branchName = os.Getenv("CI_COMMIT_BRANCH")
+	}
+
+	changeTitle := os.Getenv("CI_MERGE_REQUEST_TITLE")
+	if changeTitle == "" {
+		changeTitle = os.Getenv("CI_COMMIT_TITLE")
+	}
+
 	labels := []Label{
 		{
 			Name:  "dagger.io/vcs.repo.url",
@@ -288,11 +299,11 @@ func LoadGitLabLabels() ([]Label, error) {
 		},
 		{
 			Name:  "dagger.io/vcs.change.branch",
-			Value: os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"),
+			Value: branchName,
 		},
 		{
 			Name:  "dagger.io/vcs.change.title",
-			Value: os.Getenv("CI_MERGE_REQUEST_TITLE"),
+			Value: changeTitle,
 		},
 		{
 			Name:  "dagger.io/vcs.change.head_sha",
