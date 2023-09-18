@@ -27,21 +27,23 @@ The Dagger Engine is developed in the open, and Project Zenith is no exception.
 
 ## How to test it
 
-To get started, first clone this branch to a separate directory.
-
-> You could also just fetch the branch into an existing Dagger repo checkout,
-> but I've found it nice to keep them separate, since it's a bit of a
-> context-switch if you have anything else going on in your Dagger repo.
+To get started, clone or pull this branch:
 
 ```sh
-git clone https://github.com/shykes/dagger --branch zenith-functions ./zenith/
+# fresh clone
+git clone https://github.com/shykes/dagger --branch zenith-functions ./dagger/
+
+# OR pull branch
+git remote add shykes https://github.com/shykes/dagger
+git fetch shykes zenith-functions
+git checkout zenith-functions
 ```
 
-Next, `cd` to it and build the dev `dagger` CLI and start the dev engine:
+Next, build the dev `dagger` CLI and start the dev engine:
 
 ```sh
 # cd into repo
-cd ./zenith/
+cd ./dagger/
 
 # build dev CLI and engine
 ./hack/dev
@@ -76,18 +78,19 @@ echo '{vito{helloWorld}}' | dagger query --progress=plain
 ## Creating your first Module
 
 Create a new directory under `./zenith/` and run `dagger mod init` to
-bootstrap your first module.
+bootstrap your first module. We'll call it `potato` here, but you can choose
+your favorite food.
 
 ```sh
 cd ./zenith/ # if not there already
 
-mkdir vito-mod/
-cd vito-mod/
+mkdir potato-mod/
+cd potato-mod/
 
 # initialize Dagger module
 #
 # NOTE: currently Go is the only supported SDK.
-dagger mod init --name=vito --sdk=go
+dagger mod init --name=potato --sdk=go
 ```
 
 This will generate `dagger.gen.go`, `dagger.json`, and an initial `main.go`
@@ -96,11 +99,11 @@ file.
 If you like, you can run the generated `main.go` like so:
 
 ```sh
-echo '{vito{myFunction(stringArg:"hey"){id}}}' | dagger query
+echo '{potato{myFunction(stringArg:"hey"){id}}}' | dagger query
 ```
 
-Let's try changing the `main.go`. We named our module `vito`, so that means all
-methods on the `Vito` type are published as functions. Let's replace the
+Let's try changing the `main.go`. We named our module `potato`, so that means all
+methods on the `Potato` type are published as functions. Let's replace the
 template with something simpler:
 
 ```go
@@ -108,10 +111,10 @@ package main
 
 import "context"
 
-type Vito struct{}
+type Potato struct{}
 
-func (m *Vito) HelloWorld(context.Context) (string, error) {
-  return "hey", nil
+func (m *Potato) HelloWorld(context.Context) (string, error) {
+	return "hey", nil
 }
 ```
 
@@ -125,7 +128,7 @@ future.
 To run the new function, once again use `dagger query`:
 
 ```sh
-echo '{vito{helloWorld}}' | dagger query
+echo '{potato{helloWorld}}' | dagger query
 ```
 
 That's it! ...For now.
@@ -139,13 +142,13 @@ package main
 
 import "context"
 
-type Vito struct{}
+type Potato struct{}
 
-func (m *Vito) HelloWorld(context.Context) (string, error) {
+func (m *Potato) HelloWorld(context.Context) (string, error) {
   return "hey", nil
 }
 
-func (m *Vito) Snyk(ctx context.Context, ctr *Container) (*Container, error) {
+func (m *Potato) Snyk(ctx context.Context, ctr *Container) (*Container, error) {
   return ctr, nil
 }
 
@@ -162,6 +165,11 @@ func (ctr *Container) Snyk(ctx context.Context, token string, path string) (*Con
   return c, nil
 }
 ```
+
+> **CAVEAT:** there is currently a bug where functions added to a core type. In
+> order for these functions to be discovered, the core type must be referenced
+> by a function signature added to the module's type. The example above only
+> works because of the `Potato.Snyk` method.
 
 Next, run `dagger mod sync`.
 
