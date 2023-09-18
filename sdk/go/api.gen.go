@@ -4,10 +4,24 @@ package dagger
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 )
+
+// assertNotNil panic if the given value is nil.
+// This function is used to validate that input with pointer type are not nil.
+// See https://github.com/dagger/dagger/issues/5696 for more context.
+func assertNotNil(argName string, value any) {
+	// We use reflect because just comparing value to nil is not working since
+	// the value is wrapped into a type when passed as parameter.
+	// E.g., nil become (*dagger.File)(nil).
+	if reflect.ValueOf(value).IsNil() {
+		panic(fmt.Sprintf("unexpected nil pointer for argument %q", argName))
+	}
+}
 
 // A global cache volume identifier.
 type CacheID string
@@ -146,6 +160,7 @@ type ContainerBuildOpts struct {
 
 // Initializes this container from a Dockerfile build.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
+	assertNotNil("context", context)
 	q := r.q.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerfile` optional argument
@@ -471,6 +486,7 @@ type ContainerImportOpts struct {
 // NOTE: this involves unpacking the tarball to an OCI store on the host at
 // $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
 func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
+	assertNotNil("source", source)
 	q := r.q.Select("import")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `tag` optional argument
@@ -732,6 +748,7 @@ type ContainerWithDirectoryOpts struct {
 
 // Retrieves this container plus a directory written at the given path.
 func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
+	assertNotNil("directory", directory)
 	q := r.q.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -902,6 +919,7 @@ type ContainerWithFileOpts struct {
 
 // Retrieves this container plus the contents of the given file copied to the given path.
 func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
+	assertNotNil("source", source)
 	q := r.q.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -965,6 +983,7 @@ type ContainerWithMountedCacheOpts struct {
 
 // Retrieves this container plus a cache volume mounted at the given path.
 func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
+	assertNotNil("cache", cache)
 	q := r.q.Select("withMountedCache")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -1001,6 +1020,7 @@ type ContainerWithMountedDirectoryOpts struct {
 
 // Retrieves this container plus a directory mounted at the given path.
 func (r *Container) WithMountedDirectory(path string, source *Directory, opts ...ContainerWithMountedDirectoryOpts) *Container {
+	assertNotNil("source", source)
 	q := r.q.Select("withMountedDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1029,6 +1049,7 @@ type ContainerWithMountedFileOpts struct {
 
 // Retrieves this container plus a file mounted at the given path.
 func (r *Container) WithMountedFile(path string, source *File, opts ...ContainerWithMountedFileOpts) *Container {
+	assertNotNil("source", source)
 	q := r.q.Select("withMountedFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1062,6 +1083,7 @@ type ContainerWithMountedSecretOpts struct {
 
 // Retrieves this container plus a secret mounted into a file at the given path.
 func (r *Container) WithMountedSecret(path string, source *Secret, opts ...ContainerWithMountedSecretOpts) *Container {
+	assertNotNil("source", source)
 	q := r.q.Select("withMountedSecret")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1136,6 +1158,7 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 
 // Retrieves this container with a registry authentication for a given address.
 func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
+	assertNotNil("secret", secret)
 	q := r.q.Select("withRegistryAuth")
 	q = q.Arg("address", address)
 	q = q.Arg("username", username)
@@ -1149,6 +1172,7 @@ func (r *Container) WithRegistryAuth(address string, username string, secret *Se
 
 // Initializes this container from this DirectoryID.
 func (r *Container) WithRootfs(directory *Directory) *Container {
+	assertNotNil("directory", directory)
 	q := r.q.Select("withRootfs")
 	q = q.Arg("directory", directory)
 
@@ -1160,6 +1184,7 @@ func (r *Container) WithRootfs(directory *Directory) *Container {
 
 // Retrieves this container plus an env variable containing the given secret.
 func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
+	assertNotNil("secret", secret)
 	q := r.q.Select("withSecretVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
@@ -1181,6 +1206,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+	assertNotNil("service", service)
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
@@ -1203,6 +1229,7 @@ type ContainerWithUnixSocketOpts struct {
 
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket, opts ...ContainerWithUnixSocketOpts) *Container {
+	assertNotNil("source", source)
 	q := r.q.Select("withUnixSocket")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
@@ -1367,6 +1394,7 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 // Gets the difference between this directory and an another directory.
 func (r *Directory) Diff(other *Directory) *Directory {
+	assertNotNil("other", other)
 	q := r.q.Select("diff")
 	q = q.Arg("other", other)
 
@@ -1562,6 +1590,7 @@ type DirectoryWithDirectoryOpts struct {
 
 // Retrieves this directory plus a directory written at the given path.
 func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
+	assertNotNil("directory", directory)
 	q := r.q.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -1592,6 +1621,7 @@ type DirectoryWithFileOpts struct {
 
 // Retrieves this directory plus the contents of the given file copied to the given path.
 func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
+	assertNotNil("source", source)
 	q := r.q.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
@@ -2161,6 +2191,7 @@ func (r *Project) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // Initialize this project from the given directory and config path
 func (r *Project) Load(source *Directory, configPath string) *Project {
+	assertNotNil("source", source)
 	q := r.q.Select("load")
 	q = q.Arg("source", source)
 	q = q.Arg("configPath", configPath)
