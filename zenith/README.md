@@ -135,6 +135,77 @@ That's it! ...For now.
 
 ## More things you can do
 
+### Chaining
+
+Your functions can return objects, which in turn can define new functions. This allows for "chaining" of functions in the same style as the core Dagger API.
+
+As long as your object can be JSON-serialized by your SDK, its state will be preserved and passed to the next function in the chain.
+
+Here is an example module using the Go SDK:
+
+```golang
+// A Dagger module for saying hello to the world
+type HelloWorld struct {
+  Greeting string
+  Name string
+}
+
+func (hello *HelloWorld) WithGreeting(greeting string) (*HelloWorld, error) {
+  hello.Greeting = greeting
+  return hello, nil
+}
+
+func (hello *HellowWorld) WithName(name string) (*HelloWorld, error) {
+  hello.Name = name
+  return hello, nil
+}
+
+func (hello *HelloWorld) Message() (string, error) {
+  var (
+    greeting = hello.Greeting
+    name = hello.Name
+  )
+  if greeting == "" {
+    greeting = "Hello"
+  }
+  if name == "" {
+    name = "World"
+  }
+  return fmt.Sprintf("%s, %s!", greeting, name)
+}
+```
+
+And here is an example query for this module:
+
+```graphql
+{
+  helloWorld {
+    message
+    withName(name: "Monde") {
+      withGreeting(greeting: "Bonjour") {
+        message
+      }
+    }
+  }
+}
+```
+
+The result will be:
+
+```json
+{
+  "helloWorld": {
+    "message": "Hello, World!",
+    "withName": {
+      "withGreeting": {
+        "message": "Bonjour, Monde!"
+      }
+    }
+  }
+}```
+
+### Extend core types
+
 You can add a new function to accept and return a `*Container`.
 
 ```go
