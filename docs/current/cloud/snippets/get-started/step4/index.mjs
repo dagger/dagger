@@ -1,8 +1,8 @@
-import { connect } from "@dagger.io/dagger";
+import { connect } from "@dagger.io/dagger"
 
 connect(
   async (client) => {
-    const nodeCache = client.cacheVolume("node");
+    const nodeCache = client.cacheVolume("node")
 
     const source = client
       .container()
@@ -11,16 +11,16 @@ connect(
         "/src",
         client.host().directory(".", { exclude: ["node_modules/", "ci/"] }),
       )
-      .withMountedCache("/src/node_modules", nodeCache);
+      .withMountedCache("/src/node_modules", nodeCache)
 
-    const runner = source.withWorkdir("/src").withExec(["npm", "install"]);
+    const runner = source.withWorkdir("/src").withExec(["npm", "install"])
 
-    const test = runner.withExec(["npm", "test", "--", "--watchAll=false"]);
+    const test = runner.withExec(["npm", "test", "--", "--watchAll=false"])
 
     await test
       .withExec(["npm", "run", "build"])
       .directory("./build")
-      .export("./build");
+      .export("./build")
 
     const imageRef = await client
       .container()
@@ -29,8 +29,8 @@ connect(
         "/usr/share/nginx/html",
         client.host().directory("./build"),
       )
-      .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000));
-    console.log(`Published image to: ${imageRef}`);
+      .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000))
+    console.log(`Published image to: ${imageRef}`)
   },
   { LogOutput: process.stdout },
-);
+)
