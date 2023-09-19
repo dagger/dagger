@@ -394,22 +394,6 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 	return nil
 }
 
-func apiTypeKindToGoType(typeDef *dagger.TypeDefInput) string {
-	switch typeDef.Kind {
-	case dagger.Stringkind:
-		return "string"
-	case dagger.Integerkind:
-		return "int"
-	case dagger.Booleankind:
-		return "bool"
-	case dagger.Listkind:
-		return "[]" + apiTypeKindToGoType(typeDef.AsList.ElementTypeDef)
-	case dagger.Objectkind:
-		return typeDef.AsObject.Name
-	}
-	return ""
-}
-
 type parseState struct {
 	visitedStructs map[string]struct{}
 	pkgs           []*packages.Package
@@ -468,25 +452,25 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 	if named == nil {
 		return nil, fmt.Errorf("struct types must be named")
 	}
-	name := named.Obj().Name()
-	if name == "" {
+	typeName := named.Obj().Name()
+	if typeName == "" {
 		return nil, fmt.Errorf("struct types must be named")
 	}
 	// Return "stub" type if we've already handled this type; the full definition that includes all fields+functions
 	// only needs to appear once. Every other occurrence should just have a ref to the object's name.
-	if _, ok := ps.visitedStructs[name]; ok {
+	if _, ok := ps.visitedStructs[typeName]; ok {
 		return &dagger.TypeDefInput{
 			Kind:     dagger.Objectkind,
-			AsObject: &dagger.ObjectTypeDefInput{Name: name},
+			AsObject: &dagger.ObjectTypeDefInput{Name: typeName},
 		}, nil
 	}
 	// we only cache the type def w/ the name so that an future encounters with it just result in that stub
 	// being used rather than the whole def being included many times
-	ps.visitedStructs[name] = struct{}{}
+	ps.visitedStructs[typeName] = struct{}{}
 
 	typeDef := &dagger.TypeDefInput{
 		Kind:     dagger.Objectkind,
-		AsObject: &dagger.ObjectTypeDefInput{Name: name},
+		AsObject: &dagger.ObjectTypeDefInput{Name: typeName},
 	}
 	tokenFile := ps.fset.File(named.Obj().Pos())
 	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
@@ -510,145 +494,26 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		if !method.Exported() {
 			continue
 		}
-		fnTypeDef := &dagger.FunctionDef{
-			Name: method.Name(),
-		}
 
-		funcDecl, err := ps.declForFunc(method)
+		fnTypeDef, err := ps.goMethodToAPIFunctionDef(typeName, method, named)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find decl for method %s: %w", method.Name(), err)
-		}
-		if doc := funcDecl.Doc; doc != nil {
-			fnTypeDef.Description = doc.Text()
-		}
-
-		methodSig, ok := method.Type().(*types.Signature)
-		if !ok {
-			return nil, fmt.Errorf("expected method to be a func, got %T", method.Type())
-		}
-
-		// stash away the method signature so we can remember details on how it's
-		// invoked (e.g. no error return, no ctx arg, error-only return, etc)
-		ps.methods[methodKey{name, method.Name()}] = methodSig
-
-		for i := 0; i < methodSig.Params().Len(); i++ {
-			param := methodSig.Params().At(i)
-
-			if i == 0 && param.Type().String() == "context.Context" {
-				// ignore ctx arg
-				continue
-			}
-
-			if opts, ok := namedOrDirectStruct(param.Type()); ok {
-				for f := 0; f < opts.NumFields(); f++ {
-					param := opts.Field(f)
-
-					tags, err := structtag.Parse(opts.Tag(f))
-					if err != nil {
-						return nil, fmt.Errorf("failed to parse struct tag: %w", err)
-					}
-
-					argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
-					if err != nil {
-						return nil, fmt.Errorf("failed to convert param type: %w", err)
-					}
-
-					// all values in a struct are optional
-					argTypeDef.Optional = true
-
-					def := &dagger.FunctionArgDef{
-						Name: strcase.ToLowerCamel(param.Name()),
-					}
-
-					if tags != nil {
-						// TODO: support this?
-						// if tag, err := tags.Get("name"); err == nil {
-						// 	def.Name = tag.Value()
-						// }
-
-						if tag, err := tags.Get("required"); err == nil {
-							argTypeDef.Optional = tag.Value() == "true"
-						}
-
-						if tag, err := tags.Get("doc"); err == nil {
-							def.Description = tag.Value()
-						}
-
-						if tag, err := tags.Get("default"); err == nil {
-							if param.Type().String() == "string" {
-								enc, err := json.Marshal(tag.Value())
-								if err != nil {
-									return nil, fmt.Errorf("failed to marshal default value: %w", err)
-								}
-								def.DefaultValue = dagger.JSON(enc)
-							} else {
-								def.DefaultValue = dagger.JSON(tag.Value())
-							}
-						}
-					}
-
-					def.TypeDef = argTypeDef
-
-					fnTypeDef.Args = append(fnTypeDef.Args, def)
-				}
-			} else {
-				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert param type: %w", err)
-				}
-
-				fnTypeDef.Args = append(fnTypeDef.Args, &dagger.FunctionArgDef{
-					Name:    param.Name(),
-					TypeDef: argTypeDef,
-				})
-			}
-		}
-
-		methodResults := methodSig.Results()
-		switch methodResults.Len() {
-		case 0:
-			fnTypeDef.ReturnType = &dagger.TypeDefInput{
-				Kind:     dagger.Voidkind,
-				Optional: true,
-			}
-		case 1:
-			result := methodResults.At(0).Type()
-			if result.String() == errorTypeName {
-				fnTypeDef.ReturnType = &dagger.TypeDefInput{
-					Kind:     dagger.Voidkind,
-					Optional: true,
-				}
-			} else {
-				resultTypeDef, err := ps.goTypeToAPIType(result, nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert result type: %w", err)
-				}
-				fnTypeDef.ReturnType = resultTypeDef
-			}
-		case 2:
-			result := methodResults.At(0).Type()
-			resultTypeDef, err := ps.goTypeToAPIType(result, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert result type: %w", err)
-			}
-			fnTypeDef.ReturnType = resultTypeDef
-		default:
-			return nil, fmt.Errorf("method %s has too many return values", method.Name())
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.Name(), err)
 		}
 
 		typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fnTypeDef)
 	}
 
 	if isDaggerGenerated {
-		// If this object is from the core API or another dependency, we only care about any new methods
-		// being attached to it, so we're all done in this case
+		// If this object is from the core API or another dependency, we only care
+		// about any new methods being attached to it, so we're all done in this
+		// case
 		return typeDef, nil
 	}
 
 	// Fill out the Description with the comment above the struct (if any)
 	typeSpec, err := ps.typeSpecForNamedType(named)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find decl for named type %s: %w", name, err)
+		return nil, fmt.Errorf("failed to find decl for named type %s: %w", typeName, err)
 	}
 	if doc := typeSpec.Doc; doc != nil {
 		typeDef.AsObject.Description = doc.Text()
@@ -680,6 +545,136 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 	}
 
 	return typeDef, nil
+}
+
+func (ps *parseState) goMethodToAPIFunctionDef(typeName string, method *types.Func, named *types.Named) (*dagger.FunctionDef, error) {
+	fnTypeDef := &dagger.FunctionDef{
+		Name: method.Name(),
+	}
+
+	funcDecl, err := ps.declForFunc(method)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find decl for method %s: %w", method.Name(), err)
+	}
+	if doc := funcDecl.Doc; doc != nil {
+		fnTypeDef.Description = doc.Text()
+	}
+
+	methodSig, ok := method.Type().(*types.Signature)
+	if !ok {
+		return nil, fmt.Errorf("expected method to be a func, got %T", method.Type())
+	}
+
+	// stash away the method signature so we can remember details on how it's
+	// invoked (e.g. no error return, no ctx arg, error-only return, etc)
+	ps.methods[methodKey{typeName, method.Name()}] = methodSig
+
+	for i := 0; i < methodSig.Params().Len(); i++ {
+		param := methodSig.Params().At(i)
+
+		if i == 0 && param.Type().String() == "context.Context" {
+			// ignore ctx arg
+			continue
+		}
+
+		if opts, ok := namedOrDirectStruct(param.Type()); ok {
+			for f := 0; f < opts.NumFields(); f++ {
+				param := opts.Field(f)
+
+				tags, err := structtag.Parse(opts.Tag(f))
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse struct tag: %w", err)
+				}
+
+				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert param type: %w", err)
+				}
+
+				// all values in a struct are optional
+				argTypeDef.Optional = true
+
+				def := &dagger.FunctionArgDef{
+					Name: strcase.ToLowerCamel(param.Name()),
+				}
+
+				if tags != nil {
+					// TODO: support this?
+					// if tag, err := tags.Get("name"); err == nil {
+					// 	def.Name = tag.Value()
+					// }
+
+					if tag, err := tags.Get("required"); err == nil {
+						argTypeDef.Optional = tag.Value() == "true"
+					}
+
+					if tag, err := tags.Get("doc"); err == nil {
+						def.Description = tag.Value()
+					}
+
+					if tag, err := tags.Get("default"); err == nil {
+						if param.Type().String() == "string" {
+							enc, err := json.Marshal(tag.Value())
+							if err != nil {
+								return nil, fmt.Errorf("failed to marshal default value: %w", err)
+							}
+							def.DefaultValue = dagger.JSON(enc)
+						} else {
+							def.DefaultValue = dagger.JSON(tag.Value())
+						}
+					}
+				}
+
+				def.TypeDef = argTypeDef
+
+				fnTypeDef.Args = append(fnTypeDef.Args, def)
+			}
+		} else {
+			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert param type: %w", err)
+			}
+
+			fnTypeDef.Args = append(fnTypeDef.Args, &dagger.FunctionArgDef{
+				Name:    param.Name(),
+				TypeDef: argTypeDef,
+			})
+		}
+	}
+
+	methodResults := methodSig.Results()
+	switch methodResults.Len() {
+	case 0:
+		fnTypeDef.ReturnType = &dagger.TypeDefInput{
+			Kind:     dagger.Voidkind,
+			Optional: true,
+		}
+	case 1:
+		result := methodResults.At(0).Type()
+		if result.String() == errorTypeName {
+			fnTypeDef.ReturnType = &dagger.TypeDefInput{
+				Kind:     dagger.Voidkind,
+				Optional: true,
+			}
+		} else {
+			resultTypeDef, err := ps.goTypeToAPIType(result, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert result type: %w", err)
+			}
+			fnTypeDef.ReturnType = resultTypeDef
+		}
+	case 2:
+		result := methodResults.At(0).Type()
+		resultTypeDef, err := ps.goTypeToAPIType(result, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result type: %w", err)
+		}
+		fnTypeDef.ReturnType = resultTypeDef
+	default:
+		return nil, fmt.Errorf("method %s has too many return values", method.Name())
+	}
+
+	return fnTypeDef, nil
 }
 
 func namedOrDirectStruct(t types.Type) (*types.Struct, bool) {
