@@ -313,6 +313,9 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 }
 
 func proxyEnvList(p *pb.ProxyEnv) []string {
+	if p == nil {
+		return nil
+	}
 	out := []string{}
 	if v := p.HttpProxy; v != "" {
 		out = append(out, "HTTP_PROXY="+v, "http_proxy="+v)
