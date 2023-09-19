@@ -9,7 +9,7 @@ pipeline {
     stage("dagger") {
       steps {
         sh '''
-            dagger run go run main.go./ci ci
+            dagger run go run main.go
         '''
       }
     }

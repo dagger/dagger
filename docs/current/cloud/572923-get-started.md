@@ -185,6 +185,10 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 ```groovy title="Jenkinsfile" file=./snippets/get-started/go/Jenkinsfile
 ```
 
+:::note
+This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s).
+:::
+
 </TabItem>
 <TabItem value="ArgoCD">
 
