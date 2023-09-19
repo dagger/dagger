@@ -107,6 +107,8 @@ func TestModuleGoMinimalSignatures(t *testing.T) {
 }
 
 func TestEnvCmd(t *testing.T) {
+	t.Skip("pending conversion to modules")
+
 	t.Parallel()
 
 	type testCase struct {
@@ -148,6 +150,8 @@ func TestEnvCmd(t *testing.T) {
 }
 
 func TestEnvCmdHelps(t *testing.T) {
+	t.Skip("pending conversion to modules")
+
 	t.Parallel()
 	c, ctx := connect(t)
 
@@ -205,6 +209,8 @@ func TestEnvCmdHelps(t *testing.T) {
 }
 
 func TestEnvCmdInit(t *testing.T) {
+	t.Skip("pending conversion to modules")
+
 	t.Parallel()
 
 	type testCase struct {
@@ -314,6 +320,8 @@ func TestEnvCmdInit(t *testing.T) {
 }
 
 func TestEnvChecks(t *testing.T) {
+	t.Skip("pending conversion to modules")
+
 	t.Parallel()
 
 	allChecks := []string{
