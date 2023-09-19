@@ -9,9 +9,9 @@ import TabItem from "@theme/TabItem";
 
 ## Introduction
 
-This guide helps you get started with Dagger Cloud.
+Dagger Cloud provides pipeline visualization, operational insights, and distributed caching for your Daggerized pipelines.
 
-Here are the steps you’ll follow in this guide:
+This guide helps you get started with Dagger Cloud. Here are the steps you'll follow:
 
 - Sign up for Dagger Cloud
 - Connect Dagger Cloud with your CI provider or CI tool
