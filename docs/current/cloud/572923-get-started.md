@@ -404,10 +404,8 @@ This guide uses the starter React application and Dagger pipeline from the [Dagg
   This Dagger pipeline uses the Dagger Go SDK to test, build and publish a containerized version of the application to a public registry.
 
   :::info
-  Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
+  Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation and equivalent pipeline code for Node.js and Python in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
   :::
-
-  [TODO: Add pipeline code in other SDKs]
 
 1. Commit the changes:
 
