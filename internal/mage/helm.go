@@ -12,6 +12,40 @@ import (
 
 type Helm mg.Namespace
 
+func (Helm) Test(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("helm").Pipeline("test")
+	helmChart := c.Host().Directory("helm/dagger")
+	helm := c.Container().From("alpine/helm:3.12.3").
+		WithDirectory("/tmp/dagger-helm", helmChart).
+		WithWorkdir("/tmp/dagger-helm")
+
+	_, err = helm.WithExec([]string{"lint"}).Sync(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = helm.WithExec([]string{"lint", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).Sync(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = helm.WithExec([]string{"template", ".", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).Sync(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (Helm) Publish(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
