@@ -1,5 +1,5 @@
 .docker:
-  image: node:18-alpine
+  image: node:16-alpine
   services:
     - docker:${DOCKER_VERSION}-dind
   variables:
