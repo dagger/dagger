@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: dagger-in-argo-
+spec:
+  entrypoint: dagger-workflow
+  volumes:
+  templates:
+    - name: dagger-workflow
+      inputs:
+      container:
+       …
+        env:
+        - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+          value: "unix:///var/run/buildkit/buildkitd.sock"
+        // highlight-start
+        - name: "DAGGER_CLOUD_TOKEN"
+          valueFrom:
+            secretKeyRef:
+              name: dagger-cloud-token
+              key: token
+        // highlight-end
+        volumeMounts:
+          - name: dagger-conn
+            mountPath: /var/run/buildkit
+          - name: gomod-cache
+            mountPath: /go/pkg/mod

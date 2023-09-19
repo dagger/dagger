@@ -1,0 +1,29 @@
+.docker:
+  image: golang:1.20-alpine
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_DRIVER: overlay2
+    DOCKER_VERSION: '20.10.16'
+    // highlight-start
+    DAGGER_CLOUD_TOKEN: $DAGGER_TOKEN
+    // highlight-end
+.dagger:
+  extends: [.docker]
+  before_script:
+    - apk add docker-cli curl
+    - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+build:
+  extends: [.dagger]
+  script:
+    - dagger run go run main.go
+// highlight-start
+# optional
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+// highlight-end

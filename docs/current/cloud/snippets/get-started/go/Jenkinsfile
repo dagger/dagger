@@ -1,0 +1,17 @@
+pipeline {
+  agent { label 'dagger' }
+
+  environment {
+   DAGGER_CLOUD_TOKEN =  credentials('DAGGER_TOKEN')
+  }
+
+  stages {
+    stage("dagger") {
+      steps {
+        sh '''
+            dagger run go run main.go./ci ci
+        '''
+      }
+    }
+  }
+}
