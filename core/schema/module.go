@@ -124,7 +124,8 @@ func (s *moduleSchema) newFunction(ctx *core.Context, _ *core.Query, args struct
 	var setFnModuleID func(def *core.Function)
 	walkTypeDef = func(def *core.TypeDef) {
 		switch def.Kind {
-		case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean:
+		case core.TypeDefKindString, core.TypeDefKindInteger,
+			core.TypeDefKindBoolean, core.TypeDefKindVoid:
 			return
 		case core.TypeDefKindList:
 			walkTypeDef(def.AsList.ElementTypeDef)
@@ -379,7 +380,8 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 // result of a function call but hitting an error about missing content.
 func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value any, typeDef *core.TypeDef) error {
 	switch typeDef.Kind {
-	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean:
+	case core.TypeDefKindString, core.TypeDefKindInteger,
+		core.TypeDefKindBoolean, core.TypeDefKindVoid:
 		return nil
 	case core.TypeDefKindList:
 		listValue, ok := value.([]any)
@@ -717,6 +719,11 @@ func (s *moduleSchema) addTypeDefToSchema(
 			NamedType: "Boolean",
 			NonNull:   !typeDef.Optional,
 		}, nil
+	case core.TypeDefKindVoid:
+		return &ast.Type{
+			NamedType: "Void",
+			NonNull:   !typeDef.Optional,
+		}, nil
 	case core.TypeDefKindList:
 		if typeDef.AsList == nil {
 			return nil, fmt.Errorf("expected list type def, got nil")
@@ -919,6 +926,14 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 		return &ast.Value{
 			Kind: ast.BooleanValue,
 			Raw:  strconv.FormatBool(boolVal),
+		}, nil
+	case core.TypeDefKindVoid:
+		if val != nil {
+			return nil, fmt.Errorf("expected nil value, got %T", val)
+		}
+		return &ast.Value{
+			Kind: ast.NullValue,
+			Raw:  "null",
 		}, nil
 	case core.TypeDefKindList:
 		astVal := &ast.Value{Kind: ast.ListValue}

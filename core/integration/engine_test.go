@@ -14,8 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const alpineImage = "alpine:3.18.2"
-
 func devEngineContainer(c *dagger.Client) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that was set up by
 	// internal/mage/engine.go:test or by ./hack/dev. This is used to spin up additional dev engines.

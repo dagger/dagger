@@ -196,6 +196,7 @@ const (
 	TypeDefKindBoolean TypeDefKind = "BooleanKind"
 	TypeDefKindList    TypeDefKind = "ListKind"
 	TypeDefKindObject  TypeDefKind = "ObjectKind"
+	TypeDefKindVoid    TypeDefKind = "VoidKind"
 )
 
 type FunctionCall struct {

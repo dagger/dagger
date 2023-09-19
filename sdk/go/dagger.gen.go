@@ -3506,4 +3506,5 @@ const (
 	Listkind    TypeDefKind = "ListKind"
 	Objectkind  TypeDefKind = "ObjectKind"
 	Stringkind  TypeDefKind = "StringKind"
+	Voidkind    TypeDefKind = "VoidKind"
 )

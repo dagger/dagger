@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -20,6 +22,89 @@ import (
 * that the codegen of the testdata envs are up to date (or incorporate that into a cli command)
 * if a dependency changes, then checks should re-run
  */
+
+//go:embed testdata/modules/go/minimal/main.go
+var minimalGo string
+
+func daggerExec(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func daggerQuery(query string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+			Stdin:                         query,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
+	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
+	require.NoError(t, err)
+
+	// log generated code to make later errors easier to diagnose
+	lines := strings.Split(generated, "\n")
+	for i, line := range lines {
+		t.Logf("%04d | %s\n", i+1, line)
+	}
+}
+
+func TestModuleGoMinimalSignatures(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: minimalGo,
+		}).
+		With(daggerExec("mod", "sync"))
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	t.Run("func() string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
+	})
+
+	t.Run("func(context.Context) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"helloContext":"hello context"}}`, out)
+	})
+
+	t.Run("func() (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{helloStringError}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"helloStringError":"hello i worked"}}`, out)
+	})
+
+	t.Run("func()", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
+	})
+
+	t.Run("func() error", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{helloVoidError}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"helloVoidError":null}}`, out)
+	})
+}
 
 func TestEnvCmd(t *testing.T) {
 	t.Parallel()

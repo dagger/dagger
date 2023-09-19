@@ -123,4 +123,7 @@ enum TypeDefKind {
   BooleanKind
   ListKind
   ObjectKind
+
+  "Void is a special kind that can only be used as a return type"
+  VoidKind
 }

@@ -81,14 +81,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 		visitedStructs: make(map[string]struct{}),
 		pkgs:           pkgs,
 		fset:           fset,
-	}
-	moduleAPITypeDef, err := ps.goTypeToAPIType(moduleObj.Type(), nil)
-	if err != nil {
-		return defaultErrorMainSrc(fmt.Sprintf("failed to convert module type: %v", err))
+		methods:        make(map[methodKey]*types.Signature),
 	}
 
 	objFunctionCases := map[string][]Code{}
-	if err := fillObjectFunctionCases(moduleAPITypeDef, objFunctionCases, moduleStructName); err != nil {
+
+	if err := ps.fillObjectFunctionCases(moduleObj.Type(), objFunctionCases, moduleStructName); err != nil {
 		// errors indicate an internal problem rather than something w/ user code, so panic instead
 		panic(err)
 	}
@@ -199,7 +197,11 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object
-func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Code, moduleName string) error {
+func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code, moduleName string) error {
+	typeDef, err := ps.goTypeToAPIType(type_, nil)
+	if err != nil {
+		return fmt.Errorf("failed to convert module type: %w", err)
+	}
 	if typeDef.Kind != dagger.Objectkind {
 		return nil
 	}
@@ -217,6 +219,8 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 	}
 
 	for _, fnDef := range typeDef.AsObject.Functions {
+		sig := ps.methods[methodKey{objName, fnDef.Name}]
+
 		statements := []Code{
 			Var().Id("err").Error(),
 		}
@@ -228,8 +232,14 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 			checkErrStatement,
 		)
 
-		fnCallArgs := []Code{Op("&").Id(parentVarName), Id("ctx")}
-		for _, argDef := range fnDef.Args {
+		fnCallArgs := []Code{Op("&").Id(parentVarName)}
+
+		// TODO(vito): should this be required?
+		if sig.Params().Len() > 0 && sig.Params().At(0).Type().String() == "context.Context" {
+			fnCallArgs = append(fnCallArgs, Id("ctx"))
+		}
+
+		for i, argDef := range fnDef.Args {
 			statements = append(statements,
 				Var().Id(argDef.Name).Id(apiTypeKindToGoType(argDef.TypeDef)),
 				Err().Op("=").Qual("json", "Unmarshal").Call(
@@ -243,18 +253,71 @@ func fillObjectFunctionCases(typeDef *dagger.TypeDefInput, cases map[string][]Co
 				fnCallArgs = append(fnCallArgs, Id(argDef.Name))
 			case dagger.Objectkind:
 				fnCallArgs = append(fnCallArgs, Op("&").Id(argDef.Name))
-				if err := fillObjectFunctionCases(argDef.TypeDef, cases, moduleName); err != nil {
+				if err := ps.fillObjectFunctionCases(sig.Params().At(i).Type(), cases, moduleName); err != nil {
 					return err
 				}
 			}
 		}
 
-		statements = append(statements, Return(Parens(Op("*").Id(objName)).Dot(fnDef.Name).Call(fnCallArgs...)))
+		results := sig.Results()
 
-		cases[objName] = append(cases[objName], Case(Lit(fnDef.Name)).Block(statements...))
+		switch results.Len() {
+		case 2:
+			// assume second value is error
 
-		if err := fillObjectFunctionCases(fnDef.ReturnType, cases, moduleName); err != nil {
-			return err
+			if results.At(1).Type().String() != "error" {
+				// sanity check
+				return fmt.Errorf("second return value must be error, have %s", results.At(0).Type().String())
+			}
+
+			statements = append(statements, Return(
+				Parens(Op("*").Id(objName)).Dot(fnDef.Name).Call(fnCallArgs...),
+			))
+
+			cases[objName] = append(cases[objName], Case(Lit(fnDef.Name)).Block(statements...))
+
+			if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases, moduleName); err != nil {
+				return err
+			}
+		case 1:
+			if results.At(0).Type().String() == "error" {
+				// void error return
+
+				statements = append(statements, Return(
+					Nil(),
+					Parens(Op("*").Id(objName)).Dot(fnDef.Name).Call(fnCallArgs...),
+				))
+
+				cases[objName] = append(cases[objName], Case(Lit(fnDef.Name)).Block(statements...))
+			} else {
+				// non-error return
+
+				statements = append(statements, Return(
+					Parens(Op("*").Id(objName)).Dot(fnDef.Name).Call(fnCallArgs...),
+					Nil(),
+				))
+
+				cases[objName] = append(cases[objName], Case(Lit(fnDef.Name)).Block(statements...))
+
+				if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases, moduleName); err != nil {
+					return err
+				}
+			}
+
+		case 0:
+			// void return
+			//
+			// NB(vito): it's really weird to have a fully void return (not even
+			// error), but we should still support it for completeness.
+
+			statements = append(statements,
+				Parens(Op("*").Id(objName)).Dot(fnDef.Name).Call(fnCallArgs...),
+				Return(Nil(), Nil()))
+
+			cases[objName] = append(cases[objName], Case(Lit(fnDef.Name)).Block(statements...))
+
+		default:
+			return fmt.Errorf("unexpected number of results from method %s: %d", fnDef.Name, results.Len())
 		}
 	}
 
@@ -323,6 +386,12 @@ type parseState struct {
 	visitedStructs map[string]struct{}
 	pkgs           []*packages.Package
 	fset           *token.FileSet
+	methods        map[methodKey]*types.Signature
+}
+
+type methodKey struct {
+	recvName string
+	name     string
 }
 
 func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagger.TypeDefInput, error) {
@@ -428,6 +497,10 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 			return nil, fmt.Errorf("expected method to be a func, got %T", method.Type())
 		}
 
+		// stash away the method signature so we can remember details on how it's
+		// invoked (e.g. no error return, no ctx arg, error-only return, etc)
+		ps.methods[methodKey{name, method.Name()}] = methodSig
+
 		for i := 0; i < methodSig.Params().Len(); i++ {
 			param := methodSig.Params().At(i)
 
@@ -450,19 +523,36 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		}
 
 		methodResults := methodSig.Results()
-		if methodResults.Len() == 0 {
-			return nil, fmt.Errorf("method %s has no return value", method.Name())
-		}
-		if methodResults.Len() > 2 {
+		switch methodResults.Len() {
+		case 0:
+			fnTypeDef.ReturnType = &dagger.TypeDefInput{
+				Kind:     dagger.Voidkind,
+				Optional: true,
+			}
+		case 1:
+			result := methodResults.At(0).Type()
+			if result.String() == "error" {
+				fnTypeDef.ReturnType = &dagger.TypeDefInput{
+					Kind:     dagger.Voidkind,
+					Optional: true,
+				}
+			} else {
+				resultTypeDef, err := ps.goTypeToAPIType(result, nil)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert result type: %w", err)
+				}
+				fnTypeDef.ReturnType = resultTypeDef
+			}
+		case 2:
+			result := methodResults.At(0).Type()
+			resultTypeDef, err := ps.goTypeToAPIType(result, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert result type: %w", err)
+			}
+			fnTypeDef.ReturnType = resultTypeDef
+		default:
 			return nil, fmt.Errorf("method %s has too many return values", method.Name())
 		}
-		// ignore error, which should be second or not present (for now, we can be more flexible later)
-		result := methodResults.At(0)
-		resultTypeDef, err := ps.goTypeToAPIType(result.Type(), nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert result type: %w", err)
-		}
-		fnTypeDef.ReturnType = resultTypeDef
 
 		typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fnTypeDef)
 	}
