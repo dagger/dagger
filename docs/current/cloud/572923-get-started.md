@@ -36,12 +36,12 @@ At the end of this step, you will have signed up for Dagger Cloud and obtained a
 
 Follow the steps below to sign up for Dagger Cloud, create an organization and obtain a Dagger Cloud token.
 
-1. Browse to the Dagger Cloud website at https://www.dagger.com/cloud/product.
-1. Click "Continue with GitHub" to log in with your GitHub account.
+1. Browse to the [Dagger Cloud website](https://www.dagger.io/cloud/signup).
+1. Click *Continue with GitHub* to log in with your GitHub account.
 
   [image]
 
-1. On the GitHub authorization screen, confirm the Dagger Cloud connection for authentication.Once authorized, you will be redirected to a welcome page and prompted to create a new organization. Enter a name for your organization in the "Organization Name" field. Click "Next" to proceed.
+1. On the GitHub authorization screen, confirm the Dagger Cloud connection for authentication.Once authorized, you will be redirected to a welcome page and prompted to create a new organization. Enter a name for your organization in the *Organization Name* field. Click *Next* to proceed.
 
   :::info
   The organization name can only contain alphanumeric characters and dashes and is unique across Dagger Cloud.
@@ -49,8 +49,8 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   [image]
 
-1. Review the available Dagger Cloud subscription plans. Choose a plan by clicking "Select".
-1. If you selected a team plan, you will be presented with the option to add teammates to your Dagger Cloud account. Enter one or more email addresses as required. Click"Next" to proceed.
+1. Review the available Dagger Cloud subscription plans. Choose a plan by clicking *Select*.
+1. If you selected a team plan, you will be presented with the option to add teammates to your Dagger Cloud account. Enter one or more email addresses as required. Click *Next* to proceed.
 
   :::note
   This step is optional and not available in individual plans.
@@ -58,7 +58,7 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   [image]
 
-1. Enter the required payment details. Click "Set payment method" to proceed.
+1. Enter the required payment details. Click *Set payment method* to proceed.
 
   [image]
 
@@ -66,11 +66,11 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   [image]
 
-1. Click "Go to dashboard" to visit the Dagger Cloud dashboard, which allows you to manage your Dagger Cloud organization and account.
+1. Click *Go to dashboard* to visit the Dagger Cloud dashboard, which allows you to manage your Dagger Cloud organization and account.
 
   [image]
 
-1. Click "Connect Dagger Cloud". You will be redirected to a page containing your Dagger Cloud token. Note this token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
+1. Click *Connect Dagger Cloud*. You will be redirected to a page containing your Dagger Cloud token. Note this token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
 
   [image]
 
@@ -244,70 +244,15 @@ The *Run Details* page includes detailed status and duration metadata about the 
 
 Dagger already comes with built-in support for [cache volumes](../quickstart/635927-caching.mdx), which can be used to cache packages and thereby avoid unnecessary rebuilds and test reruns. One of Dagger Cloud's most powerful features is its distributed cache, which enhances this support significantly and allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
-Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below:
+Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
-```go
-package main
-
-import (
-  "context"
-  "fmt"
-  "math"
-  "math/rand"
-  "os"
-
-  "dagger.io/dagger"
-)
-
-func main() {
-  ctx := context.Background()
-
-  // initialize Dagger client
-  client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-
-  if err != nil {
-    panic(err)
-  }
-  defer client.Close()
-
-  nodeCache := client.CacheVolume("node")
-
-  source := client.Container().
-    From("node:16").
-    WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
-      Exclude: []string{"node_modules/", "ci/"},
-    }).
-    WithMountedCache("/src/node_modules", nodeCache)
-
-  runner := source.WithWorkdir("/src").
-    WithExec([]string{"npm", "install"})
-
-  test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
-
-  _, err = test.WithExec([]string{"npm", "run", "build"}).
-    Directory("./build").
-    Export(ctx, "./build")
-
-  if err != nil {
-    panic(err)
-  }
-
-  ref, err := client.Container().
-    From("nginx:1.23-alpine").
-    WithDirectory("/usr/share/nginx/html", client.Host().Directory("./build")).
-    Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
-  if err != nil {
-    panic(err)
-  }
-
-  fmt.Printf("Published image to: %s\n", ref)
-}
+```go file=./snippets/get-started/step4/main.go
 ```
 
 This revised pipeline now uses a cache volume for the application dependencies.
 
 - It uses the client's `CacheVolume()` method to initialize a new cache volume.
-- It uses the `Container.WithMountedCache() method to mount this cache volume at the node_modules/ mount point in the container.
+- It uses the `Container.WithMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
 
 Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created cache volume listed and enabled.
 
@@ -325,10 +270,10 @@ This guide introduced you to Dagger Cloud and walked you registering a new organ
 
 Before you can integrate Dagger Cloud into your CI process, you need a Dagger pipeline and source code for it to interact with.
 
-If you don’t have these already, follow the steps below to create an application and its accompanying Dagger pipeline.
+If you don't have these already, follow the steps below to create an application and its accompanying Dagger pipeline.
 
 :::note
-This guide uses the starter React application and Dagger pipeline from the [Dagger Quickstart](../quickstart/index.mdx) in tandem with a GitHub repository. If you wish to use a different application or a different VCS, adapt the steps below accordingly.
+This section assumes that you have a Go development environment. It uses the starter React application and Dagger pipeline from the [Dagger Quickstart](../quickstart/index.mdx) in tandem with a GitHub repository. If you wish to use a different application or a different VCS, adapt the steps below accordingly.
 :::
 
 1. Begin by cloning the example application's repository:
@@ -347,58 +292,7 @@ This guide uses the starter React application and Dagger pipeline from the [Dagg
 
 1. Create a file named `main.go` and add the following code to it.
 
-  ```go
-  package main
-
-  import (
-    "context"
-    "fmt"
-    "math"
-    "math/rand"
-    "os"
-
-    "dagger.io/dagger"
-  )
-
-  func main() {
-    ctx := context.Background()
-
-    client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-
-    if err != nil {
-      panic(err)
-    }
-    defer client.Close()
-
-    source := client.Container().
-      From("node:16").
-      WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
-        Exclude: []string{"node_modules/", "ci/"},
-      })
-
-    runner := source.WithWorkdir("/src").
-      WithExec([]string{"npm", "install"})
-
-    test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
-
-    _, err = test.WithExec([]string{"npm", "run", "build"}).
-      Directory("./build").
-      Export(ctx, "./build")
-
-    if err != nil {
-      panic(err)
-    }
-
-    ref, err := client.Container().
-      From("nginx:1.23-alpine").
-      WithDirectory("/usr/share/nginx/html", client.Host().Directory("./build")).
-      Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
-    if err != nil {
-      panic(err)
-    }
-
-    fmt.Printf("Published image to: %s\n", ref)
-  }
+  ```go file=./snippets/get-started/appa/main.go
   ```
 
   This Dagger pipeline uses the Dagger Go SDK to test, build and publish a containerized version of the application to a public registry.
