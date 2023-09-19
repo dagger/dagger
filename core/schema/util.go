@@ -12,28 +12,28 @@ import (
 // stringResolver is used to generate a scalar resolver for a stringable type.
 func stringResolver[T ~string](sample T) ScalarResolver {
 	return ScalarResolver{
-		Serialize: func(value any) any {
+		Serialize: func(value any) (any, error) {
 			switch v := value.(type) {
 			case string, T:
-				return v
+				return v, nil
 			default:
-				panic(fmt.Sprintf("unexpected %T type %T", sample, v))
+				return nil, fmt.Errorf("unexpected %T type %T", sample, v)
 			}
 		},
-		ParseValue: func(value any) any {
+		ParseValue: func(value any) (any, error) {
 			switch v := value.(type) {
 			case string:
-				return T(v)
+				return T(v), nil
 			default:
-				panic(fmt.Sprintf("unexpected %T value type %T: %+v", sample, v, v))
+				return nil, fmt.Errorf("unexpected %T type %T", sample, v)
 			}
 		},
-		ParseLiteral: func(valueAST ast.Value) any {
+		ParseLiteral: func(valueAST ast.Value) (any, error) {
 			switch valueAST := valueAST.(type) {
 			case *ast.StringValue:
-				return T(valueAST.Value)
+				return T(valueAST.Value), nil
 			default:
-				panic(fmt.Sprintf("unexpected %T literal type: %T", sample, valueAST))
+				return nil, fmt.Errorf("unexpected %T literal type: %T", sample, valueAST)
 			}
 		},
 	}
@@ -41,30 +41,30 @@ func stringResolver[T ~string](sample T) ScalarResolver {
 
 var jsonResolver = ScalarResolver{
 	// serialize object to a JSON string when sending to clients
-	Serialize: func(value any) any {
+	Serialize: func(value any) (any, error) {
 		bs, err := json.Marshal(value)
 		if err != nil {
-			panic(fmt.Errorf("JSON scalar serialize error: %v", err))
+			return nil, fmt.Errorf("JSON scalar serialize error: %v", err)
 		}
-		return string(bs)
+		return string(bs), nil
 	},
 	// parse JSON string from clients into the equivalent Go type (string, slice, map, etc.)
-	ParseValue: func(value any) any {
+	ParseValue: func(value any) (any, error) {
 		switch v := value.(type) {
 		case string:
 			if v == "" {
-				return nil
+				return nil, nil
 			}
 			var x any
 			if err := json.Unmarshal([]byte(v), &x); err != nil {
-				panic(fmt.Errorf("JSON scalar parse value error: %v", err))
+				return nil, fmt.Errorf("JSON scalar parse error: %v", err)
 			}
-			return x
+			return x, nil
 		default:
-			panic(fmt.Errorf("JSON scalar parse value unexpected type %T", v))
+			return nil, fmt.Errorf("JSON scalar parse value unexpected type %T", v)
 		}
 	},
-	ParseLiteral: func(valueAST ast.Value) any {
+	ParseLiteral: func(valueAST ast.Value) (any, error) {
 		switch v := valueAST.(type) {
 		case *ast.StringValue:
 			var jsonStr string
@@ -72,40 +72,40 @@ var jsonResolver = ScalarResolver{
 				jsonStr = v.Value
 			}
 			if jsonStr == "" {
-				return nil
+				return nil, nil
 			}
 			var x any
 			if err := json.Unmarshal([]byte(jsonStr), &x); err != nil {
-				panic(fmt.Errorf("JSON scalar parse literal error: %v", err))
+				return nil, fmt.Errorf("JSON scalar parse literal error: %v", err)
 			}
-			return x
+			return x, nil
 		default:
-			panic(fmt.Errorf("unexpected literal type for json scalar: %T", valueAST))
+			return nil, fmt.Errorf("JSON scalar parse literal unexpected type %T", v)
 		}
 	},
 }
 
 var voidScalarResolver = ScalarResolver{
-	Serialize: func(value any) any {
+	Serialize: func(value any) (any, error) {
 		if value != nil {
-			panic(fmt.Errorf("void scalar serialize unexpected value: %v", value))
+			return nil, fmt.Errorf("void scalar serialize unexpected value: %v", value)
 		}
-		return nil
+		return nil, nil
 	},
-	ParseValue: func(value any) any {
+	ParseValue: func(value any) (any, error) {
 		if value != nil {
-			panic(fmt.Errorf("void scalar parse value unexpected value: %v", value))
+			return nil, fmt.Errorf("void scalar parse value unexpected value: %v", value)
 		}
-		return nil
+		return nil, nil
 	},
-	ParseLiteral: func(valueAST ast.Value) any {
+	ParseLiteral: func(valueAST ast.Value) (any, error) {
 		if valueAST == nil {
-			return nil
+			return nil, nil
 		}
 		if valueAST.GetValue() != nil {
-			panic(fmt.Errorf("void scalar parse literal unexpected value: %v", valueAST.GetValue()))
+			return nil, fmt.Errorf("void scalar parse literal unexpected value: %v", valueAST.GetValue())
 		}
-		return nil
+		return nil, nil
 	},
 }
 

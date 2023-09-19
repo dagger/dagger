@@ -29,41 +29,41 @@ func (s *platformSchema) Resolvers() Resolvers {
 			"defaultPlatform": ToResolver(s.defaultPlatform),
 		},
 		"Platform": ScalarResolver{
-			Serialize: func(value any) any {
+			Serialize: func(value any) (any, error) {
 				switch v := value.(type) {
 				case specs.Platform:
-					return platforms.Format(v)
+					return platforms.Format(v), nil
 				case *specs.Platform:
 					if v == nil {
-						return ""
+						return "", nil
 					}
-					return platforms.Format(*v)
+					return platforms.Format(*v), nil
 				default:
-					panic(fmt.Sprintf("unexpected platform scalar serialize type %T", v))
+					return nil, fmt.Errorf("unexpected platform scalar serialize type %T", v)
 				}
 			},
-			ParseValue: func(value any) any {
+			ParseValue: func(value any) (any, error) {
 				switch v := value.(type) {
 				case string:
 					p, err := platforms.Parse(v)
 					if err != nil {
-						panic(InvalidInputError{Err: fmt.Errorf("platform parse value error: %w", err)})
+						return nil, InvalidInputError{Err: fmt.Errorf("platform parse value error: %w", err)}
 					}
-					return p
+					return p, nil
 				default:
-					panic(fmt.Sprintf("unexpected platform parse value type %T: %+v", v, v))
+					return nil, fmt.Errorf("unexpected platform parse value type %T", v)
 				}
 			},
-			ParseLiteral: func(valueAST ast.Value) any {
+			ParseLiteral: func(valueAST ast.Value) (any, error) {
 				switch valueAST := valueAST.(type) {
 				case *ast.StringValue:
 					p, err := platforms.Parse(valueAST.Value)
 					if err != nil {
-						panic(InvalidInputError{Err: fmt.Errorf("platform parse literal error: %w", err)})
+						return nil, InvalidInputError{Err: fmt.Errorf("platform parse literal error: %w", err)}
 					}
-					return p
+					return p, nil
 				default:
-					panic(fmt.Sprintf("unexpected platform parse literal type: %T: %+v", valueAST, valueAST))
+					return nil, fmt.Errorf("unexpected platform parse literal type: %T: %+v", valueAST, valueAST)
 				}
 			},
 		},
