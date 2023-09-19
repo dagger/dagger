@@ -333,73 +333,73 @@ This guide uses the starter React application and Dagger pipeline from the [Dagg
 
 1. Begin by cloning the example application's repository:
 
+  ```shell
+  git clone https://github.com/dagger/hello-dagger.git
+  ```
 
-```shell
-git clone https://github.com/dagger/hello-dagger.git
-```
 1. In the application directory, create a new Go module:
 
-```shell
-cd hello-dagger
-go mod init main
-go get dagger.io/dagger
-```
+  ```shell
+  cd hello-dagger
+  go mod init main
+  go get dagger.io/dagger
+  ```
 
 1. Create a file named `main.go` and add the following code to it.
 
-```go
-package main
+  ```go
+  package main
 
-import (
-  "context"
-  "fmt"
-  "math"
-  "math/rand"
-  "os"
+  import (
+    "context"
+    "fmt"
+    "math"
+    "math/rand"
+    "os"
 
-  "dagger.io/dagger"
-)
+    "dagger.io/dagger"
+  )
 
-func main() {
-  ctx := context.Background()
+  func main() {
+    ctx := context.Background()
 
-  client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+    client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 
-  if err != nil {
-    panic(err)
+    if err != nil {
+      panic(err)
+    }
+    defer client.Close()
+
+    source := client.Container().
+      From("node:16").
+      WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
+        Exclude: []string{"node_modules/", "ci/"},
+      })
+
+    runner := source.WithWorkdir("/src").
+      WithExec([]string{"npm", "install"})
+
+    test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
+
+    _, err = test.WithExec([]string{"npm", "run", "build"}).
+      Directory("./build").
+      Export(ctx, "./build")
+
+    if err != nil {
+      panic(err)
+    }
+
+    ref, err := client.Container().
+      From("nginx:1.23-alpine").
+      WithDirectory("/usr/share/nginx/html", client.Host().Directory("./build")).
+      Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
+    if err != nil {
+      panic(err)
+    }
+
+    fmt.Printf("Published image to: %s\n", ref)
   }
-  defer client.Close()
-
-  source := client.Container().
-    From("node:16").
-    WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
-      Exclude: []string{"node_modules/", "ci/"},
-    })
-
-  runner := source.WithWorkdir("/src").
-    WithExec([]string{"npm", "install"})
-
-  test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
-
-  _, err = test.WithExec([]string{"npm", "run", "build"}).
-    Directory("./build").
-    Export(ctx, "./build")
-
-  if err != nil {
-    panic(err)
-  }
-
-  ref, err := client.Container().
-    From("nginx:1.23-alpine").
-    WithDirectory("/usr/share/nginx/html", client.Host().Directory("./build")).
-    Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
-  if err != nil {
-    panic(err)
-  }
-
-  fmt.Printf("Published image to: %s\n", ref)
-}
-```
+  ```
 
   This Dagger pipeline uses the Dagger Go SDK to test, build and publish a containerized version of the application to a public registry.
 
@@ -407,19 +407,19 @@ func main() {
   Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
   :::
 
-[TODO: Add pipeline code in other SDKs]
+  [TODO: Add pipeline code in other SDKs]
 
 1. Commit the changes:
 
-```shell
-git add .
-git commit -a -m "Added Dagger pipeline"
-```
+  ```shell
+  git add .
+  git commit -a -m "Added Dagger pipeline"
+  ```
 
 1. Create a private repository in your GitHub account and push the changes to it:
 
-```shell
-git remote remove origin
-gh auth login
-gh repo create hello-dagger --push --source . --private
-```
+  ```shell
+  git remote remove origin
+  gh auth login
+  gh repo create hello-dagger --push --source . --private
+  ```

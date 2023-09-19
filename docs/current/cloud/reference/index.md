@@ -1,5 +1,6 @@
 ---
 slug: /cloud/reference
+displayed_sidebar: "current"
 ---
 
 # Reference
