@@ -84,7 +84,6 @@ var moduleCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to get git module config: %w", err)
 				}
-				return nil
 			}
 			cfgBytes, err := json.MarshalIndent(cfg, "", "  ")
 			if err != nil {

@@ -265,7 +265,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		case 2:
 			// assume second value is error
 
-			if results.At(1).Type().String() != "error" {
+			if results.At(1).Type().String() != errorTypeName {
 				// sanity check
 				return fmt.Errorf("second return value must be error, have %s", results.At(0).Type().String())
 			}
@@ -280,7 +280,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 				return err
 			}
 		case 1:
-			if results.At(0).Type().String() == "error" {
+			if results.At(0).Type().String() == errorTypeName {
 				// void error return
 
 				statements = append(statements, Return(
@@ -434,6 +434,8 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 	}
 }
 
+const errorTypeName = "error"
+
 func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*dagger.TypeDefInput, error) {
 	if named == nil {
 		return nil, fmt.Errorf("struct types must be named")
@@ -443,7 +445,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		return nil, fmt.Errorf("struct types must be named")
 	}
 	// Return "stub" type if we've already handled this type; the full definition that includes all fields+functions
-	// only needs to appear once. Every other occurance should just have a ref to the object's name.
+	// only needs to appear once. Every other occurrence should just have a ref to the object's name.
 	if _, ok := ps.visitedStructs[name]; ok {
 		return &dagger.TypeDefInput{
 			Kind:     dagger.Objectkind,
@@ -531,7 +533,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 			}
 		case 1:
 			result := methodResults.At(0).Type()
-			if result.String() == "error" {
+			if result.String() == errorTypeName {
 				fnTypeDef.ReturnType = &dagger.TypeDefInput{
 					Kind:     dagger.Voidkind,
 					Optional: true,
