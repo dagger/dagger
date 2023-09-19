@@ -379,13 +379,8 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/cyphar/filepath-securejoin v0.2.2/go.mod h1:FpkQEhXnPnOthhzymB7CGsFk2G9VLXONKD9G7QGMM+4=
 github.com/cyphar/filepath-securejoin v0.2.3 h1:YX6ebbZCZP7VkM3scTTokDgBL2TY741X51MTk3ycuNI=
 github.com/cyphar/filepath-securejoin v0.2.3/go.mod h1:aPGpWjXOXUn2NCNjFvBE6aRxGGx79pTxQpKOJNYHHl4=
-github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72/go.mod h1:z9nYmunTkok2pE+Kdjpl1ICaqcCzlDxcVjwaFE0MJTc=
-github.com/dagger/graphql v0.0.0-20230601100125-137fc3a90735 h1:eZiRlRGdN726q4M1FRlO6Ti6KWPtMhOVzgZ9AQmq06g=
-github.com/dagger/graphql v0.0.0-20230601100125-137fc3a90735/go.mod h1:z9nYmunTkok2pE+Kdjpl1ICaqcCzlDxcVjwaFE0MJTc=
 github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21 h1:6H/36Lk+mcSXxlbjjIMUYd4DR+aqCzeaRigK5dUe/a0=
 github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21/go.mod h1:jxe8vuRdvEbdLR5nrc6F7gLPmPeJhGe2DbIgEok+pCA=
-github.com/dagger/graphql-go-tools v0.0.0-20230418214324-32c52f390881 h1:sy8EAAP1LrDQzuViMhHaW7HMiFGO32PXnEiU1AdWghc=
-github.com/dagger/graphql-go-tools v0.0.0-20230418214324-32c52f390881/go.mod h1:n/St2rWoBXCywBsC4Bw4Gj/Bs92X8fVd0Q8Y0aaNbH0=
 github.com/dagger/graphql-go-tools v0.0.0-20230919175228-6b7534b060ab h1:IwFA67qEtlZJ/fo58LWVoEq2Cok1/ye8WaG4pMz21R0=
 github.com/dagger/graphql-go-tools v0.0.0-20230919175228-6b7534b060ab/go.mod h1:SXt7tSY8l+OVghRddofY+eDdv8EK82N0JlrrfrkqFEw=
 github.com/dave/jennifer v1.7.0 h1:uRbSBH9UTS64yXbh4FrMHfgfY762RD+C7bUPKODpSJE=
@@ -480,6 +475,8 @@ github.com/fatih/color v1.9.0/go.mod h1:eQcE1qtQxscV5RaZvpXrrb8Drkc3/DdQ+uUYCNjL
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
 github.com/fatih/color v1.15.0 h1:kOqh6YHBtK8aywxGerMG2Eq3H6Qgoqeo13Bk2Mv/nBs=
 github.com/fatih/color v1.15.0/go.mod h1:0h5ZqXfHYED7Bhv2ZJamyIOUej9KtShiJESRwBDUSsw=
+github.com/fatih/structtag v1.2.0 h1:/OdNE99OxoI/PqaW/SuSK9uxxT3f/tcSZgon/ssNSx4=
+github.com/fatih/structtag v1.2.0/go.mod h1:mBJUNpUnHmRKrKlQQlmCrh5PuhftFbNv8Ys4/aAZl94=
 github.com/felixge/httpsnoop v1.0.1/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
 github.com/felixge/httpsnoop v1.0.3 h1:s/nj+GCswXYzN5v2DpNMuMQYe+0DDwt5WVCU6CWBdXk=
 github.com/felixge/httpsnoop v1.0.3/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=

@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
+	"github.com/fatih/structtag"
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 )
@@ -195,6 +196,15 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 	return fmt.Sprintf("%#v", invokeFunc)
 }
 
+func renderNameOrStruct(t types.Type) string {
+	if named, ok := t.(*types.Named); ok {
+		// assume local
+		return named.Obj().Name()
+	}
+	// HACK(vito): this is passed to Id(), which is a bit weird, but works
+	return t.String()
+}
+
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object
 func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code, moduleName string) error {
@@ -234,28 +244,46 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 		fnCallArgs := []Code{Op("&").Id(parentVarName)}
 
-		// TODO(vito): should this be required?
-		if sig.Params().Len() > 0 && sig.Params().At(0).Type().String() == "context.Context" {
-			fnCallArgs = append(fnCallArgs, Id("ctx"))
-		}
+		for i := 0; i < sig.Params().Len(); i++ {
+			arg := sig.Params().At(i)
 
-		for i, argDef := range fnDef.Args {
-			statements = append(statements,
-				Var().Id(argDef.Name).Id(apiTypeKindToGoType(argDef.TypeDef)),
-				Err().Op("=").Qual("json", "Unmarshal").Call(
-					Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argDef.Name))),
-					Op("&").Id(argDef.Name),
-				),
-				checkErrStatement,
-			)
-			switch argDef.TypeDef.Kind {
-			case dagger.Stringkind, dagger.Integerkind, dagger.Booleankind, dagger.Listkind:
-				fnCallArgs = append(fnCallArgs, Id(argDef.Name))
-			case dagger.Objectkind:
-				fnCallArgs = append(fnCallArgs, Op("&").Id(argDef.Name))
-				if err := ps.fillObjectFunctionCases(sig.Params().At(i).Type(), cases, moduleName); err != nil {
-					return err
+			if i == 0 && arg.Type().String() == "context.Context" {
+				fnCallArgs = append(fnCallArgs, Id("ctx"))
+				continue
+			}
+
+			if opts, ok := namedOrDirectStruct(arg.Type()); ok {
+				optsName := arg.Name()
+
+				statements = append(statements,
+					Var().Id(optsName).Id(renderNameOrStruct(arg.Type())))
+
+				for f := 0; f < opts.NumFields(); f++ {
+					param := opts.Field(f)
+
+					argName := strcase.ToLowerCamel(param.Name())
+					statements = append(statements,
+						Err().Op("=").Qual("json", "Unmarshal").Call(
+							Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argName))),
+							Op("&").Id(optsName).Dot(param.Name()),
+						),
+						checkErrStatement)
 				}
+
+				fnCallArgs = append(fnCallArgs, Id(optsName))
+			} else {
+				argName := arg.Name()
+
+				statements = append(statements,
+					Var().Id(argName).Id(renderNameOrStruct(arg.Type())),
+					Err().Op("=").Qual("json", "Unmarshal").Call(
+						Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argName))),
+						Op("&").Id(argName),
+					),
+					checkErrStatement,
+				)
+
+				fnCallArgs = append(fnCallArgs, Id(argName))
 			}
 		}
 
@@ -511,14 +539,69 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 				continue
 			}
 
-			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert param type: %w", err)
+			if opts, ok := namedOrDirectStruct(param.Type()); ok {
+				for f := 0; f < opts.NumFields(); f++ {
+					param := opts.Field(f)
+
+					tags, err := structtag.Parse(opts.Tag(f))
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse struct tag: %w", err)
+					}
+
+					argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+					if err != nil {
+						return nil, fmt.Errorf("failed to convert param type: %w", err)
+					}
+
+					// all values in a struct are optional
+					argTypeDef.Optional = true
+
+					def := &dagger.FunctionArgDef{
+						Name: strcase.ToLowerCamel(param.Name()),
+					}
+
+					if tags != nil {
+						// TODO: support this?
+						// if tag, err := tags.Get("name"); err == nil {
+						// 	def.Name = tag.Value()
+						// }
+
+						if tag, err := tags.Get("required"); err == nil {
+							argTypeDef.Optional = tag.Value() == "true"
+						}
+
+						if tag, err := tags.Get("doc"); err == nil {
+							def.Description = tag.Value()
+						}
+
+						if tag, err := tags.Get("default"); err == nil {
+							if param.Type().String() == "string" {
+								enc, err := json.Marshal(tag.Value())
+								if err != nil {
+									return nil, fmt.Errorf("failed to marshal default value: %w", err)
+								}
+								def.DefaultValue = dagger.JSON(enc)
+							} else {
+								def.DefaultValue = dagger.JSON(tag.Value())
+							}
+						}
+					}
+
+					def.TypeDef = argTypeDef
+
+					fnTypeDef.Args = append(fnTypeDef.Args, def)
+				}
+			} else {
+				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert param type: %w", err)
+				}
+
+				fnTypeDef.Args = append(fnTypeDef.Args, &dagger.FunctionArgDef{
+					Name:    param.Name(),
+					TypeDef: argTypeDef,
+				})
 			}
-			fnTypeDef.Args = append(fnTypeDef.Args, &dagger.FunctionArgDef{
-				Name:    param.Name(),
-				TypeDef: argTypeDef,
-			})
 		}
 
 		methodResults := methodSig.Results()
@@ -597,6 +680,17 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 	}
 
 	return typeDef, nil
+}
+
+func namedOrDirectStruct(t types.Type) (*types.Struct, bool) {
+	switch x := t.(type) {
+	case *types.Named:
+		return namedOrDirectStruct(x.Underlying())
+	case *types.Struct:
+		return x, true
+	default:
+		return nil, false
+	}
 }
 
 // typeSpecForNamedType returns the *ast* type spec for the given Named type. This is needed

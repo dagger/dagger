@@ -122,15 +122,14 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		render = append(render, moduleMain.String())
 	}
 
-	formatted, err := format.Source(
-		[]byte(strings.Join(render, "\n")),
-	)
+	source := strings.Join(render, "\n")
+	formatted, err := format.Source([]byte(source))
 	if err != nil {
-		return nil, fmt.Errorf("error formatting generated code: %w", err)
+		return nil, fmt.Errorf("error formatting generated code: %w\nsource:\n%s", err, source)
 	}
 	formatted, err = imports.Process(filepath.Join(g.Config.SourceDirectoryPath, "dummy.go"), formatted, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error formatting generated code: %w", err)
+		return nil, fmt.Errorf("error formatting generated code: %w\nsource:\n%s", err, source)
 	}
 
 	if err := mfs.WriteFile(ClientGenFile, formatted, 0600); err != nil {

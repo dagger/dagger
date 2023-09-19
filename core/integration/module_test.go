@@ -54,7 +54,7 @@ func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
 	}
 }
 
-func TestModuleGoMinimalSignatures(t *testing.T) {
+func TestModuleGoSignatures(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -70,53 +70,77 @@ func TestModuleGoMinimalSignatures(t *testing.T) {
 
 	logGen(ctx, t, modGen.Directory("."))
 
-	t.Run("func() string", func(t *testing.T) {
+	t.Run("func Hello() string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
-	t.Run("func(string) string", func(t *testing.T) {
+	t.Run("func Echo(string) string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"echo":"hello... hello... hello..."}}`, out)
+		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
-	t.Run("func(context.Context) string", func(t *testing.T) {
+	t.Run("func HelloContext(context.Context) string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloContext":"hello context"}}`, out)
 	})
 
-	t.Run("func(context.Context, string) string", func(t *testing.T) {
+	t.Run("func EchoContext(context.Context, string) string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoContext(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"echoContext":"ctx.hello... ctx.hello... ctx.hello..."}}`, out)
+		require.JSONEq(t, `{"minimal":{"echoContext":"ctx.hello...ctx.hello...ctx.hello..."}}`, out)
 	})
 
-	t.Run("func() (string, error)", func(t *testing.T) {
+	t.Run("func HelloStringError() (string, error)", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloStringError}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloStringError":"hello i worked"}}`, out)
 	})
 
-	t.Run("func()", func(t *testing.T) {
+	t.Run("func HelloVoid()", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
-	t.Run("func() error", func(t *testing.T) {
+	t.Run("func HelloVoidError() error", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoidError}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoidError":null}}`, out)
+	})
+
+	t.Run("func EchoOpts(string, Opts) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOpts":"hi...hi...hi..."}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
+	})
+
+	t.Run("func EchoOptsInline(string, struct{Suffix string, Times int}) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi...hi...hi..."}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi!hi!"}}`, out)
 	})
 }
 

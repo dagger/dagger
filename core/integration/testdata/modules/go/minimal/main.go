@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"strings"
 )
 
 type Minimal struct{}
@@ -12,7 +12,14 @@ func (m *Minimal) Hello() string {
 }
 
 func (m *Minimal) Echo(msg string) string {
-	return fmt.Sprintf("%s... %s... %s...", msg, msg, msg)
+	return m.EchoOpts(msg, EchoOpts{
+		// TODO(vito): gotcha! Because we're calling the method directly, defaults
+		// are not applied. Maybe the default:"..." struct tag should be removed in
+		// favor of handling it at runtime? Maybe it should be kept anyway as a
+		// convenience, and this won't be a common footgun?
+		Suffix: "...",
+		Times:  3,
+	})
 }
 
 func (m *Minimal) HelloContext(ctx context.Context) string {
@@ -31,4 +38,21 @@ func (m *Minimal) HelloVoid() {}
 
 func (m *Minimal) HelloVoidError() error {
 	return nil
+}
+
+type EchoOpts struct {
+	Suffix string `doc:"String to append to the echoed message." default:"..."`
+	Times  int    `doc:"Number of times to repeat the message." default:"3"`
+}
+
+func (m *Minimal) EchoOpts(msg string, opts EchoOpts) string {
+	return m.EchoOptsInline(msg, opts)
+}
+
+func (m *Minimal) EchoOptsInline(msg string, opts struct {
+	Suffix string `doc:"String to append to the echoed message." default:"..."`
+	Times  int    `doc:"Number of times to repeat the message." default:"3"`
+}) string {
+	msg += opts.Suffix
+	return strings.Repeat(msg, opts.Times)
 }

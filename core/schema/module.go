@@ -910,8 +910,13 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 			Raw:  strVal,
 		}, nil
 	case core.TypeDefKindInteger:
-		intVal, ok := val.(int)
-		if !ok {
+		var intVal int
+		switch val := val.(type) {
+		case int:
+			intVal = val
+		case float64: // JSON unmarshaling to `any'
+			intVal = int(val)
+		default:
 			return nil, fmt.Errorf("expected integer default value, got %T", val)
 		}
 		return &ast.Value{

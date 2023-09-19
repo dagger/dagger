@@ -63,6 +63,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.8.0
 	github.com/dave/jennifer v1.7.0
 	github.com/dschmidt/go-layerfs v0.1.0
+	github.com/fatih/structtag v1.2.0
 	github.com/go-git/go-git/v5 v5.8.1
 	github.com/google/go-github/v50 v50.2.0
 	github.com/hashicorp/go-multierror v1.1.1
