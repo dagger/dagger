@@ -43,14 +43,14 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 	# move the processes from the root group to the /init group,
 	# otherwise writing subtree_control fails with EBUSY.
 	# An error during moving non-existent process (i.e., "cat") is ignored.
-	mkdir -p /sys/fs/cgroup/init
-	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+	rootlesskit mkdir -p /sys/fs/cgroup/init
+	rootlesskit xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
 	# enable controllers
-	sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
+	rootlesskit sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-exec {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKeys -}}--{{ $key }}="{{ index $.EntrypointArgs $key }}" {{ end -}} "$@"
+exec rootlesskit {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKeys -}}--{{ $key }}="{{ index $.EntrypointArgs $key }}" {{ end -}} "$@"
 `
 
 const engineConfigTmpl = `
@@ -190,6 +190,30 @@ func DevEngineContainer(c *dagger.Client, arches []string, version string, opts 
 	return devEngineContainers(c, arches, version, opts...)
 }
 
+func rootlessBinary(c *dagger.Client, arch string) *dagger.File {
+	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From("golang:1.19.13-alpine"+alpineVersion).
+		WithExec([]string{"apk", "add", "file", "bash", "clang", "lld", "musl-dev", "pkgconfig", "git", "make"}).
+		WithMountedDirectory("/rootlesskit-repo", c.Git("github.com/rootless-containers/rootlesskit").Tag("v1.1.1").Tree()).
+		WithWorkdir("/rootlesskit-repo").
+		WithMountedCache("/root/.cache", c.CacheVolume("rootlesskit-cache")).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec([]string{"go", "build", "-o", "/rootlesskit", "./cmd/rootlesskit"}).
+		File("/rootlesskit")
+}
+
+func rootlessUser(c *dagger.Container) *dagger.Container {
+	return c.WithExec([]string{"adduser", "-D", "-u", "1000", "user"}).
+		WithExec([]string{"mkdir", "-p", "/run/user/1000", "/home/user/.local/tmp", "/home/user/.local/share/buildkit"}).
+		WithExec([]string{"chown", "-R", "user", "/run/user/1000", "/home/user"}).
+		WithNewFile("/etc/subuid", dagger.ContainerWithNewFileOpts{Contents: "user:100000:65536"}).
+		WithNewFile("/etc/subgid", dagger.ContainerWithNewFileOpts{Contents: "user:100000:65536"}).
+		WithEnvVariable("HOME", "/home/user").
+		WithEnvVariable("USER", "user").
+		WithEnvVariable("XDG_RUNTIME_DIR", "/run/user/1000").
+		WithEnvVariable("TMPDIR", "/home/user/.local/tmp")
+}
+
 func devEngineContainer(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
@@ -207,6 +231,9 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 			"git", "openssh", "pigz", "xz",
 			// for CNI
 			"iptables", "ip6tables", "dnsmasq",
+
+			// for rootless
+			"fuse3", "fuse-overlayfs", "shadow-uidmap",
 		}).
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
@@ -214,6 +241,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
+		WithFile("/usr/local/bin/rootlesskit", rootlessBinary(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -225,6 +253,8 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 			Contents:    engineEntrypoint,
 			Permissions: 0o755,
 		}).
+		With(rootlessUser).
+		WithUser("user").
 		WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
 

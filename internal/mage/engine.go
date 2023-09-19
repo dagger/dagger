@@ -12,11 +12,12 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/sdk"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/internal/mage/sdk"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 var publishedEngineArches = []string{"amd64", "arm64"}
@@ -318,7 +319,9 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
 		"-v", volumeName + ":" + util.EngineDefaultStateDir,
 		"--name", util.EngineContainerName,
-		"--privileged",
+		// "--security-opt", "seccomp=unconfined",
+		// "--security-opt apparmor=unconfined",
+		// "--privileged",
 	}
 	runArgs = append(runArgs, imageName, "--debug")
 
