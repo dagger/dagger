@@ -36,49 +36,42 @@ At the end of this step, you will have signed up for Dagger Cloud and obtained a
 
 Follow the steps below to sign up for Dagger Cloud, create an organization and obtain a Dagger Cloud token.
 
-1. Browse to the [Dagger Cloud website](https://www.dagger.io/cloud/signup).
-1. Click *Continue with GitHub* to log in with your GitHub account.
+1. Browse to the [Dagger Cloud website](https://www.dagger.io/cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
 
-  [image]
+  ![Authenticate with GitHub](/img/current/cloud/get-started/connect-github.png)
 
-1. On the GitHub authorization screen, confirm the Dagger Cloud connection for authentication.Once authorized, you will be redirected to a welcome page and prompted to create a new organization. Enter a name for your organization in the *Organization Name* field. Click *Next* to proceed.
+1. On the GitHub authorization screen, confirm the Dagger Cloud connection for authentication. Once authorized, you will be redirected to a welcome page and prompted to create a new Dagger Cloud organization. Enter a name for your organization in the *Organization Name* field. Click *Next* to proceed.
 
   :::info
   The organization name can only contain alphanumeric characters and dashes and is unique across Dagger Cloud.
   :::
 
-  [image]
+  ![Create Dagger Cloud organization](/img/current/cloud/get-started/create-organization.png)
 
 1. Review the available Dagger Cloud subscription plans. Choose a plan by clicking *Select*.
-1. If you selected the *Team* plan, you will be presented with the option to add teammates to your Dagger Cloud account. Enter one or more email addresses as required. Click *Next* to proceed.
+1. If you selected the *Team* plan, you will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in individual plans. Enter one or more email addresses as required. Click *Next* to proceed.
 
-  :::note
-  This step is optional and not available in individual plans.
-  :::
-
-  [image]
+  ![Select plan](/img/current/cloud/get-started/invite-team.png)
 
 1. Enter the required payment details. Click *Set payment method* to proceed.
 
-  [image]
+  ![Add payment method](/img/current/cloud/get-started/add-payment.png)
 
 1. Your payment information will now be verified. If all is well, your new organization will be created and you will be redirected to a success page confirming that your Dagger Cloud account and organization have been created.
 
-  [image]
+  ![Create organization](/img/current/cloud/get-started/create-organization-success.png)
 
 1. Click *Go to dashboard* to visit the Dagger Cloud dashboard, which allows you to manage your Dagger Cloud organization and account.
 
-  [image]
+  ![View dashboard](/img/current/cloud/get-started/connect-cloud.png)
 
 1. Click *Connect Dagger Cloud*. You will be redirected to a page containing your Dagger Cloud token. Note this token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
-
-  [image]
 
   :::tip
   You can view this token at any time by browsing to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface), selecting your organization and navigating to the *Configuration* tab.
   :::
 
-  [image]
+  ![Get token](/img/current/cloud/get-started/get-token.png)
 
 ## Step 2: Connect Dagger Cloud with your CI
 
@@ -103,8 +96,6 @@ You must store this token as a secret (not plaintext) with your CI provider and 
 1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
-
-  [image]
 
 Here is a sample GitHub Actions workflow file with the Dagger Cloud integration highlighted:
 
@@ -228,37 +219,29 @@ git commit -a -m “Updated welcome message”
 git push
 ```
 
-Once your CI workflow begins, navigate to the *Runs* page of the Dagger Cloud dashboard. You should see your most recent CI run as the first entry in the table, as shown below:
+Once your CI workflow begins, navigate to the *All Runs* page of the Dagger Cloud dashboard. You should see your most recent CI run as the first entry in the table, as shown below:
 
-[image]
+![View runs](/img/current/cloud/get-started/view-runs.png)
 
 A run represents one invocation of a Dagger pipeline. It contains detailed information about the steps performed by the pipeline.
 
 The *Runs* page provides an overview of all runs. You can drill down into the details of a specific run by clicking it. This directs you to a run-specific Run Details page, as shown below:
 
-[image]
+![View run details](/img/current/cloud/get-started/view-run-details-tree.png)
 
-The *Run Details* page includes detailed status and duration metadata about the pipeline steps. You can opt to view the details using either the tree view or the Directed Acyclic Graph (DAG) view.
+The *Run Details* page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
 
-- The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
-
-  [image]
-
-- The DAG view displays a graph of everything that happened in a Dagger run and shows the status for each step. Click on a node in the graph to see detailed logs for a step.
-
-  [image]
-
-## Step 4: Integrate the Dagger Cloud cache with your CI pipeline
+## Step 4: Integrate the Dagger Cloud cache
 
 :::info
-At the end of this step, you will have integrated the Dagger Cloud cache with your CI pipeline.
+At the end of this step, you will have integrated Dagger Cloud's distributed cache with your CI pipeline.
 :::
-
-Dagger already comes with built-in support for [cache volumes](../quickstart/635927-caching.mdx), which can be used to cache packages and thereby avoid unnecessary rebuilds and test reruns. Dagger Cloud enhances caching support significantly and allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
 :::note
 Dagger Cloud's distributed caching feature is only available under the *Team* plan.
 :::
+
+Dagger already comes with built-in support for [cache volumes](../quickstart/635927-caching.mdx), which can be used to cache packages and thereby avoid unnecessary rebuilds and test reruns. Dagger Cloud enhances caching support significantly and allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
 Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
@@ -272,11 +255,9 @@ This revised pipeline now uses a cache volume for the application dependencies.
 
 Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
 
-[image]
+![Manage volumes](/img/current/cloud/get-started/manage-volumes.png)
 
 You can create as many volumes as needed and manage them from the *Configuration* tab of your Dagger Cloud organization page.
-
-[image]
 
 ## Conclusion
 
