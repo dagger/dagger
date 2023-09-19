@@ -150,17 +150,17 @@ type HelloWorld struct {
   Name string
 }
 
-func (hello *HelloWorld) WithGreeting(greeting string) (*HelloWorld, error) {
+func (hello *HelloWorld) WithGreeting(ctx context.Context, greeting string) (*HelloWorld, error) {
   hello.Greeting = greeting
   return hello, nil
 }
 
-func (hello *HellowWorld) WithName(name string) (*HelloWorld, error) {
+func (hello *HelloWorld) WithName(ctx context.Context, name string) (*HelloWorld, error) {
   hello.Name = name
   return hello, nil
 }
 
-func (hello *HelloWorld) Message() (string, error) {
+func (hello *HelloWorld) Message(ctx context.Context) (string, error) {
   var (
     greeting = hello.Greeting
     name = hello.Name
@@ -171,7 +171,7 @@ func (hello *HelloWorld) Message() (string, error) {
   if name == "" {
     name = "World"
   }
-  return fmt.Sprintf("%s, %s!", greeting, name)
+  return fmt.Sprintf("%s, %s!", greeting, name), nil
 }
 ```
 
@@ -202,7 +202,8 @@ The result will be:
       }
     }
   }
-}```
+}
+```
 
 ### Extend core types
 
