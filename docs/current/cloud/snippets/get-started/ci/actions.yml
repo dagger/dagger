@@ -9,13 +9,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-node@v3
         with:
-          go-version: '1.20'
+          node-version: 16
+      - name: Install deps
+        run: npm ci
       - name: Install Dagger CLI
         run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
       - name: Run Dagger pipeline
-        run: dagger run go run main.go
+        run: dagger run node index.mjs
         // highlight-start
         env:
            DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_TOKEN }}

@@ -99,7 +99,7 @@ You must store this token as a secret (not plaintext) with your CI provider and 
 
 Here is a sample GitHub Actions workflow file with the Dagger Cloud integration highlighted:
 
-```yaml title=".github/workflows/dagger.yml" file=./snippets/get-started/go/actions.yml
+```yaml title=".github/workflows/dagger.yml" file=./snippets/get-started/ci/actions.yml
 ```
 
 :::tip
@@ -121,7 +121,7 @@ You can use this file with the starter application and Dagger pipeline in [Appen
 
 Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighted:
 
-```yaml title=".gitlab-ci.yml" file=./snippets/get-started/go/gitlab.yml
+```yaml title=".gitlab-ci.yml" file=./snippets/get-started/ci/gitlab.yml
 ```
 
 </TabItem>
@@ -157,7 +157,7 @@ Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighte
 
 Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variable will be automatically injected.
 
-```yaml title=".circleci/config.yml" file=./snippets/get-started/go/circle.yml
+```yaml title=".circleci/config.yml" file=./snippets/get-started/ci/circle.yml
 ```
 
 </TabItem>
@@ -173,7 +173,7 @@ Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variabl
 
 Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 
-```groovy title="Jenkinsfile" file=./snippets/get-started/go/Jenkinsfile
+```groovy title="Jenkinsfile" file=./snippets/get-started/ci/Jenkinsfile
 ```
 
 :::note
@@ -193,7 +193,7 @@ This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Je
 
 Here is a sample ArgoCD Workflow with the Dagger Cloud integration highlighted:
 
-```yaml file=./snippets/get-started/go/argocd-workflow.yml
+```yaml file=./snippets/get-started/ci/argocd-workflow.yml
 ```
 
 :::note
@@ -215,7 +215,7 @@ To do this, trigger your CI workflow and Dagger pipeline by pushing a commit or 
 
 ```shell
 sed -i 's/Welcome to Dagger/Welcome to Dagger Cloud/g' src/App.tsx
-git commit -a -m “Updated welcome message”
+git commit -a -m "Updated welcome message"
 git push
 ```
 
@@ -245,13 +245,13 @@ Dagger already comes with built-in support for [cache volumes](../quickstart/635
 
 Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
-```go file=./snippets/get-started/step4/main.go
+```javascript file=./snippets/get-started/step4/index.mjs
 ```
 
 This revised pipeline now uses a cache volume for the application dependencies.
 
-- It uses the client's `CacheVolume()` method to initialize a new cache volume.
-- It uses the `Container.WithMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
+- It uses the client's `cacheVolume()` method to initialize a new cache volume named `node`.
+- It uses the `Container.withMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
 
 Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
 
@@ -270,7 +270,7 @@ Before you can integrate Dagger Cloud into your CI process, you need a Dagger pi
 If you don't have these already, follow the steps below to create an application and its accompanying Dagger pipeline.
 
 :::note
-This section assumes that you have a Go development environment. It uses the starter React application and Dagger pipeline from the [Dagger Quickstart](../quickstart/index.mdx) in tandem with a GitHub repository. If you wish to use a different application or a different VCS, adapt the steps below accordingly.
+This section assumes that you have a Node.js development environment. It uses the starter React application and Dagger pipeline from the [Dagger Quickstart](../quickstart/index.mdx) in tandem with a GitHub repository. If you wish to use a different application or a different VCS, adapt the steps below accordingly.
 :::
 
 1. Begin by cloning the example application's repository:
@@ -279,23 +279,22 @@ This section assumes that you have a Go development environment. It uses the sta
   git clone https://github.com/dagger/hello-dagger.git
   ```
 
-1. In the application directory, create a new Go module:
+1. Install the Dagger Node.js SDK:
 
   ```shell
   cd hello-dagger
-  go mod init main
-  go get dagger.io/dagger
+  npm install @dagger.io/dagger --save-dev
   ```
 
-1. Create a file named `main.go` and add the following code to it.
+1. In the application directory, create a file named `index.mjs` and add the following code to it.
 
-  ```go file=./snippets/get-started/appa/main.go
+  ```javascript file=./snippets/get-started/appa/index.mjs
   ```
 
-  This Dagger pipeline uses the Dagger Go SDK to test, build and publish a containerized version of the application to a public registry.
+  This Dagger pipeline uses the Dagger Node.js SDK to test, build and publish a containerized version of the application to a public registry.
 
   :::info
-  Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation and equivalent pipeline code for Node.js and Python in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
+  Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation and equivalent pipeline code for Go and Python in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
   :::
 
 1. Commit the changes:

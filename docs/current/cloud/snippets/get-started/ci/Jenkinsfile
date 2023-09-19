@@ -9,7 +9,8 @@ pipeline {
     stage("dagger") {
       steps {
         sh '''
-            dagger run go run main.go
+            npm ci
+            dagger run node index.mjs
         '''
       }
     }
