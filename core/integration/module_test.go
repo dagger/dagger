@@ -77,11 +77,25 @@ func TestModuleGoMinimalSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
+	t.Run("func(string) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echo":"hello... hello... hello..."}}`, out)
+	})
+
 	t.Run("func(context.Context) string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloContext":"hello context"}}`, out)
+	})
+
+	t.Run("func(context.Context, string) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{echoContext(msg: "hello")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoContext":"ctx.hello... ctx.hello... ctx.hello..."}}`, out)
 	})
 
 	t.Run("func() (string, error)", func(t *testing.T) {

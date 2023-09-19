@@ -506,11 +506,8 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		for i := 0; i < methodSig.Params().Len(); i++ {
 			param := methodSig.Params().At(i)
 
-			// first arg must be Context
-			if i == 0 {
-				if param.Type().String() != "context.Context" {
-					return nil, fmt.Errorf("method %s has first arg %s, expected context.Context", method.Name(), param.Type().String())
-				}
+			if i == 0 && param.Type().String() == "context.Context" {
+				// ignore ctx arg
 				continue
 			}
 
