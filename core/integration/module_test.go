@@ -165,7 +165,7 @@ func TestModuleGoCustomTypes(t *testing.T) {
 
 	out, err := modGen.With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"rest":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
+	require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 }
 
 func TestEnvCmd(t *testing.T) {

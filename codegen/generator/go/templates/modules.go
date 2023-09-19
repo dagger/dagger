@@ -79,7 +79,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 	}
 
 	ps := &parseState{
-		visitedStructs: make(map[string]struct{}),
+		visitedStructs: make(map[string]*dagger.TypeDefInput),
 		pkgs:           pkgs,
 		fset:           fset,
 		methods:        make(map[methodKey]*types.Signature),
@@ -208,7 +208,7 @@ func renderNameOrStruct(t types.Type) string {
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object
 func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code, moduleName string) error {
-	typeDef, err := ps.goTypeToAPIType(type_, nil)
+	typeDef, err := ps.goTypeToAPIType(type_, nil, false)
 	if err != nil {
 		return fmt.Errorf("failed to convert module type: %w", err)
 	}
@@ -395,7 +395,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 }
 
 type parseState struct {
-	visitedStructs map[string]struct{}
+	visitedStructs map[string]*dagger.TypeDefInput
 	pkgs           []*packages.Package
 	fset           *token.FileSet
 	methods        map[methodKey]*types.Signature
@@ -406,17 +406,17 @@ type methodKey struct {
 	name     string
 }
 
-func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagger.TypeDefInput, error) {
+func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, reference bool) (*dagger.TypeDefInput, error) {
 	switch t := typ.(type) {
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
-		typeDef, err := ps.goTypeToAPIType(t.Underlying(), t)
+		typeDef, err := ps.goTypeToAPIType(t.Underlying(), t, reference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert named type: %w", err)
 		}
 		return typeDef, nil
 	case *types.Pointer:
-		return ps.goTypeToAPIType(t.Elem(), named)
+		return ps.goTypeToAPIType(t.Elem(), named, reference)
 	case *types.Basic:
 		typeDef := &dagger.TypeDefInput{}
 		switch t.Info() {
@@ -429,7 +429,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 		}
 		return typeDef, nil
 	case *types.Slice:
-		elemTypeDef, err := ps.goTypeToAPIType(t.Elem(), nil)
+		elemTypeDef, err := ps.goTypeToAPIType(t.Elem(), nil, reference)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert slice element type: %w", err)
 		}
@@ -440,7 +440,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 			},
 		}, nil
 	case *types.Struct:
-		return ps.goStructToAPIType(t, named)
+		return ps.goStructToAPIType(t, named, reference)
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
@@ -448,7 +448,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*dagg
 
 const errorTypeName = "error"
 
-func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*dagger.TypeDefInput, error) {
+func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, reference bool) (*dagger.TypeDefInput, error) {
 	if named == nil {
 		return nil, fmt.Errorf("struct types must be named")
 	}
@@ -456,23 +456,26 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 	if typeName == "" {
 		return nil, fmt.Errorf("struct types must be named")
 	}
-	// Return "stub" type if we've already handled this type; the full definition that includes all fields+functions
-	// only needs to appear once. Every other occurrence should just have a ref to the object's name.
-	if _, ok := ps.visitedStructs[typeName]; ok {
-		return &dagger.TypeDefInput{
-			Kind:     dagger.Objectkind,
-			AsObject: &dagger.ObjectTypeDefInput{Name: typeName},
-		}, nil
-	}
-
-	// we only cache the type def w/ the name so that an future encounters with it just result in that stub
-	// being used rather than the whole def being included many times
-	ps.visitedStructs[typeName] = struct{}{}
 
 	typeDef := &dagger.TypeDefInput{
 		Kind:     dagger.Objectkind,
 		AsObject: &dagger.ObjectTypeDefInput{Name: typeName},
 	}
+
+	// Return "stub" type if we've already handled this type; the full definition that includes all fields+functions
+	// only needs to appear once. Every other occurrence should just have a ref to the object's name.
+	if fullDef, ok := ps.visitedStructs[typeName]; ok {
+		if reference {
+			return typeDef, nil
+		} else {
+			return fullDef, nil
+		}
+	}
+
+	// we only cache the type def w/ the name so that an future encounters with it just result in that stub
+	// being used rather than the whole def being included many times
+	ps.visitedStructs[typeName] = typeDef
+
 	tokenFile := ps.fset.File(named.Obj().Pos())
 	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
 
@@ -530,7 +533,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 		if !field.Exported() {
 			continue
 		}
-		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil)
+		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
@@ -587,7 +590,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, method *types.Fu
 					return nil, fmt.Errorf("failed to parse struct tag: %w", err)
 				}
 
-				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil, true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert param type: %w", err)
 				}
@@ -631,7 +634,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, method *types.Fu
 				fnTypeDef.Args = append(fnTypeDef.Args, def)
 			}
 		} else {
-			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
+			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert param type: %w", err)
 			}
@@ -658,7 +661,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, method *types.Fu
 				Optional: true,
 			}
 		} else {
-			resultTypeDef, err := ps.goTypeToAPIType(result, nil)
+			resultTypeDef, err := ps.goTypeToAPIType(result, nil, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert result type: %w", err)
 			}
@@ -666,7 +669,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, method *types.Fu
 		}
 	case 2:
 		result := methodResults.At(0).Type()
-		resultTypeDef, err := ps.goTypeToAPIType(result, nil)
+		resultTypeDef, err := ps.goTypeToAPIType(result, nil, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert result type: %w", err)
 		}
