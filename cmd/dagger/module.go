@@ -149,21 +149,21 @@ var moduleUseCmd = &cobra.Command{
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
 
-			depSet := make(map[string]struct{})
-			for _, dep := range modCfg.Dependencies {
-				depSet[dep] = struct{}{}
-			}
-			for _, newDep := range extraArgs {
-				depMod, err := resolver.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.Module, newDep)
+			var deps []string
+			deps = append(deps, modCfg.Dependencies...)
+			deps = append(deps, extraArgs...)
+			depSet := make(map[string]*resolver.Module)
+			for _, dep := range deps {
+				depMod, err := resolver.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.Module, dep)
 				if err != nil {
 					return fmt.Errorf("failed to get module: %w", err)
 				}
-				depSet[depMod.String()] = struct{}{}
+				depSet[depMod.Path] = depMod
 			}
 
 			modCfg.Dependencies = nil
-			for dep := range depSet {
-				modCfg.Dependencies = append(modCfg.Dependencies, dep)
+			for _, dep := range depSet {
+				modCfg.Dependencies = append(modCfg.Dependencies, dep.String())
 			}
 			sort.Strings(modCfg.Dependencies)
 
