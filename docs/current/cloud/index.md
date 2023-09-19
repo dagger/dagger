@@ -22,7 +22,7 @@ Dagger Cloud collects telemetry from all your organization's Dagger Engines, whe
 
 ### Distributed caching
 
-One of Dagger's superpowers is that it caches everything. On a single machine (like a laptop or long-running server) caching just works, because the same Dagger Engine writing to the cache is also reading from it. But in a multi-machine configuration (like an elastic CI cluster) things get more complicated because all machines are continuously producing and consuming large amounts of cache data. How do we get the right cache data to the right machine at the right time, without wasting compute, networking, or storage resources?
+One of Dagger's superpowers is that it caches everything. On a single machine (like a laptop or long-running server) caching just works, because the same Dagger Engine writing to the cache is also reading from it. But in a multi-machine configuration (like an elastic CI cluster), things get more complicated because all machines are continuously producing and consuming large amounts of cache data. How do we get the right cache data to the right machine at the right time, without wasting compute, networking, or storage resources?
 
 This is a complex problem which requires a distributed caching service, to orchestrate the movement of data between all machines in the cluster, and a centralized storage service. Because Dagger Cloud receives telemetry from all Dagger Engines, it can model the state of the cluster and make optimal caching decisions. The more telemetry data it receives, the smarter it becomes.
 
