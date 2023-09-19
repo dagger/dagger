@@ -50,7 +50,7 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
   [image]
 
 1. Review the available Dagger Cloud subscription plans. Choose a plan by clicking *Select*.
-1. If you selected a team plan, you will be presented with the option to add teammates to your Dagger Cloud account. Enter one or more email addresses as required. Click *Next* to proceed.
+1. If you selected the *Team* plan, you will be presented with the option to add teammates to your Dagger Cloud account. Enter one or more email addresses as required. Click *Next* to proceed.
 
   :::note
   This step is optional and not available in individual plans.
@@ -212,7 +212,11 @@ This ArgoCD Workflow is significantly abbreviated for this guide.
 </TabItem>
 </Tabs>
 
-## Step 3: Visualize CI runs with Dagger Cloud
+## Step 3: Visualize a CI run with Dagger Cloud
+
+:::info
+At the end of this step, you will have data from one or more CI runs available for inspection and analysis in Dagger Cloud.
+:::
 
 Once your CI provider/tool is connected with Dagger Cloud, it’s time to test the integration.
 
@@ -244,9 +248,17 @@ The *Run Details* page includes detailed status and duration metadata about the 
 
   [image]
 
-## Step 4: Improve CI performance with Dagger Cloud’s distributed caching
+## Step 4: Integrate the Dagger Cloud cache with your CI pipeline
 
-Dagger already comes with built-in support for [cache volumes](../quickstart/635927-caching.mdx), which can be used to cache packages and thereby avoid unnecessary rebuilds and test reruns. One of Dagger Cloud's most powerful features is its distributed cache, which enhances this support significantly and allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
+:::info
+At the end of this step, you will have integrated the Dagger Cloud cache with your CI pipeline.
+:::
+
+Dagger already comes with built-in support for [cache volumes](../quickstart/635927-caching.mdx), which can be used to cache packages and thereby avoid unnecessary rebuilds and test reruns. Dagger Cloud enhances caching support significantly and allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
+
+:::note
+Dagger Cloud's distributed caching feature is only available under the *Team* plan.
+:::
 
 Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
@@ -258,11 +270,11 @@ This revised pipeline now uses a cache volume for the application dependencies.
 - It uses the client's `CacheVolume()` method to initialize a new cache volume.
 - It uses the `Container.WithMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
 
-Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created cache volume listed and enabled.
+Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
 
 [image]
 
-You can create as many cache volumes as needed and manage them from the *Configuration* tab of your Dagger Cloud organization page.
+You can create as many volumes as needed and manage them from the *Configuration* tab of your Dagger Cloud organization page.
 
 [image]
 
