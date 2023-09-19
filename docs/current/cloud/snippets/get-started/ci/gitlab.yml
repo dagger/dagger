@@ -22,9 +22,3 @@ build:
   script:
     - npm ci
     - dagger run node index.mjs
-// highlight-start
-# optional, run workflow only on merge requests
-workflow:
-  rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
-// highlight-end

@@ -113,12 +113,6 @@ You can use this file with the starter application and Dagger pipeline in [Appen
 
 1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
 
-1. GitLab makes some metadata available only to merge request pipelines. If your CI workflow relies entirely on merge requests, you can improve your Dagger Cloud experience by optionally adding a workflow rule to create a pipeline only on merge requests. Refer to the GitLab documentation on [merge requests](https://docs.gitlab.com/ee/user/project/merge_requests/) and [workflow rules](https://docs.gitlab.com/ee/ci/yaml/workflow.html#switch-between-branch-pipelines-and-merge-request-pipelines).
-
-  :::danger
-  This step is optional and should be performed only after an in-depth analysis of the impact on your CI workflow.
-  :::
-
 Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighted:
 
 ```yaml title=".gitlab-ci.yml" file=./snippets/get-started/ci/gitlab.yml
@@ -177,27 +171,7 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 ```
 
 :::note
-This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s).
-:::
-
-</TabItem>
-<TabItem value="ArgoCD">
-
-1. Create a Kubernetes secret and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud) with the following command (replace the `TOKEN` placeholder with the token value). Refer to the Kubernetes documentation on [creating secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more information.
-
-  ```shell
-  kubectl create secret generic dagger-cloud-token --from-literal=token={TOKEN}
-  ```
-
-1. Update your ArgoCD Workflow and add the secret to the CI environment. Refer to the ArgoCD documentation on [using secrets](https://argoproj.github.io/argo-workflows/walk-through/secrets/).
-
-Here is a sample ArgoCD Workflow with the Dagger Cloud integration highlighted:
-
-```yaml file=./snippets/get-started/ci/argocd-workflow.yml
-```
-
-:::note
-This ArgoCD Workflow is significantly abbreviated for this guide.
+This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
 :::
 
 </TabItem>
