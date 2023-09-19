@@ -4,7 +4,7 @@ slug: /cloud/968372/roles-permissions
 
 # Roles and Permissions
 
-In Dagger Cloud, users can have one of two roles: **Admin** or **Member**. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger pipeline runs, ensure that the user also has the Member role.
+In Dagger Cloud, users can have one of two roles: *Admin* or *Member*. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger pipeline runs, ensure that the user also has the Member role.
 
 | Actions | Admin | Member |
 | --- | :---: | :---: |
