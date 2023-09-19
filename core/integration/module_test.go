@@ -23,9 +23,6 @@ import (
 * if a dependency changes, then checks should re-run
  */
 
-//go:embed testdata/modules/go/minimal/main.go
-var minimalGo string
-
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
@@ -53,6 +50,9 @@ func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
 		t.Logf("%04d | %s\n", i+1, line)
 	}
 }
+
+//go:embed testdata/modules/go/minimal/main.go
+var minimalGo string
 
 func TestModuleGoSignatures(t *testing.T) {
 	t.Parallel()
@@ -142,6 +142,30 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi!hi!"}}`, out)
 	})
+}
+
+//go:embed testdata/modules/go/custom-types/main.go
+var customTypes string
+
+func TestModuleGoCustomTypes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: customTypes,
+		}).
+		With(daggerExec("mod", "sync"))
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"rest":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 }
 
 func TestEnvCmd(t *testing.T) {

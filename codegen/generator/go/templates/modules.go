@@ -464,6 +464,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*d
 			AsObject: &dagger.ObjectTypeDefInput{Name: typeName},
 		}, nil
 	}
+
 	// we only cache the type def w/ the name so that an future encounters with it just result in that stub
 	// being used rather than the whole def being included many times
 	ps.visitedStructs[typeName] = struct{}{}
