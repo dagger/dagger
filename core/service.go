@@ -243,6 +243,21 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 		checked <- health.Check(ctx)
 	}()
 
+	if execOp.Meta.ProxyEnv == nil {
+		execOp.Meta.ProxyEnv = &pb.ProxyEnv{}
+	}
+
+	execOp.Meta.ProxyEnv.FtpProxy, err = buildkit.ContainerExecUncachedMetadata{
+		ParentClientIDs:       clientMetadata.ClientIDs(),
+		ServerID:              clientMetadata.ServerID,
+		ProgSockPath:          bk.ProgSockPath,
+		ModuleDigest:          clientMetadata.ModuleDigest,
+		FunctionContextDigest: clientMetadata.FunctionContextDigest,
+	}.ToPBFtpProxyVal()
+	if err != nil {
+		return nil, err
+	}
+
 	outBuf := new(bytes.Buffer)
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
 		Args:         execOp.Meta.Args,
