@@ -311,13 +311,21 @@ func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/codegen")
 }
 
-func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
+func cniPlugins(c *dagger.Client, arch string, gpuSupportEnabled bool) *dagger.Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
-	ctr := c.Container().
-		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
-		WithExec([]string{"apk", "add", "build-base", "go", "git"}).
-		WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
+	// If GPU support is enabled use a Debian image:
+	ctr := c.Container()
+	if gpuSupportEnabled {
+		ctr = ctr.From("golang:1.21.1-bullseye").
+			WithExec([]string{"apt-get", "update"}).
+			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
+	} else {
+		ctr = ctr.From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+			WithExec([]string{"apk", "add", "build-base", "go", "git"})
+	}
+
+	ctr = ctr.WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
 		WithMountedDirectory("/src", c.Git("github.com/containernetworking/plugins").Tag(cniVersion).Tree()).
 		WithWorkdir("/src").
