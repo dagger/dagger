@@ -55,6 +55,7 @@ module.exports = {
           items: [
             "current/cloud/reference/user-interface",
             "current/cloud/reference/roles-permissions",
+            "current/cloud/reference/org-administration",
           ]
         },
       ],
