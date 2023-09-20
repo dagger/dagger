@@ -15,7 +15,7 @@ connect(
       )
       // highlight-start
       .withMountedCache("/src/node_modules", nodeCache)
-      // highlight-end
+    // highlight-end
 
     const runner = source.withWorkdir("/src").withExec(["npm", "install"])
 
