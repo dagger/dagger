@@ -64,5 +64,3 @@ To use Dagger in production, learn about [Dagger Cloud](https://dagger.io/cloud)
 | a GraphQL veteran | Use the [GraphQL API](api) |
 | a fan of shell scripts | Use the [CLI](cli) |
 | Not sure which SDK to choose 🤷 | In doubt, try the [Go SDK](sdk/go). It does not require advanced Go knowledge, and what you learn will transpose well to future SDKs
-
-##
