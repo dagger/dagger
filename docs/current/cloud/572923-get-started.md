@@ -36,7 +36,7 @@ At the end of this step, you will have signed up for Dagger Cloud and obtained a
 
 Follow the steps below to sign up for Dagger Cloud, create an organization and obtain a Dagger Cloud token.
 
-1. Browse to the [Dagger Cloud website](dagger.cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
+1. Browse to the [Dagger Cloud website](https://dagger.cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
 
   ![Authenticate with GitHub](/img/current/cloud/get-started/connect-github.png)
 
