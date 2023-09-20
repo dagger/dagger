@@ -22,5 +22,7 @@ jobs:
         env:
            DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_TOKEN }}
         // highlight-end
+        # for ephemeral runners only: override the default docker stop timeout and
+        # give the Dagger Engine more time to push cache data to Dagger cloud
         - name: Stop Engine
           run: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
