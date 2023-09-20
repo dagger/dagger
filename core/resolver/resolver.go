@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -24,6 +25,18 @@ type Module struct {
 }
 
 func (mod *Module) String() string {
+	if mod.Local {
+		// TODO(vito): This may be worth a rethink, but the idea is for local
+		// modules to be represented as a 'subpath' of their outer module, that way
+		// they can do things like refer to sibling modules at ../foo. But this
+		// hasn't been proved out. Anyway, at this layer we need to preserve the
+		// subpath because this gets printed to `dagger.json`, and without this the
+		// module will depend on itself, leading to an infinite loop.
+		return path.Join(mod.Path, mod.SubPath)
+	}
+	if mod.Version == "" {
+		return mod.Path
+	}
 	return fmt.Sprintf("%s@%s", mod.Path, mod.Version)
 }
 
@@ -115,7 +128,7 @@ func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) 
 	ref.Git = &GitRef{} // assume git for now, HTTP can come later
 
 	if !isGitHub {
-		return nil, fmt.Errorf("for now, only github.com/ paths are supported: %s", modPath)
+		return nil, fmt.Errorf("for now, only github.com/ paths are supported: %q", modQuery)
 	}
 
 	segments := strings.SplitN(modPath, "/", 4)

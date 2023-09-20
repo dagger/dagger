@@ -168,6 +168,45 @@ func TestModuleGoCustomTypes(t *testing.T) {
 	require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 }
 
+//go:embed testdata/modules/go/use/dep/main.go
+var useInner string
+
+//go:embed testdata/modules/go/use/main.go
+var useOuter string
+
+func TestModuleGoUseLocal(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep").
+		With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: useInner,
+		}).
+		With(daggerExec("mod", "sync")).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
+		With(daggerExec("mod", "use", "./dep")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: useOuter,
+		}).
+		With(daggerExec("mod", "sync"))
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+
+	// cannot use transitive dependency directly
+	_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
+}
+
 func TestEnvCmd(t *testing.T) {
 	t.Skip("pending conversion to modules")
 
