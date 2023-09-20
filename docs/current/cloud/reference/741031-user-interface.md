@@ -18,7 +18,7 @@ Here's a quick summary of what you'll see for each run.
 
 |Field | Description |
 |---|---|
-|Status	| Indication of run success or failure |
+|Status | Indication of run success or failure |
 |Title | Commit message / pull request title (abbreviated) |
 |Commit | Commit ID |
 |Change | |
@@ -26,8 +26,8 @@ Here's a quick summary of what you'll see for each run.
 |Duration | Run duration |
 |User | User triggering the run |
 |Runner Job | |
-|Branch	| Name of the branch in source code repository |
-|Remote	| Full path to the remote source code repository |
+|Branch | Name of the branch in source code repository |
+|Remote | Full path to the remote source code repository |
 
 :::tip
 You can display a subset of runs, such as runs related to a specific commit, branch, user or remote, by clicking the *Filter* icon in the corresponding field of the run list.
@@ -57,7 +57,7 @@ Here's a quick summary of what you'll see for each change.
 
 |Field | Description |
 |---|---|
-|Status	| Indication of run success or failure |
+|Status | Indication of run success or failure |
 |Title | Commit message / pull request title (abbreviated) |
 |Commit | Commit ID |
 |Change | |
@@ -65,8 +65,8 @@ Here's a quick summary of what you'll see for each change.
 |Duration | Run duration |
 |User | User triggering the run |
 |Runner Job | |
-|Branch	| Name of the branch in source code repository |
-|Remote	| Full path to the remote source code repository |
+|Branch | Name of the branch in source code repository |
+|Remote | Full path to the remote source code repository |
 
 You can drill down into the details of a specific change by clicking it. This directs you to a *Change Details* page, as shown below:
 
