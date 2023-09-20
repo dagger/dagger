@@ -205,6 +205,8 @@ The *All Runs* page provides an overview of all runs. You can drill down into th
 
 The *Run Details* page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
 
+Learn more about the [Dagger Cloud user interface](./reference/741031-user-interface.md).
+
 ## Step 4: Integrate the Dagger Cloud cache
 
 :::info
@@ -235,7 +237,7 @@ You can create as many volumes as needed and manage them from the *Configuration
 
 ## Conclusion
 
-This guide introduced you to Dagger Cloud and walked you registering a new organization, integrating Dagger Cloud with your CI provider/tool, and using Dagger Cloud’s visualization and caching features. For more information and technical support, visit the [Dagger Cloud reference pages](./reference/index.md) or open a support ticket.
+This guide introduced you to Dagger Cloud and walked you registering a new organization, integrating Dagger Cloud with your CI provider/tool, and using Dagger Cloud’s visualization and caching features. For more information and technical support, visit the [Dagger Cloud reference pages](./reference/index.md) or contact Dagger via the support messenger in Dagger Cloud if you need assistance.
 
 ## Appendix A: Create a Dagger pipeline
 
