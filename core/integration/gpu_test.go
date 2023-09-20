@@ -105,7 +105,7 @@ func TestGPUAccess(t *testing.T) {
 			ctr := c.Container().From(cudaImage)
 			contents, err := ctr.
 				// WithGPU(dagger.ContainerWithGPUOpts{Devices: "GPU-5d8950fe-17a6-2fa7-9baa-afa83bba0e2b"}).
-				WithGPU(dagger.ContainerWithGPUOpts{Devices: "all"}).
+				WithAllGPUs().
 				WithExec([]string{"nvidia-smi", "-L"}).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestGPUAccess(t *testing.T) {
 				// Pick first GPU and initialize a Dagger container for it:
 				ctr := c.Container().From(cudaImage)
 				contents, err := ctr.
-					WithGPU(dagger.ContainerWithGPUOpts{Devices: gpus[0]}).
+					WithGPU([]string{gpus[0]}).
 					WithExec([]string{"nvidia-smi", "-L"}).
 					Stdout(ctx)
 				require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestGPUAccessWithPython(t *testing.T) {
 	t.Run("pytorch CUDA availibility check", func(t *testing.T) {
 		ctr := c.Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
-			WithGPU(dagger.ContainerWithGPUOpts{Devices: "all"}).
+			WithAllGPUs().
 			WithExec([]string{"python3", "-c", "import torch; print(torch.cuda.is_available())"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestGPUAccessWithPython(t *testing.T) {
 	t.Run("pytorch tensors sample", func(t *testing.T) {
 		ctr := c.Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
-			WithGPU(dagger.ContainerWithGPUOpts{Devices: "all"}).
+			WithAllGPUs().
 			WithNewFile("/tmp/tensors.py", dagger.ContainerWithNewFileOpts{
 				Contents: torchTensorsSample,
 			}).
