@@ -535,8 +535,10 @@ type Container {
   Sets GPU access parameters for the given container, currently works for Nvidia only.
   """
   withGPU(
-    devices: String
+    devices: [String!]!
   ): Container!
+
+  withAllGPUs: Container!
 
   """
   Retrieves this container after executing the specified command inside it.

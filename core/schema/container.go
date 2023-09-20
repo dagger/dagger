@@ -106,6 +106,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withoutFocus":         ToResolver(s.withoutFocus),
 		"shellEndpoint":        ToResolver(s.shellEndpoint),
 		"withGPU":              ToResolver(s.withGPU),
+		"withAllGPUs":          ToResolver(s.withAllGPUs),
 	})
 
 	return rs
@@ -225,6 +226,10 @@ type containerGpuArgs struct {
 
 func (s *containerSchema) withGPU(ctx *core.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
 	return parent.WithGPU(ctx, args.ContainerGPUOpts)
+}
+
+func (s *containerSchema) withAllGPUs(ctx *core.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
+	return parent.WithGPU(ctx, core.ContainerGPUOpts{Devices: []string{"all"}})
 }
 
 type containerWithEntrypointArgs struct {
