@@ -146,7 +146,7 @@ var DefaultDevEngineOpts = DevEngineOpts{
 		"network-cidr": "10.88.0.0/16",
 	},
 	ConfigEntries: map[string]string{
-		"grpc":                 `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
+		"grpc":                 `address=["unix:///run/user/1000/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
 		`registry."docker.io"`: `mirrors = ["mirror.gcr.io"]`,
 	},
 }
@@ -236,7 +236,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 			"fuse3", "fuse-overlayfs", "shadow-uidmap",
 		}).
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
-			Permissions: 0o700,
+			//Permissions: 0o777,
 		}).
 		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
