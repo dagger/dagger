@@ -1110,7 +1110,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {
 			return nil, fmt.Errorf("GPU support is not enabled, set _EXPERIMENTAL_DAGGER_GPU_SUPPORT")
 		}
-		runOpts = append(runOpts, llb.AddEnv("_EXPERIMENTAL_DAGGER_GPU_PARAMS", strings.Join(container.GPUConfig, ",")))
+		runOpts = append(runOpts, llb.AddEnv("_EXPERIMENTAL_DAGGER_GPU_PARAMS", strings.Join(container.EnabledGPUs, ",")))
 	}
 
 	secretsToScrub := SecretToScrubInfo{}
