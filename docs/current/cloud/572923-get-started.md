@@ -180,6 +180,10 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 </TabItem>
 </Tabs>
 
+:::danger
+When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a common source of unexpected network charges. It's advisable to setup an Amazon S3 Gateway for these cases. Refer to the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) for detailed information on how to do this.
+:::
+
 ## Step 3: Visualize a CI run with Dagger Cloud
 
 :::info

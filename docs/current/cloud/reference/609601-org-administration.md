@@ -13,6 +13,7 @@ You must hold the *Admin* role of a Dagger Cloud organization to administer memb
 :::
 
 You can:
+
 * Add a member to the organization
 * Delete a member from the organization
 
