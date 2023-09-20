@@ -199,7 +199,7 @@ Once your CI workflow begins, navigate to the *All Runs* page of the Dagger Clou
 
 A run represents one invocation of a Dagger pipeline. It contains detailed information about the steps performed by the pipeline.
 
-The *Runs* page provides an overview of all runs. You can drill down into the details of a specific run by clicking it. This directs you to a run-specific Run Details page, as shown below:
+The *All Runs* page provides an overview of all runs. You can drill down into the details of a specific run by clicking it. This directs you to a run-specific Run Details page, as shown below:
 
 ![View run details](/img/current/cloud/get-started/view-run-details-tree.png)
 
