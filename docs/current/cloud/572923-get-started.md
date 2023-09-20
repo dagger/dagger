@@ -65,11 +65,7 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   ![View dashboard](/img/current/cloud/get-started/connect-cloud.png)
 
-1. Click *Connect Dagger Cloud*. You will be redirected to a page containing your Dagger Cloud token. Note this token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
-
-  :::tip
-  You can view this token at any time by browsing to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface), selecting your organization and navigating to the *Configuration* tab.
-  :::
+1. Browse to the *Organization Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
 
   ![Get token](/img/current/cloud/get-started/get-token.png)
 
@@ -242,7 +238,7 @@ You can create as many volumes as needed and manage them from the *Configuration
 
 ## Conclusion
 
-This guide introduced you to Dagger Cloud and walked you registering a new organization, integrating Dagger Cloud with your CI provider/tool, and using Dagger Cloud’s visualization and caching features. For more information and technical support, visit the [Dagger Cloud reference pages](./reference/index.md) or contact Dagger via the support messenger in Dagger Cloud if you need assistance.
+This guide introduced you to Dagger Cloud and walked you registering a new organization, integrating Dagger Cloud with your CI provider/tool, and using Dagger Cloud’s visualization and caching features. For more information and technical support, visit the [Dagger Cloud reference pages](./reference/index.md) or contact Dagger via the support messenger in Dagger Cloud.
 
 ## Appendix A: Create a Dagger pipeline
 

@@ -2,7 +2,9 @@ import { connect } from "@dagger.io/dagger"
 
 connect(
   async (client) => {
+    // highlight-start
     const nodeCache = client.cacheVolume("node")
+    // highlight-end
 
     const source = client
       .container()
@@ -11,7 +13,9 @@ connect(
         "/src",
         client.host().directory(".", { exclude: ["node_modules/", "ci/"] })
       )
-      .withMountedCache("/src/node_modules", nodeCache)
+    // highlight-start
+    .withMountedCache("/src/node_modules", nodeCache)
+    // highlight-end
 
     const runner = source.withWorkdir("/src").withExec(["npm", "install"])
 
