@@ -22,3 +22,5 @@ jobs:
         env:
            DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_TOKEN }}
         // highlight-end
+        - name: Stop Engine
+          run: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
