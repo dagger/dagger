@@ -19,13 +19,13 @@ Here's a quick summary of what you'll see for each run.
 |Field | Description |
 |---|---|
 |Status | Indication of run success or failure |
-|Title | Commit message or pull/merge request title (abbreviated) |
+|Title | Change or commit title (abbreviated) |
 |Commit | Commit ID |
-|Change | |
+|Change | Reference to change in source code repository |
 |Start | Run start time |
 |Duration | Run duration |
 |User | User triggering the run |
-|Runner Job | |
+|Runner Job | Run ID (first 8 identifying bytes) |
 |Branch | Name of the branch in source code repository |
 |Remote | Full path to the remote source code repository |
 
@@ -58,13 +58,13 @@ Here's a quick summary of what you'll see for each change.
 |Field | Description |
 |---|---|
 |Status | Indication of run success or failure |
-|Title | Commit message or pull/merge request title (abbreviated) |
+|Title | Change or commit title (abbreviated) |
 |Commit | Commit ID |
-|Change | |
+|Change | Reference to change in source code repository |
 |Start | Run start time |
 |Duration | Run duration |
 |User | User triggering the run |
-|Runner Job | |
+|Runner Job | Run ID (first 8 identifying bytes) |
 |Branch | Name of the branch in source code repository |
 |Remote | Full path to the remote source code repository |
 
