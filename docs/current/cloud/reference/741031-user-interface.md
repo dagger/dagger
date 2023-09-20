@@ -16,7 +16,7 @@ The *All Runs* page lists available runs, as shown below:
 
 Here's a quick summary of what you'll see for each run.
 
-|Field |	Description |
+|Field | Description |
 |---|---|
 |Status	| Indication of run success or failure |
 |Title | Commit message / pull request title (abbreviated) |
@@ -55,7 +55,7 @@ The *All Changes* page lists available groups, as shown below:
 
 Here's a quick summary of what you'll see for each change.
 
-|Field |	Description |
+|Field | Description |
 |---|---|
 |Status	| Indication of run success or failure |
 |Title | Commit message / pull request title (abbreviated) |
