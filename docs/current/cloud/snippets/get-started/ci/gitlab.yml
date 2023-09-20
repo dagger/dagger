@@ -22,3 +22,4 @@ build:
   script:
     - npm ci
     - dagger run node index.mjs
+    - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
