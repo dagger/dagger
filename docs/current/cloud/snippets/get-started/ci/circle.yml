@@ -23,6 +23,9 @@ jobs:
       - run:
           name: Run Dagger pipeline
           command: dagger run node index.mjs
+     - run:
+         name: Stop Dagger Engine
+         command: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
 workflows:
   dagger:
     jobs:
