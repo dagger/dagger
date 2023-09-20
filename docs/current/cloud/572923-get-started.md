@@ -53,7 +53,7 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   ![Select plan](/img/current/cloud/get-started/invite-team.png)
 
-1. Enter the required payment details. Click *Set payment method* to proceed.
+1. Enter the required payment details. Click *Sign up* to proceed.
 
   ![Add payment method](/img/current/cloud/get-started/add-payment.png)
 
