@@ -1,0 +1,93 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "dagger.fullname" . }}-engine
+  namespace: {{ .Release.Namespace }}
+  labels:
+    k8s-app: {{ include "dagger.fullname" . }}-engine
+    {{- include "dagger.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      name: {{ include "dagger.fullname" . }}-engine
+  template:
+    metadata:
+      {{- if (or .Values.engine.config .Values.magicache.enabled) }}
+      annotations:
+        {{- if .Values.engine.config }}
+        checksum/config: {{ include (print $.Template.BasePath "/engine-config.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.magicache.enabled }}
+        checksum/secret: {{ include (print $.Template.BasePath "/magicache-secret.yaml") . | sha256sum }}
+        {{- end }}
+      {{- end }}
+      labels:
+        name: {{ include "dagger.fullname" . }}-engine
+    spec:
+      {{- with .Values.engine.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: "OnRootMismatch"
+      containers:
+        - name: dagger-engine
+          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
+          imagePullPolicy: Always
+          args:
+            - "--oci-max-parallelism"
+            - "num-cpu"
+          {{- if .Values.magicache.enabled }}
+          env:
+          - name: _EXPERIMENTAL_DAGGER_CACHESERVICE_URL
+            value: {{ required "A magicache url is required" .Values.magicache.url }}
+          envFrom:
+          - secretRef:
+              name: {{ include "dagger.fullname" . }}-magicache-token
+          {{- end }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - ALL
+          resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            {{- if .Values.engine.readinessProbeSettings }}
+            {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: varlibdagger
+              mountPath: /var/lib/dagger
+            - name: varrundagger
+              mountPath: /var/run/buildkit
+            {{- if .Values.engine.config }}
+            - name: dagger-engine-config
+              mountPath: /etc/dagger/engine.toml
+              subPath: engine.toml
+            {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
+      volumes:
+        - name: varlibdagger
+          hostPath:
+            path: /var/lib/dagger
+        - name: varrundagger
+          hostPath:
+            path: /var/run/dagger
+        {{- if .Values.engine.config }}
+        - name: dagger-engine-config
+          configMap:
+            name: {{ include "dagger.fullname" . }}-engine-config
+            items:
+              - key: engine.toml
+                path: engine.toml
+        {{- end }}
