@@ -26,7 +26,7 @@ const (
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
-	EngineDefaultStateDir = "/var/lib/dagger"
+	EngineDefaultStateDir = "/run/lib/dagger"
 
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
@@ -39,16 +39,16 @@ set -e
 
 # cgroup v2: enable nesting
 # see https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
-if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
-	# move the processes from the root group to the /init group,
-	# otherwise writing subtree_control fails with EBUSY.
-	# An error during moving non-existent process (i.e., "cat") is ignored.
-	rootlesskit mkdir -p /sys/fs/cgroup/init
-	rootlesskit xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
-	# enable controllers
-	rootlesskit sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
-		> /sys/fs/cgroup/cgroup.subtree_control
-fi
+# if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+# 	# move the processes from the root group to the /init group,
+# 	# otherwise writing subtree_control fails with EBUSY.
+# 	# An error during moving non-existent process (i.e., "cat") is ignored.
+# 	mkdir -p /sys/fs/cgroup/init
+# 	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+# 	# enable controllers
+# 	sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
+# 		> /sys/fs/cgroup/cgroup.subtree_control
+# fi
 
 exec rootlesskit {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKeys -}}--{{ $key }}="{{ index $.EntrypointArgs $key }}" {{ end -}} "$@"
 `
@@ -245,16 +245,17 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
+		With(rootlessUser).
+		WithUser("user").
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
-			Permissions: 0o600,
+			Permissions: 0o666,
+			Owner:       "user",
 		}).
 		WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineEntrypoint,
 			Permissions: 0o755,
 		}).
-		With(rootlessUser).
-		WithUser("user").
 		WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
 

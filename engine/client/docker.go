@@ -17,7 +17,7 @@ import (
 const (
 	DockerImageProvider = "docker-image"
 	// NOTE: this needs to be consistent with engineDefaultStateDir in internal/mage/engine.go
-	DefaultStateDir = "/var/lib/dagger"
+	DefaultStateDir = "/run/user/1000"
 
 	ServicesDNSEnvName    = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"

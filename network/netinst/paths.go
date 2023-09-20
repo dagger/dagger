@@ -38,7 +38,7 @@ func pidfilePath(name string) string {
 // NOTE: this is only placed beside the other paths for convenience; dnsmasq
 // doesn't try to read it.
 func containerResolvPath(name string) string {
-	return fmt.Sprintf("/var/run/containers/cni/dnsname/%s/resolv.conf", name)
+	return fmt.Sprintf("/run/user/1000/containers/cni/dnsname/%s/resolv.conf", name)
 }
 
 // Location of the CNI configuration which bundles our dnsname plugin.

@@ -5,7 +5,7 @@ import (
 )
 
 // engineDefaultStateDir is the directory that we map to a volume by default.
-const engineDefaultStateDir = "/var/lib/dagger"
+const engineDefaultStateDir = "/run/user/1000"
 
 // engineDefaultShimBin is the path to the shim binary we use as our oci runtime.
 const engineDefaultShimBin = "/usr/local/bin/dagger-shim"

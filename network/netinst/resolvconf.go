@@ -13,7 +13,7 @@ const resolv = "/etc/resolv.conf"
 func InstallResolvconf(name, containerDNS string) error {
 	containerDNSResolv := containerResolvPath(name)
 	if err := createIfNeeded(containerDNSResolv); err != nil {
-		return err
+		return fmt.Errorf("create container dns resolve directory: %v", err)
 	}
 
 	// create the resolv.conf for the container namespace by swapping out the
@@ -23,7 +23,7 @@ func InstallResolvconf(name, containerDNS string) error {
 	}
 
 	if err := createIfNeeded(upstreamResolvPath); err != nil {
-		return err
+		return fmt.Errorf("create upstream resolve directory: %v", err)
 	}
 
 	// preserve original resolv.conf at upstream path
