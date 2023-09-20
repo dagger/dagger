@@ -9,6 +9,10 @@ import TabItem from "@theme/TabItem";
 
 ## General
 
+### What is the Dagger Platform?
+
+We're building the devops operating system, an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs. Soon we will deliver the capability to publish and leverage prebuilt modules to further accelerate the adoption of Dagger across an organization’s pipelines.
+
 ### How do I install Dagger?
 
 Refer to the documentation for information on how to install the [Dagger CLI](./cli/465058-install.md) and the Dagger [Go](./sdk/go/371491-install.md), [Node.js](./sdk/nodejs/835948-install.md) and [Python](./sdk/python/866944-install.md) SDKs.
@@ -150,6 +154,52 @@ Follow these steps:
 ### I am stuck. How can I get help?
 
 Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
+
+## Dagger Cloud
+
+### What is Dagger Cloud?
+
+Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
+
+### Is Dagger Cloud a hosting service for Dagger Engines?
+
+No, Dagger Cloud is a “bring your own compute” service. The Dagger Engine can run on a wide variety of machines, including most development and CI platforms. If the Dagger Engine can run on it, then Dagger Cloud supports it.
+
+### Which CI providers does Dagger Cloud work with?
+
+Because the Dagger Engine can integrate seamlessly with practically any CI, there is no limit to the type and number of CI providers that Dagger Cloud can work with to provide Dagger pipeline visualization, operational insights, and distributed caching. Users report successfully leveraging Dagger with: GitLab, CircleCI, GitHub Actions, Jenkins,Tekton and many more.
+
+### What is pipeline visualization?
+
+Dagger Cloud provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+
+### What operational insights does Dagger Cloud provide?
+
+Dagger Cloud collects telemetry from all your organization’s Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
+
+### What is distributed caching?
+
+One of Dagger’s superpowers is that it caches everything. On a single machine (like a laptop or long-running server), caching "just works", because the same Dagger Engine writing to the cache is also reading from it. But in a multi-machine configuration (like an elastic CI cluster), things get more complicated because all machines are continuously producing and consuming large amounts of cache data. How do we get the right cache data to the right machine at the right time, without wasting compute, networking, or storage resources? This is a complex problem which requires a distributed caching service, to orchestrate the movement of data between all machines in the cluster, and a centralized storage service. Because Dagger Cloud receives telemetry from all Dagger Engines, it can model the state of the cluster and make optimal caching decisions. The more telemetry data it receives, the smarter it becomes.
+
+### Does distributed caching support ephemeral CI runners?
+
+Yes. Ephemeral runners, by definition, lack caching; the runner’s local storage is purged when the runner is spun down. However, when your CI is connected to Dagger Cloud, these ephemeral runners gain all the benefits of a persistent shared cache.
+
+### Does Dagger Cloud store my cache data?
+
+Yes. For distributed caching to work, it requires two components: a centralized storage service and an orchestrator. Dagger Cloud provides both, in one integrated package.
+
+### Where does Dagger Cloud store my cache data?
+
+Dagger Cloud features a global data storage service spanning 26 regions across 3 cloud providers: AWS, Google Cloud Platform, and Cloudflare R2. The region closest to your compute is automatically selected.
+
+### Does Dagger Cloud support “bring your own storage” for distributed caching?
+
+The ability to "bring your own storage" is coming soon. Please reach out to us if this capability is needed for your organization.
+
+### How do I connect my pipelines to Dagger Cloud?
+
+Refer to our [getting started guide](./cloud/572923-get-started.md) for detailed information on connecting Dagger Cloud with your CI provider or CI tool.
 
 ## Dagger SDKs
 
