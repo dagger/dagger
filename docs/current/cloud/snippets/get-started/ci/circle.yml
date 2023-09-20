@@ -19,7 +19,7 @@ jobs:
           command: npm ci
       - run:
           name: Install Dagger CLI
-             command: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+         command: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
       - run:
           name: Run Dagger pipeline
           command: dagger run node index.mjs
