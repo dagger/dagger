@@ -26,7 +26,6 @@ engine:
   image:
     repository: registry.dagger.io/engine
     # See https://github.com/dagger/dagger/blob/main/CHANGELOG.md for a list of available versions
-    # tag: v0.6.5
   tolerations:
     - effect: NoSchedule
       key: dagger-runner
@@ -38,6 +37,7 @@ engine:
         - matchExpressions:
           - key: actions-runner
             operator: Exists
+    # tag: v0.8.7
   readinessProbeSettings: 
     initialDelaySeconds: 5
     timeoutSeconds: 30
