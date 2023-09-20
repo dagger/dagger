@@ -312,6 +312,8 @@ func (t Engine) Dev(ctx context.Context) error {
 	runArgs := []string{
 		"run",
 		"-d",
+		"--security-opt", "seccomp=unconfined",
+		"--security-opt", "apparmor=unconfined",
 		// "--rm",
 		"-e", util.CacheConfigEnvName,
 		"-e", util.ServicesDNSEnvName,
@@ -319,8 +321,6 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
 		"-v", volumeName + ":" + util.EngineDefaultStateDir,
 		"--name", util.EngineContainerName,
-		// "--security-opt", "seccomp=unconfined",
-		// "--security-opt apparmor=unconfined",
 		// "--privileged",
 	}
 	runArgs = append(runArgs, imageName, "--debug")
