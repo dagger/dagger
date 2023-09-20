@@ -1,5 +1,5 @@
 ---
-slug: /609601/org-administration
+slug: /cloud/609601/org-administration
 ---
 
 # Organization Administration
