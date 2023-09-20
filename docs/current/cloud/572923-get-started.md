@@ -65,7 +65,7 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   ![View dashboard](/img/current/cloud/get-started/connect-cloud.png)
 
-1. Browse to the *Organization Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
+1. Browse to the *Organizations Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
 
   ![Get token](/img/current/cloud/get-started/get-token.png)
 
@@ -232,7 +232,7 @@ This revised pipeline now uses a cache volume for the application dependencies.
 - It uses the client's `cacheVolume()` method to initialize a new cache volume named `node`.
 - It uses the `Container.withMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
 
-Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organization Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
+Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organizations Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
 
 ![Manage volumes](/img/current/cloud/get-started/manage-volumes.png)
 
