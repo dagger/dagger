@@ -13,9 +13,9 @@ connect(
         "/src",
         client.host().directory(".", { exclude: ["node_modules/", "ci/"] })
       )
-    // highlight-start
-    .withMountedCache("/src/node_modules", nodeCache)
-    // highlight-end
+      // highlight-start
+      .withMountedCache("/src/node_modules", nodeCache)
+      // highlight-end
 
     const runner = source.withWorkdir("/src").withExec(["npm", "install"])
 

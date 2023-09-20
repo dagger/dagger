@@ -170,9 +170,11 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 ```
 
 :::note
+
 - This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
 - If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
 - Typically, Jenkins servers are non-ephemeral and therefore it is not necessary to adjust the `docker stop` timeout.
+
 :::
 
 </TabItem>
