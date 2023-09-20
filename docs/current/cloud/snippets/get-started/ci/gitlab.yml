@@ -10,7 +10,7 @@
     DOCKER_DRIVER: overlay2
     DOCKER_VERSION: '20.10.16'
     // highlight-start
-    DAGGER_CLOUD_TOKEN: $DAGGER_TOKEN
+    DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
     // highlight-end
 .dagger:
   extends: [.docker]
@@ -22,6 +22,8 @@ build:
   script:
     - npm ci
     - dagger run node index.mjs
+    // highlight-start
     # for ephemeral runners only: override the default docker stop timeout and
-    # give the Dagger Engine more time to push cache data to Dagger cloud
+    # give the Dagger Engine more time to push cache data to Dagger Cloud
     - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
+    // highlight-end

@@ -8,7 +8,7 @@ Dagger Cloud lets you visualize your Dagger pipelines in two ways: runs and chan
 
 ## Runs
 
-A run is an invocation of a Dagger pipeline. Depending on your CI workflow configuration, you may see several runs for a single commit or single pull request.
+A run is an invocation of a Dagger pipeline. If you have many CI jobs configured to run for every pull/merge request or commit, you may see several runs for a single commit or single pull/merge request.
 
 The *All Runs* page lists available runs, as shown below:
 
@@ -19,7 +19,7 @@ Here's a quick summary of what you'll see for each run.
 |Field | Description |
 |---|---|
 |Status | Indication of run success or failure |
-|Title | Commit message / pull request title (abbreviated) |
+|Title | Commit message or pull/merge request title (abbreviated) |
 |Commit | Commit ID |
 |Change | |
 |Start | Run start time |
@@ -47,7 +47,7 @@ It is also possible to view a run as a Directed Acyclic Graph (DAG). This DAG vi
 
 ## Changes
 
-A change is a group of runs for a specific commit or pull request.
+A change is a group of runs for a specific commit or pull/merge request.
 
 The *All Changes* page lists available groups, as shown below:
 
@@ -58,7 +58,7 @@ Here's a quick summary of what you'll see for each change.
 |Field | Description |
 |---|---|
 |Status | Indication of run success or failure |
-|Title | Commit message / pull request title (abbreviated) |
+|Title | Commit message or pull/merge request title (abbreviated) |
 |Commit | Commit ID |
 |Change | |
 |Start | Run start time |

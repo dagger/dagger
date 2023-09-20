@@ -36,7 +36,7 @@ At the end of this step, you will have signed up for Dagger Cloud and obtained a
 
 Follow the steps below to sign up for Dagger Cloud, create an organization and obtain a Dagger Cloud token.
 
-1. Browse to the [Dagger Cloud website](https://www.dagger.io/cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
+1. Browse to the [Dagger Cloud website](dagger.cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
 
   ![Authenticate with GitHub](/img/current/cloud/get-started/connect-github.png)
 
@@ -82,18 +82,21 @@ At the end of this step, you will have connected Dagger Cloud with your CI provi
 The Dagger Cloud dashboard will not display any data until you connect your Dagger Cloud account with a CI provider or CI tool. The general procedure to do this is:
 
 - Store the token as a secret with your CI provider/in your CI tool.
-- Add the secret to your CI environment as a variable named DAGGER_CLOUD_TOKEN.
+- Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
+- For *Team* plan subscribers with ephemeral CI runners only: Adjust the Docker configuration to wait longer  before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache
 
 :::danger
-You must store this token as a secret (not plaintext) with your CI provider and reference it in your CI’s workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project.
+You must store the Dagger Cloud token as a secret (not plaintext) with your CI provider and reference it in your CI’s workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project.
 :::
 
 <Tabs groupId="ci">
 <TabItem value="GitHub Actions">
 
-1. Create a new secret for your GitHub repository named `DAGGER_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
+1. Create a new secret for your GitHub repository named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
 
-1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
+1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
+
+1. For *Team* plan subscribers with ephemeral CI runners only: Update your GitHub Actions workflow and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
 
@@ -109,9 +112,11 @@ You can use this file with the starter application and Dagger pipeline in [Appen
 </TabItem>
 <TabItem value="GitLab CI">
 
-1. Create a new CI/CD project variable in your GitLab project named `DAGGER_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Ensure that you configure the project variable to be masked and protected. Refer to the GitLab documentation on [creating CI/CD project variables](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) and [CI/CD variable security](https://docs.gitlab.com/ee/ci/variables/#cicd-variable-security).
+1. Create a new CI/CD project variable in your GitLab project named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Ensure that you configure the project variable to be masked and protected. Refer to the GitLab documentation on [creating CI/CD project variables](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) and [CI/CD variable security](https://docs.gitlab.com/ee/ci/variables/#cicd-variable-security).
 
 1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
+
+1. For *Team* plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
 Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighted:
 
@@ -123,7 +128,9 @@ Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighte
 
 1. Create a new environment variable in your CircleCI project named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the CircleCI documentation on [creating environment variables for a project](https://circleci.com/docs/set-environment-variable/#set-an-environment-variable-in-a-project).
 
-1. If your source code is stored in a GitHub, GitLab or Atlassian Bitbucket repository, update your CircleCI workflow and add the following pipeline values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
+1. For *Team* plan subscribers with ephemeral CI runners only: Update your CircleCI workflow and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
+
+1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following pipeline values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
 
   GitHub:
 
@@ -157,13 +164,9 @@ Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variabl
 </TabItem>
 <TabItem value="Jenkins">
 
-1. Configure a Jenkins credential named `DAGGER_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the Jenkins documentation on [creating credentials](https://www.jenkins.io/doc/book/using/using-credentials/#configuring-credentials) and [credential security](https://www.jenkins.io/doc/book/using/using-credentials/#credential-security).
+1. Configure a Jenkins credential named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the Jenkins documentation on [creating credentials](https://www.jenkins.io/doc/book/using/using-credentials/#configuring-credentials) and [credential security](https://www.jenkins.io/doc/book/using/using-credentials/#credential-security).
 
-1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
-
-  :::note
-  If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
-  :::
+1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
 
 Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 
@@ -171,7 +174,9 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 ```
 
 :::note
-This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
+- This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
+- If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
+- Typically, Jenkins servers are non-ephemeral and therefore it is not necessary to adjust the `docker stop` timeout.
 :::
 
 </TabItem>

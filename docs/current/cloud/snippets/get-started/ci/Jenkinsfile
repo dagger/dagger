@@ -2,7 +2,7 @@ pipeline {
   agent { label 'dagger' }
 
   environment {
-   DAGGER_CLOUD_TOKEN =  credentials('DAGGER_TOKEN')
+   DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
   }
 
   stages {
