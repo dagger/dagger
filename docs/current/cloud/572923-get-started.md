@@ -146,7 +146,7 @@ Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighte
 
   ```yaml
   environment:
-    CIRCLE_PIPELINE_NUMBER: << pipeline.number
+    CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
   ```
 
 Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variable will be automatically injected.
