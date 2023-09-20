@@ -263,7 +263,7 @@ func loadPackages(ctx context.Context, dir string) ([]*packages.Package, error) 
 			packages.NeedSyntax |
 			packages.NeedTypesInfo |
 			packages.NeedModule,
-	}, "./...")
+	}, ".")
 }
 
 func (g *GoGenerator) baseModuleSource() string {
