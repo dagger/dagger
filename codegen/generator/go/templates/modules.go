@@ -272,7 +272,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 				fnCallArgs = append(fnCallArgs, Id(optsName))
 			} else {
-				argName := arg.Name()
+				argName := strcase.ToLowerCamel(arg.Name())
 
 				statements = append(statements,
 					Var().Id(argName).Id(renderNameOrStruct(arg.Type())),
