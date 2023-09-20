@@ -39,6 +39,7 @@
 - Use API Playground embeds where possible (see "API Playground embeds" section below).
 
 ## Images
+
 - Images must be PNG format with a minimum width of 679 px.
 
 ## Text
