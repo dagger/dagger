@@ -564,7 +564,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true))))
+	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))))
 	if err != nil {
 		return nil, err
 	}

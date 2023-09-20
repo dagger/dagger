@@ -455,6 +455,13 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"some-file"}, entries)
 
+	entries, err = dir1.
+		WithoutDirectory("non-existent").
+		Entries(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-dir", "some-file"}, entries)
+
 	dir := c.Directory().
 		WithNewFile("foo.txt", "foo").
 		WithNewFile("a/bar.txt", "bar").
