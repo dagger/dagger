@@ -174,7 +174,7 @@ Dagger engine relies on a buildkit engine, it order to run it rootless, we need 
 It's an experimental tool that aims to replace root with a fakeroot using user namespaces, however depending on the host operating system, some feature might not be fully supported.
 
 Meaning that dagger may have unsupported feature on some platform and kernel specifications. Since dagger aims to be a CI/CD that runs consistently everywhere, dealing with specific platform capabilities is opposite to our objective.
-No matter the distribution: Linux, Mac or Windows, Dagger need to work the same way. 
+No matter the distribution: Linux, Mac or Windows, Dagger need to work the same way.
 
 #### Volume constraint
 
