@@ -10,7 +10,10 @@ connect(
       .container()
       .from("node:18")
       .withDirectory("/src", client.host().directory("."))
-      .withMountedCache("/src/node_modules", client.cacheVolume("node-18-myapp-myenv"))
+      .withMountedCache(
+        "/src/node_modules",
+        client.cacheVolume("node-18-myapp-myenv")
+      )
 
     // set the working directory in the container
     // install application dependencies
