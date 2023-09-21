@@ -15,7 +15,7 @@ func TestHTTP(t *testing.T) {
 	c, ctx := connect(t)
 
 	// do two in a row to ensure each gets downloaded correctly
-	url := "https://raw.githubusercontent.com/dagger/dagger/main/TESTING.md"
+	url := "https://raw.githubusercontent.com/dagger/dagger/main/CONTRIBUTING.md"
 	contents, err := c.HTTP(url).Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, contents, "tests")
