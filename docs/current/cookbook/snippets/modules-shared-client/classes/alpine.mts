@@ -1,6 +1,6 @@
 import { Client, Container } from "@dagger.io/dagger"
 
-export class Pipelines {
+export class Alpine {
   private client: Client
 
   // initialize pipeline class

@@ -1,7 +1,7 @@
 import dagger
 
 
-class Pipelines:
+class Alpine:
     __client: dagger.Client
 
     # initialize pipeline class

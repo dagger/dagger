@@ -1,12 +1,12 @@
 import { connect, Client } from "@dagger.io/dagger"
 
-import * as pipelines from "./pipelines.mts"
+import * as alpine from "./alpine.mts"
 
 connect(
   // initialize Dagger client
   // pass client to method imported from another module
   async (client: Client) => {
-    console.log(await pipelines.version(client))
+    console.log(await alpine.version(client))
   },
   { LogOutput: process.stderr }
 )

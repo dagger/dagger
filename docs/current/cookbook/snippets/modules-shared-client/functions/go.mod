@@ -2,7 +2,7 @@ module main
 
 go 1.20
 
-require dagger.io/dagger v0.8.2
+require dagger.io/dagger v0.8.7
 
 require (
 	github.com/99designs/gqlgen v0.17.31 // indirect
