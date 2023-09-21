@@ -70,9 +70,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
-		// 0 when  failed to list container, 1 when there is no container
-		// due to the present of EOL in output
-		if len(leftoverEngines) <= 1 {
+		if len(leftoverEngines) == 0 {
 			return "", errors.Errorf("no fallback container found")
 		}
 		firstEngine := leftoverEngines[0]
@@ -148,6 +146,11 @@ func collectLeftoverEngines(ctx context.Context) ([]string, error) {
 		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
 	).CombinedOutput()
+	output = bytes.TrimSpace(output)
+
+	if len(output) == 0 {
+		return nil, err
+	}
 
 	engineNames := strings.Split(string(output), "\n")
 	return engineNames, err
