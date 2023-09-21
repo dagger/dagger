@@ -46,7 +46,7 @@ func (Helm) Test(ctx context.Context) error {
 	return nil
 }
 
-func (Helm) Publish(ctx context.Context) error {
+func (Helm) Publish(ctx context.Context, tag string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -64,13 +64,11 @@ func (Helm) Publish(ctx context.Context) error {
 
 	secret := c.SetSecret("GITHUB_TOKEN", env)
 
+	version := strings.TrimPrefix(tag, "helm/chart/v")
+
 	helm := c.Container().From("alpine/helm:3.12.3").
 		WithDirectory("/tmp/dagger-helm", helmChart).
 		WithWorkdir("/tmp/dagger-helm")
-
-	version, err := helm.WithExec([]string{"sh", "-c", "grep ^version Chart.yaml | cut -f 2 -d ' '"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).Stdout(ctx)
-
-	version = strings.TrimSpace(version)
 
 	if err != nil {
 		return err
