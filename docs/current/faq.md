@@ -168,7 +168,7 @@ Currently, the Dagger engine cannot be run as a rootless container, some complex
 We know that it can be a limitation if you are using a managed container environment or have security constraints.
 However, running an unprivileged dagger engine strongly limit capabilities and performances of dagger.
 
-**Platform constraint**
+#### Platform constraint
 
 Dagger engine relies on a buildkit engine, it order to run it rootless, we need to use [Rootlesskit](https://github.com/rootless-containers/rootlesskit).
 It's an experimental tool that aims to replace root with a fakeroot using user namespaces, however depending on the host operating system, some feature might not be fully supported.
@@ -176,7 +176,7 @@ It's an experimental tool that aims to replace root with a fakeroot using user n
 Meaning that dagger may have unsupported feature on some platform and kernel specifications. Since dagger aims to be a CI/CD that runs consistently everywhere, dealing with specific platform capabilities is opposite to our objective.
 No matter the distribution: Linux, Mac or Windows, Dagger need to work the same way. 
 
-**Volume constraint**
+#### Volume constraint
 
 Dagger engine relies on overlayfs snapshotter to mounts for efficient operation, running as rootless require to use [fuse-overlayfs](https://github.com/containers/fuse-overlayfs) which is a rootless implementation of overlayfs.
 
@@ -185,14 +185,14 @@ Meaning that if it's not possible to use the default snapshotter, you will exper
 
 Dagger aims to accelerate your CI/CD pipeline, reducing performances also reduces the value Dagger adds as well as leading to unstable behaviour.
 
-**Network constraint**
+#### Network constraint
 
 Using a rootless engine will especially constraint the custom network management of Dagger.
 
 It is possible to use [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but it will highly decrease network performances in addition to be extremely complex to setup.
 Rootlesskit wrote a [table of comparaison]((https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers)), we can observe that slirp is at least five time slower than root network, meaning that dagger will be way slower if ran as rootless.
 
-**Conclusion**
+#### Conclusion
 
 It might be possible in the future once these constraint vanish but for now it's highly recommended to run dagger engine with privileges if you want to unlock its full potentiel.
 
