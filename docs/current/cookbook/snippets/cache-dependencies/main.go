@@ -25,9 +25,9 @@ func main() {
 	source := client.Container().
 		From("golang:1.21").
 		WithDirectory("/src", client.Host().Directory(".")).
-		WithMountedCache("/go/pkg/mod", client.CacheVolume("go-mod")).
+		WithMountedCache("/go/pkg/mod", client.CacheVolume("go-mod-121-myapp-myenv")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-		WithMountedCache("/go/build-cache", client.CacheVolume("go-build")).
+		WithMountedCache("/go/build-cache", client.CacheVolume("go-build-121-myapp-myenv")).
 		WithEnvVariable("GOCACHE", "/go/build-cache")
 
 	// set the working directory in the container

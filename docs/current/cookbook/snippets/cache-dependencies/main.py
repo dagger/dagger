@@ -9,11 +9,6 @@ async def main():
     config = dagger.Config(log_output=sys.stdout)
 
     async with dagger.Connection(config) as client:
-        # create cache volumes as needed
-        pip_cache = client.cache_volume("pip")
-        pipx_cache = client.cache_volume("pipx")
-        hatch_cache = client.cache_volume("hatch")
-
         # use a python:3.11 container
         # mount the source code directory on the host
         # at /src in the container
@@ -26,9 +21,17 @@ async def main():
                 client.host().directory("."),
                 exclude=[".venv/", ".cache/", "ci/"],
             )
-            .with_mounted_cache("/root/.cache/pip", pip_cache)
-            .with_mounted_cache("/root/.local/pipx/cache", pipx_cache)
-            .with_mounted_cache("/root/.cache/hatch", hatch_cache)
+            .with_mounted_cache(
+                "/root/.cache/pip", client.cache_volume("pip-python-311-myapp-myenv")
+            )
+            .with_mounted_cache(
+                "/root/.local/pipx/cache",
+                client.cache_volume("pipx-python-311-myapp-myenv"),
+            )
+            .with_mounted_cache(
+                "/root/.cache/hatch",
+                client.cache_volume("hatch-python-311-myapp-myenv"),
+            )
         )
 
         # set the working directory in the container
