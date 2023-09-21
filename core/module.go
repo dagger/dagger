@@ -52,8 +52,8 @@ type Module struct {
 	// Dependencies as configured by the module
 	DependencyConfig []string `json:"dependencyConfig"`
 
-	// The module's functions
-	Functions []*Function `json:"functions,omitempty"`
+	// The module's objects
+	Objects []*TypeDef `json:"objects,omitempty"`
 
 	// (Not in public API) The container used to execute the module's functions,
 	// derived from the SDK, source directory, and workdir.
@@ -92,7 +92,7 @@ func (mod *Module) PBDefinitions() ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-func (mod Module) Clone() (*Module, error) {
+func (mod Module) Clone() *Module {
 	cp := mod
 	if mod.SourceDirectory != nil {
 		cp.SourceDirectory = mod.SourceDirectory.Clone()
@@ -102,21 +102,13 @@ func (mod Module) Clone() (*Module, error) {
 	}
 	cp.Dependencies = make([]*Module, len(mod.Dependencies))
 	for i, dep := range mod.Dependencies {
-		var err error
-		cp.Dependencies[i], err = dep.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone dependency %q: %w", dep.Name, err)
-		}
+		cp.Dependencies[i] = dep.Clone()
 	}
-	cp.Functions = make([]*Function, len(mod.Functions))
-	for i, function := range mod.Functions {
-		var err error
-		cp.Functions[i], err = function.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone function %q: %w", function.Name, err)
-		}
+	cp.Objects = make([]*TypeDef, len(mod.Objects))
+	for i, def := range mod.Objects {
+		cp.Objects[i] = def.Clone()
 	}
-	return &cp, nil
+	return &cp
 }
 
 func NewModule(platform ocispecs.Platform, pipeline pipeline.Path) *Module {
@@ -221,17 +213,14 @@ func (mod *Module) FromConfig(
 	return mod, nil
 }
 
-func (mod *Module) WithFunction(fn *Function) (*Module, error) {
-	mod, err := mod.Clone()
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone module: %w", err)
+func (mod *Module) WithObject(def *TypeDef) (*Module, error) {
+	mod = mod.Clone()
+	// need to clone def too since updateMod will mutate it
+	def = def.Clone()
+	if def.AsObject == nil {
+		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}
-	// need to clone fn too since updateMod will mutate it
-	fn, err = fn.Clone()
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone function: %w", err)
-	}
-	mod.Functions = append(mod.Functions, fn)
+	mod.Objects = append(mod.Objects, def)
 	return mod, mod.updateMod()
 }
 
@@ -273,12 +262,9 @@ func (mod *Module) recalcRuntime(
 
 // DigestWithoutFunctions gives a digest after unsetting Functions, which is useful
 // as a digest of the "base" Module that's stable before+after loading Functions.
-func (mod *Module) DigestWithoutFunctions() (digest.Digest, error) {
-	mod, err := mod.Clone()
-	if err != nil {
-		return "", fmt.Errorf("failed to clone module: %w", err)
-	}
-	mod.Functions = nil
+func (mod *Module) DigestWithoutObjects() (digest.Digest, error) {
+	mod = mod.Clone()
+	mod.Objects = nil
 	return stableDigest(mod)
 }
 
@@ -332,10 +318,7 @@ func (id ModuleID) Decode() (*Module, error) {
 }
 
 func (mod *Module) ID() (ModuleID, error) {
-	mod, err := mod.Clone()
-	if err != nil {
-		return "", fmt.Errorf("failed to clone module: %w", err)
-	}
+	mod = mod.Clone()
 	// unset the ModuleID fields of any of this module's functions and use that to serialize to ID
 	if err := mod.setFunctionMods(""); err != nil {
 		return "", fmt.Errorf("failed to set function mods: %w", err)
@@ -348,10 +331,7 @@ func (mod *Module) ID() (ModuleID, error) {
 }
 
 func (mod *Module) Digest() (digest.Digest, error) {
-	mod, err := mod.Clone()
-	if err != nil {
-		return "", fmt.Errorf("failed to clone module: %w", err)
-	}
+	mod = mod.Clone()
 	if err := mod.setFunctionMods(""); err != nil {
 		return "", fmt.Errorf("failed to set function mods: %w", err)
 	}
@@ -394,9 +374,14 @@ func (mod *Module) setFunctionMods(id ModuleID) error {
 		return nil
 	}
 
-	for _, fn := range mod.Functions {
-		if err := set("", fn); err != nil {
-			return err
+	for _, def := range mod.Objects {
+		if def.AsObject == nil {
+			return fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
+		}
+		for _, fn := range def.AsObject.Functions {
+			if err := set("", fn); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

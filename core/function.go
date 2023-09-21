@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagger/core/resourceid"
@@ -20,6 +19,13 @@ type Function struct {
 	ModuleID ModuleID `json:"moduleID,omitempty"`
 }
 
+func NewFunction(name string, returnType *TypeDef) *Function {
+	return &Function{
+		Name:       name,
+		ReturnType: returnType,
+	}
+}
+
 func (fn *Function) ID() (FunctionID, error) {
 	return resourceid.Encode(fn)
 }
@@ -29,23 +35,33 @@ func (fn *Function) Digest() (digest.Digest, error) {
 	return stableDigest(fn)
 }
 
-func (fn Function) Clone() (*Function, error) {
+func (fn Function) Clone() *Function {
 	cp := fn
 	cp.Args = make([]*FunctionArg, len(fn.Args))
-	var err error
 	for i, arg := range fn.Args {
-		cp.Args[i], err = arg.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone function arg %q: %w", arg.Name, err)
-		}
+		cp.Args[i] = arg.Clone()
 	}
 	if fn.ReturnType != nil {
-		cp.ReturnType, err = fn.ReturnType.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone return type: %w", err)
-		}
+		cp.ReturnType = fn.ReturnType.Clone()
 	}
-	return &cp, nil
+	return &cp
+}
+
+func (fn *Function) WithDescription(desc string) *Function {
+	fn = fn.Clone()
+	fn.Description = desc
+	return fn
+}
+
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue any) *Function {
+	fn = fn.Clone()
+	fn.Args = append(fn.Args, &FunctionArg{
+		Name:         name,
+		Description:  desc,
+		TypeDef:      typeDef,
+		DefaultValue: defaultValue,
+	})
+	return fn
 }
 
 type FunctionArg struct {
@@ -55,24 +71,13 @@ type FunctionArg struct {
 	DefaultValue any      `json:"defaultValue"`
 }
 
-func (arg FunctionArg) Clone() (*FunctionArg, error) {
+func (arg FunctionArg) Clone() *FunctionArg {
 	cp := arg
-	var err error
-	cp.TypeDef, err = arg.TypeDef.Clone()
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone type def: %w", err)
-	}
-
-	// TODO: not sure there's any better way to clone any besides a ser/deser cycle
-	bs, err := json.Marshal(arg.DefaultValue)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal default value: %w", err)
-	}
-	if err := json.Unmarshal(bs, &cp.DefaultValue); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal default value: %w", err)
-	}
-
-	return &cp, nil
+	cp.TypeDef = arg.TypeDef.Clone()
+	// NB(vito): don't bother copying DefaultValue, it's already 'any' so it's
+	// hard to imagine anything actually mutating it at runtime vs. replacing it
+	// wholesale.
+	return &cp
 }
 
 type TypeDef struct {
@@ -82,23 +87,75 @@ type TypeDef struct {
 	AsObject *ObjectTypeDef `json:"asObject"`
 }
 
-func (typeDef TypeDef) Clone() (*TypeDef, error) {
+func (fn *TypeDef) ID() (TypeDefID, error) {
+	return resourceid.Encode(fn)
+}
+
+func (fn *TypeDef) Digest() (digest.Digest, error) {
+	// TODO: does this need to unpack ModuleID and stable digest that?
+	return stableDigest(fn)
+}
+
+func (typeDef TypeDef) Clone() *TypeDef {
 	cp := typeDef
 	if typeDef.AsList != nil {
-		var err error
-		cp.AsList, err = typeDef.AsList.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone typedef list definition: %w", err)
-		}
+		cp.AsList = typeDef.AsList.Clone()
 	}
 	if typeDef.AsObject != nil {
-		var err error
-		cp.AsObject, err = typeDef.AsObject.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone typedef object definition: %w", err)
-		}
+		cp.AsObject = typeDef.AsObject.Clone()
 	}
-	return &cp, nil
+	return &cp
+}
+
+func (typeDef *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Kind = kind
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
+	typeDef = typeDef.WithKind(TypeDefKindList)
+	typeDef.AsList = &ListTypeDef{
+		ElementTypeDef: elem,
+	}
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithObject(name, desc string) *TypeDef {
+	typeDef = typeDef.WithKind(TypeDefKindObject)
+	typeDef.AsObject = &ObjectTypeDef{
+		Name:        name,
+		Description: desc,
+	}
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Optional = optional
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string) (*TypeDef, error) {
+	if typeDef.AsObject == nil {
+		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
+	}
+	typeDef = typeDef.Clone()
+	typeDef.AsObject.Fields = append(typeDef.AsObject.Fields, &FieldTypeDef{
+		Name:        name,
+		Description: desc,
+		TypeDef:     fieldType,
+	})
+	return typeDef, nil
+}
+
+func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
+	if typeDef.AsObject == nil {
+		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
+	}
+	typeDef = typeDef.Clone()
+	typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
+	return typeDef, nil
 }
 
 type ObjectTypeDef struct {
@@ -108,28 +165,20 @@ type ObjectTypeDef struct {
 	Functions   []*Function     `json:"functions"`
 }
 
-func (typeDef ObjectTypeDef) Clone() (*ObjectTypeDef, error) {
+func (typeDef ObjectTypeDef) Clone() *ObjectTypeDef {
 	cp := typeDef
 
 	cp.Fields = make([]*FieldTypeDef, len(typeDef.Fields))
 	for i, field := range typeDef.Fields {
-		var err error
-		cp.Fields[i], err = field.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone field %q: %w", field.Name, err)
-		}
+		cp.Fields[i] = field.Clone()
 	}
 
 	cp.Functions = make([]*Function, len(typeDef.Functions))
 	for i, fn := range typeDef.Functions {
-		var err error
-		cp.Functions[i], err = fn.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone function %q: %w", fn.Name, err)
-		}
+		cp.Functions[i] = fn.Clone()
 	}
 
-	return &cp, nil
+	return &cp
 }
 
 func (typeDef ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
@@ -156,32 +205,24 @@ type FieldTypeDef struct {
 	TypeDef     *TypeDef `json:"typeDef"`
 }
 
-func (typeDef FieldTypeDef) Clone() (*FieldTypeDef, error) {
+func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
 	cp := typeDef
 	if typeDef.TypeDef != nil {
-		var err error
-		cp.TypeDef, err = typeDef.TypeDef.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone field typedef: %w", err)
-		}
+		cp.TypeDef = typeDef.TypeDef.Clone()
 	}
-	return &cp, nil
+	return &cp
 }
 
 type ListTypeDef struct {
 	ElementTypeDef *TypeDef `json:"elementTypeDef"`
 }
 
-func (typeDef ListTypeDef) Clone() (*ListTypeDef, error) {
+func (typeDef ListTypeDef) Clone() *ListTypeDef {
 	cp := typeDef
 	if typeDef.ElementTypeDef != nil {
-		var err error
-		cp.ElementTypeDef, err = typeDef.ElementTypeDef.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone list element typedef: %w", err)
-		}
+		cp.ElementTypeDef = typeDef.ElementTypeDef.Clone()
 	}
-	return &cp, nil
+	return &cp
 }
 
 type TypeDefKind string

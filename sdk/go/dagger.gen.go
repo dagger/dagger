@@ -54,6 +54,8 @@ type SecretID string
 // A content-addressed socket identifier.
 type SocketID string
 
+type TypeDefID string
+
 type Void string
 
 // Key value object that represents a build argument.
@@ -65,80 +67,18 @@ type BuildArg struct {
 	Value string `json:"value,omitempty"`
 }
 
-// A definition of a field on a custom object defined in a Module.
-// A field on an object has a static value, as opposed to a function on an
-// object whose value is computed by invoking code (and can accept arguments).
-type FieldTypeDefInput struct {
-	// A doc string for the field, if any
-	Description string `json:"description,omitempty"`
-
-	// The name of the field in the object
-	Name string `json:"name,omitempty"`
-
-	// The type of the field
-	TypeDef *TypeDefInput `json:"typeDef,omitempty"`
-}
-
-type FunctionArgDef struct {
-	// A default value to use for this argument if not explicitly set by the caller, if any
-	DefaultValue JSON `json:"defaultValue,omitempty"`
-
-	// A doc string for the argument, if any
-	Description string `json:"description,omitempty"`
-
-	// The name of the argument
-	Name string `json:"name,omitempty"`
-
-	// The type of the argument
-	TypeDef *TypeDefInput `json:"typeDef,omitempty"`
-}
-
 type FunctionCallInput struct {
 	// The name of the argument to the function
 	Name string `json:"name,omitempty"`
 
-	// The value of the argument to the function, representing as a JSON-serialized string.
+	// The value of the argument represented as a string of the JSON serialization.
 	Value JSON `json:"value,omitempty"`
-}
-
-type FunctionDef struct {
-	// Arguments accepted by this function, if any
-	Args []*FunctionArgDef `json:"args,omitempty"`
-
-	// A doc string for the function, if any
-	Description string `json:"description,omitempty"`
-
-	// The name of the function
-	Name string `json:"name,omitempty"`
-
-	// The type returned by this function
-	ReturnType *TypeDefInput `json:"returnType,omitempty"`
-}
-
-type ListTypeDefInput struct {
-	// The type of the elements in the list
-	ElementTypeDef *TypeDefInput `json:"elementTypeDef,omitempty"`
 }
 
 type ModuleEnvironmentVariable struct {
 	Name string `json:"name,omitempty"`
 
 	Value string `json:"value,omitempty"`
-}
-
-// A definition of a custom object defined in a Module.
-type ObjectTypeDefInput struct {
-	// The doc string for the object, if any
-	Description string `json:"description,omitempty"`
-
-	// Static fields defined on this object, if any
-	Fields []*FieldTypeDefInput `json:"fields,omitempty"`
-
-	// Functions defined on this object, if any
-	Functions []*FunctionDef `json:"functions,omitempty"`
-
-	// The name of the object
-	Name string `json:"name,omitempty"`
 }
 
 // Key value object that represents a Pipeline label.
@@ -148,23 +88,6 @@ type PipelineLabel struct {
 
 	// Label value.
 	Value string `json:"value,omitempty"`
-}
-
-// A definition of a type used in a Module as an argument, return type or object field.
-type TypeDefInput struct {
-	// If kind is LIST, the list-specific type definition.
-	// If kind is not LIST, this will be null."
-	AsList *ListTypeDefInput `json:"asList,omitempty"`
-
-	// If kind is OBJECT, the object-specific type definition.
-	// If kind is not OBJECT, this will be null."
-	AsObject *ObjectTypeDefInput `json:"asObject,omitempty"`
-
-	// The kind of type this is (e.g. primitive, list, object)
-	Kind TypeDefKind `json:"kind,omitempty"`
-
-	// Whether this type can be set to null
-	Optional bool `json:"optional,omitempty"`
 }
 
 // A directory whose contents persist across runs.
@@ -2095,6 +2018,14 @@ type Function struct {
 	id          *FunctionID
 	name        *string
 }
+type WithFunctionFunc func(r *Function) *Function
+
+// With calls the provided function with current Function.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Function) With(f WithFunctionFunc) *Function {
+	return f(r)
+}
 
 // Arguments accepted by this function, if any
 func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
@@ -2229,6 +2160,48 @@ func (r *Function) ReturnType() *TypeDef {
 	q := r.q.Select("returnType")
 
 	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// FunctionWithArgOpts contains options for Function.WithArg
+type FunctionWithArgOpts struct {
+	// A doc string for the argument, if any
+	Description string
+	// A default value to use for this argument if not explicitly set by the caller, if any
+	DefaultValue JSON
+}
+
+// Returns the function with the provided argument
+func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithArgOpts) *Function {
+	assertNotNil("typeDef", typeDef)
+	q := r.q.Select("withArg")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+		// `defaultValue` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultValue) {
+			q = q.Arg("defaultValue", opts[i].DefaultValue)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("typeDef", typeDef)
+
+	return &Function{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Returns the function with the doc string
+func (r *Function) WithDescription(description string) *Function {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &Function{
 		q: q,
 		c: r.c,
 	}
@@ -2690,37 +2663,6 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Functions served by this module
-func (r *Module) Functions(ctx context.Context) ([]Function, error) {
-	q := r.q.Select("functions")
-
-	q = q.Select("id")
-
-	type functions struct {
-		Id FunctionID
-	}
-
-	convert := func(fields []functions) []Function {
-		out := []Function{}
-
-		for i := range fields {
-			out = append(out, Function{id: &fields[i].Id})
-		}
-
-		return out
-	}
-	var response []functions
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // The ID of the module
 func (r *Module) ID(ctx context.Context) (ModuleID, error) {
 	if r.id != nil {
@@ -2772,6 +2714,37 @@ func (r *Module) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Objects served by this module
+func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("objects")
+
+	q = q.Select("id")
+
+	type objects struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []objects) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			out = append(out, TypeDef{id: &fields[i].Id})
+		}
+
+		return out
+	}
+	var response []objects
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // The SDK used by this module
@@ -2837,10 +2810,11 @@ func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// This module plus the given Function associated with it
-func (r *Module) WithFunction(id *Function) *Module {
-	q := r.q.Select("withFunction")
-	q = q.Arg("id", id)
+// This module plus the given Object type and associated functions
+func (r *Module) WithObject(object *TypeDef) *Module {
+	assertNotNil("object", object)
+	q := r.q.Select("withObject")
+	q = q.Arg("object", object)
 
 	return &Module{
 		q: q,
@@ -3216,10 +3190,11 @@ func (r *Client) Module(opts ...ModuleOpts) *Module {
 }
 
 // Create a new function from the provided definition.
-func (r *Client) NewFunction(def *FunctionDef) *Function {
-	assertNotNil("def", def)
+func (r *Client) NewFunction(name string, returnType *TypeDef) *Function {
+	assertNotNil("returnType", returnType)
 	q := r.q.Select("newFunction")
-	q = q.Arg("def", def)
+	q = q.Arg("name", name)
+	q = q.Arg("returnType", returnType)
 
 	return &Function{
 		q: q,
@@ -3296,6 +3271,26 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 
 	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TypeDefOpts contains options for Client.TypeDef
+type TypeDefOpts struct {
+	ID TypeDefID
+}
+
+func (r *Client) TypeDef(opts ...TypeDefOpts) *TypeDef {
+	q := r.q.Select("typeDef")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &TypeDef{
 		q: q,
 		c: r.c,
 	}
@@ -3415,8 +3410,17 @@ type TypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	id       *TypeDefID
 	kind     *TypeDefKind
 	optional *bool
+}
+type WithTypeDefFunc func(r *TypeDef) *TypeDef
+
+// With calls the provided function with current TypeDef.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
+	return f(r)
 }
 
 // If kind is LIST, the list-specific type definition.
@@ -3439,6 +3443,45 @@ func (r *TypeDef) AsObject() *ObjectTypeDef {
 		q: q,
 		c: r.c,
 	}
+}
+
+func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response TypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TypeDef) XXX_GraphQLType() string {
+	return "TypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TypeDef) XXX_GraphQLIDType() string {
+	return "TypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // The kind of type this is (e.g. primitive, list, object)
@@ -3465,6 +3508,103 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// TypeDefWithFieldOpts contains options for TypeDef.WithField
+type TypeDefWithFieldOpts struct {
+	// A doc string for the field, if any
+	Description string
+}
+
+// Adds a static field for an Object TypeDef, failing if the type is not an object.
+func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFieldOpts) *TypeDef {
+	assertNotNil("typeDef", typeDef)
+	q := r.q.Select("withField")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("typeDef", typeDef)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Adds a function for an Object TypeDef, failing if the type is not an object.
+func (r *TypeDef) WithFunction(function *Function) *TypeDef {
+	assertNotNil("function", function)
+	q := r.q.Select("withFunction")
+	q = q.Arg("function", function)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Sets the kind of the type.
+func (r *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
+	q := r.q.Select("withKind")
+	q = q.Arg("kind", kind)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Returns a TypeDef of kind List with the provided type for its elements.
+func (r *TypeDef) WithListOf(elementType *TypeDef) *TypeDef {
+	assertNotNil("elementType", elementType)
+	q := r.q.Select("withListOf")
+	q = q.Arg("elementType", elementType)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TypeDefWithObjectOpts contains options for TypeDef.WithObject
+type TypeDefWithObjectOpts struct {
+	Description string
+}
+
+// Returns a TypeDef of kind Object with the provided name.
+//
+// Note that an object's fields and functions may be omitted if the intent is
+// only to refer to an object. This is how functions are able to return their
+// own object, or any other circular reference.
+func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDef {
+	q := r.q.Select("withObject")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Sets whether this type can be set to null.
+func (r *TypeDef) WithOptional(optional bool) *TypeDef {
+	q := r.q.Select("withOptional")
+	q = q.Arg("optional", optional)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
 }
 
 type CacheSharingMode string

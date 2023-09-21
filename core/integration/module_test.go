@@ -5,10 +5,12 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/iancoleman/strcase"
@@ -44,11 +46,25 @@ func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
 	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
 	require.NoError(t, err)
 
-	// log generated code to make later errors easier to diagnose
-	lines := strings.Split(generated, "\n")
-	for i, line := range lines {
-		t.Logf("%04d | %s\n", i+1, line)
-	}
+	t.Cleanup(func() {
+		t.Name()
+		fileName := filepath.Join(
+			os.TempDir(),
+			t.Name(),
+			fmt.Sprintf("dagger.gen.go.%d", time.Now().Unix()),
+		)
+
+		if err := os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
+			t.Logf("failed to create temp dir for generated code: %v", err)
+			return
+		}
+
+		if err := os.WriteFile(fileName, []byte(generated), 0644); err != nil {
+			t.Logf("failed to write generated code to %s: %v", fileName, err)
+		} else {
+			t.Logf("wrote generated code to %s", fileName)
+		}
+	})
 }
 
 //go:embed testdata/modules/go/minimal/main.go

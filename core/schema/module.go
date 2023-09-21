@@ -43,33 +43,108 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	return Resolvers{
 		"ModuleID":   stringResolver(core.ModuleID("")),
 		"FunctionID": stringResolver(core.FunctionID("")),
+		"TypeDefID":  stringResolver(core.TypeDefID("")),
 		"Query": ObjectResolver{
 			"module":              ToResolver(s.module),
 			"currentModule":       ToResolver(s.currentModule),
 			"function":            ToResolver(s.function),
 			"newFunction":         ToResolver(s.newFunction),
 			"currentFunctionCall": ToResolver(s.currentFunctionCall),
+			"typeDef":             ToResolver(s.typeDef),
 		},
 		"Directory": ObjectResolver{
 			"asModule": ToResolver(s.directoryAsModule),
 		},
 		"Module": ToIDableObjectResolver(core.ModuleID.Decode, ObjectResolver{
-			"id":           ToResolver(s.moduleID),
-			"withFunction": ToResolver(s.moduleWithFunction),
-			"serve":        ToVoidResolver(s.moduleServe),
+			"id":         ToResolver(s.moduleID),
+			"withObject": ToResolver(s.moduleWithObject),
+			"serve":      ToVoidResolver(s.moduleServe),
 		}),
 		"Function": ToIDableObjectResolver(core.FunctionID.Decode, ObjectResolver{
-			"id":   ToResolver(s.functionID),
-			"call": ToResolver(s.functionCall),
+			"id":              ToResolver(s.functionID),
+			"withDescription": ToResolver(s.functionWithDescription),
+			"withArg":         ToResolver(s.functionWithArg),
+			"call":            ToResolver(s.functionCall),
 		}),
 		"FunctionCall": ObjectResolver{
 			"returnValue": ToVoidResolver(s.functionCallReturnValue),
 			"parent":      ToResolver(s.functionCallParent),
 		},
 		"TypeDef": ObjectResolver{
-			"kind": ToResolver(s.typeDefKind),
+			"id":           ToResolver(s.typeDefID),
+			"kind":         ToResolver(s.typeDefKind),
+			"withOptional": ToResolver(s.typeDefWithOptional),
+			"withKind":     ToResolver(s.typeDefWithKind),
+			"withListOf":   ToResolver(s.typeDefWithListOf),
+			"withObject":   ToResolver(s.typeDefWithObject),
+			"withField":    ToResolver(s.typeDefWithObjectField),
+			"withFunction": ToResolver(s.typeDefWithObjectFunction),
 		},
 	}
+}
+
+func (s *moduleSchema) typeDef(ctx *core.Context, _ *core.Query, args struct {
+	ID core.TypeDefID
+}) (*core.TypeDef, error) {
+	if args.ID != "" {
+		return args.ID.Decode()
+	}
+	return &core.TypeDef{}, nil
+}
+
+func (s *moduleSchema) typeDefWithOptional(ctx *core.Context, def *core.TypeDef, args struct {
+	Optional bool
+}) (*core.TypeDef, error) {
+	return def.WithOptional(args.Optional), nil
+}
+
+func (s *moduleSchema) typeDefWithKind(ctx *core.Context, def *core.TypeDef, args struct {
+	Kind core.TypeDefKind
+}) (*core.TypeDef, error) {
+	return def.WithKind(args.Kind), nil
+}
+
+func (s *moduleSchema) typeDefWithListOf(ctx *core.Context, def *core.TypeDef, args struct {
+	ElementType core.TypeDefID
+}) (*core.TypeDef, error) {
+	elemType, err := args.ElementType.Decode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode element type: %w", err)
+	}
+	return def.WithListOf(elemType), nil
+}
+
+func (s *moduleSchema) typeDefWithObject(ctx *core.Context, def *core.TypeDef, args struct {
+	Name        string
+	Description string
+}) (*core.TypeDef, error) {
+	return def.WithObject(args.Name, args.Description), nil
+}
+
+func (s *moduleSchema) typeDefWithObjectField(ctx *core.Context, def *core.TypeDef, args struct {
+	Name        string
+	TypeDef     core.TypeDefID
+	Description string
+}) (*core.TypeDef, error) {
+	fieldType, err := args.TypeDef.Decode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode element type: %w", err)
+	}
+	return def.WithObjectField(args.Name, fieldType, args.Description)
+}
+
+func (s *moduleSchema) typeDefWithObjectFunction(ctx *core.Context, def *core.TypeDef, args struct {
+	Function core.FunctionID
+}) (*core.TypeDef, error) {
+	fn, err := args.Function.Decode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode element type: %w", err)
+	}
+	return def.WithObjectFunction(fn)
+}
+
+func (s *moduleSchema) typeDefID(ctx *core.Context, def *core.TypeDef, args any) (core.TypeDefID, error) {
+	return def.ID()
 }
 
 func (s *moduleSchema) typeDefKind(ctx *core.Context, def *core.TypeDef, args any) (string, error) {
@@ -109,46 +184,15 @@ func (s *moduleSchema) function(ctx *core.Context, _ *core.Query, args queryFunc
 	return args.ID.Decode()
 }
 
-func (s *moduleSchema) newFunction(ctx *core.Context, _ *core.Query, args struct{ Def *core.Function }) (*core.Function, error) {
-	// We can mostly use the Def as is, but need to also fill in its ModuleID.
-	fnCtx, err := s.functionContextCache.FunctionContextFrom(ctx)
+func (s *moduleSchema) newFunction(ctx *core.Context, _ *core.Query, args struct {
+	Name       string
+	ReturnType core.TypeDefID
+}) (*core.Function, error) {
+	returnType, err := args.ReturnType.Decode()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get function context from context: %w", err)
+		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
-	modID, err := fnCtx.Module.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module ID: %w", err)
-	}
-
-	var walkTypeDef func(def *core.TypeDef)
-	var setFnModuleID func(def *core.Function)
-	walkTypeDef = func(def *core.TypeDef) {
-		switch def.Kind {
-		case core.TypeDefKindString, core.TypeDefKindInteger,
-			core.TypeDefKindBoolean, core.TypeDefKindVoid:
-			return
-		case core.TypeDefKindList:
-			walkTypeDef(def.AsList.ElementTypeDef)
-		case core.TypeDefKindObject:
-			for _, field := range def.AsObject.Fields {
-				walkTypeDef(field.TypeDef)
-			}
-			for _, fn := range def.AsObject.Functions {
-				setFnModuleID(fn)
-			}
-		default:
-			panic(fmt.Errorf("unhandled type def kind %q", def.Kind))
-		}
-	}
-	setFnModuleID = func(fn *core.Function) {
-		fn.ModuleID = modID
-		for _, arg := range fn.Args {
-			walkTypeDef(arg.TypeDef)
-		}
-		walkTypeDef(fn.ReturnType)
-	}
-	setFnModuleID(args.Def)
-	return args.Def, nil
+	return core.NewFunction(args.Name, returnType), nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx *core.Context, _ *core.Query, _ any) (*core.FunctionCall, error) {
@@ -194,22 +238,14 @@ func (s *moduleSchema) moduleServe(ctx *core.Context, module *core.Module, args 
 	return nil
 }
 
-type withFunctionArgs struct {
-	ID core.FunctionID
-}
-
-func (s *moduleSchema) moduleWithFunction(ctx *core.Context, module *core.Module, args withFunctionArgs) (_ *core.Module, rerr error) {
-	defer func() {
-		if err := recover(); err != nil {
-			rerr = fmt.Errorf("panic in moduleWithFunction: %s\n%s", err, debug.Stack())
-		}
-	}()
-
-	fn, err := args.ID.Decode()
+func (s *moduleSchema) moduleWithObject(ctx *core.Context, module *core.Module, args struct {
+	Object core.TypeDefID
+}) (_ *core.Module, rerr error) {
+	def, err := args.Object.Decode()
 	if err != nil {
 		return nil, err
 	}
-	return module.WithFunction(fn)
+	return module.WithObject(def)
 }
 
 func (s *moduleSchema) functionID(ctx *core.Context, fn *core.Function, _ any) (core.FunctionID, error) {
@@ -235,6 +271,25 @@ func (s *moduleSchema) functionCallParent(ctx *core.Context, fnCall *core.Functi
 		return struct{}{}, nil
 	}
 	return fnCall.Parent, nil
+}
+
+func (s *moduleSchema) functionWithDescription(ctx *core.Context, fn *core.Function, args struct {
+	Description string
+}) (*core.Function, error) {
+	return fn.WithDescription(args.Description), nil
+}
+
+func (s *moduleSchema) functionWithArg(ctx *core.Context, fn *core.Function, args struct {
+	Name         string
+	TypeDef      core.TypeDefID
+	Description  string
+	DefaultValue any
+}) (*core.Function, error) {
+	argType, err := args.TypeDef.Decode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode arg type: %w", err)
+	}
+	return fn.WithArg(args.Name, argType, args.Description, args.DefaultValue), nil
 }
 
 type functionCallArgs struct {
@@ -582,7 +637,7 @@ func (s *moduleSchema) loadModuleFunctions(ctx *core.Context, mod *core.Module) 
 	// We use the digest without functions as cache key because loadModuleFunctions should behave idempotently,
 	// returning the same Module object whether or not its Functions were already loaded.
 	// The digest without functions is stable before+after function loading.
-	dgst, err := mod.DigestWithoutFunctions()
+	dgst, err := mod.DigestWithoutObjects()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module digest: %w", err)
 	}
@@ -598,6 +653,7 @@ func (s *moduleSchema) loadModuleFunctions(ctx *core.Context, mod *core.Module) 
 		}
 		// canned function for asking the SDK to return the module + functions it provides
 		getModDefFn := &core.Function{
+			Name: "", // no name indicates that the SDK should return the module
 			ReturnType: &core.TypeDef{
 				Kind: core.TypeDefKindObject,
 				AsObject: &core.ObjectTypeDef{
@@ -659,31 +715,29 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 	schemaDoc := &ast.SchemaDocument{}
 	newResolvers := Resolvers{}
 
-	// get the schema + resolvers for the module as a whole
-	moduleType, err := s.addTypeDefToSchema(&core.TypeDef{
-		Kind: core.TypeDefKindObject,
-		AsObject: &core.ObjectTypeDef{
-			Name:        module.Name,
-			Description: module.Description,
-			Functions:   module.Functions,
-		},
-	}, false, schemaDoc, newResolvers)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert module to schema: %w", err)
-	}
+	for _, def := range module.Objects {
+		// get the schema + resolvers for the object as a whole
+		objType, err := s.addTypeDefToSchema(def, false, schemaDoc, newResolvers)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
+		}
 
-	// stitch in the module object right under Query
-	schemaDoc.Extensions = append(schemaDoc.Extensions, &ast.Definition{
-		Name: "Query",
-		Kind: ast.Object,
-		Fields: ast.FieldList{&ast.FieldDefinition{
-			Name: module.Name,
-			// TODO: Description
-			Type: moduleType,
-		}},
-	})
-	newResolvers["Query"] = ObjectResolver{
-		module.Name: PassthroughResolver,
+		constructorName := gqlFieldName(def.AsObject.Name)
+
+		// stitch in the module object right under Query
+		schemaDoc.Extensions = append(schemaDoc.Extensions, &ast.Definition{
+			Name: "Query",
+			Kind: ast.Object,
+			Fields: ast.FieldList{&ast.FieldDefinition{
+				Name: constructorName,
+				// TODO is it correct to set it here too vs. type definition?
+				// Description: def.AsObject.Description,
+				Type: objType,
+			}},
+		})
+		newResolvers["Query"] = ObjectResolver{
+			constructorName: PassthroughResolver,
+		}
 	}
 
 	buf := &bytes.Buffer{}

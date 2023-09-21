@@ -2,7 +2,7 @@ extend type Query {
   """
   Create a new function from the provided definition.
   """
-  newFunction(def: FunctionDef!): Function!
+  newFunction(name: String!, returnType: TypeDefID!): Function!
 
   """
   The FunctionCall context that the SDK caller is currently executing in.
@@ -46,93 +46,4 @@ type FunctionCallArgValue {
 
   "The value of the argument represented as a string of the JSON serialization."
   value: JSON!
-}
-
-input FunctionDef {
-  "The name of the function"
-  name: String!
-
-  "A doc string for the function, if any"
-  description: String
-
-  "Arguments accepted by this function, if any"
-  args: [FunctionArgDef!]
-
-  "The type returned by this function"
-  returnType: TypeDefInput!
-}
-
-input FunctionArgDef {
-  "The name of the argument"
-  name: String!
-
-  "A doc string for the argument, if any"
-  description: String
-
-  "The type of the argument"
-  typeDef: TypeDefInput!
-
-  "A default value to use for this argument if not explicitly set by the caller, if any"
-  defaultValue: JSON
-}
-
-"""
-A definition of a type used in a Module as an argument, return type or object field.
-"""
-input TypeDefInput {
-  "The kind of type this is (e.g. primitive, list, object)"
-  kind: TypeDefKind!
-
-  "Whether this type can be set to null"
-  optional: Boolean
-
-  """
-  If kind is LIST, the list-specific type definition.
-  If kind is not LIST, this will be null."
-  """
-  asList: ListTypeDefInput
-
-  """
-  If kind is OBJECT, the object-specific type definition.
-  If kind is not OBJECT, this will be null."
-  """
-  asObject: ObjectTypeDefInput
-}
-
-"""
-A definition of a custom object defined in a Module.
-"""
-input ObjectTypeDefInput {
-  "The name of the object"
-  name: String!
-
-  "The doc string for the object, if any"
-  description: String
-
-  "Static fields defined on this object, if any"
-  fields: [FieldTypeDefInput!]
-
-  "Functions defined on this object, if any"
-  functions: [FunctionDef!]
-}
-
-"""
-A definition of a field on a custom object defined in a Module.
-A field on an object has a static value, as opposed to a function on an
-object whose value is computed by invoking code (and can accept arguments).
-"""
-input FieldTypeDefInput {
-  "The name of the field in the object"
-  name: String!
-
-  "A doc string for the field, if any"
-  description: String
-
-  "The type of the field"
-  typeDef: TypeDefInput!
-}
-
-input ListTypeDefInput {
-  "The type of the elements in the list"
-  elementTypeDef: TypeDefInput!
 }

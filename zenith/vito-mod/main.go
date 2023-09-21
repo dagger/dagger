@@ -1,9 +1,9 @@
 package main
 
-import "context"
-
+// Vito says hi.
 type Vito struct{}
 
-func (m *Vito) HelloWorld(context.Context) (string, error) {
-	return "hey", nil
+// HelloWorld says hi.
+func (m *Vito) HelloWorld() string {
+	return "hey"
 }

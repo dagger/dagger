@@ -23,6 +23,8 @@ type ModuleID resourceid.ID[Module]
 
 type FunctionID = resourceid.ID[Function]
 
+type TypeDefID = resourceid.ID[TypeDef]
+
 // SocketID is in the socket package (to avoid circular imports)
 
 // ResourceFromID returns the resource corresponding to the given ID.

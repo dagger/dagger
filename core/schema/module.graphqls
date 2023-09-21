@@ -37,11 +37,11 @@ type Module {
   "The module's subpath within the source directory"
   sourceDirectorySubPath: String!
 
-  "Functions served by this module"
-  functions: [Function!]
+  "Objects served by this module"
+  objects: [TypeDef!]
 
-  "This module plus the given Function associated with it"
-  withFunction(id: FunctionID!): Module!
+  "This module plus the given Object type and associated functions"
+  withObject(object: TypeDefID!): Module! # TODO: this is technically any type
 
   """
   Serve a module's API in the current session.
