@@ -901,19 +901,19 @@ The following code listing uses a cache volume for application dependencies. Thi
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./quickstart/snippets/caching/main.go
+```go file=./cookbook/snippets/cache-dependencies/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./quickstart/snippets/caching/index.mjs
+```javascript file=./cookbook/snippets/cache-dependencies/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./quickstart/snippets/caching/main.py
+```python file=./cookbook/snippets/cache-dependencies/main.py
 ```
 
 </TabItem>
