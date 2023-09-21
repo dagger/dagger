@@ -1011,7 +1011,7 @@ The same Dagger client can safely be used in concurrent threads/routines. Theref
 </TabItem>
 </Tabs>
 
-Another possible approach shown into the following listing is to use independent classes (or interface depending on the programming language) with public methods as function.
+Another possible approach is to use independent classes (or interfaces, depending on the programming language) with public methods as functions. With this, it is no longer necessary to pass the client to all imported functions. The following code listing demonstrates this approach.
 
 <Tabs groupId="language">
 <TabItem value="Go">
