@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
@@ -73,8 +74,16 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		if len(leftoverEngines) == 0 {
 			return "", errors.Errorf("no fallback container found")
 		}
+
+		// the first leftover engine may not be running, so make sure to start it
 		firstEngine := leftoverEngines[0]
-		garbageCollectEngines(ctx, leftoverEngines, firstEngine)
+		cmd := exec.CommandContext(ctx, "docker", "start", firstEngine)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return "", errors.Wrapf(err, "failed to start container: %s", output)
+		}
+
+		garbageCollectEngines(ctx, leftoverEngines[1:])
+
 		return "docker-container://" + firstEngine, nil
 	}
 
@@ -93,6 +102,19 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 
 	// run the container using that id in the name
 	containerName := containerNamePrefix + id
+
+	for i, leftoverEngine := range leftoverEngines {
+		// if we already have a container with that name, attempt to start it
+		if leftoverEngine == containerName {
+			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				return "", errors.Wrapf(err, "failed to start container: %s", output)
+			}
+			garbageCollectEngines(ctx, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			return "docker-container://" + containerName, nil
+		}
+	}
+
 	runArgs := []string{
 		"run",
 		"--name", containerName,
@@ -103,7 +125,6 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		"-v", DefaultStateDir,
 		"--privileged",
 	}
-
 	runArgs = append(runArgs, imageRef, "--debug")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
@@ -115,17 +136,14 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	garbageCollectEngines(ctx, leftoverEngines, containerName)
+	garbageCollectEngines(ctx, leftoverEngines)
 
 	return "docker-container://" + containerName, nil
 }
 
-func garbageCollectEngines(ctx context.Context, engines []string, exceptThis string) {
+func garbageCollectEngines(ctx context.Context, engines []string) {
 	for _, engine := range engines {
 		if engine == "" {
-			continue
-		}
-		if engine == exceptThis {
 			continue
 		}
 		if output, err := exec.CommandContext(ctx,
