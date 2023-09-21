@@ -984,28 +984,61 @@ The same Dagger client can safely be used in concurrent threads/routines. Theref
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go title="main.go" file=./cookbook/snippets/modules-shared-client/main.go
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/functions/main.go
 ```
 
-```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines/pipelines.go
+```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/functions/pipelines/pipelines.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/index.mts
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/functions/index.mts
 ```
 
-```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/pipelines.mts
+```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/functions/pipelines.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python title="main.py" file=./cookbook/snippets/modules-shared-client/main.py
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/functions/main.py
 ```
 
-```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/pipelines.py
+```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/functions/pipelines.py
+```
+
+</TabItem>
+</Tabs>
+
+Another possible approach shown into the following listing is to use independent classes (or interface depending on the programming language) with public methods as function.
+This is useful to avoid passing the client to all imported functions.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/classes/main.go
+```
+
+```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/classes/pipelines/pipelines.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/classes/index.mts
+```
+
+```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/classes/pipelines.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/classes/main.py
+```
+
+```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/classes/pipelines.py
 ```
 
 </TabItem>
