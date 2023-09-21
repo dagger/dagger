@@ -24,7 +24,7 @@ require (
 	github.com/dagger/graphql v0.0.0-20230601100125-137fc3a90735
 	github.com/dagger/graphql-go-tools v0.0.0-20230418214324-32c52f390881
 	github.com/docker/distribution v2.8.2+incompatible
-	github.com/google/go-containerregistry v0.15.2
+	github.com/google/go-containerregistry v0.16.1
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.3.0
 	// https://github.com/moby/buildkit/commit/bbe48e778f9df07eabc7fc05023c8e97e3c5c5ce
@@ -229,7 +229,7 @@ require (
 	github.com/containerd/ttrpc v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/cli v24.0.5+incompatible
-	github.com/docker/docker v24.0.0-rc.2.0.20230905130451-032797ea4bcb+incompatible
+	github.com/docker/docker v24.0.0+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
