@@ -194,7 +194,7 @@ Rootlesskit wrote a [table of comparaison]((https://github.com/rootless-containe
 
 #### Conclusion
 
-It might be possible in the future once these constraint vanish but for now it's highly recommended to run dagger engine with privileges if you want to unlock its full potentiel.
+It might be possible in the future once these constraint vanish but for now it's not possible to run dagger engine with privileges if you want to unlock its full potentiel.
 
 ### I am stuck. How can I get help?
 
