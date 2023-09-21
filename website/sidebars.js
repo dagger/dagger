@@ -210,6 +210,7 @@ module.exports = {
         "current/quickstart/index",
         "current/quickstart/basics",
         "current/quickstart/setup",
+        "current/quickstart/cli",
         "current/quickstart/sdk",
         "current/quickstart/hello",
         "current/quickstart/test",
