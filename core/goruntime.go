@@ -46,6 +46,15 @@ func (mod *Module) goRuntime(
 		return nil, fmt.Errorf("failed to mount gobuildcache: %w", err)
 	}
 	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
+		Args: []string{"dagger", "mod", "sync"},
+
+		// this automatically gives us a /bin/dagger
+		ExperimentalPrivilegedNesting: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec mod sync: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{
 			"go", "build",
 			"-o", runtimeExecutablePath,
