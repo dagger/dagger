@@ -51,7 +51,7 @@ func (mod *Module) pythonRuntime(
 	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{
 			"shiv",
-			"-e", "dagger.server.cli:app",
+			"-e", "dagger.ext.cli:app",
 			"-o", runtimeExecutablePath,
 			"--root", "/tmp/.shiv",
 			".",

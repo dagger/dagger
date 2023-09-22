@@ -14,14 +14,6 @@ class CacheID(Scalar):
     """A global cache volume identifier."""
 
 
-class CheckID(Scalar):
-    """A unique environment check identifier."""
-
-
-class CheckResultID(Scalar):
-    """A unique environment check result identifier."""
-
-
 class ContainerID(Scalar):
     """A unique container identifier. Null designates an empty container
     (scratch)."""
@@ -31,12 +23,17 @@ class DirectoryID(Scalar):
     """A content-addressed directory identifier."""
 
 
-class EnvironmentID(Scalar):
-    """A unique environment identifier."""
-
-
 class FileID(Scalar):
     """A file identifier."""
+
+
+class FunctionID(Scalar): ...
+
+
+class JSON(Scalar): ...
+
+
+class ModuleID(Scalar): ...
 
 
 class Platform(Scalar):
@@ -53,6 +50,12 @@ class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
 
+class TypeDefID(Scalar): ...
+
+
+class Void(Scalar): ...
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -66,63 +69,6 @@ class CacheSharingMode(Enum):
 
     SHARED = "SHARED"
     """Shares the cache volume amongst many build pipelines"""
-
-
-class CheckEntrypointReturnType(Enum):
-    """Internal-only.  The handled return types for a check entrypoint."""
-
-    CheckEntrypointReturnCheck = "CheckEntrypointReturnCheck"
-    """Internal-only.
-
-    The entrypoint returns a check. In this case, the check's result will be
-    determined by (recursively) evaluating the returned check.
-
-    A non-zero entrypoint exit code will be treated as an internal error and
-    result in the entrypoint execution not being cached.
-    """
-
-    CheckEntrypointReturnCheckResult = "CheckEntrypointReturnCheckResult"
-    """Internal-only.
-
-    The entrypoint returns a check result. In this case, the check's result will
-    be set to this return value.
-
-    A non-zero entrypoint exit code will be treated as an internal error and
-    result in the entrypoint execution not being cached.
-    """
-
-    CheckEntrypointReturnString = "CheckEntrypointReturnString"
-    """Internal-only.
-
-    The entrypoint returns a string. In this case, the check's output will be
-    set to that string and the check's success based on the entrypoint exit code.
-
-    Exit code 0 will result in a successful check.
-
-    Exiting with exit code 1 will result in a failed check, but the entrypoint
-    execution will be cached.
-
-    Exiting with any other exit code will be treated an internal error and not
-    result in the entrypoint execution being cached. This error will be forwarded
-    to any clients querying the check result.
-    """
-
-    CheckEntrypointReturnVoid = "CheckEntrypointReturnVoid"
-    """Internal-only.
-
-    The entrypoint does not return any value.
-
-    In this case, the check's result is based on the entrypoint exit code.
-
-    Exit code 0 will result in a successful check.
-
-    Exiting with exit code 1 will result in a failed check, but the entrypoint
-    execution will be cached.
-
-    Exiting with any other exit code will be treated an internal error and not
-    result in the entrypoint execution being cached. This error will be forwarded
-    to any clients querying the check result.
-    """
 
 
 class ImageLayerCompression(Enum):
@@ -155,6 +101,23 @@ class NetworkProtocol(Enum):
     """UDP (User Datagram Protocol)"""
 
 
+class TypeDefKind(Enum):
+    BooleanKind = "BooleanKind"
+
+    IntegerKind = "IntegerKind"
+
+    ListKind = "ListKind"
+    """Complex types"""
+
+    ObjectKind = "ObjectKind"
+
+    StringKind = "StringKind"
+    """Primitive types"""
+
+    VoidKind = "VoidKind"
+    """Void is a special kind that can only be used as a return type"""
+
+
 @dataclass(slots=True)
 class BuildArg(Input):
     """Key value object that represents a build argument."""
@@ -164,6 +127,22 @@ class BuildArg(Input):
 
     value: str
     """The build argument value."""
+
+
+@dataclass(slots=True)
+class FunctionCallInput(Input):
+    name: str
+    """The name of the argument to the function"""
+
+    value: JSON
+    """The value of the argument represented as a string of the JSON serialization."""
+
+
+@dataclass(slots=True)
+class ModuleEnvironmentVariable(Input):
+    name: str
+
+    value: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -205,240 +184,6 @@ class CacheVolume(Type):
     @classmethod
     def _id_type(cls) -> type[Scalar]:
         return CacheID
-
-
-class Check(Type):
-    """An entrypoint for tests, lints or anything that can pass/fail."""
-
-    __slots__ = (
-        "_description",
-        "_name",
-    )
-
-    _description: Optional[str]
-    _name: Optional[str]
-
-    @typecheck
-    async def description(self) -> Optional[str]:
-        """Documentation for this check.
-
-        Returns
-        -------
-        Optional[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_description"):
-            return self._description
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
-
-    @typecheck
-    async def id(self) -> CheckID:
-        """A unique identifier for this check.
-
-        Note
-        ----
-        This is lazyly evaluated, no operation is actually run.
-
-        Returns
-        -------
-        CheckID
-            A unique environment check identifier.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(CheckID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return CheckID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "check"
-
-    @typecheck
-    async def name(self) -> str:
-        """The name of the check.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_name"):
-            return self._name
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    def result(self) -> "CheckResult":
-        """The result of evaluating this check."""
-        _args: list[Arg] = []
-        _ctx = self._select("result", _args)
-        return CheckResult(_ctx)
-
-    @typecheck
-    async def subchecks(self) -> list["Check"]:
-        """The subchecks of this check."""
-        _args: list[Arg] = []
-        _ctx = self._select("subchecks", _args)
-        _ctx = Check(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[Check])
-
-    @typecheck
-    def with_container(self, id: "Container") -> "Check":
-        """This check with the given container used to determine the check's
-        result.
-        If set, the container will be executed and the check success will be
-        true
-        if the container exits with a zero exit code, false otherwise.
-        """
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("withContainer", _args)
-        return Check(_ctx)
-
-    @typecheck
-    def with_description(self, description: str) -> "Check":
-        """This check with the given description"""
-        _args = [
-            Arg("description", description),
-        ]
-        _ctx = self._select("withDescription", _args)
-        return Check(_ctx)
-
-    @typecheck
-    def with_name(self, name: str) -> "Check":
-        """This check with the given name"""
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("withName", _args)
-        return Check(_ctx)
-
-    @typecheck
-    def with_subcheck(self, id: CheckID) -> "Check":
-        """This check with the given subcheck"""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("withSubcheck", _args)
-        return Check(_ctx)
-
-    def with_(self, cb: Callable[["Check"], "Check"]) -> "Check":
-        """Call the provided callable with current Check.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-class CheckResult(Type):
-    @typecheck
-    async def id(self) -> CheckResultID:
-        """A unique identifier for this check result.
-
-        Note
-        ----
-        This is lazyly evaluated, no operation is actually run.
-
-        Returns
-        -------
-        CheckResultID
-            A unique environment check result identifier.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(CheckResultID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return CheckResultID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "checkResult"
-
-    @typecheck
-    async def output(self) -> str:
-        """Any output obtained from evaluating the check's success.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("output", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def success(self) -> bool:
-        """Whether the check was successful.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("success", _args)
-        return await _ctx.execute(bool)
 
 
 class Container(Type):
@@ -1886,6 +1631,34 @@ class Directory(Type):
     """A directory."""
 
     @typecheck
+    def as_module(
+        self,
+        *,
+        source_subpath: Optional[str] = None,
+    ) -> "Module":
+        """Load the directory as a Dagger module
+
+        sourceSubpath is an optional parameter that, if set, points to a
+        subpath of this
+        directory that contains the module's source code. This is needed when
+        the module
+        code is in a subdirectory but requires parent directories to be loaded
+        in order
+        to execute. For example, the module source code may need a go.mod,
+        project.toml,
+        package.json, etc. file from a parent directory.
+
+        If sourceSubpath is not set, the module source code is loaded from the
+        root of
+        the directory.
+        """
+        _args = [
+            Arg("sourceSubpath", source_subpath, None),
+        ]
+        _ctx = self._select("asModule", _args)
+        return Module(_ctx)
+
+    @typecheck
     def diff(self, other: "Directory") -> "Directory":
         """Gets the difference between this directory and an another directory.
 
@@ -2272,60 +2045,6 @@ class Directory(Type):
         return cb(self)
 
 
-class EntrypointInput(Type):
-    """Internal-only.  The input provided to an SDK entrypoint invocation."""
-
-    @typecheck
-    async def args(self) -> str:
-        """Internal-only.
-
-        The json-serialized arguments to pass to the entrypoint. The json
-        object is a map of argument names to argument values.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("args", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def name(self) -> Optional[str]:
-        """Internal-only.
-
-        The name of the entrypoint to invoke. If not set, then the sdk
-        is expected to return the environment definition.
-
-        Returns
-        -------
-        Optional[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(Optional[str])
-
-
 class EnvVariable(Type):
     """A simple key value object that represents an environment
     variable."""
@@ -2387,147 +2106,23 @@ class EnvVariable(Type):
         return await _ctx.execute(str)
 
 
-class Environment(Type):
-    """A group of Dagger entrypoints that can be queried and/or
-    invoked."""
+class FieldTypeDef(Type):
+    """A definition of a field on a custom object defined in a Module. A
+    field on an object has a static value, as opposed to a function on an
+    object whose value is computed by invoking code (and can accept
+    arguments)."""
 
     __slots__ = (
+        "_description",
         "_name",
-        "_return_entrypoint_value",
-        "_sdk",
     )
 
+    _description: Optional[str]
     _name: Optional[str]
-    _return_entrypoint_value: Optional[bool]
-    _sdk: Optional[str]
 
     @typecheck
-    def check(self, name: str) -> Check:
-        """The check in this environment with the given name, if any"""
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("check", _args)
-        return Check(_ctx)
-
-    @typecheck
-    async def checks(self) -> list[Check]:
-        """The list of checks in this environment"""
-        _args: list[Arg] = []
-        _ctx = self._select("checks", _args)
-        _ctx = Check(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[Check])
-
-    @typecheck
-    async def dependencies(self) -> list["Environment"]:
-        """Other environments that this environment depends on. If this
-        environment is installed,
-        all dependencies will be (recursively) installed too.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("dependencies", _args)
-        _ctx = Environment(_ctx)._select_multiple(
-            _name="name",
-            _return_entrypoint_value="returnEntrypointValue",
-            _sdk="sdk",
-        )
-        return await _ctx.execute(list[Environment])
-
-    @typecheck
-    def entrypoint_input(self) -> EntrypointInput:
-        """Internal only.
-
-        The input for the current entrypoint invocation.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("entrypointInput", _args)
-        return EntrypointInput(_ctx)
-
-    @typecheck
-    def from_(
-        self,
-        name: str,
-        source_directory: Directory,
-        sdk: str,
-        *,
-        source_directory_subpath: Optional[str] = None,
-        dependencies: Optional[Sequence["Environment"]] = None,
-    ) -> "Environment":
-        """The environment initialized with the given name, sourceDirectory, sdk
-        and dependencies.
-
-        If set, sourceDirectorySubpath should point to the subpath of
-        sourceDirectory that
-        contains the environment code. If unset, it will default to the root
-        of the sourceDirectory.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("sourceDirectory", source_directory),
-            Arg("sdk", sdk),
-            Arg("sourceDirectorySubpath", source_directory_subpath, None),
-            Arg("dependencies", dependencies, None),
-        ]
-        _ctx = self._select("from", _args)
-        return Environment(_ctx)
-
-    @typecheck
-    def from_config(
-        self,
-        source_directory: Directory,
-        *,
-        config_path: Optional[str] = None,
-    ) -> "Environment":
-        """The environment initialized with the sourceDirectory and environment
-        configuration file path.
-        If configPath is not set, it defaults to the root of the
-        sourceDirectory.
-        """
-        _args = [
-            Arg("sourceDirectory", source_directory),
-            Arg("configPath", config_path, None),
-        ]
-        _ctx = self._select("fromConfig", _args)
-        return Environment(_ctx)
-
-    @typecheck
-    async def id(self) -> EnvironmentID:
-        """A unique identifier for this environment.
-
-        Note
-        ----
-        This is lazyly evaluated, no operation is actually run.
-
-        Returns
-        -------
-        EnvironmentID
-            A unique environment identifier.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(EnvironmentID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return EnvironmentID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "environment"
-
-    @typecheck
-    async def name(self) -> Optional[str]:
-        """Name of the environment
+    async def description(self) -> Optional[str]:
+        """A doc string for the field, if any
 
         Returns
         -------
@@ -2543,44 +2138,15 @@ class Environment(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
+        if hasattr(self, "_description"):
+            return self._description
         _args: list[Arg] = []
-        _ctx = self._select("name", _args)
+        _ctx = self._select("description", _args)
         return await _ctx.execute(Optional[str])
 
     @typecheck
-    async def return_entrypoint_value(self, value: str) -> bool:
-        """Internal only.
-
-        Return the given value as the result of the current entrypoint
-        invocation.
-        The value is expected to be the json-serialized representation of the
-        return.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_return_entrypoint_value"):
-            return self._return_entrypoint_value
-        _args = [
-            Arg("value", value),
-        ]
-        _ctx = self._select("returnEntrypointValue", _args)
-        return await _ctx.execute(bool)
-
-    @typecheck
-    async def sdk(self) -> str:
-        """The SDK that this environment will be executed with
+    async def name(self) -> str:
+        """The name of the field in the object
 
         Returns
         -------
@@ -2596,67 +2162,18 @@ class Environment(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_sdk"):
-            return self._sdk
+        if hasattr(self, "_name"):
+            return self._name
         _args: list[Arg] = []
-        _ctx = self._select("sdk", _args)
+        _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
     @typecheck
-    def source_directory(self) -> Directory:
-        """The directory containing all the source needed to execute this
-        environment's code
-        """
+    def type_def(self) -> "TypeDef":
+        """The type of the field"""
         _args: list[Arg] = []
-        _ctx = self._select("sourceDirectory", _args)
-        return Directory(_ctx)
-
-    @typecheck
-    def with_check(
-        self,
-        id: Check,
-        *,
-        return_type: Optional[CheckEntrypointReturnType] = None,
-    ) -> "Environment":
-        """Internal only.
-
-        This environment with the given check. It is an error to call this
-        outside
-        of environment initialization code.
-        """
-        _args = [
-            Arg("id", id),
-            Arg("returnType", return_type, None),
-        ]
-        _ctx = self._select("withCheck", _args)
-        return Environment(_ctx)
-
-    @typecheck
-    def with_workdir(self, id: Directory) -> "Environment":
-        """This environment with the given workdir"""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("withWorkdir", _args)
-        return Environment(_ctx)
-
-    @typecheck
-    def workdir(self) -> Directory:
-        """The directory that the environment code will execute in as its current
-        working directory.
-        If not set explicitly, it will default to the root of the
-        sourceDirectory.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("workdir", _args)
-        return Directory(_ctx)
-
-    def with_(self, cb: Callable[["Environment"], "Environment"]) -> "Environment":
-        """Call the provided callable with current Environment.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
+        _ctx = self._select("typeDef", _args)
+        return TypeDef(_ctx)
 
 
 class File(Type):
@@ -2818,6 +2335,419 @@ class File(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+class Function(Type):
+    __slots__ = (
+        "_call",
+        "_description",
+        "_name",
+    )
+
+    _call: Optional[JSON]
+    _description: Optional[str]
+    _name: Optional[str]
+
+    @typecheck
+    async def args(self) -> list["FunctionArg"]:
+        """Arguments accepted by this function, if any"""
+        _args: list[Arg] = []
+        _ctx = self._select("args", _args)
+        _ctx = FunctionArg(_ctx)._select_multiple(
+            _default_value="defaultValue",
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[FunctionArg])
+
+    @typecheck
+    async def call(
+        self,
+        *,
+        input: Optional[Sequence[FunctionCallInput]] = None,
+    ) -> JSON:
+        """Execute this function using dynamic input+output types.
+
+        Typically, it's preferable to invoke a function using a type
+        safe graphql query rather than using this call field. However,
+        call is useful for some advanced use cases where dynamically
+        loading arbitrary modules and invoking functions in them is
+        required.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_call"):
+            return self._call
+        _args = [
+            Arg("input", input, None),
+        ]
+        _ctx = self._select("call", _args)
+        return await _ctx.execute(JSON)
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """A doc string for the function, if any
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def id(self) -> FunctionID:
+        """Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(FunctionID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return FunctionID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "function"
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the function
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def return_type(self) -> "TypeDef":
+        """The type returned by this function"""
+        _args: list[Arg] = []
+        _ctx = self._select("returnType", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_arg(
+        self,
+        name: str,
+        type_def: "TypeDef",
+        *,
+        description: Optional[str] = None,
+        default_value: Optional[JSON] = None,
+    ) -> "Function":
+        """Returns the function with the provided argument
+
+        Parameters
+        ----------
+        name:
+            The name of the argument
+        type_def:
+            The type of the argument
+        description:
+            A doc string for the argument, if any
+        default_value:
+            A default value to use for this argument if not explicitly set by
+            the caller, if any
+        """
+        _args = [
+            Arg("name", name),
+            Arg("typeDef", type_def),
+            Arg("description", description, None),
+            Arg("defaultValue", default_value, None),
+        ]
+        _ctx = self._select("withArg", _args)
+        return Function(_ctx)
+
+    @typecheck
+    def with_description(self, description: str) -> "Function":
+        """Returns the function with the doc string"""
+        _args = [
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDescription", _args)
+        return Function(_ctx)
+
+    def with_(self, cb: Callable[["Function"], "Function"]) -> "Function":
+        """Call the provided callable with current Function.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+class FunctionArg(Type):
+    __slots__ = (
+        "_default_value",
+        "_description",
+        "_name",
+    )
+
+    _default_value: Optional[JSON]
+    _description: Optional[str]
+    _name: Optional[str]
+
+    @typecheck
+    async def default_value(self) -> Optional[JSON]:
+        """A default value to use for this argument when not explicitly set by
+        the caller, if any
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_default_value"):
+            return self._default_value
+        _args: list[Arg] = []
+        _ctx = self._select("defaultValue", _args)
+        return await _ctx.execute(Optional[JSON])
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """A doc string for the argument, if any
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def name(self) -> Optional[str]:
+        """The name of the argument
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    def type_def(self) -> "TypeDef":
+        """The type of the argument"""
+        _args: list[Arg] = []
+        _ctx = self._select("typeDef", _args)
+        return TypeDef(_ctx)
+
+
+class FunctionCall(Type):
+    @typecheck
+    async def input_args(self) -> list["FunctionCallArgValue"]:
+        """The argument values the function is being invoked with."""
+        _args: list[Arg] = []
+        _ctx = self._select("inputArgs", _args)
+        _ctx = FunctionCallArgValue(_ctx)._select_multiple(
+            _name="name",
+            _value="value",
+        )
+        return await _ctx.execute(list[FunctionCallArgValue])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the function being called.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def parent(self) -> JSON:
+        """The value of the parent object of the function being called.
+        If the function is "top-level" to the module, this is always an empty
+        object.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("parent", _args)
+        return await _ctx.execute(JSON)
+
+    @typecheck
+    async def parent_name(self) -> str:
+        """The name of the parent object of the function being called.
+        If the function is "top-level" to the module, this is the name of the
+        module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("parentName", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def return_value(self, value: JSON) -> Optional[Void]:
+        """Set the return value of the function call to the provided value.
+        The value should be a string of the JSON serialization of the return
+        value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("returnValue", _args)
+        return await _ctx.execute(Optional[Void])
+
+
+class FunctionCallArgValue(Type):
+    __slots__ = (
+        "_name",
+        "_value",
+    )
+
+    _name: Optional[str]
+    _value: Optional[JSON]
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the argument.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def value(self) -> JSON:
+        """The value of the argument represented as a string of the JSON
+        serialization.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_value"):
+            return self._value
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(JSON)
 
 
 class GitRef(Type):
@@ -3032,6 +2962,326 @@ class Label(Type):
         return await _ctx.execute(str)
 
 
+class ListTypeDef(Type):
+    @typecheck
+    def element_type_def(self) -> "TypeDef":
+        """The type of the elements in the list"""
+        _args: list[Arg] = []
+        _ctx = self._select("elementTypeDef", _args)
+        return TypeDef(_ctx)
+
+
+class Module(Type):
+    __slots__ = (
+        "_dependency_config",
+        "_description",
+        "_name",
+        "_sdk",
+        "_serve",
+        "_source_directory_sub_path",
+    )
+
+    _dependency_config: Optional[str]
+    _description: Optional[str]
+    _name: Optional[str]
+    _sdk: Optional[str]
+    _serve: Optional[Void]
+    _source_directory_sub_path: Optional[str]
+
+    @typecheck
+    async def dependencies(self) -> list["Module"]:
+        """Modules used by this module"""
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        _ctx = Module(_ctx)._select_multiple(
+            _dependency_config="dependencyConfig",
+            _description="description",
+            _name="name",
+            _sdk="sdk",
+            _serve="serve",
+            _source_directory_sub_path="sourceDirectorySubPath",
+        )
+        return await _ctx.execute(list[Module])
+
+    @typecheck
+    async def dependency_config(self) -> list[str]:
+        """The dependencies as configured by the module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_dependency_config"):
+            return self._dependency_config
+        _args: list[Arg] = []
+        _ctx = self._select("dependencyConfig", _args)
+        return await _ctx.execute(list[str])
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """The doc string of the module, if any
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def id(self) -> ModuleID:
+        """The ID of the module
+
+        Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ModuleID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return ModuleID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "module"
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the module
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def objects(self) -> list["TypeDef"]:
+        """Objects served by this module"""
+        _args: list[Arg] = []
+        _ctx = self._select("objects", _args)
+        _ctx = TypeDef(_ctx)._select_multiple(
+            _kind="kind",
+            _optional="optional",
+        )
+        return await _ctx.execute(list[TypeDef])
+
+    @typecheck
+    async def sdk(self) -> str:
+        """The SDK used by this module
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_sdk"):
+            return self._sdk
+        _args: list[Arg] = []
+        _ctx = self._select("sdk", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def serve(
+        self,
+        *,
+        environment: Optional[Sequence[ModuleEnvironmentVariable]] = None,
+    ) -> Optional[Void]:
+        """Serve a module's API in the current session.
+            Note: this can only be called once per session.
+            In the future, it could return a stream or service to remove the
+        side effect.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_serve"):
+            return self._serve
+        _args = [
+            Arg("environment", environment, None),
+        ]
+        _ctx = self._select("serve", _args)
+        return await _ctx.execute(Optional[Void])
+
+    @typecheck
+    def source_directory(self) -> Directory:
+        """The directory containing the module's source code"""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceDirectory", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    async def source_directory_sub_path(self) -> str:
+        """The module's subpath within the source directory
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_source_directory_sub_path"):
+            return self._source_directory_sub_path
+        _args: list[Arg] = []
+        _ctx = self._select("sourceDirectorySubPath", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def with_object(self, object: "TypeDef") -> "Module":
+        """This module plus the given Object type and associated functions"""
+        _args = [
+            Arg("object", object),
+        ]
+        _ctx = self._select("withObject", _args)
+        return Module(_ctx)
+
+    def with_(self, cb: Callable[["Module"], "Module"]) -> "Module":
+        """Call the provided callable with current Module.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+class ObjectTypeDef(Type):
+    """A definition of a custom object defined in a Module."""
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """The doc string for the object, if any
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def fields(self) -> list[FieldTypeDef]:
+        """Static fields defined on this object, if any"""
+        _args: list[Arg] = []
+        _ctx = self._select("fields", _args)
+        _ctx = FieldTypeDef(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[FieldTypeDef])
+
+    @typecheck
+    async def functions(self) -> list[Function]:
+        """Functions defined on this object, if any"""
+        _args: list[Arg] = []
+        _ctx = self._select("functions", _args)
+        _ctx = Function(_ctx)._select_multiple(
+            _call="call",
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[Function])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the object
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
 class Port(Type):
     """A port exposed by a container."""
 
@@ -3134,28 +3384,6 @@ class Client(Root):
         return CacheVolume(_ctx)
 
     @typecheck
-    def check(self, *, id: Optional[CheckID] = None) -> Check:
-        """The check initialized from the given ID."""
-        _args = [
-            Arg("id", id, None),
-        ]
-        _ctx = self._select("check", _args)
-        return Check(_ctx)
-
-    @typecheck
-    def check_result(
-        self,
-        *,
-        id: Optional[CheckResultID] = None,
-    ) -> CheckResult:
-        """The check result initialized from the given ID."""
-        _args = [
-            Arg("id", id, None),
-        ]
-        _ctx = self._select("checkResult", _args)
-        return CheckResult(_ctx)
-
-    @typecheck
     async def check_version_compatibility(self, version: str) -> bool:
         """Checks if the current Dagger Engine is compatible with an SDK's
         required version.
@@ -3205,13 +3433,23 @@ class Client(Root):
         return Container(_ctx)
 
     @typecheck
-    def current_environment(self) -> Environment:
-        """The environment the requester is being executed in (or an error if
-        none).
+    def current_function_call(self) -> FunctionCall:
+        """The FunctionCall context that the SDK caller is currently executing
+        in.
+        If the caller is not currently executing in a function, this will
+        return
+        an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("currentEnvironment", _args)
-        return Environment(_ctx)
+        _ctx = self._select("currentFunctionCall", _args)
+        return FunctionCall(_ctx)
+
+    @typecheck
+    def current_module(self) -> Module:
+        """The module currently being served in the session, if any."""
+        _args: list[Arg] = []
+        _ctx = self._select("currentModule", _args)
+        return Module(_ctx)
 
     @typecheck
     async def default_platform(self) -> Platform:
@@ -3249,19 +3487,6 @@ class Client(Root):
         return Directory(_ctx)
 
     @typecheck
-    def environment(
-        self,
-        *,
-        id: Optional[EnvironmentID] = None,
-    ) -> Environment:
-        """The environment initialized from the given ID."""
-        _args = [
-            Arg("id", id, None),
-        ]
-        _ctx = self._select("environment", _args)
-        return Environment(_ctx)
-
-    @typecheck
     def file(self, id: FileID) -> File:
         """Loads a file by ID."""
         _args = [
@@ -3269,6 +3494,15 @@ class Client(Root):
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
+
+    @typecheck
+    def function(self, id: FunctionID) -> Function:
+        """Load a function by ID"""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("function", _args)
+        return Function(_ctx)
 
     @typecheck
     def git(
@@ -3331,37 +3565,23 @@ class Client(Root):
         return File(_ctx)
 
     @typecheck
-    async def install_environment(self, id: Environment) -> bool:
-        """Install the given environment into this graphql API. Its schema will
-        be
-        stitched into the schema of this server, making those APIs available
-        for
-        subsequent queries.
-
-        If an environment with the same ID has already been installed, this is
-        a no-op.
-
-        If there are any conflicts between the environment's schema and any
-        existing
-        schemas, an error will be returned.
-
-        Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def module(self, *, id: Optional[ModuleID] = None) -> Module:
+        """Load a module by ID, or create a new one if id is unset."""
         _args = [
-            Arg("id", id),
+            Arg("id", id, None),
         ]
-        _ctx = self._select("installEnvironment", _args)
-        return await _ctx.execute(bool)
+        _ctx = self._select("module", _args)
+        return Module(_ctx)
+
+    @typecheck
+    def new_function(self, name: str, return_type: "TypeDef") -> Function:
+        """Create a new function from the provided definition."""
+        _args = [
+            Arg("name", name),
+            Arg("returnType", return_type),
+        ]
+        _ctx = self._select("newFunction", _args)
+        return Function(_ctx)
 
     @typecheck
     def pipeline(
@@ -3429,19 +3649,12 @@ class Client(Root):
         return Socket(_ctx)
 
     @typecheck
-    def static_check_result(
-        self,
-        success: bool,
-        *,
-        output: Optional[str] = None,
-    ) -> CheckResult:
-        """A check result initialized with the given success and output."""
+    def type_def(self, *, id: Optional[TypeDefID] = None) -> "TypeDef":
         _args = [
-            Arg("success", success),
-            Arg("output", output, None),
+            Arg("id", id, None),
         ]
-        _ctx = self._select("staticCheckResult", _args)
-        return CheckResult(_ctx)
+        _ctx = self._select("typeDef", _args)
+        return TypeDef(_ctx)
 
     def with_(self, cb: Callable[["Client"], "Client"]) -> "Client":
         """Call the provided callable with current Client.
@@ -3544,22 +3757,217 @@ class Socket(Type):
         return "socket"
 
 
+class TypeDef(Type):
+    """A definition of a parameter or return type in a Module."""
+
+    __slots__ = (
+        "_kind",
+        "_optional",
+    )
+
+    _kind: Optional[TypeDefKind]
+    _optional: Optional[bool]
+
+    @typecheck
+    def as_list(self) -> ListTypeDef:
+        """If kind is LIST, the list-specific type definition.
+        If kind is not LIST, this will be null.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asList", _args)
+        return ListTypeDef(_ctx)
+
+    @typecheck
+    def as_object(self) -> ObjectTypeDef:
+        """If kind is OBJECT, the object-specific type definition.
+        If kind is not OBJECT, this will be null.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asObject", _args)
+        return ObjectTypeDef(_ctx)
+
+    @typecheck
+    async def id(self) -> TypeDefID:
+        """Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(TypeDefID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return TypeDefID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "typeDef"
+
+    @typecheck
+    async def kind(self) -> Optional[TypeDefKind]:
+        """The kind of type this is (e.g. primitive, list, object)
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_kind"):
+            return self._kind
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(Optional[TypeDefKind])
+
+    @typecheck
+    async def optional(self) -> bool:
+        """Whether this type can be set to null. Defaults to false.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_optional"):
+            return self._optional
+        _args: list[Arg] = []
+        _ctx = self._select("optional", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
+    def with_field(
+        self,
+        name: str,
+        type_def: "TypeDef",
+        *,
+        description: Optional[str] = None,
+    ) -> "TypeDef":
+        """Adds a static field for an Object TypeDef, failing if the type is not
+        an object.
+
+        Parameters
+        ----------
+        name:
+            The name of the field in the object
+        type_def:
+            The type of the field
+        description:
+            A doc string for the field, if any
+        """
+        _args = [
+            Arg("name", name),
+            Arg("typeDef", type_def),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withField", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_function(self, function: Function) -> "TypeDef":
+        """Adds a function for an Object TypeDef, failing if the type is not an
+        object.
+        """
+        _args = [
+            Arg("function", function),
+        ]
+        _ctx = self._select("withFunction", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_kind(self, kind: TypeDefKind) -> "TypeDef":
+        """Sets the kind of the type."""
+        _args = [
+            Arg("kind", kind),
+        ]
+        _ctx = self._select("withKind", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_list_of(self, element_type: "TypeDef") -> "TypeDef":
+        """Returns a TypeDef of kind List with the provided type for its
+        elements.
+        """
+        _args = [
+            Arg("elementType", element_type),
+        ]
+        _ctx = self._select("withListOf", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_object(
+        self,
+        name: str,
+        *,
+        description: Optional[str] = None,
+    ) -> "TypeDef":
+        """Returns a TypeDef of kind Object with the provided name.
+
+        Note that an object's fields and functions may be omitted if the
+        intent is
+        only to refer to an object. This is how functions are able to return
+        their
+        own object, or any other circular reference.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withObject", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_optional(self, optional: bool) -> "TypeDef":
+        """Sets whether this type can be set to null."""
+        _args = [
+            Arg("optional", optional),
+        ]
+        _ctx = self._select("withOptional", _args)
+        return TypeDef(_ctx)
+
+    def with_(self, cb: Callable[["TypeDef"], "TypeDef"]) -> "TypeDef":
+        """Call the provided callable with current TypeDef.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
 _client = Client()
 cache_volume = _client.cache_volume
 check_version_compatibility = _client.check_version_compatibility
 container = _client.container
+current_function_call = _client.current_function_call
+current_module = _client.current_module
 default_platform = _client.default_platform
 directory = _client.directory
 file = _client.file
+function = _client.function
 git = _client.git
 host = _client.host
 http = _client.http
+module = _client.module
+new_function = _client.new_function
 pipeline = _client.pipeline
-project = _client.project
-project_command = _client.project_command
 secret = _client.secret
 set_secret = _client.set_secret
 socket = _client.socket
+type_def = _client.type_def
 
 
 def default_client() -> Client:
@@ -3572,29 +3980,34 @@ __all__ = [
     "CacheID",
     "CacheSharingMode",
     "CacheVolume",
-    "Check",
-    "CheckEntrypointReturnType",
-    "CheckID",
-    "CheckResult",
-    "CheckResultID",
     "Client",
     "Container",
     "ContainerID",
     "Directory",
     "DirectoryID",
-    "EntrypointInput",
     "EnvVariable",
-    "Environment",
-    "EnvironmentID",
+    "FieldTypeDef",
     "File",
     "FileID",
+    "Function",
+    "FunctionArg",
+    "FunctionCall",
+    "FunctionCallArgValue",
+    "FunctionCallInput",
+    "FunctionID",
     "GitRef",
     "GitRepository",
     "Host",
     "ImageLayerCompression",
     "ImageMediaTypes",
+    "JSON",
     "Label",
+    "ListTypeDef",
+    "Module",
+    "ModuleEnvironmentVariable",
+    "ModuleID",
     "NetworkProtocol",
+    "ObjectTypeDef",
     "PipelineLabel",
     "Platform",
     "Port",
@@ -3602,20 +4015,28 @@ __all__ = [
     "SecretID",
     "Socket",
     "SocketID",
+    "TypeDef",
+    "TypeDefID",
+    "TypeDefKind",
+    "Void",
     "cache_volume",
     "check_version_compatibility",
     "container",
+    "current_function_call",
+    "current_module",
     "default_client",
     "default_platform",
     "directory",
     "file",
+    "function",
     "git",
     "host",
     "http",
+    "module",
+    "new_function",
     "pipeline",
-    "project",
-    "project_command",
     "secret",
     "set_secret",
     "socket",
+    "type_def",
 ]

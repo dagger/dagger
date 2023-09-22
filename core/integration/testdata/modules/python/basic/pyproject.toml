@@ -2,7 +2,7 @@
 name = "basic"
 version = "0.0.0"
 dependencies = [
-    "dagger-io[server] @ {root:uri}/../../../../../../sdk/python"
+    "dagger-io @ {root:uri}/../../../../../../sdk/python"
 ]
 
 [tool.hatch.metadata]

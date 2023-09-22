@@ -40,12 +40,6 @@ dependencies = [
     "rich>=10.11.0",
 ]
 
-[project.optional-dependencies]
-server = [
-    "typer[all]>=0.6.1",
-    "strawberry-graphql>=0.187.0",
-]
-
 [project.urls]
 "Homepage" = "https://dagger.io"
 "Documentation" = "https://docs.dagger.io/sdk/python"
@@ -71,7 +65,6 @@ only-include = [
 packages = ["src/dagger"]
 
 [tool.hatch.envs.default]
-features = ["server"]
 dependencies = [
     "black>=22.3.0",
     "ruff>=0.0.218",
@@ -142,9 +135,6 @@ pretty = true
 show_column_numbers = true
 warn_no_return = false
 warn_unused_ignores = true
-# plugins = [
-#     "strawberry.ext.mypy_plugin",
-# ]
 
 [tool.black]
 include = '\.pyi?$'

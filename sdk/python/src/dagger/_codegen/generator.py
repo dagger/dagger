@@ -12,7 +12,7 @@ from decimal import Decimal
 from functools import partial
 from itertools import chain, groupby
 from keyword import iskeyword
-from operator import attrgetter, itemgetter
+from operator import itemgetter
 from typing import (
     ClassVar,
     Generic,
@@ -554,7 +554,13 @@ class _InputField:
     def __str__(self) -> Iterator[str]:
         """Output for an InputObject field."""
         yield ""
-        yield self.as_param()
+
+        field = self.as_param()
+        # Add quotes around types that haven't been defined yet (forward references).
+        if self.ctx.remaining:
+            field = re.sub(rf"\b({'|'.join(self.ctx.remaining)})\b", r'"\1"', field)
+        yield field
+
         if self.description:
             yield doc(self.description)
 
@@ -885,7 +891,10 @@ class ObjectHandler(Handler[_O]):
             str(field)
             # Sorting by graphql name rather than python name for
             # consistency with other SDKs.
-            for field in sorted(self.fields(t), key=attrgetter("graphql_name"))
+            for field in sorted(
+                self.fields(t),
+                key=lambda f: (getattr(f, "has_default", False), f.graphql_name),
+            )
         )
 
 
