@@ -148,7 +148,7 @@ spec:
       - effect: NoSchedule
         key: actions-runner
         operator: Exists
-	env:
+  env:
 - name: _EXPERIMENTAL_DAGGER_RUNNER_HOST
   value: unix:///var/run/dagger/buildkitd.sock
       volumeMounts:
