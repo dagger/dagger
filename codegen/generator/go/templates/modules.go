@@ -254,14 +254,11 @@ var checkErrStatement = If(Err().Op("!=").Nil()).Block(
 func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code) error {
 	var objName string
 	switch x := type_.(type) {
-	case *types.Named:
-		objName = x.Obj().Name()
-	case *types.Basic:
-		return nil
 	case *types.Pointer:
 		return ps.fillObjectFunctionCases(x.Elem(), cases)
+	case *types.Named:
+		objName = x.Obj().Name()
 	default:
-		panic(fmt.Errorf("expected named type, got %T", x))
 		return nil
 	}
 
