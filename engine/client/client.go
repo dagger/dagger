@@ -288,8 +288,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		})
 	})
 
-	fmt.Fprintln(loader.Stdout(), "!!! STARTING SESSION", c.ModuleDigest)
-
 	// Try connecting to the session server to make sure it's running
 	c.httpClient = &http.Client{Transport: &http.Transport{
 		DialContext: c.DialContext,
@@ -303,15 +301,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bo.InitialInterval = 100 * time.Millisecond
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
-	var scaredTheUser bool
 	err = backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(connectRetryCtx, bo.NextBackOff())
 		defer cancel()
 		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 		if innerErr != nil {
 			fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
-			scaredTheUser = true
-		} else if scaredTheUser {
+		} else {
 			fmt.Fprintln(loader.Stdout(), "OK!")
 		}
 		return innerErr

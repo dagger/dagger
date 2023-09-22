@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"sync"
 
@@ -133,7 +132,6 @@ func (s *MergedSchemas) getModuleSchemaView(moduleDigest digest.Digest) (*module
 }
 
 func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, error) {
-	log.Println("!!! GET SCHEMA", moduleDigest)
 	ms, err := s.getModuleSchemaView(moduleDigest)
 	if err != nil {
 		return nil, err
@@ -142,7 +140,6 @@ func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, err
 }
 
 func (s *MergedSchemas) addSchemas(moduleDigest digest.Digest, schemasToAdd ...ExecutableSchema) error {
-	log.Println("!!! ADDSCHEMAS", moduleDigest, len(schemasToAdd))
 	ms, err := s.getModuleSchemaView(moduleDigest)
 	if err != nil {
 		return err

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
-	"github.com/google/shlex"
 
 	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
@@ -65,24 +64,13 @@ func (t Go) Test(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	testCmd := []string{"go", "test", "-v"}
-	if flags := os.Getenv("TESTFLAGS"); flags != "" {
-		args, err := shlex.Split(flags)
-		if err != nil {
-			args = []string{flags}
-		}
-		testCmd = append(testCmd, args...)
-	} else {
-		testCmd = append(testCmd, "./...")
-	}
-
 	output, err := util.GoBase(c).
 		WithWorkdir("sdk/go").
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec(testCmd).
+		WithExec([]string{"go", "test", "-v", "./..."}).
 		Stdout(ctx)
 	if err != nil {
 		err = fmt.Errorf("test failed: %w\n%s", err, output)

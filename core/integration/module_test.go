@@ -177,7 +177,7 @@ func TestModuleGoUseLocal(t *testing.T) {
 	require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
 
 	// cannot use transitive dependency directly
-	_, err = modGen.With(daggerQuery(`{dep {hello}}`)).Stdout(ctx)
+	_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
 }
