@@ -428,7 +428,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, refere
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert slice element type: %w", err)
 		}
-		return Qual("dag", "TypeDef").Call().Dot("WithList").Call(
+		return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(
 			elemTypeDef,
 		), nil
 	case *types.Struct:
