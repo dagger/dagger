@@ -17,16 +17,11 @@ import (
 )
 
 /* TODO:
-* Handle IDable core types as inputs args+parents
-* Handle chainable methods
-   * Need to avoid circular typedef object references, json marshal fails right now
 * Handle types from 3rd party imports in the type signature
    * Add packages.NeedImports and packages.NeedDependencies to packages.Load opts, ensure performance is okay (or deal with that by lazy loading)
 * Fix problem where changing a function signature requires running `dagger mod sync` twice (first one will result in package errors being seen, second one fixes)
    * Use Overlays field in packages.Config to provide partial generation of dagger.gen.go, without the unupdated code we generate here
-* Handle no go.mod being present more gracefully and w/ better error messages
 * Handle automatically re-running `dagger mod sync` when invoking functions from CLI, to save users from having to always remember while developing locally
-* More flexibility around only returning error, not returning error, etc.
 * Support methods defined on non-pointer receivers
 */
 
@@ -47,39 +42,20 @@ on the object+function name, with each case doing json deserialization of the in
 Go function.
 */
 func (funcs goTemplateFuncs) moduleMainSrc() string {
-	fset := token.NewFileSet()
-	pkgs, err := packages.Load(&packages.Config{
-		Context: funcs.ctx,
-		Dir:     funcs.sourceDirectoryPath,
-		Tests:   false,
-		Fset:    fset,
-		Mode: packages.NeedName |
-			packages.NeedTypes |
-			packages.NeedSyntax |
-			packages.NeedTypesInfo,
-	}, "./...")
-	if err != nil {
-		panic(fmt.Sprintf("failed to load packages: %v", err))
-	}
-	var mainPkg *packages.Package
-	for _, pkg := range pkgs {
-		if pkg.Name == "main" {
-			mainPkg = pkg
-			break
-		}
-	}
-	if mainPkg == nil {
-		return defaultErrorMainSrc("no main package yet")
+	if funcs.modulePkg == nil {
+		// during bootstrapping, we might not have code yet, since it takes
+		// multiple passes.
+		return `func main() { panic("no code yet") }`
 	}
 
 	ps := &parseState{
 		visitedStructs: make(map[string]*Statement),
-		pkgs:           pkgs,
-		fset:           fset,
+		pkg:            funcs.modulePkg,
+		fset:           funcs.moduleFset,
 		methods:        make(map[string][]method),
 	}
 
-	pkgScope := mainPkg.Types.Scope()
+	pkgScope := funcs.modulePkg.Types.Scope()
 
 	objFunctionCases := map[string][]Code{}
 
@@ -423,7 +399,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 type parseState struct {
 	visitedStructs map[string]*Statement
-	pkgs           []*packages.Package
+	pkg            *packages.Package
 	fset           *token.FileSet
 	methods        map[string][]method
 }
@@ -769,24 +745,22 @@ func (ps *parseState) typeSpecForNamedType(namedType *types.Named) (*ast.TypeSpe
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", namedType.Obj().Name())
 	}
-	for _, pkg := range ps.pkgs {
-		for _, f := range pkg.Syntax {
-			if ps.fset.File(f.Pos()) != tokenFile {
+	for _, f := range ps.pkg.Syntax {
+		if ps.fset.File(f.Pos()) != tokenFile {
+			continue
+		}
+		for _, decl := range f.Decls {
+			genDecl, ok := decl.(*ast.GenDecl)
+			if !ok {
 				continue
 			}
-			for _, decl := range f.Decls {
-				genDecl, ok := decl.(*ast.GenDecl)
+			for _, spec := range genDecl.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
 				if !ok {
 					continue
 				}
-				for _, spec := range genDecl.Specs {
-					typeSpec, ok := spec.(*ast.TypeSpec)
-					if !ok {
-						continue
-					}
-					if typeSpec.Name.Name == namedType.Obj().Name() {
-						return typeSpec, nil
-					}
+				if typeSpec.Name.Name == namedType.Obj().Name() {
+					return typeSpec, nil
 				}
 			}
 		}
@@ -802,16 +776,14 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", fnType.Name())
 	}
-	for _, pkg := range ps.pkgs {
-		for _, f := range pkg.Syntax {
-			if ps.fset.File(f.Pos()) != tokenFile {
-				continue
-			}
-			for _, decl := range f.Decls {
-				fnDecl, ok := decl.(*ast.FuncDecl)
-				if ok && fnDecl.Name.Name == fnType.Name() {
-					return fnDecl, nil
-				}
+	for _, f := range ps.pkg.Syntax {
+		if ps.fset.File(f.Pos()) != tokenFile {
+			continue
+		}
+		for _, decl := range f.Decls {
+			fnDecl, ok := decl.(*ast.FuncDecl)
+			if ok && fnDecl.Name.Name == fnType.Name() {
+				return fnDecl, nil
 			}
 		}
 	}

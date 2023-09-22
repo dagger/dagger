@@ -1,4 +1,3 @@
-//go:generate client-gen -o ./ --package dagger --lang go
 package dagger
 
 import (

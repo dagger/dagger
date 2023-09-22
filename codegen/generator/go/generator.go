@@ -8,7 +8,6 @@ import (
 	"go/token"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -37,21 +36,24 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	mfs := memfs.New()
 
-	mainMod, needSync, err := g.bootstrapMain(ctx, mfs)
+	pkgInfo, needSync, err := g.bootstrapPkg(ctx, mfs)
 	if err != nil {
-		return nil, fmt.Errorf("bootstrap main: %w", err)
+		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
 
-	funcs := templates.GoTemplateFuncs(ctx, g.Config.ModuleName, g.Config.SourceDirectoryPath, schema)
+	pkg, fset, err := loadPackage(ctx, g.Config.SourceDir)
+	if err != nil {
+		// return nil, fmt.Errorf("load package: %w", err)
+	}
+
+	funcs := templates.GoTemplateFuncs(ctx, schema, g.Config.ModuleName, pkg, fset)
 
 	headerData := struct {
-		Package  string
-		GoModule string
-		Schema   *introspection.Schema
+		*PackageInfo
+		Schema *introspection.Schema
 	}{
-		Package:  g.Config.Package,
-		GoModule: mainMod,
-		Schema:   schema,
+		PackageInfo: pkgInfo,
+		Schema:      schema,
 	}
 
 	var render []string
@@ -112,7 +114,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			SourceDirectoryPath string
 		}{
 			Schema:              schema,
-			SourceDirectoryPath: g.Config.SourceDirectoryPath,
+			SourceDirectoryPath: g.Config.SourceDir,
 		}
 
 		var moduleMain bytes.Buffer
@@ -127,7 +129,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	if err != nil {
 		return nil, fmt.Errorf("error formatting generated code: %w\nsource:\n%s", err, source)
 	}
-	formatted, err = imports.Process(filepath.Join(g.Config.SourceDirectoryPath, "dummy.go"), formatted, nil)
+	formatted, err = imports.Process(filepath.Join(g.Config.SourceDir, "dummy.go"), formatted, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error formatting generated code: %w\nsource:\n%s", err, source)
 	}
@@ -136,49 +138,53 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.SourceDirectoryPath); err != nil {
+	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.OutputDir); err != nil {
 		return nil, err
 	}
 
-	// run 'go mod tidy' after generating to fix and prune dependencies
-	tidyCmd := exec.Command("go", "mod", "tidy")
-	tidyCmd.Dir = g.Config.SourceDirectoryPath
-
 	return &generator.GeneratedState{
-		Overlay:        layerfs.New(mfs, dagger.QueryBuilder),
-		PostCommands:   []*exec.Cmd{tidyCmd},
+		Overlay: layerfs.New(mfs, dagger.QueryBuilder),
+		PostCommands: []*exec.Cmd{
+			// run 'go mod tidy' after generating to fix and prune dependencies
+			exec.Command("go", "mod", "tidy"),
+		},
 		NeedRegenerate: needSync,
 	}, nil
 }
 
-func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string, bool, error) {
-	srcDir := g.Config.SourceDirectoryPath
+type PackageInfo struct {
+	PackageName string // Go package name, typically "main"
+	ModulePath  string // import path of package in which this file appears
+}
 
-	pkgs, err := loadPackages(ctx, srcDir)
-	if err != nil {
-		return "", false, fmt.Errorf("error loading packages: %w", err)
-	}
-	var mainPkg *packages.Package
-	for _, pkg := range pkgs {
-		if pkg.Name == "main" {
-			mainPkg = pkg
-			break
-		}
-	}
+// if dagger.json is already present, stop
+// if go.mod is already present, return its module name (import path), else module-name
+// if go code is already present, return its package name, else "main"
 
-	if mainPkg != nil {
-		progrock.FromContext(ctx).Warn("already bootstrapped")
-		// already bootstrapped
-		return mainPkg.Module.Path, false, nil
+func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*PackageInfo, bool, error) {
+	outDir := g.Config.OutputDir
+
+	info := &PackageInfo{}
+
+	if modPkg, _, err := loadPackage(ctx, outDir); err == nil {
+		progrock.FromContext(ctx).Debug("found existing Go package",
+			progrock.Labelf("pkgName", modPkg.Name),
+			progrock.Labelf("pkgPath", modPkg.PkgPath),
+			progrock.Labelf("module", modPkg.Module.Path),
+		)
+
+		info.PackageName = modPkg.Name
+	} else {
+		info.PackageName = "main"
 	}
 
 	var needsRegen bool
-	if _, err := os.Stat(filepath.Join(srcDir, StarterTemplateFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(outDir, StarterTemplateFile)); err != nil {
 		// write an initial main.go if no main pkg exists yet
 		//
 		// NB: this has to happen before we run codegen, since it's an input to it.
 		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource()), 0600); err != nil {
-			return "", false, err
+			return nil, false, err
 		}
 
 		// we just generated code that is actually an input to codegen, so this
@@ -186,31 +192,19 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 		needsRegen = true
 	}
 
-	// re-try loading main package so that we can detect outer module
-	pkgs, err = loadPackages(ctx, g.Config.SourceDirectoryPath)
-	if err != nil {
-		return "", false, fmt.Errorf("error loading packages: %w", err)
-	}
-	for _, pkg := range pkgs {
-		if pkg.Name == "main" {
-			mainPkg = pkg
-			break
-		}
-	}
-
 	// bootstrap go.mod using dependencies from the embedded Go SDK
 	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
 	if err != nil {
-		return "", false, fmt.Errorf("parse embedded go.mod: %w", err)
+		return nil, false, fmt.Errorf("parse embedded go.mod: %w", err)
 	}
 
 	newMod := new(modfile.File)
 
-	var currentMod *modfile.File
-	if content, err := os.ReadFile(filepath.Join(srcDir, "go.mod")); err == nil {
-		currentMod, err = modfile.Parse("go.mod", content, nil)
+	// respect existing go.mod (no strong reason)
+	if content, err := os.ReadFile(filepath.Join(outDir, "go.mod")); err == nil {
+		currentMod, err := modfile.Parse("go.mod", content, nil)
 		if err != nil {
-			return "", false, fmt.Errorf("parse go.mod: %w", err)
+			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
 
 		newMod = currentMod
@@ -218,49 +212,35 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 		for _, req := range sdkMod.Require {
 			newMod.AddRequire(req.Mod.Path, req.Mod.Version)
 		}
-	} else {
-		var newModName string
-		if mainPkg == nil {
-			rec := progrock.FromContext(ctx)
-			rec.Warn("no main package or module found; falling back to bare module name")
-			// fallback to bare module name
-			newModName = g.Config.ModuleName
-		} else {
-			relPath, err := filepath.Rel(mainPkg.Module.Dir, srcDir)
-			if err != nil {
-				return "", false, fmt.Errorf("error getting relative path: %w", err)
-			}
 
-			// base Go module name on outer module path
-			//
-			// that is, if a repo's root level go.mod is github.com/dagger/dagger, and
-			// we're codegenning in ./zenith/foo, the resulting module will be
-			// github.com/dagger/dagger/zenith/foo.
-			newModName = path.Join(mainPkg.Module.Path, filepath.ToSlash(relPath))
-			progrock.FromContext(ctx).Warn("new mod name", progrock.Labelf("mod", newModName))
-		}
+		// TODO test
+		info.ModulePath = currentMod.Module.Mod.Path
+	} else {
+		newModName := strcase.ToKebab(g.Config.ModuleName)
 
 		newMod.AddModuleStmt(newModName)
 		newMod.SetRequire(sdkMod.Require)
+
+		info.ModulePath = newModName
 	}
 
 	modBody, err := newMod.Format()
 	if err != nil {
-		return "", false, fmt.Errorf("format go.mod: %w", err)
+		return nil, false, fmt.Errorf("format go.mod: %w", err)
 	}
 	if err := mfs.WriteFile("go.mod", modBody, 0600); err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 	if err := mfs.WriteFile("go.sum", dagger.GoSum, 0600); err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 
-	return newMod.Module.Mod.Path, needsRegen, nil
+	return info, needsRegen, nil
 }
 
-func loadPackages(ctx context.Context, dir string) ([]*packages.Package, error) {
+func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {
 	fset := token.NewFileSet()
-	return packages.Load(&packages.Config{
+	pkgs, err := packages.Load(&packages.Config{
 		Context: ctx,
 		Dir:     dir,
 		Tests:   false,
@@ -271,6 +251,18 @@ func loadPackages(ctx context.Context, dir string) ([]*packages.Package, error) 
 			packages.NeedTypesInfo |
 			packages.NeedModule,
 	}, ".")
+	if err != nil {
+		return nil, nil, err
+	}
+	switch len(pkgs) {
+	case 0:
+		return nil, nil, fmt.Errorf("no packages found in %s", dir)
+	case 1:
+		return pkgs[0], fset, nil
+	default:
+		// this would mean I don't understand how loading '.' works
+		return nil, nil, fmt.Errorf("expected 1 package, got %d", len(pkgs))
+	}
 }
 
 func (g *GoGenerator) baseModuleSource() string {

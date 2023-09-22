@@ -4,17 +4,20 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/moduleconfig"
 )
 
-// Module contains all of the information we're able to learn about a provided
+// ModuleRef contains all of the information we're able to learn about a provided
 // module ref.
-type Module struct {
+type ModuleRef struct {
 	Path    string // Path is the provided path for the module.
 	Version string // Version is the provided version for the module, if any.
 
@@ -24,33 +27,111 @@ type Module struct {
 	SubPath string // Subdir is the subdirectory within the fetched source.
 }
 
-func (mod *Module) String() string {
-	if mod.Local {
-		// TODO(vito): This may be worth a rethink, but the idea is for local
-		// modules to be represented as a 'subpath' of their outer module, that way
-		// they can do things like refer to sibling modules at ../foo. But this
-		// hasn't been proved out. Anyway, at this layer we need to preserve the
-		// subpath because this gets printed to `dagger.json`, and without this the
-		// module will depend on itself, leading to an infinite loop.
-		return path.Join(mod.Path, mod.SubPath)
-	}
-	if mod.Version == "" {
-		return mod.Path
-	}
-	return fmt.Sprintf("%s@%s", mod.Path, mod.Version)
-}
-
 type GitRef struct {
 	HTMLURL  string // HTMLURL is the URL a user can use to browse the repo.
 	CloneURL string // CloneURL is the URL to clone.
 	Commit   string // Commit is the commit to check out.
 }
 
+func (ref *ModuleRef) String() string {
+	if ref.Local {
+		// TODO(vito): This may be worth a rethink, but the idea is for local
+		// modules to be represented as a 'subpath' of their outer module, that way
+		// they can do things like refer to sibling modules at ../foo. But this
+		// hasn't been proved out. Anyway, at this layer we need to preserve the
+		// subpath because this gets printed to `dagger.json`, and without this the
+		// module will depend on itself, leading to an infinite loop.
+		return path.Join(ref.Path, ref.SubPath)
+	}
+	if ref.Version == "" {
+		return ref.Path
+	}
+	return fmt.Sprintf("%s@%s", ref.Path, ref.Version)
+}
+
+func (ref *ModuleRef) Config(ctx context.Context, c *dagger.Client) (*moduleconfig.Config, error) {
+	switch {
+	case ref.Local:
+		configBytes, err := os.ReadFile(path.Join(ref.Path, moduleconfig.Filename))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read local config file: %w", err)
+		}
+		var cfg moduleconfig.Config
+		if err := json.Unmarshal(configBytes, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse local config file: %w", err)
+		}
+		return &cfg, nil
+
+	case ref.Git != nil:
+		if c == nil {
+			return nil, fmt.Errorf("cannot load git module config with nil dagger client")
+		}
+		repoDir := c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree()
+		var configPath string
+		if ref.SubPath != "" {
+			configPath = path.Join(ref.SubPath, moduleconfig.Filename)
+		} else {
+			configPath = moduleconfig.Filename
+		}
+		configStr, err := repoDir.File(configPath).Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read git config file: %w", err)
+		}
+		var cfg moduleconfig.Config
+		if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse git config file: %w", err)
+		}
+		return &cfg, nil
+
+	default:
+		panic("invalid module ref")
+	}
+}
+
+func (ref *ModuleRef) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
+	cfg, err := ref.Config(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module config: %w", err)
+	}
+
+	switch {
+	case ref.Local:
+		rootDir := filepath.Clean(filepath.Join(ref.Path, cfg.Root))
+		subdirRelPath, err := filepath.Rel(rootDir, ref.Path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subdir relative path: %w", err)
+		}
+		if strings.HasPrefix(subdirRelPath, "..") {
+			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.Path, rootDir)
+		}
+
+		return c.Host().Directory(rootDir, dagger.HostDirectoryOpts{
+			Include: cfg.Include,
+			Exclude: cfg.Exclude,
+		}).AsModule(dagger.DirectoryAsModuleOpts{
+			SourceSubpath: subdirRelPath,
+		}), nil
+
+	case ref.Git != nil:
+		rootPath := path.Clean(path.Join(ref.SubPath, cfg.Root))
+		if strings.HasPrefix(rootPath, "..") {
+			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.SubPath, rootPath)
+		}
+
+		return c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree().
+			Directory(rootPath).
+			AsModule(), nil
+
+	default:
+		return nil, fmt.Errorf("invalid module (local=%t, git=%t)", ref.Local, ref.Git != nil)
+	}
+}
+
 // TODO dedup with ResolveMovingRef
-func ResolveStableRef(modQuery string) (*Module, error) {
+func ResolveStableRef(modQuery string) (*ModuleRef, error) {
 	modPath, modVersion, hasVersion := strings.Cut(modQuery, "@")
 
-	ref := &Module{
+	ref := &ModuleRef{
 		Path: modPath,
 	}
 
@@ -103,10 +184,10 @@ func ResolveStableRef(modQuery string) (*Module, error) {
 	return ref, nil
 }
 
-func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) (*Module, error) {
+func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) (*ModuleRef, error) {
 	modPath, modVersion, hasVersion := strings.Cut(modQuery, "@")
 
-	ref := &Module{
+	ref := &ModuleRef{
 		Path: modPath,
 	}
 
@@ -164,7 +245,7 @@ func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) 
 	return ref, nil
 }
 
-func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *Module, urlStr string) (*Module, error) {
+func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *ModuleRef, urlStr string) (*ModuleRef, error) {
 	mod, err := ResolveMovingRef(ctx, dag, urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve module: %w", err)

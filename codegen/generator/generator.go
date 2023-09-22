@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -31,15 +30,11 @@ const (
 )
 
 type Config struct {
-	Lang SDKLang
+	Lang      SDKLang
+	SourceDir string
+	OutputDir string
 
-	// Package is the target package that is generated.
-	// Not used for the SDKLangNodeJS.
-	Package string
-
-	ModuleName          string
-	DependencyModules   []*dagger.Module
-	SourceDirectoryPath string
+	ModuleName string
 }
 
 type Generator interface {

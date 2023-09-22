@@ -3,33 +3,43 @@ package templates
 import (
 	"context"
 	"fmt"
+	"go/token"
 	"regexp"
 	"sort"
 	"strings"
 	"text/template"
 
 	"github.com/iancoleman/strcase"
+	"golang.org/x/tools/go/packages"
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
-func GoTemplateFuncs(ctx context.Context, moduleName string, sourceDirectoryPath string, schema *introspection.Schema) template.FuncMap {
+func GoTemplateFuncs(
+	ctx context.Context,
+	schema *introspection.Schema,
+	moduleName string,
+	pkg *packages.Package,
+	fset *token.FileSet,
+) template.FuncMap {
 	return goTemplateFuncs{
-		CommonFunctions:     generator.NewCommonFunctions(&FormatTypeFunc{}),
-		ctx:                 ctx,
-		moduleName:          moduleName,
-		sourceDirectoryPath: sourceDirectoryPath,
-		schema:              schema,
+		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
+		ctx:             ctx,
+		moduleName:      moduleName,
+		modulePkg:       pkg,
+		moduleFset:      fset,
+		schema:          schema,
 	}.FuncMap()
 }
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	ctx                 context.Context
-	moduleName          string
-	sourceDirectoryPath string
-	schema              *introspection.Schema
+	ctx        context.Context
+	moduleName string
+	modulePkg  *packages.Package
+	moduleFset *token.FileSet
+	schema     *introspection.Schema
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
@@ -167,11 +177,14 @@ func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field) strin
 func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 	// don't create methods on query for the env itself,
 	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
-	if moduleName := funcs.moduleName; moduleName != "" {
-		if f.ParentObject.Name == generator.QueryStructName && f.Name == moduleName {
-			return ""
-		}
-	}
+	// TODO(vito): still needed? we codegen against the module's schema view,
+	// which shouldn't include the module itself, only its dependencies. or is
+	// this because of universe?
+	// if moduleName := funcs.moduleName; moduleName != "" {
+	// 	if f.ParentObject.Name == generator.QueryStructName && f.Name == moduleName {
+	// 		return ""
+	// 	}
+	// }
 
 	structName := formatName(f.ParentObject.Name)
 	signature := fmt.Sprintf(`func (r *%s) %s`,

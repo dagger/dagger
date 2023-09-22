@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/codegen"
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/core/resolver"
 	"github.com/dagger/dagger/engine/client"
@@ -69,7 +70,7 @@ var moduleCmd = &cobra.Command{
 			var cfg *moduleconfig.Config
 			switch {
 			case mod.Local:
-				cfg, err = mod.config(ctx, nil)
+				cfg, err = mod.Config(ctx, nil)
 				if err != nil {
 					return fmt.Errorf("failed to get local module config: %w", err)
 				}
@@ -78,7 +79,7 @@ var moduleCmd = &cobra.Command{
 				vtx := rec.Vertex("get-mod-config", strings.Join(os.Args, " "))
 				defer func() { vtx.Done(err) }()
 				readConfigTask := vtx.Task("reading git module config")
-				cfg, err = mod.config(ctx, engineClient.Dagger())
+				cfg, err = mod.Config(ctx, engineClient.Dagger())
 				readConfigTask.Done(err)
 				if err != nil {
 					return fmt.Errorf("failed to get git module config: %w", err)
@@ -142,7 +143,7 @@ var moduleUseCmd = &cobra.Command{
 			if modFlagCfg.Git != nil {
 				return fmt.Errorf("module use is not supported for git modules")
 			}
-			modCfg, err := modFlagCfg.config(ctx, nil)
+			modCfg, err := modFlagCfg.Config(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
@@ -150,9 +151,9 @@ var moduleUseCmd = &cobra.Command{
 			var deps []string
 			deps = append(deps, modCfg.Dependencies...)
 			deps = append(deps, extraArgs...)
-			depSet := make(map[string]*resolver.Module)
+			depSet := make(map[string]*resolver.ModuleRef)
 			for _, dep := range deps {
-				depMod, err := resolver.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.Module, dep)
+				depMod, err := resolver.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.ModuleRef, dep)
 				if err != nil {
 					return fmt.Errorf("failed to get module: %w", err)
 				}
@@ -184,7 +185,7 @@ var moduleSyncCmd = &cobra.Command{
 			if modFlagCfg.Git != nil {
 				return fmt.Errorf("module sync is not supported for git modules")
 			}
-			modCfg, err := modFlagCfg.config(ctx, nil)
+			modCfg, err := modFlagCfg.Config(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
@@ -209,19 +210,13 @@ func updateModuleConfig(
 			rec := progrock.FromContext(ctx)
 			vtx := rec.Vertex("mod-update", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
-
-			loadDeps := vtx.Task("loading module dependencies")
-			mod, err := resolver.ResolveStableRef(moduleDir)
-			if err != nil {
-				return fmt.Errorf("failed to resolve module: %w", err)
-			}
-			deps, err := moduleFlagConfig{mod}.loadDeps(ctx, engineClient.Dagger())
-			loadDeps.Done(err)
-			if err != nil {
-				return fmt.Errorf("failed to load dependencies: %w", err)
-			}
 			runCodegenTask := vtx.Task("generating module code")
-			err = RunCodegen(ctx, engineClient, nil, newModCfg, deps, cmd, nil)
+			err = codegen.Generate(ctx, generator.Config{
+				Lang:       generator.SDKLang(newModCfg.SDK),
+				SourceDir:  workdir,
+				OutputDir:  codegenOutputDir,
+				ModuleName: newModCfg.Name,
+			}, engineClient)
 			runCodegenTask.Done(err)
 			return err
 		}
@@ -313,48 +308,11 @@ func getModuleFlagConfigFromURL(ctx context.Context, dag *dagger.Client, moduleU
 
 // moduleFlagConfig holds the module settings provided by the user via flags (or defaults if not set)
 type moduleFlagConfig struct {
-	// only one of these will be set
-	*resolver.Module
+	*resolver.ModuleRef
 }
 
 func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
-	cfg, err := p.config(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-
-	var mod *dagger.Module
-	switch {
-	case p.Local:
-		rootDir := filepath.Clean(filepath.Join(p.Path, cfg.Root))
-		subdirRelPath, err := filepath.Rel(rootDir, p.Path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get subdir relative path: %w", err)
-		}
-		if strings.HasPrefix(subdirRelPath, "..") {
-			return nil, fmt.Errorf("module config path %q is not under module root %q", p.Path, rootDir)
-		}
-
-		mod = c.Host().Directory(rootDir, dagger.HostDirectoryOpts{
-			Include: cfg.Include,
-			Exclude: cfg.Exclude,
-		}).AsModule(dagger.DirectoryAsModuleOpts{
-			SourceSubpath: subdirRelPath,
-		})
-
-	case p.Git != nil:
-		rootPath := path.Clean(path.Join(p.SubPath, cfg.Root))
-		if strings.HasPrefix(rootPath, "..") {
-			return nil, fmt.Errorf("module config path %q is not under module root %q", p.SubPath, rootPath)
-		}
-
-		mod = c.Git(p.Git.CloneURL).Commit(p.Version).Tree().
-			Directory(rootPath).
-			AsModule()
-
-	default:
-		err = fmt.Errorf("invalid module")
-	}
+	mod, err := p.AsModule(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load module: %w", err)
 	}
@@ -364,68 +322,6 @@ func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.M
 	// module.
 
 	return mod, nil
-}
-
-func (p moduleFlagConfig) config(ctx context.Context, c *dagger.Client) (*moduleconfig.Config, error) {
-	switch {
-	case p.Local:
-		configBytes, err := os.ReadFile(path.Join(p.Path, moduleconfig.Filename))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read local config file: %w", err)
-		}
-		var cfg moduleconfig.Config
-		if err := json.Unmarshal(configBytes, &cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse local config file: %w", err)
-		}
-		return &cfg, nil
-
-	case p.Git != nil:
-		if c == nil {
-			return nil, fmt.Errorf("cannot load git module config with nil dagger client")
-		}
-		repoDir := c.Git(p.Git.CloneURL).Commit(p.Version).Tree()
-		var configPath string
-		if p.SubPath != "" {
-			configPath = path.Join(p.SubPath, moduleconfig.Filename)
-		} else {
-			configPath = moduleconfig.Filename
-		}
-		configStr, err := repoDir.File(configPath).Contents(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read git config file: %w", err)
-		}
-		var cfg moduleconfig.Config
-		if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse git config file: %w", err)
-		}
-		return &cfg, nil
-
-	default:
-		panic("invalid module ref")
-	}
-}
-
-func (p moduleFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*dagger.Module, error) {
-	if !p.Local {
-		return nil, fmt.Errorf("TODO: implement non-local module dependency loading")
-	}
-	cfg, err := p.config(ctx, c)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module config: %w", err)
-	}
-	depMods := make([]*dagger.Module, 0, len(cfg.Dependencies))
-	for _, dep := range cfg.Dependencies {
-		depModFlagCfg, err := getModuleFlagConfigFromURL(ctx, c, dep)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module: %w", err)
-		}
-		depMod, err := depModFlagCfg.load(ctx, c)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load dependency module: %w", err)
-		}
-		depMods = append(depMods, depMod)
-	}
-	return depMods, nil
 }
 
 func (p moduleFlagConfig) modExists(ctx context.Context, c *dagger.Client) (bool, error) {

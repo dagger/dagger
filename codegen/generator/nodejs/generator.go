@@ -54,7 +54,7 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.SourceDirectoryPath); err != nil {
+	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.SourceDir); err != nil {
 		return nil, err
 	}
 
