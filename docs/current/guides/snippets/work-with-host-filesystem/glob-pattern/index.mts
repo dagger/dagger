@@ -29,5 +29,5 @@ connect(
       console.log(entries)
     }
   },
-  { LogOutput: process.stderr, Workdir: workdir }
+  { LogOutput: process.stderr }
 )

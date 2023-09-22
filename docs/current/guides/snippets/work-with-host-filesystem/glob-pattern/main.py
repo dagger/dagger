@@ -8,15 +8,15 @@ import anyio
 import dagger
 
 
-async def main(workdir: anyio.Path):
-    folder = Path(workdir)
+async def main(hostdir: str):
+    folder = Path(hostdir)
     for subdir in ["foo", "bar", "baz"]:
         folder.joinpath(Path(subdir)).mkdir()
         for file in [".txt", ".out", ".rar"]:
             folder.joinpath(Path(subdir), str(subdir + file)).write_text(str(subdir))
         folder = folder / subdir
 
-    cfg = dagger.Config(log_output=sys.stderr, workdir=workdir)
+    cfg = dagger.Config(log_output=sys.stderr)
 
     async with dagger.Connection(cfg) as client:
         daggerdirectory = await client.host().directory(
@@ -30,5 +30,5 @@ async def main(workdir: anyio.Path):
             print("In", subdir, ":", entries)
 
 
-with tempfile.TemporaryDirectory() as workdir:
-    anyio.run(main, anyio.Path(workdir))
+with tempfile.TemporaryDirectory() as hostdir:
+    anyio.run(main, hostdir)

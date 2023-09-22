@@ -11,12 +11,12 @@ import (
 )
 
 func main() {
-	workdir := os.TempDir()
+	workdir, _ := os.Getwd()
 	folder := workdir + string(os.PathSeparator)
 
 	for _, subdir := range []string{"foo", "bar", "baz"} {
 		folder = filepath.Join(folder, subdir)
-		os.Mkdir(folder, 0600)
+		os.Mkdir(folder, 0700)
 
 		for _, file := range []string{".txt", ".rar", ".out"} {
 			os.WriteFile(filepath.Join(folder, subdir+file), []byte(subdir), 0600)
@@ -25,7 +25,7 @@ func main() {
 
 	ctx := context.Background()
 
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr), dagger.WithWorkdir(workdir))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		log.Println(err)
 		return
