@@ -34,13 +34,13 @@ The base pattern consists of persistent Kubernetes nodes with ephemeral CI runne
 
 The minimum required components are:
 
-- **Kubernetes cluster**, consisting of support nodes and runner nodes.
+- Kubernetes cluster, consisting of support nodes and runner nodes.
   - Runner nodes host CI runners and Dagger Engines.
   - Support nodes host support and management tools, such as certificate management, runner controller & other functions.
-- **Certificates manager**, required by Runner controller for Admission Webhook.
-- **Runner controller**, responsible for managing CI runners in response to CI job requests.
+- Certificates manager, required by Runner controller for Admission Webhook.
+- Runner controller, responsible for managing CI runners in response to CI job requests.
   - CI runners are the workhorses of a CI/CD system. They execute the jobs that are defined in the CI/CD pipeline.
-- **Dagger Engine** on each runner node, running alongside one or more CI runners.
+- Dagger Engine on each runner node, running alongside one or more CI runners.
   - Responsible for running Dagger pipelines and caching intermediate and final build artifacts.
 
 In this architecture:
@@ -87,7 +87,7 @@ This section explains how to implement the base pattern and optimizations descri
 These steps may vary depending on your specific setup and requirements. Always refer to the official documentation of the tools and services listed for the most accurate and up-to-date information.
 :::
 
-### Step 1/5: Understand the architecture
+### Step 1: Understand the architecture
 
 ![Kubernetes implementation](/img/current/guides/kubernetes/implementation.png)
 
@@ -101,7 +101,7 @@ Here is a brief description of the architecture and components:
 - Dagger Engines communicate with the Dagger Cloud to read from & write to the shared cache.
 - Karpenter, a Kubernetes-native node auto-scaler, uses the AWS EKS API to dynamically add or remove runner nodes depending on workload requirements.
 
-### Step 2/5: Set up services and components
+### Step 2: Set up services and components
 
 The next step is to set up the required services and components. Ensure that you have:
 
@@ -109,65 +109,22 @@ The next step is to set up the required services and components. Ensure that you
 - A GitHub account
 - A [Dagger Cloud account](https://dagger.io/cloud), which provides distributed caching, pipeline visibility, and operational insights.
 
-### Step 3/5: Create a set of taints and tolerations for the GitHub Actions runners
+### Step 3: Create a set of taints and tolerations for the GitHub Actions runners
 
 [Taints and tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) in Kubernetes are a way to ensure that certain nodes are reserved for specific tasks. By setting up taints on runner nodes, you can prevent other workloads from being scheduled on them. Tolerations are then added to the runners so that they can be scheduled on these tainted nodes. This ensures that the runners have dedicated resources for their tasks.
 
 A sample GitHub Actions runner deployment configuration is shown below. Replace the `YOUR_GITHUB_ORGANIZATION` placeholder with your GitHub organization name. If you do not have a GitHub organization, you can use your GitHub username instead.
 
-```yaml
-apiVersion: actions.summerwind.dev/v1alpha1
-kind: RunnerDeployment
-metadata:
-  name: dagger-runner-deployment-2c-8g
-  namespace: dagger
-spec:
-  replicas: 0
-  template:
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                - key: actions-runner
-                  operator: Exists
-      dockerEnabled: true
-      dockerdWithinRunnerContainer: true
-      image: summerwind/actions-runner-dind
-      labels:
-        - dagger-runner
-        - dagger-runner-2c-8g
-      organization: YOUR_GITHUB_ORGANIZATION
-      resources:
-        requests:
-          cpu: "2"
-          memory: 8Gi
-      securityContext:
-        fsGroup: 1001
-        fsGroupChangePolicy: OnRootMismatch
-      tolerations:
-        - effect: NoSchedule
-          key: actions-runner
-          operator: Exists
-      env:
-        - name: _EXPERIMENTAL_DAGGER_RUNNER_HOST
-          value: unix:///var/run/dagger/buildkitd.sock
-      volumeMounts:
-        - name: dagger-socket
-          mountPath: /var/run/dagger
-      volumes:
-        - name: dagger-socket
-          hostPath:
-            path: /var/run/dagger
-          
+```yaml file=./snippets/kubernetes/runner_deployment.yml
 ```
 
 :::note
 This configuration uses the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable to point to the Dagger Engine DaemonSet socket that is mounted into the GitHub Actions runners. This ensures that the runners will use the local Dagger Engine for pipeline execution.
+
+This configuration also uses the `DAGGER_CLOUD_ENVIRONMENT` environment variable to connect this Dagger Engine to Dagger Cloud. Replace `YOUR_DAGGER_CLOUD_TOKEN` with your own token.
 :::
 
-### Step 4/5: Deploy the Dagger Engine DaemonSet with Helm v3
+### Step 4: Deploy the Dagger Engine DaemonSet with Helm v3
 
 A Dagger Engine is required on each of the GitHub Actions runner nodes. A DaemonSet ensures that all matching nodes run an instance of Dagger Engine. To ensure that the Dagger Engines are co-located with the GitHub Actions runners, the Dagger Engine Daemonset should be configured with the same taints and tolerations as the GitHub Actions runners.
 
@@ -183,12 +140,17 @@ This Dagger Engine DaemonSet configuration is designed to:
 - reduce the amount of network latency and bandwidth requirements
 - simplify routing of Dagger SDK and CLI requests
 
-### Step 5/5: Test the deployment
+### Step 5: Test the deployment
 
 At this point, the deployment is configured and ready for use. Test it by triggering the GitHub Actions workflow, by committing a new change to the source code repository. Your CI pipelines will be now connected to your Dagger Engines.
 
-:::warning
-TODO: Gerhard to add <https://github.com/dagger/hello-dagger> example
+If you don't already have a GitHub repository, clone the [repository for the Dagger starter application](https://github.com/dagger/hello-dagger) and add the sample GitHub actions workflow shown below to it. Refer to the inline comments for configuration you may wish to change.
+
+```yaml file=./snippets/kubernetes/github_workflow.yml
+```
+
+:::note
+Remember to add the `ci/index.mjs` file too. Alternatively, pick your preferred language and adapt the GitHub Actions workflow example above.
 :::
 
 :::tip
@@ -197,7 +159,7 @@ To validate that your Dagger Engines are working as expected, you can check your
 
 ## Recommendations
 
-When deploying Dagger on a Kubernetes cluster, it's important to understand the design constraints you're operating under, so you can optimize your configuration to suit your workload requirements. Here are two key recommendations:
+When deploying Dagger on a Kubernetes cluster, it's important to understand the design constraints you're operating under, so you can optimize your configuration to suit your workload requirements. Here are two key recommendations.
 
 #### Runner nodes with moderate to large NVMe drives
 
