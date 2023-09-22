@@ -190,7 +190,7 @@ Dagger aims to accelerate your CI/CD pipeline, reducing performances also reduce
 Using a rootless engine will especially constraint the custom network management of Dagger.
 
 It is possible to use [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but it will highly decrease network performances in addition to be extremely complex to setup.
-Rootlesskit wrote a [table of comparaison]((https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers)), we can observe that slirp is at least five time slower than root network, meaning that dagger will be way slower if ran as rootless.
+Rootlesskit wrote a [table of comparaison](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers), we can observe that `slirp` is at least five time slower than root network, meaning that dagger will be way slower if ran as rootless.
 
 #### Conclusion
 
