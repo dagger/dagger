@@ -267,7 +267,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	})
 
 	// registry auth
-	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
+	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started

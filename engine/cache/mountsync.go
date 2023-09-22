@@ -33,10 +33,6 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 	}
 	syncedCacheMounts := getCacheMountConfigResp.SyncedCacheMounts
 
-	if len(syncedCacheMounts) == 0 {
-		return nil
-	}
-
 	var eg errgroup.Group
 	for _, syncedCacheMount := range syncedCacheMounts {
 		syncedCacheMount := syncedCacheMount

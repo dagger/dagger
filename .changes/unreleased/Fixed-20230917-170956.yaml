@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix name of TUI experimental ENV variable
-time: 2023-09-17T17:09:56.165968+02:00
-custom:
-  Author: gmile
-  PR: "5789"

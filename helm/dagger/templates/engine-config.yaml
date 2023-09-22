@@ -1,0 +1,12 @@
+{{- if .Values.engine.config }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dagger.fullname" . }}-engine-config
+  namespace: {{ .Release.Namespace }}
+  labels: 
+    {{- include "dagger.labels" . | nindent 4 }}
+data:
+  engine.toml: |{{- .Values.engine.config | nindent 4 }}
+{{- end }}

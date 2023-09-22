@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%2013%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%2018%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -127,16 +127,16 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.8.5.md` by either running `changie batch
+- [ ] Create e.g. `.changes/v0.8.6.md` by either running `changie batch
   patch` (or `changie batch minor` if this is a new minor).
 
 > **Note**
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-  `.changes/v0.8.5.md`
+  `.changes/v0.8.7.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] Submit a PR - e.g. `add-v0.8.4-release-notes` with the new release notes
+- [ ] Submit a PR - e.g. `add-v0.8.7-release-notes` with the new release notes
   so that they can be used in the new release. The merge commit is what gets
   tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -168,27 +168,29 @@ git fetch origin
 git checkout bump-engine
 
 cd sdk/go
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5779"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
 changie batch patch
 changie merge
 
 cd ../python
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5779"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
 changie batch patch
 changie merge
 
 cd ../nodejs
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5779"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
 changie batch patch
 changie merge
 
 cd ../elixir
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5779"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
 changie batch patch
 changie merge
+
+cd ../..
 ```
 
-- [ ] Commit and push the changes
+- [ ] Commit and push the changes with the message `Add SDK release notes`
 - [ ] `10mins` Open this draft PR in
   [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
   click on **Ready to review**.
@@ -220,16 +222,10 @@ workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-- [ ] After the newly published tag appears on [🐙
-  github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
-  double-check that is was picked up by
-  [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
-  this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
-  The new version can take up to `15mins` to appear, it's OK to move on.
-- [ ] `20mins` Bump the Go SDK version in our internal mage CI targets. Create
-  a new branch - e.g. `improve-releasing-during-v0.8.5` - and submit a new PR
-  so that we can check that our workflows pass with the new SDK version before
-  we create a new GitHub release and make it widely public.
+- [ ] `20mins` Bump the Go SDK version in our internal mage CI targets & check
+  that Engine tests pass locally. If everything looks good, submit a new PR
+  with this change so that we can check that all our workflows pass with the new
+  SDK version before we create a new GitHub release and make it widely public.
 
 ```console
 cd internal/mage
@@ -238,7 +234,23 @@ go mod tidy
 
 # Check that the most important workflow works locally:
 go run main.go -w ../.. engine:test
+
+# Test using the just-released CLI
+dagger version | grep ${ENGINE_VERSION:?must be set}
+cd ../..
+dagger run ./hack/make engine:test
+
+git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 ```
+
+- [ ] After you confirm that our internal tooling works with the new Go SDK
+  release, [🐙
+  github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
+  double-check that is was picked up by
+  [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
+  this new version via `open
+  https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`. The new
+  version can take up to `15mins` to appear, it's OK to move on.
 
 > **Note**
 >
@@ -263,8 +275,8 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 
 - [ ] Tag & publish:
 
-
 ```console
+git checkout main
 cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/python/${PYTHON_SDK_VERSION}
@@ -293,7 +305,6 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
 
 - [ ] Tag & publish:
 
-
 ```console
 cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
@@ -321,7 +332,6 @@ gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
 ## 🧪 Elixir SDK ⏱ `5mins`
 
 - [ ] Tag & publish:
-
 
 ```console
 cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
@@ -428,6 +438,6 @@ Follow these steps to retrieve and verify the Playground Dagger version:
 ## Last step
 
 - [ ] When all the above done, remember to add the `RELEASING.md` changes to
-  the `improve-releasing-during-v0.8.4` PR that you have opened earlier. Here
+  the `improve-releasing-during-v...` PR that you have opened earlier. Here
   is an example: https://github.com/dagger/dagger/pull/5658
 - [ ] Remember to toggle all the checkboxes back to `[ ]`

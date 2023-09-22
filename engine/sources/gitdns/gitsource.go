@@ -27,7 +27,7 @@ import (
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	gitsource "github.com/moby/buildkit/source/git"
+	srcgit "github.com/moby/buildkit/source/git"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/sshutil"
@@ -74,7 +74,7 @@ func (gs *gitSource) Schemes() []string {
 }
 
 func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := gitsource.NewGitIdentifier(ref)
+	id, err := srcgit.NewGitIdentifier(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +104,7 @@ func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, pla
 	return id, nil
 }
 
-// isGitTransport returns true if the provided str is a git transport by inspecting
-// the prefix of the string for known protocols used in git.
+// TODO: this logic should be public in buildkit
 func isGitTransport(str string) bool {
 	return strings.HasPrefix(str, "http://") || strings.HasPrefix(str, "https://") || strings.HasPrefix(str, "git://") || strings.HasPrefix(str, "ssh://") || sshutil.IsImplicitSSHTransport(str)
 }
@@ -200,7 +199,7 @@ func (gs *gitSource) mountRemote(ctx context.Context, remote string, auth []stri
 
 type gitSourceHandler struct {
 	*gitSource
-	src       gitsource.GitIdentifier
+	src       srcgit.GitIdentifier
 	clientIDs []string
 	cacheKey  string
 	sm        *session.Manager
@@ -226,7 +225,7 @@ type DaggerGitURLHack struct {
 }
 
 func (gs *gitSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	gitIdentifier, ok := id.(*gitsource.GitIdentifier)
+	gitIdentifier, ok := id.(*srcgit.GitIdentifier)
 	if !ok {
 		return nil, errors.Errorf("invalid git identifier %v", id)
 	}

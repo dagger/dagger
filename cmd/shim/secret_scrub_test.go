@@ -5,7 +5,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"testing"
 	"testing/fstest"
 
@@ -46,7 +46,7 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 			Files: []string{"/mysecret", "/subdir/alsosecret"},
 		})
 		require.NoError(t, err)
-		out, err := ioutil.ReadAll(r)
+		out, err := io.ReadAll(r)
 		require.NoError(t, err)
 		want := "I love to share *** to my close ones. But I keep *** to myself. As well as ***."
 		require.Equal(t, want, string(out))
@@ -69,7 +69,7 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 			Files: []string{"/emptysecret"},
 		})
 		require.NoError(t, err)
-		out, err := ioutil.ReadAll(r)
+		out, err := io.ReadAll(r)
 		require.NoError(t, err)
 		want := "I love to share my secret value to my close ones. But I keep my secret file to myself."
 		require.Equal(t, want, string(out))
@@ -188,7 +188,7 @@ func TestScrubSecretWrite(t *testing.T) {
 			require.NoError(t, err)
 			_, err = buf.WriteString(input)
 			require.NoError(t, err)
-			out, err := ioutil.ReadAll(r)
+			out, err := io.ReadAll(r)
 			require.NoError(t, err)
 			require.Equal(t, expectedOutput, string(out))
 		}
@@ -201,7 +201,7 @@ func TestScrubSecretWrite(t *testing.T) {
 		input := "aaa\nsecret1 value\nno secret\n"
 		_, err = buf.WriteString(input)
 		require.NoError(t, err)
-		out, err := ioutil.ReadAll(r)
+		out, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.Equal(t, "aaa\n***\nno secret\n", string(out))
 	})

@@ -26,7 +26,7 @@ import (
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	httpsource "github.com/moby/buildkit/source/http"
+	srchttp "github.com/moby/buildkit/source/http"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/tracing"
 	"github.com/moby/locker"
@@ -62,11 +62,11 @@ func NewSource(opt Opt) (source.Source, error) {
 }
 
 func (hs *httpSource) Schemes() []string {
-	return []string{srctypes.HTTPScheme, srctypes.HTTPSScheme}
+	return []string{srctypes.HTTPSScheme}
 }
 
 func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := httpsource.NewHTTPIdentifier(ref, scheme == "https")
+	id, err := srchttp.NewHTTPIdentifier(ref, scheme == "https")
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, pl
 
 type httpSourceHandler struct {
 	*httpSource
-	src       httpsource.HTTPIdentifier
+	src       srchttp.HTTPIdentifier
 	clientIDs []string
 	refID     string
 	cacheKey  digest.Digest
@@ -122,7 +122,7 @@ type DaggerHTTPURLHack struct {
 }
 
 func (hs *httpSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	httpIdentifier, ok := id.(*httpsource.HTTPIdentifier)
+	httpIdentifier, ok := id.(*srchttp.HTTPIdentifier)
 	if !ok {
 		return nil, errors.Errorf("invalid http identifier %v", id)
 	}
