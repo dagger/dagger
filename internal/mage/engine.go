@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/google/shlex"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
@@ -199,24 +200,30 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 
 	cgoEnabledEnv := "0"
-	args := []string{
-		"gotestsum",
-		"--format", "testname",
-		"--no-color=false",
-		"--jsonfile=./tests.log",
-		"--",
+	testCmd := []string{
+		"go", "test",
 		// go test flags
-		"-parallel=16",
+		"-parallel=1",
+		"-v",
 		"-count=1",
 		"-timeout=15m",
 	}
 
 	if race {
-		args = append(args, "-race", "-timeout=1h")
+		testCmd = append(testCmd, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
 	}
 
-	args = append(args, "./...")
+	if flags := os.Getenv("TESTFLAGS"); flags != "" {
+		args, err := shlex.Split(flags)
+		if err != nil {
+			testCmd = []string{flags}
+		}
+		testCmd = append(testCmd, args...)
+	} else {
+		testCmd = append(testCmd, "./...")
+	}
+
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
@@ -241,7 +248,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-		WithExec(args).
+		WithExec(testCmd).
 		WithExec([]string{"gotestsum", "tool", "slowest", "--jsonfile=./tests.log", "--threshold=1s"}).
 		Sync(ctx)
 	return err

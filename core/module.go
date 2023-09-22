@@ -339,49 +339,12 @@ func (mod *Module) Digest() (digest.Digest, error) {
 }
 
 func (mod *Module) setFunctionMods(id ModuleID) error {
-	memo := map[string]struct{}{}
-	var set func(parentName string, fn *Function) error
-	set = func(parentName string, fn *Function) error {
-		memoKey := fmt.Sprintf("%s.%s", parentName, fn.Name)
-		if _, ok := memo[memoKey]; ok {
-			return nil
-		}
-		memo[memoKey] = struct{}{}
-
-		// recurse to any subobjects
-		if fn.ReturnType.Kind == TypeDefKindObject {
-			for _, subFn := range fn.ReturnType.AsObject.Functions {
-				if err := set(fn.ReturnType.AsObject.Name, subFn); err != nil {
-					return err
-				}
-			}
-		}
-
-		if fn.ModuleID == "" {
-			fn.ModuleID = id
-			return nil
-		}
-
-		// Check to see if this function belongs to this module by comparing the
-		// module name. If so, update the function's ModuleID to id.
-		fnMod, err := fn.ModuleID.Decode()
-		if err != nil {
-			return fmt.Errorf("failed to decode module for function %q: %w", fn.Name, err)
-		}
-		if fnMod.Name == mod.Name {
-			fn.ModuleID = id
-		}
-		return nil
-	}
-
 	for _, def := range mod.Objects {
 		if def.AsObject == nil {
 			return fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 		}
 		for _, fn := range def.AsObject.Functions {
-			if err := set("", fn); err != nil {
-				return err
-			}
+			fn.ModuleID = id
 		}
 	}
 	return nil

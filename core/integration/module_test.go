@@ -27,7 +27,7 @@ import (
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -35,7 +35,7 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 
 func daggerQuery(query string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "--debug", "query"}, dagger.ContainerWithExecOpts{
 			Stdin:                         query,
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -209,7 +209,8 @@ func TestModuleGoUseLocal(t *testing.T) {
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: useOuter,
 		}).
-		With(daggerExec("mod", "sync"))
+		With(daggerExec("mod", "sync")).
+		WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
 	logGen(ctx, t, modGen.Directory("."))
 
@@ -218,7 +219,7 @@ func TestModuleGoUseLocal(t *testing.T) {
 	require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
 
 	// cannot use transitive dependency directly
-	_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+	_, err = modGen.With(daggerQuery(`{dep {hello}}`)).Stdout(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
 }
