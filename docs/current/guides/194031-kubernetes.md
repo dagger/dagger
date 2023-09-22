@@ -136,7 +136,7 @@ helm upgrade --create-namespace --install --namespace dagger dagger oci://regist
 
 This Dagger Engine DaemonSet configuration is designed to:
 
-- best utilize local NVMe hard drives of the worker nodes
+- best utilize local Non-Volatile Memory Express (NVMe) hard drives of the worker nodes
 - reduce the amount of network latency and bandwidth requirements
 - simplify routing of Dagger SDK and CLI requests
 
