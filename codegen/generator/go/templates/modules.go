@@ -461,11 +461,17 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		}
 	}
 
+	// Mark visiting immediately so that self-referential functions don't recurse
+	// and only get a reference.
+	ps.visitedStructs[typeName] = Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
+		Lit(typeName),
+	)
+
 	// args for IsObject
-	isObjectArgs := []Code{
+	withObjectArgs := []Code{
 		Lit(typeName),
 	}
-	isObjectOpts := []Code{}
+	withObjectOpts := []Code{}
 
 	// Fill out the Description with the comment above the struct (if any)
 	typeSpec, err := ps.typeSpecForNamedType(named)
@@ -473,13 +479,13 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", typeName, err)
 	}
 	if doc := typeSpec.Doc; doc != nil {
-		isObjectOpts = append(isObjectOpts, Id("Description").Op(":").Lit(doc.Text()))
+		withObjectOpts = append(withObjectOpts, Id("Description").Op(":").Lit(doc.Text()))
 	}
-	if len(isObjectOpts) > 0 {
-		isObjectArgs = append(isObjectArgs, Id("TypeDefIsObjectOpts").Values(isObjectOpts...))
+	if len(withObjectOpts) > 0 {
+		withObjectArgs = append(withObjectArgs, Id("TypeDefIsObjectOpts").Values(withObjectOpts...))
 	}
 
-	typeDef := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(isObjectArgs...)
+	typeDef := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgs...)
 
 	tokenFile := ps.fset.File(named.Obj().Pos())
 	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
