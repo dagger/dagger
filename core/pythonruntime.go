@@ -26,7 +26,13 @@ func (mod *Module) pythonRuntime(
 		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
-	buildEnvCtr, err := baseCtr.WithMountedDirectory(ctx, bk, ModSourceDirPath, sourceDir, "", false)
+    buildEnvCtr, err := baseCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
+		Args: []string{"apk", "add", "git"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to install system dependencies: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.WithMountedDirectory(ctx, bk, ModSourceDirPath, sourceDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod source directory: %w", err)
 	}
