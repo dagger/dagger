@@ -196,6 +196,9 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 }
 
 func renderNameOrStruct(t types.Type) string {
+	if ptr, ok := t.(*types.Pointer); ok {
+		return "*" + renderNameOrStruct(ptr.Elem())
+	}
 	if named, ok := t.(*types.Named); ok {
 		// assume local
 		return named.Obj().Name()
