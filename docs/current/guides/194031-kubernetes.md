@@ -118,7 +118,6 @@ A sample GitHub Actions runner deployment configuration is shown below.
 - Replace the `YOUR_GITHUB_ORGANIZATION` placeholder with your GitHub organization name. If you do not have a GitHub organization, you can use your GitHub username instead.
 - This configuration also uses the `DAGGER_CLOUD_ENVIRONMENT` environment variable to connect this Dagger Engine to Dagger Cloud. Replace `YOUR_DAGGER_CLOUD_TOKEN` with your own Dagger Cloud token.
 
-
 ```yaml file=./snippets/kubernetes/runner_deployment.yml
 ```
 
