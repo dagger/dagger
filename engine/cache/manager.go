@@ -75,7 +75,8 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		EngineID: m.EngineID,
 	})
 	if err != nil {
-		return nil, err
+		bklog.G(ctx).WithError(err).Warnf("cache init failed, falling back to local cache")
+		return defaultCacheManager{m.localCache}, nil
 	}
 	if config.ImportPeriod == 0 || config.ExportPeriod == 0 || config.ExportTimeout == 0 {
 		return nil, fmt.Errorf("invalid cache config: import/export periods must be non-zero")
