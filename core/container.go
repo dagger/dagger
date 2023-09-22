@@ -120,9 +120,6 @@ func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platfor
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (container *Container) Clone() *Container {
-	if container == nil {
-		return nil
-	}
 	cp := *container
 	cp.Config.ExposedPorts = cloneMap(cp.Config.ExposedPorts)
 	cp.Config.Env = cloneSlice(cp.Config.Env)
