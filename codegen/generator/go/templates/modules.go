@@ -501,7 +501,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		Lit(typeName),
 	)
 
-	// args for IsObject
+	// args for WithObject
 	withObjectArgs := []Code{
 		Lit(typeName),
 	}
@@ -512,11 +512,11 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", typeName, err)
 	}
-	if doc := typeSpec.Doc; doc != nil {
+	if doc := typeSpec.Doc; doc != nil { // TODO(vito): for some reason this is always nil
 		withObjectOpts = append(withObjectOpts, Id("Description").Op(":").Lit(doc.Text()))
 	}
 	if len(withObjectOpts) > 0 {
-		withObjectArgs = append(withObjectArgs, Id("TypeDefIsObjectOpts").Values(withObjectOpts...))
+		withObjectArgs = append(withObjectArgs, Id("TypeDefWithObjectOpts").Values(withObjectOpts...))
 	}
 
 	typeDef := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgs...)
