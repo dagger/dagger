@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
@@ -84,25 +85,37 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 
 	createMod := Qual("dag", "CurrentModule").Call()
 
+	objs := []types.Object{}
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
 		if obj == nil {
 			continue
 		}
 
+		objs = append(objs, obj)
+	}
+
+	// preserve definition order, so developer can keep more important /
+	// entrypoint types higher up
+	sort.Slice(objs, func(i, j int) bool {
+		return objs[i].Pos() < objs[j].Pos()
+	})
+
+	for _, obj := range objs {
 		named, isNamed := obj.Type().(*types.Named)
 		if !isNamed {
 			continue
 		}
 
-		if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
-			// TODO: could possibly support non-struct types, but why bother
+		strct, isStruct := named.Underlying().(*types.Struct)
+		if !isStruct {
+			// TODO(vito): could possibly support non-struct types, but why bother
 			continue
 		}
 
 		// TODO(vito): hacky: need to run this before fillObjectFunctionCases so it
 		// collects all the methods
-		objType, err := ps.goTypeToAPIType(obj.Type(), nil, false)
+		objType, err := ps.goStructToAPIType(strct, named, false)
 		if err != nil {
 			panic(err)
 		}
@@ -112,16 +125,21 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			panic(err)
 		}
 
-		if len(objFunctionCases[name]) == 0 {
+		if len(objFunctionCases[obj.Name()]) == 0 {
 			// no functions on this object, so don't add it to the module
 			continue
 		}
 
 		// Add the object to the module
-		createMod = createMod.Dot("WithObject").Call(objType)
+		createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objType))
 	}
 
+	// TODO: sort cases and functions based on their definition order
 	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases, createMod)}, "\n")
+}
+
+func dotLine(a *Statement, id string) *Statement {
+	return a.Op(".").Line().Id(id)
 }
 
 const (
@@ -506,6 +524,8 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 	tokenFile := ps.fset.File(named.Obj().Pos())
 	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
 
+	methods := []*types.Func{}
+
 	// Fill out any Functions on the object, which are methods on the struct
 	// TODO: support methods defined on non-pointer receivers
 	methodSet := types.NewMethodSet(types.NewPointer(named))
@@ -522,16 +542,25 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		if !ok {
 			return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
 		}
+
 		if !method.Exported() {
 			continue
 		}
 
+		methods = append(methods, method)
+	}
+
+	sort.Slice(methods, func(i, j int) bool {
+		return methods[i].Pos() < methods[j].Pos()
+	})
+
+	for _, method := range methods {
 		fnTypeDef, err := ps.goMethodToAPIFunctionDef(typeName, method, named)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.Name(), err)
 		}
 
-		typeDef = typeDef.Dot("WithFunction").Call(fnTypeDef)
+		typeDef = dotLine(typeDef, "WithFunction").Call(Add(Line(), fnTypeDef))
 	}
 
 	if isDaggerGenerated {
@@ -561,7 +590,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 			description = doc.Text()
 		}
 
-		typeDef = typeDef.Dot("WithField").Call(
+		typeDef = dotLine(typeDef, "WithField").Call(
 			Lit(field.Name()),
 			fieldTypeDef,
 			Id("TypeDefWithFieldOpts").Values(
@@ -620,14 +649,14 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 		return nil, fmt.Errorf("method %s has too many return values", fn.Name())
 	}
 
-	fnDef := Qual("dag", "NewFunction").Call(Lit(fn.Name()), fnReturnType)
+	fnDef := Qual("dag", "NewFunction").Call(Lit(fn.Name()), Add(Line(), fnReturnType))
 
 	funcDecl, err := ps.declForFunc(fn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
 	if doc := funcDecl.Doc; doc != nil {
-		fnDef = fnDef.Dot("WithDescription").Call(Lit(doc.Text()))
+		fnDef = dotLine(fnDef, "WithDescription").Call(Lit(doc.Text()))
 	}
 
 	for i := 0; i < methodSig.Params().Len(); i++ {
@@ -699,7 +728,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 					argArgs = append(argArgs, Id("FunctionWithArgOpts").Values(argOpts...))
 				}
 
-				fnDef = fnDef.Dot("WithArg").Call(argArgs...)
+				fnDef = dotLine(fnDef, "WithArg").Call(argArgs...)
 			}
 		} else {
 			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil, true)
@@ -707,7 +736,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 				return nil, fmt.Errorf("failed to convert param type: %w", err)
 			}
 
-			fnDef = fnDef.Dot("WithArg").Call(Lit(param.Name()), argTypeDef)
+			fnDef = dotLine(fnDef, "WithArg").Call(Lit(param.Name()), argTypeDef)
 		}
 	}
 

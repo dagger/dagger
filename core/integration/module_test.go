@@ -25,48 +25,6 @@ import (
 * if a dependency changes, then checks should re-run
  */
 
-func daggerExec(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
-	}
-}
-
-func daggerQuery(query string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "--debug", "query"}, dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
-		})
-	}
-}
-
-func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
-	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		t.Name()
-		fileName := filepath.Join(
-			os.TempDir(),
-			t.Name(),
-			fmt.Sprintf("dagger.gen.go.%d", time.Now().Unix()),
-		)
-
-		if err := os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
-			t.Logf("failed to create temp dir for generated code: %v", err)
-			return
-		}
-
-		if err := os.WriteFile(fileName, []byte(generated), 0644); err != nil {
-			t.Logf("failed to write generated code to %s: %v", fileName, err)
-		} else {
-			t.Logf("wrote generated code to %s", fileName)
-		}
-	})
-}
-
 //go:embed testdata/modules/go/minimal/main.go
 var minimalGo string
 
@@ -608,4 +566,46 @@ func TestEnvChecks(t *testing.T) {
 			})
 		}
 	}
+}
+
+func daggerExec(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func daggerQuery(query string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"dagger", "--debug", "query"}, dagger.ContainerWithExecOpts{
+			Stdin:                         query,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
+	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		t.Name()
+		fileName := filepath.Join(
+			os.TempDir(),
+			t.Name(),
+			fmt.Sprintf("dagger.gen.go.%d", time.Now().Unix()),
+		)
+
+		if err := os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
+			t.Logf("failed to create temp dir for generated code: %v", err)
+			return
+		}
+
+		if err := os.WriteFile(fileName, []byte(generated), 0644); err != nil {
+			t.Logf("failed to write generated code to %s: %v", fileName, err)
+		} else {
+			t.Logf("wrote generated code to %s", fileName)
+		}
+	})
 }
