@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -310,11 +309,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		defer cancel()
 		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 		if innerErr != nil {
-			log.Println("!!! FAILED TO CALL", innerErr)
 			fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
 			scaredTheUser = true
 		} else if scaredTheUser {
-			log.Println("!!! OK")
 			fmt.Fprintln(loader.Stdout(), "OK!")
 		}
 		return innerErr
