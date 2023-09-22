@@ -280,11 +280,13 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 					argName := strcase.ToLowerCamel(param.Name())
 					statements = append(statements,
-						Err().Op("=").Qual("json", "Unmarshal").Call(
-							Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argName))),
-							Op("&").Id(optsName).Dot(param.Name()),
-						),
-						checkErrStatement)
+						If(Id(inputArgsVar).Index(Lit(argName)).Op("!=").Nil()).Block(
+							Err().Op("=").Qual("json", "Unmarshal").Call(
+								Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argName))),
+								Op("&").Id(optsName).Dot(param.Name()),
+							),
+							checkErrStatement,
+						))
 				}
 
 				fnCallArgs = append(fnCallArgs, Id(optsName))
