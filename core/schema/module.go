@@ -793,20 +793,22 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 
 		constructorName := gqlFieldName(def.AsObject.Name)
 
-		// stitch in the module object right under Query
-		schemaDoc.Extensions = append(schemaDoc.Extensions, &ast.Definition{
-			Name: "Query",
-			Kind: ast.Object,
-			Fields: ast.FieldList{&ast.FieldDefinition{
-				Name: constructorName,
-				// TODO is it correct to set it here too vs. type definition?
-				// Description: def.AsObject.Description,
-				Type: objType,
-			}},
-		})
+		if constructorName == gqlFieldName(module.Name) {
+			// stitch in the module object right under Query
+			schemaDoc.Extensions = append(schemaDoc.Extensions, &ast.Definition{
+				Name: "Query",
+				Kind: ast.Object,
+				Fields: ast.FieldList{&ast.FieldDefinition{
+					Name: constructorName,
+					// TODO is it correct to set it here too vs. type definition?
+					// Description: def.AsObject.Description,
+					Type: objType,
+				}},
+			})
 
-		newResolvers["Query"] = ObjectResolver{
-			constructorName: PassthroughResolver,
+			newResolvers["Query"] = ObjectResolver{
+				constructorName: PassthroughResolver,
+			}
 		}
 	}
 
