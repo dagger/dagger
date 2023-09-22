@@ -26,29 +26,16 @@ In this guide, Argo Workflows will be running on a [kind](https://kind.sigs.k8s.
 
 Install kind following the [kind quickstart guide](https://kind.sigs.k8s.io/docs/user/quick-start/).
 
-Next, create a configuration to initiate the kind cluster. Here's an example configuration to use:
+Next, create a kind cluster configuration. Here's an example configuration for `~/.kube/kind-config.yaml`
 
-`~/.kube/kind-config.yaml`
-
-```yaml
-# 2 node (one masters & one worker) cluster config
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-- role: worker
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 80
-    listenAddress: "0.0.0.0"
-  - containerPort: 443
-    hostPort: 443
-    listenAddress: "0.0.0.0"
+```yaml file=./snippets/argo-workflows/kind-config.yaml
 ```
 
-Initiate the cluster:
+Create the kind cluster:
 
-`kind create cluster --name argo --config ~/.kube/kind-config.yaml`
+```sh
+kind create cluster --name argo --config ~/.kube/kind-config.yaml
+```
 
 ## Step 2: Install Argo Workflows
 
