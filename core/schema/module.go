@@ -298,6 +298,7 @@ type functionCallArgs struct {
 	// Below are not in public API, used internally by Function.call api
 	ParentName string
 	Parent     any
+	Module     *core.Module
 }
 
 func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args functionCallArgs) (any, error) {
@@ -307,9 +308,22 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	// TODO: re-add support for different exit codes
 	cacheExitCode := uint32(0)
 
-	mod, err := fn.ModuleID.Decode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode module: %w", err)
+	// will already be set for internal calls, which close over a fn that doesn't
+	// have ModuleID set yet
+	mod := args.Module
+
+	if mod == nil {
+		// will not be set for API calls
+
+		if fn.ModuleID == "" {
+			return nil, fmt.Errorf("function %s has no module", fn.Name)
+		}
+
+		var err error
+		mod, err = fn.ModuleID.Decode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode module: %w", err)
+		}
 	}
 
 	if err := s.installDeps(ctx, mod); err != nil {
@@ -322,7 +336,8 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		Parent:     args.Parent,
 		InputArgs:  args.Input,
 	}
-	ctx, err = s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
+
+	ctx, err := s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
 		Module:      mod,
 		CurrentCall: callParams,
 	})
@@ -663,7 +678,9 @@ func (s *moduleSchema) loadModuleFunctions(ctx *core.Context, mod *core.Module) 
 			ModuleID: modID,
 		}
 		result, err := s.functionCall(ctx, getModDefFn, functionCallArgs{
-			ParentName: gqlObjectName(mod.Name),
+			Module: mod,
+			// empty to signify we're querying to get the constructed module
+			// ParentName: gqlObjectName(mod.Name),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to call module to get functions: %w", err)
@@ -716,10 +733,56 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 	newResolvers := Resolvers{}
 
 	for _, def := range module.Objects {
+		objTypeDef := def.AsObject
+		objName := gqlObjectName(objTypeDef.Name)
+
 		// get the schema + resolvers for the object as a whole
-		objType, err := s.addTypeDefToSchema(def, false, schemaDoc, newResolvers)
+		objType, err := s.typeDefToSchema(def, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
+		}
+
+		// check whether this is a pre-existing object (from core or another module) being extended
+		_, preExistingObject := s.currentSchemaView.resolvers()[objName]
+		// also check whether it's specifically an idable object from the core API
+
+		astDef := &ast.Definition{
+			Name:        objName,
+			Description: objTypeDef.Description,
+			Kind:        ast.Object,
+		}
+
+		for _, field := range objTypeDef.Fields {
+			fieldASTType, err := s.typeDefToSchema(field.TypeDef, false)
+			if err != nil {
+				return nil, err
+			}
+			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
+				Name:        gqlFieldName(field.Name),
+				Description: field.Description,
+				Type:        fieldASTType,
+			})
+			// no resolver to add; fields rely on the graphql "trivial resolver" where the value is just read from the parent object
+		}
+
+		newObjResolver := ObjectResolver{}
+		for _, fn := range objTypeDef.Functions {
+			if err := s.addFunctionToSchema(astDef, newObjResolver, fn, module, schemaDoc, newResolvers); err != nil {
+				return nil, err
+			}
+		}
+		if len(newObjResolver) > 0 {
+			newResolvers[objName] = newObjResolver
+		}
+
+		if len(astDef.Fields) > 0 {
+			if preExistingObject {
+				// if there's any new functions added to an existing object from core or another module, include
+				// those in the schema as extensions
+				schemaDoc.Extensions = append(schemaDoc.Extensions, astDef)
+			} else {
+				schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
+			}
 		}
 
 		constructorName := gqlFieldName(def.AsObject.Name)
@@ -751,12 +814,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 	}), nil
 }
 
-func (s *moduleSchema) addTypeDefToSchema(
-	typeDef *core.TypeDef,
-	isInput bool,
-	schemaDoc *ast.SchemaDocument,
-	newResolvers Resolvers,
-) (*ast.Type, error) {
+func (s *moduleSchema) typeDefToSchema(typeDef *core.TypeDef, isInput bool) (*ast.Type, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindString:
 		return &ast.Type{
@@ -782,7 +840,7 @@ func (s *moduleSchema) addTypeDefToSchema(
 		if typeDef.AsList == nil {
 			return nil, fmt.Errorf("expected list type def, got nil")
 		}
-		astType, err := s.addTypeDefToSchema(typeDef.AsList.ElementTypeDef, isInput, schemaDoc, newResolvers)
+		astType, err := s.typeDefToSchema(typeDef.AsList.ElementTypeDef, isInput)
 		if err != nil {
 			return nil, err
 		}
@@ -796,59 +854,11 @@ func (s *moduleSchema) addTypeDefToSchema(
 		}
 		objTypeDef := typeDef.AsObject
 		objName := gqlObjectName(objTypeDef.Name)
-
-		// check whether this is a pre-existing object (from core or another module) being extended
-		_, preExistingObject := s.currentSchemaView.resolvers()[objName]
-		// also check whether it's specifically an idable object from the core API
-		idableObjectResolver, _ := s.idableObjectResolver(objName)
-
-		astDef := &ast.Definition{
-			Name:        objName,
-			Description: objTypeDef.Description,
-			Kind:        ast.Object,
-		}
-		if isInput && idableObjectResolver == nil {
-			astDef.Kind = ast.InputObject
-		}
-
-		for _, field := range objTypeDef.Fields {
-			fieldASTType, err := s.addTypeDefToSchema(field.TypeDef, isInput, schemaDoc, newResolvers)
-			if err != nil {
-				return nil, err
-			}
-			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
-				Name:        gqlFieldName(field.Name),
-				Description: field.Description,
-				Type:        fieldASTType,
-			})
-			// no resolver to add; fields rely on the graphql "trivial resolver" where the value is just read from the parent object
-		}
-
-		newObjResolver := ObjectResolver{}
-		for _, fn := range objTypeDef.Functions {
-			if err := s.addFunctionToSchema(astDef, newObjResolver, fn, schemaDoc, newResolvers); err != nil {
-				return nil, err
-			}
-		}
-		if len(newObjResolver) > 0 {
-			newResolvers[objName] = newObjResolver
-		}
-
-		if len(astDef.Fields) > 0 {
-			if preExistingObject {
-				// if there's any new functions added to an existing object from core or another module, include
-				// those in the schema as extensions
-				schemaDoc.Extensions = append(schemaDoc.Extensions, astDef)
-			} else {
-				schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
-			}
-		}
-
-		if isInput && idableObjectResolver != nil {
+		if isInput {
 			// idable types use their ID scalar as the input value
-			return &ast.Type{NamedType: astDef.Name + "ID", NonNull: !typeDef.Optional}, nil
+			return &ast.Type{NamedType: objName + "ID", NonNull: !typeDef.Optional}, nil
 		}
-		return &ast.Type{NamedType: astDef.Name, NonNull: !typeDef.Optional}, nil
+		return &ast.Type{NamedType: objName, NonNull: !typeDef.Optional}, nil
 	default:
 		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
 	}
@@ -858,20 +868,21 @@ func (s *moduleSchema) addFunctionToSchema(
 	parentObj *ast.Definition,
 	parentObjResolver ObjectResolver,
 	fn *core.Function,
+	module *core.Module,
 	schemaDoc *ast.SchemaDocument,
 	newResolvers Resolvers,
 ) error {
 	fnName := gqlFieldName(fn.Name)
 	objFnName := fmt.Sprintf("%s.%s", parentObj.Name, fnName)
 
-	returnASTType, err := s.addTypeDefToSchema(fn.ReturnType, false, schemaDoc, newResolvers)
+	returnASTType, err := s.typeDefToSchema(fn.ReturnType, false)
 	if err != nil {
 		return err
 	}
 
 	var argASTTypes ast.ArgumentDefinitionList
 	for _, fnArg := range fn.Args {
-		argASTType, err := s.addTypeDefToSchema(fnArg.TypeDef, true, schemaDoc, newResolvers)
+		argASTType, err := s.typeDefToSchema(fnArg.TypeDef, true)
 		if err != nil {
 			return err
 		}
@@ -926,6 +937,7 @@ func (s *moduleSchema) addFunctionToSchema(
 			})
 		}
 		result, err := s.functionCall(ctx, fn, functionCallArgs{
+			Module:     module,
 			Input:      callInput,
 			ParentName: parentObj.Name,
 			Parent:     parent,

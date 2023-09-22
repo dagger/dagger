@@ -71,12 +71,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 		return defaultErrorMainSrc("no main package yet")
 	}
 
-	moduleStructName := strcase.ToCamel(funcs.moduleName)
-	moduleObj := mainPkg.Types.Scope().Lookup(moduleStructName)
-	if moduleObj == nil {
-		return defaultErrorMainSrc("no module struct yet")
-	}
-
 	ps := &parseState{
 		visitedStructs: make(map[string]*Statement),
 		pkgs:           pkgs,
@@ -84,13 +78,50 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 		methods:        make(map[string][]method),
 	}
 
+	pkgScope := mainPkg.Types.Scope()
+
 	objFunctionCases := map[string][]Code{}
 
-	if err := ps.fillObjectFunctionCases(moduleObj.Type(), objFunctionCases, moduleStructName); err != nil {
-		// errors indicate an internal problem rather than something w/ user code, so panic instead
-		panic(err)
+	createMod := Qual("dag", "CurrentModule").Call()
+
+	for _, name := range pkgScope.Names() {
+		obj := pkgScope.Lookup(name)
+		if obj == nil {
+			continue
+		}
+
+		named, isNamed := obj.Type().(*types.Named)
+		if !isNamed {
+			continue
+		}
+
+		if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
+			// TODO: could possibly support non-struct types, but why bother
+			continue
+		}
+
+		// TODO(vito): hacky: need to run this before fillObjectFunctionCases so it
+		// collects all the methods
+		objType, err := ps.goTypeToAPIType(obj.Type(), nil, false)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
+			// errors indicate an internal problem rather than something w/ user code, so panic instead
+			panic(err)
+		}
+
+		if len(objFunctionCases[name]) == 0 {
+			// no functions on this object, so don't add it to the module
+			continue
+		}
+
+		// Add the object to the module
+		createMod = createMod.Dot("WithObject").Call(objType)
 	}
-	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases)}, "\n")
+
+	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases, createMod)}, "\n")
 }
 
 const (
@@ -161,12 +192,16 @@ const (
 )
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
-func invokeSrc(objFunctionCases map[string][]Code) string {
+func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 	// each `case` statement for every object name, which makes up the body of the invoke func
 	objCases := []Code{}
 	for objName, functionCases := range objFunctionCases {
 		objCases = append(objCases, Case(Lit(objName)).Block(Switch(Id(fnNameVar)).Block(functionCases...)))
 	}
+	// when the object name is empty, return the module definition
+	objCases = append(objCases, Case(Lit("")).Block(
+		Return(createMod, Nil()),
+	))
 	// default case (return error)
 	objCases = append(objCases, Default().Block(
 		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown object %s"), Id(parentNameVar))),
@@ -216,12 +251,7 @@ var checkErrStatement = If(Err().Op("!=").Nil()).Block(
 
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object
-func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code, moduleName string) error {
-	objType, err := ps.goTypeToAPIType(type_, nil, false) // TODO: hacky thiat this is needed
-	if err != nil {
-		return fmt.Errorf("failed to convert module type: %w", err)
-	}
-
+func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code) error {
 	var objName string
 	switch x := type_.(type) {
 	case *types.Named:
@@ -229,7 +259,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 	case *types.Basic:
 		return nil
 	case *types.Pointer:
-		return ps.fillObjectFunctionCases(x.Elem(), cases, moduleName)
+		return ps.fillObjectFunctionCases(x.Elem(), cases)
 	default:
 		panic(fmt.Errorf("expected named type, got %T", x))
 		return nil
@@ -323,7 +353,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 			cases[objName] = append(cases[objName], Case(Lit(fnName)).Block(statements...))
 
-			if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases, moduleName); err != nil {
+			if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
 				return err
 			}
 		case 1:
@@ -346,7 +376,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 				cases[objName] = append(cases[objName], Case(Lit(fnName)).Block(statements...))
 
-				if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases, moduleName); err != nil {
+				if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
 					return err
 				}
 			}
@@ -366,17 +396,6 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		default:
 			return fmt.Errorf("unexpected number of results from method %s: %d", fnName, results.Len())
 		}
-	}
-
-	// Special case for object name is module and function name is empty. This is called by the engine when
-	// it wants the module to return the definition of the functions it serves rather than actually invoke
-	// any of them.
-	if objName == moduleName {
-		// TODO(vito) add other  objects, too
-		cases[objName] = append(cases[objName], Case(Lit("")).Block(
-			Id("mod").Op(":=").Qual("dag", "CurrentModule").Call().Dot("WithObject").Call(objType),
-			Return(Id("mod"), Nil()),
-		))
 	}
 
 	// default case (return error)
@@ -536,7 +555,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		if !field.Exported() {
 			continue
 		}
-		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil, false)
+		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
