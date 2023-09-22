@@ -585,18 +585,25 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
+
 		var description string
 		if doc := astStructType.Fields.List[i].Doc; doc != nil {
 			description = doc.Text()
 		}
 
-		typeDef = dotLine(typeDef, "WithField").Call(
+		withFieldArgs := []Code{
 			Lit(field.Name()),
 			fieldTypeDef,
-			Id("TypeDefWithFieldOpts").Values(
-				Id("Description").Op(":").Lit(description),
-			),
-		)
+		}
+
+		if description != "" {
+			withFieldArgs = append(withFieldArgs,
+				Id("TypeDefWithFieldOpts").Values(
+					Id("Description").Op(":").Lit(description),
+				))
+		}
+
+		typeDef = dotLine(typeDef, "WithField").Call(withFieldArgs...)
 	}
 
 	ps.visitedStructs[typeName] = typeDef
