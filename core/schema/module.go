@@ -785,6 +785,12 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 			}
 		}
 
+		if preExistingObject {
+			// extending already-existing type, don't need to add a stub for
+			// constructing it
+			continue
+		}
+
 		constructorName := gqlFieldName(def.AsObject.Name)
 
 		// stitch in the module object right under Query
@@ -798,6 +804,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 				Type: objType,
 			}},
 		})
+
 		newResolvers["Query"] = ObjectResolver{
 			constructorName: PassthroughResolver,
 		}
