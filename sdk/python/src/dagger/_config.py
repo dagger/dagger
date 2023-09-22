@@ -27,7 +27,7 @@ class Retry:
 class Timeout(httpx.Timeout):
     @classmethod
     def default(cls) -> "Timeout":
-        return cls(None, connect=30.0)
+        return cls(None, connect=10.0)
 
 
 Timeout.__doc__ = httpx.Timeout.__doc__
