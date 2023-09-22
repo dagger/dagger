@@ -34,13 +34,13 @@ The base pattern consists of persistent Kubernetes nodes with ephemeral CI runne
 
 The minimum required components are:
 
-- Kubernetes cluster, consisting of support nodes and runner nodes.
+- *Kubernetes cluster*, consisting of support nodes and runner nodes.
   - Runner nodes host CI runners and Dagger Engines.
   - Support nodes host support and management tools, such as certificate management, runner controller & other functions.
-- Certificates manager, required by Runner controller for Admission Webhook.
-- Runner controller, responsible for managing CI runners in response to CI job requests.
+- *Certificates manager*, required by Runner controller for Admission Webhook.
+- *Runner controller*, responsible for managing CI runners in response to CI job requests.
   - CI runners are the workhorses of a CI/CD system. They execute the jobs that are defined in the CI/CD pipeline.
-- Dagger Engine on each runner node, running alongside one or more CI runners.
+- *Dagger Engine* on each runner node, running alongside one or more CI runners.
   - Responsible for running Dagger pipelines and caching intermediate and final build artifacts.
 
 In this architecture:
@@ -54,7 +54,7 @@ In this architecture:
 
 ### Optimization 1: Ephemeral, auto-scaled nodes
 
-The base architecture pattern described previously can be optimized by the addition of a **node auto-scaler**. This can automatically adjust the size of node groups based on the current workload. If there are a lot of CI jobs running, the auto-scaler can automatically add more runner nodes to the cluster to handle the increased workload. Conversely, if there are few jobs running, it can remove unnecessary runner nodes.
+The base architecture pattern described previously can be optimized by the addition of a *node auto-scaler*. This can automatically adjust the size of node groups based on the current workload. If there are a lot of CI jobs running, the auto-scaler can automatically add more runner nodes to the cluster to handle the increased workload. Conversely, if there are few jobs running, it can remove unnecessary runner nodes.
 
 This optimization reduces the total compute cost since runner nodes are added & removed based on the number of concurrent CI jobs.
 
@@ -69,7 +69,7 @@ In this architecture:
 
 The previous pattern makes it possible to scale the Dagger deployment, but comes with the following trade-offs:
 
-1. Runner nodes are automatically de-provisioned when they are not needed. During de-provisioning, the Dagger Engines get deleted too. As a result, data and operations cached in previous runs will be deleted and subsequent runs will not benefit from previous runs. To resolve this, the cached data and operations are stored in a cloud caching service and made available to new Dagger Engines when they are provisioned.
+1. Runner nodes are automatically de-provisioned when they are not needed. During de-provisioning, the Dagger Engines get deleted too. As a result, data and operations cached in previous runs will be deleted and subsequent runs will not benefit from previous runs. To resolve this, the cached data and operations are stored in a *cloud caching service* and made available to new Dagger Engines when they are provisioned.
 2. The deployment will only scale to a certain point, given that each Dagger Engine can only scale vertically to provide better performance. In order to make the system horizontally scalable, a caching service makes the same data and operations available to as many Dagger Engines as needed.
 
 In this architecture:
@@ -113,15 +113,17 @@ The next step is to set up the required services and components. Ensure that you
 
 [Taints and tolerations](https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/) in Kubernetes are a way to ensure that certain nodes are reserved for specific tasks. By setting up taints on runner nodes, you can prevent other workloads from being scheduled on them. Tolerations are then added to the runners so that they can be scheduled on these tainted nodes. This ensures that the runners have dedicated resources for their tasks.
 
-A sample GitHub Actions runner deployment configuration is shown below. Replace the `YOUR_GITHUB_ORGANIZATION` placeholder with your GitHub organization name. If you do not have a GitHub organization, you can use your GitHub username instead.
+A sample GitHub Actions runner deployment configuration is shown below.
+
+- Replace the `YOUR_GITHUB_ORGANIZATION` placeholder with your GitHub organization name. If you do not have a GitHub organization, you can use your GitHub username instead.
+- This configuration also uses the `DAGGER_CLOUD_ENVIRONMENT` environment variable to connect this Dagger Engine to Dagger Cloud. Replace `YOUR_DAGGER_CLOUD_TOKEN` with your own Dagger Cloud token.
+
 
 ```yaml file=./snippets/kubernetes/runner_deployment.yml
 ```
 
 :::note
 This configuration uses the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable to point to the Dagger Engine DaemonSet socket that is mounted into the GitHub Actions runners. This ensures that the runners will use the local Dagger Engine for pipeline execution.
-
-This configuration also uses the `DAGGER_CLOUD_ENVIRONMENT` environment variable to connect this Dagger Engine to Dagger Cloud. Replace `YOUR_DAGGER_CLOUD_TOKEN` with your own token.
 :::
 
 ### Step 4: Deploy the Dagger Engine DaemonSet with Helm v3
@@ -146,11 +148,11 @@ At this point, the deployment is configured and ready for use. Test it by trigge
 
 If you don't already have a GitHub repository, clone the [repository for the Dagger starter application](https://github.com/dagger/hello-dagger) and add the sample GitHub actions workflow shown below to it. Refer to the inline comments for configuration you may wish to change.
 
-```yaml file=./snippets/kubernetes/github_workflow.yml
+```yaml title=".github/workflows/dagger-on-kubernetes.yaml" file=./snippets/kubernetes/github_workflow.yml
 ```
 
 :::note
-Remember to add the `ci/index.mjs` file too. Alternatively, pick your preferred language and adapt the GitHub Actions workflow example above.
+Remember to add the `ci/index.mjs` file containing the Dagger pipeline too (an example is available in the [Dagger quickstart](../quickstart/635927-caching.mdx)). Alternatively, pick your preferred language and adapt the GitHub Actions workflow example above.
 :::
 
 :::tip
