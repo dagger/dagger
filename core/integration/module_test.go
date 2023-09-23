@@ -39,8 +39,7 @@ func TestModuleGoSignatures(t *testing.T) {
 		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: minimalGo,
-		}).
-		With(daggerExec("mod", "sync"))
+		})
 
 	logGen(ctx, t, modGen.Directory("."))
 
@@ -132,8 +131,7 @@ func TestModuleGoCustomTypes(t *testing.T) {
 		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: customTypes,
-		}).
-		With(daggerExec("mod", "sync"))
+		})
 
 	logGen(ctx, t, modGen.Directory("."))
 
@@ -157,17 +155,15 @@ func TestModuleGoUseLocal(t *testing.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
 		With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: useInner,
-		}).
-		With(daggerExec("mod", "sync")).
 		WithWorkdir("/work").
 		With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
-		With(daggerExec("mod", "use", "./dep")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+		WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: useInner,
+		}).
+		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: useOuter,
 		}).
-		With(daggerExec("mod", "sync")).
+		With(daggerExec("mod", "use", "./dep")).
 		WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
 	logGen(ctx, t, modGen.Directory("."))

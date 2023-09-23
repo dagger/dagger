@@ -763,6 +763,10 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 				Type:        fieldASTType,
 			})
 			// no resolver to add; fields rely on the graphql "trivial resolver" where the value is just read from the parent object
+
+			// TODO: actually, I think we might want a resolver to make sure ID'd
+			// objects get hydrated into their core counterparts, otherwise the
+			// Container gets called with a string receiver.
 		}
 
 		newObjResolver := ObjectResolver{}
