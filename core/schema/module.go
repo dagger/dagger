@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/graphql"
 	"github.com/iancoleman/strcase"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
@@ -752,24 +753,41 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 			Kind:        ast.Object,
 		}
 
+		newObjResolver := ObjectResolver{}
 		for _, field := range objTypeDef.Fields {
 			fieldASTType, err := s.typeDefToSchema(field.TypeDef, false)
 			if err != nil {
 				return nil, err
 			}
+			fieldName := gqlFieldName(field.Name)
 			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
-				Name:        gqlFieldName(field.Name),
+				Name:        fieldName,
 				Description: field.Description,
 				Type:        fieldASTType,
 			})
-			// no resolver to add; fields rely on the graphql "trivial resolver" where the value is just read from the parent object
 
-			// TODO: actually, I think we might want a resolver to make sure ID'd
-			// objects get hydrated into their core counterparts, otherwise the
-			// Container gets called with a string receiver.
+			// if this is an IDable type, add a resolver that converts the ID into
+			// the real object, otherwise its schema will be called against the
+			// string
+			if field.TypeDef.Kind == core.TypeDefKindObject {
+				newObjResolver[fieldName] = func(p graphql.ResolveParams) (any, error) {
+					res, err := graphql.DefaultResolveFn(p)
+					if err != nil {
+						return nil, err
+					}
+					id, ok := res.(string)
+					if !ok {
+						return nil, fmt.Errorf("expected string %sID, got %T", field.TypeDef.AsObject.Name, res)
+					}
+					return core.ResourceFromID(id)
+				}
+			} else {
+				// no resolver to add; fields rely on the graphql "trivial resolver"
+				// where the value is just read from the parent object
+				_ = 1
+			}
 		}
 
-		newObjResolver := ObjectResolver{}
 		for _, fn := range objTypeDef.Functions {
 			if err := s.addFunctionToSchema(astDef, newObjResolver, fn, module, schemaDoc, newResolvers); err != nil {
 				return nil, err

@@ -178,6 +178,34 @@ func TestModuleGoUseLocal(t *testing.T) {
 	require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
 }
 
+//go:embed testdata/modules/go/wrapper/main.go
+var wrapper string
+
+func TestModuleGoWrapping(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=wrapper", "--sdk=go")).
+		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: wrapper,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	id := identity.NewID()
+	out, err := modGen.With(daggerQuery(
+		fmt.Sprintf(`{wrapper{container{echo(msg:%q){unwrap{stdout}}}}}`, id),
+	)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t,
+		fmt.Sprintf(`{"wrapper":{"container":{"echo":{"unwrap":{"stdout":%q}}}}}`, id),
+		out)
+}
+
 func TestEnvCmd(t *testing.T) {
 	t.Skip("pending conversion to modules")
 
