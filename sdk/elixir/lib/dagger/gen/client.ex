@@ -16,40 +16,6 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "The check initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec check(t(), keyword()) :: Dagger.Check.t()
-    def check(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "check")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          arg(selection, "id", optional_args[:id])
-        end
-
-      %Dagger.Check{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "The check result initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec check_result(t(), keyword()) :: Dagger.CheckResult.t()
-    def check_result(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "checkResult")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          arg(selection, "id", optional_args[:id])
-        end
-
-      %Dagger.CheckResult{selection: selection, client: query.client}
-    end
-  )
-
-  (
     @doc "Checks if the current Dagger Engine is compatible with an SDK's required version.\n\n## Required Arguments\n\n* `version` - The SDK's required version."
     @spec check_version_compatibility(t(), Dagger.String.t()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
@@ -86,11 +52,25 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "The environment the requester is being executed in (or an error if none)."
-    @spec current_environment(t()) :: Dagger.Environment.t()
-    def current_environment(%__MODULE__{} = query) do
-      selection = select(query.selection, "currentEnvironment")
-      %Dagger.Environment{selection: selection, client: query.client}
+    @doc "The FunctionCall context that the SDK caller is currently executing in.\nIf the caller is not currently executing in a function, this will return\nan error."
+    @spec current_function_call(t()) :: Dagger.FunctionCall.t()
+    def current_function_call(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentFunctionCall")
+      %Dagger.FunctionCall{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "The module currently being served in the session, if any."
+    @spec current_module(t()) :: {:ok, Dagger.Module.t() | nil} | {:error, term()}
+    def current_module(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentModule")
+
+      case execute(selection, query.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.Module)
+        error -> error
+      end
     end
   )
 
@@ -122,29 +102,22 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "The environment initialized from the given ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec environment(t(), keyword()) :: Dagger.Environment.t()
-    def environment(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "environment")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          arg(selection, "id", optional_args[:id])
-        end
-
-      %Dagger.Environment{selection: selection, client: query.client}
-    end
-  )
-
-  (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
     @spec file(t(), Dagger.FileID.t()) :: {:ok, Dagger.File.t() | nil} | {:error, term()}
     def file(%__MODULE__{} = query, file) do
       selection = select(query.selection, "file")
       selection = arg(selection, "id", file)
       %Dagger.File{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a function by ID\n\n## Required Arguments\n\n* `id` -"
+    @spec function(t(), Dagger.Function.t()) :: Dagger.Function.t()
+    def function(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "function")
+      selection = arg(selection, "id", id)
+      %Dagger.Function{selection: selection, client: query.client}
     end
   )
 
@@ -203,13 +176,30 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Install the given environment into this graphql API. Its schema will be\nstitched into the schema of this server, making those APIs available for\nsubsequent queries.\n\nIf an environment with the same ID has already been installed, this is a no-op.\n\nIf there are any conflicts between the environment's schema and any existing\nschemas, an error will be returned.\n\n## Required Arguments\n\n* `id` -"
-    @spec install_environment(t(), Dagger.Environment.t()) ::
-            {:ok, Dagger.Boolean.t()} | {:error, term()}
-    def install_environment(%__MODULE__{} = query, id) do
-      selection = select(query.selection, "installEnvironment")
-      selection = arg(selection, "id", id)
-      execute(selection, query.client)
+    @doc "Load a module by ID, or create a new one if id is unset.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec module(t(), keyword()) :: Dagger.Module.t()
+    def module(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "module")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Module{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Create a new function from the provided definition.\n\n## Required Arguments\n\n* `name` - \n* `return_type` -"
+    @spec new_function(t(), Dagger.String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
+    def new_function(%__MODULE__{} = query, name, return_type) do
+      selection = select(query.selection, "newFunction")
+      selection = arg(selection, "name", name)
+      selection = arg(selection, "returnType", return_type)
+      %Dagger.Function{selection: selection, client: query.client}
     end
   )
 
@@ -278,20 +268,19 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "A check result initialized with the given success and output.\n\n## Required Arguments\n\n* `success` - \n\n## Optional Arguments\n\n* `output` -"
-    @spec static_check_result(t(), Dagger.Boolean.t(), keyword()) :: Dagger.CheckResult.t()
-    def static_check_result(%__MODULE__{} = query, success, optional_args \\ []) do
-      selection = select(query.selection, "staticCheckResult")
-      selection = arg(selection, "success", success)
+    @doc "## Optional Arguments\n\n* `id` -"
+    @spec type_def(t(), keyword()) :: Dagger.TypeDef.t()
+    def type_def(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "typeDef")
 
       selection =
-        if is_nil(optional_args[:output]) do
+        if is_nil(optional_args[:id]) do
           selection
         else
-          arg(selection, "output", optional_args[:output])
+          arg(selection, "id", optional_args[:id])
         end
 
-      %Dagger.CheckResult{selection: selection, client: query.client}
+      %Dagger.TypeDef{selection: selection, client: query.client}
     end
   )
 end
