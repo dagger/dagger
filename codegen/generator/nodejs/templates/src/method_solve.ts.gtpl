@@ -12,7 +12,7 @@
 	{{- /* Write method comment. */ -}}
 	{{- template "method_comment" . }}
 	{{- /* Write async method name. */ -}}
-	{{- "" }}  async {{ .Name }}(
+	{{- "" }}  async {{ .Name | FormatName }}(
 
 	{{- /* Write required arguments. */ -}}
 	{{- if $required }}
@@ -54,7 +54,7 @@
 	{{- if gt (len $enums) 0 }}
 	const metadata: Metadata = {
 	    {{- range $v := $enums }}
-	    {{ $v.Name -}}: { is_enum: true },
+	    {{ $v.Name | FormatName -}}: { is_enum: true },
 	    {{- end }}
 	}
 {{ "" -}}

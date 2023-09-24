@@ -1157,7 +1157,7 @@ export class Container extends BaseClient {
    *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
    */
-  from_(address: string): Container {
+  from(address: string): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
