@@ -1,6 +1,5 @@
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import anyio
@@ -30,5 +29,5 @@ async def main(hostdir: str):
             print("In", subdir, ":", entries)
 
 
-with tempfile.TemporaryDirectory() as hostdir:
-    anyio.run(main, hostdir)
+hostdir = Path.cwd()
+anyio.run(main, hostdir)
