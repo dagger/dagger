@@ -12,7 +12,7 @@
 	{{- template "method_comment" . }}
 
 	{{- /* Write method name. */ -}}
-	{{- "" }}  {{ .Name -}}(
+	{{- "" }}  {{ .Name | FormatName -}}(
 
 	{{- /* Write required arguments. */ -}}
 	{{- if $required }}
@@ -27,13 +27,13 @@
 	{{- end }}
 
 	{{- /* Write return type. */ -}}
-	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType  }} {
+	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} {
 
 	{{- $enums := GetEnumValues .Args }}
 	{{- if gt (len $enums) 0 }}
 	const metadata: Metadata = {
 	    {{- range $v := $enums }}
-	    {{ $v.Name -}}: { is_enum: true },
+	    {{ $v.Name | FormatName -}}: { is_enum: true },
 	    {{- end }}
 	}
 {{ "" -}}
@@ -44,7 +44,7 @@
       queryTree: [
         ...this._queryTree,
         {
-          operation: "{{ .Name}}",
+          operation: "{{ .Name }}",
 
 		{{- /* Insert arguments. */ -}}
 		{{- if or $required $optionals }}

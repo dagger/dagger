@@ -98,79 +98,6 @@ export enum CacheSharingMode {
    */
   Shared = "SHARED",
 }
-/**
- * Internal-only.
- *
- * The handled return types for a check entrypoint.
- */
-export enum CheckEntrypointReturnType {
-  /**
-   * Internal-only.
-   *
-   * The entrypoint returns a check. In this case, the check's result will be
-   * determined by (recursively) evaluating the returned check.
-   *
-   * A non-zero entrypoint exit code will be treated as an internal error and
-   * result in the entrypoint execution not being cached.
-   */
-  Checkentrypointreturncheck = "CheckEntrypointReturnCheck",
-
-  /**
-   * Internal-only.
-   *
-   * The entrypoint returns a check result. In this case, the check's result will
-   * be set to this return value.
-   *
-   * A non-zero entrypoint exit code will be treated as an internal error and
-   * result in the entrypoint execution not being cached.
-   */
-  Checkentrypointreturncheckresult = "CheckEntrypointReturnCheckResult",
-
-  /**
-   * Internal-only.
-   *
-   * The entrypoint returns a string. In this case, the check's output will be
-   * set to that string and the check's success based on the entrypoint exit code.
-   *
-   * Exit code 0 will result in a successful check.
-   *
-   * Exiting with exit code 1 will result in a failed check, but the entrypoint
-   * execution will be cached.
-   *
-   * Exiting with any other exit code will be treated an internal error and not
-   * result in the entrypoint execution being cached. This error will be forwarded
-   * to any clients querying the check result.
-   */
-  Checkentrypointreturnstring = "CheckEntrypointReturnString",
-
-  /**
-   * Internal-only.
-   *
-   * The entrypoint does not return any value.
-   *
-   * In this case, the check's result is based on the entrypoint exit code.
-   *
-   * Exit code 0 will result in a successful check.
-   *
-   * Exiting with exit code 1 will result in a failed check, but the entrypoint
-   * execution will be cached.
-   *
-   * Exiting with any other exit code will be treated an internal error and not
-   * result in the entrypoint execution being cached. This error will be forwarded
-   * to any clients querying the check result.
-   */
-  Checkentrypointreturnvoid = "CheckEntrypointReturnVoid",
-}
-/**
- * A unique environment check identifier.
- */
-export type CheckID = string & { __CheckID: never }
-
-/**
- * A unique environment check result identifier.
- */
-export type CheckResultID = string & { __CheckResultID: never }
-
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
@@ -502,6 +429,10 @@ export type ContainerID = string & { __ContainerID: never }
  */
 export type DateTime = string & { __DateTime: never }
 
+export type DirectoryAsModuleOpts = {
+  sourceSubpath?: string
+}
+
 export type DirectoryDockerBuildOpts = {
   /**
    * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
@@ -596,24 +527,6 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
-export type EnvironmentFromOpts = {
-  sourceDirectorySubpath?: string
-  dependencies?: Environment[]
-}
-
-export type EnvironmentFromConfigOpts = {
-  configPath?: string
-}
-
-export type EnvironmentWithCheckOpts = {
-  returnType?: CheckEntrypointReturnType
-}
-
-/**
- * A unique environment identifier.
- */
-export type EnvironmentID = string & { __EnvironmentID: never }
-
 export type FileExportOpts = {
   /**
    * If allowParentDirPath is true, the path argument can be a directory path, in which case
@@ -626,6 +539,36 @@ export type FileExportOpts = {
  * A file identifier.
  */
 export type FileID = string & { __FileID: never }
+
+export type FunctionCallOpts = {
+  input?: FunctionCallInput[]
+}
+
+export type FunctionWithArgOpts = {
+  /**
+   * A doc string for the argument, if any
+   */
+  description?: string
+
+  /**
+   * A default value to use for this argument if not explicitly set by the caller, if any
+   */
+  defaultValue?: JSON
+}
+
+export type FunctionCallInput = {
+  /**
+   * The name of the argument to the function
+   */
+  name: string
+
+  /**
+   * The value of the argument represented as a string of the JSON serialization.
+   */
+  value: JSON
+}
+
+export type FunctionID = string & { __FunctionID: never }
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
@@ -665,6 +608,19 @@ export enum ImageMediaTypes {
   Dockermediatypes = "DockerMediaTypes",
   Ocimediatypes = "OCIMediaTypes",
 }
+export type JSON = string & { __JSON: never }
+
+export type ModuleServeOpts = {
+  environment?: ModuleEnvironmentVariable[]
+}
+
+export type ModuleEnvironmentVariable = {
+  name: string
+  value?: string
+}
+
+export type ModuleID = string & { __ModuleID: never }
+
 /**
  * Transport layer network protocol associated to a port.
  */
@@ -698,14 +654,6 @@ export type PipelineLabel = {
  */
 export type Platform = string & { __Platform: never }
 
-export type ClientCheckOpts = {
-  id?: CheckID
-}
-
-export type ClientCheckResultOpts = {
-  id?: CheckResultID
-}
-
 export type ClientContainerOpts = {
   id?: ContainerID
   platform?: Platform
@@ -713,10 +661,6 @@ export type ClientContainerOpts = {
 
 export type ClientDirectoryOpts = {
   id?: DirectoryID
-}
-
-export type ClientEnvironmentOpts = {
-  id?: EnvironmentID
 }
 
 export type ClientGitOpts = {
@@ -738,6 +682,10 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Container
 }
 
+export type ClientModuleOpts = {
+  id?: ModuleID
+}
+
 export type ClientPipelineOpts = {
   /**
    * Pipeline description.
@@ -754,8 +702,8 @@ export type ClientSocketOpts = {
   id?: SocketID
 }
 
-export type ClientStaticCheckResultOpts = {
-  output?: string
+export type ClientTypeDefOpts = {
+  id?: TypeDefID
 }
 
 /**
@@ -767,6 +715,41 @@ export type SecretID = string & { __SecretID: never }
  * A content-addressed socket identifier.
  */
 export type SocketID = string & { __SocketID: never }
+
+export type TypeDefWithFieldOpts = {
+  /**
+   * A doc string for the field, if any
+   */
+  description?: string
+}
+
+export type TypeDefWithObjectOpts = {
+  description?: string
+}
+
+export type TypeDefID = string & { __TypeDefID: never }
+
+export enum TypeDefKind {
+  Booleankind = "BooleanKind",
+  Integerkind = "IntegerKind",
+
+  /**
+   * Complex types
+   */
+  Listkind = "ListKind",
+  Objectkind = "ObjectKind",
+
+  /**
+   * Primitive types
+   */
+  Stringkind = "StringKind",
+
+  /**
+   * Void is a special kind that can only be used as a return type
+   */
+  Voidkind = "VoidKind",
+}
+export type Void = string & { __Void: never }
 
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
@@ -813,316 +796,14 @@ export class CacheVolume extends BaseClient {
 }
 
 /**
- * An entrypoint for tests, lints or anything that can pass/fail.
- */
-export class Check extends BaseClient {
-  private readonly _description?: string = undefined
-  private readonly _id?: CheckID = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _description?: string,
-    _id?: CheckID,
-    _name?: string
-  ) {
-    super(parent)
-
-    this._description = _description
-    this._id = _id
-    this._name = _name
-  }
-
-  /**
-   * Documentation for this check.
-   */
-  async description(): Promise<string> {
-    if (this._description) {
-      return this._description
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "description",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * A unique identifier for this check.
-   */
-  async id(): Promise<CheckID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<CheckID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The name of the check.
-   */
-  async name(): Promise<string> {
-    if (this._name) {
-      return this._name
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "name",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The result of evaluating this check.
-   */
-  result(): CheckResult {
-    return new CheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "result",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The subchecks of this check.
-   */
-  async subchecks(): Promise<Check[]> {
-    type subchecks = {
-      id: CheckID
-    }
-
-    const response: Awaited<subchecks[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "subchecks",
-        },
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new Check(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.id
-        )
-    )
-  }
-
-  /**
-   * This check with the given container used to determine the check's result.
-   * If set, the container will be executed and the check success will be true
-   * if the container exits with a zero exit code, false otherwise.
-   */
-  withContainer(id: Container): Check {
-    return new Check({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withContainer",
-          args: { id },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * This check with the given description
-   */
-  withDescription(description: string): Check {
-    return new Check({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withDescription",
-          args: { description },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * This check with the given name
-   */
-  withName(name: string): Check {
-    return new Check({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withName",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * This check with the given subcheck
-   */
-  withSubcheck(id: Check): Check {
-    return new Check({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withSubcheck",
-          args: { id },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Call the provided function with current Check.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with(arg: (param: Check) => Check) {
-    return arg(this)
-  }
-}
-
-export class CheckResult extends BaseClient {
-  private readonly _id?: CheckResultID = undefined
-  private readonly _output?: string = undefined
-  private readonly _success?: boolean = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _id?: CheckResultID,
-    _output?: string,
-    _success?: boolean
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._output = _output
-    this._success = _success
-  }
-
-  /**
-   * A unique identifier for this check result.
-   */
-  async id(): Promise<CheckResultID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<CheckResultID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Any output obtained from evaluating the check's success.
-   */
-  async output(): Promise<string> {
-    if (this._output) {
-      return this._output
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "output",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Whether the check was successful.
-   */
-  async success(): Promise<boolean> {
-    if (this._success) {
-      return this._success
-    }
-
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "success",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-}
-
-/**
  * An OCI-compatible container, also known as a docker container.
  */
 export class Container extends BaseClient {
+  private readonly _id?: ContainerID = undefined
   private readonly _endpoint?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _export?: boolean = undefined
   private readonly _hostname?: string = undefined
-  private readonly _id?: ContainerID = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
@@ -1138,11 +819,11 @@ export class Container extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: ContainerID,
     _endpoint?: string,
     _envVariable?: string,
     _export?: boolean,
     _hostname?: string,
-    _id?: ContainerID,
     _imageRef?: string,
     _label?: string,
     _platform?: Platform,
@@ -1155,11 +836,11 @@ export class Container extends BaseClient {
   ) {
     super(parent)
 
+    this._id = _id
     this._endpoint = _endpoint
     this._envVariable = _envVariable
     this._export = _export
     this._hostname = _hostname
-    this._id = _id
     this._imageRef = _imageRef
     this._label = _label
     this._platform = _platform
@@ -1169,6 +850,27 @@ export class Container extends BaseClient {
     this._sync = _sync
     this._user = _user
     this._workdir = _workdir
+  }
+
+  /**
+   * A unique identifier for this container.
+   */
+  async id(): Promise<ContainerID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ContainerID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -1455,7 +1157,7 @@ export class Container extends BaseClient {
    *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
    */
-  from(address: string): Container {
+  from_(address: string): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1484,27 +1186,6 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "hostname",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * A unique identifier for this container.
-   */
-  async id(): Promise<ContainerID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ContainerID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
         },
       ],
       this.client
@@ -1543,7 +1224,7 @@ export class Container extends BaseClient {
    * @param opts.tag Identifies the tag to import from the archive, if the archive bundles
    * multiple tags.
    */
-  import(source: File, opts?: ContainerImportOpts): Container {
+  import_(source: File, opts?: ContainerImportOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2538,8 +2219,8 @@ export class Container extends BaseClient {
  * A directory.
  */
 export class Directory extends BaseClient {
-  private readonly _export?: boolean = undefined
   private readonly _id?: DirectoryID = undefined
+  private readonly _export?: boolean = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2547,15 +2228,62 @@ export class Directory extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _export?: boolean,
     _id?: DirectoryID,
+    _export?: boolean,
     _sync?: DirectoryID
   ) {
     super(parent)
 
-    this._export = _export
     this._id = _id
+    this._export = _export
     this._sync = _sync
+  }
+
+  /**
+   * The content-addressed identifier of the directory.
+   */
+  async id(): Promise<DirectoryID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DirectoryID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Load the directory as a Dagger module
+   *
+   * sourceSubpath is an optional parameter that, if set, points to a subpath of this
+   * directory that contains the module's source code. This is needed when the module
+   * code is in a subdirectory but requires parent directories to be loaded in order
+   * to execute. For example, the module source code may need a go.mod, project.toml,
+   * package.json, etc. file from a parent directory.
+   *
+   * If sourceSubpath is not set, the module source code is loaded from the root of
+   * the directory.
+   */
+  asModule(opts?: DirectoryAsModuleOpts): Module_ {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asModule",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -2678,27 +2406,6 @@ export class Directory extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * The content-addressed identifier of the directory.
-   */
-  async id(): Promise<DirectoryID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<DirectoryID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**
@@ -2906,78 +2613,6 @@ export class Directory extends BaseClient {
 }
 
 /**
- * Internal-only.
- *
- * The input provided to an SDK entrypoint invocation.
- */
-export class EntrypointInput extends BaseClient {
-  private readonly _args?: string = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _args?: string,
-    _name?: string
-  ) {
-    super(parent)
-
-    this._args = _args
-    this._name = _name
-  }
-
-  /**
-   * Internal-only.
-   *
-   * The json-serialized arguments to pass to the entrypoint. The json
-   * object is a map of argument names to argument values.
-   */
-  async args(): Promise<string> {
-    if (this._args) {
-      return this._args
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "args",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Internal-only.
-   *
-   * The name of the entrypoint to invoke. If not set, then the sdk
-   * is expected to return the environment definition.
-   */
-  async name(): Promise<string> {
-    if (this._name) {
-      return this._name
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "name",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-}
-
-/**
  * A simple key value object that represents an environment variable.
  */
 export class EnvVariable extends BaseClient {
@@ -3042,195 +2677,41 @@ export class EnvVariable extends BaseClient {
 }
 
 /**
- * A group of Dagger entrypoints that can be queried and/or invoked.
+ * A definition of a field on a custom object defined in a Module.
+ * A field on an object has a static value, as opposed to a function on an
+ * object whose value is computed by invoking code (and can accept arguments).
  */
-export class Environment extends BaseClient {
-  private readonly _id?: EnvironmentID = undefined
+export class FieldTypeDef extends BaseClient {
+  private readonly _description?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _returnEntrypointValue?: boolean = undefined
-  private readonly _sdk?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _id?: EnvironmentID,
-    _name?: string,
-    _returnEntrypointValue?: boolean,
-    _sdk?: string
+    _description?: string,
+    _name?: string
   ) {
     super(parent)
 
-    this._id = _id
+    this._description = _description
     this._name = _name
-    this._returnEntrypointValue = _returnEntrypointValue
-    this._sdk = _sdk
   }
 
   /**
-   * The check in this environment with the given name, if any
+   * A doc string for the field, if any
    */
-  check(name: string): Check {
-    return new Check({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "check",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The list of checks in this environment
-   */
-  async checks(): Promise<Check[]> {
-    type checks = {
-      id: CheckID
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
     }
 
-    const response: Awaited<checks[]> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "checks",
-        },
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new Check(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.id
-        )
-    )
-  }
-
-  /**
-   * Other environments that this environment depends on. If this environment is installed,
-   * all dependencies will be (recursively) installed too.
-   */
-  async dependencies(): Promise<Environment[]> {
-    type dependencies = {
-      id: EnvironmentID
-    }
-
-    const response: Awaited<dependencies[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "dependencies",
-        },
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new Environment(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.id
-        )
-    )
-  }
-
-  /**
-   * Internal only.
-   *
-   * The input for the current entrypoint invocation.
-   */
-  entrypointInput(): EntrypointInput {
-    return new EntrypointInput({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "entrypointInput",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The environment initialized with the given name, sourceDirectory, sdk and dependencies.
-   *
-   * If set, sourceDirectorySubpath should point to the subpath of sourceDirectory that
-   * contains the environment code. If unset, it will default to the root of the sourceDirectory.
-   */
-  from(
-    name: string,
-    sourceDirectory: Directory,
-    sdk: string,
-    opts?: EnvironmentFromOpts
-  ): Environment {
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "from",
-          args: { name, sourceDirectory, sdk, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The environment initialized with the sourceDirectory and environment configuration file path.
-   * If configPath is not set, it defaults to the root of the sourceDirectory.
-   */
-  fromConfig(
-    sourceDirectory: Directory,
-    opts?: EnvironmentFromConfigOpts
-  ): Environment {
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "fromConfig",
-          args: { sourceDirectory, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * A unique identifier for this environment.
-   */
-  async id(): Promise<EnvironmentID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<EnvironmentID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
+          operation: "description",
         },
       ],
       this.client
@@ -3240,7 +2721,7 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * Name of the environment
+   * The name of the field in the object
    */
   async name(): Promise<string> {
     if (this._name) {
@@ -3261,132 +2742,19 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * Internal only.
-   *
-   * Return the given value as the result of the current entrypoint invocation.
-   * The value is expected to be the json-serialized representation of the return.
+   * The type of the field
    */
-  async returnEntrypointValue(value: string): Promise<boolean> {
-    if (this._returnEntrypointValue) {
-      return this._returnEntrypointValue
-    }
-
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "returnEntrypointValue",
-          args: { value },
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The SDK that this environment will be executed with
-   */
-  async sdk(): Promise<string> {
-    if (this._sdk) {
-      return this._sdk
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "sdk",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The directory containing all the source needed to execute this environment's code
-   */
-  sourceDirectory(): Directory {
-    return new Directory({
+  typeDef(): TypeDef {
+    return new TypeDef({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "sourceDirectory",
+          operation: "typeDef",
         },
       ],
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Internal only.
-   *
-   * This environment with the given check. It is an error to call this outside
-   * of environment initialization code.
-   */
-  withCheck(id: Check, opts?: EnvironmentWithCheckOpts): Environment {
-    const metadata: Metadata = {
-      returnType: { is_enum: true },
-    }
-
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withCheck",
-          args: { id, ...opts, __metadata: metadata },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * This environment with the given workdir
-   */
-  withWorkdir(id: Directory): Environment {
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withWorkdir",
-          args: { id },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The directory that the environment code will execute in as its current working directory.
-   * If not set explicitly, it will default to the root of the sourceDirectory.
-   */
-  workdir(): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "workdir",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Call the provided function with current Environment.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with(arg: (param: Environment) => Environment) {
-    return arg(this)
   }
 }
 
@@ -3394,9 +2762,9 @@ export class Environment extends BaseClient {
  * A file.
  */
 export class File extends BaseClient {
+  private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
   private readonly _export?: boolean = undefined
-  private readonly _id?: FileID = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
 
@@ -3405,19 +2773,40 @@ export class File extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: FileID,
     _contents?: string,
     _export?: boolean,
-    _id?: FileID,
     _size?: number,
     _sync?: FileID
   ) {
     super(parent)
 
+    this._id = _id
     this._contents = _contents
     this._export = _export
-    this._id = _id
     this._size = _size
     this._sync = _sync
+  }
+
+  /**
+   * Retrieves the content-addressed identifier of the file.
+   */
+  async id(): Promise<FileID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<FileID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -3458,27 +2847,6 @@ export class File extends BaseClient {
         {
           operation: "export",
           args: { path, ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Retrieves the content-addressed identifier of the file.
-   */
-  async id(): Promise<FileID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<FileID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
         },
       ],
       this.client
@@ -3552,6 +2920,534 @@ export class File extends BaseClient {
    */
   with(arg: (param: File) => File) {
     return arg(this)
+  }
+}
+
+export class Function_ extends BaseClient {
+  private readonly _id?: FunctionID = undefined
+  private readonly _call?: JSON = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: FunctionID,
+    _call?: JSON,
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._call = _call
+    this._description = _description
+    this._name = _name
+  }
+  async id(): Promise<FunctionID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<FunctionID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Arguments accepted by this function, if any
+   */
+  async args(): Promise<FunctionArg[]> {
+    type args = {
+      defaultValue: JSON
+      description: string
+      name: string
+    }
+
+    const response: Awaited<args[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "args",
+        },
+        {
+          operation: "defaultValue description name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new FunctionArg(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.defaultValue,
+          r.description,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * Execute this function using dynamic input+output types.
+   *
+   * Typically, it's preferable to invoke a function using a type
+   * safe graphql query rather than using this call field. However,
+   * call is useful for some advanced use cases where dynamically
+   * loading arbitrary modules and invoking functions in them is
+   * required.
+   */
+  async call(opts?: FunctionCallOpts): Promise<JSON> {
+    if (this._call) {
+      return this._call
+    }
+
+    const response: Awaited<JSON> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "call",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the function, if any
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the function
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The type returned by this function
+   */
+  returnType(): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "returnType",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Returns the function with the provided argument
+   * @param name The name of the argument
+   * @param typeDef The type of the argument
+   * @param opts.description A doc string for the argument, if any
+   * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
+   */
+  withArg(
+    name: string,
+    typeDef: TypeDef,
+    opts?: FunctionWithArgOpts
+  ): Function_ {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withArg",
+          args: { name, typeDef, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Returns the function with the doc string
+   */
+  withDescription(description: string): Function_ {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current Function.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: Function_) => Function_) {
+    return arg(this)
+  }
+}
+
+export class FunctionArg extends BaseClient {
+  private readonly _defaultValue?: JSON = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _defaultValue?: JSON,
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._defaultValue = _defaultValue
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A default value to use for this argument when not explicitly set by the caller, if any
+   */
+  async defaultValue(): Promise<JSON> {
+    if (this._defaultValue) {
+      return this._defaultValue
+    }
+
+    const response: Awaited<JSON> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "defaultValue",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the argument, if any
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the argument
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The type of the argument
+   */
+  typeDef(): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "typeDef",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
+export class FunctionCall extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _parent?: JSON = undefined
+  private readonly _parentName?: string = undefined
+  private readonly _returnValue?: Void = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _parent?: JSON,
+    _parentName?: string,
+    _returnValue?: Void
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._parent = _parent
+    this._parentName = _parentName
+    this._returnValue = _returnValue
+  }
+
+  /**
+   * The argument values the function is being invoked with.
+   */
+  async inputArgs(): Promise<FunctionCallArgValue[]> {
+    type inputArgs = {
+      name: string
+      value: JSON
+    }
+
+    const response: Awaited<inputArgs[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "inputArgs",
+        },
+        {
+          operation: "name value",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new FunctionCallArgValue(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.value
+        )
+    )
+  }
+
+  /**
+   * The name of the function being called.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The value of the parent object of the function being called.
+   * If the function is "top-level" to the module, this is always an empty object.
+   */
+  async parent(): Promise<JSON> {
+    if (this._parent) {
+      return this._parent
+    }
+
+    const response: Awaited<JSON> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "parent",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the parent object of the function being called.
+   * If the function is "top-level" to the module, this is the name of the module.
+   */
+  async parentName(): Promise<string> {
+    if (this._parentName) {
+      return this._parentName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "parentName",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Set the return value of the function call to the provided value.
+   * The value should be a string of the JSON serialization of the return value.
+   */
+  async returnValue(value: JSON): Promise<Void> {
+    if (this._returnValue) {
+      return this._returnValue
+    }
+
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "returnValue",
+          args: { value },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+export class FunctionCallArgValue extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _value?: JSON = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _value?: JSON
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._value = _value
+  }
+
+  /**
+   * The name of the argument.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The value of the argument represented as a string of the JSON serialization.
+   */
+  async value(): Promise<JSON> {
+    if (this._value) {
+      return this._value
+    }
+
+    const response: Awaited<JSON> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "value",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 }
 
@@ -3814,6 +3710,456 @@ export class Label extends BaseClient {
   }
 }
 
+export class ListTypeDef extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
+   * The type of the elements in the list
+   */
+  elementTypeDef(): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "elementTypeDef",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
+export class Module_ extends BaseClient {
+  private readonly _id?: ModuleID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _sdk?: string = undefined
+  private readonly _serve?: Void = undefined
+  private readonly _sourceDirectorySubPath?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: ModuleID,
+    _description?: string,
+    _name?: string,
+    _sdk?: string,
+    _serve?: Void,
+    _sourceDirectorySubPath?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+    this._sdk = _sdk
+    this._serve = _serve
+    this._sourceDirectorySubPath = _sourceDirectorySubPath
+  }
+
+  /**
+   * The ID of the module
+   */
+  async id(): Promise<ModuleID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ModuleID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Modules used by this module
+   */
+  async dependencies(): Promise<Module_[]> {
+    type dependencies = {
+      id: ModuleID
+    }
+
+    const response: Awaited<dependencies[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "dependencies",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new Module_(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * The dependencies as configured by the module
+   */
+  async dependencyConfig(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "dependencyConfig",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The doc string of the module, if any
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the module
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Objects served by this module
+   */
+  async objects(): Promise<TypeDef[]> {
+    type objects = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<objects[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "objects",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * The SDK used by this module
+   */
+  async sdk(): Promise<string> {
+    if (this._sdk) {
+      return this._sdk
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sdk",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Serve a module's API in the current session.
+   *     Note: this can only be called once per session.
+   *     In the future, it could return a stream or service to remove the side effect.
+   */
+  async serve(opts?: ModuleServeOpts): Promise<Void> {
+    if (this._serve) {
+      return this._serve
+    }
+
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "serve",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The directory containing the module's source code
+   */
+  sourceDirectory(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceDirectory",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * The module's subpath within the source directory
+   */
+  async sourceDirectorySubPath(): Promise<string> {
+    if (this._sourceDirectorySubPath) {
+      return this._sourceDirectorySubPath
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceDirectorySubPath",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * This module plus the given Object type and associated functions
+   */
+  withObject(object: TypeDef): Module_ {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withObject",
+          args: { object },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current Module.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: Module_) => Module_) {
+    return arg(this)
+  }
+}
+
+/**
+ * A definition of a custom object defined in a Module.
+ */
+export class ObjectTypeDef extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * The doc string for the object, if any
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Static fields defined on this object, if any
+   */
+  async fields(): Promise<FieldTypeDef[]> {
+    type fields = {
+      description: string
+      name: string
+    }
+
+    const response: Awaited<fields[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "fields",
+        },
+        {
+          operation: "description name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new FieldTypeDef(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * Functions defined on this object, if any
+   */
+  async functions(): Promise<Function_[]> {
+    type functions = {
+      id: FunctionID
+    }
+
+    const response: Awaited<functions[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "functions",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new Function_(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * The name of the object
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
 /**
  * A port exposed by a container.
  */
@@ -3905,7 +4251,6 @@ export class Port extends BaseClient {
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
-  private readonly _installEnvironment?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3913,14 +4258,12 @@ export class Client extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _checkVersionCompatibility?: boolean,
-    _defaultPlatform?: Platform,
-    _installEnvironment?: boolean
+    _defaultPlatform?: Platform
   ) {
     super(parent)
 
     this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
-    this._installEnvironment = _installEnvironment
   }
 
   /**
@@ -3934,40 +4277,6 @@ export class Client extends BaseClient {
         {
           operation: "cacheVolume",
           args: { key },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The check initialized from the given ID.
-   */
-  check(opts?: ClientCheckOpts): Check {
-    return new Check({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "check",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The check result initialized from the given ID.
-   */
-  checkResult(opts?: ClientCheckResultOpts): CheckResult {
-    return new CheckResult({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "checkResult",
-          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -4016,14 +4325,32 @@ export class Client extends BaseClient {
   }
 
   /**
-   * The environment the requester is being executed in (or an error if none).
+   * The FunctionCall context that the SDK caller is currently executing in.
+   * If the caller is not currently executing in a function, this will return
+   * an error.
    */
-  currentEnvironment(): Environment {
-    return new Environment({
+  currentFunctionCall(): FunctionCall {
+    return new FunctionCall({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "currentEnvironment",
+          operation: "currentFunctionCall",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * The module currently being served in the session, if any.
+   */
+  currentModule(): Module_ {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "currentModule",
         },
       ],
       host: this.clientHost,
@@ -4066,23 +4393,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * The environment initialized from the given ID.
-   */
-  environment(opts?: ClientEnvironmentOpts): Environment {
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "environment",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Loads a file by ID.
    */
   file(id: FileID): File {
@@ -4091,6 +4401,23 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "file",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a function by ID
+   */
+  function_(id: FunctionID): Function_ {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "function",
           args: { id },
         },
       ],
@@ -4157,28 +4484,37 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Install the given environment into this graphql API. Its schema will be
-   * stitched into the schema of this server, making those APIs available for
-   * subsequent queries.
-   *
-   * If an environment with the same ID has already been installed, this is a no-op.
-   *
-   * If there are any conflicts between the environment's schema and any existing
-   * schemas, an error will be returned.
+   * Load a module by ID, or create a new one if id is unset.
    */
-  async installEnvironment(id: EnvironmentID): Promise<boolean> {
-    const response: Awaited<boolean> = await computeQuery(
-      [
+  module_(opts?: ClientModuleOpts): Module_ {
+    return new Module_({
+      queryTree: [
         ...this._queryTree,
         {
-          operation: "installEnvironment",
-          args: { id },
+          operation: "module",
+          args: { ...opts },
         },
       ],
-      this.client
-    )
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
-    return response
+  /**
+   * Create a new function from the provided definition.
+   */
+  newFunction(name: string, returnType: TypeDef): Function_ {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "newFunction",
+          args: { name, returnType },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -4254,20 +4590,13 @@ export class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-
-  /**
-   * A check result initialized with the given success and output.
-   */
-  staticCheckResult(
-    success: boolean,
-    opts?: ClientStaticCheckResultOpts
-  ): CheckResult {
-    return new CheckResult({
+  typeDef(opts?: ClientTypeDefOpts): TypeDef {
+    return new TypeDef({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "staticCheckResult",
-          args: { success, ...opts },
+          operation: "typeDef",
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -4383,5 +4712,245 @@ export class Socket extends BaseClient {
     )
 
     return response
+  }
+}
+
+/**
+ * A definition of a parameter or return type in a Module.
+ */
+export class TypeDef extends BaseClient {
+  private readonly _id?: TypeDefID = undefined
+  private readonly _kind?: TypeDefKind = undefined
+  private readonly _optional?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: TypeDefID,
+    _kind?: TypeDefKind,
+    _optional?: boolean
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._kind = _kind
+    this._optional = _optional
+  }
+  async id(): Promise<TypeDefID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<TypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * If kind is LIST, the list-specific type definition.
+   * If kind is not LIST, this will be null.
+   */
+  asList(): ListTypeDef {
+    return new ListTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asList",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * If kind is OBJECT, the object-specific type definition.
+   * If kind is not OBJECT, this will be null.
+   */
+  asObject(): ObjectTypeDef {
+    return new ObjectTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asObject",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * The kind of type this is (e.g. primitive, list, object)
+   */
+  async kind(): Promise<TypeDefKind> {
+    if (this._kind) {
+      return this._kind
+    }
+
+    const response: Awaited<TypeDefKind> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "kind",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Whether this type can be set to null. Defaults to false.
+   */
+  async optional(): Promise<boolean> {
+    if (this._optional) {
+      return this._optional
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "optional",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Adds a static field for an Object TypeDef, failing if the type is not an object.
+   * @param name The name of the field in the object
+   * @param typeDef The type of the field
+   * @param opts.description A doc string for the field, if any
+   */
+  withField(
+    name: string,
+    typeDef: TypeDef,
+    opts?: TypeDefWithFieldOpts
+  ): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withField",
+          args: { name, typeDef, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Adds a function for an Object TypeDef, failing if the type is not an object.
+   */
+  withFunction(function_: Function_): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFunction",
+          args: { function_ },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Sets the kind of the type.
+   */
+  withKind(kind: TypeDefKind): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withKind",
+          args: { kind },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind List with the provided type for its elements.
+   */
+  withListOf(elementType: TypeDef): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withListOf",
+          args: { elementType },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind Object with the provided name.
+   *
+   * Note that an object's fields and functions may be omitted if the intent is
+   * only to refer to an object. This is how functions are able to return their
+   * own object, or any other circular reference.
+   */
+  withObject(name: string, opts?: TypeDefWithObjectOpts): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withObject",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Sets whether this type can be set to null.
+   */
+  withOptional(optional: boolean): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withOptional",
+          args: { optional },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current TypeDef.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: TypeDef) => TypeDef) {
+    return arg(this)
   }
 }

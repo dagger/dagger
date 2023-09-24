@@ -8,8 +8,6 @@ Export a type for each type or input existing in the GraphQL schema.
 {{- end }}
 
 {{ define "type" }}
-	{{- $typeName := .Name | FormatName }}
-
 	{{- /* Generate scalar type. */ -}}
 	{{- if IsCustomScalar . }}
 		{{- if .Description }}
@@ -59,7 +57,7 @@ export enum {{ .Name }} {
 		{{- range . }}
 			{{- $optionals := GetOptionalArgs .Args }}
 			{{- if gt (len $optionals) 0 }}
-export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
+export type {{ $.Name | QueryToClient }}{{ .Name | PascalCase }}Opts = {
 				{{- template "field" $optionals }}
 }
 {{ "" }}	{{- end }}
@@ -68,7 +66,7 @@ export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
 
 	{{- /* Generate input GraphQL type. */ -}}
 	{{- with .InputFields }}
-export type {{ $typeName }} = {
+export type {{ $.Name | FormatName }} = {
 		{{- template "field" (SortInputFields .) }}
 }
 {{ "" }}

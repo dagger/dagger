@@ -16,7 +16,7 @@
 {{""}}
 
 			{{- /* Write object name. */ -}}
-export class {{ .Name | FormatName }} extends BaseClient {
+export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
             {{- /* Write private temporary field */ -}}
             {{ range $field := .Fields }}
                 {{- if $field.TypeRef.IsScalar }}
@@ -59,11 +59,11 @@ export class {{ .Name | FormatName }} extends BaseClient {
 {{- if . | IsSelfChainable }}
 {{""}}
   /**
-   * Call the provided function with current {{ .Name | FormatName }}.
+   * Call the provided function with current {{ .Name | QueryToClient }}.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: {{ .Name | FormatName }}) => {{ .Name | FormatName }}) {
+  with(arg: (param: {{ .Name | QueryToClient | FormatName }}) => {{ .Name | QueryToClient | FormatName }}) {
     return arg(this)
   }
 {{- end }}

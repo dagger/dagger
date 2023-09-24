@@ -26,7 +26,18 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 	})
 	for _, v := range schema.Types {
 		sort.SliceStable(v.Fields, func(i, j int) bool {
-			return v.Fields[i].Name < v.Fields[j].Name
+			in := v.Fields[i].Name
+			jn := v.Fields[j].Name
+			switch {
+			case in == "id" && jn == "id":
+				return false
+			case in == "id":
+				return true
+			case jn == "id":
+				return false
+			default:
+				return in < jn
+			}
 		})
 	}
 

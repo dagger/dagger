@@ -22,6 +22,7 @@ var (
 		"FormatOutputType":    commonFunc.FormatOutputType,
 		"FormatEnum":          formatEnum,
 		"FormatName":          formatName,
+		"QueryToClient":       queryToClient,
 		"GetOptionalArgs":     getOptionalArgs,
 		"GetRequiredArgs":     getRequiredArgs,
 		"HasPrefix":           strings.HasPrefix,
@@ -105,12 +106,89 @@ func isEnum(t *introspection.Type) bool {
 		!strings.HasPrefix(t.Name, "__")
 }
 
-// formatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
+// formatName formats a GraphQL name (e.g. object, field, arg) into a TS
+// equivalent, avoiding collisions with reserved words.
 func formatName(s string) string {
+	if _, isKeyword := jsKeywords[strings.ToLower(s)]; isKeyword {
+		// NB: this is case-insensitive; in JS, both function and Function cause
+		// problems (one straight up doesn't parse, the other causes lint errors)
+		return s + "_"
+	}
+	return s
+}
+
+func queryToClient(s string) string {
 	if s == generator.QueryStructName {
 		return generator.QueryStructClientName
 	}
 	return s
+}
+
+// all words to avoid collisions with, whether they're reserved or not
+var jsKeywords = map[string]struct{}{
+	"await":       {},
+	"break":       {},
+	"case":        {},
+	"catch":       {},
+	"class":       {},
+	"const":       {},
+	"continue":    {},
+	"debugger":    {},
+	"default":     {},
+	"delete":      {},
+	"do":          {},
+	"else":        {},
+	"enum":        {},
+	"export":      {},
+	"extends":     {},
+	"false":       {},
+	"finally":     {},
+	"for":         {},
+	"function":    {},
+	"if":          {},
+	"implements":  {},
+	"import":      {},
+	"in":          {},
+	"instanceof":  {},
+	"interface":   {},
+	"new":         {},
+	"null":        {},
+	"package":     {},
+	"private":     {},
+	"protected":   {},
+	"public":      {},
+	"return":      {},
+	"super":       {},
+	"switch":      {},
+	"this":        {},
+	"throw":       {},
+	"true":        {},
+	"try":         {},
+	"typeof":      {},
+	"var":         {},
+	"void":        {},
+	"while":       {},
+	"with":        {},
+	"yield":       {},
+	"as":          {},
+	"let":         {},
+	"static":      {},
+	"any":         {},
+	"boolean":     {},
+	"constructor": {},
+	"declare":     {},
+	"get":         {},
+	"module":      {},
+	"require":     {},
+	"number":      {},
+	"set":         {},
+	"string":      {},
+	"symbol":      {},
+	"type":        {},
+	"from":        {},
+	"of":          {},
+	"async":       {},
+	"namespace":   {},
 }
 
 // formatEnum formats a GraphQL enum into a TS equivalent

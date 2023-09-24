@@ -2,7 +2,7 @@
 {{ define "call_args" }}
 	{{- $maxIndex := Subtract (len .) 1 }}
 	{{- range $index, $value := . }}
-		{{- .Name }}
+		{{- .Name | FormatName }}
 
 		{{- /* Add a ", " only if it's not the last item. */ -}}
 		{{- if ne $index $maxIndex }}
