@@ -50,6 +50,9 @@ func (mod *Module) goRuntime(
 
 		// this automatically gives us a /bin/dagger
 		ExperimentalPrivilegedNesting: true,
+
+		// defensive
+		SkipEntrypoint: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec mod sync: %w", err)

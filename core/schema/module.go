@@ -635,11 +635,15 @@ func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, 
 
 	// TODO: it makes no sense to use this cache since we don't need a core.Module, but also doesn't hurt, but make a separate one anyways for clarity
 	_, err = s.moduleCache.GetOrInitialize(cacheKey, func() (*core.Module, error) {
-		executableSchema, err := s.moduleToSchema(ctx, mod)
+		dependerView, err := s.getModuleSchemaView(dependerModDigest)
+		if err != nil {
+			return nil, err
+		}
+		executableSchema, err := s.moduleToSchemaFor(ctx, mod, dependerView)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert module to executable schema: %w", err)
 		}
-		if err := s.addSchemas(dependerModDigest, executableSchema); err != nil {
+		if err := dependerView.addSchemas(executableSchema); err != nil {
 			return nil, fmt.Errorf("failed to install module schema: %w", err)
 		}
 		return mod, nil
@@ -729,7 +733,7 @@ func (s *moduleSchema) installDeps(ctx *core.Context, module *core.Module) error
 
 // moduleToSchema converts a Module to an ExecutableSchema that can be stitched in to an existing schema.
 // It presumes that the Module's Functions have already been loaded.
-func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) (ExecutableSchema, error) {
+func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Module, dest *moduleSchemaView) (ExecutableSchema, error) {
 	schemaDoc := &ast.SchemaDocument{}
 	newResolvers := Resolvers{}
 
@@ -743,9 +747,9 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
 		}
 
-		// check whether this is a pre-existing object (from core or another module) being extended
-		_, preExistingObject := s.currentSchemaView.resolvers()[objName]
-		// also check whether it's specifically an idable object from the core API
+		// check whether this is a pre-existing object (from core or another
+		// module) being extended
+		_, preExistingObject := dest.resolvers()[objName]
 
 		astDef := &ast.Definition{
 			Name:        objName,
@@ -789,9 +793,11 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 		}
 
 		for _, fn := range objTypeDef.Functions {
-			if err := s.addFunctionToSchema(astDef, newObjResolver, fn, module, schemaDoc, newResolvers); err != nil {
+			resolver, err := s.functionResolver(astDef, module, fn)
+			if err != nil {
 				return nil, err
 			}
+			newObjResolver[gqlFieldName(fn.Name)] = resolver
 		}
 		if len(newObjResolver) > 0 {
 			newResolvers[objName] = newObjResolver
@@ -895,31 +901,28 @@ func (s *moduleSchema) typeDefToSchema(typeDef *core.TypeDef, isInput bool) (*as
 	}
 }
 
-func (s *moduleSchema) addFunctionToSchema(
+func (s *moduleSchema) functionResolver(
 	parentObj *ast.Definition,
-	parentObjResolver ObjectResolver,
-	fn *core.Function,
 	module *core.Module,
-	schemaDoc *ast.SchemaDocument,
-	newResolvers Resolvers,
-) error {
+	fn *core.Function,
+) (graphql.FieldResolveFn, error) {
 	fnName := gqlFieldName(fn.Name)
 	objFnName := fmt.Sprintf("%s.%s", parentObj.Name, fnName)
 
 	returnASTType, err := s.typeDefToSchema(fn.ReturnType, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var argASTTypes ast.ArgumentDefinitionList
 	for _, fnArg := range fn.Args {
 		argASTType, err := s.typeDefToSchema(fnArg.TypeDef, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		argASTTypes = append(argASTTypes, &ast.ArgumentDefinition{
 			Name:         gqlArgName(fnArg.Name),
@@ -946,7 +949,7 @@ func (s *moduleSchema) addFunctionToSchema(
 	}
 	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name)
 
-	parentObjResolver[fnName] = ToResolver(func(ctx *core.Context, parent any, args map[string]any) (_ any, rerr error) {
+	return ToResolver(func(ctx *core.Context, parent any, args map[string]any) (_ any, rerr error) {
 		defer func() {
 			if r := recover(); r != nil {
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
@@ -985,8 +988,7 @@ func (s *moduleSchema) addFunctionToSchema(
 			return nil, fmt.Errorf("expected string ID result for %s, got %T", objFnName, result)
 		}
 		return returnIDableObjectResolver.FromID(id)
-	})
-	return nil
+	}), nil
 }
 
 // relevant ast code we need to work with here:

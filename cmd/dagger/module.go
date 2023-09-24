@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -360,10 +359,9 @@ func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.M
 		return nil, fmt.Errorf("failed to load module: %w", err)
 	}
 
-	// install the mod schema too
-	if _, err := mod.Serve(ctx); err != nil {
-		return nil, fmt.Errorf("failed to install module: %w", err)
-	}
+	// NB(vito): do NOT Serve the dependency; that installs it to the 'global'
+	// schema view! we only want dependencies served directly to the dependent
+	// module.
 
 	return mod, nil
 }
@@ -411,12 +409,10 @@ func (p moduleFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*da
 	if !p.Local {
 		return nil, fmt.Errorf("TODO: implement non-local module dependency loading")
 	}
-
 	cfg, err := p.config(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
-
 	depMods := make([]*dagger.Module, 0, len(cfg.Dependencies))
 	for _, dep := range cfg.Dependencies {
 		depModFlagCfg, err := getModuleFlagConfigFromURL(ctx, c, dep)
@@ -428,21 +424,6 @@ func (p moduleFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*da
 			return nil, fmt.Errorf("failed to load dependency module: %w", err)
 		}
 		depMods = append(depMods, depMod)
-	}
-
-	var eg errgroup.Group
-	for _, depMod := range depMods {
-		depMod := depMod
-		eg.Go(func() error {
-			_, err = depMod.Serve(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to serve dependency module %w", err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
 	}
 	return depMods, nil
 }
@@ -523,7 +504,19 @@ func loadMod(ctx context.Context, c *dagger.Client, modIsOptional bool) (*dagger
 
 	// TODO: hack to unlazy mod so it's actually loaded
 	// TODO: is this still needed?
-	_, err = loadedMod.ID(ctx)
+	// TODO(vito): this came up again, specifically because I wanted the
+	// dependencies to be started and served before doing schema introspection
+	// for codegen. still seems useful, OR we could somehow have schema
+	// introspection block/synchronize on loading dependencies automatically
+	// _, err = loadedMod.ID(ctx)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to get loaded module ID: %w", err)
+	// }
+
+	// TODO(vito): immediate follow-up: turns out what I want is to Serve here
+	// but _not_ Serve for each dependency, since we don't want them all
+	// installed into the same schema - transitive deps should not be included.
+	_, err = loadedMod.Serve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get loaded module ID: %w", err)
 	}

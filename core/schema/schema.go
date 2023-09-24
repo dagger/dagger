@@ -139,25 +139,6 @@ func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, err
 	return ms.schema(), nil
 }
 
-func (s *MergedSchemas) addSchemas(moduleDigest digest.Digest, schemasToAdd ...ExecutableSchema) error {
-	ms, err := s.getModuleSchemaView(moduleDigest)
-	if err != nil {
-		return err
-	}
-	return ms.addSchemas(schemasToAdd...)
-}
-
-// nolint: unused
-//
-// (seems like useful scaffolding that just isn't used yet)
-func (s *MergedSchemas) resolvers(moduleDigest digest.Digest) (Resolvers, error) {
-	ms, err := s.getModuleSchemaView(moduleDigest)
-	if err != nil {
-		return nil, err
-	}
-	return ms.resolvers(), nil
-}
-
 type moduleSchemaView struct {
 	mu              sync.RWMutex
 	separateSchemas map[string]ExecutableSchema

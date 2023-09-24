@@ -618,7 +618,7 @@ func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
 		fileName := filepath.Join(
 			os.TempDir(),
 			t.Name(),
-			fmt.Sprintf("dagger.gen.go.%d", time.Now().Unix()),
+			fmt.Sprintf("dagger.gen.%d.go", time.Now().Unix()),
 		)
 
 		if err := os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
