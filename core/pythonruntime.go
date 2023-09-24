@@ -26,7 +26,7 @@ func (mod *Module) pythonRuntime(
 		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
-    buildEnvCtr, err := baseCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
+	buildEnvCtr, err := baseCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{"apk", "add", "git"},
 	})
 	if err != nil {
