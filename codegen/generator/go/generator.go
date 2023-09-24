@@ -172,11 +172,18 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 		return mainPkg.Module.Path, false, nil
 	}
 
-	// write an initial main.go if no main pkg exists yet
-	//
-	// NB: this has to happen before we run codegen, since it's an input to it.
-	if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource()), 0600); err != nil {
-		return "", false, err
+	var needsRegen bool
+	if _, err := os.Stat(filepath.Join(srcDir, StarterTemplateFile)); err != nil {
+		// write an initial main.go if no main pkg exists yet
+		//
+		// NB: this has to happen before we run codegen, since it's an input to it.
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource()), 0600); err != nil {
+			return "", false, err
+		}
+
+		// we just generated code that is actually an input to codegen, so this
+		// will take two passes
+		needsRegen = true
 	}
 
 	// re-try loading main package so that we can detect outer module
@@ -248,7 +255,7 @@ func (g *GoGenerator) bootstrapMain(ctx context.Context, mfs *memfs.FS) (string,
 		return "", false, err
 	}
 
-	return newMod.Module.Mod.Path, true, nil
+	return newMod.Module.Mod.Path, needsRegen, nil
 }
 
 func loadPackages(ctx context.Context, dir string) ([]*packages.Package, error) {
