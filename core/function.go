@@ -87,13 +87,12 @@ type TypeDef struct {
 	AsObject *ObjectTypeDef `json:"asObject"`
 }
 
-func (fn *TypeDef) ID() (TypeDefID, error) {
-	return resourceid.Encode(fn)
+func (typeDef *TypeDef) ID() (TypeDefID, error) {
+	return resourceid.Encode(typeDef)
 }
 
-func (fn *TypeDef) Digest() (digest.Digest, error) {
-	// TODO: does this need to unpack ModuleID and stable digest that?
-	return stableDigest(fn)
+func (typeDef *TypeDef) Digest() (digest.Digest, error) {
+	return stableDigest(typeDef)
 }
 
 func (typeDef TypeDef) Clone() *TypeDef {
