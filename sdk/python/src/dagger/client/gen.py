@@ -27,13 +27,16 @@ class FileID(Scalar):
     """A file identifier."""
 
 
-class FunctionID(Scalar): ...
+class FunctionID(Scalar):
+    """A reference to a Function."""
 
 
-class JSON(Scalar): ...
+class JSON(Scalar):
+    """An arbitrary JSON-encoded value."""
 
 
-class ModuleID(Scalar): ...
+class ModuleID(Scalar):
+    """A reference to a Module."""
 
 
 class Platform(Scalar):
@@ -50,10 +53,13 @@ class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
 
-class TypeDefID(Scalar): ...
+class TypeDefID(Scalar):
+    """A reference to a TypeDef."""
 
 
-class Void(Scalar): ...
+class Void(Scalar):
+    """The absense of a value.  A Null Void is used as a placeholder for
+    resolvers that do not return anything."""
 
 
 class CacheSharingMode(Enum):
@@ -102,20 +108,36 @@ class NetworkProtocol(Enum):
 
 
 class TypeDefKind(Enum):
+    """Distinguishes the different kinds of TypeDefs."""
+
     BooleanKind = "BooleanKind"
+    """A boolean value"""
 
     IntegerKind = "IntegerKind"
+    """An integer value"""
 
     ListKind = "ListKind"
-    """Complex types"""
+    """A list of values all having the same type.
+
+    Always paired with a ListTypeDef.
+    """
 
     ObjectKind = "ObjectKind"
+    """A named type defined in the GraphQL schema, with fields and functions.
+
+    Always paired with an ObjectTypeDef.
+    """
 
     StringKind = "StringKind"
-    """Primitive types"""
+    """A string value"""
 
     VoidKind = "VoidKind"
-    """Void is a special kind that can only be used as a return type"""
+    """A special kind used to signify that no value is returned.
+
+    This is used for functions that have no return value. The outer TypeDef
+    specifying this Kind is always Optional, as the Void is never actually
+    represented.
+    """
 
 
 @dataclass(slots=True)
@@ -2338,6 +2360,10 @@ class File(Type):
 
 
 class Function(Type):
+    """Function represents a resolver provided by a Module.  A function
+    always evaluates against a parent object and is given a set of named
+    arguments."""
+
     __slots__ = (
         "_call",
         "_description",
@@ -2373,6 +2399,11 @@ class Function(Type):
         call is useful for some advanced use cases where dynamically
         loading arbitrary modules and invoking functions in them is
         required.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
 
         Raises
         ------
@@ -2415,9 +2446,16 @@ class Function(Type):
 
     @typecheck
     async def id(self) -> FunctionID:
-        """Note
+        """The ID of the function
+
+        Note
         ----
         This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        FunctionID
+            A reference to a Function.
 
         Raises
         ------
@@ -2519,6 +2557,10 @@ class Function(Type):
 
 
 class FunctionArg(Type):
+    """An argument accepted by a function.  This is a specification for an
+    argument at function definition time, not an argument passed at
+    function call time."""
+
     __slots__ = (
         "_default_value",
         "_description",
@@ -2533,6 +2575,11 @@ class FunctionArg(Type):
     async def default_value(self) -> Optional[JSON]:
         """A default value to use for this argument when not explicitly set by
         the caller, if any
+
+        Returns
+        -------
+        Optional[JSON]
+            An arbitrary JSON-encoded value.
 
         Raises
         ------
@@ -2643,6 +2690,11 @@ class FunctionCall(Type):
         If the function is "top-level" to the module, this is always an empty
         object.
 
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
         Raises
         ------
         ExecuteTimeoutError
@@ -2683,6 +2735,12 @@ class FunctionCall(Type):
         """Set the return value of the function call to the provided value.
         The value should be a string of the JSON serialization of the return
         value.
+
+        Returns
+        -------
+        Optional[Void]
+            The absense of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
 
         Raises
         ------
@@ -2735,6 +2793,11 @@ class FunctionCallArgValue(Type):
     async def value(self) -> JSON:
         """The value of the argument represented as a string of the JSON
         serialization.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
 
         Raises
         ------
@@ -2963,6 +3026,8 @@ class Label(Type):
 
 
 class ListTypeDef(Type):
+    """A definition of a list type in a Module."""
+
     @typecheck
     def element_type_def(self) -> "TypeDef":
         """The type of the elements in the list"""
@@ -3059,6 +3124,11 @@ class Module(Type):
         ----
         This is lazyly evaluated, no operation is actually run.
 
+        Returns
+        -------
+        ModuleID
+            A reference to a Module.
+
         Raises
         ------
         ExecuteTimeoutError
@@ -3147,6 +3217,12 @@ class Module(Type):
             Note: this can only be called once per session.
             In the future, it could return a stream or service to remove the
         side effect.
+
+        Returns
+        -------
+        Optional[Void]
+            The absense of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
 
         Raises
         ------
@@ -3792,6 +3868,11 @@ class TypeDef(Type):
         ----
         This is lazyly evaluated, no operation is actually run.
 
+        Returns
+        -------
+        TypeDefID
+            A reference to a TypeDef.
+
         Raises
         ------
         ExecuteTimeoutError
@@ -3814,6 +3895,11 @@ class TypeDef(Type):
     @typecheck
     async def kind(self) -> Optional[TypeDefKind]:
         """The kind of type this is (e.g. primitive, list, object)
+
+        Returns
+        -------
+        Optional[TypeDefKind]
+            Distinguishes the different kinds of TypeDefs.
 
         Raises
         ------

@@ -568,6 +568,9 @@ export type FunctionCallInput = {
   value: JSON
 }
 
+/**
+ * A reference to a Function.
+ */
 export type FunctionID = string & { __FunctionID: never }
 
 export type GitRefTreeOpts = {
@@ -608,6 +611,9 @@ export enum ImageMediaTypes {
   Dockermediatypes = "DockerMediaTypes",
   Ocimediatypes = "OCIMediaTypes",
 }
+/**
+ * An arbitrary JSON-encoded value.
+ */
 export type JSON = string & { __JSON: never }
 
 export type ModuleServeOpts = {
@@ -619,6 +625,9 @@ export type ModuleEnvironmentVariable = {
   value?: string
 }
 
+/**
+ * A reference to a Module.
+ */
 export type ModuleID = string & { __ModuleID: never }
 
 /**
@@ -727,28 +736,58 @@ export type TypeDefWithObjectOpts = {
   description?: string
 }
 
+/**
+ * A reference to a TypeDef.
+ */
 export type TypeDefID = string & { __TypeDefID: never }
 
+/**
+ * Distinguishes the different kinds of TypeDefs.
+ */
 export enum TypeDefKind {
+  /**
+   * A boolean value
+   */
   Booleankind = "BooleanKind",
+
+  /**
+   * An integer value
+   */
   Integerkind = "IntegerKind",
 
   /**
-   * Complex types
+   * A list of values all having the same type.
+   *
+   * Always paired with a ListTypeDef.
    */
   Listkind = "ListKind",
+
+  /**
+   * A named type defined in the GraphQL schema, with fields and functions.
+   *
+   * Always paired with an ObjectTypeDef.
+   */
   Objectkind = "ObjectKind",
 
   /**
-   * Primitive types
+   * A string value
    */
   Stringkind = "StringKind",
 
   /**
-   * Void is a special kind that can only be used as a return type
+   * A special kind used to signify that no value is returned.
+   *
+   * This is used for functions that have no return value. The outer TypeDef
+   * specifying this Kind is always Optional, as the Void is never actually
+   * represented.
    */
   Voidkind = "VoidKind",
 }
+/**
+ * The absense of a value.
+ *
+ * A Null Void is used as a placeholder for resolvers that do not return anything.
+ */
 export type Void = string & { __Void: never }
 
 export type __TypeEnumValuesOpts = {
@@ -2923,6 +2962,12 @@ export class File extends BaseClient {
   }
 }
 
+/**
+ * Function represents a resolver provided by a Module.
+ *
+ * A function always evaluates against a parent object and is given a set of
+ * named arguments.
+ */
 export class Function_ extends BaseClient {
   private readonly _id?: FunctionID = undefined
   private readonly _call?: JSON = undefined
@@ -2946,6 +2991,10 @@ export class Function_ extends BaseClient {
     this._description = _description
     this._name = _name
   }
+
+  /**
+   * The ID of the function
+   */
   async id(): Promise<FunctionID> {
     if (this._id) {
       return this._id
@@ -3140,6 +3189,12 @@ export class Function_ extends BaseClient {
   }
 }
 
+/**
+ * An argument accepted by a function.
+ *
+ * This is a specification for an argument at function definition time, not an
+ * argument passed at function call time.
+ */
 export class FunctionArg extends BaseClient {
   private readonly _defaultValue?: JSON = undefined
   private readonly _description?: string = undefined
@@ -3710,6 +3765,9 @@ export class Label extends BaseClient {
   }
 }
 
+/**
+ * A definition of a list type in a Module.
+ */
 export class ListTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.

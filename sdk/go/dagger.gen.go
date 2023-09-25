@@ -37,10 +37,13 @@ type DirectoryID string
 // A file identifier.
 type FileID string
 
+// A reference to a Function.
 type FunctionID string
 
+// An arbitrary JSON-encoded value.
 type JSON string
 
+// A reference to a Module.
 type ModuleID string
 
 // The platform config OS and architecture in a Container.
@@ -54,8 +57,12 @@ type SecretID string
 // A content-addressed socket identifier.
 type SocketID string
 
+// A reference to a TypeDef.
 type TypeDefID string
 
+// The absense of a value.
+//
+// A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
 // Key value object that represents a build argument.
@@ -2009,6 +2016,10 @@ func (r *File) WithTimestamps(timestamp int) *File {
 	}
 }
 
+// Function represents a resolver provided by a Module.
+//
+// A function always evaluates against a parent object and is given a set of
+// named arguments.
 type Function struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -2103,6 +2114,7 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The ID of the function
 func (r *Function) ID(ctx context.Context) (FunctionID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2207,6 +2219,10 @@ func (r *Function) WithDescription(description string) *Function {
 	}
 }
 
+// An argument accepted by a function.
+//
+// This is a specification for an argument at function definition time, not an
+// argument passed at function call time.
 type FunctionArg struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -2574,6 +2590,7 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// A definition of a list type in a Module.
 type ListTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
