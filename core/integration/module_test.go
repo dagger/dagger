@@ -43,19 +43,6 @@ func TestModuleGoInit(t *testing.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
-
-		t.Run("configures .gitignore", func(t *testing.T) {
-			ignore, err := modGen.File(".gitignore").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, ignore, "/dagger.gen.go\n")
-			require.Contains(t, ignore, "/internal/\n")
-		})
-
-		t.Run("configures .gitattributes", func(t *testing.T) {
-			attributes, err := modGen.File(".gitattributes").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, attributes, "/dagger.gen.go linguist-generated=true\n")
-		})
 	})
 
 	t.Run("kebab-cases Go module name, camel-cases Dagger module name", func(t *testing.T) {
@@ -194,18 +181,42 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 	})
 }
 
-func TestModuleGoSyncRemovesIgnored(t *testing.T) {
+func TestModuleGoGit(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 
-	committedModGen := c.Container().From(golangImage).
-		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		WithExec([]string{"git", "init"}).
+	modGen := goGitBase(t, c).
+		With(daggerExec("mod", "init", "--name=bare", "--sdk=go"))
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.
+		With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
+
+	t.Run("configures .gitignore", func(t *testing.T) {
+		ignore, err := modGen.File(".gitignore").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, ignore, "/dagger.gen.go\n")
+		require.Contains(t, ignore, "/internal/\n")
+	})
+
+	t.Run("configures .gitattributes", func(t *testing.T) {
+		attributes, err := modGen.File(".gitattributes").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, attributes, "/dagger.gen.go linguist-generated=true\n")
+	})
+}
+
+func TestModuleGoGitRemovesIgnored(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	committedModGen := goGitBase(t, c).
 		With(daggerExec("mod", "init", "--name=bare", "--sdk=go")).
 		WithExec([]string{"rm", ".gitignore"}).
 		WithExec([]string{"cp", "-a", "./internal/querybuilder", "./querybuilder"}).
@@ -831,6 +842,16 @@ func daggerQuery(query string) dagger.WithContainerFunc {
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
+}
+
+func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
+	return c.Container().From(golangImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithExec([]string{"git", "init"})
 }
 
 func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
