@@ -10,7 +10,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 
-	"dagger.io/dagger/querybuilder"
+	"dagger.io/dagger/internal/querybuilder"
 )
 
 // assertNotNil panic if the given value is nil.
