@@ -10,6 +10,7 @@ connect(
       .container()
       .from("node:18")
       .withDirectory("/src", client.host().directory("."))
+      .withWorkdir("/src")
       .withMountedCache(
         "/src/node_modules",
         client.cacheVolume("node-18-myapp-myenv")
@@ -18,11 +19,8 @@ connect(
     // set the working directory in the container
     // install application dependencies
     const runner = await source
-      .withWorkdir("/src")
       .withExec(["npm", "install"])
       .sync()
-
-    console.log(await runner.id())
   },
   { LogOutput: process.stderr }
 )

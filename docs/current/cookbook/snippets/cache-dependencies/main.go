@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"dagger.io/dagger"
@@ -25,6 +24,7 @@ func main() {
 	source := client.Container().
 		From("golang:1.21").
 		WithDirectory("/src", client.Host().Directory(".")).
+		WithWorkdir("/src").
 		WithMountedCache("/go/pkg/mod", client.CacheVolume("go-mod-121-myapp-myenv")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", client.CacheVolume("go-build-121-myapp-myenv")).
@@ -32,12 +32,10 @@ func main() {
 
 	// set the working directory in the container
 	// install application dependencies
-	runner, err := source.WithWorkdir("/src").
+	_, err = source.
 		WithExec([]string{"go", "build"}).
 		Sync(ctx)
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println(runner.ID(ctx))
 }

@@ -21,6 +21,7 @@ async def main():
                 client.host().directory("."),
                 exclude=[".venv/", ".cache/", "ci/"],
             )
+            .with_workdir("/src")
             .with_mounted_cache(
                 "/root/.cache/pip", client.cache_volume("pip-python-311-myapp-myenv")
             )
@@ -36,13 +37,9 @@ async def main():
 
         # set the working directory in the container
         # install application dependencies
-        runner = (
-            await source.with_workdir("/src")
-            .with_exec(["pip", "install", "-r", "requirements.txt"])
-            .sync()
-        )
-
-        print(await runner.id())
+        runner = await source.with_exec(
+            ["pip", "install", "-r", "requirements.txt"]
+        ).sync()
 
 
 anyio.run(main)
