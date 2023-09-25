@@ -1,20 +1,17 @@
 package templates
 
 import (
+	"go/token"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/tools/go/packages"
 )
 
 func TestModuleMainSrc(t *testing.T) {
 	tmpdir := t.TempDir()
-
-	funcs := goTemplateFuncs{
-		moduleName:          "testMod",
-		sourceDirectoryPath: tmpdir,
-	}
 
 	testMain := `package main
 
@@ -37,6 +34,18 @@ go 1.20
 `
 	err = os.WriteFile(filepath.Join(tmpdir, "go.mod"), []byte(testGoMod), 0644)
 	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	pkgs, err := packages.Load(&packages.Config{
+		Dir: tmpdir,
+	}, ".")
+	require.NoError(t, err)
+
+	funcs := goTemplateFuncs{
+		moduleName: "testMod",
+		modulePkg:  pkgs[0],
+		moduleFset: fset,
+	}
 
 	// TODO: assert on contents
 	require.NotPanics(t, func() {
