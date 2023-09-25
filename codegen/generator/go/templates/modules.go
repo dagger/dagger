@@ -794,7 +794,3 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 	}
 	return nil, fmt.Errorf("no decl for %s", fnType.Name())
 }
-
-func defaultErrorMainSrc(msg string) string {
-	return fmt.Sprintf("%#v", Func().Id("main").Parens(nil).Block(Id("panic").Call(Lit(msg))))
-}
