@@ -2136,6 +2136,16 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Returns a list of files and directories that matche the given pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - Pattern to match (e.g., "*.md").
+    pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("glob");
+        query = query.arg("pattern", pattern.into());
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The content-addressed identifier of the directory.
     pub async fn id(&self) -> Result<DirectoryId, DaggerError> {
         let query = self.selection.select("id");

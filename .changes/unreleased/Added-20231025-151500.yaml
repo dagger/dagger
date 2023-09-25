@@ -1,0 +1,6 @@
+kind: Added
+body: Directory supports Glob method
+time: 2023-10-25T15:15:00.800196+02:00
+custom:
+  Author: TomChv
+  PR: "5824"

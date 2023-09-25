@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/buildkit/identity"
+	"github.com/stretchr/testify/require"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/moby/buildkit/identity"
-	"github.com/stretchr/testify/require"
 )
 
 func TestEmptyDirectory(t *testing.T) {
@@ -924,5 +925,69 @@ func TestDirectorySync(t *testing.T) {
 		entries, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, entries)
+	})
+}
+
+func TestDirectoryGlob(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	srcDir := c.Directory().
+		WithNewFile("main.go", "").
+		WithNewFile("func.go", "").
+		WithNewFile("test.md", "").
+		WithNewFile("foo.txt", "").
+		WithNewFile("README.txt", "").
+		WithNewDirectory("/subdir").
+		WithNewFile("/subdir/foo.txt", "").
+		WithNewFile("/subdir/README.md", "").
+		WithNewDirectory("/subdir2").
+		WithNewDirectory("/subdir2/subsubdir").
+		WithNewFile("/subdir2/baz.txt", "").
+		WithNewFile("/subdir2/TESTING.md", "").
+		WithNewFile("/subdir/subsubdir/package.json", "").
+		WithNewFile("/subdir/subsubdir/index.mts", "").
+		WithNewFile("/subdir/subsubdir/JS.md", "")
+
+	t.Run("include only markdown", func(t *testing.T) {
+		entries, err := srcDir.Glob(ctx, "*.md")
+
+		require.NoError(t, err)
+		require.ElementsMatch(t, entries, []string{"test.md"})
+	})
+
+	t.Run("recursive listing", func(t *testing.T) {
+		entries, err := srcDir.Glob(ctx, "**/*")
+
+		require.NoError(t, err)
+		require.ElementsMatch(t, entries, []string{
+			"func.go", "main.go", "test.md", "foo.txt", "README.txt",
+			"subdir", "subdir/foo.txt", "subdir/README.md",
+			"subdir2", "subdir2/subsubdir", "subdir2/baz.txt", "subdir2/TESTING.md",
+			"subdir/subsubdir", "subdir/subsubdir/package.json",
+			"subdir/subsubdir/index.mts", "subdir/subsubdir/JS.md",
+		})
+	})
+
+	t.Run("recursive that include only markdown", func(t *testing.T) {
+		entries, err := srcDir.Glob(ctx, "**/*.md")
+
+		require.NoError(t, err)
+		require.ElementsMatch(t, entries, []string{
+			"test.md", "subdir/README.md",
+			"subdir2/TESTING.md", "subdir/subsubdir/JS.md",
+		})
+	})
+
+	t.Run("recursive with directories in the pattern", func(t *testing.T) {
+		srcDir := c.Directory().
+			WithNewFile("foo/bar.md/x.md", "").
+			WithNewFile("foo/bar.md/y.go", "")
+
+		entries, err := srcDir.Glob(ctx, "**/*.md")
+
+		require.NoError(t, err)
+		require.ElementsMatch(t, entries, []string{"foo/bar.md", "foo/bar.md/x.md"})
 	})
 }

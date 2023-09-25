@@ -2529,6 +2529,25 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Returns a list of files and directories that matche the given pattern.
+   * @param pattern Pattern to match (e.g., "*.md").
+   */
+  async glob(pattern: string): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "glob",
+          args: { pattern },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Creates a named sub-pipeline
    * @param name Pipeline name.
    * @param opts.description Pipeline description.
