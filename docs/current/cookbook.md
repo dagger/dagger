@@ -973,7 +973,7 @@ The following code listing demonstrates how to add multiple environment variable
 </TabItem>
 </Tabs>
 
-### Organize pipeline code into modules
+### Organize pipeline code into modules & classes
 
 The following code listing demonstrates how to organize Dagger pipeline code into independent modules (or functions/packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between modules.
 
@@ -984,28 +984,60 @@ The same Dagger client can safely be used in concurrent threads/routines. Theref
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go title="main.go" file=./cookbook/snippets/modules-shared-client/main.go
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/functions/main.go
 ```
 
-```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines/pipelines.go
+```go title="alpine/alpine.go" file=./cookbook/snippets/modules-shared-client/functions/alpine/alpine.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/index.mts
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/functions/index.mts
 ```
 
-```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/pipelines.mts
+```typescript title="alpine.mts" file=./cookbook/snippets/modules-shared-client/functions/alpine.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python title="main.py" file=./cookbook/snippets/modules-shared-client/main.py
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/functions/main.py
 ```
 
-```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/pipelines.py
+```python title="alpine.py" file=./cookbook/snippets/modules-shared-client/functions/alpine.py
+```
+
+</TabItem>
+</Tabs>
+
+Another possible approach is to use independent classes (or interfaces, depending on the programming language) with public methods as functions. With this, it is no longer necessary to pass the client to all imported functions. The following code listing demonstrates this approach.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/classes/main.go
+```
+
+```go title="alpine/alpine.go" file=./cookbook/snippets/modules-shared-client/classes/alpine/alpine.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/classes/index.mts
+```
+
+```typescript title="alpine.mts" file=./cookbook/snippets/modules-shared-client/classes/alpine.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/classes/main.py
+```
+
+```python title="alpine.py" file=./cookbook/snippets/modules-shared-client/classes/alpine.py
 ```
 
 </TabItem>
