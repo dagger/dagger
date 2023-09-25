@@ -13,9 +13,6 @@ import (
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/moby/buildkit/identity"
-	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -90,34 +87,39 @@ func Introspect(ctx context.Context, engineClient *client.Client) (*introspectio
 	return introspectionResp.Schema, nil
 }
 
-func Overlay(ctx context.Context, overlay fs.FS, outputDir string) (rerr error) {
-	rec := progrock.FromContext(ctx)
-
-	vtx := rec.Vertex(digest.FromString(identity.NewID()), "write overlay")
-	defer func() { vtx.Done(rerr) }()
-
+func Overlay(ctx context.Context, logsW io.Writer, overlay fs.FS, outputDir string) (rerr error) {
 	return fs.WalkDir(overlay, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			fmt.Fprintln(vtx.Stderr(), "creating directory", path)
-			return os.MkdirAll(filepath.Join(outputDir, path), 0755)
+			if _, err := os.Stat(filepath.Join(outputDir, path)); err == nil {
+				return nil
+			}
+			fmt.Fprintln(logsW, "creating directory", path)
+			return os.MkdirAll(filepath.Join(outputDir, path), 0o755)
 		}
-		fmt.Fprintln(vtx.Stderr(), "writing", path)
-		r, err := overlay.Open(path)
+
+		var needsWrite bool
+
+		newContent, err := fs.ReadFile(overlay, path)
 		if err != nil {
-			return fmt.Errorf("open %s: %w", path, err)
+			return fmt.Errorf("read %s: %w", path, err)
 		}
-		defer r.Close()
-		w, err := os.Create(filepath.Join(outputDir, path))
+
+		outPath := filepath.Join(outputDir, path)
+		oldContent, err := os.ReadFile(outPath)
 		if err != nil {
-			return fmt.Errorf("create %s: %w", path, err)
+			needsWrite = true
+		} else {
+			needsWrite = string(oldContent) != string(newContent)
 		}
-		defer w.Close()
-		if _, err := io.Copy(w, r); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
+
+		if needsWrite {
+			fmt.Fprintln(logsW, "writing", path)
+			return os.WriteFile(outPath, newContent, 0o600)
 		}
+
 		return nil
 	})
 }

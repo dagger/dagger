@@ -207,18 +207,12 @@ func updateModuleConfig(
 	switch newModCfg.SDK {
 	case moduleconfig.SDKGo:
 		runCodegenFunc = func() (err error) {
-			rec := progrock.FromContext(ctx)
-			vtx := rec.Vertex("mod-update", strings.Join(os.Args, " "))
-			defer func() { vtx.Done(err) }()
-			runCodegenTask := vtx.Task("generating module code")
-			err = codegen.Generate(ctx, generator.Config{
+			return codegen.Generate(ctx, generator.Config{
 				Lang:       generator.SDKLang(newModCfg.SDK),
 				SourceDir:  workdir,
 				OutputDir:  codegenOutputDir,
 				ModuleName: newModCfg.Name,
 			}, engineClient)
-			runCodegenTask.Done(err)
-			return err
 		}
 	case moduleconfig.SDKPython:
 	default:

@@ -42,15 +42,15 @@ func Generate(
 	vtx := rec.Vertex(digest.FromString(identity.NewID()), vtxName)
 	defer func() { vtx.Done(rerr) }()
 
-	for ctx.Err() == nil {
-		fmt.Fprintln(vtx.Stderr(), "done!")
+	logsW := vtx.Stdout()
 
+	for ctx.Err() == nil {
 		generated, err := generate(ctx, introspectionSchema, cfg)
 		if err != nil {
 			return err
 		}
 
-		if err := generator.Overlay(ctx, generated.Overlay, cfg.OutputDir); err != nil {
+		if err := generator.Overlay(ctx, logsW, generated.Overlay, cfg.OutputDir); err != nil {
 			return fmt.Errorf("failed to overlay generated code: %w", err)
 		}
 
@@ -62,9 +62,11 @@ func Generate(
 		}
 
 		if !generated.NeedRegenerate {
-			fmt.Fprintln(vtx.Stderr(), "done!")
+			fmt.Fprintln(logsW, "done!")
 			break
 		}
+
+		fmt.Fprintln(logsW, "needs another pass...")
 	}
 
 	return ctx.Err()
