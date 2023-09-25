@@ -89,7 +89,7 @@ Create the PersistentVolumeClaim configuration in a file called `gomodcache.yaml
 
 Apply the configuration:
 
- `kubectl apply -f ./gomodcache.yaml`
+ `kubectl apply -n argo -f ./gomodcache.yaml`
 
 When you're satisfied with the workflow configuration, run it with Argo:
 

@@ -24,7 +24,7 @@ spec:
             path: /usr/local/bin
             mode: 0755
             http:
-              url: https://github.com/dagger/dagger/releases/download/v0.8.4/dagger_v0.8.4_linux_amd64.tar.gz
+              url: https://github.com/dagger/dagger/releases/download/v0.8.7/dagger_v0.8.7_linux_arm64.tar.gz
       container:
         image: golang:1.21.0-bookworm
         command: ["sh", "-c"]
