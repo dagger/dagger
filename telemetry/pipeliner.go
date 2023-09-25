@@ -45,12 +45,12 @@ type PipelinedVertex struct {
 	Pipelines []pipeline.Path
 }
 
-func (t *Pipeliner) WriteStatus(ev *progrock.StatusUpdate) error {
+func (t *Pipeliner) TrackUpdate(ev *progrock.StatusUpdate) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.closed {
-		return nil
+		return
 	}
 
 	for _, g := range ev.Groups {
@@ -66,8 +66,6 @@ func (t *Pipeliner) WriteStatus(ev *progrock.StatusUpdate) error {
 	for _, v := range ev.Vertexes {
 		t.vertices[v.Id] = v
 	}
-
-	return nil
 }
 
 func (t *Pipeliner) Close() error {

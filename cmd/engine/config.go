@@ -27,14 +27,16 @@ func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 		cfg.DNS = &config.DNSConfig{}
 	}
 
-	// set dnsmasq as the default nameserver
-	cfg.DNS.Nameservers = []string{netConf.Bridge.String()}
+	if netConf != nil {
+		// set dnsmasq as the default nameserver
+		cfg.DNS.Nameservers = []string{netConf.Bridge.String()}
 
-	if netConf.CNIConfigPath != "" {
-		setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, netConf.CNIConfigPath)
+		if netConf.CNIConfigPath != "" {
+			setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, netConf.CNIConfigPath)
 
-		// we don't use containerd, but make it match anyway
-		setNetworkDefaults(&cfg.Workers.Containerd.NetworkConfig, netConf.CNIConfigPath)
+			// we don't use containerd, but make it match anyway
+			setNetworkDefaults(&cfg.Workers.Containerd.NetworkConfig, netConf.CNIConfigPath)
+		}
 	}
 
 	return nil

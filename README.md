@@ -29,7 +29,15 @@ Dagger may be a good fit if you are...
 
 * [How does it work?](https://docs.dagger.io/#how-does-it-work)
 * [Getting started](https://docs.dagger.io/#getting-started)
-* [Examples](https://github.com/dagger/examples)
-* [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
-* [Follow us on Twitter](https://twitter.com/dagger_io)
-* Join a [Dagger community call](https://dagger.io/events).
+* [Examples](https://github.com/dagger/dagger/tree/main/examples)
+
+## Join the community
+
+* Join the [Dagger community server](https://discord.gg/ufnyBtc8uY)
+* Follow us on [Twitter](https://twitter.com/dagger_io)
+* Come to a [Dagger community call](https://dagger.io/events).
+
+## Contributing
+
+Interested in contributing or building dagger from scratch? See
+[CONTRIBUTING.md](https://github.com/dagger/dagger/tree/main/CONTRIBUTING.md).

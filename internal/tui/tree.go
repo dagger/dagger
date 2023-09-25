@@ -57,7 +57,7 @@ func (m *Tree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Tree) SetRoot(root TreeEntry) {
+func (m *Tree) SetRoot(root *Group) {
 	m.root = root
 }
 

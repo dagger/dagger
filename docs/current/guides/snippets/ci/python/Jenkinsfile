@@ -6,7 +6,8 @@ pipeline {
       steps {
         sh '''
             pip install .
-            python main.py
+            cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+            dagger run python main.py
         '''
       }
     }

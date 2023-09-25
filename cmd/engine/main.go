@@ -748,6 +748,12 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
 	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
 
+	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
+	// TODO: deprecate in a future release
+	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
+		cacheServiceToken = v
+	}
+
 	if cacheServiceURL == "" {
 		cacheServiceURL = daggerCacheServiceURL
 	}

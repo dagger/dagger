@@ -24,6 +24,7 @@ This tutorial assumes that:
 - You have a basic understanding of the AWS Lambda service. If not, learn about [AWS Lambda](https://docs.aws.amazon.com/lambda/latest/dg/welcome.html).
 - You have a Go, Node.js or Python development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have an AWS account with appropriate privileges to create and manage AWS Lambda resources. If not, [register for an AWS account](https://aws.amazon.com/).
 - You have an existing AWS Lambda function with a publicly-accessible URL in Go, Node.js or Python, deployed as a ZIP archive. If not, follow the steps in Appendix A to [create an example AWS Lambda function](#appendix-a-create-an-example-aws-lambda-function).
 
@@ -152,21 +153,21 @@ After modifying the function code, execute the Dagger pipeline:
 <TabItem value="Go">
 
 ```shell
-go run ci/main.go
+dagger run go run ci/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 ```shell
-node ci/index.mjs
+dagger run node ci/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```shell
-python ci/main.py
+dagger run python ci/main.py
 ```
 
 </TabItem>

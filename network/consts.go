@@ -12,7 +12,3 @@ const DefaultName = "dagger"
 
 // DefaultCIDR is the default address range to use for networked containers.
 const DefaultCIDR = "10.87.0.0/16"
-
-// DaggerNetwork is the ID of the network used for the Buildkit networks
-// session attachable.
-const DaggerNetwork = "dagger"

@@ -62,7 +62,7 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
-	recorder := progrock.RecorderFromContext(ctx)
+	recorder := progrock.FromContext(ctx)
 
 	// Skip development version
 	if strings.Contains(engine.Version, "devel") {

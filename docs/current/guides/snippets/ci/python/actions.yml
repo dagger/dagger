@@ -15,6 +15,6 @@ jobs:
       - name: Install deps
         run: pip install .
       - name: Install Dagger CLI
-        run: cd /usr/local && curl -L https://dl.dagger.io/dagger/install.sh | sh
+        run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
       - name: Run Dagger pipeline
         run: dagger run python main.py

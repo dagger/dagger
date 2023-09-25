@@ -5,11 +5,13 @@ phases:
     commands:
       - echo "Installing Dagger SDK for Go"
       - go get dagger.io/dagger
+      - echo "Installing Dagger CLI"
+      - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - go run ci/main.go
+      - dagger run go run ci/main.go
 
   post_build:
     commands:

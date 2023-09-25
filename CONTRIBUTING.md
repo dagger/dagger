@@ -18,10 +18,10 @@ The recommended workflow is to fork the repository and open pull requests from y
 
 ```shell
 # Clone repository
-git clone https://github.com/$YOUR_GITHUB_USER/$REPOSITORY.git
+git clone git@github.com:$YOUR_GITHUB_USER/dagger.git
 
 # Add upstream origin
-git remote add upstream git@github.com:dagger/$REPOSITORY.git
+git remote add upstream git@github.com:dagger/dagger.git
 ```
 
 ### 2. Create a pull request
@@ -39,7 +39,7 @@ git commit -s
 # Push your new feature branch
 git push my_feature_branch
 
-# Create a new pull request from https://github.com/dagger/$REPOSITORY
+# Create a new pull request from https://github.com/dagger/dagger
 ```
 
 ### 3. Add release notes fragment
@@ -62,9 +62,9 @@ If there are code changes in the SDKs, run `changie new` in the corresponding di
 
 Remember to add & commit the release notes fragment.
 This will be used at release time, in the changelog.
-Here is an example of the end-result for all release notes fragments: https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md
+Here is an example of the end-result for all release notes fragments: <https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md>
 
-You can find an asciinema of how `changie` works on https://changie.dev
+You can find an asciinema of how `changie` works on <https://changie.dev>
 
 ### 4. Update your pull request with latest changes
 
@@ -199,6 +199,48 @@ Otherwise, you'll want to check if the binary in question has a newer version wi
 If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on Github or Discord if you're unsure how to best proceed.
 
 ## FAQ
+
+### How to run a development engine?
+
+To automatically build and start a development engine (and stop any previously
+running one):
+
+```shell
+./hack/dev
+```
+
+The above will build the CLI and the engine, and provide configuration details
+to connect to the engine:
+
+```shell
+export _EXPERIMENTAL_DAGGER_CLI_BIN=bin/dagger
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+```
+
+To run the dev CLI:
+
+```shell
+> ./bin/dagger version
+dagger devel () linux/amd64
+```
+
+### How to run tests locally?
+
+To run all go tests against an engine built from local code (with some parallelism):
+
+```shell
+./hack/dev go test -parallel 4 -v -count=1 ./...
+```
+
+To run one go test against an engine built from local code:
+
+```shell
+./hack/dev go test -v -count=1 -run TestExtensionMount $(pwd)/core/integration/
+```
+
+:::tip
+When running core integration tests don't specify an individual file; always run with the full core/integration/ package or you will get errors (due to use of an init func in suite_test.go).
+:::
 
 ### How to run linters locally?
 

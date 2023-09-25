@@ -736,13 +736,10 @@ img[alt="github-contribute"] {
   }
 }
 
-.docs-doc-id-current\/quickstart\/hello,
-.docs-doc-id-current\/quickstart\/test,
-.docs-doc-id-current\/quickstart\/build,
-.docs-doc-id-current\/quickstart\/publish,
-.docs-doc-id-current\/quickstart\/build-multi,
-.docs-doc-id-current\/quickstart\/caching,
-.docs-doc-id-current\/quickstart\/build-dockerfile {
+// This selects the quickstart pages that contains embeds.
+// A class is added in the pages with embeds using a Docusarus
+// internal helper declared in the quickstartDoc.js component.
+.quickstart-page-with-embed {
   main {
     padding-right: 0px !important;
   }

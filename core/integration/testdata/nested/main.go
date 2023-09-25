@@ -27,7 +27,7 @@ func main() {
 		fatal(err)
 	}
 
-	if depth > 0 {
+	if depth > 1 {
 		weHaveToGoDeeper(ctx, c, depth, mode, svcURLs)
 		return
 	}

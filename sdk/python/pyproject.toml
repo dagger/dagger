@@ -163,9 +163,11 @@ ignore = [
     "ARG002",
     # Black can handle trailing commas automatically.
     "COM812",
-    # TODO: prefix everything internal with an underscore and document
-    # what's left (public).
-    "D1",
+    # Can't control using a library with boolean arguments.
+    "FBT",
+    # TODO: Document public modules and packages.
+    "D100",
+    "D104",
     # Imperative mood only makes sense in functions, not classes.
     "D401",
     # Not using timezones in this project.

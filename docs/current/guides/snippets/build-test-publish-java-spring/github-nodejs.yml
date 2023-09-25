@@ -28,8 +28,11 @@ jobs:
         name: Install Dagger
         run: npm install @dagger.io/dagger@latest
       -
+        name: Install Dagger CLI
+        run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+      -
         name: Build and publish with Dagger
-        run: node ci/index.mjs
+        run: dagger run node ci/index.mjs
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}

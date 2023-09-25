@@ -1,10 +1,9 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"sync"
+	"io"
 	"testing"
 	"time"
 
@@ -12,39 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type safeBuffer struct {
-	bu bytes.Buffer
-	mu sync.Mutex
-}
-
-func (s *safeBuffer) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Write(p)
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.String()
-}
-
 func TestPipeline(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("container pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx, logs := connectWithLogs(t)
 
-		_, err = c.
+		_, err := c.
 			Container().
 			Pipeline("container pipeline").
 			From(alpineImage).
@@ -61,10 +36,7 @@ func TestPipeline(t *testing.T) {
 	t.Run("directory pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx, logs := connectWithLogs(t)
 
 		contents, err := c.
 			Directory().
@@ -84,10 +56,7 @@ func TestPipeline(t *testing.T) {
 	t.Run("service pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx, logs := connectWithLogs(t)
 
 		srv, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -106,28 +75,24 @@ func TestPipeline(t *testing.T) {
 		require.NoError(t, c.Close()) // close + flush logs
 
 		require.Contains(t, logs.String(), "service "+hostname)
+		require.Regexp(t, `start python -m http.server.*DONE`, logs.String())
 	})
 }
 
 func TestInternalVertexes(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("merge pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		var logs safeBuffer
-		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
-		require.NoError(t, err)
-		defer c.Close()
+		c, ctx, logs := connectWithLogs(t)
 
 		dirA := c.Directory().WithNewFile("/foo", "foo")
 		dirB := c.Directory().WithNewFile("/bar", "bar")
 
-		_, err = c.
+		_, err := c.
 			Container().
 			From(alpineImage).
 			WithDirectory("/foo", dirA).
@@ -140,4 +105,11 @@ func TestInternalVertexes(t *testing.T) {
 		require.NoError(t, c.Close()) // close + flush logs
 		require.NotContains(t, logs.String(), "merge")
 	})
+}
+
+func connectWithLogs(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Context, *safeBuffer) {
+	var logs safeBuffer
+	out := io.MultiWriter(&logs, newTWriter(t))
+	c, ctx := connect(t, append(opts, dagger.WithLogOutput(out))...)
+	return c, ctx, &logs
 }

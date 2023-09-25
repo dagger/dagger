@@ -34,31 +34,6 @@ The following code listing obtains a reference to the host working directory and
 </TabItem>
 </Tabs>
 
-When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory.
-
-The following listing revises the previous one, obtaining a reference to the parent directory on the host and listing its contents.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-parent/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.py
-```
-
-</TabItem>
-</Tabs>
-
 [Learn more](./guides/421437-work-with-host-filesystem.md)
 
 ### Get host directory with filters
@@ -532,10 +507,14 @@ The following code listing creates a temporary MariaDB database service and bind
 
 ### Invalidate cache
 
-The following code listing demonstrates how to invalidate the Dagger cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
+The following code listing demonstrates how to invalidate the Dagger pipeline operations cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
 
 :::note
 This is a temporary workaround until cache invalidation support is officially added to Dagger.
+:::
+
+:::note
+Changes in mounted cache volumes do not invalidate the Dagger pipeline operations cache.
 :::
 
 <Tabs groupId="language">
@@ -989,6 +968,76 @@ The following code listing demonstrates how to add multiple environment variable
 <TabItem value="Python">
 
 ```python file=./guides/snippets/custom-callbacks/environment-variables/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Organize pipeline code into modules & classes
+
+The following code listing demonstrates how to organize Dagger pipeline code into independent modules (or functions/packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between modules.
+
+:::note
+The same Dagger client can safely be used in concurrent threads/routines. Therefore, it is recommended to reuse the Dagger client wherever possible, instead of creating a new client for each use. Initializing and using multiple Dagger clients in the same pipeline can result in unexpected behavior.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/functions/main.go
+```
+
+```go title="alpine/alpine.go" file=./cookbook/snippets/modules-shared-client/functions/alpine/alpine.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/functions/index.mts
+```
+
+```typescript title="alpine.mts" file=./cookbook/snippets/modules-shared-client/functions/alpine.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/functions/main.py
+```
+
+```python title="alpine.py" file=./cookbook/snippets/modules-shared-client/functions/alpine.py
+```
+
+</TabItem>
+</Tabs>
+
+Another possible approach is to use independent classes (or interfaces, depending on the programming language) with public methods as functions. With this, it is no longer necessary to pass the client to all imported functions. The following code listing demonstrates this approach.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/classes/main.go
+```
+
+```go title="alpine/alpine.go" file=./cookbook/snippets/modules-shared-client/classes/alpine/alpine.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/classes/index.mts
+```
+
+```typescript title="alpine.mts" file=./cookbook/snippets/modules-shared-client/classes/alpine.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/classes/main.py
+```
+
+```python title="alpine.py" file=./cookbook/snippets/modules-shared-client/classes/alpine.py
 ```
 
 </TabItem>

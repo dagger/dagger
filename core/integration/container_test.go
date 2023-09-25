@@ -18,18 +18,19 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -85,10 +86,7 @@ func TestContainerFrom(t *testing.T) {
 }
 
 func TestContainerBuild(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	contextDir := c.Directory().
 		WithNewFile("main.go",
@@ -224,7 +222,6 @@ CMD echo "stage2"
 
 	t.Run("with build secrets", func(t *testing.T) {
 		sec := c.SetSecret("my-secret", "barbar")
-		require.NoError(t, err)
 
 		src := contextDir.
 			WithNewFile("Dockerfile",
@@ -246,7 +243,7 @@ CMD cat /secret
 		src := contextDir.
 			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nCMD false")
 
-		_, err = c.Container().Build(src).Sync(ctx)
+		_, err := c.Container().Build(src).Sync(ctx)
 		require.NoError(t, err)
 
 		// unless there's a WithExec
@@ -258,7 +255,7 @@ CMD cat /secret
 		src := contextDir.
 			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nRUN false")
 
-		_, err = c.Container().Build(src).Sync(ctx)
+		_, err := c.Container().Build(src).Sync(ctx)
 		require.NotEmpty(t, err)
 	})
 }
@@ -266,10 +263,7 @@ CMD cat /secret
 func TestContainerWithRootFS(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	alpine316 := c.Container().From(alpineImage)
 
@@ -315,7 +309,6 @@ func TestContainerWithRootFSSubdir(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	hello := c.Directory().WithNewFile("main.go", helloSrc).File("main.go")
 
@@ -449,7 +442,6 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, res.Container.From.WithExec.Err.Contents, "goodbye\n")
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	execWithMount := c.Container().From(alpineImage).
 		WithMountedDirectory("/mnt", c.Directory()).
@@ -612,7 +604,6 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	base := c.Container().From(alpineImage)
 	before, err := base.Entrypoint(ctx)
@@ -921,10 +912,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 
 func TestContainerWithEnvVariableExpand(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	t.Run("add env var without expansion", func(t *testing.T) {
 		out, err := c.Container().
@@ -960,10 +948,7 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 }
 
 func TestContainerLabel(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	t.Run("container with new label", func(t *testing.T) {
 		label, err := c.Container().From(alpineImage).WithLabel("FOO", "BAR").Label(ctx, "FOO")
@@ -1567,7 +1552,6 @@ func TestContainerWithDirectory(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	dir := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -1627,7 +1611,6 @@ func TestContainerWithFile(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	file := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -1653,7 +1636,6 @@ func TestContainerWithNewFile(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	ctr := c.Container().
 		From(alpineImage).
@@ -1761,7 +1743,6 @@ func TestContainerReplacedMounts(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
-	defer c.Close()
 
 	lower := c.Directory().WithNewFile("some-file", "lower-content")
 
@@ -2514,7 +2495,6 @@ func TestContainerMultiFrom(t *testing.T) {
 
 func TestContainerPublish(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	testRef := registryRef("container-publish")
 
@@ -2538,11 +2518,7 @@ func TestContainerPublish(t *testing.T) {
 }
 
 func TestExecFromScratch(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
 	execBusybox := c.Container().
@@ -2550,7 +2526,7 @@ func TestExecFromScratch(t *testing.T) {
 		WithMountedFile("/busybox", c.Container().From("busybox:musl").File("/bin/busybox")).
 		WithExec([]string{"/busybox"})
 
-	_, err = execBusybox.Stdout(ctx)
+	_, err := execBusybox.Stdout(ctx)
 	require.NoError(t, err)
 	_, err = execBusybox.Publish(ctx, registryRef("from-scratch"))
 	require.NoError(t, err)
@@ -2558,7 +2534,6 @@ func TestExecFromScratch(t *testing.T) {
 
 func TestContainerMultipleMounts(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0o600))
@@ -2586,14 +2561,10 @@ func TestContainerMultipleMounts(t *testing.T) {
 func TestContainerExport(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir(wd))
 
 	entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
 	ctr := c.Container().From(alpineImage).
@@ -2670,11 +2641,8 @@ func TestContainerExport(t *testing.T) {
 func TestContainerImport(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	c, ctx := connect(t)
 
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
 	pf, err := c.DefaultPlatform(ctx)
 	require.NoError(t, err)
 
@@ -2744,12 +2712,7 @@ func TestContainerImport(t *testing.T) {
 }
 
 func TestContainerMultiPlatformExport(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -2809,12 +2772,7 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 // Multiplatform publish is also tested in more complicated scenarios in platform_test.go
 func TestContainerMultiPlatformPublish(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -2843,12 +2801,7 @@ func TestContainerMultiPlatformPublish(t *testing.T) {
 }
 
 func TestContainerMultiPlatformImport(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
@@ -2880,11 +2833,7 @@ func TestContainerMultiPlatformImport(t *testing.T) {
 func TestContainerWithDirectoryToMount(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	mnt := c.Directory().
 		WithNewDirectory("/top/sub-dir/sub-file").
@@ -2914,7 +2863,6 @@ var echoSocketSrc string
 
 func TestContainerWithUnixSocket(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
@@ -2991,9 +2939,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 func TestContainerExecError(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
+	c, ctx := connect(t)
 
 	outMsg := "THIS SHOULD GO TO STDOUT"
 	encodedOutMsg := base64.StdEncoding.EncodeToString([]byte(outMsg))
@@ -3001,7 +2947,7 @@ func TestContainerExecError(t *testing.T) {
 	encodedErrMsg := base64.StdEncoding.EncodeToString([]byte(errMsg))
 
 	t.Run("includes output of failed exec in error", func(t *testing.T) {
-		_, err = c.Container().
+		_, err := c.Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
@@ -3016,7 +2962,7 @@ func TestContainerExecError(t *testing.T) {
 	})
 
 	t.Run("includes output of failed exec in error when redirects are enabled", func(t *testing.T) {
-		_, err = c.Container().
+		_, err := c.Container().
 			From(alpineImage).
 			WithExec(
 				[]string{"sh", "-c", fmt.Sprintf(
@@ -3055,7 +3001,7 @@ func TestContainerExecError(t *testing.T) {
 
 		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, 50)
 
-		_, err = c.Container().
+		_, err := c.Container().
 			From(alpineImage).
 			WithDirectory("/", c.Directory().
 				WithNewFile("encout", encodedOutMsg).
@@ -3075,18 +3021,13 @@ func TestContainerExecError(t *testing.T) {
 func TestContainerWithRegistryAuth(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	testRef := privateRegistryRef("container-with-registry-auth")
 	container := c.Container().From(alpineImage)
 
 	// Push without credentials should fail
-	_, err = container.Publish(ctx, testRef)
+	_, err := container.Publish(ctx, testRef)
 	require.Error(t, err)
 
 	pushedRef, err := container.
@@ -3174,7 +3115,6 @@ func TestContainerImageRef(t *testing.T) {
 
 	t.Run("should throw error after the container image modification with directory", func(t *testing.T) {
 		c, ctx := connect(t)
-		defer c.Close()
 
 		dir := c.Directory().
 			WithNewFile("some-file", "some-content").
@@ -3196,15 +3136,8 @@ func TestContainerImageRef(t *testing.T) {
 func TestContainerBuildNilContextError(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-
-	require.NoError(t, err)
-	defer c.Close()
-
 	// regression test, this previously caused the engine to panic
-	err = testutil.Query(
+	err := testutil.Query(
 		`{
 			container {
 				build(context: "") {
@@ -3217,9 +3150,6 @@ func TestContainerBuildNilContextError(t *testing.T) {
 
 func TestContainerInsecureRootCapabilites(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
 	// is trickier since the full list of caps is host dependent based on the kernel version.
@@ -3260,9 +3190,6 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 
 func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	// verify the root capabilities setting works by executing dockerd with it and
 	// testing it can startup, create containers and bind mount from its filesystem to
@@ -3304,7 +3231,6 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 
 func TestContainerNoExec(t *testing.T) {
 	c, ctx := connect(t)
-	defer c.Close()
 
 	stdout, err := c.Container().From(alpineImage).Stdout(ctx)
 	require.NoError(t, err)
@@ -3327,7 +3253,6 @@ func TestContainerNoExec(t *testing.T) {
 
 func TestContainerWithMountedFileOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	t.Run("simple file", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -3365,7 +3290,6 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 
 func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	t.Run("simple directory", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -3431,7 +3355,6 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 
 func TestContainerWithFileOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	t.Run("simple file", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -3469,7 +3392,6 @@ func TestContainerWithFileOwner(t *testing.T) {
 
 func TestContainerWithDirectoryOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	t.Run("simple directory", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -3507,7 +3429,6 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 
 func TestContainerWithNewFileOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithNewFile(name, dagger.ContainerWithNewFileOpts{
@@ -3518,7 +3439,6 @@ func TestContainerWithNewFileOwner(t *testing.T) {
 
 func TestContainerWithMountedCacheOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	cache := c.CacheVolume("test")
 
@@ -3575,7 +3495,6 @@ func TestContainerWithMountedCacheOwner(t *testing.T) {
 
 func TestContainerWithMountedSecretOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	secret := c.SetSecret("test", "hunter2")
 
@@ -3588,7 +3507,6 @@ func TestContainerWithMountedSecretOwner(t *testing.T) {
 
 func TestContainerWithUnixSocketOwner(t *testing.T) {
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
 
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
@@ -3732,7 +3650,6 @@ func TestContainerForceCompression(t *testing.T) {
 			t.Parallel()
 
 			c, ctx := connect(t)
-			defer c.Close()
 
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := c.Container().
@@ -3809,7 +3726,6 @@ func TestContainerMediaTypes(t *testing.T) {
 			t.Parallel()
 
 			c, ctx := connect(t)
-			defer c.Close()
 
 			ref := registryRef("testcontainerpublishmediatypes" + strings.ToLower(string(tc.mediaTypes)))
 			_, err := c.Container().
@@ -3909,7 +3825,7 @@ EXPOSE 8080
 
 	res := struct {
 		Container struct {
-			ExposedPorts []core.ContainerPort
+			ExposedPorts []core.Port
 		}
 	}{}
 
@@ -3993,9 +3909,6 @@ func TestContainerFromMergesWithParent(t *testing.T) {
 func TestContainerImageLoadCompatibility(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
-	t.Cleanup(func() { c.Close() })
-	ctx, cancel := context.WithCancel(ctx)
-	t.Cleanup(cancel)
 
 	for i, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerVersion := dockerVersion
@@ -4067,4 +3980,22 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestContainerWithMountedSecretMode(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	secret := c.SetSecret("test", "secret")
+
+	ctr := c.Container().From("alpine:3.18.2").WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
+		Mode:  0o666,
+		Owner: "root:root",
+	})
+
+	perms, err := ctr.WithExec([]string{"sh", "-c", "stat /secret "}).Stdout(ctx)
+	require.Contains(t, perms, "0666/-rw-rw-rw-")
+	require.NoError(t, err)
 }

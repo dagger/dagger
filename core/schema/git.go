@@ -13,6 +13,8 @@ var _ ExecutableSchema = &gitSchema{}
 
 type gitSchema struct {
 	*MergedSchemas
+
+	svcs *core.Services
 }
 
 func (s *gitSchema) Name() string {
@@ -44,11 +46,11 @@ func (s *gitSchema) Dependencies() []ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL             string            `json:"url"`
-	KeepGitDir      bool              `json:"keepGitDir"`
-	AuthTokenSecret *core.SecretID    `json:"authTokenSecret,omitempty"`
-	Pipeline        pipeline.Path     `json:"pipeline"`
-	ServiceHost     *core.ContainerID `json:"serviceHost,omitempty"`
+	URL             string         `json:"url"`
+	KeepGitDir      bool           `json:"keepGitDir"`
+	AuthTokenSecret *core.SecretID `json:"authTokenSecret,omitempty"`
+	Pipeline        pipeline.Path  `json:"pipeline"`
+	ServiceHost     *core.Service  `json:"serviceHost,omitempty"`
 }
 
 type gitRef struct {
@@ -63,12 +65,26 @@ type gitArgs struct {
 }
 
 func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
-	return gitRepository{
-		URL:         args.URL,
-		KeepGitDir:  args.KeepGitDir,
-		ServiceHost: args.ExperimentalServiceHost,
-		Pipeline:    parent.PipelinePath(),
-	}, nil
+	repo := gitRepository{
+		URL:        args.URL,
+		KeepGitDir: args.KeepGitDir,
+		Pipeline:   parent.PipelinePath(),
+	}
+	if args.ExperimentalServiceHost != nil {
+		ctr, err := args.ExperimentalServiceHost.ToContainer()
+		if err != nil {
+			return gitRepository{}, err
+		}
+		svc, err := ctr.Service(ctx, s.bk, s.progSockPath)
+		if err != nil {
+			return gitRepository{}, err
+		}
+		if err != nil {
+			return gitRepository{}, nil
+		}
+		repo.ServiceHost = svc
+	}
+	return repo, nil
 }
 
 type branchArgs struct {
@@ -121,9 +137,17 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 	if args.SSHAuthSocket != "" {
 		opts = append(opts, llb.MountSSHSock(string(args.SSHAuthSocket)))
 	}
+
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
-		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
+		host, err := parent.Repository.ServiceHost.Hostname(ctx, s.svcs)
+		if err != nil {
+			return nil, err
+		}
+		svcs = append(svcs, core.ServiceBinding{
+			Service:  parent.Repository.ServiceHost,
+			Hostname: host,
+		})
 	}
 
 	useDNS := len(svcs) > 0

@@ -38,6 +38,10 @@
 
 - Use API Playground embeds where possible (see "API Playground embeds" section below).
 
+## Images
+
+- Images must be PNG format with a minimum width of 679 px.
+
 ## Text
 
 - Avoid using `you`, `we`, `our` and other personal pronouns. Alternatives are (e.g. instead of `this is where you will deploy the application`):

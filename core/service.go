@@ -1,29 +1,382 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"syscall"
-	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
-	"golang.org/x/sync/errgroup"
 )
 
 type Service struct {
-	Container *Container
-	Detach    func()
+	// Container is the container to run as a service.
+	Container *Container `json:"container"`
 }
 
-type ServiceBindings map[ContainerID]AliasSet
+func NewContainerService(ctr *Container) *Service {
+	return &Service{
+		Container: ctr,
+	}
+}
+
+type ServiceID string
+
+func (id ServiceID) String() string {
+	return string(id)
+}
+
+// ServiceID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ Digestible = ServiceID("")
+
+func (id ServiceID) Digest() (digest.Digest, error) {
+	svc, err := id.ToService()
+	if err != nil {
+		return "", err
+	}
+	return svc.Digest()
+}
+
+func (id ServiceID) ToService() (*Service, error) {
+	var service Service
+
+	if id == "" {
+		// scratch
+		return &service, nil
+	}
+
+	if err := resourceid.Decode(&service, id); err != nil {
+		return nil, err
+	}
+
+	return &service, nil
+}
+
+// ID marshals the service into a content-addressed ID.
+func (svc *Service) ID() (ServiceID, error) {
+	return resourceid.Encode[ServiceID](svc)
+}
+
+var _ pipeline.Pipelineable = (*Service)(nil)
+
+// Clone returns a deep copy of the container suitable for modifying in a
+// WithXXX method.
+func (svc *Service) Clone() *Service {
+	cp := *svc
+	if cp.Container != nil {
+		cp.Container = cp.Container.Clone()
+	}
+	return &cp
+}
+
+// PipelinePath returns the service's pipeline path.
+func (svc *Service) PipelinePath() pipeline.Path {
+	switch {
+	case svc.Container != nil:
+		return svc.Container.Pipeline
+	default:
+		return pipeline.Path{}
+	}
+}
+
+// Service is digestible so that it can be recorded as an output of the
+// --debug vertex that created it.
+var _ Digestible = (*Service)(nil)
+
+// Digest returns the service's content hash.
+func (svc *Service) Digest() (digest.Digest, error) {
+	return stableDigest(svc)
+}
+
+func (svc *Service) Hostname(ctx context.Context, svcs *Services) (string, error) {
+	switch {
+	case svc.Container != nil: // container=>container
+		dig, err := svc.Digest()
+		if err != nil {
+			return "", err
+		}
+
+		return network.HostHash(dig), nil
+	default:
+		return "", errors.New("unknown service type")
+	}
+}
+
+func (svc *Service) Ports(ctx context.Context, svcs *Services) ([]Port, error) {
+	switch {
+	case svc.Container != nil:
+		return svc.Container.Ports, nil
+	default:
+		return nil, errors.New("unknown service type")
+	}
+}
+
+func (svc *Service) Endpoint(ctx context.Context, svcs *Services, port int, scheme string) (string, error) {
+	var host string
+	var err error
+	switch {
+	case svc.Container != nil:
+		host, err = svc.Hostname(ctx, svcs)
+		if err != nil {
+			return "", err
+		}
+
+		if port == 0 {
+			if len(svc.Container.Ports) == 0 {
+				return "", fmt.Errorf("no ports exposed")
+			}
+
+			port = svc.Container.Ports[0].Port
+		}
+	default:
+		return "", fmt.Errorf("unknown service type")
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", host, port)
+	if scheme != "" {
+		endpoint = scheme + "://" + endpoint
+	}
+
+	return endpoint, nil
+}
+
+func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
+	switch {
+	case svc.Container != nil:
+		return svc.startContainer(ctx, bk, svcs)
+	default:
+		return nil, fmt.Errorf("unknown service type")
+	}
+}
+
+func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
+	dig, err := svc.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	host, err := svc.Hostname(ctx, svcs)
+	if err != nil {
+		return nil, err
+	}
+
+	rec := progrock.FromContext(ctx).WithGroup(
+		fmt.Sprintf("service %s", host),
+		progrock.Weak(),
+	)
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr := svc.Container
+
+	dag, err := defToDAG(ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+
+	if dag.GetOp() == nil && len(dag.inputs) == 1 {
+		dag = dag.inputs[0]
+	} else {
+		// i mean, theoretically this should never happen, but it's better to
+		// notice it
+		return nil, fmt.Errorf("what in tarnation? that's too many inputs! (%d) %v", len(dag.inputs), dag.GetInputs())
+	}
+
+	execOp, ok := dag.AsExec()
+	if !ok {
+		return nil, fmt.Errorf("service container must be result of withExec (expected exec op, got %T)", dag.GetOp())
+	}
+
+	detachDeps, _, err := svcs.StartBindings(ctx, bk, ctr.Services)
+	if err != nil {
+		return nil, fmt.Errorf("start dependent services: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			detachDeps()
+		}
+	}()
+
+	vtx := rec.Vertex(dig, "start "+strings.Join(execOp.Meta.Args, " "))
+	defer func() {
+		if err != nil {
+			vtx.Error(err)
+		}
+	}()
+
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+
+	health := newHealth(bk, fullHost, ctr.Ports)
+
+	pbPlatform := pb.PlatformFromSpec(ctr.Platform)
+
+	mounts := make([]bkgw.Mount, len(execOp.Mounts))
+	for i, m := range execOp.Mounts {
+		mount := bkgw.Mount{
+			Selector:  m.Selector,
+			Dest:      m.Dest,
+			ResultID:  m.ResultID,
+			Readonly:  m.Readonly,
+			MountType: m.MountType,
+			CacheOpt:  m.CacheOpt,
+			SecretOpt: m.SecretOpt,
+			SSHOpt:    m.SSHOpt,
+			// TODO(vito): why is there no TmpfsOpt? PR upstream?
+			// TmpfsOpt  *TmpfsOpt   `protobuf:"bytes,19,opt,name=TmpfsOpt,proto3" json:"TmpfsOpt,omitempty"`
+		}
+
+		if m.Input > -1 {
+			input := execOp.Input(m.Input)
+			def, err := input.Marshal()
+			if err != nil {
+				return nil, fmt.Errorf("marshal mount %s: %w", m.Dest, err)
+			}
+
+			res, err := bk.Solve(ctx, bkgw.SolveRequest{
+				Definition: def,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("solve mount %s: %w", m.Dest, err)
+			}
+
+			mount.Ref = res.Ref
+		}
+
+		mounts[i] = mount
+	}
+
+	gc, err := bk.NewContainer(ctx, bkgw.NewContainerRequest{
+		Mounts:   mounts,
+		Hostname: fullHost,
+		Platform: &pbPlatform,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("new container: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			gc.Release(context.Background())
+		}
+	}()
+
+	checked := make(chan error, 1)
+	go func() {
+		checked <- health.Check(ctx)
+	}()
+
+	outBuf := new(bytes.Buffer)
+	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
+		Args:         execOp.Meta.Args,
+		Env:          append(execOp.Meta.Env, proxyEnvList(execOp.Meta.ProxyEnv)...),
+		Cwd:          execOp.Meta.Cwd,
+		User:         execOp.Meta.User,
+		SecretEnv:    execOp.Secretenv,
+		Tty:          false,
+		Stdout:       nopCloser{io.MultiWriter(vtx.Stdout(), outBuf)},
+		Stderr:       nopCloser{io.MultiWriter(vtx.Stderr(), outBuf)},
+		SecurityMode: execOp.Security,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("start container: %w", err)
+	}
+
+	exited := make(chan error, 1)
+	go func() {
+		exited <- svcProc.Wait()
+
+		// detach dependent services when process exits
+		detachDeps()
+	}()
+
+	stopSvc := func(ctx context.Context) (stopErr error) {
+		defer func() {
+			vtx.Done(stopErr)
+		}()
+
+		// TODO(vito): graceful shutdown?
+		if err := svcProc.Signal(ctx, syscall.SIGKILL); err != nil {
+			return fmt.Errorf("signal: %w", err)
+		}
+
+		if err := gc.Release(ctx); err != nil {
+			// TODO(vito): returns context.Canceled, which is a bit strange, because
+			// that's the goal
+			if !errors.Is(err, context.Canceled) {
+				return fmt.Errorf("release: %w", err)
+			}
+		}
+
+		return nil
+	}
+
+	select {
+	case err := <-checked:
+		if err != nil {
+			return nil, fmt.Errorf("health check errored: %w", err)
+		}
+
+		return &RunningService{
+			Host:  fullHost,
+			Ports: ctr.Ports,
+			Key: ServiceKey{
+				Digest:   dig,
+				ClientID: clientMetadata.ClientID,
+			},
+			Stop: stopSvc,
+		}, nil
+	case err := <-exited:
+		if err != nil {
+			return nil, fmt.Errorf("exited: %w\noutput: %s", err, outBuf.String())
+		}
+
+		return nil, fmt.Errorf("service exited before healthcheck")
+	}
+}
+
+func proxyEnvList(p *pb.ProxyEnv) []string {
+	out := []string{}
+	if v := p.HttpProxy; v != "" {
+		out = append(out, "HTTP_PROXY="+v, "http_proxy="+v)
+	}
+	if v := p.HttpsProxy; v != "" {
+		out = append(out, "HTTPS_PROXY="+v, "https_proxy="+v)
+	}
+	if v := p.FtpProxy; v != "" {
+		out = append(out, "FTP_PROXY="+v, "ftp_proxy="+v)
+	}
+	if v := p.NoProxy; v != "" {
+		out = append(out, "NO_PROXY="+v, "no_proxy="+v)
+	}
+	if v := p.AllProxy; v != "" {
+		out = append(out, "ALL_PROXY="+v, "all_proxy="+v)
+	}
+	return out
+}
+
+type ServiceBindings []ServiceBinding
+
+type ServiceBinding struct {
+	Service  *Service `json:"service"`
+	Hostname string   `json:"hostname"`
+	Aliases  AliasSet `json:"aliases"`
+}
 
 type AliasSet []string
 
@@ -44,201 +397,34 @@ func (set AliasSet) With(alias string) AliasSet {
 	return append(set, alias)
 }
 
+func (set AliasSet) Union(other AliasSet) AliasSet {
+	for _, a := range other {
+		set = set.With(a)
+	}
+	return set
+}
+
 func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 	if *bndp == nil {
 		*bndp = ServiceBindings{}
 	}
 
-	bnd := *bndp
+	merged := *bndp
 
-	for id, aliases := range other {
-		if len(bnd[id]) == 0 {
-			bnd[id] = aliases
-		} else {
-			for _, alias := range aliases {
-				bnd[id] = bnd[id].With(alias)
-			}
-		}
+	indices := map[string]int{}
+	for i, b := range merged {
+		indices[b.Hostname] = i
 	}
-}
 
-// NetworkProtocol is a string deriving from NetworkProtocol enum
-type NetworkProtocol string
-
-const (
-	NetworkProtocolTCP NetworkProtocol = "TCP"
-	NetworkProtocolUDP NetworkProtocol = "UDP"
-)
-
-// Network returns the value appropriate for the "network" argument to Go
-// net.Dial, and for appending to the port number to form the key for the
-// ExposedPorts object in the OCI image config.
-func (p NetworkProtocol) Network() string {
-	return strings.ToLower(string(p))
-}
-
-// WithServices runs the given function with the given services started,
-// detaching from each of them after the function completes.
-func WithServices[T any](ctx context.Context, bk *buildkit.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
-	var zero T
-
-	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
-	eg := new(errgroup.Group)
-	started := make(chan *Service, len(svcs))
-
-	for svcID, aliases := range svcs {
-		svc, err := svcID.ToContainer()
-		if err != nil {
-			return zero, err
+	for _, bnd := range other {
+		i, has := indices[bnd.Hostname]
+		if !has {
+			merged = append(merged, bnd)
+			continue
 		}
 
-		host, err := svc.HostnameOrErr()
-		if err != nil {
-			return zero, err
-		}
-
-		aliases := aliases
-		eg.Go(func() error {
-			svc, err := svc.Start(ctx, bk)
-			if err != nil {
-				return fmt.Errorf("start %s (%s): %w", host, aliases, err)
-			}
-			started <- svc
-			return nil
-		})
+		merged[i].Aliases = merged[i].Aliases.Union(bnd.Aliases)
 	}
 
-	startErr := eg.Wait()
-
-	close(started)
-
-	defer func() {
-		go func() {
-			<-time.After(10 * time.Second)
-
-			for svc := range started {
-				svc.Detach()
-			}
-		}()
-	}()
-
-	// wait for all services to start
-	if startErr != nil {
-		return zero, startErr
-	}
-
-	return fn()
-}
-
-type portHealthChecker struct {
-	bk    *buildkit.Client
-	host  string
-	ports []ContainerPort
-}
-
-func newHealth(bk *buildkit.Client, host string, ports []ContainerPort) *portHealthChecker {
-	return &portHealthChecker{
-		bk:    bk,
-		host:  host,
-		ports: ports,
-	}
-}
-
-type marshalable interface {
-	Marshal(ctx context.Context, co ...llb.ConstraintsOpt) (*llb.Definition, error)
-}
-
-func result(ctx context.Context, bk *buildkit.Client, st marshalable) (*buildkit.Result, error) {
-	def, err := st.Marshal(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
-	})
-}
-
-func (d *portHealthChecker) Check(ctx context.Context) (err error) {
-	rec := progrock.RecorderFromContext(ctx)
-
-	args := []string{"check", d.host}
-	for _, port := range d.ports {
-		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
-	}
-
-	// show health-check logs in a --debug vertex
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		strings.Join(args, " "),
-		progrock.Internal(),
-	)
-	defer func() {
-		vtx.Done(err)
-	}()
-
-	scratchRes, err := result(ctx, d.bk, llb.Scratch())
-	if err != nil {
-		return err
-	}
-
-	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts: []bkgw.Mount{
-			{
-				Dest:      "/",
-				MountType: pb.MountType_BIND,
-				Ref:       scratchRes.Ref,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	// NB: use a different ctx than the one that'll be interrupted for anything
-	// that needs to run as part of post-interruption cleanup
-	cleanupCtx := context.Background()
-
-	defer container.Release(cleanupCtx)
-
-	proc, err := container.Start(ctx, bkgw.StartRequest{
-		Args:   args,
-		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
-		Stdout: nopCloser{vtx.Stdout()},
-		Stderr: nopCloser{vtx.Stderr()},
-	})
-	if err != nil {
-		return err
-	}
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- proc.Wait()
-	}()
-
-	select {
-	case err := <-exited:
-		if err != nil {
-			return err
-		}
-
-		return nil
-	case <-ctx.Done():
-		err := proc.Signal(cleanupCtx, syscall.SIGKILL)
-		if err != nil {
-			return fmt.Errorf("interrupt check: %w", err)
-		}
-
-		<-exited
-
-		return ctx.Err()
-	}
-}
-
-type nopCloser struct {
-	io.Writer
-}
-
-func (nopCloser) Close() error {
-	return nil
+	*bndp = merged
 }

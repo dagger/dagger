@@ -14,18 +14,20 @@ from collections.abc import Iterator
 from pathlib import Path, PurePath
 from typing import IO
 
+import anyio
 import httpx
 import platformdirs
 
 import dagger
-from dagger._engine.progress import Progress
-from dagger._managers import SyncResourceManager
 
 from ._version import CLI_VERSION
+from .progress import Progress
 
 DEFAULT_CLI_HOST = "dl.dagger.io"
 
 logger = logging.getLogger(__name__)
+
+asyncify = anyio.to_thread.run_sync
 
 
 class Platform(typing.NamedTuple):
@@ -45,16 +47,17 @@ def get_platform() -> Platform:
     return Platform(os_name, arch)
 
 
-class TempFile(SyncResourceManager):
+class TempFile(contextlib.AbstractContextManager):
     """Create a temporary file that only deletes on error."""
 
     def __init__(self, prefix: str, directory: Path):
         super().__init__()
         self.prefix = prefix
         self.dir = directory
+        self.stack = contextlib.ExitStack()
 
     def __enter__(self) -> typing.IO[bytes]:
-        with self.get_sync_stack() as stack:
+        with self.stack as stack:
             self.file = stack.enter_context(
                 tempfile.NamedTemporaryFile(
                     mode="a+b",
@@ -63,10 +66,11 @@ class TempFile(SyncResourceManager):
                     delete=False,
                 ),
             )
+            self.stack = stack.pop_all()
         return self.file
 
-    def __exit__(self, exc, value, tb) -> None:
-        super().__exit__(exc, value, tb)
+    def __exit__(self, exc, *_) -> None:
+        self.stack.close()
         # delete on error
         if exc:
             Path(self.file.name).unlink()
@@ -117,9 +121,14 @@ class Downloader:
     CLI_BIN_PREFIX = "dagger-"
     CLI_BASE_URL = f"https://{DEFAULT_CLI_HOST}/dagger/releases"
 
-    def __init__(self, version: str = CLI_VERSION) -> None:
+    def __init__(
+        self,
+        version: str = CLI_VERSION,
+        progress: Progress | None = None,
+    ) -> None:
         self.version = version
         self.platform = get_platform()
+        self.progress = progress or Progress()
 
     @property
     def archive_url(self) -> str:
@@ -142,13 +151,20 @@ class Downloader:
         # Use the XDG_CACHE_HOME environment variable in all platforms to follow
         # https://github.com/adrg/xdg a bit more closely (used in the Go SDK).
         # See https://github.com/dagger/dagger/issues/3963
-        env = os.environ.get("XDG_CACHE_HOME", "").strip()
+        env = os.getenv("XDG_CACHE_HOME", "").strip()
         path = Path(env).expanduser() if env else platformdirs.user_cache_path()
         cache_dir = path / "dagger"
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         return cache_dir
 
-    def get(self, progress: Progress) -> str:
+    def __await__(self):
+        return self.get().__await__()
+
+    async def get(self) -> str:
+        # TODO: Convert download to async.
+        return await asyncify(self.get_sync)
+
+    def get_sync(self) -> str:
         """Download CLI to cache and return its path."""
         cli_bin_path = self.cache_dir / f"{self.CLI_BIN_PREFIX}{self.version}"
 
@@ -156,7 +172,6 @@ class Downloader:
             cli_bin_path = cli_bin_path.with_suffix(".exe")
 
         if not cli_bin_path.exists():
-            progress.update("Downloading dagger CLI")
             cli_bin_path = self._download(cli_bin_path)
 
         # garbage collection of old binaries
@@ -167,6 +182,8 @@ class Downloader:
         return str(cli_bin_path.absolute())
 
     def _download(self, path: Path) -> Path:
+        logger.debug("Downloading dagger CLI from %s to %s", self.archive_url, path)
+        self.progress.update_sync("Downloading dagger CLI")
         try:
             expected_hash = self.expected_checksum()
         except httpx.HTTPError as e:

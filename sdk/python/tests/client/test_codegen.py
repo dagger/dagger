@@ -75,7 +75,6 @@ opts = InputObject(
         (Scalar("FileID"), "Optional[File]"),
         (NonNull(opts), "Options"),
         (opts, "Optional[Options]"),
-        (NonNull(opts), "Options"),
         (NonNull(List(NonNull(opts))), "list[Options]"),
         (NonNull(List(opts)), "list[Optional[Options]]"),
         (List(NonNull(opts)), "Optional[list[Options]]"),

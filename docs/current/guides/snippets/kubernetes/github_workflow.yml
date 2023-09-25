@@ -1,0 +1,36 @@
+name: Build, test & publish in Dagger on Kubernetes
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  # Enable manual trigger for easy debugging
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  workflow_dispatch:
+
+jobs:
+  build-test-publish:
+    # runs-on: ubuntu-latest
+    # 👆 Uncomment line above & comment line below 👇 if you want to run this on GitHub Runners instead
+    runs-on: dagger-runner
+    steps:
+      # https://github.com/actions/checkout
+      - name: Checkout code
+        uses: actions/checkout@v3
+      # https://github.com/actions/setup-node
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: npm
+      - name: Install Dagger CLI
+        run: |
+          mkdir -p ~/.local/bin
+          cd ~/.local
+          curl -L https://dl.dagger.io/dagger/install.sh | sh
+      - name: Run Dagger pipeline
+        run: |
+          npm install
+          dagger run node ci/index.mjs

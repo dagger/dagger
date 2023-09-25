@@ -8,8 +8,11 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - run:
-          name: Dagger Pipeline
-          command: go run main.go
+          name: Install Dagger CLI
+          command: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sudo sh; cd -; }
+      - run:
+          name: Run Dagger pipeline
+          command: dagger run --progress plain go run main.go
 workflows:
   dagger:
     jobs:

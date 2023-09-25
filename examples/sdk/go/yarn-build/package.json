@@ -1,0 +1,16 @@
+{
+  "name": "nodetest",
+  "version": "1.0.0",
+  "description": "test",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo \"Build script would go here\" && exit 0",
+    "test": "echo \"No tests specified\" && exit 0",
+    "start": "node index.js"
+  },
+  "author": "",
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "license": "Apache-2.0"
+}

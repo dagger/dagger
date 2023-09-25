@@ -39,8 +39,6 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
-const OCIStoreName = "dagger-oci"
-
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.
@@ -127,15 +125,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		cloudURL = tel.URL()
 		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
-	// NB(vito): use a _passthrough_ recorder at this layer, since we don't want
-	// to initialize a group; that's handled by the other side.
-	//
-	// TODO: this is pretty confusing and could probably be refactored. afaict
-	// it's split up this way because we need the engine name to be part of the
-	// root group labels, but maybe that could be handled differently.
-	recorder := progrock.NewPassthroughRecorder(progMultiW)
-	c.Recorder = recorder
-	ctx = progrock.RecorderToContext(ctx, c.Recorder)
+	c.Recorder = progrock.NewRecorder(progMultiW)
+	ctx = progrock.ToContext(ctx, c.Recorder)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
@@ -154,7 +145,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	initGroup := progrock.RecorderFromContext(ctx).WithGroup("init", progrock.Weak())
+	initGroup := progrock.FromContext(ctx).WithGroup("init", progrock.Weak())
 
 	loader := initGroup.Vertex("starting-engine", "connect")
 	defer func() {
@@ -230,6 +221,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 
 	c.labels = pipeline.LoadVCSLabels(workdir)
+	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:          c.ID(),
@@ -255,7 +247,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	})
 
 	// registry auth
-	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
+	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
@@ -292,7 +284,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		defer cancel()
 		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 		if innerErr != nil {
-			recorder.Debug("Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+			c.Recorder.Debug("Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
 		}
 		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))
@@ -311,14 +303,21 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 }
 
 func (c *Client) Close() (rerr error) {
+	// shutdown happens outside of c.closeMu, since it requires a connection
+	if err := c.shutdownServer(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
+	}
+
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
+
 	select {
 	case <-c.closeCtx.Done():
 		// already closed
 		return nil
 	default:
 	}
+
 	if len(c.upstreamCacheOptions) > 0 {
 		cacheExportCtx, cacheExportCancel := context.WithTimeout(c.internalCtx, 600*time.Second)
 		defer cacheExportCancel()
@@ -361,6 +360,25 @@ func (c *Client) Close() (rerr error) {
 	}
 
 	return rerr
+}
+
+func (c *Client) shutdownServer() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("do shutdown: %w", err)
+	}
+
+	return resp.Body.Close()
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
@@ -587,7 +605,7 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 
 	if !opts.IsFileStream {
 		// we're writing a full directory tree, normal fsutil.Receive is good
-		if err := os.MkdirAll(opts.Path, 0700); err != nil {
+		if err := os.MkdirAll(opts.Path, 0o700); err != nil {
 			return fmt.Errorf("failed to create synctarget dest dir %s: %w", opts.Path, err)
 		}
 
@@ -648,12 +666,12 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 		finalDestPath = filepath.Join(destParentDir, fileOriginalName)
 	}
 
-	if err := os.MkdirAll(destParentDir, 0700); err != nil {
+	if err := os.MkdirAll(destParentDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
 	}
 
 	if opts.FileMode == 0 {
-		opts.FileMode = 0600
+		opts.FileMode = 0o600
 	}
 	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, opts.FileMode)
 	if err != nil {

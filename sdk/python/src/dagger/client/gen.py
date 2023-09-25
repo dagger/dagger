@@ -1209,6 +1209,7 @@ class Container(Type):
         source: "Secret",
         *,
         owner: Optional[str] = None,
+        mode: Optional[int] = None,
     ) -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
         given path.
@@ -1224,11 +1225,16 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        mode:
+            Permission given to the mounted secret (e.g., 0600).
+            This option requires an owner to be set to be active.
+            Default: 0400.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, None),
+            Arg("mode", mode, None),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)
@@ -3140,6 +3146,29 @@ class Socket(Type):
         return "socket"
 
 
+_client = Client()
+cache_volume = _client.cache_volume
+check_version_compatibility = _client.check_version_compatibility
+container = _client.container
+default_platform = _client.default_platform
+directory = _client.directory
+file = _client.file
+git = _client.git
+host = _client.host
+http = _client.http
+pipeline = _client.pipeline
+project = _client.project
+project_command = _client.project_command
+secret = _client.secret
+set_secret = _client.set_secret
+socket = _client.socket
+
+
+def default_client() -> Client:
+    """Return the default client instance."""
+    return _client
+
+
 __all__ = [
     "BuildArg",
     "CacheID",
@@ -3172,4 +3201,20 @@ __all__ = [
     "SecretID",
     "Socket",
     "SocketID",
+    "cache_volume",
+    "check_version_compatibility",
+    "container",
+    "default_client",
+    "default_platform",
+    "directory",
+    "file",
+    "git",
+    "host",
+    "http",
+    "pipeline",
+    "project",
+    "project_command",
+    "secret",
+    "set_secret",
+    "socket",
 ]

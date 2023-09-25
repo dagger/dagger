@@ -11,6 +11,7 @@ type hostSchema struct {
 	*MergedSchemas
 
 	host *core.Host
+	svcs *core.Services
 }
 
 var _ ExecutableSchema = &hostSchema{}
@@ -83,5 +84,5 @@ type hostFileArgs struct {
 }
 
 func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
-	return s.host.File(ctx, s.bk, args.Path, parent.PipelinePath(), s.platform)
+	return s.host.File(ctx, s.bk, s.svcs, args.Path, parent.PipelinePath(), s.platform)
 }

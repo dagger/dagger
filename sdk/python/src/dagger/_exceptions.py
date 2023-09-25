@@ -58,7 +58,7 @@ class InvalidQueryError(ClientError):
     """Misuse of the query builder."""
 
 
-@dataclass
+@dataclass(slots=True)
 class QueryErrorLocation:
     """Error location returned by the API."""
 
@@ -66,13 +66,13 @@ class QueryErrorLocation:
     column: int
 
 
-@dataclass
+@dataclass(slots=True)
 class QueryErrorValue:
     """An error value returned by the API."""
 
     message: str
-    locations: list[QueryErrorLocation] | None
-    path: list[str] | None
+    locations: list[QueryErrorLocation] | None = None
+    path: list[str] | None = None
     extensions: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
@@ -117,7 +117,11 @@ class QueryError(ClientError):
         lines = graphql.print_ast(self.query).splitlines()
         # count number of digits from line count
         pad = len(str(len(lines)))
-        locations = {loc.line: loc.column for loc in self.errors[0].locations}
+        locations = (
+            {loc.line: loc.column for loc in self.errors[0].locations}
+            if self.errors[0].locations
+            else {}
+        )
         res = []
         for nr, line in enumerate(lines, start=1):
             # prepend line number

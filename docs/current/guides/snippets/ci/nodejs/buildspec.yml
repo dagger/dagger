@@ -5,8 +5,10 @@ phases:
     commands:
       - echo "Installing dependencies"
       - npm ci
+      - echo "Installing Dagger CLI"
+      - cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
 
   build:
     commands:
       - echo "Running Dagger pipeline"
-      - node index.mjs
+      - dagger run node index.mjs

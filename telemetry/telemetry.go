@@ -35,10 +35,17 @@ type Telemetry struct {
 }
 
 func New() *Telemetry {
+	cloudToken := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN")
+	// add DAGGER_CLOUD_TOKEN in backwards compat way.
+	// TODO: deprecate in a future release
+	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
+		cloudToken = v
+	}
+
 	t := &Telemetry{
 		runID:   uuid.NewString(),
 		pushURL: os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"),
-		token:   os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"),
+		token:   cloudToken,
 		stopCh:  make(chan struct{}),
 		doneCh:  make(chan struct{}),
 	}

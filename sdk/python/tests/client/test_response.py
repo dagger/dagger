@@ -17,10 +17,9 @@ class F(NamedTuple):
 
 @pytest.fixture(name="ctx")
 def context(mocker):
-    session = mocker.MagicMock()
-    schema = mocker.MagicMock()
+    connection = mocker.MagicMock()
     selections = deque(Field("T", f, {}) for f in ("one", "two", "three"))
-    return Context(session, schema, selections)
+    return Context(connection, selections)
 
 
 def test_none(ctx: Context):

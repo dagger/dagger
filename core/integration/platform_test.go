@@ -1,14 +1,13 @@
 package core
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,12 +25,7 @@ var platformToFileArch = map[dagger.Platform]string{
 }
 
 func TestPlatformEmulatedExecAndPush(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -51,7 +45,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	}
 
 	testRef := registryRef("platform-emulated-exec-and-push")
-	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+	_, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
@@ -70,15 +64,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 func TestPlatformCrossCompile(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx,
-		dagger.WithWorkdir("../.."),
-		dagger.WithLogOutput(os.Stdout),
-	)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t, dagger.WithWorkdir("../.."))
 
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
@@ -102,15 +88,27 @@ func TestPlatformCrossCompile(t *testing.T) {
 				WithEnvVariable("CGO_ENABLED", "0").
 				WithExec([]string{"sh", "-c", "uname -m && goxx-go build -o /out/dagger /src/cmd/dagger"})
 
+			// using require in a goroutine brings down the whole test suite, so
+			// use assert instead and return an error
+			assertErr := fmt.Errorf("assertion failed for %s", platform)
+
 			// should be running as the default (buildkit host) platform
 			ctrPlatform, err := ctr.Platform(ctx)
-			require.NoError(t, err)
-			require.Equal(t, defaultPlatform, ctrPlatform)
+			if !assert.NoError(t, err) {
+				return assertErr
+			}
+			if !assert.Equal(t, defaultPlatform, ctrPlatform) {
+				return assertErr
+			}
 
 			stdout, err := ctr.Stdout(ctx)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return assertErr
+			}
 			stdout = strings.TrimSpace(stdout)
-			require.Equal(t, platformToUname[defaultPlatform], stdout)
+			if !assert.Equal(t, platformToUname[defaultPlatform], stdout) {
+				return assertErr
+			}
 
 			out := ctr.Directory("/out")
 			variants[i] = c.Container(dagger.ContainerOpts{Platform: platform}).WithRootfs(out)
@@ -154,14 +152,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 func TestPlatformCacheMounts(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx,
-		dagger.WithLogOutput(os.Stdout),
-	)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	randomID := identity.NewID()
 
@@ -182,7 +173,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 		cmds = append(cmds, fmt.Sprintf(`cat /cache/%s%s/uname | grep '%s'`, randomID, platform, platformToUname[platform]))
 	}
 
-	_, err = c.Container().
+	_, err := c.Container().
 		From(alpineImage).
 		WithMountedCache("/cache", cache).
 		WithExec([]string{"sh", "-x", "-c", strings.Join(cmds, " && ")}).
@@ -193,30 +184,16 @@ func TestPlatformCacheMounts(t *testing.T) {
 func TestPlatformInvalid(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	c, ctx := connect(t)
 
-	c, err := dagger.Connect(ctx,
-		dagger.WithLogOutput(os.Stdout),
-	)
-	require.NoError(t, err)
-	defer c.Close()
-
-	_, err = c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
+	_, err := c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
 	require.ErrorContains(t, err, "unknown operating system or architecture")
 }
 
 func TestPlatformWindows(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c, err := dagger.Connect(ctx,
-		dagger.WithLogOutput(os.Stdout),
-	)
-	require.NoError(t, err)
-	defer c.Close()
+	c, ctx := connect(t)
 
 	// It's not possible to exec, but we can pull and read files
 	ents, err := c.Container(dagger.ContainerOpts{Platform: "windows/amd64"}).

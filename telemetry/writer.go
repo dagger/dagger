@@ -33,10 +33,7 @@ func NewWriter(t *Telemetry) progrock.Writer {
 }
 
 func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
-	if err := t.pipeliner.WriteStatus(ev); err != nil {
-		// should never happen
-		return err
-	}
+	t.pipeliner.TrackUpdate(ev)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -50,6 +47,7 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 			}
 		}
 	}
+
 	for _, eventVertex := range ev.Vertexes {
 		if v, found := t.pipeliner.Vertex(eventVertex.Id); found {
 			// override the vertex with the current event vertex since a
