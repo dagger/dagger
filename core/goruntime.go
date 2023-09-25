@@ -46,7 +46,7 @@ func (mod *Module) goRuntime(
 		return nil, fmt.Errorf("failed to mount gobuildcache: %w", err)
 	}
 	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
-		Args: []string{"dagger", "mod", "sync"},
+		Args: []string{"dagger", "mod", "sync", "bust-hack:1"},
 
 		// this automatically gives us a /bin/dagger
 		ExperimentalPrivilegedNesting: true,
