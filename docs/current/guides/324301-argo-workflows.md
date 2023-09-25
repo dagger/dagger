@@ -24,7 +24,7 @@ This guide assumes that you have a basic understanding of Kubernetes and Argo Wo
 
 The first step is to install [Argo Workflows](https://argoproj.github.io/argo-workflows/) in the Kubernetes cluster.
 
-Follow the [Argo Workflows quickstart](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) steps, adjusting them as needed to your own requirements. Once you've successfully installed Argo Workflows to your cluster, continue to the next step.
+Follow the [Argo Workflows quickstart](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) steps, adjusting them as needed to your own requirements. Once you've successfully installed Argo Workflows in your cluster, continue to the next step.
 
 ## Step 2: Run A Sample Workflow
 
