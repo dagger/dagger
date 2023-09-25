@@ -37,9 +37,7 @@ async def main():
 
         # set the working directory in the container
         # install application dependencies
-        await source.with_exec(
-            ["pip", "install", "-r", "requirements.txt"]
-        ).sync()
+        await source.with_exec(["pip", "install", "-r", "requirements.txt"]).sync()
 
 
 anyio.run(main)
