@@ -80,8 +80,8 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 		// main.go is actually an input to codegen, so this requires another pass
 		partial = true
-	} else if !partial && g.Config.ModuleSourceDir != "" {
-		pkg, fset, err = loadPackage(ctx, g.Config.ModuleSourceDir)
+	} else if !partial {
+		pkg, fset, err = loadPackage(ctx, outDir)
 		if err != nil {
 			return nil, fmt.Errorf("load package: %w", err)
 		}
