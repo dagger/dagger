@@ -32,9 +32,13 @@ func init() {
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	return codegen.Generate(ctx, generator.Config{
-		Lang:      generator.SDKLang(lang),
-		SourceDir: workdir,
-		OutputDir: outputDir,
+		Lang:            generator.SDKLang(lang),
+		ModuleSourceDir: workdir,
+		OutputDir:       outputDir,
+
+		// we expressly don't want to .gitignore generated files for the
+		// off-the-shelf SDK clients; the whole point is to commit + push'em
+		AutomateVCS: false,
 	}, nil)
 }
 

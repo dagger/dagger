@@ -194,6 +194,38 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 	})
 }
 
+func TestModuleGoSyncRemovesIgnored(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	committedModGen := c.Container().From(golangImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Dagger Tests"}).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithExec([]string{"git", "init"}).
+		With(daggerExec("mod", "init", "--name=bare", "--sdk=go")).
+		WithExec([]string{"rm", ".gitignore"}).
+		WithExec([]string{"cp", "-a", "./internal/querybuilder", "./querybuilder"}).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init with generated files"})
+
+	changedAfterSync, err := committedModGen.
+		With(daggerExec("mod", "sync")).
+		WithExec([]string{"git", "diff"}). // for debugging
+		WithExec([]string{"git", "status", "--short"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	t.Logf("changed after sync:\n%s", changedAfterSync)
+	require.Contains(t, changedAfterSync, "D  dagger.gen.go\n")
+	require.Contains(t, changedAfterSync, "D  querybuilder/marshal.go\n")
+	require.Contains(t, changedAfterSync, "D  querybuilder/querybuilder.go\n")
+	require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
+	require.Contains(t, changedAfterSync, "D  internal/querybuilder/querybuilder.go\n")
+}
+
 //go:embed testdata/modules/go/minimal/main.go
 var goSignatures string
 

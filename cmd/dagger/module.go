@@ -208,10 +208,11 @@ func updateModuleConfig(
 	case moduleconfig.SDKGo:
 		runCodegenFunc = func() (err error) {
 			return codegen.Generate(ctx, generator.Config{
-				Lang:       generator.SDKLang(newModCfg.SDK),
-				SourceDir:  workdir,
-				OutputDir:  codegenOutputDir,
-				ModuleName: newModCfg.Name,
+				Lang:            generator.SDKLang(newModCfg.SDK),
+				ModuleSourceDir: workdir,
+				OutputDir:       codegenOutputDir,
+				ModuleName:      newModCfg.Name,
+				AutomateVCS:     true,
 			}, engineClient)
 		}
 	case moduleconfig.SDKPython:

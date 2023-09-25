@@ -3,6 +3,7 @@ package gogenerator
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/format"
 	"go/token"
@@ -16,6 +17,7 @@ import (
 	"github.com/dagger/dagger/codegen/generator/go/templates"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
+	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
 	"github.com/vito/progrock"
@@ -34,45 +36,134 @@ type GoGenerator struct {
 func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
+	// 1. if no go.mod, generate go.mod
+	// 2. if no .go files, bootstrap package main
+	//  2a. generate dagger.gen.go from base client,
+	//  2b. add stub main.go
+	// 3. load package, generate dagger.gen.go (possibly again)
+
 	mfs := memfs.New()
 
-	pkgInfo, needsRegen, err := g.bootstrapPkg(ctx, mfs)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap package: %w", err)
-	}
-
-	if !needsRegen {
-		err := g.generateCode(ctx, schema, mfs, pkgInfo)
-		if err != nil {
-			return nil, fmt.Errorf("generate code: %w", err)
-		}
-	}
-
-	return &generator.GeneratedState{
+	genSt := &generator.GeneratedState{
 		Overlay: layerfs.New(mfs, dagger.QueryBuilder),
 		PostCommands: []*exec.Cmd{
 			// run 'go mod tidy' after generating to fix and prune dependencies
 			exec.Command("go", "mod", "tidy"),
 		},
-		NeedRegenerate: needsRegen,
-	}, nil
+	}
+
+	pkgInfo, partial, err := g.bootstrapPkg(ctx, mfs)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap package: %w", err)
+	}
+
+	outDir := g.Config.OutputDir
+
+	var pkg *packages.Package
+	var fset *token.FileSet
+	if goFiles, err := filepath.Glob(filepath.Join(outDir, "*.go")); err == nil && len(goFiles) == 0 {
+		// assume package main, default for modules
+		pkgInfo.PackageName = "main"
+
+		// generate an initial dagger.gen.go from the base Dagger API
+		baseCfg := g.Config
+		baseCfg.ModuleName = ""
+		baseCfg.ModuleSourceDir = ""
+		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, pkg, fset); err != nil {
+			return nil, fmt.Errorf("generate code: %w", err)
+		}
+
+		// write an initial main.go if no main pkg exists yet
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource()), 0600); err != nil {
+			return nil, err
+		}
+
+		// main.go is actually an input to codegen, so this requires another pass
+		partial = true
+	} else if g.Config.ModuleSourceDir != "" {
+		pkg, fset, err = loadPackage(ctx, g.Config.ModuleSourceDir)
+		if err != nil {
+			return nil, fmt.Errorf("load package: %w", err)
+		}
+
+		// respect existing package name
+		pkgInfo.PackageName = pkg.Name
+	}
+
+	if partial {
+		genSt.NeedRegenerate = true
+		return genSt, nil
+	}
+
+	rec := progrock.FromContext(ctx)
+	rec.Debug("generating code")
+
+	// automate VCS first so we re-add any files cleaned up from the transition
+	// to using .gitignore for generated files
+	if err := g.automateVCS(ctx, mfs); err != nil {
+		return nil, fmt.Errorf("automate vcs: %w", err)
+	}
+
+	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset); err != nil {
+		return nil, fmt.Errorf("generate code: %w", err)
+	}
+
+	return genSt, nil
+}
+
+func (g *GoGenerator) automateVCS(ctx context.Context, mfs *memfs.FS) error {
+	rec := progrock.FromContext(ctx)
+
+	if !g.Config.AutomateVCS {
+		rec.Debug("skipping VCS automation (disabled)")
+		// TODO disable this for on-the-fly codegen
+		return nil
+	}
+
+	repo, err := git.PlainOpenWithOptions(g.Config.OutputDir, &git.PlainOpenOptions{
+		DetectDotGit: true,
+	})
+	if err != nil {
+		if errors.Is(err, git.ErrRepositoryNotExists) {
+			// not in a repo
+			rec.Debug("repo not found; skipping VCS automation")
+			return nil
+		}
+		return fmt.Errorf("open git repo: %w", err)
+	}
+
+	rec.Debug("updating .gitattributes")
+
+	if err := generator.MarkGeneratedAttributes(mfs, g.Config.OutputDir, ClientGenFile); err != nil {
+		return fmt.Errorf("update .gitattributes: %w", err)
+	}
+
+	rec.Debug("updating .gitignore")
+
+	if err := generator.GitIgnorePaths(ctx, repo, mfs, g.Config.OutputDir,
+		ClientGenFile,
+		"internal/",
+		"querybuilder/", // now lives under internal/
+	); err != nil {
+		return fmt.Errorf("update .gitignore: %w", err)
+	}
+
+	return nil
 }
 
 type PackageInfo struct {
-	PackageName string // Go package name, typically "main"
-	ModulePath  string // import path of package in which this file appears
+	PackageName   string // Go package name, typically "main"
+	PackageImport string // import path of package in which this file appears
 }
 
 func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*PackageInfo, bool, error) {
-	rec := progrock.FromContext(ctx)
-
 	var needsRegen bool
 
 	outDir := g.Config.OutputDir
 
 	info := &PackageInfo{}
 
-	// bootstrap go.mod using dependencies from the embedded Go SDK
+	// use embedded go.mod as basis for pinning versions
 	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("parse embedded go.mod: %w", err)
@@ -80,8 +171,9 @@ func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*Package
 
 	newMod := new(modfile.File)
 
-	// respect existing go.mod
 	if content, err := os.ReadFile(filepath.Join(outDir, "go.mod")); err == nil {
+		// respect existing go.mod
+
 		currentMod, err := modfile.Parse("go.mod", content, nil)
 		if err != nil {
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
@@ -93,14 +185,16 @@ func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*Package
 			newMod.AddRequire(req.Mod.Path, req.Mod.Version)
 		}
 
-		info.ModulePath = currentMod.Module.Mod.Path
+		info.PackageImport = currentMod.Module.Mod.Path
 	} else {
+		// bootstrap go.mod using dependencies from the embedded Go SDK
+
 		newModName := strcase.ToKebab(g.Config.ModuleName)
 
 		newMod.AddModuleStmt(newModName)
 		newMod.SetRequire(sdkMod.Require)
 
-		info.ModulePath = newModName
+		info.PackageImport = newModName
 
 		needsRegen = true
 	}
@@ -116,49 +210,19 @@ func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*Package
 		return nil, false, err
 	}
 
-	if needsRegen {
-		// need go.mod to exist for us to be able to loadPackage below, so just
-		// wait for the next regen pass
-		return info, true, nil
-	}
-
-	if modPkg, _, loadPkgErr := loadPackage(ctx, outDir); loadPkgErr == nil {
-		msgOpts := []progrock.MessageOpt{
-			progrock.Labelf("pkgName", modPkg.Name),
-			progrock.Labelf("pkgPath", modPkg.PkgPath),
-		}
-		if modPkg.Module != nil {
-			msgOpts = append(msgOpts, progrock.Labelf("module", modPkg.Module.Path))
-		}
-		rec.Debug("found existing Go package", msgOpts...)
-		info.PackageName = modPkg.Name
-	} else {
-		rec.Debug("bootstrapping main package", progrock.ErrorLabel(loadPkgErr))
-
-		info.PackageName = "main"
-
-		if matches, err := filepath.Glob(filepath.Join(outDir, "*.go")); err == nil && len(matches) == 0 {
-			// write an initial main.go if no main pkg exists yet
-			if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource()), 0600); err != nil {
-				return nil, false, err
-			}
-
-			// we just generated code that is actually an input to codegen, so this
-			// will take two passes
-			needsRegen = true
-		}
-	}
-
 	return info, needsRegen, nil
 }
 
-func (g *GoGenerator) generateCode(ctx context.Context, schema *introspection.Schema, mfs *memfs.FS, pkgInfo *PackageInfo) error {
-	pkg, fset, err := loadPackage(ctx, g.Config.SourceDir)
-	if err != nil {
-		return fmt.Errorf("load package: %w", err)
-	}
-
-	funcs := templates.GoTemplateFuncs(ctx, schema, g.Config.ModuleName, pkg, fset)
+func generateCode(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	mfs *memfs.FS,
+	pkgInfo *PackageInfo,
+	pkg *packages.Package,
+	fset *token.FileSet,
+) error {
+	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleName, pkg, fset)
 
 	headerData := struct {
 		*PackageInfo
@@ -176,7 +240,7 @@ func (g *GoGenerator) generateCode(ctx context.Context, schema *introspection.Sc
 	}
 	render = append(render, header.String())
 
-	err = schema.Visit(introspection.VisitHandlers{
+	err := schema.Visit(introspection.VisitHandlers{
 		Scalar: func(t *introspection.Type) error {
 			var out bytes.Buffer
 			if err := templates.Scalar(funcs).Execute(&out, t); err != nil {
@@ -192,7 +256,7 @@ func (g *GoGenerator) generateCode(ctx context.Context, schema *introspection.Sc
 				IsModuleCode bool
 			}{
 				Type:         t,
-				IsModuleCode: g.Config.ModuleName != "",
+				IsModuleCode: cfg.ModuleName != "",
 			}); err != nil {
 				return err
 			}
@@ -220,13 +284,13 @@ func (g *GoGenerator) generateCode(ctx context.Context, schema *introspection.Sc
 		return err
 	}
 
-	if g.Config.ModuleName != "" {
+	if cfg.ModuleName != "" {
 		moduleData := struct {
 			Schema              *introspection.Schema
 			SourceDirectoryPath string
 		}{
 			Schema:              schema,
-			SourceDirectoryPath: g.Config.SourceDir,
+			SourceDirectoryPath: cfg.ModuleSourceDir,
 		}
 
 		var moduleMain bytes.Buffer
@@ -241,20 +305,12 @@ func (g *GoGenerator) generateCode(ctx context.Context, schema *introspection.Sc
 	if err != nil {
 		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
 	}
-	formatted, err = imports.Process(filepath.Join(g.Config.SourceDir, "dummy.go"), formatted, nil)
+	formatted, err = imports.Process(filepath.Join(cfg.ModuleSourceDir, "dummy.go"), formatted, nil)
 	if err != nil {
 		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
 	}
 
 	if err := mfs.WriteFile(ClientGenFile, formatted, 0600); err != nil {
-		return err
-	}
-
-	if err := generator.MarkGeneratedAttributes(mfs, g.Config.OutputDir, ClientGenFile); err != nil {
-		return err
-	}
-
-	if err := generator.GitIgnorePaths(mfs, g.Config.OutputDir, ClientGenFile, "internal"); err != nil {
 		return err
 	}
 

@@ -28,10 +28,15 @@ const (
 
 type Config struct {
 	Lang      SDKLang
-	SourceDir string
 	OutputDir string
 
-	ModuleName string
+	// Generate code for a Dagger module.
+	ModuleName      string
+	ModuleSourceDir string
+
+	// Configure the version control system to ignore generated files, e.g. by
+	// appending them to .gitignore for Git.
+	AutomateVCS bool
 }
 
 type Generator interface {

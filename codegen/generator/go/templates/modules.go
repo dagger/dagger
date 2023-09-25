@@ -421,6 +421,9 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, refere
 	case *types.Pointer:
 		return ps.goTypeToAPIType(t.Elem(), named, reference)
 	case *types.Basic:
+		if t.Kind() == types.Invalid {
+			return nil, fmt.Errorf("invalid type: %+v", t)
+		}
 		var kind Code
 		switch t.Info() {
 		case types.IsString:
@@ -429,6 +432,8 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, refere
 			kind = Id("Integerkind")
 		case types.IsBoolean:
 			kind = Id("Booleankind")
+		default:
+			return nil, fmt.Errorf("unsupported basic type: %+v", t)
 		}
 		return Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
 			kind,
