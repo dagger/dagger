@@ -1,3 +1,4 @@
+"A reference to a Module."
 scalar ModuleID
 
 extend type Query {

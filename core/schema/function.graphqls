@@ -1,3 +1,4 @@
+"A reference to a Function."
 scalar FunctionID
 
 extend type Query {
@@ -5,7 +6,14 @@ extend type Query {
   function(id: FunctionID!): Function!
 }
 
+"""
+Function represents a resolver provided by a Module.
+
+A function always evaluates against a parent object and is given a set of
+named arguments.
+"""
 type Function {
+  "The ID of the function"
   id: FunctionID!
 
   "The name of the function"
@@ -47,6 +55,12 @@ type Function {
   call(input: [FunctionCallInput!]): JSON!
 }
 
+"""
+An argument accepted by a function.
+
+This is a specification for an argument at function definition time, not an
+argument passed at function call time.
+"""
 type FunctionArg {
   "The name of the argument"
   name: String
@@ -69,6 +83,7 @@ input FunctionCallInput {
   value: JSON!
 }
 
+"A reference to a TypeDef."
 scalar TypeDefID
 
 extend type Query {
@@ -164,21 +179,47 @@ type FieldTypeDef {
   typeDef: TypeDef!
 }
 
+"""
+A definition of a list type in a Module.
+"""
 type ListTypeDef {
   "The type of the elements in the list"
   elementTypeDef: TypeDef!
 }
 
+"""
+Distinguishes the different kinds of TypeDefs.
+"""
 enum TypeDefKind {
-  "Primitive types"
+  "A string value"
   StringKind
+
+  "An integer value"
   IntegerKind
+
+  "A boolean value"
   BooleanKind
 
-  "Complex types"
+  """
+  A list of values all having the same type.
+
+  Always paired with a ListTypeDef.
+  """
   ListKind
+
+  """
+  A named type defined in the GraphQL schema, with fields and functions.
+
+  Always paired with an ObjectTypeDef.
+  """
   ObjectKind
 
-  "Void is a special kind that can only be used as a return type"
+  """
+  A special kind used to signify that no value is returned.
+
+  This is used for functions that have no return value. The outer TypeDef
+  specifying this Kind is always Optional, as the Void is never actually
+  represented.
+  """
   VoidKind
 }
