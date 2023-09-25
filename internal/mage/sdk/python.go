@@ -148,7 +148,7 @@ func (t Python) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("/").
 		WithExec([]string{cliBinPath, "run", "python", "-m", "dagger", "generate", pythonGeneratedAPIPath}).
-		WithExec([]string{"black", "--preview", pythonGeneratedAPIPath}).
+		WithExec([]string{"black", pythonGeneratedAPIPath}).
 		File(pythonGeneratedAPIPath).
 		Contents(ctx)
 	if err != nil {

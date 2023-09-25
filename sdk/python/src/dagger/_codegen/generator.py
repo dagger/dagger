@@ -299,11 +299,13 @@ def render_default_client(
     yield from (f"{name} = _client.{name}" for name in names)
     defined.update(names)
 
-    yield textwrap.dedent('''\
+    yield textwrap.dedent(
+        '''\
         def default_client() -> Client:
             """Return the default client instance."""
             return _client
-        ''')
+        '''
+    )
     defined.add("default_client")
 
 
@@ -718,13 +720,15 @@ class _ObjectField:
             msg = f'Method "{self.name}" is deprecated: {deprecated}'.replace(
                 '"', '\\"'
             )
-            yield textwrap.dedent(f"""\
+            yield textwrap.dedent(
+                f"""\
                 warnings.warn(
                     "{msg}",
                     DeprecationWarning,
                     stacklevel=4,
                 )\
-                """)
+                """
+            )
 
         if self.slot_field:
             yield f'if hasattr(self, "{self.slot_field.python_name}"):'
@@ -932,11 +936,13 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
         if is_self_chainable(t):
             self_name = self.type_name(t)
-            yield textwrap.dedent(f'''
+            yield textwrap.dedent(
+                f'''
                 def with_(self, cb: Callable[["{self_name}"], "{self_name}"]) -> "{self_name}":
                     """Call the provided callable with current {self_name}.
 
                     This is useful for reusability and readability by not breaking the calling chain.
                     """
                     return cb(self)
-                ''')  # noqa: E501
+                '''  # noqa: E501
+            )
