@@ -250,7 +250,11 @@ func (g *GoGenerator) generateCode(ctx context.Context, schema *introspection.Sc
 		return err
 	}
 
-	if err := generator.InstallGitAttributes(mfs, ClientGenFile, g.Config.OutputDir); err != nil {
+	if err := generator.MarkGeneratedAttributes(mfs, g.Config.OutputDir, ClientGenFile); err != nil {
+		return err
+	}
+
+	if err := generator.GitIgnorePaths(mfs, g.Config.OutputDir, ClientGenFile, "internal"); err != nil {
 		return err
 	}
 

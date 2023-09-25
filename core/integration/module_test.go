@@ -43,6 +43,19 @@ func TestModuleGoInit(t *testing.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("configures .gitignore", func(t *testing.T) {
+			ignore, err := modGen.File(".gitignore").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, ignore, "/dagger.gen.go\n")
+			require.Contains(t, ignore, "/internal/\n")
+		})
+
+		t.Run("configures .gitattributes", func(t *testing.T) {
+			attributes, err := modGen.File(".gitattributes").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, attributes, "/dagger.gen.go linguist-generated=true\n")
+		})
 	})
 
 	t.Run("kebab-cases Go module name, camel-cases Dagger module name", func(t *testing.T) {
