@@ -32,9 +32,9 @@ spec:
         workingDir: /work
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
-          value: "unix:///var/run/buildkit/buildkitd.sock"
+          value: "unix:///var/run/dagger/buildkitd.sock"
         volumeMounts:
           - name: dagger-conn
-            mountPath: /var/run/buildkit
+            mountPath: /var/run/dagger
           - name: gomod-cache
             mountPath: /go/pkg/mod
