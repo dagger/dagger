@@ -18,8 +18,7 @@ connect(
 
     // set the working directory in the container
     // install application dependencies
-    const runner = await source
-      .withExec(["npm", "install"])
+    await source.withExec(["npm", "install"])
       .sync()
   },
   { LogOutput: process.stderr }

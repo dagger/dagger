@@ -37,7 +37,7 @@ async def main():
 
         # set the working directory in the container
         # install application dependencies
-        runner = await source.with_exec(
+        await source.with_exec(
             ["pip", "install", "-r", "requirements.txt"]
         ).sync()
 
