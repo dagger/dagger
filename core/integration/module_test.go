@@ -26,7 +26,7 @@ import (
  */
 
 //go:embed testdata/modules/go/minimal/main.go
-var minimalGo string
+var goSignatures string
 
 func TestModuleGoSignatures(t *testing.T) {
 	t.Parallel()
@@ -38,7 +38,7 @@ func TestModuleGoSignatures(t *testing.T) {
 		WithWorkdir("/work").
 		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: minimalGo,
+			Contents: goSignatures,
 		})
 
 	logGen(ctx, t, modGen.Directory("."))
@@ -115,6 +115,29 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi!hi!"}}`, out)
 	})
+}
+
+//go:embed testdata/modules/go/extend/main.go
+var goExtend string
+
+func TestModuleGoExtendCore(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: goExtend,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"hi!")}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"container":{"from":{"echo":"hi!\n"}}}`, out)
 }
 
 //go:embed testdata/modules/go/custom-types/main.go
