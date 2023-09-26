@@ -6,7 +6,7 @@ import dagger
 
 
 async def main():
-    config = dagger.Config(log_output=sys.stdout)
+    config = dagger.Config(log_output=sys.stderr)
 
     async with dagger.Connection(config) as client:
         # use a python:3.11 container
@@ -18,20 +18,19 @@ async def main():
             .from_("python:3.11")
             .with_directory(
                 "/src",
-                client.host().directory("."),
-                exclude=[".venv/", ".cache/", "ci/"],
+                client.host().directory(".")
             )
             .with_workdir("/src")
             .with_mounted_cache(
-                "/root/.cache/pip", client.cache_volume("pip-python-311-myapp-myenv")
+                "/root/.cache/pip", client.cache_volume("pip-python-311")
             )
             .with_mounted_cache(
                 "/root/.local/pipx/cache",
-                client.cache_volume("pipx-python-311-myapp-myenv"),
+                client.cache_volume("pipx-python-311"),
             )
             .with_mounted_cache(
                 "/root/.cache/hatch",
-                client.cache_volume("hatch-python-311-myapp-myenv"),
+                client.cache_volume("hatch-python-311"),
             )
         )
 

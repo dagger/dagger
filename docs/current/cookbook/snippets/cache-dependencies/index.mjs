@@ -15,6 +15,10 @@ connect(
         "/src/node_modules",
         client.cacheVolume("node-18-myapp-myenv")
       )
+      .withMountedCache(
+        "/root/.npm",
+        client.cacheVolume("node-18")
+      )
 
     // set the working directory in the container
     // install application dependencies
