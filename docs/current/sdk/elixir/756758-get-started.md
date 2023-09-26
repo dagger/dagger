@@ -30,7 +30,7 @@ This tutorial assumes that:
 Create an Elixir project with `mix`:
 
 ```shell
-mix new a_project
+mix new elixir_with_dagger
 ```
 
 ## Step 2: Install the Dagger Elixir SDK
@@ -53,9 +53,9 @@ mix deps.get
 
 ## Step 3: Create the Mix task
 
-Create a new module and Mix task to test the project at `lib/mix/tasks/a_project.test.ex`:
+Create a new module and Mix task to test the project at `lib/mix/tasks/elixir_with_dagger.test.ex`:
 
-```elixir file=snippets/get-started/step3/a_project.test.ex
+```elixir file=snippets/get-started/step3/elixir_with_dagger.test.ex
 ```
 
 This module performs the following operations:
@@ -66,13 +66,13 @@ This module performs the following operations:
 - It uses the client's `Dagger.Client.container/2` and `Dagger.Container.from/2` to initialize a new container from the `hexpm/elixir:1.15.4-erlang-25.3.2.5-ubuntu-bionic-20230126` base image.
 - It uses `Dagger.Container.with_mounted_directory/3` to mount the project's source files into the container.
 - It uses `Dagger.Container.with_exec/3` to define the commands to be executed in the container - in this case, commands such as `mix deps get`, which downloads dependencies and `mix test`, which runs unit tests. Each invocation of `with_exec` returns a revised `Container` with the results of command execution.
-- It uses `Dagger.Sync.sync/1` to force command execution.
+- It uses `Dagger.Container.stdout/1` to get the output of the last execution command.
 - It uses `Dagger.close/1` to close the client connection.
 
 Run the Mix task by executing the command below from the project directory:
 
 ```shell
-dagger run mix a_project.test
+dagger run mix elixir_with_dagger.test
 ```
 
 The `dagger run` command executes the specified command in a Dagger session and displays live progress. Here is an example of the output:
@@ -87,26 +87,28 @@ Now that the Elixir CI tool can test the application against a specified Elixir 
 
 Replace the `lib/mix/tasks/a_project.test.ex` file from the previous step with the version below:
 
-```elixir file=snippets/get-started/step4/a_project.test.ex
+```elixir file=snippets/get-started/step4/elixir_with_dagger.test.ex
 ```
 
 This version has additional support for testing and building against multiple Elixir and Erlang/OTP versions:
 
 - It defines the test matrix, consisting of a list of Elixir and Erlang/OTP version pairs.
 - It uses `Task.async_stream/3` to run tests against each version pair concurrently.
+- It uses `Stream.run/1` to await all tasks.
 
 Run the tool again by executing the command below:
 
 ```shell
-dagger run mix a_project.test
+dagger run mix elixir_with_dagger.test
 ```
 
 The tool tests the application, logging its operations to the console as it works. If all tests pass, it displays the final output below:
 
 ```shell
-Starting tests for Erlang 1.14.5 and Erlang OTP 25.3.2.5
-Tests for Python Erlang 1.14.5 and Erlang OTP 25.3.2.5 succeeded!
-TODO
+Starting tests for Elixir 1.14.5 with Erlang OTP 25.3.2.5
+Starting tests for Elixir 1.15.4 with Erlang OTP 25.3.2.5
+Tests for Elixir 1.15.4 with Erlang OTP 25.3.2.5 succeeded
+Tests for Elixir 1.14.5 with Erlang OTP 25.3.2.5 succeeded!
 All tasks have finished
 ```
 

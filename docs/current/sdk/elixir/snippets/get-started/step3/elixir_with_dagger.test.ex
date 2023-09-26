@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.AProject.Test do
+defmodule Mix.Tasks.ElixirWithDagger.Test do
   use Mix.Task
 
   @impl Mix.Task
@@ -25,5 +25,7 @@ defmodule Mix.Tasks.AProject.Test do
       |> Dagger.Sync.sync()
 
     Dagger.close(client)
+
+    IO.puts("Tests succeeded!")
   end
 end
