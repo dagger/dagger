@@ -102,6 +102,22 @@ To ensure that an SDK will be used with a compatible CLI and runner:
 1. If using a pre-installed CLI, install the CLI at that version as detailed in [Versioning](#versioning).
 1. Once the runner and/or CLI are setup, you are safe to upgrade your SDK to the newest version.
 
+### Can I run the Dagger Engine as a "rootless" container?
+
+No. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not have "root" privileges for all devices on the host system. Currently, the Dagger Engine cannot be run as a rootless container; network, platform and volume constraints related to rootless usage would significantly limit its capabilities and performance.
+
+#### Platform constraints
+
+The Dagger Engine uses Buildkit. In order to run it in rootless mode, it is necessary to use [Rootlesskit](https://github.com/rootless-containers/rootlesskit), an experimental tool that aims to replace the "root" user with a "fake root" user using user namespaces. However, depending on the host operating system, some features might not be fully supported.Since Dagger is intended to run consistently everywhere, introducing platform-specific incompatibilities would be contrary to this goal.
+
+#### Volume constraints
+
+The Dagger Engine relies on the `overlayfs` snapshotter for efficient operation of mounted filesystems. In order to run it in rootless mode, it is necessary to use [`fuse-overlayfs`](https://github.com/containers/fuse-overlayfs), a rootless implementation of `overlayfs`. However, optimal configuration of `fuse-overlayfs` depends on the kernel capabilities, its own configuration, `fuse` availability and upstream kernel patches specific to the host distribution. In the absence of all these, correctly configured, you will experience noticeable slowdown, either with `fuse-overlayfs` or the default snapshotter. Since Dagger aims to accelerate your CI/CD pipeline, reducing performance also reduces the value provided by Dagger and leads to unstable behaviour.
+
+#### Network constraints
+
+Running the Dagger Engine in rootless mode constrains network management. It is possible to use [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but this tool significantly decreases network performance in addition to being extremely complex to setup. This [comparison table of network drivers](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers) shows that `slirp` is at least five time slower than a root-privileged network driver.
+
 ## Runner Details
 
 ### Distribution and Versioning
@@ -303,3 +319,44 @@ sequenceDiagram
 (11-12) `dagger session` listens on a random available port on localhost and generates a random uuid to use as a session token (same as described in the [previous section](#dsi-basic)). The port being listened on and the session token are serialized to JSON and then written to stdout, which is a pipe connected back to the SDK parent process.
 
 (13-17) The SDK then sends GraphQL HTTP requests to the localhost listener, including the session token as a basic auth header.
+
+
+
+
+
+
+### Why we do not support rootless engine?
+
+Rootless aims to run a container without `--privileged` flag, meaning that the container has not root capabilities to all devices on the host system.
+Currently, the Dagger engine cannot be run as a rootless container, some complex features such as network, multi-platform and volumes are not supported when running rootless.
+
+We know that it can be a limitation if you are using a managed container environment or have security constraints.
+However, running an unprivileged dagger engine strongly limit capabilities and performances of dagger.
+
+#### Platform constraint
+
+Dagger engine relies on a buildkit engine, it order to run it rootless, we need to use [Rootlesskit](https://github.com/rootless-containers/rootlesskit).
+It's an experimental tool that aims to replace root with a fakeroot using user namespaces, however depending on the host operating system, some feature might not be fully supported.
+
+Meaning that dagger may have unsupported feature on some platform and kernel specifications. Since dagger aims to be a CI/CD that runs consistently everywhere, dealing with specific platform capabilities is opposite to our objective.
+No matter the distribution: Linux, Mac or Windows, Dagger need to work the same way.
+
+#### Volume constraint
+
+Dagger engine relies on overlayfs snapshotter to mounts for efficient operation, running as rootless require to use [fuse-overlayfs](https://github.com/containers/fuse-overlayfs) which is a rootless implementation of overlayfs.
+
+Choosing the right configuration depends on the kernel capabilities, its own configuration, fuse availability and the upstream kernel patches specific to the host distribution.
+Meaning that if it's not possible to use the default snapshotter, you will experience noticeable slowdown, either with fuse-overlayfs or the default snapshotter.
+
+Dagger aims to accelerate your CI/CD pipeline, reducing performances also reduces the value Dagger adds as well as leading to unstable behaviour.
+
+#### Network constraint
+
+Using a rootless engine will especially constraint the custom network management of Dagger.
+
+It is possible to use [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but it will highly decrease network performances in addition to be extremely complex to setup.
+Rootlesskit wrote a [table of comparaison](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers), we can observe that `slirp` is at least five time slower than root network, meaning that dagger will be way slower if ran as rootless.
+
+#### Conclusion
+
+It might be possible in the future once these constraint vanish but for now it's not possible to run dagger engine with privileges if you want to unlock its full potential.
