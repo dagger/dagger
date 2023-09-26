@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/codegen"
-	"github.com/dagger/dagger/codegen/generator"
+	"dagger.io/dagger/codegen"
+	"dagger.io/dagger/codegen/generator"
 	"github.com/dagger/dagger/core/moduleconfig"
 	"github.com/dagger/dagger/core/resolver"
 	"github.com/dagger/dagger/engine/client"
@@ -214,7 +214,7 @@ func updateModuleConfig(
 				ModuleSourceDir: workdir,
 				ModuleRootDir:   newModCfg.Root,
 				AutomateVCS:     true,
-			}, engineClient)
+			}, engineClient.Dagger())
 		}
 	case moduleconfig.SDKPython:
 	default:

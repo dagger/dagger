@@ -6,7 +6,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/dagger/dagger/codegen/generator/nodejs/templates"
+	"dagger.io/dagger/codegen/generator/nodejs/templates"
 	"github.com/stretchr/testify/require"
 )
 

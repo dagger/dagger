@@ -14,9 +14,9 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/codegen/generator"
-	"github.com/dagger/dagger/codegen/generator/go/templates"
-	"github.com/dagger/dagger/codegen/introspection"
+	"dagger.io/dagger/codegen/generator"
+	"dagger.io/dagger/codegen/generator/go/templates"
+	"dagger.io/dagger/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"

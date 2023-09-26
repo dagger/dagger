@@ -1,0 +1,5 @@
+{
+  "root": "..",
+  "name": "go-sdk",
+  "sdk": "go"
+}

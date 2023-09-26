@@ -1,15 +1,14 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/dagger/dagger/codegen"
-	"github.com/dagger/dagger/codegen/generator"
-	"github.com/dagger/dagger/tracing"
+	"dagger.io/dagger"
+	"dagger.io/dagger/codegen"
+	"dagger.io/dagger/codegen/generator"
 )
 
 var (
@@ -19,35 +18,37 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:  "client-gen",
+	Use:  "codegen",
 	RunE: ClientGen,
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
-	rootCmd.Flags().StringVarP(&outputDir, "output", "o", "", "output directory")
-	rootCmd.Flags().StringVar(&lang, "lang", "", "language to generate in")
+	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
+	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
+	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate in")
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		return err
+	}
 	return codegen.Generate(ctx, generator.Config{
-		Lang:            generator.SDKLang(lang),
+		Lang:      generator.SDKLang(lang),
+		OutputDir: outputDir,
+
 		ModuleSourceDir: workdir,
-		OutputDir:       outputDir,
 
 		// we expressly don't want to .gitignore generated files for the
 		// off-the-shelf SDK clients; the whole point is to commit + push'em
 		AutomateVCS: false,
-	}, nil)
+	}, dag)
 }
 
 func main() {
-	closer := tracing.Init()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		closer.Close()
 		os.Exit(1)
 	}
-	closer.Close()
 }

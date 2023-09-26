@@ -10,9 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client"
+	"dagger.io/dagger"
+	"dagger.io/dagger/codegen/introspection"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -78,21 +77,15 @@ func SetSchemaParents(schema *introspection.Schema) {
 	}
 }
 
-// Introspect get the Dagger Schema
-func Introspect(ctx context.Context, engineClient *client.Client) (*introspection.Schema, error) {
-	if engineClient == nil {
-		var err error
-		engineClient, ctx, err = client.Connect(ctx, client.Params{
-			RunnerHost: engine.RunnerHost(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		defer engineClient.Close()
-	}
-
+// Introspect gets the Dagger Schema
+func Introspect(ctx context.Context, dag *dagger.Client) (*introspection.Schema, error) {
 	var introspectionResp introspection.Response
-	err := engineClient.Do(ctx, introspection.Query, "IntrospectionQuery", nil, &introspectionResp)
+	err := dag.Do(ctx, &dagger.Request{
+		Query:  introspection.Query,
+		OpName: "IntrospectionQuery",
+	}, &dagger.Response{
+		Data: &introspectionResp,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("introspection query: %w", err)
 	}

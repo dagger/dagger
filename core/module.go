@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path"
 	"path/filepath"
 	"strings"
@@ -187,6 +188,8 @@ func (mod *Module) FromConfig(
 		return nil, err
 	}
 
+	log.Println("!!! CALCULATING CONFIG PATH", cfg.Root, configPath)
+
 	// Reposition the root of the sourceDir in case it's pointing to a subdir of current sourceDir
 	if cfg.Root != "" {
 		rootPath := filepath.Join("/", filepath.Dir(configPath), cfg.Root)
@@ -199,6 +202,8 @@ func (mod *Module) FromConfig(
 			configPath = filepath.Join("/", strings.TrimPrefix(configPath, rootPath))
 		}
 	}
+
+	log.Println("!!! CALCULATED CONFIG PATH", cfg.Root, configPath)
 
 	// fill in the module settings and set the runtime container
 	mod.SourceDirectory = sourceDir

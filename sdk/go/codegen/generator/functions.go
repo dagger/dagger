@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unicode"
 
-	"github.com/dagger/dagger/codegen/introspection"
+	"dagger.io/dagger/codegen/introspection"
 )
 
 const (

@@ -4,28 +4,19 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/dagger/dagger/codegen/generator"
-	gogenerator "github.com/dagger/dagger/codegen/generator/go"
-	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
-	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/moby/buildkit/identity"
+	"dagger.io/dagger"
+	"dagger.io/dagger/codegen/generator"
+	gogenerator "dagger.io/dagger/codegen/generator/go"
+	nodegenerator "dagger.io/dagger/codegen/generator/nodejs"
+	"dagger.io/dagger/codegen/introspection"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
 
-func Generate(
-	ctx context.Context,
-	cfg generator.Config,
-	// TODO: this can probably just be replaced with *dagger.Client now that
-	// we're bootstrapped. I'm guessing we're avoiding that because this would
-	// otherwise be a circular dependency, since this is used to generate
-	// dagger.io/dagger, but we already depend on that through
-	// engineClient.Dagger() anyway.
-	engineClient *client.Client,
-) (rerr error) {
-	introspectionSchema, err := generator.Introspect(ctx, engineClient)
+func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (rerr error) {
+	introspectionSchema, err := generator.Introspect(ctx, dag)
 	if err != nil {
 		return err
 	}
@@ -39,7 +30,7 @@ func Generate(
 		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
 	}
 
-	vtx := rec.Vertex(digest.FromString(identity.NewID()), vtxName)
+	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
 	defer func() { vtx.Done(rerr) }()
 
 	logsW := vtx.Stdout()

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dagger/dagger/codegen/generator"
-	"github.com/dagger/dagger/codegen/introspection"
+	"dagger.io/dagger/codegen/generator"
+	"dagger.io/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 

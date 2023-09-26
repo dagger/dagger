@@ -1,3 +1,3 @@
 package dagger
 
-//go:generate client-gen -o ./ --lang go
+//go:generate go run -C ./runtime ./cmd/codegen -o $PWD --lang go
