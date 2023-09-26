@@ -233,12 +233,13 @@ func TestModuleGoInit(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: `
+					package main
 
-type HasMainGo struct {}
+					type HasMainGo struct {}
 
-func (m *HasMainGo) Hello() string { return "Hello, world!" }
-`,
+					func (m *HasMainGo) Hello() string { return "Hello, world!" }
+				`,
 			}).
 			With(daggerExec("mod", "init", "--name=hasMainGo", "--sdk=go"))
 
@@ -249,6 +250,38 @@ func (m *HasMainGo) Hello() string { return "Hello, world!" }
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasMainGo":{"hello":"Hello, world!"}}`, out)
+	})
+
+	t.Run("respects existing main.go even if it uses types not generated yet", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `
+					package main
+
+					type HasDaggerTypes struct {}
+
+					func (m *HasDaggerTypes) Hello() *Container {
+						return dag.Container().
+							From("` + alpineImage + `").
+							WithExec([]string{"echo", "Hello, world!"})
+					}
+				`,
+			}).
+			With(daggerExec("mod", "init", "--name=hasDaggerTypes", "--sdk=go"))
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		out, err := modGen.
+			With(daggerQuery(`{hasDaggerTypes{hello{stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasDaggerTypes":{"hello":{"stdout":"Hello, world!\n"}}}`, out)
 	})
 
 	t.Run("respects existing package without creating main.go", func(t *testing.T) {
