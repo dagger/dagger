@@ -19,15 +19,7 @@ async def main():
             .with_directory("/src", client.host().directory("."))
             .with_workdir("/src")
             .with_mounted_cache(
-                "/root/.cache/pip", client.cache_volume("pip-python-311")
-            )
-            .with_mounted_cache(
-                "/root/.local/pipx/cache",
-                client.cache_volume("pipx-python-311"),
-            )
-            .with_mounted_cache(
-                "/root/.cache/hatch",
-                client.cache_volume("hatch-python-311"),
+                "/root/.cache/pip", client.cache_volume("python-311")
             )
         )
 
