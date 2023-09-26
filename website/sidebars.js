@@ -159,33 +159,32 @@ module.exports = {
             },
           ],
         },
+        {
+          type: "category",
+          label: "Elixir SDK (Experimental)",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Overview",
+              id: "current/sdk/elixir/index",
+            },
+            "current/sdk/elixir/install",
+            {
+              type: "doc",
+              label: "Get Started",
+              id: "current/sdk/elixir/get-started",
+            },
+            {
+              type: "link",
+              label: "Reference 🔗",
+              href: "https://hexdocs.pm/dagger/Dagger.html",
+            },
+          ],
+        },
       ]
     },
-    {
-      type: "category",
-      label: "Elixir SDK (Experimental)",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "Overview",
-          id: "current/sdk/elixir/index",
-        },
-        "current/sdk/elixir/install",
-        {
-          type: "doc",
-          label: "Get Started",
-          id: "current/sdk/elixir/get-started",
-        },
-        {
-          type: "link",
-          label: "Reference 🔗",
-          href: "https://hexdocs.pm/dagger/Dagger.html",
-        },
-      ],
-    },
-
     {
       type: "category",
       label: "GraphQL API",
