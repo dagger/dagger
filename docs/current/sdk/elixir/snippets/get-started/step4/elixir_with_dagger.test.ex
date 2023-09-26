@@ -40,7 +40,7 @@ defmodule Mix.Tasks.ElixirWithDagger.Test do
         {:ok, _} = Dagger.Sync.sync(elixir)
         IO.puts("Tests for Elixir #{elixir_version} with Erlang OTP #{erlang_version} succeeded!")
       end,
-      timeout: :infinity
+      timeout: :timer.minutes(10)
     )
     |> Stream.run()
 
