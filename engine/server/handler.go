@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
+	"github.com/moby/buildkit/util/bklog"
 )
 
 const (
@@ -152,6 +153,9 @@ func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *
 			formatted[i] = formatErrorFn(formattedError.OriginalError())
 		}
 		result.Errors = formatted
+	}
+	for _, err := range result.Errors {
+		bklog.G(ctx).WithError(err.OriginalError()).Debug("error while executing query")
 	}
 
 	// use proper JSON Header
