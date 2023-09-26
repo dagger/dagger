@@ -116,12 +116,14 @@ func (Java) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mvn", "help:evaluate", "-q", "-DforceStdout", "-Dexpression=daggerengine.version"}).
+		WithExec([]string{cliBinPath, "version"}).
 		Stdout(ctx)
 
 	if err != nil {
 		return err
 	}
+
+	engineVersion = strings.TrimPrefix(strings.Fields(engineVersion)[1], "v")
 
 	return os.WriteFile(javaSchemasDirPath+fmt.Sprintf("/schema-%s.json", engineVersion), []byte(generatedSchema), 0o600)
 }

@@ -119,8 +119,12 @@ property `daggerengine.version`.
 ./mvnw package -Ddaggerengine.version=0.8.1
 ```
 
-By setting the variable to the special `local` value, it is possible to query a dagger CLI to
-generate the API schema.
+> **Warning**
+> If the targeted version mismatches the actual CLI version, the code generation will fail
+
+By setting the variable to the special `local` value (or the alias `devel`), it is possible to query
+a dagger CLI to generate the API schema.
+
 It is also possible to specify the Dagger CLI binary to use to generate the schema...
 
 Either by setting the `_EXPERIMENTAL_DAGGER_CLI_BIN` environment variable
