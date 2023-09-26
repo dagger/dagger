@@ -96,12 +96,6 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		return genSt, nil
 	}
 
-	// automate VCS first so we re-add any files cleaned up from the transition
-	// to using .gitignore for generated files
-	if err := g.automateVCS(ctx, mfs); err != nil {
-		return nil, fmt.Errorf("automate vcs: %w", err)
-	}
-
 	pkg, fset, err := loadPackage(ctx, outDir)
 	if err != nil {
 		return nil, fmt.Errorf("load package: %w", err)
@@ -109,6 +103,12 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
+
+	// automate VCS first so we re-add any files cleaned up from the transition
+	// to using .gitignore for generated files
+	if err := g.automateVCS(ctx, mfs); err != nil {
+		return nil, fmt.Errorf("automate vcs: %w", err)
+	}
 
 	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)

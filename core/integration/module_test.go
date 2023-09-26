@@ -350,6 +350,7 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 	committedModGen := goGitBase(t, c).
 		With(daggerExec("mod", "init", "--name=bare", "--sdk=go")).
 		WithExec([]string{"rm", ".gitignore"}).
+		// simulate old path scheme to show we ignore it too to help transition
 		WithExec([]string{"cp", "-a", "./internal/querybuilder", "./querybuilder"}).
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init with generated files"})
