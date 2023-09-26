@@ -22,9 +22,9 @@ type RuntimeOpts struct {
 
 func (m *GoSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Container {
 	return m.Base().
-		WithMountedDirectory(ModSourceDirPath, modSource).
+		WithDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath)).
-		WithExec([]string{"codegen"}, ContainerWithExecOpts{
+		WithExec([]string{"codegen", "--module", "."}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		WithExec([]string{
@@ -43,22 +43,37 @@ func (m *GoSdk) Bootstrap() *Container {
 	})
 }
 
-func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
-	return m.Base().
-		WithMountedDirectory(ModSourceDirPath, modSource).
-		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath)).
-		WithExec([]string{"codegen"}, ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
-		Directory(".").
-		Diff(modSource.Directory(opts.SubPath))
-}
+// func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
+// 	return m.Base().
+// 		WithMountedDirectory(ModSourceDirPath, modSource).
+// 		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath)).
+// 		WithExec([]string{"codegen", "--module", "."}, ContainerWithExecOpts{
+// 			ExperimentalPrivilegedNesting: true,
+// 		}).
+// 		Directory(".").
+// 		Diff(modSource.Directory(opts.SubPath))
+// }
 
 func (m *GoSdk) Base() *Container {
+	return m.goBase().
+		WithFile("/usr/bin/codegen", m.CodegenBin())
+}
+
+func (m *GoSdk) goBase() *Container {
 	return dag.Container().
 		From("golang:1.21-alpine").
 		WithMountedCache("/go/pkg/mod", dag.CacheVolume("modgomodcache")).
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("modgobuildcache")).
+		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("modgobuildcache"))
+}
+
+func (m *GoSdk) CodegenBin() *File {
+	return m.goBase().
 		WithMountedDirectory("/sdk", dag.Host().Directory(".")).
-		WithExec([]string{"go", "install", "-C", "/sdk", "./runtime/cmd/codegen"})
+		WithExec([]string{
+			"go", "build",
+			"-C", "/sdk",
+			"-o", "/bin/codegen",
+			"./runtime/cmd/codegen",
+		}).
+		File("/bin/codegen")
 }

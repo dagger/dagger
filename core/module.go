@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"path"
 	"path/filepath"
 	"strings"
@@ -127,6 +126,7 @@ func (mod *Module) FromConfig(
 	progSock string,
 	sourceDir *Directory,
 	configPath string,
+	installRuntime func(*Module) error,
 ) (*Module, error) {
 	// Read the config file
 	configPath = moduleconfig.NormalizeConfigPath(configPath)
@@ -176,7 +176,7 @@ func (mod *Module) FromConfig(
 				return fmt.Errorf("invalid dependency url from %q", depURL)
 			}
 
-			depMod, err := NewModule(mod.Platform, mod.Pipeline).FromConfig(ctx, bk, svcs, progSock, depSourceDir, depConfigPath)
+			depMod, err := NewModule(mod.Platform, mod.Pipeline).FromConfig(ctx, bk, svcs, progSock, depSourceDir, depConfigPath, installRuntime)
 			if err != nil {
 				return fmt.Errorf("failed to get dependency mod from config %q: %w", depURL, err)
 			}
@@ -187,8 +187,6 @@ func (mod *Module) FromConfig(
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
-	log.Println("!!! CALCULATING CONFIG PATH", cfg.Root, configPath)
 
 	// Reposition the root of the sourceDir in case it's pointing to a subdir of current sourceDir
 	if cfg.Root != "" {
@@ -203,19 +201,18 @@ func (mod *Module) FromConfig(
 		}
 	}
 
-	log.Println("!!! CALCULATED CONFIG PATH", cfg.Root, configPath)
-
 	// fill in the module settings and set the runtime container
 	mod.SourceDirectory = sourceDir
 	mod.SourceDirectorySubpath = filepath.Dir(configPath)
 	mod.Name = cfg.Name
 	mod.SDK = cfg.SDK
 	mod.DependencyConfig = cfg.Dependencies
-	if err := mod.recalcRuntime(ctx, bk, progSock); err != nil {
-		return nil, fmt.Errorf("failed to set runtime container: %w", err)
+
+	if err := installRuntime(mod); err != nil {
+		return nil, fmt.Errorf("failed to get runtime: %w", err)
 	}
 
-	return mod, nil
+	return mod, mod.updateMod()
 }
 
 func (mod *Module) WithObject(def *TypeDef) (*Module, error) {
@@ -227,42 +224,6 @@ func (mod *Module) WithObject(def *TypeDef) (*Module, error) {
 	}
 	mod.Objects = append(mod.Objects, def)
 	return mod, mod.updateMod()
-}
-
-// recalculate the definition of the runtime based on the current state of the module
-func (mod *Module) recalcRuntime(
-	ctx context.Context,
-	bk *buildkit.Client,
-	progSock string,
-) error {
-	var runtime *Container
-	var err error
-	switch mod.SDK {
-	case moduleconfig.SDKGo:
-		runtime, err = mod.goRuntime(
-			ctx,
-			bk,
-			progSock,
-			mod.SourceDirectory,
-			mod.SourceDirectorySubpath,
-		)
-	case moduleconfig.SDKPython:
-		runtime, err = mod.pythonRuntime(
-			ctx,
-			bk,
-			progSock,
-			mod.SourceDirectory,
-			mod.SourceDirectorySubpath,
-		)
-	default:
-		return fmt.Errorf("unknown sdk %q", mod.SDK)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to get base runtime for sdk %s: %w", mod.SDK, err)
-	}
-
-	mod.Runtime = runtime
-	return mod.updateMod()
 }
 
 // DigestWithoutFunctions gives a digest after unsetting Functions, which is useful

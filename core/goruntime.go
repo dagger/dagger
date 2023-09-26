@@ -20,6 +20,7 @@ func (mod *Module) goRuntime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
+	// return baseCtr.From(ctx, bk, "vito/dagger-sdk-go")
 	baseCtr, err = baseCtr.From(ctx, bk, "golang:1.21-alpine")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container from: %w", err)
@@ -45,12 +46,6 @@ func (mod *Module) goRuntime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount gobuildcache: %w", err)
 	}
-	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
-		Args: []string{"pwd"},
-	})
-	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
-		Args: []string{"find", "."},
-	})
 	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{"dagger", "mod", "sync", "bust-hack:2"},
 

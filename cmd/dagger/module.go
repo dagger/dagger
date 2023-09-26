@@ -207,6 +207,7 @@ func updateModuleConfig(
 	switch newModCfg.SDK {
 	case moduleconfig.SDKGo:
 		runCodegenFunc = func() (err error) {
+			// TODO call out to SDK module instead
 			return codegen.Generate(ctx, generator.Config{
 				Lang:            generator.SDKLang(newModCfg.SDK),
 				OutputDir:       codegenOutputDir,

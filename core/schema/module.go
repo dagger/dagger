@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -211,11 +212,103 @@ type asModuleArgs struct {
 }
 
 func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
-	mod, err := core.NewModule(s.platform, sourceDir.Pipeline).FromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath)
+	defer func() {
+		if err := recover(); err != nil {
+			debug.PrintStack()
+		}
+	}()
+
+	mod, err := core.NewModule(s.platform, sourceDir.Pipeline).
+		FromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath, func(m *core.Module) error {
+			return s.installRuntime(ctx, m)
+		})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
+
 	return s.loadModuleFunctions(ctx, mod)
+}
+
+func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error {
+	if mod.Runtime != nil {
+		log.Println("!!! ALREADY HAS RUNTIME", mod.Name)
+		return nil
+	}
+
+	sdkModRuntime, err := core.NewContainer("", mod.Pipeline, mod.Platform)
+	if err != nil {
+		return fmt.Errorf("failed to create container: %w", err)
+	}
+	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, "vito/dagger-sdk-"+string(mod.SDK))
+	if err != nil {
+		return fmt.Errorf("failed to create container from: %w", err)
+	}
+	sdkMod, err := core.NewModule(s.platform, mod.Pipeline).
+		FromConfig(ctx, s.bk, s.services, s.progSockPath,
+			mod.SourceDirectory,
+			mod.SourceDirectorySubpath,
+			func(m *core.Module) error {
+				m.Runtime = sdkModRuntime
+				return nil
+			})
+	if err != nil {
+		return fmt.Errorf("failed to create sdk module from config: %w", err)
+	}
+	sdkMod, err = s.loadModuleFunctions(ctx, sdkMod)
+	if err != nil {
+		return fmt.Errorf("failed to load sdk module functions: %w", err)
+	}
+	sdkModID, err := sdkMod.ID()
+	if err != nil {
+		return fmt.Errorf("failed to get sdk module id: %w", err)
+	}
+	// canned function for asking the SDK to return the module + functions it provides
+	getRuntimeFn := &core.Function{
+		Name: "ModuleRuntime",
+		ReturnType: &core.TypeDef{
+			Kind: core.TypeDefKindObject,
+			AsObject: &core.ObjectTypeDef{
+				Name: "Container",
+			},
+		},
+		ModuleID: sdkModID,
+	}
+
+	srcDirID, err := mod.SourceDirectory.ID()
+	if err != nil {
+		return fmt.Errorf("failed to get source directory id: %w", err)
+	}
+	result, err := s.functionCall(ctx, getRuntimeFn, functionCallArgs{
+		Module: sdkMod,
+		Input: []*core.CallInput{{
+			Name:  "modSource",
+			Value: srcDirID,
+		}, {
+			Name:  "subPath",
+			Value: mod.SourceDirectorySubpath,
+		}},
+		ParentName: "GoSdk",          // TODO: don't hardcode, dummy
+		Parent:     map[string]any{}, // TODO: params????
+		// empty to signify we're querying to get the constructed module
+		// ParentName: gqlObjectName(mod.Name),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to call sdk module: %w", err)
+	}
+
+	runtimeID, ok := result.(string)
+	if !ok {
+		return fmt.Errorf("expected container result, got %T", result)
+	}
+
+	runtime, err := core.ContainerID(runtimeID).Decode()
+	if err != nil {
+		return fmt.Errorf("failed to decode container: %w", err)
+	}
+
+	mod.Runtime = runtime
+
+	return nil
 }
 
 func (s *moduleSchema) moduleID(ctx *core.Context, module *core.Module, args any) (_ core.ModuleID, rerr error) {

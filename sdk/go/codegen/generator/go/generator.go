@@ -98,7 +98,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	pkg, fset, err := loadPackage(ctx, outDir)
 	if err != nil {
-		return nil, fmt.Errorf("load package: %w", err)
+		return nil, fmt.Errorf("load package %q: %w", outDir, err)
 	}
 
 	// respect existing package name
