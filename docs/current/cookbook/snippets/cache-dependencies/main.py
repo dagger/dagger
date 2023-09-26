@@ -16,10 +16,7 @@ async def main():
         source = (
             client.container()
             .from_("python:3.11")
-            .with_directory(
-                "/src",
-                client.host().directory(".")
-            )
+            .with_directory("/src", client.host().directory("."))
             .with_workdir("/src")
             .with_mounted_cache(
                 "/root/.cache/pip", client.cache_volume("pip-python-311")
