@@ -19,8 +19,8 @@ defmodule Mix.Tasks.ElixirWithDagger.Test do
     ]
     |> Task.async_stream(
       fn {elixir_version, erlang_version} ->
-        # highlight-end
         elixir =
+        # highlight-end
           client
           |> Dagger.Client.container()
           # highlight-start
