@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -52,7 +53,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		},
 	}
 
-	pkgInfo, partial, err := g.bootstrapPkg(ctx, mfs)
+	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -156,7 +157,7 @@ type PackageInfo struct {
 	PackageImport string // import path of package in which this file appears
 }
 
-func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*PackageInfo, bool, error) {
+func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*PackageInfo, bool, error) {
 	var needsRegen bool
 
 	outDir := g.Config.OutputDir
@@ -187,6 +188,33 @@ func (g *GoGenerator) bootstrapPkg(ctx context.Context, mfs *memfs.FS) (*Package
 
 		info.PackageImport = currentMod.Module.Mod.Path
 	} else {
+		if g.Config.ModuleRootDir != "" {
+			// when a root dir is configured, look for a go.mod there instead
+			//
+			// this is a necessary part of bootstrapping: SDKs such as the Go SDK
+			// will want to have a runtime module that lives in the same Go module as
+			// the generated client, which typically lives in the parent directory.
+			if pkg, _, err := loadPackage(ctx, g.Config.ModuleRootDir); err == nil {
+				modSrcDir, err := filepath.Abs(g.Config.ModuleSourceDir)
+				if err != nil {
+					return nil, false, fmt.Errorf("failed to get module root: %w", err)
+				}
+				modRootDir, err := filepath.Abs(filepath.Join(g.Config.ModuleSourceDir, g.Config.ModuleRootDir))
+				if err != nil {
+					return nil, false, fmt.Errorf("failed to get module root: %w", err)
+				}
+				subdirRelPath, err := filepath.Rel(modRootDir, modSrcDir)
+				if err != nil {
+					return nil, false, fmt.Errorf("failed to get subdir relative path: %w", err)
+				}
+				return &PackageInfo{
+					// leave package name blank
+					// TODO: maybe we don't even need to return it?
+					PackageImport: path.Join(pkg.Module.Path, subdirRelPath),
+				}, false, nil
+			}
+		}
+
 		// bootstrap go.mod using dependencies from the embedded Go SDK
 
 		newModName := strcase.ToKebab(g.Config.ModuleName)

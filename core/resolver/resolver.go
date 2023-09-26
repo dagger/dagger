@@ -96,16 +96,24 @@ func (ref *ModuleRef) AsModule(ctx context.Context, c *dagger.Client) (*dagger.M
 
 	switch {
 	case ref.Local:
-		rootDir := filepath.Clean(filepath.Join(ref.Path, cfg.Root))
-		subdirRelPath, err := filepath.Rel(rootDir, ref.Path)
+		// TODO put this somewhere
+		modSrcDir, err := filepath.Abs(ref.Path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module root: %w", err)
+		}
+		modRootDir, err := filepath.Abs(filepath.Join(ref.Path, cfg.Root))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module root: %w", err)
+		}
+		subdirRelPath, err := filepath.Rel(modRootDir, modSrcDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get subdir relative path: %w", err)
 		}
 		if strings.HasPrefix(subdirRelPath, "..") {
-			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.Path, rootDir)
+			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.Path, modRootDir)
 		}
 
-		return c.Host().Directory(rootDir, dagger.HostDirectoryOpts{
+		return c.Host().Directory(modRootDir, dagger.HostDirectoryOpts{
 			Include: cfg.Include,
 			Exclude: cfg.Exclude,
 		}).AsModule(dagger.DirectoryAsModuleOpts{

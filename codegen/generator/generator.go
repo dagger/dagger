@@ -32,11 +32,19 @@ type Config struct {
 
 	// Generate code for a Dagger module.
 	ModuleName      string
+	ModuleRootDir   string
 	ModuleSourceDir string
 
 	// Configure the version control system to ignore generated files, e.g. by
 	// appending them to .gitignore for Git.
 	AutomateVCS bool
+}
+
+func (cfg Config) ModuleRoot() string {
+	if cfg.ModuleRootDir != "" {
+		return cfg.ModuleRootDir
+	}
+	return cfg.ModuleSourceDir
 }
 
 type Generator interface {

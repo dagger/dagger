@@ -68,7 +68,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.Contains(t, generated, "module my-module")
 	})
 
-	t.Run("creates go.mod beneath an existing go.mod", func(t *testing.T) {
+	t.Run("creates go.mod beneath an existing go.mod if root points beneath it", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -124,6 +124,104 @@ func TestModuleGoInit(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, generated, "module example.com/test")
 		})
+	})
+
+	t.Run("respects parent go.mod if root points to it", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithNewFile("/work/foo.go", dagger.ContainerWithNewFileOpts{
+				Contents: "package foo\n",
+			}).
+			WithWorkdir("/work/child").
+			With(daggerExec("mod", "init", "--name=child", "--sdk=go", "--root=..")).
+			WithNewFile("/work/child/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `
+					package main
+
+					type Child struct{}
+
+					func (m *Child) Root() *Directory {
+						return dag.Host().Directory(".")
+					}
+				`,
+			})
+
+		generated := modGen.
+			// explicitly sync to see whether it makes a go.mod
+			With(daggerExec("mod", "sync")).
+			Directory(".")
+
+		logGen(ctx, t, generated)
+
+		out, err := modGen.
+			With(daggerQuery(`{child{root{entries}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"child":{"root":{"entries":["child","foo.go","go.mod","go.sum"]}}}`, out)
+
+		childEntries, err := generated.Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, childEntries, "go.mod")
+
+		t.Run("preserves parent module name", func(t *testing.T) {
+			generated, err := modGen.File("/work/go.mod").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, generated, "module example.com/test")
+		})
+	})
+
+	t.Run("respects existing go.mod even if root points to parent that has go.mod", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithNewFile("/work/foo.go", dagger.ContainerWithNewFileOpts{
+				Contents: "package foo\n",
+			}).
+			WithWorkdir("/work/child").
+			WithExec([]string{"go", "mod", "init", "my-mod"}).
+			With(daggerExec("mod", "init", "--name=child", "--sdk=go", "--root=..")).
+			WithNewFile("/work/child/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `
+					package main
+
+					type Child struct{}
+
+					func (m *Child) Root() *Directory {
+						return dag.Host().Directory(".")
+					}
+				`,
+			})
+
+		generated := modGen.
+			// explicitly sync to see whether it makes a go.mod
+			With(daggerExec("mod", "sync")).
+			Directory(".")
+
+		logGen(ctx, t, generated)
+
+		out, err := modGen.
+			With(daggerQuery(`{child{root{entries}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		// no go.sum
+		require.JSONEq(t, `{"child":{"root":{"entries":["child","foo.go","go.mod"]}}}`, out)
+
+		childEntries, err := generated.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, childEntries, "go.mod")
+		require.Contains(t, childEntries, "go.sum")
 	})
 
 	t.Run("respects existing main.go", func(t *testing.T) {

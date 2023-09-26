@@ -209,9 +209,10 @@ func updateModuleConfig(
 		runCodegenFunc = func() (err error) {
 			return codegen.Generate(ctx, generator.Config{
 				Lang:            generator.SDKLang(newModCfg.SDK),
-				ModuleSourceDir: workdir,
 				OutputDir:       codegenOutputDir,
 				ModuleName:      newModCfg.Name,
+				ModuleSourceDir: workdir,
+				ModuleRootDir:   newModCfg.Root,
 				AutomateVCS:     true,
 			}, engineClient)
 		}
