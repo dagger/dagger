@@ -51,7 +51,7 @@ func GitIgnorePaths(ctx context.Context, repo *git.Repository, mfs *memfs.FS, ou
 		return err
 	}
 
-	if !bytes.HasSuffix(content, []byte("\n")) {
+	if len(content) > 0 && !bytes.HasSuffix(content, []byte("\n")) {
 		content = append(content, '\n')
 	}
 
