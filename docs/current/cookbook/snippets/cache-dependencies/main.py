@@ -18,9 +18,7 @@ async def main():
             .from_("python:3.11")
             .with_directory("/src", client.host().directory("."))
             .with_workdir("/src")
-            .with_mounted_cache(
-                "/root/.cache/pip", client.cache_volume("python-311")
-            )
+            .with_mounted_cache("/root/.cache/pip", client.cache_volume("python-311"))
         )
 
         # set the working directory in the container
