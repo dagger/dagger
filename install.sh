@@ -3,7 +3,7 @@
 set -e
 
 name="dagger"
-base="https://dagger-io.s3.amazonaws.com"
+base="https://dl.dagger.io"
 
 cat /dev/null <<EOF
 ------------------------------------------------------------------------
