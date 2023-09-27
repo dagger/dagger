@@ -1,46 +1,43 @@
 package main
 
 import (
-	"path"
+	"path/filepath"
 )
 
 type GoSdk struct{}
 
 const (
-	ModMetaDirPath     = "/.daggermod"
-	ModMetaInputPath   = "input.json"
-	ModMetaOutputPath  = "output.json"
-	ModMetaDepsDirPath = "deps"
-
 	ModSourceDirPath      = "/src"
-	runtimeExecutablePath = "/runtime"
+	RuntimeExecutablePath = "/runtime"
 )
 
 type RuntimeOpts struct {
-	SubPath string `doc:"sub-path of the module source to build"`
+	SubPath string `doc:"Sub-path of the source directory that contains the module config."`
 }
 
 func (m *GoSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Container {
+	modSubPath := filepath.Join(ModSourceDirPath, opts.SubPath)
 	return m.Base().
 		WithDirectory(ModSourceDirPath, modSource).
-		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath)).
+		WithWorkdir(modSubPath).
 		WithExec([]string{"codegen", "--module", "."}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		WithExec([]string{
 			"go", "build",
-			"-o", runtimeExecutablePath,
+			"-o", RuntimeExecutablePath,
 			"-ldflags", "-s -d -w",
 			".",
 		}).
 		WithWorkdir(ModSourceDirPath).
-		WithEntrypoint([]string{runtimeExecutablePath})
+		WithEntrypoint([]string{RuntimeExecutablePath}).
+		WithLabel("io.dagger.module.config", modSubPath)
 }
 
 func (m *GoSdk) Bootstrap() *Container {
 	return m.ModuleRuntime(dag.Host().Directory("."), RuntimeOpts{
 		SubPath: "./runtime",
-	}).WithLabel("io.dagger.module.config", "/src/runtime/dagger.json")
+	})
 }
 
 // func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
@@ -73,7 +70,7 @@ func (m *GoSdk) CodegenBin() *File {
 			"go", "build",
 			"-C", "/sdk",
 			"-o", "/bin/codegen",
-			"./runtime/cmd/codegen",
+			"./cmd/codegen",
 		}).
 		File("/bin/codegen")
 }

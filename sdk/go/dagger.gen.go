@@ -1437,25 +1437,35 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 // DirectoryAsModuleOpts contains options for Directory.AsModule
 type DirectoryAsModuleOpts struct {
+	// An optional subpath of the directory which contains the module's source
+	// code.
+	//
+	// This is needed when the module code is in a subdirectory but requires
+	// parent directories to be loaded in order to execute. For example, the
+	// module source code may need a go.mod, project.toml, package.json, etc. file
+	// from a parent directory.
+	//
+	// If not set, the module source code is loaded from the root of the
+	// directory.
 	SourceSubpath string
+	// A pre-built runtime container to use instead of building one from the
+	// source code. This is useful for bootstrapping.
+	//
+	// You should ignore this unless you're building a Dagger SDK.
+	Runtime *Container
 }
 
 // Load the directory as a Dagger module
-//
-// sourceSubpath is an optional parameter that, if set, points to a subpath of this
-// directory that contains the module's source code. This is needed when the module
-// code is in a subdirectory but requires parent directories to be loaded in order
-// to execute. For example, the module source code may need a go.mod, project.toml,
-// package.json, etc. file from a parent directory.
-//
-// If sourceSubpath is not set, the module source code is loaded from the root of
-// the directory.
 func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 	q := r.q.Select("asModule")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sourceSubpath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceSubpath) {
 			q = q.Arg("sourceSubpath", opts[i].SourceSubpath)
+		}
+		// `runtime` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Runtime) {
+			q = q.Arg("runtime", opts[i].Runtime)
 		}
 	}
 

@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	outputDir string
-	moduleDir string
-	lang      string
+	outputDir   string
+	moduleDir   string
+	lang        string
+	automateVCS bool
 )
 
 var rootCmd = &cobra.Command{
@@ -28,6 +29,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate in")
 	rootCmd.Flags().StringVar(&moduleDir, "module", "", "module to load and codegen dependencies for")
+	rootCmd.Flags().BoolVar(&automateVCS, "vcs", false, "automate VCS config (.gitignore, .gitattributes)")
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
@@ -42,9 +44,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 		OutputDir: outputDir,
 
-		// TODO: this should be a flag; we'll want it for codegen run by the user,
-		// but not codegen run just-in-time
-		AutomateVCS: false,
+		AutomateVCS: automateVCS,
 	}
 
 	if moduleDir != "" {

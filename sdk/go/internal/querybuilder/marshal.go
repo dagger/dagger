@@ -43,6 +43,7 @@ var (
 		"CacheID":     {},
 		"ModuleID":    {},
 		"FunctionID":  {},
+		"TypeDefID":   {},
 		// Others
 		"Platform": {},
 		"JSON":     {},
