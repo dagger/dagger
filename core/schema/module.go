@@ -209,6 +209,7 @@ func (s *moduleSchema) currentFunctionCall(ctx *core.Context, _ *core.Query, _ a
 
 type asModuleArgs struct {
 	SourceSubpath string
+	Runtime       core.ContainerID
 }
 
 func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
@@ -218,10 +219,19 @@ func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Dire
 		}
 	}()
 
-	mod, err := core.NewModule(s.platform, sourceDir.Pipeline).
-		FromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath, func(m *core.Module) error {
-			return s.installRuntime(ctx, m)
-		})
+	mod := core.NewModule(s.platform, sourceDir.Pipeline)
+
+	if args.Runtime != "" {
+		ctr, err := args.Runtime.Decode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode runtime: %w", err)
+		}
+		mod.Runtime = ctr
+	}
+
+	mod, err := mod.FromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath, func(m *core.Module) error {
+		return s.installRuntime(ctx, m)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
@@ -242,7 +252,7 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 	if err != nil {
 		return fmt.Errorf("failed to create container: %w", err)
 	}
-	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, "vito/dagger-sdk-"+string(mod.SDK+":bootstrapped-3"))
+	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, "vito/dagger-sdk-"+string(mod.SDK+":real-bootstrap"))
 	if err != nil {
 		return fmt.Errorf("failed to create container from: %w", err)
 	}
