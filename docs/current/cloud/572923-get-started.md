@@ -65,9 +65,7 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
   ![View dashboard](/img/current/cloud/get-started/connect-cloud.png)
 
-1. Browse to the *Organizations Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully, as you will need it to connect your Dagger Cloud account with your CI provider.
-
-  ![Get token](/img/current/cloud/get-started/get-token.png)
+The Dagger Cloud dashboard will not display any data until you connect your Dagger Cloud account with a CI provider or CI tool. The next step describes how to do this.
 
 ## Step 2: Connect Dagger Cloud with your CI
 
@@ -75,7 +73,13 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 At the end of this step, you will have connected Dagger Cloud with your CI provider or CI tool using your Dagger Cloud token. If you have already connected Dagger Cloud with your CI provider/tool, you may skip this step.
 :::
 
-The Dagger Cloud dashboard will not display any data until you connect your Dagger Cloud account with a CI provider or CI tool. The general procedure to do this is:
+To connect your Dagger Cloud account with a CI provider or CI tool, you must first obtain a Dagger Cloud token.
+
+Browse to the *Organizations Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully.
+
+  ![Get token](/img/current/cloud/get-started/get-token.png)
+
+Once you have a token, the general procedure to connect Dagger Cloud with a CI provider/CI tool is:
 
 - Store the token as a secret with your CI provider/in your CI tool.
 - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
