@@ -151,6 +151,15 @@ Follow these steps:
     - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
   :::
 
+### What are Dagger's caching features?
+
+Dagger is able to cache:
+
+- Operations, such as copying files or directories to a container, running tests, compiling code, etc.
+- Volumes, such as data caches or package manager caches
+
+Operations are automatically cached every time a Dagger pipeline runs. [Cache volumes](./quickstart/635927-caching.mdx) must be explicity defined and used in your Dagger pipeline code.
+
 ### I am stuck. How can I get help?
 
 Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
