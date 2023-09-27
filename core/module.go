@@ -128,9 +128,9 @@ func (mod *Module) FromConfig(
 	configPath string,
 	installRuntime func(*Module) error,
 ) (*Module, error) {
-	// Read the config file
 	configPath = moduleconfig.NormalizeConfigPath(configPath)
 
+	// Read the config file
 	configFile, err := sourceDir.File(ctx, bk, svcs, configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config file: %w", err)
@@ -208,8 +208,10 @@ func (mod *Module) FromConfig(
 	mod.SDK = cfg.SDK
 	mod.DependencyConfig = cfg.Dependencies
 
-	if err := installRuntime(mod); err != nil {
-		return nil, fmt.Errorf("failed to get runtime: %w", err)
+	if mod.Runtime == nil {
+		if err := installRuntime(mod); err != nil {
+			return nil, fmt.Errorf("failed to get runtime: %w", err)
+		}
 	}
 
 	return mod, mod.updateMod()

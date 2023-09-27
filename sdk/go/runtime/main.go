@@ -40,7 +40,7 @@ func (m *GoSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Container
 func (m *GoSdk) Bootstrap() *Container {
 	return m.ModuleRuntime(dag.Host().Directory("."), RuntimeOpts{
 		SubPath: "./runtime",
-	})
+	}).WithLabel("io.dagger.module.config", "/src/runtime/dagger.json")
 }
 
 // func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {

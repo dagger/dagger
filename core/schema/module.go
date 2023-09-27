@@ -226,11 +226,14 @@ func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Dire
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
 
-	return s.loadModuleFunctions(ctx, mod)
+	return s.loadModuleFromRuntime(ctx, mod)
 }
+
+const modConfigLabel = "io.dagger.module.config"
 
 func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error {
 	if mod.Runtime != nil {
+		// this isn't expected
 		log.Println("!!! ALREADY HAS RUNTIME", mod.Name)
 		return nil
 	}
@@ -239,45 +242,67 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 	if err != nil {
 		return fmt.Errorf("failed to create container: %w", err)
 	}
-	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, "vito/dagger-sdk-"+string(mod.SDK))
+	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, "vito/dagger-sdk-"+string(mod.SDK+":bootstrapped-3"))
 	if err != nil {
 		return fmt.Errorf("failed to create container from: %w", err)
 	}
-	sdkMod, err := core.NewModule(s.platform, mod.Pipeline).
-		FromConfig(ctx, s.bk, s.services, s.progSockPath,
-			mod.SourceDirectory,
-			mod.SourceDirectorySubpath,
-			func(m *core.Module) error {
-				m.Runtime = sdkModRuntime
-				return nil
-			})
+	sdkImageConfig, err := sdkModRuntime.ImageConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get sdk image config: %w", err)
+	}
+	configPath, found := sdkImageConfig.Labels[modConfigLabel]
+	if !found {
+		return fmt.Errorf("sdk image missing config label: %q", modConfigLabel)
+	}
+	sdkRoot, err := sdkModRuntime.RootFS(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get sdk root: %w", err)
+	}
+
+	sdkMod := core.NewModule(s.platform, mod.Pipeline)
+
+	// set the SDK module's runtime; it's pre-compiled
+	sdkMod.Runtime = sdkModRuntime
+
+	// load SDK module config + dependencies
+	sdkMod, err = sdkMod.FromConfig(ctx,
+		s.bk, s.services, s.progSockPath,
+		sdkRoot,
+		configPath,
+		func(m *core.Module) error {
+			// dependency of the SDK module
+			return s.installRuntime(ctx, m)
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create sdk module from config: %w", err)
 	}
-	sdkMod, err = s.loadModuleFunctions(ctx, sdkMod)
+
+	// call the canned "" entrypoint to load the module's definitions
+	sdkMod, err = s.loadModuleFromRuntime(ctx, sdkMod)
 	if err != nil {
 		return fmt.Errorf("failed to load sdk module functions: %w", err)
 	}
-	sdkModID, err := sdkMod.ID()
-	if err != nil {
-		return fmt.Errorf("failed to get sdk module id: %w", err)
-	}
-	// canned function for asking the SDK to return the module + functions it provides
-	getRuntimeFn := &core.Function{
-		Name: "ModuleRuntime",
-		ReturnType: &core.TypeDef{
-			Kind: core.TypeDefKindObject,
-			AsObject: &core.ObjectTypeDef{
-				Name: "Container",
-			},
-		},
-		ModuleID: sdkModID,
+
+	moduleName := gqlObjectName(sdkMod.Name)
+	funcName := "ModuleRuntime"
+	var getRuntimeFn *core.Function
+	for _, obj := range sdkMod.Objects {
+		if obj.AsObject.Name == moduleName {
+			for _, fn := range obj.AsObject.Functions {
+				if fn.Name == funcName {
+					getRuntimeFn = fn
+					break
+				}
+			}
+		}
 	}
 
 	srcDirID, err := mod.SourceDirectory.ID()
 	if err != nil {
 		return fmt.Errorf("failed to get source directory id: %w", err)
 	}
+
 	result, err := s.functionCall(ctx, getRuntimeFn, functionCallArgs{
 		Module: sdkMod,
 		Input: []*core.CallInput{{
@@ -287,10 +312,10 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 			Name:  "subPath",
 			Value: mod.SourceDirectorySubpath,
 		}},
-		ParentName: "GoSdk",          // TODO: don't hardcode, dummy
-		Parent:     map[string]any{}, // TODO: params????
-		// empty to signify we're querying to get the constructed module
-		// ParentName: gqlObjectName(mod.Name),
+		ParentName: moduleName,
+		// TODO: params? somehow? maybe from module config? would be a good way to
+		// e.g. configure the language version.
+		Parent: map[string]any{},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to call sdk module: %w", err)
@@ -725,7 +750,7 @@ func (cache *FunctionContextCache) FunctionContextFrom(ctx context.Context) (*Fu
 // are keyed by the digest of the module viewing them.
 // serveModuleToDigest stitches in the schema for the given mod to the schema keyed by dependerModDigest.
 func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, dependerModDigest digest.Digest) error {
-	mod, err := s.loadModuleFunctions(ctx, mod)
+	mod, err := s.loadModuleFromRuntime(ctx, mod)
 	if err != nil {
 		return fmt.Errorf("failed to load dep module functions: %w", err)
 	}
@@ -754,9 +779,9 @@ func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, 
 	return err
 }
 
-// loadModuleFunctions invokes the Module to ask for the Functions it defines and returns the updated
+// loadModuleFromRuntime invokes the Module to ask for the Functions it defines and returns the updated
 // Module object w/ those Functions included.
-func (s *moduleSchema) loadModuleFunctions(ctx *core.Context, mod *core.Module) (*core.Module, error) {
+func (s *moduleSchema) loadModuleFromRuntime(ctx *core.Context, mod *core.Module) (*core.Module, error) {
 	// We use the digest without functions as cache key because loadModuleFunctions should behave idempotently,
 	// returning the same Module object whether or not its Functions were already loaded.
 	// The digest without functions is stable before+after function loading.
