@@ -49,10 +49,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 	}
 
 	ps := &parseState{
-		visitedStructs: make(map[string]*Statement),
-		pkg:            funcs.modulePkg,
-		fset:           funcs.moduleFset,
-		methods:        make(map[string][]method),
+		pkg:     funcs.modulePkg,
+		fset:    funcs.moduleFset,
+		methods: make(map[string][]method),
 	}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
@@ -91,7 +90,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 
 		// TODO(vito): hacky: need to run this before fillObjectFunctionCases so it
 		// collects all the methods
-		objType, err := ps.goStructToAPIType(strct, named, false)
+		objType, err := ps.goStructToAPIType(strct, named)
 		if err != nil {
 			panic(err)
 		}
@@ -398,10 +397,9 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 }
 
 type parseState struct {
-	visitedStructs map[string]*Statement
-	pkg            *packages.Package
-	fset           *token.FileSet
-	methods        map[string][]method
+	pkg     *packages.Package
+	fset    *token.FileSet
+	methods map[string][]method
 }
 
 type method struct {
@@ -409,17 +407,17 @@ type method struct {
 	sig  *types.Signature
 }
 
-func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, reference bool) (*Statement, error) {
+func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*Statement, error) {
 	switch t := typ.(type) {
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
-		typeDef, err := ps.goTypeToAPIType(t.Underlying(), t, reference)
+		typeDef, err := ps.goTypeToAPIType(t.Underlying(), t)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert named type: %w", err)
 		}
 		return typeDef, nil
 	case *types.Pointer:
-		return ps.goTypeToAPIType(t.Elem(), named, reference)
+		return ps.goTypeToAPIType(t.Elem(), named)
 	case *types.Basic:
 		if t.Kind() == types.Invalid {
 			return nil, fmt.Errorf("invalid type: %+v", t)
@@ -439,7 +437,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, refere
 			kind,
 		), nil
 	case *types.Slice:
-		elemTypeDef, err := ps.goTypeToAPIType(t.Elem(), nil, reference)
+		elemTypeDef, err := ps.goTypeToAPIType(t.Elem(), nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert slice element type: %w", err)
 		}
@@ -447,7 +445,16 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, refere
 			elemTypeDef,
 		), nil
 	case *types.Struct:
-		return ps.goStructToAPIType(t, named, reference)
+		if named == nil {
+			return nil, fmt.Errorf("struct types must be named")
+		}
+		typeName := named.Obj().Name()
+		if typeName == "" {
+			return nil, fmt.Errorf("struct types must be named")
+		}
+		return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
+			Lit(typeName),
+		), nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T", t)
 	}
@@ -455,32 +462,15 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named, refere
 
 const errorTypeName = "error"
 
-func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, reference bool) (*Statement, error) {
+func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*Statement, error) {
 	if named == nil {
 		return nil, fmt.Errorf("struct types must be named")
 	}
+
 	typeName := named.Obj().Name()
 	if typeName == "" {
 		return nil, fmt.Errorf("struct types must be named")
 	}
-
-	// Return "stub" type if we've already handled this type; the full definition that includes all fields+functions
-	// only needs to appear once. Every other occurrence should just have a ref to the object's name.
-	if fullDef, ok := ps.visitedStructs[typeName]; ok {
-		if reference {
-			return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
-				Lit(typeName),
-			), nil
-		} else {
-			return fullDef, nil
-		}
-	}
-
-	// Mark visiting immediately so that self-referential functions don't recurse
-	// and only get a reference.
-	ps.visitedStructs[typeName] = Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
-		Lit(typeName),
-	)
 
 	// args for WithObject
 	withObjectArgs := []Code{
@@ -562,7 +552,8 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 		if !field.Exported() {
 			continue
 		}
-		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil, true)
+
+		fieldTypeDef, err := ps.goTypeToAPIType(field.Type(), nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
@@ -586,8 +577,6 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named, ref
 
 		typeDef = dotLine(typeDef, "WithField").Call(withFieldArgs...)
 	}
-
-	ps.visitedStructs[typeName] = typeDef
 
 	return typeDef, nil
 }
@@ -622,14 +611,14 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 		if result.String() == errorTypeName {
 			fnReturnType = voidDef
 		} else {
-			fnReturnType, err = ps.goTypeToAPIType(result, nil, true)
+			fnReturnType, err = ps.goTypeToAPIType(result, nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert result type: %w", err)
 			}
 		}
 	case 2:
 		result := methodResults.At(0).Type()
-		fnReturnType, err = ps.goTypeToAPIType(result, nil, true)
+		fnReturnType, err = ps.goTypeToAPIType(result, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert result type: %w", err)
 		}
@@ -664,7 +653,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 					return nil, fmt.Errorf("failed to parse struct tag: %w", err)
 				}
 
-				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil, true)
+				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert param type: %w", err)
 				}
@@ -719,7 +708,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 				fnDef = dotLine(fnDef, "WithArg").Call(argArgs...)
 			}
 		} else {
-			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil, true)
+			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert param type: %w", err)
 			}
