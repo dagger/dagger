@@ -40,9 +40,9 @@ A few important points to note:
 - The workflow uses hardwired artifacts to clone the Git repository and to install the Dagger CLI.
 - `unix:///var/run/dagger/buildkitd.sock` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
 - The Dagger CLI `dagger_v0.8.7_linux_amd64.tar.gz` is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project.
-- The image `golang:1.21.0-bookworm` is used as the runtime for the container because the example project requires Go.
+- The image `golang:1.21.0-bookworm` is used as the runtime for the pipeline because the example project requires Go.
 
-The workflow uses a PersistentVolumeClaim for the runtime dependencies of the pipeline. Even though the dependencies within the pipeline are cached through Dagger, we still have dependencies to run the pipeline.
+The workflow uses a PersistentVolumeClaim for the runtime dependencies of the pipeline, such as the Dagger Go SDK.
 
 Create the PersistentVolumeClaim configuration in a file called `gomodcache.yaml`:
 
