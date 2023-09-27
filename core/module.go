@@ -8,9 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/core/moduleconfig"
+	"dagger.io/dagger/modules"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resolver"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
@@ -43,8 +42,11 @@ type Module struct {
 	// The doc string of the module, if any
 	Description string `json:"description"`
 
-	// The SDK of the module
-	SDK moduleconfig.SDK `json:"sdk"`
+	// The name of the well-known SDK configured by the module, if any.
+	SDK string `json:"sdk,omitempty"`
+
+	// The SDK runtime module image ref configured by the module.
+	SDKRuntime string `json:"sdkRuntime"`
 
 	// Dependencies of the module
 	Dependencies []*Module `json:"dependencies"`
@@ -128,7 +130,7 @@ func (mod *Module) FromConfig(
 	configPath string,
 	installRuntime func(*Module) error,
 ) (*Module, error) {
-	configPath = moduleconfig.NormalizeConfigPath(configPath)
+	configPath = modules.NormalizeConfigPath(configPath)
 
 	// Read the config file
 	configFile, err := sourceDir.File(ctx, bk, svcs, configPath)
@@ -139,7 +141,7 @@ func (mod *Module) FromConfig(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
-	var cfg moduleconfig.Config
+	var cfg modules.Config
 	if err := json.Unmarshal(configBytes, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -150,7 +152,7 @@ func (mod *Module) FromConfig(
 	for i, depURL := range cfg.Dependencies {
 		i, depURL := i, depURL
 		eg.Go(func() error {
-			modRef, err := resolver.ResolveStableRef(depURL)
+			modRef, err := modules.ResolveStableRef(depURL)
 			if err != nil {
 				return fmt.Errorf("failed to parse dependency url %q: %w", depURL, err)
 			}
@@ -164,14 +166,14 @@ func (mod *Module) FromConfig(
 			switch {
 			case modRef.Local:
 				depSourceDir = sourceDir
-				depConfigPath = moduleconfig.NormalizeConfigPath(path.Join("/", path.Dir(configPath), modRef.Path))
+				depConfigPath = modules.NormalizeConfigPath(path.Join("/", path.Dir(configPath), modRef.Path))
 			case modRef.Git != nil:
 				var err error
 				depSourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
 				if err != nil {
 					return fmt.Errorf("failed to create git directory: %w", err)
 				}
-				depConfigPath = moduleconfig.NormalizeConfigPath(modRef.SubPath)
+				depConfigPath = modules.NormalizeConfigPath(modRef.SubPath)
 			default:
 				return fmt.Errorf("invalid dependency url from %q", depURL)
 			}
@@ -205,7 +207,8 @@ func (mod *Module) FromConfig(
 	mod.SourceDirectory = sourceDir
 	mod.SourceDirectorySubpath = filepath.Dir(configPath)
 	mod.Name = cfg.Name
-	mod.SDK = cfg.SDK
+	mod.SDK = cfg.SDKName
+	mod.SDKRuntime = cfg.SDKRuntime
 	mod.DependencyConfig = cfg.Dependencies
 
 	if mod.Runtime == nil {

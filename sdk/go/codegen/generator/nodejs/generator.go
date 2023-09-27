@@ -54,7 +54,7 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	if err := generator.MarkGeneratedAttributes(mfs, ClientGenFile, g.Config.ModuleSourceDir); err != nil {
+	if err := generator.MarkGeneratedAttributes(mfs, ClientGenFile, g.Config.OutputDir); err != nil {
 		return nil, err
 	}
 

@@ -68,6 +68,9 @@ func Bootstrap(cmd *cobra.Command, args []string) error {
 			"./*.go",
 			"./internal/",
 
+			// utilities for loading modules
+			"./modules/",
+
 			// codegen, for generating the runtime module
 			"./codegen/",
 			"./cmd/codegen/main.go",
@@ -128,7 +131,7 @@ const (
 
 // bootstrap builds the module "natively" using the Dagger client.
 //
-// This approximates the runtime module's ModuleRuntime code; unfortuantely we
+// This approximates the runtime module's ModuleRuntime code; unfortunately we
 // can't share code because the runtime module has its own types.
 //
 // Fortunately, this container is shortlived: we only use it to build the
@@ -166,18 +169,18 @@ func bootstrapUsingModule(
 	modSubPath string,
 	sdkRuntime *dagger.Container,
 ) (*dagger.Container, error) {
-	mod := modSrcRoot.AsModule(dagger.DirectoryAsModuleOpts{
+	sdkMod := modSrcRoot.AsModule(dagger.DirectoryAsModuleOpts{
 		Runtime:       sdkRuntime,
 		SourceSubpath: modSubPath,
 	})
 
-	modName, err := mod.Name(ctx)
-	if err != nil {
-		return nil, err
+	if _, err := sdkMod.Serve(ctx); err != nil {
+		return nil, fmt.Errorf("serve SDK module: %w", err)
 	}
 
-	if _, err := mod.Serve(ctx); err != nil {
-		return nil, fmt.Errorf("serve sdk module: %w", err)
+	modName, err := sdkMod.Name(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	modSrcRootID, err := modSrcRoot.ID(ctx)

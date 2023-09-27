@@ -1,4 +1,4 @@
-package resolver
+package modules
 
 import (
 	"bufio"
@@ -12,12 +12,11 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/moduleconfig"
 )
 
-// ModuleRef contains all of the information we're able to learn about a provided
+// Ref contains all of the information we're able to learn about a provided
 // module ref.
-type ModuleRef struct {
+type Ref struct {
 	Path    string // Path is the provided path for the module.
 	Version string // Version is the provided version for the module, if any.
 
@@ -33,15 +32,14 @@ type GitRef struct {
 	Commit   string // Commit is the commit to check out.
 }
 
-func (ref *ModuleRef) String() string {
+func (ref *Ref) String() string {
 	if ref.Local {
-		// TODO(vito): This may be worth a rethink, but the idea is for local
-		// modules to be represented as a 'subpath' of their outer module, that way
-		// they can do things like refer to sibling modules at ../foo. But this
-		// hasn't been proved out. Anyway, at this layer we need to preserve the
-		// subpath because this gets printed to `dagger.json`, and without this the
-		// module will depend on itself, leading to an infinite loop.
-		return path.Join(ref.Path, ref.SubPath)
+		p, err := ref.LocalSourcePath()
+		if err != nil {
+			// should be impossible given the ref.Local guard
+			panic(err)
+		}
+		return p
 	}
 	if ref.Version == "" {
 		return ref.Path
@@ -49,14 +47,27 @@ func (ref *ModuleRef) String() string {
 	return fmt.Sprintf("%s@%s", ref.Path, ref.Version)
 }
 
-func (ref *ModuleRef) Config(ctx context.Context, c *dagger.Client) (*moduleconfig.Config, error) {
+func (ref *Ref) LocalSourcePath() (string, error) {
+	if ref.Local {
+		// TODO(vito): This may be worth a rethink, but the idea is for local
+		// modules to be represented as a 'subpath' of their outer module, that way
+		// they can do things like refer to sibling modules at ../foo. But this
+		// hasn't been proved out. Anyway, at this layer we need to preserve the
+		// subpath because this gets printed to `dagger.json`, and without this the
+		// module will depend on itself, leading to an infinite loop.
+		return path.Join(ref.Path, ref.SubPath), nil
+	}
+	return "", fmt.Errorf("cannot get local source path for non-local module")
+}
+
+func (ref *Ref) Config(ctx context.Context, c *dagger.Client) (*Config, error) {
 	switch {
 	case ref.Local:
-		configBytes, err := os.ReadFile(path.Join(ref.Path, moduleconfig.Filename))
+		configBytes, err := os.ReadFile(path.Join(ref.Path, Filename))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read local config file: %w", err)
 		}
-		var cfg moduleconfig.Config
+		var cfg Config
 		if err := json.Unmarshal(configBytes, &cfg); err != nil {
 			return nil, fmt.Errorf("failed to parse local config file: %w", err)
 		}
@@ -69,15 +80,15 @@ func (ref *ModuleRef) Config(ctx context.Context, c *dagger.Client) (*moduleconf
 		repoDir := c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree()
 		var configPath string
 		if ref.SubPath != "" {
-			configPath = path.Join(ref.SubPath, moduleconfig.Filename)
+			configPath = path.Join(ref.SubPath, Filename)
 		} else {
-			configPath = moduleconfig.Filename
+			configPath = Filename
 		}
 		configStr, err := repoDir.File(configPath).Contents(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read git config file: %w", err)
 		}
-		var cfg moduleconfig.Config
+		var cfg Config
 		if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 			return nil, fmt.Errorf("failed to parse git config file: %w", err)
 		}
@@ -88,7 +99,7 @@ func (ref *ModuleRef) Config(ctx context.Context, c *dagger.Client) (*moduleconf
 	}
 }
 
-func (ref *ModuleRef) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
+func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 	cfg, err := ref.Config(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module config: %w", err)
@@ -96,21 +107,15 @@ func (ref *ModuleRef) AsModule(ctx context.Context, c *dagger.Client) (*dagger.M
 
 	switch {
 	case ref.Local:
-		// TODO put this somewhere
-		modSrcDir, err := filepath.Abs(ref.Path)
+		localSrc, err := ref.LocalSourcePath()
+		if err != nil {
+			// should be impossible given the ref.Local guard
+			panic(err)
+		}
+
+		modRootDir, subdirRelPath, err := cfg.RootAndSubpath(localSrc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module root: %w", err)
-		}
-		modRootDir, err := filepath.Abs(filepath.Join(ref.Path, cfg.Root))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module root: %w", err)
-		}
-		subdirRelPath, err := filepath.Rel(modRootDir, modSrcDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get subdir relative path: %w", err)
-		}
-		if strings.HasPrefix(subdirRelPath, "..") {
-			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.Path, modRootDir)
 		}
 
 		return c.Host().Directory(modRootDir, dagger.HostDirectoryOpts{
@@ -136,10 +141,10 @@ func (ref *ModuleRef) AsModule(ctx context.Context, c *dagger.Client) (*dagger.M
 }
 
 // TODO dedup with ResolveMovingRef
-func ResolveStableRef(modQuery string) (*ModuleRef, error) {
+func ResolveStableRef(modQuery string) (*Ref, error) {
 	modPath, modVersion, hasVersion := strings.Cut(modQuery, "@")
 
-	ref := &ModuleRef{
+	ref := &Ref{
 		Path: modPath,
 	}
 
@@ -192,10 +197,10 @@ func ResolveStableRef(modQuery string) (*ModuleRef, error) {
 	return ref, nil
 }
 
-func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) (*ModuleRef, error) {
+func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) (*Ref, error) {
 	modPath, modVersion, hasVersion := strings.Cut(modQuery, "@")
 
-	ref := &ModuleRef{
+	ref := &Ref{
 		Path: modPath,
 	}
 
@@ -253,7 +258,7 @@ func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) 
 	return ref, nil
 }
 
-func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *ModuleRef, urlStr string) (*ModuleRef, error) {
+func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *Ref, urlStr string) (*Ref, error) {
 	mod, err := ResolveMovingRef(ctx, dag, urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve module: %w", err)

@@ -72,8 +72,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 		// generate an initial dagger.gen.go from the base Dagger API
 		baseCfg := g.Config
-		baseCfg.ModuleName = ""
-		baseCfg.ModuleSourceDir = ""
+		baseCfg.ModuleConfig = nil
 		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
@@ -193,34 +192,36 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 
 		info.PackageImport = currentMod.Module.Mod.Path
 	} else {
-		if g.Config.ModuleRootDir != "" {
-			// when a root dir is configured, look for a go.mod there instead
+		if g.Config.ModuleConfig != nil {
+			rootDir, subdirRelPath, err := g.Config.ModuleConfig.RootAndSubpath(outDir)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get module root: %w", err)
+			}
+
+			// when a module is configured, look for a go.mod in its root dir instead
 			//
 			// this is a necessary part of bootstrapping: SDKs such as the Go SDK
 			// will want to have a runtime module that lives in the same Go module as
 			// the generated client, which typically lives in the parent directory.
-			if pkg, _, err := loadPackage(ctx, g.Config.ModuleRootDir); err == nil {
-				modSrcDir, err := filepath.Abs(g.Config.ModuleSourceDir)
-				if err != nil {
-					return nil, false, fmt.Errorf("failed to get module root: %w", err)
-				}
-				modRootDir, err := filepath.Abs(filepath.Join(g.Config.ModuleSourceDir, g.Config.ModuleRootDir))
-				if err != nil {
-					return nil, false, fmt.Errorf("failed to get module root: %w", err)
-				}
-				subdirRelPath, err := filepath.Rel(modRootDir, modSrcDir)
-				if err != nil {
-					return nil, false, fmt.Errorf("failed to get subdir relative path: %w", err)
-				}
+			if pkg, _, err := loadPackage(ctx, rootDir); err == nil {
 				return &PackageInfo{
 					// leave package name blank
 					// TODO: maybe we don't even need to return it?
 					PackageImport: path.Join(pkg.Module.Path, subdirRelPath),
 				}, false, nil
 			}
-		}
 
-		if g.Config.ModuleName == "" {
+			// bootstrap go.mod using dependencies from the embedded Go SDK
+
+			newModName := strcase.ToKebab(g.Config.ModuleConfig.Name)
+
+			newMod.AddModuleStmt(newModName)
+			newMod.SetRequire(sdkMod.Require)
+
+			info.PackageImport = newModName
+
+			needsRegen = true
+		} else {
 			// no module; assume client-only codegen
 
 			if pkg, _, err := loadPackage(ctx, outDir); err == nil {
@@ -232,17 +233,6 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 
 			return nil, false, fmt.Errorf("no module name configured and no existing package found")
 		}
-
-		// bootstrap go.mod using dependencies from the embedded Go SDK
-
-		newModName := strcase.ToKebab(g.Config.ModuleName)
-
-		newMod.AddModuleStmt(newModName)
-		newMod.SetRequire(sdkMod.Require)
-
-		info.PackageImport = newModName
-
-		needsRegen = true
 	}
 
 	modBody, err := newMod.Format()
@@ -268,7 +258,7 @@ func generateCode(
 	pkg *packages.Package,
 	fset *token.FileSet,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleName, pkg, fset)
+	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset)
 
 	headerData := struct {
 		*PackageInfo
@@ -302,7 +292,7 @@ func generateCode(
 				IsModuleCode bool
 			}{
 				Type:         t,
-				IsModuleCode: cfg.ModuleName != "",
+				IsModuleCode: cfg.ModuleConfig != nil,
 			}); err != nil {
 				return err
 			}
@@ -330,13 +320,11 @@ func generateCode(
 		return err
 	}
 
-	if cfg.ModuleName != "" {
+	if cfg.ModuleConfig != nil {
 		moduleData := struct {
-			Schema              *introspection.Schema
-			SourceDirectoryPath string
+			Schema *introspection.Schema
 		}{
-			Schema:              schema,
-			SourceDirectoryPath: cfg.ModuleSourceDir,
+			Schema: schema,
 		}
 
 		var moduleMain bytes.Buffer
@@ -351,7 +339,7 @@ func generateCode(
 	if err != nil {
 		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
 	}
-	formatted, err = imports.Process(filepath.Join(cfg.ModuleSourceDir, "dummy.go"), formatted, nil)
+	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)
 	if err != nil {
 		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
 	}
@@ -395,7 +383,8 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 }
 
 func (g *GoGenerator) baseModuleSource() string {
-	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
+	moduleStructName := strcase.ToCamel(g.Config.ModuleConfig.Name)
+
 	return fmt.Sprintf(`package main
 
 import (

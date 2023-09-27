@@ -12,38 +12,32 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/codegen/introspection"
+	"dagger.io/dagger/modules"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
 
-// TODO: de-dupe this with moduleconfig api
 type SDKLang string
 
 const (
 	SDKLangGo     SDKLang = "go"
 	SDKLangNodeJS SDKLang = "nodejs"
-	SDKLangPython SDKLang = "python"
 )
 
 type Config struct {
-	Lang      SDKLang
+	// Language supported by this codegen infra.
+	Lang SDKLang
+
+	// Destination directory for generated code.
 	OutputDir string
 
 	// Generate code for a Dagger module.
-	ModuleName      string
-	ModuleRootDir   string
-	ModuleSourceDir string
+	ModuleRef    *modules.Ref
+	ModuleConfig *modules.Config
 
 	// Configure the version control system to ignore generated files, e.g. by
 	// appending them to .gitignore for Git.
 	AutomateVCS bool
-}
-
-func (cfg Config) ModuleRoot() string {
-	if cfg.ModuleRootDir != "" {
-		return cfg.ModuleRootDir
-	}
-	return cfg.ModuleSourceDir
 }
 
 type Generator interface {

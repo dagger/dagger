@@ -10,10 +10,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/codegen"
-	"dagger.io/dagger/codegen/generator"
-	"github.com/dagger/dagger/core/moduleconfig"
-	"github.com/dagger/dagger/core/resolver"
+	"dagger.io/dagger/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -24,7 +21,8 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
-	sdk        string
+	sdk string
+
 	moduleName string
 	moduleRoot string
 )
@@ -41,7 +39,7 @@ func init() {
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
-	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK to use for the module")
+	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.MarkFlagRequired("sdk")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.MarkFlagRequired("name")
@@ -67,7 +65,7 @@ var moduleCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
-			var cfg *moduleconfig.Config
+			var cfg *modules.Config
 			switch {
 			case mod.Local:
 				cfg, err = mod.Config(ctx, nil)
@@ -118,13 +116,21 @@ var moduleInitCmd = &cobra.Command{
 				return fmt.Errorf("module init config path already exists: %s", mod.Path)
 			}
 
-			cfg := &moduleconfig.Config{
+			cfg := &modules.Config{
 				Name: moduleName,
-				SDK:  moduleconfig.SDK(sdk),
 				Root: moduleRoot,
 			}
 
-			return updateModuleConfig(ctx, engineClient, mod.Path, cfg, cmd)
+			runtimes := SDKRuntimes()
+			if runtime, ok := runtimes[sdk]; ok {
+				cfg.SDKName = sdk
+				cfg.SDKRuntime = runtime
+			} else {
+				// not a well-known name; assume direct image ref
+				cfg.SDKRuntime = sdk
+			}
+
+			return updateModuleConfig(ctx, engineClient, mod, cfg, cmd)
 		})
 	},
 }
@@ -151,9 +157,9 @@ var moduleUseCmd = &cobra.Command{
 			var deps []string
 			deps = append(deps, modCfg.Dependencies...)
 			deps = append(deps, extraArgs...)
-			depSet := make(map[string]*resolver.ModuleRef)
+			depSet := make(map[string]*modules.Ref)
 			for _, dep := range deps {
-				depMod, err := resolver.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.ModuleRef, dep)
+				depMod, err := modules.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.Ref, dep)
 				if err != nil {
 					return fmt.Errorf("failed to get module: %w", err)
 				}
@@ -166,7 +172,7 @@ var moduleUseCmd = &cobra.Command{
 			}
 			sort.Strings(modCfg.Dependencies)
 
-			return updateModuleConfig(ctx, engineClient, modFlagCfg.Path, modCfg, cmd)
+			return updateModuleConfig(ctx, engineClient, modFlagCfg, modCfg, cmd)
 		})
 	},
 }
@@ -189,7 +195,7 @@ var moduleSyncCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
-			return updateModuleConfig(ctx, engineClient, modFlagCfg.Path, modCfg, cmd)
+			return updateModuleConfig(ctx, engineClient, modFlagCfg, modCfg, cmd)
 		})
 	},
 }
@@ -197,34 +203,28 @@ var moduleSyncCmd = &cobra.Command{
 func updateModuleConfig(
 	ctx context.Context,
 	engineClient *client.Client,
-	moduleDir string,
-	newModCfg *moduleconfig.Config,
+	modFlag *moduleFlagConfig,
+	modCfg *modules.Config,
 	cmd *cobra.Command,
 ) (rerr error) {
-	runCodegenFunc := func() error {
+	moduleDir := modFlag.Path
+	if moduleDir == "" {
+		// nothing to do
 		return nil
 	}
-	switch newModCfg.SDK {
-	case moduleconfig.SDKGo:
-		runCodegenFunc = func() (err error) {
-			// TODO call out to SDK module instead
-			return codegen.Generate(ctx, generator.Config{
-				Lang:            generator.SDKLang(newModCfg.SDK),
-				OutputDir:       codegenOutputDir,
-				ModuleName:      newModCfg.Name,
-				ModuleSourceDir: workdir,
-				ModuleRootDir:   newModCfg.Root,
-				AutomateVCS:     true,
-			}, engineClient.Dagger())
+
+	// Update module config to point to latest SDK runtime if SDKName is set.
+	if modCfg.SDKName != "" {
+		latest, ok := SDKRuntimes()[modCfg.SDKName]
+		if !ok {
+			return fmt.Errorf("unknown SDK name: %s", modCfg.SDKName)
 		}
-	case moduleconfig.SDKPython:
-	default:
-		return fmt.Errorf("unsupported module SDK: %s", sdk)
+		modCfg.SDKRuntime = latest
 	}
 
-	configPath := filepath.Join(moduleDir, moduleconfig.Filename)
+	configPath := filepath.Join(moduleDir, modules.Filename)
 
-	cfgBytes, err := json.MarshalIndent(newModCfg, "", "  ")
+	cfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal module config: %w", err)
 	}
@@ -277,8 +277,22 @@ func updateModuleConfig(
 		return fmt.Errorf("failed to write module config: %w", err)
 	}
 
-	if err := runCodegenFunc(); err != nil {
-		return fmt.Errorf("failed to run codegen: %w", err)
+	dag := engineClient.Dagger()
+
+	mod, err := modFlag.AsModule(ctx, dag)
+	if err != nil {
+		return fmt.Errorf("failed to load module: %w", err)
+	}
+	dir := mod.GeneratedCode()
+	entries, err := dir.Entries(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get codegen output entries: %w", err)
+	}
+
+	progrock.FromContext(ctx).Debug("syncing generated files", progrock.Labelf("entries", "%v", entries))
+
+	if _, err := dir.Export(ctx, moduleDir); err != nil {
+		return fmt.Errorf("failed to export codegen output: %w", err)
 	}
 
 	return nil
@@ -296,7 +310,7 @@ func getModuleFlagConfig(ctx context.Context, dag *dagger.Client) (*moduleFlagCo
 }
 
 func getModuleFlagConfigFromURL(ctx context.Context, dag *dagger.Client, moduleURL string) (*moduleFlagConfig, error) {
-	modRef, err := resolver.ResolveMovingRef(ctx, dag, moduleURL)
+	modRef, err := modules.ResolveMovingRef(ctx, dag, moduleURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module URL: %w", err)
 	}
@@ -305,7 +319,7 @@ func getModuleFlagConfigFromURL(ctx context.Context, dag *dagger.Client, moduleU
 
 // moduleFlagConfig holds the module settings provided by the user via flags (or defaults if not set)
 type moduleFlagConfig struct {
-	*resolver.ModuleRef
+	*modules.Ref
 }
 
 func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
@@ -324,7 +338,7 @@ func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.M
 func (p moduleFlagConfig) modExists(ctx context.Context, c *dagger.Client) (bool, error) {
 	switch {
 	case p.Local:
-		configPath := moduleconfig.NormalizeConfigPath(p.Path)
+		configPath := modules.NormalizeConfigPath(p.Path)
 		_, err := os.Stat(configPath)
 		if err == nil {
 			return true, nil
@@ -334,7 +348,7 @@ func (p moduleFlagConfig) modExists(ctx context.Context, c *dagger.Client) (bool
 		}
 		return false, fmt.Errorf("failed to stat module config: %w", err)
 	case p.Git != nil:
-		configPath := moduleconfig.NormalizeConfigPath(p.SubPath)
+		configPath := modules.NormalizeConfigPath(p.SubPath)
 		_, err := c.Git(p.Git.CloneURL).Commit(p.Version).Tree().File(configPath).Sync(ctx)
 		// TODO: this could technically fail for other reasons, but is okay enough for now, it will
 		// still fail later if something else went wrong

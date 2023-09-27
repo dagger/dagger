@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path"
 	"path/filepath"
 )
 
@@ -40,16 +41,18 @@ func (m *GoSdk) Bootstrap() *Container {
 	})
 }
 
-// func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
-// 	return m.Base().
-// 		WithMountedDirectory(ModSourceDirPath, modSource).
-// 		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath)).
-// 		WithExec([]string{"codegen", "--module", "."}, ContainerWithExecOpts{
-// 			ExperimentalPrivilegedNesting: true,
-// 		}).
-// 		Directory(".").
-// 		Diff(modSource.Directory(opts.SubPath))
-// }
+func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
+	base := m.Base().
+		WithMountedDirectory(ModSourceDirPath, modSource).
+		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath))
+	return base.Directory(".").Diff(
+		base.
+			WithExec([]string{"codegen", "--module", ".", "--vcs"}, ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Directory("."),
+	)
+}
 
 func (m *GoSdk) Base() *Container {
 	return m.goBase().

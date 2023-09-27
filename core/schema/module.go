@@ -60,9 +60,10 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"asModule": ToResolver(s.directoryAsModule),
 		},
 		"Module": ToIDableObjectResolver(core.ModuleID.Decode, ObjectResolver{
-			"id":         ToResolver(s.moduleID),
-			"withObject": ToResolver(s.moduleWithObject),
-			"serve":      ToVoidResolver(s.moduleServe),
+			"id":            ToResolver(s.moduleID),
+			"withObject":    ToResolver(s.moduleWithObject),
+			"generatedCode": ToResolver(s.moduleGeneratedCode),
+			"serve":         ToVoidResolver(s.moduleServe),
 		}),
 		"Function": ToIDableObjectResolver(core.FunctionID.Decode, ObjectResolver{
 			"id":              ToResolver(s.functionID),
@@ -241,32 +242,31 @@ func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Dire
 
 const modConfigLabel = "io.dagger.module.config"
 
-func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error {
-	if mod.Runtime != nil {
-		// this isn't expected
-		log.Println("!!! ALREADY HAS RUNTIME", mod.Name)
-		return nil
+func (s *moduleSchema) loadRuntimeModule(ctx *core.Context, mod *core.Module) (*core.Module, error) {
+	if mod.SDKRuntime == "" {
+		return nil, fmt.Errorf("module %q has no SDKRuntime; you may need to run dagger mod sync", mod.Name)
 	}
 
 	sdkModRuntime, err := core.NewContainer("", mod.Pipeline, mod.Platform)
 	if err != nil {
-		return fmt.Errorf("failed to create container: %w", err)
+		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
-	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, "vito/dagger-sdk-"+string(mod.SDK+":real-bootstrap"))
+
+	sdkModRuntime, err = sdkModRuntime.From(ctx, s.bk, mod.SDKRuntime)
 	if err != nil {
-		return fmt.Errorf("failed to create container from: %w", err)
+		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 	sdkImageConfig, err := sdkModRuntime.ImageConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get sdk image config: %w", err)
+		return nil, fmt.Errorf("failed to get sdk image config: %w", err)
 	}
 	configPath, found := sdkImageConfig.Labels[modConfigLabel]
 	if !found {
-		return fmt.Errorf("sdk image missing config label: %q", modConfigLabel)
+		return nil, fmt.Errorf("sdk image missing config label: %q", modConfigLabel)
 	}
 	sdkRoot, err := sdkModRuntime.RootFS(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get sdk root: %w", err)
+		return nil, fmt.Errorf("failed to get sdk root: %w", err)
 	}
 
 	sdkMod := core.NewModule(s.platform, mod.Pipeline)
@@ -285,13 +285,28 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create sdk module from config: %w", err)
+		return nil, fmt.Errorf("failed to create sdk module from config: %w", err)
 	}
 
 	// call the canned "" entrypoint to load the module's definitions
 	sdkMod, err = s.loadModuleFromRuntime(ctx, sdkMod)
 	if err != nil {
-		return fmt.Errorf("failed to load sdk module functions: %w", err)
+		return nil, fmt.Errorf("failed to load sdk module functions: %w", err)
+	}
+
+	return sdkMod, nil
+}
+
+func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error {
+	if mod.Runtime != nil {
+		// this isn't expected
+		log.Println("!!! ALREADY HAS RUNTIME", mod.Name)
+		return nil
+	}
+
+	sdkMod, err := s.loadRuntimeModule(ctx, mod)
+	if err != nil {
+		return fmt.Errorf("failed to load sdk module: %w", err)
 	}
 
 	moduleName := gqlObjectName(sdkMod.Name)
@@ -333,7 +348,7 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 
 	runtimeID, ok := result.(string)
 	if !ok {
-		return fmt.Errorf("expected container result, got %T", result)
+		return fmt.Errorf("expected string container ID result, got %T", result)
 	}
 
 	runtime, err := core.ContainerID(runtimeID).Decode()
@@ -348,6 +363,57 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 
 func (s *moduleSchema) moduleID(ctx *core.Context, module *core.Module, args any) (_ core.ModuleID, rerr error) {
 	return module.ID()
+}
+
+func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, args any) (*core.Directory, error) {
+	sdkMod, err := s.loadRuntimeModule(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sdk module: %w", err)
+	}
+
+	moduleName := gqlObjectName(sdkMod.Name)
+	funcName := "Codegen"
+	var getRuntimeFn *core.Function
+	for _, obj := range sdkMod.Objects {
+		if obj.AsObject.Name == moduleName {
+			for _, fn := range obj.AsObject.Functions {
+				if fn.Name == funcName {
+					getRuntimeFn = fn
+					break
+				}
+			}
+		}
+	}
+
+	srcDirID, err := mod.SourceDirectory.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory id: %w", err)
+	}
+
+	result, err := s.functionCall(ctx, getRuntimeFn, functionCallArgs{
+		Module: sdkMod,
+		Input: []*core.CallInput{{
+			Name:  "modSource",
+			Value: srcDirID,
+		}, {
+			Name:  "subPath",
+			Value: mod.SourceDirectorySubpath,
+		}},
+		ParentName: moduleName,
+		// TODO: params? somehow? maybe from module config? would be a good way to
+		// e.g. configure the language version.
+		Parent: map[string]any{},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to call sdk module: %w", err)
+	}
+
+	dirID, ok := result.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string directory ID result, got %T", result)
+	}
+
+	return core.DirectoryID(dirID).Decode()
 }
 
 func (s *moduleSchema) moduleServe(ctx *core.Context, module *core.Module, args any) (rerr error) {

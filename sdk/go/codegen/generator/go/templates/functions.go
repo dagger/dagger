@@ -14,19 +14,20 @@ import (
 
 	"dagger.io/dagger/codegen/generator"
 	"dagger.io/dagger/codegen/introspection"
+	"dagger.io/dagger/modules"
 )
 
 func GoTemplateFuncs(
 	ctx context.Context,
 	schema *introspection.Schema,
-	moduleName string,
+	module *modules.Config,
 	pkg *packages.Package,
 	fset *token.FileSet,
 ) template.FuncMap {
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
 		ctx:             ctx,
-		moduleName:      moduleName,
+		module:          module,
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
@@ -36,7 +37,7 @@ func GoTemplateFuncs(
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
 	ctx        context.Context
-	moduleName string
+	module     *modules.Config
 	modulePkg  *packages.Package
 	moduleFset *token.FileSet
 	schema     *introspection.Schema
