@@ -220,6 +220,19 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 			}
 		}
 
+		if g.Config.ModuleName == "" {
+			// no module; assume client-only codegen
+
+			if pkg, _, err := loadPackage(ctx, outDir); err == nil {
+				return &PackageInfo{
+					PackageName:   pkg.Name,
+					PackageImport: pkg.Module.Path,
+				}, false, nil
+			}
+
+			return nil, false, fmt.Errorf("no module name configured and no existing package found")
+		}
+
 		// bootstrap go.mod using dependencies from the embedded Go SDK
 
 		newModName := strcase.ToKebab(g.Config.ModuleName)
