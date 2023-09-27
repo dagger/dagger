@@ -3,12 +3,14 @@ package schema
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
@@ -382,6 +384,14 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		return nil, fmt.Errorf("failed to mount input file: %w", err)
 	}
 
+	// [shykes] inject a cachebuster before runtime exec,
+	// to fix crippling mandatory memoization of all functions.
+	busterKey := base64.StdEncoding.EncodeToString([]byte(time.Now().String()))
+	busterTon := core.NewScratchDirectory(mod.Pipeline, mod.Platform)
+	ctr, err = ctr.WithMountedDirectory(ctx, s.bk, "/"+busterKey, busterTon, "", true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inject session cache key: %s", err)
+	}
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, s.bk, s.progSockPath, mod.Platform, core.ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
