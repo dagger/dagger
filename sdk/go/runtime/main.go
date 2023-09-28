@@ -13,12 +13,13 @@ const (
 )
 
 type RuntimeOpts struct {
-	SubPath string `doc:"Sub-path of the source directory that contains the module config."`
+	SubPath  string   `doc:"Sub-path of the source directory that contains the module config."`
+	Platform Platform `doc:"Platform to build for."`
 }
 
 func (m *GoSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Container {
 	modSubPath := filepath.Join(ModSourceDirPath, opts.SubPath)
-	return m.Base().
+	return m.Base(opts.Platform).
 		WithDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(modSubPath).
 		WithExec([]string{"codegen", "--module", "."}, ContainerWithExecOpts{
@@ -42,9 +43,10 @@ func (m *GoSdk) Bootstrap() *Container {
 }
 
 func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
-	base := m.Base().
+	base := m.Base(opts.Platform).
 		WithMountedDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath))
+
 	return base.Directory(".").Diff(
 		base.
 			WithExec([]string{"codegen", "--module", ".", "--vcs"}, ContainerWithExecOpts{
@@ -54,20 +56,13 @@ func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
 	)
 }
 
-func (m *GoSdk) Base() *Container {
-	return m.goBase().
-		WithFile("/usr/bin/codegen", m.CodegenBin())
+func (m *GoSdk) Base(platform Platform) *Container {
+	return m.goBase(platform).
+		WithFile("/usr/bin/codegen", m.CodegenBin(platform))
 }
 
-func (m *GoSdk) goBase() *Container {
-	return dag.Container().
-		From("golang:1.21-alpine").
-		WithMountedCache("/go/pkg/mod", dag.CacheVolume("modgomodcache")).
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("modgobuildcache"))
-}
-
-func (m *GoSdk) CodegenBin() *File {
-	return m.goBase().
+func (m *GoSdk) CodegenBin(platform Platform) *File {
+	return m.goBase(platform).
 		WithMountedDirectory("/sdk", dag.Host().Directory(".")).
 		WithExec([]string{
 			"go", "build",
@@ -76,4 +71,15 @@ func (m *GoSdk) CodegenBin() *File {
 			"./cmd/codegen",
 		}).
 		File("/bin/codegen")
+}
+
+func (m *GoSdk) goBase(platform Platform) *Container {
+	opts := ContainerOpts{}
+	if platform != "" {
+		opts.Platform = platform
+	}
+	return dag.Container(opts).
+		From("golang:1.21-alpine").
+		WithMountedCache("/go/pkg/mod", dag.CacheVolume("modgomodcache")).
+		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("modgobuildcache"))
 }

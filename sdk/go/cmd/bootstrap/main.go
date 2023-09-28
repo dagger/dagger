@@ -30,6 +30,8 @@ var rootCmd = &cobra.Command{
 	Long:  help,
 }
 
+var supportedPlatforms = []dagger.Platform{"linux/amd64", "linux/arm64"}
+
 func init() {
 	rootCmd.Flags().StringVar(&modRoot, "root", ".",
 		"Root directory of the module.")
@@ -86,17 +88,15 @@ func Bootstrap(cmd *cobra.Command, args []string) error {
 	sdkRuntime := bootstrap(dag, modSrcRoot, modSubPath)
 
 	// next, build the SDK's runtime container using its own container
-	sdkRuntime, err = bootstrapUsingModule(ctx, dag, modSrcRoot, modSubPath, sdkRuntime)
+	runtimeVariants, err := bootstrapUsingModule(ctx, dag, modSrcRoot, modSubPath, sdkRuntime)
 	if err != nil {
 		return fmt.Errorf("bootstrap using module: %w", err)
 	}
 
-	if _, err := sdkRuntime.Sync(ctx); err != nil {
-		return err
-	}
-
 	if export != "" {
-		if _, err := sdkRuntime.Export(ctx, export); err != nil {
+		if _, err := dag.Container().Export(ctx, export, dagger.ContainerExportOpts{
+			PlatformVariants: runtimeVariants,
+		}); err != nil {
 			return err
 		}
 
@@ -106,7 +106,9 @@ func Bootstrap(cmd *cobra.Command, args []string) error {
 	if publish != "" {
 		slog.Info("publishing container", "ref", publish)
 
-		addr, err := sdkRuntime.Publish(ctx, publish)
+		addr, err := dag.Container().Publish(ctx, publish, dagger.ContainerPublishOpts{
+			PlatformVariants: runtimeVariants,
+		})
 		if err != nil {
 			return err
 		}
@@ -161,14 +163,14 @@ func bootstrap(dag *dagger.Client, modSrcRoot *dagger.Directory, subPath string)
 }
 
 // bootstrapUsingModule invokes the module we just bootstrapped and tells it to
-// build itself.
+// build itself on all supported platforms.
 func bootstrapUsingModule(
 	ctx context.Context,
 	dag *dagger.Client,
 	modSrcRoot *dagger.Directory,
 	modSubPath string,
 	sdkRuntime *dagger.Container,
-) (*dagger.Container, error) {
+) ([]*dagger.Container, error) {
 	sdkMod := modSrcRoot.AsModule(dagger.DirectoryAsModuleOpts{
 		Runtime:       sdkRuntime,
 		SourceSubpath: modSubPath,
@@ -194,37 +196,48 @@ func bootstrapUsingModule(
 		}
 	}
 
-	res := map[string]CallResult{}
-	modSelector := strcase.ToLowerCamel(modName)
-	err = dag.Do(ctx, &dagger.Request{
-		Query: fmt.Sprintf(`
-		  query Bootstrap($modSource: DirectoryID!, $modSubpath: String!) {
-				%s {
-					moduleRuntime(modSource: $modSource, subPath: $modSubpath) {
-						id
+	variants := make([]*dagger.Container, 0, len(supportedPlatforms))
+	for _, platform := range supportedPlatforms {
+		res := map[string]CallResult{}
+		modSelector := strcase.ToLowerCamel(modName)
+		err = dag.Do(ctx, &dagger.Request{
+			Query: fmt.Sprintf(`
+				query Bootstrap($platform: String!, $modSource: DirectoryID!, $modSubpath: String!) {
+					%s {
+						moduleRuntime(platform: $platform, modSource: $modSource, subPath: $modSubpath) {
+							id
+						}
 					}
 				}
-			}
-		`, modSelector),
-		Variables: map[string]interface{}{
-			"modSource":  modSrcRootID,
-			"modSubpath": modSubPath,
-		},
-	}, &dagger.Response{
-		Data: &res,
-	})
-	if err != nil {
-		return nil, err
+			`, modSelector),
+			Variables: map[string]interface{}{
+				"platform":   platform,
+				"modSource":  modSrcRootID,
+				"modSubpath": modSubPath,
+			},
+		}, &dagger.Response{
+			Data: &res,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		containerID := res[modSelector].ModuleRuntime.ID
+		if containerID == "" {
+			return nil, fmt.Errorf("moduleRuntime returned empty container ID")
+		}
+
+		variant := dag.Container(dagger.ContainerOpts{
+			ID: containerID,
+		})
+
+		variant, err := variant.Sync(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("platform %s: %w", platform, err)
+		}
+
+		variants = append(variants, variant)
 	}
 
-	containerID := res[modSelector].ModuleRuntime.ID
-	if containerID == "" {
-		return nil, fmt.Errorf("moduleRuntime returned empty container ID")
-	}
-
-	sdkRuntime = dag.Container(dagger.ContainerOpts{
-		ID: containerID,
-	})
-
-	return sdkRuntime, nil
+	return variants, nil
 }
