@@ -341,6 +341,7 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 		// TODO: params? somehow? maybe from module config? would be a good way to
 		// e.g. configure the language version.
 		Parent: map[string]any{},
+		Cache:  true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to call sdk module: %w", err)
@@ -403,6 +404,7 @@ func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, 
 		// TODO: params? somehow? maybe from module config? would be a good way to
 		// e.g. configure the language version.
 		Parent: map[string]any{},
+		Cache:  true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
@@ -496,6 +498,7 @@ type functionCallArgs struct {
 	ParentName string
 	Parent     any
 	Module     *core.Module
+	Cache      bool
 }
 
 func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args functionCallArgs) (any, error) {
@@ -578,14 +581,17 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		return nil, fmt.Errorf("failed to mount input file: %w", err)
 	}
 
-	// [shykes] inject a cachebuster before runtime exec,
-	// to fix crippling mandatory memoization of all functions.
-	busterKey := base64.StdEncoding.EncodeToString([]byte(time.Now().String()))
-	busterTon := core.NewScratchDirectory(mod.Pipeline, mod.Platform)
-	ctr, err = ctr.WithMountedDirectory(ctx, s.bk, "/"+busterKey, busterTon, "", true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to inject session cache key: %s", err)
+	if !args.Cache { // TODO: allow caching for calls coming from "inside the house"
+		// [shykes] inject a cachebuster before runtime exec,
+		// to fix crippling mandatory memoization of all functions.
+		busterKey := base64.StdEncoding.EncodeToString([]byte(time.Now().String()))
+		busterTon := core.NewScratchDirectory(mod.Pipeline, mod.Platform)
+		ctr, err = ctr.WithMountedDirectory(ctx, s.bk, "/"+busterKey, busterTon, "", true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to inject session cache key: %s", err)
+		}
 	}
+
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, s.bk, s.progSockPath, mod.Platform, core.ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
@@ -890,6 +896,7 @@ func (s *moduleSchema) loadModuleFromRuntime(ctx *core.Context, mod *core.Module
 			Module: mod,
 			// empty to signify we're querying to get the constructed module
 			// ParentName: gqlObjectName(mod.Name),
+			Cache: true,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to call module to get functions: %w", err)
