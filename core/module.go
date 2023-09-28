@@ -203,6 +203,14 @@ func (mod *Module) FromConfig(
 		}
 	}
 
+	// TODO: for backwards-compatibility pre-merge, we'll adopt the current ref.
+	// This would normally be weird to do, since it'll point to the version
+	// _before_ shipping the SDK (assuming it uses engineconn.CLIVersion). Better
+	// to always have it required, and automate it with the CLI.
+	if cfg.SDKRuntime == "" {
+		cfg.SyncSDKRuntime()
+	}
+
 	// fill in the module settings and set the runtime container
 	mod.SourceDirectory = sourceDir
 	mod.SourceDirectorySubpath = filepath.Dir(configPath)

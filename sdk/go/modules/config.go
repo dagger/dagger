@@ -38,6 +38,28 @@ type Config struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 
+// SyncRuntime sets the SDKRuntime field to the current image ref for the
+// well-known runtime for the SDKName field.
+func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
+	cfg := &Config{
+		Name: name,
+		Root: rootPath,
+	}
+	if ref, found := WellKnownSDKRuntimes[sdkNameOrRef]; found {
+		cfg.SDKName = sdkNameOrRef
+		cfg.SDKRuntime = ref
+	} else {
+		cfg.SDKRuntime = sdkNameOrRef
+	}
+	return cfg
+}
+
+// SyncSDKRuntime sets the SDKRuntime field to the current image ref for the
+// well-known runtime for the SDKName field.
+func (cfg *Config) SyncSDKRuntime() {
+	cfg.SDKRuntime = WellKnownSDKRuntimes[cfg.SDKName]
+}
+
 func (cfg *Config) RootAndSubpath(moduleSourceDir string) (string, string, error) {
 	modSrcDir, err := filepath.Abs(moduleSourceDir)
 	if err != nil {

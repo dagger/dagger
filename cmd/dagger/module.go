@@ -116,20 +116,7 @@ var moduleInitCmd = &cobra.Command{
 				return fmt.Errorf("module init config path already exists: %s", mod.Path)
 			}
 
-			cfg := &modules.Config{
-				Name: moduleName,
-				Root: moduleRoot,
-			}
-
-			runtimes := SDKRuntimes()
-			if runtime, ok := runtimes[sdk]; ok {
-				cfg.SDKName = sdk
-				cfg.SDKRuntime = runtime
-			} else {
-				// not a well-known name; assume direct image ref
-				cfg.SDKRuntime = sdk
-			}
-
+			cfg := modules.NewConfig(moduleName, sdk, moduleRoot)
 			return updateModuleConfig(ctx, engineClient, mod, cfg, cmd)
 		})
 	},
@@ -213,14 +200,8 @@ func updateModuleConfig(
 		return nil
 	}
 
-	// Update module config to point to latest SDK runtime if SDKName is set.
-	if modCfg.SDKName != "" {
-		latest, ok := SDKRuntimes()[modCfg.SDKName]
-		if !ok {
-			return fmt.Errorf("unknown SDK name: %s", modCfg.SDKName)
-		}
-		modCfg.SDKRuntime = latest
-	}
+	// pin dagger.json to the current runtime image version
+	modCfg.SyncSDKRuntime()
 
 	configPath := filepath.Join(moduleDir, modules.Filename)
 
