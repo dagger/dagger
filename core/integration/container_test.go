@@ -2711,6 +2711,23 @@ func TestContainerImport(t *testing.T) {
 	})
 }
 
+func TestContainerFromIDPlatform(t *testing.T) {
+	c, ctx := connect(t)
+
+	var desiredPlatform dagger.Platform = "linux/arm64"
+
+	id, err := c.Container(dagger.ContainerOpts{
+		Platform: desiredPlatform,
+	}).From(alpineImage).ID(ctx)
+	require.NoError(t, err)
+
+	platform, err := c.Container(dagger.ContainerOpts{
+		ID: id,
+	}).Platform(ctx)
+	require.NoError(t, err)
+	require.Equal(t, desiredPlatform, platform)
+}
+
 func TestContainerMultiPlatformExport(t *testing.T) {
 	c, ctx := connect(t)
 

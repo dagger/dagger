@@ -117,14 +117,13 @@ type containerArgs struct {
 }
 
 func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
+	if args.ID != "" {
+		return args.ID.Decode()
+	}
 	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
-		if args.ID != "" {
-			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
-		}
 		platform = *args.Platform
 	}
-
 	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
 	if err != nil {
 		return nil, err
