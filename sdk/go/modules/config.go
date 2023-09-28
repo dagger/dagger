@@ -57,6 +57,11 @@ func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
 // SyncSDKRuntime sets the SDKRuntime field to the current image ref for the
 // well-known runtime for the SDKName field.
 func (cfg *Config) SyncSDKRuntime() {
+	if cfg.SDKName == "" {
+		// assume hand-configured
+		return
+	}
+
 	cfg.SDKRuntime = WellKnownSDKRuntimes[cfg.SDKName]
 }
 
