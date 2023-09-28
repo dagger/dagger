@@ -116,7 +116,7 @@ The Dagger Engine relies on the `overlayfs` snapshotter for efficient operation 
 
 #### Network constraints
 
-Running the Dagger Engine in rootless mode constrains network management. It is possible to use [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but this tool significantly decreases network performance in addition to being extremely complex to setup. This [comparison table of network drivers](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers) shows that `slirp` is at least five time slower than a root-privileged network driver.
+Running the Dagger Engine in rootless mode constrains network management. It is possible to use [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but this tool significantly decreases network performance in addition to being extremely complex to setup. This [comparison table of network drivers](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers) shows that `slirp` is at least five times slower than a root-privileged network driver.
 
 ## Runner Details
 
