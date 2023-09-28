@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"golang.org/x/sync/errgroup"
 	"log"
 	"math/big"
 	"os"
+
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 )

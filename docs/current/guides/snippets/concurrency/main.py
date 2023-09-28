@@ -15,7 +15,9 @@ async def long_time_task(c: dagger.Client):
 
 
 async def main():
-    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client, anyio.create_task_group() as tg:
+    async with \
+            dagger.Connection(dagger.Config(log_output=sys.stderr)) as client, \
+            anyio.create_task_group() as tg:
         tg.start_soon(long_time_task, client)
         tg.start_soon(long_time_task, client)
         tg.start_soon(long_time_task, client)
