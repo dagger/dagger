@@ -68,8 +68,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query
 
 	// Skip development version
 	if strings.Contains(engine.Version, "devel") {
-		recorder.Warn("Using development engine; skipping version compatibility check.")
-
+		recorder.Debug("Using development engine; skipping version compatibility check.")
 		return true, nil
 	}
 

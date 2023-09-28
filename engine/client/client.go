@@ -154,12 +154,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				DisableKeepAlives: true,
 			},
 		}
-
-		c.daggerClient, err = dagger.Connect(ctx, dagger.WithConn(EngineConn(c)))
-		if err != nil {
+		if err := c.daggerConnect(ctx); err != nil {
 			return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
 		}
-
 		return c, ctx, nil
 	}
 
@@ -323,12 +320,19 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.CloudURLCallback(cloudURL)
 	}
 
-	c.daggerClient, err = dagger.Connect(ctx, dagger.WithConn(EngineConn(c)))
-	if err != nil {
+	if err := c.daggerConnect(ctx); err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
 	}
 
 	return c, ctx, nil
+}
+
+func (c *Client) daggerConnect(ctx context.Context) error {
+	var err error
+	c.daggerClient, err = dagger.Connect(context.Background(),
+		dagger.WithConn(EngineConn(c)),
+		dagger.WithSkipCompatibilityCheck())
+	return err
 }
 
 func (c *Client) Close() (rerr error) {
