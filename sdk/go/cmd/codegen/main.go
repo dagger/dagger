@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/codegen"
@@ -13,10 +15,11 @@ import (
 )
 
 var (
-	outputDir   string
-	moduleRef   string
-	lang        string
-	automateVCS bool
+	outputDir     string
+	moduleRef     string
+	lang          string
+	automateVCS   bool
+	propagateLogs bool
 )
 
 var rootCmd = &cobra.Command{
@@ -29,7 +32,10 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&moduleRef, "module", "", "module to load and codegen dependency code")
 	rootCmd.Flags().BoolVar(&automateVCS, "vcs", false, "automate VCS config (.gitignore, .gitattributes)")
+	rootCmd.Flags().BoolVar(&propagateLogs, "propagate-logs", false, "propagate logs directly to progrock.sock")
 }
+
+const nestedSock = "/.progrock.sock"
 
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
@@ -37,6 +43,27 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	var progW progrock.Writer
+	var dialErr error
+	if propagateLogs {
+		progW, dialErr = progrock.DialRPC(ctx, "unix://"+nestedSock)
+		if err != nil {
+			return fmt.Errorf("error connecting to progrock: %w", err)
+		}
+	} else {
+		progW = console.NewWriter(os.Stderr, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+	}
+
+	rec := progrock.NewRecorder(progW)
+	defer rec.Complete()
+
+	if dialErr != nil {
+		rec.Warn("could not dial progrock.sock; falling back to console output",
+			progrock.ErrorLabel(dialErr))
+	}
+
+	ctx = progrock.ToContext(ctx, rec)
 
 	cfg := generator.Config{
 		Lang: generator.SDKLang(lang),

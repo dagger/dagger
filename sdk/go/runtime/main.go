@@ -49,7 +49,7 @@ func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
 
 	return base.Directory(".").Diff(
 		base.
-			WithExec([]string{"codegen", "--module", ".", "--vcs"}, ContainerWithExecOpts{
+			WithExec([]string{"codegen", "--module", ".", "--vcs", "--propagate-logs"}, ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Directory("."),

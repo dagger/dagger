@@ -18,6 +18,20 @@ import (
 )
 
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (rerr error) {
+	rec := progrock.FromContext(ctx)
+
+	var vtxName string
+	if cfg.ModuleConfig != nil {
+		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleConfig.Name)
+	} else {
+		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
+	}
+
+	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
+	defer func() { vtx.Done(rerr) }()
+
+	logsW := vtx.Stdout()
+
 	if cfg.ModuleConfig != nil {
 		// TODO: this works but isn't perfect.
 		//
@@ -63,20 +77,6 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (re
 	if err != nil {
 		return err
 	}
-
-	rec := progrock.FromContext(ctx)
-
-	var vtxName string
-	if cfg.ModuleConfig != nil {
-		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleConfig.Name)
-	} else {
-		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
-	}
-
-	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
-	defer func() { vtx.Done(rerr) }()
-
-	logsW := vtx.Stdout()
 
 	for ctx.Err() == nil {
 		generated, err := generate(ctx, introspectionSchema, cfg)
