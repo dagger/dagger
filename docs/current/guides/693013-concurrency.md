@@ -32,12 +32,10 @@ This guide assumes that:
 
 ## Approaches
 
-
 <Tabs groupId="language">
 <TabItem value="Go">
 
 You can use [goroutine](https://gobyexample.com/goroutines) in Golang to execute multiple functions in concurrency.
-
 
 ```go file=./snippets/concurrency/main.go
 ```

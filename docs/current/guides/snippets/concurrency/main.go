@@ -2,18 +2,23 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"golang.org/x/sync/errgroup"
 	"log"
-	"math/rand"
+	"math/big"
 	"os"
-	"strconv"
 
 	"dagger.io/dagger"
 )
 
 func longTimeTask(ctx context.Context, c *dagger.Client) error {
-	_, err := c.Container().From("alpine").
-		WithExec([]string{"sleep", strconv.Itoa(rand.Intn(10))}).
+	sleepTime, err := rand.Int(rand.Reader, big.NewInt(10))
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Container().From("alpine").
+		WithExec([]string{"sleep", sleepTime.String()}).
 		WithExec([]string{"echo", "task done"}).
 		Sync(ctx)
 
