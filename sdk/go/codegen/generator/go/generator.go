@@ -3,7 +3,6 @@ package gogenerator
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"go/format"
 	"go/token"
@@ -18,10 +17,8 @@ import (
 	"dagger.io/dagger/codegen/generator/go/templates"
 	"dagger.io/dagger/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
-	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
-	"github.com/vito/progrock"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/imports"
@@ -103,57 +100,11 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
 
-	// automate VCS first so we re-add any files cleaned up from the transition
-	// to using .gitignore for generated files
-	if err := g.automateVCS(ctx, mfs); err != nil {
-		return nil, fmt.Errorf("automate vcs: %w", err)
-	}
-
 	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
 	return genSt, nil
-}
-
-func (g *GoGenerator) automateVCS(ctx context.Context, mfs *memfs.FS) error {
-	rec := progrock.FromContext(ctx)
-
-	if !g.Config.AutomateVCS {
-		rec.Debug("skipping VCS automation (disabled)")
-		// TODO disable this for on-the-fly codegen
-		return nil
-	}
-
-	repo, err := git.PlainOpenWithOptions(g.Config.OutputDir, &git.PlainOpenOptions{
-		DetectDotGit: true,
-	})
-	if err != nil {
-		if errors.Is(err, git.ErrRepositoryNotExists) {
-			// not in a repo
-			rec.Debug("repo not found; skipping VCS automation")
-			return nil
-		}
-		return fmt.Errorf("open git repo: %w", err)
-	}
-
-	rec.Debug("updating .gitattributes")
-
-	if err := generator.MarkGeneratedAttributes(mfs, g.Config.OutputDir, ClientGenFile); err != nil {
-		return fmt.Errorf("update .gitattributes: %w", err)
-	}
-
-	rec.Debug("updating .gitignore")
-
-	if err := generator.GitIgnorePaths(ctx, repo, mfs, g.Config.OutputDir,
-		ClientGenFile,
-		"internal/",
-		"querybuilder/", // now lives under internal/
-	); err != nil {
-		return fmt.Errorf("update .gitignore: %w", err)
-	}
-
-	return nil
 }
 
 type PackageInfo struct {

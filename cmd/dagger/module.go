@@ -194,10 +194,17 @@ func updateModuleConfig(
 	modCfg *modules.Config,
 	cmd *cobra.Command,
 ) (rerr error) {
-	moduleDir := modFlag.Path
-	if moduleDir == "" {
+	rec := progrock.FromContext(ctx)
+
+	if !modFlag.Local {
 		// nothing to do
 		return nil
+	}
+
+	moduleDir, err := modFlag.LocalSourcePath()
+	if err != nil {
+		// TODO: impossible given Local check, would be nice to make unrepresentable
+		return err
 	}
 
 	// pin dagger.json to the current runtime image version
@@ -264,15 +271,21 @@ func updateModuleConfig(
 	if err != nil {
 		return fmt.Errorf("failed to load module: %w", err)
 	}
-	dir := mod.GeneratedCode()
-	entries, err := dir.Entries(ctx)
+
+	codegen := mod.GeneratedCode()
+
+	if err := automateVCS(ctx, moduleDir, codegen); err != nil {
+		return fmt.Errorf("failed to automate vcs: %w", err)
+	}
+
+	entries, err := codegen.Code().Entries(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get codegen output entries: %w", err)
 	}
 
-	progrock.FromContext(ctx).Debug("syncing generated files", progrock.Labelf("entries", "%v", entries))
+	rec.Debug("syncing generated files", progrock.Labelf("entries", "%v", entries))
 
-	if _, err := dir.Export(ctx, moduleDir); err != nil {
+	if _, err := codegen.Code().Export(ctx, moduleDir); err != nil {
 		return fmt.Errorf("failed to export codegen output: %w", err)
 	}
 

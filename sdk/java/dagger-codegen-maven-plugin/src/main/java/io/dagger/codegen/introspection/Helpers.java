@@ -25,6 +25,7 @@ public class Helpers {
           put("ModuleID", "Module");
           put("FunctionID", "Function");
           put("TypeDefID", "TypeDef");
+          put("GeneratedCodeID", "GeneratedCode");
           put("Platform", "Platform");
           put("JSON", "JSON");
           put("Void", "Void");

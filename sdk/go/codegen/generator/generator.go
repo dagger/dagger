@@ -34,10 +34,6 @@ type Config struct {
 	// Generate code for a Dagger module.
 	ModuleRef    *modules.Ref
 	ModuleConfig *modules.Config
-
-	// Configure the version control system to ignore generated files, e.g. by
-	// appending them to .gitignore for Git.
-	AutomateVCS bool
 }
 
 type Generator interface {

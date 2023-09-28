@@ -18,7 +18,6 @@ var (
 	outputDir     string
 	moduleRef     string
 	lang          string
-	automateVCS   bool
 	propagateLogs bool
 )
 
@@ -31,7 +30,6 @@ func init() {
 	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&moduleRef, "module", "", "module to load and codegen dependency code")
-	rootCmd.Flags().BoolVar(&automateVCS, "vcs", false, "automate VCS config (.gitignore, .gitattributes)")
 	rootCmd.Flags().BoolVar(&propagateLogs, "propagate-logs", false, "propagate logs directly to progrock.sock")
 }
 
@@ -69,8 +67,6 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		Lang: generator.SDKLang(lang),
 
 		OutputDir: outputDir,
-
-		AutomateVCS: automateVCS,
 	}
 
 	if moduleRef != "" {

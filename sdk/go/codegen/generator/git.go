@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/psanford/memfs"
 	"github.com/vito/progrock"
 )
@@ -41,7 +40,7 @@ func MarkGeneratedAttributes(mfs *memfs.FS, outDir string, fileNames ...string) 
 	return mfs.WriteFile(GitAttributesFile, content, 0600)
 }
 
-func GitIgnorePaths(ctx context.Context, repo *git.Repository, mfs *memfs.FS, outDir string, paths ...string) error {
+func GitIgnorePaths(ctx context.Context, mfs *memfs.FS, outDir string, paths ...string) error {
 	rec := progrock.FromContext(ctx)
 
 	rec.Debug("ignoring", progrock.Labelf("patterns", "%+v", paths))
@@ -55,11 +54,6 @@ func GitIgnorePaths(ctx context.Context, repo *git.Repository, mfs *memfs.FS, ou
 		content = append(content, '\n')
 	}
 
-	workTree, err := repo.Worktree()
-	if err != nil {
-		return err
-	}
-
 	for _, filePath := range paths {
 		thisFile := []byte(fmt.Sprintf("/%s\n", filePath))
 
@@ -70,26 +64,6 @@ func GitIgnorePaths(ctx context.Context, repo *git.Repository, mfs *memfs.FS, ou
 		}
 
 		content = append(content, thisFile...)
-
-		abs, err := filepath.Abs(filepath.Join(outDir, filePath))
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(workTree.Filesystem.Root(), abs)
-		if err != nil {
-			return err
-		}
-
-		// ignore failure
-		if _, err := workTree.Remove(relPath); err != nil {
-			rec.Warn("failed to remove .gitignored path",
-				progrock.Labelf("gitPath", relPath),
-				progrock.ErrorLabel(err))
-		} else {
-			rec.Warn("removed .gitignored path from index",
-				progrock.Labelf("gitPath", relPath))
-		}
 	}
 
 	return mfs.WriteFile(GitIgnoreFile, content, 0o600)

@@ -25,6 +25,8 @@ type FunctionID = resourceid.ID[Function]
 
 type TypeDefID = resourceid.ID[TypeDef]
 
+type GeneratedCodeID = resourceid.ID[GeneratedCode]
+
 // SocketID is in the socket package (to avoid circular imports)
 
 // ResourceFromID returns the resource corresponding to the given ID.
@@ -50,6 +52,10 @@ func ResourceFromID(id string) (any, error) {
 		return FunctionID(id).Decode()
 	case socket.ID.ResourceTypeName(""):
 		return socket.ID(id).Decode()
+	case TypeDefID.ResourceTypeName(""):
+		return TypeDefID(id).Decode()
+	case GeneratedCodeID.ResourceTypeName(""):
+		return GeneratedCodeID(id).Decode()
 	}
 	return nil, fmt.Errorf("unknown resource type: %v", typeName)
 }
@@ -74,6 +80,10 @@ func ResourceToID(r any) (string, error) {
 	case *Function:
 		id, err = r.ID()
 	case *socket.Socket:
+		id, err = r.ID()
+	case *TypeDef:
+		id, err = r.ID()
+	case *GeneratedCode:
 		id, err = r.ID()
 	default:
 		return "", fmt.Errorf("unknown resource type: %T", r)

@@ -16,15 +16,16 @@ const (
 // TODO: This may done it dynamically later instead of a static
 // map.
 var CustomScalar = map[string]string{
-	"ContainerID": "Container",
-	"FileID":      "File",
-	"DirectoryID": "Directory",
-	"SecretID":    "Secret",
-	"SocketID":    "Socket",
-	"CacheID":     "CacheVolume",
-	"ModuleID":    "Module",
-	"FunctionID":  "Function",
-	"TypeDefID":   "TypeDef",
+	"ContainerID":     "Container",
+	"FileID":          "File",
+	"DirectoryID":     "Directory",
+	"SecretID":        "Secret",
+	"SocketID":        "Socket",
+	"CacheID":         "CacheVolume",
+	"ModuleID":        "Module",
+	"FunctionID":      "Function",
+	"TypeDefID":       "TypeDef",
+	"GeneratedCodeID": "GeneratedCode",
 }
 
 // FormatTypeFuncs is an interface to format any GraphQL type.

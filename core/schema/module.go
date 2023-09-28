@@ -45,9 +45,10 @@ func (s *moduleSchema) Schema() string {
 
 func (s *moduleSchema) Resolvers() Resolvers {
 	return Resolvers{
-		"ModuleID":   stringResolver(core.ModuleID("")),
-		"FunctionID": stringResolver(core.FunctionID("")),
-		"TypeDefID":  stringResolver(core.TypeDefID("")),
+		"ModuleID":        stringResolver(core.ModuleID("")),
+		"FunctionID":      stringResolver(core.FunctionID("")),
+		"TypeDefID":       stringResolver(core.TypeDefID("")),
+		"GeneratedCodeID": stringResolver(core.GeneratedCodeID("")),
 		"Query": ObjectResolver{
 			"module":              ToResolver(s.module),
 			"currentModule":       ToResolver(s.currentModule),
@@ -55,6 +56,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"newFunction":         ToResolver(s.newFunction),
 			"currentFunctionCall": ToResolver(s.currentFunctionCall),
 			"typeDef":             ToResolver(s.typeDef),
+			"generatedCode":       ToResolver(s.generatedCode),
 		},
 		"Directory": ObjectResolver{
 			"asModule": ToResolver(s.directoryAsModule),
@@ -75,7 +77,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"returnValue": ToVoidResolver(s.functionCallReturnValue),
 			"parent":      ToResolver(s.functionCallParent),
 		},
-		"TypeDef": ObjectResolver{
+		"TypeDef": ToIDableObjectResolver(core.TypeDefID.Decode, ObjectResolver{
 			"id":           ToResolver(s.typeDefID),
 			"kind":         ToResolver(s.typeDefKind),
 			"withOptional": ToResolver(s.typeDefWithOptional),
@@ -84,7 +86,13 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"withObject":   ToResolver(s.typeDefWithObject),
 			"withField":    ToResolver(s.typeDefWithObjectField),
 			"withFunction": ToResolver(s.typeDefWithObjectFunction),
-		},
+		}),
+		"GeneratedCode": ToIDableObjectResolver(core.GeneratedCodeID.Decode, ObjectResolver{
+			"id":                    ToResolver(s.generatedCodeID),
+			"withCode":              ToResolver(s.generatedCodeWithCode),
+			"withVCSIgnoredPaths":   ToResolver(s.generatedCodeWithVCSIgnoredPaths),
+			"withVCSGeneratedPaths": ToResolver(s.generatedCodeWithVCSGeneratedPaths),
+		}),
 	}
 }
 
@@ -154,6 +162,41 @@ func (s *moduleSchema) typeDefID(ctx *core.Context, def *core.TypeDef, args any)
 
 func (s *moduleSchema) typeDefKind(ctx *core.Context, def *core.TypeDef, args any) (string, error) {
 	return def.Kind.String(), nil
+}
+
+func (s *moduleSchema) generatedCode(ctx *core.Context, _ *core.Query, args struct {
+	ID core.GeneratedCodeID
+}) (*core.GeneratedCode, error) {
+	if args.ID != "" {
+		return args.ID.Decode()
+	}
+	return &core.GeneratedCode{}, nil
+}
+
+func (s *moduleSchema) generatedCodeID(ctx *core.Context, code *core.GeneratedCode, args any) (core.GeneratedCodeID, error) {
+	return code.ID()
+}
+
+func (s *moduleSchema) generatedCodeWithCode(ctx *core.Context, code *core.GeneratedCode, args struct {
+	Code core.DirectoryID
+}) (*core.GeneratedCode, error) {
+	dir, err := args.Code.Decode()
+	if err != nil {
+		return nil, err
+	}
+	return code.WithCode(dir), nil
+}
+
+func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx *core.Context, code *core.GeneratedCode, args struct {
+	Paths []string
+}) (*core.GeneratedCode, error) {
+	return code.WithVCSIgnoredPaths(args.Paths), nil
+}
+
+func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx *core.Context, code *core.GeneratedCode, args struct {
+	Paths []string
+}) (*core.GeneratedCode, error) {
+	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
 func (s *moduleSchema) Dependencies() []ExecutableSchema {
@@ -366,7 +409,7 @@ func (s *moduleSchema) moduleID(ctx *core.Context, module *core.Module, args any
 	return module.ID()
 }
 
-func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, args any) (*core.Directory, error) {
+func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, args any) (*core.GeneratedCode, error) {
 	sdkMod, err := s.loadRuntimeModule(ctx, mod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module: %w", err)
@@ -410,12 +453,12 @@ func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, 
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
 	}
 
-	dirID, ok := result.(string)
+	genCodeID, ok := result.(string)
 	if !ok {
 		return nil, fmt.Errorf("expected string directory ID result, got %T", result)
 	}
 
-	return core.DirectoryID(dirID).Decode()
+	return core.GeneratedCodeID(genCodeID).Decode()
 }
 
 func (s *moduleSchema) moduleServe(ctx *core.Context, module *core.Module, args any) (rerr error) {

@@ -36,24 +36,24 @@ func (m *GoSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Container
 		WithLabel("io.dagger.module.config", modSubPath)
 }
 
-func (m *GoSdk) Bootstrap() *Container {
-	return m.ModuleRuntime(dag.Host().Directory("."), RuntimeOpts{
-		SubPath: "./runtime",
-	})
-}
-
-func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *Directory {
+func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *GeneratedCode {
 	base := m.Base(opts.Platform).
 		WithMountedDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath))
 
-	return base.Directory(".").Diff(
-		base.
-			WithExec([]string{"codegen", "--module", ".", "--vcs", "--propagate-logs"}, ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			Directory("."),
-	)
+	codegen := base.
+		WithExec([]string{"codegen", "--module", ".", "--vcs", "--propagate-logs"}, ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Directory(".")
+
+	return dag.GeneratedCode().
+		WithCode(base.Directory(".").Diff(codegen)).
+		WithVCSIgnoredPaths([]string{
+			"dagger.gen.go",
+			"internal/querybuilder/",
+			"querybuilder/", // for old repos
+		})
 }
 
 func (m *GoSdk) Base(platform Platform) *Container {
