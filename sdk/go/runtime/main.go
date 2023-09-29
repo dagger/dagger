@@ -42,7 +42,7 @@ func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *GeneratedCode {
 		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath))
 
 	codegen := base.
-		WithExec([]string{"codegen", "--module", ".", "--vcs", "--propagate-logs"}, ContainerWithExecOpts{
+		WithExec([]string{"codegen", "--module", ".", "--propagate-logs"}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		Directory(".")
