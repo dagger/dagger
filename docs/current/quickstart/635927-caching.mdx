@@ -22,7 +22,13 @@ export const ids = {
 
 ## Use caching
 
-One of Dagger's most powerful features is its ability to cache data across pipeline runs. Dagger lets you define one or more directories as cache volumes and persists their contents across runs. This enables you to reuse the contents of the cache volume(s) every time the pipeline runs, and thereby speed up pipeline operations.
+One of Dagger's most powerful features is its ability to cache data across pipeline runs. This is typically most useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs.
+
+Dagger lets you define one or more such directories as cache volumes and persist their contents across runs. This enables you to reuse the contents of the cache volume(s) every time the pipeline runs, and thereby speed up pipeline operations.
+
+:::note
+Cache volumes are not meant to be shared outside of Dagger; they are for persisting specific parts of the internal state of your pipeline, for optimal use of your tool's native caching features.
+:::
 
 You may have noticed that the example pipeline executes the `npm install` command to download the application's dependencies every time the pipeline runs. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every pipeline run is inefficient and time-consuming.
 

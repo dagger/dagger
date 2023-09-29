@@ -224,7 +224,9 @@ At the end of this step, you will have integrated Dagger Cloud's distributed cac
 Dagger Cloud's distributed caching feature is only available under the *Team* plan.
 :::
 
-Dagger already comes with built-in support for [cache volumes](../quickstart/635927-caching.mdx), which can be used to cache packages and thereby avoid unnecessary rebuilds and test reruns. Dagger Cloud enhances caching support significantly and allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
+One of Dagger's most powerful features is its ability to [cache data across pipeline runs](../quickstart/635927-caching.mdx). This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every pipeline run is inefficient and time-consuming.
+
+Dagger comes with built-in support to define one or more such directories as cache volumes and persist their contents across runs. Dagger Cloud enhances caching support significantly and allows cross-host synchronization of cache volumes. This allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
 Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
