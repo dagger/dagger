@@ -4,9 +4,7 @@ slug: /sdk/elixir/756758/get-started
 
 # Get Started with the Dagger Elixir SDK
 
-:::warning
-The Dagger Elixir SDK is currently experimental and is subject to change.
-:::
+{@include: ../../partials/_experimental-sdk-elixir.md}
 
 ## Introduction
 
@@ -35,21 +33,7 @@ mix new elixir_with_dagger
 
 ## Step 2: Install the Dagger Elixir SDK
 
-In your project directory, open `mix.exs` and add `{:dagger, "~> 0.8"}` to the list in the `deps` function:
-
-```elixir
-def deps do
-  [
-    {:dagger, "~> 0.8", only: [:dev, :test]}
-  ]
-end
-```
-
-Run `mix deps.get` to fetch the Elixir SDK from Hex.pm:
-
-```shell
-mix deps.get
-```
+{@include: ../../partials/_install-sdk-elixir.md}
 
 ## Step 3: Create the Mix task
 
@@ -78,14 +62,43 @@ dagger run mix elixir_with_dagger.test
 The `dagger run` command executes the specified command in a Dagger session and displays live progress. Here is an example of the output:
 
 ```shell
-Tests succeeded!
+❯ dagger run mix elixir_with_dagger.test
+┣─╮
+│ ▽ init
+│ █ [0.76s] connect
+│ ┣ [0.52s] starting engine
+│ ┣ [0.18s] starting session
+│ ┻
+█ [1.75s] mix elixir_with_dagger.test
+┃ Tests succeeded!
+┣─╮
+│ ▽ host.directory .
+│ █ [0.23s] upload .
+│ ┣ [0.15s] transferring eyJvd25lcl9jbGllbnRfaWQiOiIwNWNmN2E4YTF4dDZ0dG52amUwbG1yeTYxIiwicGF0aCI6Ii4iLCJpbmNsdWRlX3BhdHRlcm5zIjpudWxsLCJleGNsdWRlX3BhdHRlcm5zIjpbImRlcHMiLCJfYnVpbGQiXSwiZm9sbG93X3BhdGhzIjpudWxsLCJyZWFkX3NpbmdsZV9maWxlX29ubHkiOmZhbHNlLCJtYXhfZmlsZV9zaXplIjowfQ==:
+│ █ CACHED copy . (exclude deps, _build)
+│ ┣─╮ copy . (exclude deps, _build)
+│ ┻ │
+┣─╮ │
+│ ▽ │ from hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ █ │ [0.18s] resolve image config for docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ █ │ [0.04s] pull docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ ┣ │ [0.04s] resolve docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0@sha256:d77ef43aeb585ec172e290c7ebc171a16e21ebaf7c9ed09b596b9db55c848f00
+│ ┣─┼─╮ pull docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ ┻ │ │
+█◀──┴─╯ CACHED exec mix local.hex --force
+█ CACHED exec mix local.rebar --force
+█ CACHED exec mix deps.get
+█ CACHED exec mix test
+┻
+• Engine: fd814943769d (version v0.8.7)
+⧗ 2.51s ✔ 20 ∅ 5
 ```
 
 ## Step 4: Test against multiple Elixir and Erlang/OTP versions
 
 Now that the Elixir CI tool can test the application against a specified Elixir and Erlang/OTP version, the next step is to extend it for multiple Elixir and Erlang/OTP versions.
 
-Replace the `lib/mix/tasks/a_project.test.ex` file from the previous step with the version below:
+Replace the `lib/mix/tasks/elixir_with_dagger.test.ex` file from the previous step with the version below:
 
 ```elixir file=snippets/get-started/step4/elixir_with_dagger.test.ex
 ```
@@ -105,11 +118,51 @@ dagger run mix elixir_with_dagger.test
 The tool tests the application, logging its operations to the console as it works. If all tests pass, it displays the final output below:
 
 ```shell
-Starting tests for Elixir 1.14.5 with Erlang OTP 25.3.2.5
-Starting tests for Elixir 1.15.4 with Erlang OTP 25.3.2.5
-Tests for Elixir 1.15.4 with Erlang OTP 25.3.2.5 succeeded
-Tests for Elixir 1.14.5 with Erlang OTP 25.3.2.5 succeeded!
-All tasks have finished
+❯ dagger run mix elixir_with_dagger.test
+┣─╮
+│ ▽ init
+│ █ [0.59s] connect
+│ ┣ [0.53s] starting engine
+│ ┣ [0.01s] starting session
+│ ┻
+█ [2.09s] mix elixir_with_dagger.test
+┃ Starting tests for Elixir 1.14.4 with Erlang OTP erlang-25.3.2
+┃ Starting tests for Elixir 1.15.0-rc.2 with Erlang OTP erlang-26.0.1
+┃ Tests for Elixir 1.14.4 with Erlang OTP erlang-25.3.2 succeeded!
+┃ Tests for Elixir 1.15.0-rc.2 with Erlang OTP erlang-26.0.1 succeeded!
+┃ All tasks have finished
+┣─╮
+│ ▽ host.directory .
+│ █ [0.39s] upload .
+│ ┣ [0.16s] transferring eyJvd25lcl9jbGllbnRfaWQiOiJsNHJlemx0cW10dHd3MHhrNzJ6N3l1eGg1IiwicGF0aCI6Ii4iLCJpbmNsdWRlX3BhdHRlcm5zIjpudWxsLCJleGNsdWRlX3BhdHRlcm5zIjpbImRlcHMiLCJfYnVpbGQiXSwiZm9sbG93X3BhdGhzIjpudWxsLCJyZWFkX3NpbmdsZV9maWxlX29ubHkiOmZhbHNlLCJtYXhfZmlsZV9zaXplIjowfQ==:
+│ █ CACHED copy . (exclude deps, _build)
+│ ┣─╮ copy . (exclude deps, _build)
+│ ┻ │
+┣─╮ │
+│ ▽ │ from hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ █ │ [0.22s] resolve image config for docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+┣─┼─┼─╮
+│ │ │ ▽ from hexpm/elixir:1.15.0-rc.2-erlang-26.0.1-alpine-3.18.2
+│ │ │ █ [0.35s] resolve image config for docker.io/hexpm/elixir:1.15.0-rc.2-erlang-26.0.1-alpine-3.18.2
+│ █ │ │ [0.04s] pull docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ ┣ │ │ [0.03s] resolve docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0@sha256:d77ef43aeb585ec172e290c7ebc171a16e21ebaf7c9ed09b596b9db55c848f00
+│ ┣─┼─┼─╮ pull docker.io/hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0
+│ ┻ │ │ │
+█◀──┤─┼─╯ CACHED exec mix local.hex --force
+█   │ │ CACHED exec mix local.rebar --force
+█   │ │ CACHED exec mix deps.get
+█   │ │ CACHED exec mix test
+│   │ █ [0.04s] pull docker.io/hexpm/elixir:1.15.0-rc.2-erlang-26.0.1-alpine-3.18.2
+│   │ ┣ [0.03s] resolve docker.io/hexpm/elixir:1.15.0-rc.2-erlang-26.0.1-alpine-3.18.2@sha256:20eb9af6c46749c7d4a18de9aa36950f591ffa0e19e219ac6b21c58d01cfb07f
+│ ╭─┼─┫ pull docker.io/hexpm/elixir:1.15.0-rc.2-erlang-26.0.1-alpine-3.18.2
+│ │ │ ┻
+█◀┴─╯ CACHED exec mix local.hex --force
+█ CACHED exec mix local.rebar --force
+█ CACHED exec mix deps.get
+█ CACHED exec mix test
+┻
+• Engine: fd814943769d (version v0.8.7)
+⧗ 2.69s ✔ 30 ∅ 9
 ```
 
 ## Conclusion

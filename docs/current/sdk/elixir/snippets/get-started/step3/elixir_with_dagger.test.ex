@@ -7,7 +7,7 @@ defmodule Mix.Tasks.ElixirWithDagger.Test do
 
     client = Dagger.connect!()
 
-    project =
+    app =
       client
       |> Dagger.Client.host()
       |> Dagger.Host.directory(".", exclude: ["deps", "_build"])
@@ -15,9 +15,9 @@ defmodule Mix.Tasks.ElixirWithDagger.Test do
     {:ok, _} =
       client
       |> Dagger.Client.container()
-      |> Dagger.Container.from("hexpm/elixir:1.15.4-erlang-25.3.2.5-ubuntu-bionic-20230126")
-      |> Dagger.Container.with_mounted_directory("/a_project", project)
-      |> Dagger.Container.with_workdir("/a_project")
+      |> Dagger.Container.from("hexpm/elixir:1.14.4-erlang-25.3.2-alpine-3.18.0")
+      |> Dagger.Container.with_mounted_directory("/app", app)
+      |> Dagger.Container.with_workdir("/app")
       |> Dagger.Container.with_exec(~w"mix local.hex --force")
       |> Dagger.Container.with_exec(~w"mix local.rebar --force")
       |> Dagger.Container.with_exec(~w"mix deps.get")

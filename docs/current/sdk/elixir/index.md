@@ -4,19 +4,15 @@ slug: /sdk/elixir
 
 # Dagger Elixir SDK
 
-<div class="status-badge">Experimental</div>
-
-:::warning
-The Dagger Elixir SDK is currently experimental and is subject to change.
-:::
+{@include: ../../partials/_experimental-sdk-elixir.md}
 
 ## What is the Dagger Elixir SDK?
 
-The Dagger Elixir SDK contains everything you need to develop CI/CD pipelines in Elixir, and run them with the [Dagger Engine][dagger].
+The Dagger Elixir SDK contains everything you need to develop CI/CD pipelines in Elixir, and run them with the [Dagger Engine](https://dagger.io).
 
 This SDK contains:
 
-* A Elixir package: [dagger][hex-pm-dagger]
+* An Elixir package
 * This documentation
 
 ## Who is it for?
@@ -33,7 +29,7 @@ The Dagger Elixir SDK may *not* be a good fit if you are...
 
 * A developer who doesn't know Elixir, and is not interested in learning it.
 * A "designated devops person" who doesn't think of themselves as a developer - nothing makes you happier than a battle-hardened shell script.
-* Someone who loves writing YAML all day, thank you very much.
+* Someone who enjoys writing YAML.
 * A container skeptic: the less containers are involved, the happier you are.
 
 ## How does it work?
@@ -72,9 +68,7 @@ lib -..-> engine -..-> oci -..-> A1 & B1 & C1
 
 To learn more, [install the Elixir SDK][install] and [start using it][get-started].
 
-[dagger]: https://dagger.io
 [cli]: https://docs.dagger.io/cli
 [install]: ./043817-install.md
 [get-started]: ./756758-get-started.md
 [dag]: https://en.wikipedia.org/wiki/Directed_acyclic_graph
-[hex-pm-dagger]: https://hex.pm/packages/dagger
