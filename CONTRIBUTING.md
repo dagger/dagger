@@ -104,6 +104,10 @@ approaches, and they work really well in the context of Dagger.
 
 ## Commits
 
+### License
+
+Contributions to this project are made under the Apache License 2.0 (Apache-2.0).
+
 ### DCO
 
 Contributions to this project must be accompanied by a Developer Certificate of
