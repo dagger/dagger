@@ -106,4 +106,13 @@ defmodule Dagger.QueryBuilder.SelectionTest do
 
     assert Selection.build(root) == "query{a(arg:\"\\n\\t\\\"\")}"
   end
+
+  test "boolean arg" do
+    root =
+      Selection.query()
+      |> Selection.select("a")
+      |> Selection.arg("arg", true)
+
+    assert Selection.build(root) == "query{a(arg:true)}"
+  end
 end
