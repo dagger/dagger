@@ -58,7 +58,7 @@ multidict==6.0.4
     # via yarl
 mypy-extensions==1.0.0
     # via black
-packaging==23.1
+packaging==23.2
     # via
     #   black
     #   pytest
