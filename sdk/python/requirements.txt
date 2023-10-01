@@ -39,7 +39,7 @@ h11==0.14.0
     # via httpcore
 httpcore==0.17.3
     # via httpx
-httpx==0.24.1
+httpx==0.25.0
     # via
     #   -r -
     #   pytest-httpx
