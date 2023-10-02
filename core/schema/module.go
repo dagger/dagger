@@ -11,7 +11,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
@@ -627,7 +626,12 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	if !args.Cache { // TODO: allow caching for calls coming from "inside the house"
 		// [shykes] inject a cachebuster before runtime exec,
 		// to fix crippling mandatory memoization of all functions.
-		busterKey := base64.StdEncoding.EncodeToString([]byte(time.Now().String()))
+		// [sipsma] use the ServerID so that we only bust once-per-session and thus avoid exponential runtime complexity
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		busterKey := base64.StdEncoding.EncodeToString([]byte(clientMetadata.ServerID))
 		busterTon := core.NewScratchDirectory(mod.Pipeline, mod.Platform)
 		ctr, err = ctr.WithMountedDirectory(ctx, s.bk, "/"+busterKey, busterTon, "", true)
 		if err != nil {
