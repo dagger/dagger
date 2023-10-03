@@ -418,7 +418,27 @@ export type ContainerID = string & { __ContainerID: never }
 export type DateTime = string & { __DateTime: never }
 
 export type DirectoryAsModuleOpts = {
+  /**
+   * An optional subpath of the directory which contains the module's source
+   * code.
+   *
+   * This is needed when the module code is in a subdirectory but requires
+   * parent directories to be loaded in order to execute. For example, the
+   * module source code may need a go.mod, project.toml, package.json, etc. file
+   * from a parent directory.
+   *
+   * If not set, the module source code is loaded from the root of the
+   * directory.
+   */
   sourceSubpath?: string
+
+  /**
+   * A pre-built runtime container to use instead of building one from the
+   * source code. This is useful for bootstrapping.
+   *
+   * You should ignore this unless you're building a Dagger SDK.
+   */
+  runtime?: Container
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -560,6 +580,8 @@ export type FunctionCallInput = {
  * A reference to a Function.
  */
 export type FunctionID = string & { __FunctionID: never }
+
+export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
@@ -716,6 +738,10 @@ export type ClientContainerOpts = {
 
 export type ClientDirectoryOpts = {
   id?: DirectoryID
+}
+
+export type ClientGeneratedCodeOpts = {
+  id?: GeneratedCodeID
 }
 
 export type ClientGitOpts = {
@@ -2334,15 +2360,20 @@ export class Directory extends BaseClient {
 
   /**
    * Load the directory as a Dagger module
+   * @param opts.sourceSubpath An optional subpath of the directory which contains the module's source
+   * code.
    *
-   * sourceSubpath is an optional parameter that, if set, points to a subpath of this
-   * directory that contains the module's source code. This is needed when the module
-   * code is in a subdirectory but requires parent directories to be loaded in order
-   * to execute. For example, the module source code may need a go.mod, project.toml,
-   * package.json, etc. file from a parent directory.
+   * This is needed when the module code is in a subdirectory but requires
+   * parent directories to be loaded in order to execute. For example, the
+   * module source code may need a go.mod, project.toml, package.json, etc. file
+   * from a parent directory.
    *
-   * If sourceSubpath is not set, the module source code is loaded from the root of
-   * the directory.
+   * If not set, the module source code is loaded from the root of the
+   * directory.
+   * @param opts.runtime A pre-built runtime container to use instead of building one from the
+   * source code. This is useful for bootstrapping.
+   *
+   * You should ignore this unless you're building a Dagger SDK.
    */
   asModule(opts?: DirectoryAsModuleOpts): Module_ {
     return new Module_({
@@ -3539,6 +3570,149 @@ export class FunctionCallArgValue extends BaseClient {
   }
 }
 
+export class GeneratedCode extends BaseClient {
+  private readonly _id?: GeneratedCodeID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: GeneratedCodeID
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+  async id(): Promise<GeneratedCodeID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<GeneratedCodeID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The directory containing the generated code
+   */
+  code(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "code",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * List of paths to mark generated in version control (i.e. .gitattributes)
+   */
+  async vcsGeneratedPaths(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "vcsGeneratedPaths",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * List of paths to ignore in version control (i.e. .gitignore)
+   */
+  async vcsIgnoredPaths(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "vcsIgnoredPaths",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Set the directory containing the generated code
+   */
+  withCode(code: Directory): GeneratedCode {
+    return new GeneratedCode({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withCode",
+          args: { code },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Set the list of paths to mark generated in version control
+   */
+  withVCSGeneratedPaths(paths: string[]): GeneratedCode {
+    return new GeneratedCode({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withVCSGeneratedPaths",
+          args: { paths },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Set the list of paths to ignore in version control
+   */
+  withVCSIgnoredPaths(paths: string[]): GeneratedCode {
+    return new GeneratedCode({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withVCSIgnoredPaths",
+          args: { paths },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current GeneratedCode.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: GeneratedCode) => GeneratedCode) {
+    return arg(this)
+  }
+}
+
 /**
  * A git ref (tag, branch or commit).
  */
@@ -3891,6 +4065,7 @@ export class Module_ extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sdk?: string = undefined
+  private readonly _sdkRuntime?: string = undefined
   private readonly _serve?: Void = undefined
   private readonly _sourceDirectorySubPath?: string = undefined
 
@@ -3903,6 +4078,7 @@ export class Module_ extends BaseClient {
     _description?: string,
     _name?: string,
     _sdk?: string,
+    _sdkRuntime?: string,
     _serve?: Void,
     _sourceDirectorySubPath?: string
   ) {
@@ -3912,6 +4088,7 @@ export class Module_ extends BaseClient {
     this._description = _description
     this._name = _name
     this._sdk = _sdk
+    this._sdkRuntime = _sdkRuntime
     this._serve = _serve
     this._sourceDirectorySubPath = _sourceDirectorySubPath
   }
@@ -4010,6 +4187,22 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * The code generated by the SDK's runtime
+   */
+  generatedCode(): GeneratedCode {
+    return new GeneratedCode({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "generatedCode",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * The name of the module
    */
   async name(): Promise<string> {
@@ -4077,6 +4270,27 @@ export class Module_ extends BaseClient {
         ...this._queryTree,
         {
           operation: "sdk",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The SDK runtime module image ref.
+   */
+  async sdkRuntime(): Promise<string> {
+    if (this._sdkRuntime) {
+      return this._sdkRuntime
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sdkRuntime",
         },
       ],
       this.client
@@ -4566,6 +4780,19 @@ export class Client extends BaseClient {
         {
           operation: "function",
           args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  generatedCode(opts?: ClientGeneratedCodeOpts): GeneratedCode {
+    return new GeneratedCode({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "generatedCode",
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
