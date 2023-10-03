@@ -115,7 +115,7 @@ func gitIgnorePaths(ctx context.Context, repo *git.Repository, outDir string, pa
 	for _, filePath := range paths {
 		thisFile := []byte(fmt.Sprintf("/%s\n", filePath))
 
-		if bytes.Contains(content, thisFile) {
+		if bytes.HasPrefix(content, thisFile) || bytes.Contains(content, append([]byte("\n"), thisFile...)) {
 			rec.Debug("path already in .gitignore", progrock.Labelf("path", filePath))
 			// already has some config for the file
 			continue
