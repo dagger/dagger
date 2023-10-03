@@ -21,25 +21,36 @@ This tutorial assumes that:
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 :::note
-This tutorial creates a Go CI tool using the Dagger CLI and the Go SDK. It uses this tool to build the Go application in the current directory. The binary from this guide can be used to build any Go project.
-:::
-
-## Step 1: Create a Go module for the tool
-
-The first step is to create a new Go module and sub-directory for the tool.
+This tutorial creates a CI tool to build a Go application for multiple architectures. If you don't have a Go application already, clone an existing Go project. A good example is the [Go example projects repository](https://github.com/golang/example), which you can clone as below:
 
 ```shell
-go mod init multibuild
-mkdir multibuild
+git clone https://go.googlesource.com/example
+cd example/hello
 ```
 
-## Step 2: Create a Dagger client in Go
+The code samples in this tutorial are based on the above Go project. If using a different project, adjust the code samples accordingly.
+:::
+
+## Step 1: Add the Dagger Go SDK to the project
+
+{@include: ../../partials/_install-sdk-go.md}
+
+## Step 2: Create a Go module for the tool
+
+The next step is to create a new Go module and sub-directory for the tool.
+
+```shell
+mkdir multibuild && cd multibuild
+go mod init multibuild
+```
+
+## Step 3: Create a Dagger client in Go
 
 :::note
 If you would prefer to use the final `main.go` file right away, it can be found in [Step 5](#step-5-create-a-multi-build-pipeline)
 :::
 
-Create a new file in the `multibuild` sub-directory named `main.go` and add the following code to it.
+Create a new file in the `multibuild` directory named `main.go` and add the following code to it.
 
 ```go file=snippets/get-started/step2/main.go
 ```
@@ -47,10 +58,6 @@ Create a new file in the `multibuild` sub-directory named `main.go` and add the 
 This Go CI tool stub imports the Dagger SDK and defines two functions: `main()`, which provides an interface for the user to pass in an argument to the tool and `build()`, which defines the pipeline operations.
 
 The `build()` function creates a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect). This client provides an interface for executing commands against the Dagger engine. This function is sparse to begin with; it will be improved in subsequent steps.
-
-## Step 3: Add the Dagger Go SDK to the module
-
-{@include: ../../partials/_install-sdk-go.md}
 
 Try the Go CI tool by executing the commands below:
 
@@ -68,7 +75,7 @@ Building with Dagger
 
 Now that the basic structure of the Go CI tool is defined and functional, the next step is to flesh out its `build()` function to actually build the Go application.
 
-Replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
+Replace the `multibuild/main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
 ```go file=snippets/get-started/step4/main.go
 ```
@@ -106,7 +113,7 @@ build
 
 Now that the Go CI tool can build a Go application and output the build result, the next step is to extend it for multiple OS and architecture combinations.
 
-Replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
+Replace the `multibuild/main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
 ```go file=snippets/get-started/step5a/main.go
 ```
@@ -142,7 +149,7 @@ build/
         └── multibuild
 ```
 
-Another common operation in a CI environment involves creating builds targeting multiple Go versions. To do this, extend the Go CI tool further and replace the `main.go` file from the previous step with the version below (highlighted lines indicate changes):
+Another common operation in a CI environment involves creating builds targeting multiple Go versions. To do this, extend the Go CI tool further and replace the `multibuild/main.go` file from the previous step with the version below (highlighted lines indicate changes):
 
 ```go file=snippets/get-started/step5b/main.go
 ```
@@ -162,7 +169,7 @@ Use the `tree` command to see the build artifacts on the host, as shown below:
 ```shell
 tree build
 build/
-├── 1.18
+├── 1.20
 │   ├── darwin
 │   │   ├── amd64
 │   │   │   └── multibuild
@@ -173,7 +180,7 @@ build/
 │       │   └── multibuild
 │       └── arm64
 │           └── multibuild
-└── 1.19
+└── 1.21
     ├── darwin
     │   ├── amd64
     │   │   └── multibuild

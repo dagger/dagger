@@ -23,6 +23,6 @@ require (
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/sys v0.12.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

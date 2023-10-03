@@ -5,7 +5,8 @@ pipeline {
     stage("dagger") {
       steps {
         sh '''
-            go run main.go
+            cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+            dagger run go run main.go
         '''
       }
     }

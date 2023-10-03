@@ -15,8 +15,7 @@ import cattrs
 import graphql
 import httpx
 from beartype.door import TypeHint
-from cattrs.preconf.json import make_converter
-from gql.client import AsyncClientSession
+from cattrs.preconf.json import make_converter as make_json_converter
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 from gql.transport.exceptions import (
     TransportClosed,
@@ -31,7 +30,9 @@ from dagger import (
     TransportError,
 )
 from dagger._exceptions import _query_error_from_transport
-from dagger.client._guards import (
+from dagger.client.base import Scalar, Type
+
+from ._guards import (
     IDType,
     InputHint,
     InputSeqHint,
@@ -39,7 +40,7 @@ from dagger.client._guards import (
     is_id_type_sequence,
     is_id_type_subclass,
 )
-from dagger.client.base import Scalar, Type
+from ._session import BaseConnection, SharedConnection
 
 logger = logging.getLogger(__name__)
 
@@ -81,35 +82,12 @@ class Field:
 
 @dataclass(slots=True)
 class Context:
-    session: AsyncClientSession
-    schema: DSLSchema
+    conn: BaseConnection
     selections: deque[Field] = field(default_factory=deque)
     converter: cattrs.Converter = field(init=False)
 
     def __post_init__(self):
-        conv = make_converter(detailed_validation=False)
-
-        # For types that were returned from a list we need to set
-        # their private attributes with a custom structuring function.
-
-        def _needs_hook(cls: type) -> bool:
-            return issubclass(cls, Type) and hasattr(cls, "__slots__")
-
-        def _struct(d: dict[str, Any], cls: type) -> Any:
-            obj = cls(self)
-            hints = get_type_hints(cls)
-            for slot in getattr(cls, "__slots__", ()):
-                t = hints.get(slot)
-                if t and slot in d:
-                    setattr(obj, slot, conv.structure(d[slot], t))
-            return obj
-
-        conv.register_structure_hook_func(
-            _needs_hook,
-            _struct,
-        )
-
-        self.converter = conv
+        self.converter = make_converter(self)
 
     def select(
         self, type_name: str, field_name: str, args: typing.Sequence[Arg]
@@ -136,7 +114,7 @@ class Context:
         selections.append(field_)
         return replace(self, selections=selections)
 
-    def build(self) -> DSLSelectable:
+    async def build(self) -> DSLSelectable:
         if not self.selections:
             msg = "No field has been selected"
             raise InvalidQueryError(msg)
@@ -150,10 +128,10 @@ class Context:
         root = functools.reduce(_collapse, reversed(self.selections))
 
         # `to_dsl` will cascade to all children, until the end.
-        return root.to_dsl(self.schema)
+        return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
 
-    def query(self) -> graphql.DocumentNode:
-        return dsl_gql(DSLQuery(self.build()))
+    async def query(self) -> graphql.DocumentNode:
+        return dsl_gql(DSLQuery(await self.build()))
 
     @overload
     async def execute(self, return_type: None = None) -> None:
@@ -165,14 +143,14 @@ class Context:
 
     async def execute(self, return_type: type[T] | None = None) -> T | None:
         await self.resolve_ids()
-        query = self.query()
+        query = await self.query()
 
         try:
-            result = await self.session.execute(query)
+            result = await self.conn.session.execute(query)
         except httpx.TimeoutException as e:
             msg = (
-                "Request timed out. Try setting a higher value in 'execute_timeout' "
-                "config for this `dagger.Connection()`."
+                "Request timed out. Try setting a higher timeout value in "
+                "for this connection."
             )
             raise ExecuteTimeoutError(msg) from e
 
@@ -249,6 +227,32 @@ class Context:
                         tg.start_soon(_resolve_id, i, k, v)
 
 
+def make_converter(ctx: Context):
+    conv = make_json_converter(detailed_validation=False)
+
+    # For types that were returned from a list we need to set
+    # their private attributes with a custom structuring function.
+
+    def _needs_hook(cls: type) -> bool:
+        return issubclass(cls, Type) and hasattr(cls, "__slots__")
+
+    def _struct(d: dict[str, Any], cls: type) -> Any:
+        obj = cls(ctx)
+        hints = get_type_hints(cls)
+        for slot in getattr(cls, "__slots__", ()):
+            t = hints.get(slot)
+            if t and slot in d:
+                setattr(obj, slot, conv.structure(d[slot], t))
+        return obj
+
+    conv.register_structure_hook_func(
+        _needs_hook,
+        _struct,
+    )
+
+    return conv
+
+
 _Type = TypeVar("_Type", bound=Type)
 
 
@@ -260,17 +264,17 @@ class Root(Type):
         return "Query"
 
     @classmethod
-    def from_session(cls, session: AsyncClientSession):
-        assert (
-            session.client.schema is not None
-        ), "GraphQL session has not been initialized"
-        ds = DSLSchema(session.client.schema)
-        ctx = Context(session, ds)
-        return cls(ctx)
-
-    @classmethod
     def from_context(cls, ctx: Context):
         return cls(replace(ctx, selections=deque()))
+
+    @classmethod
+    def from_connection(cls, conn: BaseConnection):
+        return cls(Context(conn))
+
+    def __init__(self, ctx: Context | None = None):
+        # Since SharedConnection is a singleton, we could make Context optional
+        # in every Type like here, but let's keep it only for the root object for now.
+        super().__init__(ctx or Context(SharedConnection()))
 
     def _get_object_instance(self, id_: str | Scalar, cls: type[_Type]) -> _Type:
         if not is_id_type_subclass(cls):

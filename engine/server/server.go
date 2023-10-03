@@ -69,7 +69,7 @@ func NewDaggerServer(
 
 	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", serverID)
 	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
-		&progrock.RPCWriter{Conn: clientConn, Updates: progUpdates},
+		progrock.NewRPCWriter(clientConn, progUpdates),
 		buildkit.ProgrockLogrusWriter{},
 	})
 	if err != nil {
@@ -230,6 +230,13 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		mux := http.NewServeMux()
 		mux.Handle("/query", NewHandler(&HandlerConfig{
 			Schema: srv.schema.Schema(),
+		}))
+		mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
+			if err := srv.schema.ShutdownClient(ctx, clientMetadata); err != nil {
+				bklog.G(ctx).WithError(err).Error("failed to shutdown")
+			}
 		}))
 		mux.ServeHTTP(w, req)
 	})

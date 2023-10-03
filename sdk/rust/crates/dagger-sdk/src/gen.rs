@@ -393,6 +393,11 @@ pub struct ContainerWithMountedFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
+    /// Permission given to the mounted secret (e.g., 0600).
+    /// This option requires an owner to be set to be active.
+    /// Default: 0400.
+    #[builder(setter(into, strip_option), default)]
+    pub mode: Option<isize>,
     /// A user:group to set for the mounted secret.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1379,6 +1384,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(mode) = opts.mode {
+            query = query.arg("mode", mode);
         }
         return Container {
             proc: self.proc.clone(),

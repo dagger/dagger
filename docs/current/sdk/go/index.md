@@ -4,8 +4,6 @@ slug: /sdk/go
 
 # Dagger Go SDK
 
-<div class="status-badge">Technical Preview</div>
-
 ## What is the Dagger Go SDK?
 
 The Dagger Go SDK contains everything you need to develop CI/CD pipelines in Go, and run them with the [Dagger Engine][dagger].

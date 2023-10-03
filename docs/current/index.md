@@ -7,7 +7,11 @@ displayed_sidebar: "current"
 
 ## What is Dagger?
 
-Dagger is a programmable CI/CD engine that runs your pipelines in containers.
+Dagger is an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs.
+
+## What is the Dagger Engine?
+
+The Dagger Engine is a programmable CI/CD engine that runs your pipelines in containers.
 
 ### Programmable
 
@@ -15,13 +19,17 @@ Develop your CI/CD pipelines as code, in the same programming language as your a
 
 ### Runs your pipelines in containers
 
-Dagger executes your pipelines entirely as [standard OCI containers](https://opencontainers.org/). This has several benefits:
+The Dagger Engine executes your pipelines entirely as [standard OCI containers](https://opencontainers.org/). This has several benefits:
 
 * **Instant local testing**
 * **Portability**: the same pipeline can run on your local machine, a CI runner, a dedicated server, or any container hosting service.
 * **Superior caching**: every operation is cached by default, and caching works the same everywhere
 * **Compatibility** with the Docker ecosystem: if it runs in a container, you can add it to your pipeline.
 * **Cross-language instrumentation**: teams can use each other's tools without learning each other's language.
+
+## What is Dagger Cloud?
+
+Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
 
 ## Who is it for?
 
@@ -38,9 +46,9 @@ Dagger may be a good fit if you are...
 
 ## Getting started
 
-To get started with Dagger, use our [quickstart](./quickstart/index.mdx), which walks you through the basics of creating and using a pipeline with our SDKs.
+To get started with the Dagger Engine, use our [Dagger Engine quickstart](./quickstart/index.mdx), which walks you through the basics of creating and using a pipeline with the Dagger SDKs. Alternatively, choose an SDK and follow that SDK's getting started guide.
 
-Alternatively, choose an SDK and follow that SDK's getting started guide.
+To use Dagger in production, learn about [Dagger Cloud](https://dagger.io/cloud) and use our [Dagger Cloud guide](./cloud/572923-get-started.md) to connect Dagger with your CI provider or CI tool.
 
 ## Which SDK should I use?
 

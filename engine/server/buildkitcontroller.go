@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -242,6 +243,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 		labels := opts.Labels
 		labels = append(labels, pipeline.EngineLabel(e.EngineName))
+		labels = append(labels, pipeline.LoadServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH)...)
 
 		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels)
 		if err != nil {

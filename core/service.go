@@ -280,7 +280,7 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 
 	execOp, ok := dag.AsExec()
 	if !ok {
-		return nil, fmt.Errorf("expected exec op, got %T", dag.GetOp())
+		return nil, fmt.Errorf("service container must be result of withExec (expected exec op, got %T)", dag.GetOp())
 	}
 
 	detachDeps, _, err := svcs.StartBindings(ctx, bk, ctr.Services)

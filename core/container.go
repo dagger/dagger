@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
@@ -183,6 +184,7 @@ type ContainerSecret struct {
 	EnvName   string     `json:"env,omitempty"`
 	MountPath string     `json:"path,omitempty"`
 	Owner     *Ownership `json:"owner,omitempty"`
+	Mode      *int       `json:"mode,omitempty"`
 }
 
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
@@ -559,6 +561,8 @@ func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Cl
 	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner)
 }
 
+var SeenCacheKeys = new(sync.Map)
+
 func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
@@ -599,6 +603,8 @@ func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.C
 	// set image ref to empty string
 	container.ImageRef = ""
 
+	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
+
 	return container, nil
 }
 
@@ -618,7 +624,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return container, nil
 }
 
-func (container *Container) WithMountedSecret(ctx context.Context, bk *buildkit.Client, target string, source *Secret, owner string) (*Container, error) {
+func (container *Container) WithMountedSecret(ctx context.Context, bk *buildkit.Client, target string, source *Secret, owner string, mode *int) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
@@ -637,6 +643,7 @@ func (container *Container) WithMountedSecret(ctx context.Context, bk *buildkit.
 		Secret:    secretID,
 		MountPath: target,
 		Owner:     ownership,
+		Mode:      mode,
 	})
 
 	// set image ref to empty string
@@ -1114,10 +1121,15 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
 			if secret.Owner != nil {
+				mode := 0o400
+				if secret.Mode != nil {
+					mode = *secret.Mode
+				}
+
 				secretOpts = append(secretOpts, llb.SecretFileOpt(
 					secret.Owner.UID,
 					secret.Owner.GID,
-					0o400, // preserve default
+					mode,
 				))
 			}
 		default:

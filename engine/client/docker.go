@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
@@ -20,6 +21,7 @@ const (
 	DefaultStateDir = "/var/lib/dagger"
 
 	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
+	DaggerCloudToken      = "DAGGER_CLOUD_TOKEN"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
@@ -68,13 +70,19 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
-		// 0 when  failed to list container, 1 when there is no container
-		// due to the present of EOL in output
-		if len(leftoverEngines) <= 1 {
+		if len(leftoverEngines) == 0 {
 			return "", errors.Errorf("no fallback container found")
 		}
+
+		// the first leftover engine may not be running, so make sure to start it
 		firstEngine := leftoverEngines[0]
-		garbageCollectEngines(ctx, leftoverEngines, firstEngine)
+		cmd := exec.CommandContext(ctx, "docker", "start", firstEngine)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return "", errors.Wrapf(err, "failed to start container: %s", output)
+		}
+
+		garbageCollectEngines(ctx, leftoverEngines[1:])
+
 		return "docker-container://" + firstEngine, nil
 	}
 
@@ -84,18 +92,37 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	}
 	id = id[:hashLen]
 
+	// add DAGGER_CLOUD_TOKEN in backwards compat way.
+	// TODO: deprecate in a future release
+	cloudToken := DaggerCloudCacheToken
+	if _, ok := os.LookupEnv(DaggerCloudToken); ok {
+		cloudToken = DaggerCloudToken
+	}
+
 	// run the container using that id in the name
 	containerName := containerNamePrefix + id
+
+	for i, leftoverEngine := range leftoverEngines {
+		// if we already have a container with that name, attempt to start it
+		if leftoverEngine == containerName {
+			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				return "", errors.Wrapf(err, "failed to start container: %s", output)
+			}
+			garbageCollectEngines(ctx, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			return "docker-container://" + containerName, nil
+		}
+	}
+
 	runArgs := []string{
 		"run",
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
-		"-e", DaggerCloudCacheToken,
+		"-e", cloudToken,
 		"-v", DefaultStateDir,
 		"--privileged",
 	}
-
 	runArgs = append(runArgs, imageRef, "--debug")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
@@ -107,17 +134,14 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	garbageCollectEngines(ctx, leftoverEngines, containerName)
+	garbageCollectEngines(ctx, leftoverEngines)
 
 	return "docker-container://" + containerName, nil
 }
 
-func garbageCollectEngines(ctx context.Context, engines []string, exceptThis string) {
+func garbageCollectEngines(ctx context.Context, engines []string) {
 	for _, engine := range engines {
 		if engine == "" {
-			continue
-		}
-		if engine == exceptThis {
 			continue
 		}
 		if output, err := exec.CommandContext(ctx,
@@ -138,6 +162,11 @@ func collectLeftoverEngines(ctx context.Context) ([]string, error) {
 		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
 	).CombinedOutput()
+	output = bytes.TrimSpace(output)
+
+	if len(output) == 0 {
+		return nil, err
+	}
 
 	engineNames := strings.Split(string(output), "\n")
 	return engineNames, err

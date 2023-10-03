@@ -33,75 +33,157 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Go SDK",
+      label: "Dagger Cloud",
       collapsible: true,
       collapsed: true,
       items: [
         {
           type: "doc",
           label: "Overview",
-          id: "current/sdk/go/index",
+          id: "current/cloud/index",
         },
-        "current/sdk/go/install",
         {
           type: "doc",
           label: "Get Started",
-          id: "current/sdk/go/get-started",
+          id: "current/cloud/get-started",
         },
         {
-          type: "link",
-          label: "Reference 🔗",
-          href: "https://pkg.go.dev/dagger.io/dagger",
-        },
-      ],
-    },
-    {
-      type: "category",
-      label: "Node.js SDK",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "Overview",
-          id: "current/sdk/nodejs/index",
-        },
-        "current/sdk/nodejs/install",
-        {
-          type: "doc",
-          label: "Get Started",
-          id: "current/sdk/nodejs/get-started",
-        },
-        {
-          type: "doc",
+          type: "category",
           label: "Reference",
-          id: "current/sdk/nodejs/reference/modules",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "current/cloud/reference/user-interface",
+            "current/cloud/reference/roles-permissions",
+            "current/cloud/reference/org-administration",
+          ]
         },
       ],
     },
     {
       type: "category",
-      label: "Python SDK",
+      label: "Dagger SDKs and API",
       collapsible: true,
       collapsed: true,
       items: [
         {
-          type: "doc",
-          label: "Overview",
-          id: "current/sdk/python/index",
+          type: "category",
+          label: "Go SDK",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Overview",
+              id: "current/sdk/go/index",
+            },
+            "current/sdk/go/install",
+            {
+              type: "doc",
+              label: "Get Started",
+              id: "current/sdk/go/get-started",
+            },
+            {
+              type: "link",
+              label: "Reference 🔗",
+              href: "https://pkg.go.dev/dagger.io/dagger",
+            },
+          ],
         },
-        "current/sdk/python/install",
         {
-          type: "doc",
-          label: "Get Started",
-          id: "current/sdk/python/get-started",
+          type: "category",
+          label: "Node.js SDK",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Overview",
+              id: "current/sdk/nodejs/index",
+            },
+            "current/sdk/nodejs/install",
+            {
+              type: "doc",
+              label: "Get Started",
+              id: "current/sdk/nodejs/get-started",
+            },
+            {
+              type: "doc",
+              label: "Reference",
+              id: "current/sdk/nodejs/reference/modules",
+            },
+          ],
         },
         {
-          type: "link",
-          label: "Reference 🔗",
-          href: "https://dagger-io.readthedocs.org/",
+          type: "category",
+          label: "Python SDK",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Overview",
+              id: "current/sdk/python/index",
+            },
+            "current/sdk/python/install",
+            {
+              type: "doc",
+              label: "Get Started",
+              id: "current/sdk/python/get-started",
+            },
+            {
+              type: "link",
+              label: "Reference 🔗",
+              href: "https://dagger-io.readthedocs.org/",
+            },
+          ],
         },
-      ],
+        {
+          type: "category",
+          label: "Elixir SDK (Experimental)",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Overview",
+              id: "current/sdk/elixir/index",
+            },
+            "current/sdk/elixir/install",
+            {
+              type: "doc",
+              label: "Get Started",
+              id: "current/sdk/elixir/get-started",
+            },
+            {
+              type: "link",
+              label: "Reference 🔗",
+              href: "https://hexdocs.pm/dagger/Dagger.html",
+            },
+          ],
+        },
+        {
+          type: "category",
+          label: "GraphQL API",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Overview",
+              id: "current/api/index",
+            },
+            "current/api/concepts",
+            "current/api/playground",
+            "current/api/build-custom-client",
+            {
+              type: "link",
+              label: "Reference",
+              href: "https://docs.dagger.io/api/reference",
+            },
+          ],
+        },
+      ]
     },
     {
       type: "category",
@@ -126,7 +208,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "CLI",
+      label: "Dagger CLI",
       collapsible: true,
       collapsed: true,
       items: [
@@ -173,6 +255,7 @@ module.exports = {
         "current/quickstart/index",
         "current/quickstart/basics",
         "current/quickstart/setup",
+        "current/quickstart/cli",
         "current/quickstart/sdk",
         "current/quickstart/hello",
         "current/quickstart/test",

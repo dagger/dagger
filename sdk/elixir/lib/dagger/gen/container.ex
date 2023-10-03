@@ -686,7 +686,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted secret.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
+    @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted secret.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user.\n* `mode` - Permission given to the mounted secret (e.g., 0600).\nThis option requires an owner to be set to be active.\n\nDefault: 0400."
     @spec with_mounted_secret(t(), Dagger.String.t(), Dagger.Secret.t(), keyword()) ::
             Dagger.Container.t()
     def with_mounted_secret(%__MODULE__{} = container, path, source, optional_args \\ []) do
@@ -703,6 +703,13 @@ defmodule Dagger.Container do
           selection
         else
           arg(selection, "owner", optional_args[:owner])
+        end
+
+      selection =
+        if is_nil(optional_args[:mode]) do
+          selection
+        else
+          arg(selection, "mode", optional_args[:mode])
         end
 
       %Dagger.Container{selection: selection, client: container.client}

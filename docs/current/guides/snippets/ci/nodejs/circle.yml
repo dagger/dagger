@@ -11,8 +11,11 @@ jobs:
           name: Install deps
           command: npm ci
       - run:
-          name: Dagger Pipeline
-          command: node index.mjs
+          name: Install Dagger CLI
+          command: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sudo sh; cd -; }
+      - run:
+          name: Run Dagger pipeline
+          command: dagger run --progress plain node index.mjs
 workflows:
   dagger:
     jobs:

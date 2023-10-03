@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -78,6 +80,7 @@ func TestPipeline(t *testing.T) {
 		require.NoError(t, c.Close()) // close + flush logs
 
 		require.Contains(t, logs.String(), "service "+hostname)
+		require.Regexp(t, `start python -m http.server.*DONE`, logs.String())
 	})
 }
 
@@ -108,4 +111,11 @@ func TestInternalVertexes(t *testing.T) {
 		require.NoError(t, c.Close()) // close + flush logs
 		require.NotContains(t, logs.String(), "merge")
 	})
+}
+
+func connectWithLogs(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Context, *safeBuffer) {
+	var logs safeBuffer
+	out := io.MultiWriter(&logs, newTWriter(t))
+	c, ctx := connect(t, append(opts, dagger.WithLogOutput(out))...)
+	return c, ctx, &logs
 }
