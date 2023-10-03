@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/graphql"
 	"github.com/vito/progrock"
 )
@@ -36,20 +37,25 @@ func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
 
 type IDableObjectResolver interface {
 	FromID(id string) (any, error)
+	ToID(any) (string, error)
 	Resolver
 }
 
-func ToIDableObjectResolver[I ~string, T any](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
-	return idableObjectResolver[I, T]{idToObject, r}
+func ToIDableObjectResolver[T any, I ~string](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
+	return idableObjectResolver[T, I]{idToObject, r}
 }
 
-type idableObjectResolver[I ~string, T any] struct {
+type idableObjectResolver[T any, I ~string] struct {
 	idToObject func(I) (*T, error)
 	ObjectResolver
 }
 
-func (r idableObjectResolver[I, T]) FromID(id string) (any, error) {
+func (r idableObjectResolver[T, I]) FromID(id string) (any, error) {
 	return r.idToObject(I(id))
+}
+
+func (r idableObjectResolver[T, I]) ToID(t any) (string, error) {
+	return core.ResourceToID(t)
 }
 
 type ScalarResolver struct {
@@ -108,7 +114,7 @@ func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) gra
 			return nil, err
 		}
 
-		if edible, ok := any(res).(core.Digestible); ok {
+		if edible, ok := any(res).(resourceid.Digestible); ok {
 			dg, err := edible.Digest()
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute digest: %w", err)

@@ -8,7 +8,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-const (
+var (
 	EngineImageRepo = "registry.dagger.io/engine"
 )
 

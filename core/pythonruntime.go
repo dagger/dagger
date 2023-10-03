@@ -2,67 +2,80 @@ package core
 
 import (
 	"context"
-	"path"
+	"fmt"
+	"path/filepath"
 
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
-func (p *Project) pythonRuntime(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (*Container, error) {
-	ctr, err := NewContainer("", pipeline, p.Platform)
+func (mod *Module) pythonRuntime(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	sourceDir *Directory,
+	sourceDirSubpath string,
+) (*Container, error) {
+	baseCtr, err := NewContainer("", mod.Pipeline, mod.Platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
-	ctr, err = ctr.From(ctx, bk, "python:3.11-alpine")
+	baseCtr, err = baseCtr.From(ctx, bk, "python:3.11-alpine")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
-	workdir := "/src"
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = absPath(cfg.WorkingDir, workdir)
+	buildEnvCtr, err := baseCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
+		Args: []string{"apk", "add", "git"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to install system dependencies: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.WithMountedDirectory(ctx, bk, ModSourceDirPath, sourceDir, "", false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount mod source directory: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = filepath.Join(ModSourceDirPath, sourceDirSubpath)
 		cfg.Cmd = nil
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, p.Directory, "")
+	buildEnvCtr, err = buildEnvCtr.WithMountedCache(ctx, bk, "/root/.cache/pip", NewCache("modpythonpipcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount pipcache: %w", err)
 	}
-
-	ctr, err = ctr.WithMountedCache(ctx, bk, "/root/.cache/pip", NewCache("pythonpipcache"), nil, CacheSharingModeShared, "")
-	if err != nil {
-		return nil, err
-	}
-
-	ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
+	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{"pip", "install", "shiv"},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to install shiv: %w", err)
 	}
-
-	ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
+	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{
-			"shiv", "-e", "dagger.server.cli:app", "-o", "/entrypoint",
-			path.Join(workdir, path.Dir(p.ConfigPath)),
+			"shiv",
+			"-e", "dagger.ext.cli:app",
+			"-o", runtimeExecutablePath,
 			"--root", "/tmp/.shiv",
+			".",
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to exec shiv: %w", err)
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"/entrypoint"}
+	finalEnvCtr, err := buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = ModSourceDirPath
+		cfg.Cmd = nil
+		cfg.Entrypoint = []string{runtimeExecutablePath}
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
-	return ctr, nil
+	return finalEnvCtr, nil
 }

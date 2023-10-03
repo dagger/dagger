@@ -145,6 +145,7 @@ func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *
 	if h.rootObjectFn != nil {
 		params.RootObject = h.rootObjectFn(ctx, r)
 	}
+
 	result := graphql.Do(params)
 
 	if formatErrorFn := h.formatErrorFn; formatErrorFn != nil && len(result.Errors) > 0 {

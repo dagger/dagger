@@ -67,8 +67,7 @@ func NewDaggerServer(
 		return nil, err
 	}
 
-	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", serverID)
-	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
+	progWriter, progCleanup, err := buildkit.ProgrockForwarder(bkClient.ProgSockPath, progrock.MultiWriter{
 		progrock.NewRPCWriter(clientConn, progUpdates),
 		buildkit.ProgrockLogrusWriter{},
 	})
@@ -117,7 +116,7 @@ func NewDaggerServer(
 	apiSchema, err := schema.New(schema.InitializeArgs{
 		BuildkitClient: srv.bkClient,
 		Platform:       srv.worker.Platforms(true)[0],
-		ProgSockPath:   progSockPath,
+		ProgSockPath:   bkClient.ProgSockPath,
 		OCIStore:       srv.worker.ContentStore(),
 		LeaseManager:   srv.worker.LeaseManager(),
 		Secrets:        secretStore,
@@ -224,12 +223,17 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 			}
 		}()
 
+		schema, err := srv.schema.Schema(clientMetadata.ModuleDigest)
+		if err != nil {
+			panic(err)
+		}
+
 		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
 		mux := http.NewServeMux()
 		mux.Handle("/query", NewHandler(&HandlerConfig{
-			Schema: srv.schema.Schema(),
+			Schema: schema,
 		}))
 		mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ctx := req.Context()

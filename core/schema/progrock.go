@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
@@ -15,7 +15,7 @@ import (
 func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any) (*progrock.VertexRecorder, error) {
 	dig, err := queryDigest(fieldName, parent, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute query digest: %w", err)
+		return nil, fmt.Errorf("failed to compute query digest for field %s parent %+v: %w", fieldName, parent, err)
 	}
 
 	var inputs []digest.Digest
@@ -40,7 +40,7 @@ func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any
 			continue
 		}
 
-		if dg, ok := val.(core.Digestible); ok {
+		if dg, ok := val.(resourceid.Digestible); ok {
 			d, err := dg.Digest()
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute digest for param %q: %w", argName, err)
@@ -63,7 +63,7 @@ func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any
 		name += "(" + strings.Join(argStrs, ", ") + ")"
 	}
 
-	if edible, ok := parent.(core.Digestible); ok {
+	if edible, ok := parent.(resourceid.Digestible); ok {
 		id, err := edible.Digest()
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute digest: %w", err)
@@ -85,6 +85,14 @@ func queryDigest(fieldName string, parent, args any) (digest.Digest, error) {
 		Source any
 		Field  string
 		Args   any
+	}
+
+	if v, ok := parent.(resourceid.Digestible); ok && v != nil {
+		d, err := v.Digest()
+		if err != nil {
+			return "", fmt.Errorf("failed to compute digest for parent: %w", err)
+		}
+		parent = d
 	}
 
 	payload, err := json.Marshal(subset{

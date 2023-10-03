@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	dagger.io/dagger v0.8.7
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.15.0
 	github.com/moby/buildkit v0.12.2

@@ -42,7 +42,7 @@ func init() {
 	)
 }
 
-// show only focused vertices. enabled by default for dagger do.
+// show only focused vertices
 var focus bool
 
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/resourceid"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
@@ -27,21 +28,8 @@ func (cache *CacheVolume) Clone() *CacheVolume {
 	return &cp
 }
 
-// CacheID is an arbitrary string typically derived from a set of token
-// strings acting as the cache's "key" or "scope".
-type CacheID string
-
-func (id CacheID) ToCacheVolume() (*CacheVolume, error) {
-	var cache CacheVolume
-	if err := resourceid.Decode(&cache, id); err != nil {
-		return nil, ErrInvalidCacheID
-	}
-
-	if len(cache.Keys) == 0 {
-		return nil, ErrInvalidCacheID
-	}
-
-	return &cache, nil
+func (cache *CacheVolume) Digest() (digest.Digest, error) {
+	return stableDigest(cache)
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
@@ -55,7 +43,7 @@ func (cache *CacheVolume) Sum() string {
 }
 
 func (cache *CacheVolume) ID() (CacheID, error) {
-	return resourceid.Encode[CacheID](cache)
+	return resourceid.Encode(cache)
 }
 
 // CacheSharingMode is a string deriving from CacheSharingMode enum

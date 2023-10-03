@@ -31,6 +31,7 @@ import (
 	sgzlayer "github.com/containerd/stargz-snapshotter/fs/layer"
 	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
 	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
+	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
@@ -376,6 +377,15 @@ func registerDaggerCustomSources(worker *base.Worker, dns *oci.DNSConfig) error 
 	}
 
 	worker.SourceManager.Register(gs)
+
+	bs, err := blob.NewSource(blob.Opt{
+		CacheAccessor: worker.CacheMgr,
+	})
+	if err != nil {
+		return err
+	}
+
+	worker.SourceManager.Register(bs)
 
 	return nil
 }

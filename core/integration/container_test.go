@@ -188,7 +188,7 @@ CMD goenv
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
+		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []*dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
@@ -2705,6 +2705,23 @@ func TestContainerImport(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "bar\n", out)
 	})
+}
+
+func TestContainerFromIDPlatform(t *testing.T) {
+	c, ctx := connect(t)
+
+	var desiredPlatform dagger.Platform = "linux/arm64"
+
+	id, err := c.Container(dagger.ContainerOpts{
+		Platform: desiredPlatform,
+	}).From(alpineImage).ID(ctx)
+	require.NoError(t, err)
+
+	platform, err := c.Container(dagger.ContainerOpts{
+		ID: id,
+	}).Platform(ctx)
+	require.NoError(t, err)
+	require.Equal(t, desiredPlatform, platform)
 }
 
 func TestContainerMultiPlatformExport(t *testing.T) {

@@ -34,6 +34,27 @@ type File struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
+func (file *File) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if file.LLB != nil {
+		defs = append(defs, file.LLB)
+	}
+	if file.Services != nil {
+		for _, bnd := range file.Services {
+			ctr := bnd.Service.Container
+			if ctr == nil {
+				continue
+			}
+			ctrDefs, err := ctr.PBDefinitions()
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, ctrDefs...)
+		}
+	}
+	return defs, nil
+}
+
 func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *File {
 	return &File{
 		LLB:      def,
@@ -62,37 +83,9 @@ func (file *File) Clone() *File {
 	return &cp
 }
 
-// FileID is an opaque value representing a content-addressed file.
-type FileID string
-
-func (id FileID) String() string {
-	return string(id)
-}
-
-// FileID is digestible so that smaller hashes can be displayed in
-// --debug vertex names.
-var _ Digestible = FileID("")
-
-func (id FileID) Digest() (digest.Digest, error) {
-	file, err := id.ToFile()
-	if err != nil {
-		return "", err
-	}
-	return file.Digest()
-}
-
-func (id FileID) ToFile() (*File, error) {
-	var file File
-	if err := resourceid.Decode(&file, id); err != nil {
-		return nil, err
-	}
-
-	return &file, nil
-}
-
 // ID marshals the file into a content-addressed ID.
 func (file *File) ID() (FileID, error) {
-	return resourceid.Encode[FileID](file)
+	return resourceid.Encode(file)
 }
 
 var _ pipeline.Pipelineable = (*File)(nil)
@@ -104,7 +97,7 @@ func (file *File) PipelinePath() pipeline.Path {
 
 // File is digestible so that it can be recorded as an output of the --debug
 // vertex that created it.
-var _ Digestible = (*File)(nil)
+var _ resourceid.Digestible = (*File)(nil)
 
 // Digest returns the file's content hash.
 func (file *File) Digest() (digest.Digest, error) {

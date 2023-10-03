@@ -2,63 +2,83 @@ package core
 
 import (
 	"context"
-	"path"
+	"fmt"
+	"path/filepath"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *Project) goRuntime(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (*Container, error) {
-	ctr, err := NewContainer("", pipeline, p.Platform)
+func (mod *Module) goRuntime(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	sourceDir *Directory,
+	sourceDirSubpath string,
+) (*Container, error) {
+	baseCtr, err := NewContainer("", mod.Pipeline, mod.Platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
-	ctr, err = ctr.From(ctx, bk, "golang:1.20-alpine")
+	// return baseCtr.From(ctx, bk, "vito/dagger-sdk-go")
+	baseCtr, err = baseCtr.From(ctx, bk, "golang:1.21-alpine")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
-	workdir := "/src"
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = absPath(cfg.WorkingDir, workdir)
+	buildEnvCtr, err := baseCtr.WithMountedDirectory(ctx, bk, ModSourceDirPath, sourceDir, "", false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount mod source directory: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = filepath.Join(ModSourceDirPath, sourceDirSubpath)
 		cfg.Cmd = nil
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, p.Directory, "")
+	buildEnvCtr, err = buildEnvCtr.WithMountedCache(ctx, bk, "/go/pkg/mod", NewCache("modgomodcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount gomodcache: %w", err)
 	}
+	buildEnvCtr, err = buildEnvCtr.WithMountedCache(ctx, bk, "/root/.cache/go-build", NewCache("modgobuildcache"), nil, CacheSharingModeShared, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount gobuildcache: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
+		Args: []string{"dagger", "mod", "sync", "bust-hack:2"},
 
-	ctr, err = ctr.WithMountedCache(ctx, bk, "/go/pkg/mod", NewCache("gomodcache"), nil, CacheSharingModeShared, "")
-	if err != nil {
-		return nil, err
-	}
-	ctr, err = ctr.WithMountedCache(ctx, bk, "/root/.cache/go-build", NewCache("gobuildcache"), nil, CacheSharingModeShared, "")
-	if err != nil {
-		return nil, err
-	}
+		// this automatically gives us a /bin/dagger
+		ExperimentalPrivilegedNesting: true,
 
-	ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
+		// defensive
+		SkipEntrypoint: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec mod sync: %w", err)
+	}
+	buildEnvCtr, err = buildEnvCtr.WithExec(ctx, bk, progSock, mod.Platform, ContainerExecOpts{
 		Args: []string{
-			"go", "build", "-o", "/entrypoint", "-ldflags", "-s -d -w",
-			path.Join(workdir, path.Dir(p.ConfigPath)),
+			"go", "build",
+			"-o", runtimeExecutablePath,
+			"-ldflags", "-s -d -w",
+			".",
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to exec mod go build: %w", err)
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"/entrypoint"}
+	finalEnvCtr, err := buildEnvCtr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = ModSourceDirPath
+		cfg.Cmd = nil
+		cfg.Entrypoint = []string{runtimeExecutablePath}
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
-	return ctr, nil
+	return finalEnvCtr, nil
 }

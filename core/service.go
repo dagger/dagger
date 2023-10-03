@@ -58,42 +58,9 @@ func NewHostService(upstream string, ports []PortForward) *Service {
 	}
 }
 
-type ServiceID string
-
-func (id ServiceID) String() string {
-	return string(id)
-}
-
-// ServiceID is digestible so that smaller hashes can be displayed in
-// --debug vertex names.
-var _ Digestible = ServiceID("")
-
-func (id ServiceID) Digest() (digest.Digest, error) {
-	svc, err := id.ToService()
-	if err != nil {
-		return "", err
-	}
-	return svc.Digest()
-}
-
-func (id ServiceID) ToService() (*Service, error) {
-	var service Service
-
-	if id == "" {
-		// scratch
-		return &service, nil
-	}
-
-	if err := resourceid.Decode(&service, id); err != nil {
-		return nil, err
-	}
-
-	return &service, nil
-}
-
 // ID marshals the service into a content-addressed ID.
 func (svc *Service) ID() (ServiceID, error) {
-	return resourceid.Encode[ServiceID](svc)
+	return resourceid.Encode(svc)
 }
 
 var _ pipeline.Pipelineable = (*Service)(nil)
@@ -127,7 +94,7 @@ func (svc *Service) PipelinePath() pipeline.Path {
 
 // Service is digestible so that it can be recorded as an output of the
 // --debug vertex that created it.
-var _ Digestible = (*Service)(nil)
+var _ resourceid.Digestible = (*Service)(nil)
 
 // Digest returns the service's content hash.
 func (svc *Service) Digest() (digest.Digest, error) {
@@ -265,17 +232,17 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 
 	ctr := svc.Container
 
-	dag, err := defToDAG(ctr.FS)
+	dag, err := buildkit.DefToDAG(ctr.FS)
 	if err != nil {
 		return nil, err
 	}
 
-	if dag.GetOp() == nil && len(dag.inputs) == 1 {
-		dag = dag.inputs[0]
+	if dag.GetOp() == nil && len(dag.Inputs) == 1 {
+		dag = dag.Inputs[0]
 	} else {
 		// i mean, theoretically this should never happen, but it's better to
 		// notice it
-		return nil, fmt.Errorf("what in tarnation? that's too many inputs! (%d) %v", len(dag.inputs), dag.GetInputs())
+		return nil, fmt.Errorf("what in tarnation? that's too many inputs! (%d) %v", len(dag.Inputs), dag.GetInputs())
 	}
 
 	execOp, ok := dag.AsExec()
@@ -362,6 +329,21 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 		checked <- health.Check(ctx)
 	}()
 
+	if execOp.Meta.ProxyEnv == nil {
+		execOp.Meta.ProxyEnv = &pb.ProxyEnv{}
+	}
+
+	execOp.Meta.ProxyEnv.FtpProxy, err = buildkit.ContainerExecUncachedMetadata{
+		ParentClientIDs:       clientMetadata.ClientIDs(),
+		ServerID:              clientMetadata.ServerID,
+		ProgSockPath:          bk.ProgSockPath,
+		ModuleDigest:          clientMetadata.ModuleDigest,
+		FunctionContextDigest: clientMetadata.FunctionContextDigest,
+	}.ToPBFtpProxyVal()
+	if err != nil {
+		return nil, err
+	}
+
 	outBuf := new(bytes.Buffer)
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
 		Args:         execOp.Meta.Args,
@@ -433,6 +415,9 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 }
 
 func proxyEnvList(p *pb.ProxyEnv) []string {
+	if p == nil {
+		return nil
+	}
 	out := []string{}
 	if v := p.HttpProxy; v != "" {
 		out = append(out, "HTTP_PROXY="+v, "http_proxy="+v)

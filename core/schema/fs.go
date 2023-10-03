@@ -35,8 +35,14 @@ var Platform string
 //go:embed socket.graphqls
 var Socket string
 
-//go:embed project.graphqls
-var Project string
+//go:embed module.graphqls
+var Module string
+
+//go:embed function.graphqls
+var Function string
+
+//go:embed internalsdk.graphqls
+var InternalSDK string
 
 //go:embed service.graphqls
 var Service string

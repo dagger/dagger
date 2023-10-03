@@ -7,6 +7,23 @@ defmodule Dagger.Directory do
   defstruct [:selection, :client]
 
   (
+    @doc "Load the directory as a Dagger module\n\nsourceSubpath is an optional parameter that, if set, points to a subpath of this\ndirectory that contains the module's source code. This is needed when the module\ncode is in a subdirectory but requires parent directories to be loaded in order\nto execute. For example, the module source code may need a go.mod, project.toml,\npackage.json, etc. file from a parent directory.\n\nIf sourceSubpath is not set, the module source code is loaded from the root of\nthe directory.\n\n\n\n## Optional Arguments\n\n* `source_subpath` -"
+    @spec as_module(t(), keyword()) :: Dagger.Module.t()
+    def as_module(%__MODULE__{} = directory, optional_args \\ []) do
+      selection = select(directory.selection, "asModule")
+
+      selection =
+        if is_nil(optional_args[:source_subpath]) do
+          selection
+        else
+          arg(selection, "sourceSubpath", optional_args[:source_subpath])
+        end
+
+      %Dagger.Module{selection: selection, client: directory.client}
+    end
+  )
+
+  (
     @doc "Gets the difference between this directory and an another directory.\n\n## Required Arguments\n\n* `other` - Identifier of the directory to compare."
     @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
     def diff(%__MODULE__{} = directory, other) do
