@@ -63,6 +63,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.8.0
 	github.com/go-git/go-git/v5 v5.9.0
 	github.com/google/go-github/v50 v50.2.0
+	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/icholy/replace v0.6.0
 	github.com/jackpal/gateway v1.0.7

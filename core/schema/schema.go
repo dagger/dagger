@@ -3,6 +3,8 @@ package schema
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"runtime/debug"
 	"sort"
 	"sync"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -80,6 +83,8 @@ type MergedSchemas struct {
 func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*moduleSchemaView, error) {
 	ms := &moduleSchemaView{
 		separateSchemas: map[string]ExecutableSchema{},
+		endpoints:       map[string]http.Handler{},
+		services:        s.services,
 	}
 
 	err := ms.addSchemas(
@@ -139,11 +144,96 @@ func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, err
 	return ms.schema(), nil
 }
 
+func (s *MergedSchemas) MuxEndpoint(path string, handler http.Handler, moduleDigest digest.Digest) error {
+	ms, err := s.getModuleSchemaView(moduleDigest)
+	if err != nil {
+		return err
+	}
+	ms.muxEndpoint(path, handler)
+	return nil
+}
+
+func (s *MergedSchemas) HTTPHandler(moduleDigest digest.Digest) (http.Handler, error) {
+	return s.getModuleSchemaView(moduleDigest)
+}
+
 type moduleSchemaView struct {
 	mu              sync.RWMutex
 	separateSchemas map[string]ExecutableSchema
 	mergedSchema    ExecutableSchema
 	compiledSchema  *graphql.Schema
+	endpointMu      sync.RWMutex
+	endpoints       map[string]http.Handler
+	services        *core.Services
+}
+
+func (s *moduleSchemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(context.TODO()).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+
+			// TODO: this doesn't play nice with hijacked conns, need to fix
+			/*
+				msg := "Internal Server Error"
+				code := http.StatusInternalServerError
+				switch v := v.(type) {
+				case error:
+					msg = v.Error()
+					if errors.As(v, &InvalidInputError{}) {
+						// panics can happen on invalid input in scalar serde
+						code = http.StatusBadRequest
+					}
+				case string:
+					msg = v
+				}
+				res := graphql.Result{
+					Errors: []gqlerrors.FormattedError{
+						gqlerrors.NewFormattedError(msg),
+					},
+				}
+				bytes, err := json.Marshal(res)
+				if err != nil {
+					panic(err)
+				}
+				http.Error(w, string(bytes), code)
+			*/
+		}
+	}()
+
+	clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
+	if err != nil {
+		bklog.G(context.TODO()).WithError(err).Error("failed to get client metadata")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/query", NewHandler(&HandlerConfig{
+		Schema: s.schema(),
+	}))
+	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
+		if err := s.services.StopClientServices(ctx, clientMetadata); err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to shutdown")
+		}
+	}))
+
+	s.endpointMu.RLock()
+	for path, handler := range s.endpoints {
+		mux.Handle(path, handler)
+	}
+	s.endpointMu.RUnlock()
+
+	mux.ServeHTTP(w, r)
+}
+
+func (s *moduleSchemaView) muxEndpoint(path string, handler http.Handler) {
+	s.endpointMu.Lock()
+	defer s.endpointMu.Unlock()
+	// TODO:
+	bklog.G(context.TODO()).Debugf("registering endpoint %s", path)
+	s.endpoints[path] = handler
 }
 
 func (s *moduleSchemaView) schema() *graphql.Schema {

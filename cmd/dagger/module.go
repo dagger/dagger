@@ -39,6 +39,7 @@ func init() {
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	callCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.MarkPersistentFlagRequired("sdk")

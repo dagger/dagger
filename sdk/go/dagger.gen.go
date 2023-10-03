@@ -152,6 +152,7 @@ type Container struct {
 	c graphql.Client
 
 	endpoint    *string
+	shellEndpoint    *string
 	envVariable *string
 	export      *bool
 	hostname    *string
@@ -279,6 +280,17 @@ func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts)
 		}
 	}
 
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
+	if r.shellEndpoint != nil {
+		return *r.shellEndpoint, nil
+	}
+	q := r.q.Select("shellEndpoint")
 	var response string
 
 	q = q.Bind(&response)

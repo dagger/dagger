@@ -3,12 +3,14 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
@@ -52,6 +54,9 @@ type RunningService struct {
 	// Stop forcibly stops the service. It is normally called after all clients
 	// have detached, but may also be called manually by the user.
 	Stop func(context.Context) error
+
+	// TODO: doc and/or make method
+	Wait func() error
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -112,7 +117,15 @@ func (ss *Services) Get(ctx context.Context, svc Startable) (*RunningService, er
 type Startable interface {
 	Digest() (digest.Digest, error)
 
-	Start(context.Context, *buildkit.Client, *Services) (*RunningService, error)
+	Start(
+		ctx context.Context,
+		bk *buildkit.Client,
+		svcs *Services,
+		interactive bool,
+		forwardStdin func(io.Writer, bkgw.ContainerProcess),
+		forwardStdout func(io.Reader),
+		forwardStderr func(io.Reader),
+	) (*RunningService, error)
 }
 
 // Start starts the given service, returning the running service. If the
@@ -167,7 +180,7 @@ dance:
 		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 	}
 
-	running, err := svc.Start(svcCtx, ss.bk, ss)
+	running, err := svc.Start(svcCtx, ss.bk, ss, false, nil, nil, nil)
 	if err != nil {
 		stop()
 		ss.l.Lock()

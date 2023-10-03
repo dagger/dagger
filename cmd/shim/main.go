@@ -192,96 +192,103 @@ func shim() (returnExitCode int) {
 	}
 
 	cmd := exec.Command(name, args...)
-
-	if stdinFile, err := os.Open(stdinPath); err == nil {
-		defer stdinFile.Close()
-		cmd.Stdin = stdinFile
+	// TODO:
+	_, isTTY := internalEnv("HACK_TO_PASS_TTY_THROUGH")
+	if isTTY {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 	} else {
-		cmd.Stdin = nil
-	}
-
-	var secretsToScrub core.SecretToScrubInfo
-
-	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
-	if found {
-		err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
-		if err != nil {
-			panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+		if stdinFile, err := os.Open(stdinPath); err == nil {
+			defer stdinFile.Close()
+			cmd.Stdin = stdinFile
+		} else {
+			cmd.Stdin = nil
 		}
-	}
 
-	currentDirPath := "/"
-	shimFS := os.DirFS(currentDirPath)
+		var secretsToScrub core.SecretToScrubInfo
 
-	stdoutFile, err := os.Create(stdoutPath)
-	if err != nil {
-		panic(err)
-	}
-	defer stdoutFile.Close()
-	stdoutRedirect := io.Discard
-	stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
-	if found {
-		stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
+		secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
+		if found {
+			err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
+			if err != nil {
+				panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+			}
+		}
+
+		currentDirPath := "/"
+		shimFS := os.DirFS(currentDirPath)
+
+		stdoutFile, err := os.Create(stdoutPath)
 		if err != nil {
 			panic(err)
 		}
-		defer stdoutRedirectFile.Close()
-		stdoutRedirect = stdoutRedirectFile
-	}
+		defer stdoutFile.Close()
+		stdoutRedirect := io.Discard
+		stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
+		if found {
+			stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
+			if err != nil {
+				panic(err)
+			}
+			defer stdoutRedirectFile.Close()
+			stdoutRedirect = stdoutRedirectFile
+		}
 
-	stderrFile, err := os.Create(stderrPath)
-	if err != nil {
-		panic(err)
-	}
-	defer stderrFile.Close()
-	stderrRedirect := io.Discard
-	stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
-	if found {
-		stderrRedirectFile, err := os.Create(stderrRedirectPath)
+		stderrFile, err := os.Create(stderrPath)
 		if err != nil {
 			panic(err)
 		}
-		defer stderrRedirectFile.Close()
-		stderrRedirect = stderrRedirectFile
-	}
+		defer stderrFile.Close()
+		stderrRedirect := io.Discard
+		stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
+		if found {
+			stderrRedirectFile, err := os.Create(stderrRedirectPath)
+			if err != nil {
+				panic(err)
+			}
+			defer stderrRedirectFile.Close()
+			stderrRedirect = stderrRedirectFile
+		}
 
-	outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
-	errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
+		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
+		errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
 
-	if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
-		cmd.Stdout = outWriter
-		cmd.Stderr = errWriter
-	} else {
-		// Get pipes for command's stdout and stderr and process output
-		// through secret scrub reader in multiple goroutines:
-		envToScrub := os.Environ()
-		stdoutPipe, err := cmd.StdoutPipe()
-		if err != nil {
-			panic(err)
-		}
-		scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
-		if err != nil {
-			panic(err)
-		}
-		pipeWg.Add(1)
-		go func() {
-			defer pipeWg.Done()
-			io.Copy(outWriter, scrubOutReader)
-		}()
+		if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
+			cmd.Stdout = outWriter
+			cmd.Stderr = errWriter
+		} else {
+			// Get pipes for command's stdout and stderr and process output
+			// through secret scrub reader in multiple goroutines:
+			envToScrub := os.Environ()
+			stdoutPipe, err := cmd.StdoutPipe()
+			if err != nil {
+				panic(err)
+			}
+			scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+			if err != nil {
+				panic(err)
+			}
+			pipeWg.Add(1)
+			go func() {
+				defer pipeWg.Done()
+				io.Copy(outWriter, scrubOutReader)
+			}()
 
-		stderrPipe, err := cmd.StderrPipe()
-		if err != nil {
-			panic(err)
+			stderrPipe, err := cmd.StderrPipe()
+			if err != nil {
+				panic(err)
+			}
+			scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+			if err != nil {
+				panic(err)
+			}
+			pipeWg.Add(1)
+			go func() {
+				defer pipeWg.Done()
+				io.Copy(errWriter, scrubErrReader)
+			}()
 		}
-		scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
-		if err != nil {
-			panic(err)
-		}
-		pipeWg.Add(1)
-		go func() {
-			defer pipeWg.Done()
-			io.Copy(errWriter, scrubErrReader)
-		}()
 	}
 
 	exitCode := 0

@@ -792,6 +792,9 @@ type Container {
     "Return a URL with the given scheme, eg. http for http://"
     scheme: String
   ): String!
+
+  "TODO"
+  shellEndpoint: String!
 }
 
 "A simple key value object that represents an environment variable."

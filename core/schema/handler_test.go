@@ -1,4 +1,4 @@
-package server_test
+package schema_test
 
 import (
 	"encoding/json"

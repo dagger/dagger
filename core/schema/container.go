@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
+	"github.com/dagger/dagger/engine"
 
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -103,6 +104,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 			"withServiceBinding":   ToResolver(s.withServiceBinding),
 			"withFocus":            ToResolver(s.withFocus),
 			"withoutFocus":         ToResolver(s.withoutFocus),
+			"shellEndpoint":        ToResolver(s.shellEndpoint),
 		}),
 	}
 }
@@ -841,4 +843,19 @@ func (s *containerSchema) withoutFocus(ctx *core.Context, parent *core.Container
 	child := parent.Clone()
 	child.Focused = false
 	return child, nil
+}
+
+func (s *containerSchema) shellEndpoint(ctx *core.Context, parent *core.Container, args any) (string, error) {
+	endpoint, handler, err := parent.ShellEndpoint(s.bk, s.progSockPath, s.services)
+	if err != nil {
+		return "", err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	s.MuxEndpoint(path.Join("/", endpoint), handler, clientMetadata.ModuleDigest)
+	return "ws://dagger/" + endpoint, nil
 }

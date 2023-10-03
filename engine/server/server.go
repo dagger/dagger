@@ -1,13 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -17,8 +18,6 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/graphql"
-	"github.com/dagger/graphql/gqlerrors"
 	bkclient "github.com/moby/buildkit/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
@@ -173,7 +172,8 @@ func (srv *DaggerServer) ServeClientConn(
 	}()
 	srv.clientMu.Unlock()
 
-	l := &singleConnListener{conn: nopCloserConn{conn}, closeCh: make(chan struct{})}
+	conn = newLogicalDeadlineConn(nopCloserConn{conn})
+	l := &singleConnListener{conn: conn, closeCh: make(chan struct{})}
 	go func() {
 		<-ctx.Done()
 		l.Close()
@@ -181,69 +181,48 @@ func (srv *DaggerServer) ServeClientConn(
 
 	// NOTE: not sure how inefficient making a new server per-request is, fix if it's meaningful.
 	// Maybe we could dynamically mux in more endpoints for each client or something
+	handler, handlerDone, err := srv.HTTPHandlerForClient(clientMetadata, conn, bklog.G(ctx))
+	if err != nil {
+		return fmt.Errorf("failed to create http handler: %w", err)
+	}
+	defer func() {
+		select {
+		case <-handlerDone:
+			// TODO:
+			bklog.G(ctx).Trace("handler done")
+			// case <-ctx.Done():
+			// TODO:
+			// bklog.G(ctx).Trace("context done instead of handler")
+		}
+	}()
 	httpSrv := http.Server{
-		Handler:           srv.HTTPHandlerForClient(clientMetadata),
+		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 	defer httpSrv.Close()
 	return httpSrv.Serve(l)
 }
 
-func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
+func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata, conn net.Conn, lg *logrus.Entry) (http.Handler, <-chan struct{}, error) {
+	handler, err := srv.schema.HTTPHandler(clientMetadata.ModuleDigest)
+	if err != nil {
+		return nil, nil, err
+	}
+	doneCh := make(chan struct{})
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer close(doneCh)
+		req = req.WithContext(bklog.WithLogger(req.Context(), lg))
 		bklog.G(req.Context()).Tracef("http handler for client conn")
 		defer bklog.G(req.Context()).Tracef("http handler for client conn done: %s", clientMetadata.ClientID)
 
-		w.Header().Add(engine.EngineVersionMetaKey, engine.Version)
-
-		defer func() {
-			if v := recover(); v != nil {
-				msg := "Internal Server Error"
-				code := http.StatusInternalServerError
-				switch v := v.(type) {
-				case error:
-					msg = v.Error()
-					if errors.As(v, &schema.InvalidInputError{}) {
-						// panics can happen on invalid input in scalar serde
-						code = http.StatusBadRequest
-					}
-				case string:
-					msg = v
-				}
-				res := graphql.Result{
-					Errors: []gqlerrors.FormattedError{
-						gqlerrors.NewFormattedError(msg),
-					},
-				}
-				bytes, err := json.Marshal(res)
-				if err != nil {
-					panic(err)
-				}
-				http.Error(w, string(bytes), code)
-			}
-		}()
-
-		schema, err := srv.schema.Schema(clientMetadata.ModuleDigest)
-		if err != nil {
-			panic(err)
-		}
-
-		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
+		req = req.WithContext(progrock.RecorderToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
-		mux := http.NewServeMux()
-		mux.Handle("/query", NewHandler(&HandlerConfig{
-			Schema: schema,
-		}))
-		mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
-			if err := srv.schema.ShutdownClient(ctx, clientMetadata); err != nil {
-				bklog.G(ctx).WithError(err).Error("failed to shutdown")
-			}
-		}))
-		mux.ServeHTTP(w, req)
-	})
+		// TODO:
+		bklog.G(req.Context()).Debugf("http handler for path %s", req.URL.Path)
+
+		handler.ServeHTTP(w, req)
+	}), doneCh, nil
 }
 
 // converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
@@ -284,5 +263,222 @@ type nopCloserConn struct {
 }
 
 func (nopCloserConn) Close() error {
+	return nil
+}
+
+// TODO: could also implement this upstream on:
+// https://github.com/sipsma/buildkit/blob/fa11bf9e57a68e3b5252386fdf44042dd672949a/session/grpchijack/dial.go#L45-L45
+type withDeadlineConn struct {
+	conn          net.Conn
+	readDeadline  time.Time
+	readers       []func()
+	readBuf       *bytes.Buffer
+	readEOF       bool
+	readCond      *sync.Cond
+	writeDeadline time.Time
+	writers       []func()
+	writersL      sync.Mutex
+}
+
+func newLogicalDeadlineConn(inner net.Conn) net.Conn {
+	c := &withDeadlineConn{
+		conn:     inner,
+		readBuf:  new(bytes.Buffer),
+		readCond: sync.NewCond(new(sync.Mutex)),
+	}
+
+	go func() {
+		for {
+			buf := make([]byte, 32*1024)
+			n, err := inner.Read(buf)
+			if err != nil {
+				c.readCond.L.Lock()
+				c.readEOF = true
+				c.readCond.L.Unlock()
+				c.readCond.Broadcast()
+				return
+			}
+
+			c.readCond.L.Lock()
+			c.readBuf.Write(buf[0:n])
+			c.readCond.Broadcast()
+			c.readCond.L.Unlock()
+		}
+	}()
+
+	return c
+}
+
+func (c *withDeadlineConn) Read(b []byte) (n int, err error) {
+	c.readCond.L.Lock()
+
+	if c.readEOF {
+		c.readCond.L.Unlock()
+		return 0, io.EOF
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if !c.readDeadline.IsZero() {
+		if time.Now().After(c.readDeadline) {
+			c.readCond.L.Unlock()
+			// return early without calling inner Read
+			return 0, os.ErrDeadlineExceeded
+		}
+
+		go func() {
+			dt := time.Until(c.readDeadline)
+			if dt > 0 {
+				time.Sleep(dt)
+			}
+
+			cancel()
+		}()
+	}
+
+	// Keep track of the reader so a future SetReadDeadline can interrupt it.
+	c.readers = append(c.readers, cancel)
+
+	c.readCond.L.Unlock()
+
+	// Start a goroutine for the actual Read operation
+	read := make(chan struct{})
+	var rN int
+	var rerr error
+	go func() {
+		defer close(read)
+
+		c.readCond.L.Lock()
+		defer c.readCond.L.Unlock()
+
+		for ctx.Err() == nil {
+			if c.readEOF {
+				rerr = io.EOF
+				break
+			}
+
+			n, _ := c.readBuf.Read(b) // ignore EOF here
+			if n > 0 {
+				rN = n
+				break
+			}
+
+			c.readCond.Wait()
+		}
+	}()
+
+	// Wait for either Read to complete or the timeout
+	select {
+	case <-read:
+		return rN, rerr
+	case <-ctx.Done():
+		return 0, os.ErrDeadlineExceeded
+	}
+}
+
+func (c *withDeadlineConn) Write(b []byte) (n int, err error) {
+	c.writersL.Lock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if !c.writeDeadline.IsZero() {
+		if time.Now().After(c.writeDeadline) {
+			c.writersL.Unlock()
+			// return early without calling inner Write
+			return 0, os.ErrDeadlineExceeded
+		}
+
+		go func() {
+			dt := time.Until(c.writeDeadline)
+			if dt > 0 {
+				time.Sleep(dt)
+			}
+
+			cancel()
+		}()
+	}
+
+	// Keep track of the writer so a future SetWriteDeadline can interrupt it.
+	c.writers = append(c.writers, cancel)
+	c.writersL.Unlock()
+
+	// Start a goroutine for the actual Write operation
+	write := make(chan int, 1)
+	go func() {
+		n, err = c.conn.Write(b)
+		write <- 0
+	}()
+
+	// Wait for either Write to complete or the timeout
+	select {
+	case <-write:
+		return n, err
+	case <-ctx.Done():
+		return 0, os.ErrDeadlineExceeded
+	}
+}
+
+func (c *withDeadlineConn) Close() error {
+	return c.conn.Close()
+}
+
+func (c *withDeadlineConn) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+func (c *withDeadlineConn) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+func (c *withDeadlineConn) SetDeadline(t time.Time) error {
+	return errors.Join(
+		c.SetReadDeadline(t),
+		c.SetWriteDeadline(t),
+	)
+}
+
+func (c *withDeadlineConn) SetReadDeadline(t time.Time) error {
+	c.readCond.L.Lock()
+	c.readDeadline = t
+	readers := c.readers
+	c.readCond.L.Unlock()
+
+	if len(readers) > 0 && !t.IsZero() {
+		go func() {
+			dt := time.Until(c.readDeadline)
+			if dt > 0 {
+				time.Sleep(dt)
+			}
+
+			for _, cancel := range readers {
+				cancel()
+			}
+		}()
+	}
+
+	return nil
+}
+
+func (c *withDeadlineConn) SetWriteDeadline(t time.Time) error {
+	c.writersL.Lock()
+	c.writeDeadline = t
+	writers := c.writers
+	c.writersL.Unlock()
+
+	if len(writers) > 0 && !t.IsZero() {
+		go func() {
+			dt := time.Until(c.writeDeadline)
+			if dt > 0 {
+				time.Sleep(dt)
+			}
+
+			for _, cancel := range writers {
+				cancel()
+			}
+		}()
+	}
+
 	return nil
 }
