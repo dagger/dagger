@@ -54,10 +54,6 @@ func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema
 		return nil, err
 	}
 
-	if err := generator.MarkGeneratedAttributes(mfs, ClientGenFile, g.Config.OutputDir); err != nil {
-		return nil, err
-	}
-
 	return &generator.GeneratedState{
 		Overlay: mfs,
 	}, nil

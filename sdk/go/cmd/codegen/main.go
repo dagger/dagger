@@ -93,16 +93,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-const ConfigFile = "dagger.json"
-
-// TODO: move this + the resolver into dagger.io/dagger proper. Feels like a
-// better alignment. Daggerverse could use the resolver too.
-type ModuleConfig struct {
-	Root         string   `json:"root"`
-	Name         string   `json:"name"`
-	SDK          string   `json:"sdk,omitempty"`
-	Include      []string `json:"include,omitempty"`
-	Exclude      []string `json:"exclude,omitempty"`
-	Dependencies []string `json:"dependencies,omitempty"`
-}
