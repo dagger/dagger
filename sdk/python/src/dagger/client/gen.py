@@ -2338,7 +2338,7 @@ class Host(Type):
         """
         _args = [
             Arg("service", service),
-            Arg("native", native, False),  # noqa: FBT003
+            Arg("native", native, False),
             Arg("ports", ports, None),
         ]
         _ctx = self._select("tunnel", _args)
@@ -3326,6 +3326,7 @@ pipeline = _client.pipeline
 project = _client.project
 project_command = _client.project_command
 secret = _client.secret
+service = _client.service
 set_secret = _client.set_secret
 socket = _client.socket
 
@@ -3384,6 +3385,7 @@ __all__ = [
     "project",
     "project_command",
     "secret",
+    "service",
     "set_secret",
     "socket",
 ]

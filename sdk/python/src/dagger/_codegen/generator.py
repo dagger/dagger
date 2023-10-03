@@ -584,8 +584,6 @@ class _InputField:
         if self.has_default:
             # repr uses single quotes for strings, contrary to black
             params.append(repr(self.default_value).replace("'", '"'))
-            if isinstance(self.default_value, bool):
-                comment = " # noqa: FBT003"  # ruff is picky about bool args
         return f"Arg({', '.join(params)}),{comment}"
 
 

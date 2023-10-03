@@ -20,6 +20,7 @@ public class Helpers {
           put("FileID", "File");
           put("DirectoryID", "Directory");
           put("SecretID", "Secret");
+          put("ServiceID", "Service");
           put("SocketID", "Socket");
           put("CacheID", "CacheVolume");
           put("ProjectID", "Project");
