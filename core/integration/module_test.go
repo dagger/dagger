@@ -332,10 +332,11 @@ func TestModuleGoGit(t *testing.T) {
 		ignore, err := modGen.File(".gitignore").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, ignore, "/dagger.gen.go\n")
-		require.Contains(t, ignore, "/internal/\n")
+		require.Contains(t, ignore, "/internal/querybuilder/\n")
 	})
 
 	t.Run("configures .gitattributes", func(t *testing.T) {
+		t.Skip("it doesn't anymore, since it's .gitignored anyway")
 		attributes, err := modGen.File(".gitattributes").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, attributes, "/dagger.gen.go linguist-generated=true\n")
