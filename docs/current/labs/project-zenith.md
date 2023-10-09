@@ -42,7 +42,7 @@ Pre-requisites:
 
 ### Downloading an experimental build
 
-You can download an experimental build of dagger from [github.com/jpadams/shykes-dagger-zenith-builder](https://github.com/jpadams/shykes-dagger-zenith-builder/releases/tag/nightly).
+You can download this experimental build of Dagger from [github.com/jpadams/shykes-dagger-zenith-builder](https://github.com/jpadams/shykes-dagger-zenith-builder/releases/tag/nightly).
 
 Select the right build using your OS (darwin or linux) and platform (amd64 or arm64), and move it to a directory within your path, for example:
 
@@ -105,7 +105,7 @@ cd ./dagger/
 ./hack/dev
 ```
 
-Finally, you need to configure the dagger environment variables to point to the running engine.
+Finally, you need to configure the Dagger environment variables to point to the running engine.
 
 1. If you use [direnv](https://direnv.net/), you can just:
 
@@ -324,7 +324,7 @@ You can find other modules to use on <https://daggerverse.fly.dev>.
 
 #### Module locations
 
-You can consume modules from lots of different sources. The easiest way to `dagger use` or `dagger query` module is to reference it by it's GitHub URL (similar to go package strings).
+You can consume modules from lots of different sources. The easiest way to `dagger use` or `dagger query` module is to reference it by it's GitHub URL (similar to Go package strings).
 
 For example:
 
@@ -358,7 +358,7 @@ EOF
 
 #### Publishing your own modules
 
-You can publish your own modules to <https://daggerverse.fly.dev>, so that other users can easily discover them. At the moment, daggerverse is only used to discover other modules, all the data is stored and fetched from GitHub.
+You can publish your own modules to the [Daggerverse](https://daggerverse.fly.dev), so that other users can easily discover them. At the moment, the Daggerverse is only used to discover other modules, all the data is stored and fetched from GitHub.
 
 To publish a module, create a git repository for it and push to GitHub:
 
@@ -518,13 +518,13 @@ If you run into problems, please share in the `#zenith-help` channel in the
 
 ### Rerun commands with `--focus=false`
 
-Sometimes, the dagger client logs are automatically collapsed and don't contain all the information from a failure.
+Sometimes, the Dagger client logs are automatically collapsed and don't contain all the information from a failure.
 
 To make sure that logs aren't automatically collapsed, you can run any `dagger` subcommand with the `--focus=false` flag to disable this behavior.
 
 ### Access the `docker logs`
 
-The dagger engine runs in a dedicated container. You can find the container using `docker ps`:
+The Dagger Engine runs in a dedicated container. You can find the container using `docker ps`:
 
 ```shell
 CONTAINER ID   IMAGE                                                COMMAND                  CREATED       STATUS       PORTS     NAMES
