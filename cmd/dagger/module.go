@@ -40,9 +40,9 @@ func init() {
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
-	moduleInitCmd.MarkFlagRequired("sdk")
+	moduleInitCmd.MarkPersistentFlagRequired("sdk")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleName, "name", "", "Name of the new module")
-	moduleInitCmd.MarkFlagRequired("name")
+	moduleInitCmd.MarkPersistentFlagRequired("name")
 	moduleInitCmd.PersistentFlags().StringVarP(&moduleRoot, "root", "", "", "Root directory that should be loaded for the full module context. Defaults to the parent directory containing dagger.json.")
 	// also include codegen flags since codegen will run on module init
 
