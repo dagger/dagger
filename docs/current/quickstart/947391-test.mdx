@@ -39,8 +39,8 @@ This code listing does the following:
 
 - It creates a Dagger client with `Connect()` as before.
 - It uses the client's `Container().From()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object with the result.
-- It uses the `Container.WithDirectory()` method to write the host directory to the `/src` path in the container, and the `Container.WithWorkdir()` method to set the working directory to that filesystem location.
-  - Notice that the `Container.WithDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.WithDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.WithDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies), `ci` (pipeline code) and build (build artifacts) irectories.
 - It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
 - It uses the `Container.Stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
   - Failure, indicated by error output, will cause the pipeline to terminate.

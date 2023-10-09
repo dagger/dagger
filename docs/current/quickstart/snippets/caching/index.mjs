@@ -12,9 +12,9 @@ connect(
     const source = client
       .container()
       .from("node:16-slim")
-      .withDirectory("/src", client.host().directory("."), {
-        exclude: ["node_modules/", "ci/"],
-      })
+      .withDirectory("/src", client.host().directory(".", {
+        exclude: ["node_modules/", "ci/", "build/"],
+      }))
       .withMountedCache("/src/node_modules", nodeCache)
 
     // set the working directory in the container
