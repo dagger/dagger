@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -54,6 +55,7 @@ for t in range(2000):
     d -= learning_rate * grad_d
 print(f'Result: y = {a.item()} + {b.item()} x + {c.item()} x^2 + {d.item()} x^3')
 	`
+	gpuTestsEnabledEnvName = "DAGGER_GPU_TESTS_ENABLED"
 )
 
 var (
@@ -85,6 +87,9 @@ var (
 )
 
 func TestGPUAccess(t *testing.T) {
+	if gpuTestsEnabled := os.Getenv(gpuTestsEnabledEnvName); gpuTestsEnabled == "" {
+		t.Skip("Skipping GPU Tests")
+	}
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -147,6 +152,9 @@ func TestGPUAccess(t *testing.T) {
 }
 
 func TestGPUAccessWithPython(t *testing.T) {
+	if gpuTestsEnabled := os.Getenv(gpuTestsEnabledEnvName); gpuTestsEnabled == "" {
+		t.Skip("Skipping GPU Tests")
+	}
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
