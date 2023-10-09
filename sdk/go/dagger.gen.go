@@ -151,21 +151,21 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	endpoint    *string
-	shellEndpoint    *string
-	envVariable *string
-	export      *bool
-	hostname    *string
-	id          *ContainerID
-	imageRef    *string
-	label       *string
-	platform    *Platform
-	publish     *string
-	stderr      *string
-	stdout      *string
-	sync        *ContainerID
-	user        *string
-	workdir     *string
+	endpoint      *string
+	envVariable   *string
+	export        *bool
+	hostname      *string
+	id            *ContainerID
+	imageRef      *string
+	label         *string
+	platform      *Platform
+	publish       *string
+	shellEndpoint *string
+	stderr        *string
+	stdout        *string
+	sync          *ContainerID
+	user          *string
+	workdir       *string
 }
 type WithContainerFunc func(r *Container) *Container
 
@@ -280,17 +280,6 @@ func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts)
 		}
 	}
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
-	if r.shellEndpoint != nil {
-		return *r.shellEndpoint, nil
-	}
-	q := r.q.Select("shellEndpoint")
 	var response string
 
 	q = q.Bind(&response)
@@ -713,6 +702,19 @@ func (r *Container) Rootfs() *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// TODO
+func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
+	if r.shellEndpoint != nil {
+		return *r.shellEndpoint, nil
+	}
+	q := r.q.Select("shellEndpoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The error stream of the last executed command.

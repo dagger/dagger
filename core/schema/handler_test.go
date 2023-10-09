@@ -12,7 +12,7 @@ import (
 
 	"context"
 
-	"github.com/dagger/dagger/engine/server"
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
 	"github.com/dagger/graphql/language/location"
@@ -37,7 +37,7 @@ func decodeResponse(t *testing.T, recorder *httptest.ResponseRecorder) *graphql.
 	}
 	return &target
 }
-func executeTest(t *testing.T, h *server.Handler, req *http.Request) (*graphql.Result, *httptest.ResponseRecorder) {
+func executeTest(t *testing.T, h *schema.Handler, req *http.Request) (*graphql.Result, *httptest.ResponseRecorder) {
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	result := decodeResponse(t, resp)
@@ -71,7 +71,7 @@ func TestContextPropagated(t *testing.T) {
 	}
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/graphql?%v", queryString), nil)
 
-	h := server.NewHandler(&server.HandlerConfig{
+	h := schema.NewHandler(&schema.HandlerConfig{
 		Schema: &myNameSchema,
 		Pretty: true,
 	})
@@ -100,7 +100,7 @@ func TestHandler_BasicQuery_Pretty(t *testing.T) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/graphql?%v", queryString), nil)
 
 	callbackCalled := false
-	h := server.NewHandler(&server.HandlerConfig{
+	h := schema.NewHandler(&schema.HandlerConfig{
 		Schema: &testutil.StarWarsSchema,
 		Pretty: true,
 		ResultCallbackFn: func(ctx context.Context, params *graphql.Params, result *graphql.Result, responseBody []byte) {
@@ -137,7 +137,7 @@ func TestHandler_BasicQuery_Ugly(t *testing.T) {
 	queryString := `query=query HeroNameQuery { hero { name } }`
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/graphql?%v", queryString), nil)
 
-	h := server.NewHandler(&server.HandlerConfig{
+	h := schema.NewHandler(&schema.HandlerConfig{
 		Schema: &testutil.StarWarsSchema,
 		Pretty: false,
 	})
@@ -164,7 +164,7 @@ func TestHandler_Params_NilParams(t *testing.T) {
 		}
 		t.Fatalf("expected to panic, did not panic")
 	}()
-	_ = server.NewHandler(nil)
+	_ = schema.NewHandler(nil)
 }
 
 func TestHandler_BasicQuery_WithRootObjFn(t *testing.T) {
@@ -195,7 +195,7 @@ func TestHandler_BasicQuery_WithRootObjFn(t *testing.T) {
 	}
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/graphql?%v", queryString), nil)
 
-	h := server.NewHandler(&server.HandlerConfig{
+	h := schema.NewHandler(&schema.HandlerConfig{
 		Schema: &myNameSchema,
 		Pretty: true,
 		RootObjectFn: func(ctx context.Context, r *http.Request) map[string]interface{} {
@@ -260,7 +260,7 @@ func TestHandler_BasicQuery_WithFormatErrorFn(t *testing.T) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("/graphql?%v", queryString), nil)
 
 	formatErrorFnCalled := false
-	h := server.NewHandler(&server.HandlerConfig{
+	h := schema.NewHandler(&schema.HandlerConfig{
 		Schema: &myNameSchema,
 		Pretty: true,
 		FormatErrorFn: func(err error) gqlerrors.FormattedError {

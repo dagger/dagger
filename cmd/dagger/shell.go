@@ -24,7 +24,7 @@ var shellCmd = &cobra.Command{
 	Hidden:                true, // for now, remove once we're ready for primetime
 	RunE: func(cmd *cobra.Command, args []string) error {
 		focus = queryFocus
-		return loadModCmdWrapper(RunShell, "", true)(cmd, args)
+		return loadModCmdWrapper(RunShell, "")(cmd, args)
 	},
 }
 
