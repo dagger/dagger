@@ -566,6 +566,10 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode module: %w", err)
 		}
+
+		if fn.ParentName != "" {
+			args.ParentName = fn.ParentName
+		}
 	}
 
 	if err := s.installDeps(ctx, mod); err != nil {
