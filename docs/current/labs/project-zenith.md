@@ -202,6 +202,7 @@ func (m *Potato) HelloWorld() (string, error)
 func (m *Potato) HelloWorld(ctx context.Context) string
 func (m *Potato) HelloWorld(ctx context.Context) (string, error)
 ```
+
 :::
 
 To run the new function, once again use `dagger query`:
@@ -269,8 +270,6 @@ echo '{potato{helloWorld(message: "I'm a potato!"){message, from}}}' | dagger qu
 
 > **TODO(jedevc)**
 > Do structs nest?
-
-> **TODO(jedevc)**
 > Pointer options don't work
 
 ## More things you can do
@@ -503,7 +502,7 @@ EOF
 * When referencing another module as a local dependency, the dependent module must be stored in a sub-directory of the parent module.
 * Custom struct types used as parameters cannot be nested and contain other structs themselves.
 * Calls to functions across modules will be run exactly *once* per-session -- after that, the result will be cached, but only until the next session (a new `dagger query`, etc).
-  - At some point, we will add more fine-grained cache-control.
+  * At some point, we will add more fine-grained cache-control.
 
 ## Tips and tricks
 
