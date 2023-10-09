@@ -333,7 +333,7 @@ You can find other modules to use on <https://daggerverse.fly.dev>.
 #### Module locations
 
 You can consume modules from lots of different sources. The easiest way to
-`dagger use` or `dagger query` module is to reference it by it's GitHub URL
+`dagger use` or `dagger query` a module is to reference it by its GitHub URL
 (similar to Go package strings).
 
 For example:
@@ -373,7 +373,7 @@ You can publish your own modules to the
 discover them. At the moment, the Daggerverse is only used to discover other
 modules, all the data is stored and fetched from GitHub.
 
-To publish a module, create a git repository for it and push to GitHub:
+To publish a module, create a Git repository for it and push to GitHub:
 
 ```sh
 # assuming your module is in "potato/"
@@ -390,8 +390,8 @@ paste the GitHub link to your module (`github.com/<user>/daggerverse.git`),
 then click "Crawl".
 
 :::note
-You don't *have* to use `daggerverse` as the name of your git repo -- it's just
-a handy way to have all your modules in one git repository together. But you
+You don't *have* to use `daggerverse` as the name of your Git repository -- it's just
+a handy way to have all your modules in one Git repository together. But you
 can always split them out into separate repositories, or name it something
 different if you like!
 :::
@@ -526,6 +526,7 @@ EOF
   after that, the result will be cached, but only until the next session (a new
   `dagger query`, etc).
   * At some point, we will add more fine-grained cache-control.
+* Currently, Go is the only supported language for module development.
 
 ## Tips and tricks
 
@@ -535,7 +536,7 @@ EOF
 
 ## Troubleshooting
 
-Zenith still isn't perfectly complete! So, if you come across bugs, it helps to
+Zenith still isn't complete! So, if you come across bugs, it helps to
 have some techniques for working out what's going on.
 
 If you run into problems, please share in the `#zenith-help` channel in the
