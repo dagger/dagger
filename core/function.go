@@ -154,7 +154,7 @@ func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
 		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
 	}
 	typeDef = typeDef.Clone()
-    fn = fn.Clone()
+	fn = fn.Clone()
 	fn.ParentName = typeDef.AsObject.Name
 	typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
 	return typeDef, nil
