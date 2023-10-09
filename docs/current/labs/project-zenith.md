@@ -9,27 +9,38 @@ displayed_sidebar: "labs"
 </head>
 
 :::danger
-This is a short-lived page documenting a future release of Dagger. This release is currently experimental and should not be considered production-ready. If you arrived at this page by accident, you can [return to the official documentation](../index.md).
+This is a short-lived page documenting a future release of Dagger. This release
+is currently experimental and should not be considered production-ready. If you
+arrived at this page by accident, you can [return to the official
+documentation](../index.md).
 :::
 
 ## Overview
 
-*Project Zenith* is the codename of a future release of Dagger, currently in development (and hopefully released soon!)
+*Project Zenith* is the codename of a future release of Dagger, currently in
+development (and hopefully released soon!)
 
-The goal of the project is to make Dagger more accessible, by delivering it as a CLI tool rather than just a library.
+The goal of the project is to make Dagger more accessible, by delivering it as
+a CLI tool rather than just a library.
 
 Features of Project Zenith include:
 
-* Major expansion of the `dagger` CLI, removing the need to create a custom CLI for each project.
-* Major expansion of the Dagger API, with a complete cross-language extension and composition system.
-* An open ecosystem of reusable content, to take advantage of the extension and composition system called the [Daggerverse](https://daggerverse.fly.dev/).
+* Major expansion of the `dagger` CLI, removing the need to create a custom CLI
+  for each project.
+* Major expansion of the Dagger API, with a complete cross-language extension
+  and composition system.
+* An open ecosystem of reusable content, to take advantage of the extension and
+  composition system called the [Daggerverse](https://daggerverse.fly.dev/).
 
 ## How to get involved
 
 The Dagger Engine is developed in the open, and Project Zenith is no exception.
 
-* Discussions take place [on the Dagger Discord](https://discord.gg/dagger-io) in the `#project-zenith` channel. We love to hear from you, and there are no stupid questions!
-* Contributors and testers meet every Friday at 09:00 Pacific time [on our Discord audio room](https://discord.com/channels/707636530424053791/911305510882513037).
+* Discussions take place [on the Dagger Discord](https://discord.gg/dagger-io)
+  in the `#project-zenith` channel. We love to hear from you, and there are no
+  stupid questions!
+* Contributors and testers meet every Friday at 09:00 Pacific time [on our
+  Discord audio room](https://discord.com/channels/707636530424053791/911305510882513037).
 
 If you get stuck, check out the [Troubleshooting guide](#troubleshooting) below.
 
@@ -42,9 +53,11 @@ Pre-requisites:
 
 ### Downloading an experimental build
 
-You can download this experimental build of Dagger from [github.com/jpadams/shykes-dagger-zenith-builder](https://github.com/jpadams/shykes-dagger-zenith-builder/releases/tag/nightly).
+You can download this experimental build of Dagger from
+[github.com/jpadams/shykes-dagger-zenith-builder](https://github.com/jpadams/shykes-dagger-zenith-builder/releases/tag/nightly).
 
-Select the right build using your OS (darwin or linux) and platform (amd64 or arm64), and move it to a directory within your path, for example:
+Select the right build using your OS (darwin or linux) and platform (amd64 or
+arm64), and move it to a directory within your path, for example:
 
 ```sh
 # create a personal bin directory and add it to the PATH
@@ -78,7 +91,10 @@ dagger query <<EOF
 EOF
 ```
 
-### Building from scratch (advanced)
+### Building from scratch
+
+Building from scratch is an advanced topic, so you should attempt to download a
+build if you can.
 
 <details>
 <summary>Building from scratch instructions</summary>
@@ -105,7 +121,8 @@ cd ./dagger/
 ./hack/dev
 ```
 
-Finally, you need to configure the Dagger environment variables to point to the running engine.
+Finally, you need to configure the Dagger environment variables to point to the
+running engine.
 
 1. If you use [direnv](https://direnv.net/), you can just:
 
@@ -164,7 +181,8 @@ dagger mod init --name=potato --sdk=go
 ```
 
 This will generate a `dagger.json` module file, an initial `main.go`
-source file, as well as a generated `dagger.gen.go` and `internal` folder for the generated module code.
+source file, as well as a generated `dagger.gen.go` and `internal` folder for
+the generated module code.
 
 If you like, you can run the generated `main.go` like so:
 
@@ -173,11 +191,12 @@ echo '{potato{myFunction(stringArg:"Hello daggernauts!"){id}}}' | dagger query
 ```
 
 :::note
-All names (functions, arguments, struct fields), etc, are converted into a langauge-agnostic camel-case style.
+All names (functions, arguments, struct fields), etc, are converted into a
+langauge-agnostic camel-case style.
 :::
 
-Let's try changing the `main.go`. We named our module `potato`, so that means all
-methods on the `Potato` type are published as functions. Let's replace the
+Let's try changing the `main.go`. We named our module `potato`, so that means
+all methods on the `Potato` type are published as functions. Let's replace the
 template with something simpler:
 
 ```go
@@ -191,10 +210,13 @@ func (m *Potato) HelloWorld() string {
 ```
 
 Next, run `dagger mod sync`. **You will need to run this command after every
-change to your module's interface.**
+change to your module's interface** (e.g. when you add/remove functions or
+change their parameters and return types).
 
 :::note
-Module functions are flexible in what parameters they can take. You can include an optional `context.Context`, and an optional `error` result. These are all valid variations of the above:
+Module functions are flexible in what parameters they can take. You can include
+an optional `context.Context`, and an optional `error` result. These are all
+valid variations of the above:
 
 ```go
 func (m *Potato) HelloWorld() string
@@ -211,7 +233,9 @@ To run the new function, once again use `dagger query`:
 echo '{potato{helloWorld}}' | dagger query
 ```
 
-Your functions can accept and return multiple different types, not just basic builtin types. For example, to take an object (which you can use to provide optional parameters, or to group large numbers of parameters together):
+Your functions can accept and return multiple different types, not just basic
+builtin types. For example, to take an object (which you can use to provide
+optional parameters, or to group large numbers of parameters together):
 
 ```go
 package main
@@ -233,7 +257,8 @@ func (m *Potato) HelloWorld(opts PotatoOptions) string {
 }
 ```
 
-These options can then be set using `dagger query` (exactly as if they'd been specified as top-level options):
+These options can then be set using `dagger query` (exactly as if they'd been
+specified as top-level options):
 
 ```sh
 echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
@@ -268,63 +293,48 @@ func (m *Potato) HelloWorld(message string) PotatoMessage {
 echo '{potato{helloWorld(message: "I'm a potato!"){message, from}}}' | dagger query
 ```
 
-> **TODO(jedevc)**
-> Do structs nest?
-> Pointer options don't work
-
 ## More things you can do
 
 ### Call other modules
 
-Modules can call each other!
-
-> **TODO**
->
-> Find a module to use as an example here
-
-To add a dependency to your module, you can use `dagger mod use`:
+Modules can call each other! To add a dependency to your module, you can use
+`dagger mod use`:
 
 ```sh
-dagger mod use github.com/.../.../...
+dagger mod use github.com/shykes/daggerverse/helloWorld@dc1c6a243c741e91843fabd34e769cd4d575f46f
 ```
 
 This module will be added to your `dagger.json`:
 
 ```json
   "dependencies": [
-    "github.com/.../.../...@22596363b3de40b06f981fb85d82312e8c0ed511"
+    "github.com/shykes/daggerverse/helloWorld@22596363b3de40b06f981fb85d82312e8c0ed511"
   ]
 ```
 
-You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
+You can also use local modules as dependencies. However, they must be stored in
+a sub-directory of your module. For example:
 
 ```sh
-dagger mod use some_other_module
+dagger mod use ./path/to/module
 ```
 
-The module can be called using `dagger query`:
-
-```sh
-echo '{...}' | dagger query
-```
-
-It'll also be added to your codegeneration, so you can access it from your own module's code:
+The module will be added to your codegeneration, so you can access it from your
+own module's code:
 
 ```go
 func (m *Potato) HelloWorld(ctx context.Context) (string, error) {
-  // ...
+  return dag.HelloWorld().Message(ctx)
 }
 ```
 
 You can find other modules to use on <https://daggerverse.fly.dev>.
 
-> **TODO(jedevc)**
->
-> Are multiple module dependencies supported?
-
 #### Module locations
 
-You can consume modules from lots of different sources. The easiest way to `dagger use` or `dagger query` module is to reference it by it's GitHub URL (similar to Go package strings).
+You can consume modules from lots of different sources. The easiest way to
+`dagger use` or `dagger query` module is to reference it by it's GitHub URL
+(similar to Go package strings).
 
 For example:
 
@@ -358,7 +368,10 @@ EOF
 
 #### Publishing your own modules
 
-You can publish your own modules to the [Daggerverse](https://daggerverse.fly.dev), so that other users can easily discover them. At the moment, the Daggerverse is only used to discover other modules, all the data is stored and fetched from GitHub.
+You can publish your own modules to the
+[Daggerverse](https://daggerverse.fly.dev), so that other users can easily
+discover them. At the moment, the Daggerverse is only used to discover other
+modules, all the data is stored and fetched from GitHub.
 
 To publish a module, create a git repository for it and push to GitHub:
 
@@ -372,20 +385,25 @@ git remote add origin git@github.com:<user>/daggerverse.git
 git push origin main
 ```
 
-Next, navigate to <https://daggerverse.fly.dev>, and use the top-module bar to paste the GitHub link to your module (`github.com/<user>/daggerverse.git`), then click "Crawl".
+Next, navigate to <https://daggerverse.fly.dev>, and use the top-module bar to
+paste the GitHub link to your module (`github.com/<user>/daggerverse.git`),
+then click "Crawl".
 
 :::note
-You don't *have* to use `daggerverse` as the name of your git repo -- it's just a handy way to have all your modules in one git repository together. But you can always split them out into separate repositories, or name it something different if you like!
+You don't *have* to use `daggerverse` as the name of your git repo -- it's just
+a handy way to have all your modules in one git repository together. But you
+can always split them out into separate repositories, or name it something
+different if you like!
 :::
-
-> **TODO(jedevc)**
-> Are multiple module dependencies supported?
 
 ### Chaining
 
-As mentioned above, your functions can return custom objects, which in turn can define new functions! This allows for "chaining" of functions in the same style as the core Dagger API.
+As mentioned above, your functions can return custom objects, which in turn can
+define new functions! This allows for "chaining" of functions in the same style
+as the core Dagger API.
 
-As long as your object can be JSON-serialized by your SDK, its state will be preserved and passed to the next function in the chain.
+As long as your object can be JSON-serialized by your SDK, its state will be
+preserved and passed to the next function in the chain.
 
 Here is an example module using the Go SDK:
 
@@ -498,42 +516,49 @@ EOF
 ## Known issues
 
 * A module's public fields require a `json:"foo"` tag to be queriable.
-* Custom objects in a module require at least one method to be defined on them to be detected by the codegen.
-* When referencing another module as a local dependency, the dependent module must be stored in a sub-directory of the parent module.
-* Custom struct types used as parameters cannot be nested and contain other structs themselves.
-* Calls to functions across modules will be run exactly *once* per-session -- after that, the result will be cached, but only until the next session (a new `dagger query`, etc).
+* Custom objects in a module require at least one method to be defined on them
+  to be detected by the codegen.
+* When referencing another module as a local dependency, the dependent module
+  must be stored in a sub-directory of the parent module.
+* Custom struct types used as parameters cannot be nested and contain other
+  structs themselves.
+* Calls to functions across modules will be run exactly *once* per-session --
+  after that, the result will be cached, but only until the next session (a new
+  `dagger query`, etc).
   * At some point, we will add more fine-grained cache-control.
 
 ## Tips and tricks
 
-* The context and error return are optional in the module's function signature; remove them if you don't need them.
+* The context and error return are optional in the module's function signature;
+  remove them if you don't need them.
 * A module's private fields will not be persisted.
 
 ## Troubleshooting
 
-Zenith still isn't perfectly complete! So, if you come across bugs, it helps to have some techniques for working out what's going on.
+Zenith still isn't perfectly complete! So, if you come across bugs, it helps to
+have some techniques for working out what's going on.
 
 If you run into problems, please share in the `#zenith-help` channel in the
 [Dagger Discord](https://discord.gg/dagger-io)!
 
 ### Rerun commands with `--focus=false`
 
-Sometimes, the Dagger client logs are automatically collapsed and don't contain all the information from a failure.
+Sometimes, the Dagger client logs are automatically collapsed and don't contain
+all the information from a failure.
 
-To make sure that logs aren't automatically collapsed, you can run any `dagger` subcommand with the `--focus=false` flag to disable this behavior.
+To make sure that logs aren't automatically collapsed, you can run any `dagger`
+subcommand with the `--focus=false` flag to disable this behavior.
 
 ### Access the `docker logs`
 
-The Dagger Engine runs in a dedicated container. You can find the container using `docker ps`:
+The Dagger Engine runs in a dedicated container. You can find the container:
 
 ```shell
-CONTAINER ID   IMAGE                                                COMMAND                  CREATED       STATUS       PORTS     NAMES
-ffdef3982445   jeremyatdockerhub/dagger-engine-worker-zenith:main   "dagger-entrypoint.s…"   2 hours ago   Up 2 hours             dagger-engine-272478830461fcff
+DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
 ```
 
 You can then access the logs for the container:
 
 ```shell
-# replace <container-id> with the found id from above
-docker logs <container-id>
+docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
 ```
