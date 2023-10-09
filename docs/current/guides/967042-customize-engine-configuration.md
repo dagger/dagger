@@ -43,6 +43,10 @@ export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://customized-dagger-eng
 dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
 ```
 
+:::tip
+[See all Dagger Engine configuration options](https://docs.docker.com/build/buildkit/toml-configuration/).
+:::
+
 ## Conclusion
 
 This guide described one way to customize the Dagger Engine configuration.
