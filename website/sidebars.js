@@ -223,6 +223,13 @@ module.exports = {
       ]
     }
   ],
+  labs: [
+    {
+      type: "doc",
+      id: "current/index",
+      label: "Home",
+    },
+  ],
   0.2: [
     {
       type: "category",
