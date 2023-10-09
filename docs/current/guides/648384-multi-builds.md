@@ -62,7 +62,7 @@ This code listing does the following:
 - It creates a Dagger client with `connect()`.
 - It uses the client's `host().directory(".")` method to obtain a reference to the current directory on the host. This reference is stored in the `src` variable.
 - It uses the client's `container().from()` method to initialize a new container from a base image. This base image contains all the tooling needed to build the application - in this case, the `golang:latest` image. This `from()` method returns a new `Container` class with the results.
-- It uses the `Container.withDirectory()` method to mount the host directory into the container at the `/src` mount point.
+- It uses the `Container.withDirectory()` method to return the container image with the host directory written at the `/src` path.
 - It uses the `Container.withWorkdir()` method to set the working directory in the container.
 - It iterates over the build matrix, creating a directory in the container for each OS/architecture combination and building the Go application for each such combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case via the `Container.withEnvVariable()` method.
 - It obtains a reference to the build output directory in the container with the `withDirectory()` method, and then uses the `Directory.export()` method to write the build directory from the container to the host.

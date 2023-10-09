@@ -163,55 +163,55 @@ The following example creates a file in a container's `/tmp` directory and then 
 </TabItem>
 </Tabs>
 
-## Mount a host directory in a container
+## Write a host directory to a container
 
-A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. It is necessary to provide the mount point in the container and the directory to be mounted as method arguments.
+A common operation when working with containers is to write a host directory to a path in the container and then perform operations on it. It is necessary to provide the filesystem location in the container and the directory to be written as method arguments.
 
-The following example shows how to mount a host directory in a container at the `/host` container path and then read the contents of the mounted directory:
+The following example shows how to write a host directory to a container at the `/host` container path and then read the contents of the directory:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/work-with-host-filesystem/mount-dir/main.go
+```go file=./snippets/work-with-host-filesystem/transfer-dir/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/work-with-host-filesystem/mount-dir/index.mts
+```typescript file=./snippets/work-with-host-filesystem/transfer-dir/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/work-with-host-filesystem/mount-dir/main.py
+```python file=./snippets/work-with-host-filesystem/transfer-dir/main.py
 ```
 
 </TabItem>
 </Tabs>
 
 :::note
-Modifications made to a host directory mounted in a container do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
+Modifications made to a host directory written to a container filesystem path do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
 :::
 
-The following example shows how to mount a host directory in a container at the `/host` container path, write a file to it, and then export the modified directory back to the host:
+The following example shows how to transfer a host directory to a container at the `/host` container path, write a file to it, and then export the modified directory back to the host:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/work-with-host-filesystem/mount-dir-export/main.go
+```go file=./snippets/work-with-host-filesystem/transfer-dir-export/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/work-with-host-filesystem/mount-dir-export/index.mts
+```typescript file=./snippets/work-with-host-filesystem/transfer-dir-export/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/work-with-host-filesystem/mount-dir-export/main.py
+```python file=./snippets/work-with-host-filesystem/transfer-dir-export/main.py
 ```
 
 </TabItem>
