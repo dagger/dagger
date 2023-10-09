@@ -37,8 +37,8 @@ If you get stuck, check out the [Troubleshooting guide](#troubleshooting) below.
 
 Pre-requisites:
 
-- A shell (bash, zsh, etc)
-- [Docker](https://docs.docker.com/engine/install/)
+* A shell (bash, zsh, etc)
+* [Docker](https://docs.docker.com/engine/install/)
 
 ### Downloading an experimental build
 
@@ -172,9 +172,9 @@ If you like, you can run the generated `main.go` like so:
 echo '{potato{myFunction(stringArg:"Hello daggernauts!"){id}}}' | dagger query
 ```
 
-> **Note**
->
-> All names (functions, arguments, struct fields), etc, are converted into a langauge-agnostic camel-case style.
+:::note
+All names (functions, arguments, struct fields), etc, are converted into a langauge-agnostic camel-case style.
+:::
 
 Let's try changing the `main.go`. We named our module `potato`, so that means all
 methods on the `Potato` type are published as functions. Let's replace the
@@ -186,21 +186,23 @@ package main
 type Potato struct{}
 
 func (m *Potato) HelloWorld() string {
-	return "Hello daggernauts!"
+  return "Hello daggernauts!"
 }
 ```
 
 Next, run `dagger mod sync`. **You will need to run this command after every
 change to your module's interface.**
 
-> **Note**
-> Module functions are flexible in what parameters they can take. You can include an optional `context.Context`, and an optional `error` result. These are all valid variations of the above:
-> ```go
-> func (m *Potato) HelloWorld() string
-> func (m *Potato) HelloWorld() (string, error)
-> func (m *Potato) HelloWorld(ctx context.Context) string
-> func (m *Potato) HelloWorld(ctx context.Context) (string, error)
-> ```
+:::note
+Module functions are flexible in what parameters they can take. You can include an optional `context.Context`, and an optional `error` result. These are all valid variations of the above:
+
+```go
+func (m *Potato) HelloWorld() string
+func (m *Potato) HelloWorld() (string, error)
+func (m *Potato) HelloWorld(ctx context.Context) string
+func (m *Potato) HelloWorld(ctx context.Context) (string, error)
+```
+:::
 
 To run the new function, once again use `dagger query`:
 
@@ -218,15 +220,15 @@ import "fmt"
 type Potato struct{}
 
 type PotatoOptions struct {
-	Count  int
-	Mashed bool
+  Count  int
+  Mashed bool
 }
 
 func (m *Potato) HelloWorld(opts PotatoOptions) string {
-	if opts.Mashed {
-		return fmt.Sprintf("Hello world, I have mashed %d potatoes", opts.Count)
-	}
-	return fmt.Sprintf("Hello world, I have %d potatoes", opts.Count)
+  if opts.Mashed {
+    return fmt.Sprintf("Hello world, I have mashed %d potatoes", opts.Count)
+  }
+  return fmt.Sprintf("Hello world, I have %d potatoes", opts.Count)
 }
 ```
 
@@ -245,8 +247,8 @@ type Potato struct{}
 
 // HACK: to be queried, custom object fields require `json` tags
 type PotatoMessage struct {
-	Message string `json:"message"`
-	From    string `json:"from"`
+  Message string `json:"message"`
+  From    string `json:"from"`
 }
 
 // HACK: this is temporarily required to ensure that the codegen discovers
@@ -254,10 +256,10 @@ type PotatoMessage struct {
 func (msg PotatoMessage) Void() {}
 
 func (m *Potato) HelloWorld(message string) PotatoMessage {
-	return PotatoMessage{
-		Message: message,
-		From:    "potato@example.com",
-	}
+  return PotatoMessage{
+    Message: message,
+    From:    "potato@example.com",
+  }
 }
 ```
 
@@ -266,11 +268,9 @@ echo '{potato{helloWorld(message: "I'm a potato!"){message, from}}}' | dagger qu
 ```
 
 > **TODO(jedevc)**
->
 > Do structs nest?
 
 > **TODO(jedevc)**
->
 > Pointer options don't work
 
 ## More things you can do
@@ -313,7 +313,7 @@ It'll also be added to your codegeneration, so you can access it from your own m
 
 ```go
 func (m *Potato) HelloWorld(ctx context.Context) (string, error) {
-	// ...
+  // ...
 }
 ```
 
@@ -375,12 +375,11 @@ git push origin main
 
 Next, navigate to <https://daggerverse.fly.dev>, and use the top-module bar to paste the GitHub link to your module (`github.com/<user>/daggerverse.git`), then click "Crawl".
 
-> **Note**
->
-> You don't *have* to use `daggerverse` as the name of your git repo -- it's just a handy way to have all your modules in one git repository together. But you can always split them out into separate repositories, or name it something different if you like!
+:::note
+You don't *have* to use `daggerverse` as the name of your git repo -- it's just a handy way to have all your modules in one git repository together. But you can always split them out into separate repositories, or name it something different if you like!
+:::
 
 > **TODO(jedevc)**
->
 > Are multiple module dependencies supported?
 
 ### Chaining
@@ -397,37 +396,37 @@ Here is an example module using the Go SDK:
 package main
 
 import (
-	"context"
-	"fmt"
+  "context"
+  "fmt"
 )
 
 type HelloWorld struct {
-	Greeting string
-	Name     string
+  Greeting string
+  Name     string
 }
 
 func (hello *HelloWorld) WithGreeting(ctx context.Context, greeting string) (*HelloWorld, error) {
-	hello.Greeting = greeting
-	return hello, nil
+  hello.Greeting = greeting
+  return hello, nil
 }
 
 func (hello *HelloWorld) WithName(ctx context.Context, name string) (*HelloWorld, error) {
-	hello.Name = name
-	return hello, nil
+  hello.Name = name
+  return hello, nil
 }
 
 func (hello *HelloWorld) Message(ctx context.Context) (string, error) {
-	var (
-		greeting = hello.Greeting
-		name     = hello.Name
-	)
-	if greeting == "" {
-		greeting = "Hello"
-	}
-	if name == "" {
-		name = "World"
-	}
-	return fmt.Sprintf("%s, %s!", greeting, name), nil
+  var (
+    greeting = hello.Greeting
+    name     = hello.Name
+  )
+  if greeting == "" {
+    greeting = "Hello"
+  }
+  if name == "" {
+    name = "World"
+  }
+  return fmt.Sprintf("%s, %s!", greeting, name), nil
 }
 ```
 
@@ -471,9 +470,9 @@ package main
 type Potato struct{}
 
 func (c *Container) AddPotato() *Container {
-	return c.WithNewFile("/potato", ContainerWithNewFileOpts{
-		Contents: "i'm a potato",
-	})
+  return c.WithNewFile("/potato", ContainerWithNewFileOpts{
+    Contents: "i'm a potato",
+  })
 }
 ```
 
@@ -499,17 +498,17 @@ EOF
 
 ## Known issues
 
-- A module's public fields require a `json:"foo"` tag to be queriable.
-- Custom objects in a module require at least one method to be defined on them to be detected by the codegen.
-- When referencing another module as a local dependency, the dependent module must be stored in a sub-directory of the parent module.
-- Custom struct types used as parameters cannot be nested and contain other structs themselves.
-- Calls to functions across modules will be run exactly *once* per-session -- after that, the result will be cached, but only until the next session (a new `dagger query`, etc).
+* A module's public fields require a `json:"foo"` tag to be queriable.
+* Custom objects in a module require at least one method to be defined on them to be detected by the codegen.
+* When referencing another module as a local dependency, the dependent module must be stored in a sub-directory of the parent module.
+* Custom struct types used as parameters cannot be nested and contain other structs themselves.
+* Calls to functions across modules will be run exactly *once* per-session -- after that, the result will be cached, but only until the next session (a new `dagger query`, etc).
   - At some point, we will add more fine-grained cache-control.
 
 ## Tips and tricks
 
-- The context and error return are optional in the module's function signature; remove them if you don't need them.
-- A module's private fields will not be persisted.
+* The context and error return are optional in the module's function signature; remove them if you don't need them.
+* A module's private fields will not be persisted.
 
 ## Troubleshooting
 
@@ -528,14 +527,14 @@ To make sure that logs aren't automatically collapsed, you can run any `dagger` 
 
 The dagger engine runs in a dedicated container. You can find the container using `docker ps`:
 
-```
+```shell
 CONTAINER ID   IMAGE                                                COMMAND                  CREATED       STATUS       PORTS     NAMES
 ffdef3982445   jeremyatdockerhub/dagger-engine-worker-zenith:main   "dagger-entrypoint.s…"   2 hours ago   Up 2 hours             dagger-engine-272478830461fcff
 ```
 
 You can then access the logs for the container:
 
-```
+```shell
 # replace <container-id> with the found id from above
 docker logs <container-id>
 ```
