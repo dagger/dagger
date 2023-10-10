@@ -125,7 +125,7 @@ type blobSourceInstance struct {
 }
 
 func (bs *blobSourceInstance) CacheKey(context.Context, session.Group, int) (string, string, solver.CacheOpts, bool, error) {
-	return bs.id.Digest.String(), bs.id.Digest.String(), nil, true, nil
+	return "session:" + bs.id.Digest.String(), bs.id.Digest.String(), nil, true, nil
 }
 
 func (bs *blobSourceInstance) Snapshot(ctx context.Context, _ session.Group) (cache.ImmutableRef, error) {
