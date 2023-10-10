@@ -76,7 +76,7 @@ require (
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.9
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
-	github.com/prometheus/procfs v0.11.0
+	github.com/prometheus/procfs v0.12.0
 	github.com/rs/cors v1.10.0
 	github.com/rs/zerolog v1.30.0
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
