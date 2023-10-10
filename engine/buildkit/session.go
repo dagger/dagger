@@ -28,7 +28,6 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(&socketProxy{c})
 	sess.Allow(&authProxy{c})
 	sess.Allow(&fileSendServerProxy{c: c})
-	sess.Allow(&fileSyncServerProxy{c})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),

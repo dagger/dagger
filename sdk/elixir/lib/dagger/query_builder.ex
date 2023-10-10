@@ -91,8 +91,6 @@ end
 defmodule Dagger.QueryError do
   @moduledoc false
 
-  # TODO: use defexception.
-
   defstruct [:errors]
 end
 

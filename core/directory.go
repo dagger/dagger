@@ -36,6 +36,27 @@ type Directory struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
+func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
+	var defs []*pb.Definition
+	if dir.LLB != nil {
+		defs = append(defs, dir.LLB)
+	}
+	if dir.Services != nil {
+		for _, bnd := range dir.Services {
+			ctr := bnd.Service.Container
+			if ctr == nil {
+				continue
+			}
+			ctrDefs, err := ctr.PBDefinitions()
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, ctrDefs...)
+		}
+	}
+	return defs, nil
+}
+
 func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *Directory {
 	return &Directory{
 		LLB:      def,
@@ -63,6 +84,10 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipe
 	return NewDirectory(ctx, def.ToPB(), dir, pipeline, platform, services), nil
 }
 
+func (dir *Directory) ID() (DirectoryID, error) {
+	return resourceid.Encode(dir)
+}
+
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (dir *Directory) Clone() *Directory {
@@ -70,45 +95,6 @@ func (dir *Directory) Clone() *Directory {
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
-}
-
-// DirectoryID is an opaque value representing a content-addressed directory.
-type DirectoryID string
-
-func (id DirectoryID) String() string {
-	return string(id)
-}
-
-// DirectoryID is digestible so that smaller hashes can be displayed in
-// --debug vertex names.
-var _ Digestible = DirectoryID("")
-
-func (id DirectoryID) Digest() (digest.Digest, error) {
-	dir, err := id.ToDirectory()
-	if err != nil {
-		return "", err
-	}
-	return dir.Digest()
-}
-
-// ToDirectory converts the ID into a real Directory.
-func (id DirectoryID) ToDirectory() (*Directory, error) {
-	var dir Directory
-
-	if id == "" {
-		return &dir, nil
-	}
-
-	if err := resourceid.Decode(&dir, id); err != nil {
-		return nil, err
-	}
-
-	return &dir, nil
-}
-
-// ID marshals the directory into a content-addressed ID.
-func (dir *Directory) ID() (DirectoryID, error) {
-	return resourceid.Encode[DirectoryID](dir)
 }
 
 var _ pipeline.Pipelineable = (*Directory)(nil)
@@ -120,7 +106,7 @@ func (dir *Directory) PipelinePath() pipeline.Path {
 
 // Directory is digestible so that it can be recorded as an output of the
 // --debug vertex that created it.
-var _ Digestible = (*Directory)(nil)
+var _ resourceid.Digestible = (*Directory)(nil)
 
 // Digest returns the directory's content hash.
 func (dir *Directory) Digest() (digest.Digest, error) {
@@ -172,22 +158,21 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) error {
+func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) (*buildkit.Result, error) {
 	if dir.LLB == nil {
-		return nil
+		return nil, nil
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
+	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: dir.LLB,
 	})
-	return err
 }
 
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) (*fstypes.Stat, error) {

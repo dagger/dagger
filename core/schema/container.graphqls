@@ -792,6 +792,14 @@ type Container {
     "Return a URL with the given scheme, eg. http for http://"
     scheme: String
   ): String!
+
+  """
+  Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
+  over the websocket.
+
+  Primarily intended for internal use with the dagger CLI.
+  """
+  shellEndpoint: String!
 }
 
 "A simple key value object that represents an environment variable."

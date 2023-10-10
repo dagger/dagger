@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/docker/cli/cli/config"
@@ -28,6 +30,7 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
+	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
@@ -61,6 +64,10 @@ type Params struct {
 	ProgrockWriter     progrock.Writer
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
+
+	// TODO: doc if this stays in
+	ModuleDigest          digest.Digest
+	FunctionContextDigest digest.Digest
 }
 
 type Client struct {
@@ -75,9 +82,14 @@ type Client struct {
 
 	Recorder *progrock.Recorder
 
-	httpClient           *http.Client
-	bkClient             *bkclient.Client
-	bkSession            *bksession.Session
+	httpClient *http.Client
+	bkClient   *bkclient.Client
+	bkSession  *bksession.Session
+
+	// A client for the dagger API that is directly hooked up to this engine client.
+	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
+	daggerClient *dagger.Client
+
 	upstreamCacheOptions []*controlapi.CacheOptionsEntry
 
 	hostname string
@@ -138,9 +150,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		c.httpClient = &http.Client{
 			Transport: &http.Transport{
-				DialContext:       c.NestedDialContext,
+				DialContext:       c.DialContext,
 				DisableKeepAlives: true,
 			},
+		}
+		if err := c.daggerConnect(ctx); err != nil {
+			return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
 		}
 		return c, ctx, nil
 	}
@@ -224,12 +239,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
-		ClientID:          c.ID(),
-		ClientSecretToken: c.SecretToken,
-		ServerID:          c.ServerID,
-		ClientHostname:    c.hostname,
-		Labels:            c.labels,
-		ParentClientIDs:   c.ParentClientIDs,
+		ClientID:              c.ID(),
+		ClientSecretToken:     c.SecretToken,
+		ServerID:              c.ServerID,
+		ClientHostname:        c.hostname,
+		Labels:                c.labels,
+		ParentClientIDs:       c.ParentClientIDs,
+		ModuleDigest:          c.ModuleDigest,
+		FunctionContextDigest: c.FunctionContextDigest,
 	})
 
 	// progress
@@ -254,14 +271,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.eg.Go(func() error {
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
-				RegisterClient:      true,
-				ClientID:            c.ID(),
-				ClientSecretToken:   c.SecretToken,
-				ServerID:            c.ServerID,
-				ParentClientIDs:     c.ParentClientIDs,
-				ClientHostname:      hostname,
-				UpstreamCacheConfig: c.upstreamCacheOptions,
-				Labels:              c.labels,
+				RegisterClient:        true,
+				ClientID:              c.ID(),
+				ClientSecretToken:     c.SecretToken,
+				ServerID:              c.ServerID,
+				ParentClientIDs:       c.ParentClientIDs,
+				ClientHostname:        hostname,
+				UpstreamCacheConfig:   c.upstreamCacheOptions,
+				Labels:                c.labels,
+				ModuleDigest:          c.ModuleDigest,
+				FunctionContextDigest: c.FunctionContextDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -284,7 +303,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		defer cancel()
 		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 		if innerErr != nil {
-			c.Recorder.Debug("Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+			fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+		} else {
+			fmt.Fprintln(loader.Stdout(), "OK!")
 		}
 		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))
@@ -299,7 +320,19 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.CloudURLCallback(cloudURL)
 	}
 
+	if err := c.daggerConnect(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
 	return c, ctx, nil
+}
+
+func (c *Client) daggerConnect(ctx context.Context) error {
+	var err error
+	c.daggerClient, err = dagger.Connect(context.Background(),
+		dagger.WithConn(EngineConn(c)),
+		dagger.WithSkipCompatibilityCheck())
+	return err
 }
 
 func (c *Client) Close() (rerr error) {
@@ -333,6 +366,10 @@ func (c *Client) Close() (rerr error) {
 
 	if c.internalCancel != nil {
 		c.internalCancel()
+	}
+
+	if c.daggerClient != nil {
+		c.eg.Go(c.daggerClient.Close)
 	}
 
 	if c.httpClient != nil {
@@ -404,45 +441,36 @@ func (c *Client) ID() string {
 	return c.bkSession.ID()
 }
 
-func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, err error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID:          c.ID(),
-		ClientSecretToken: c.SecretToken,
-		ServerID:          c.ServerID,
-		ClientHostname:    c.hostname,
-		ParentClientIDs:   c.ParentClientIDs,
-		Labels:            c.labels,
-	}.ToGRPCMD())
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		<-c.closeCtx.Done()
-		cancel()
-		conn.Close()
-	}()
-	return conn, nil
-}
 
-func (c *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	isNestedSession := c.nestedSessionPort != 0
+	if isNestedSession {
+		conn, err = (&net.Dialer{
+			Cancel:    ctx.Done(),
+			KeepAlive: -1, // disable for now
+		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
+	} else {
+		conn, err = grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
+			ClientID:              c.ID(),
+			ClientSecretToken:     c.SecretToken,
+			ServerID:              c.ServerID,
+			ClientHostname:        c.hostname,
+			ParentClientIDs:       c.ParentClientIDs,
+			Labels:                c.labels,
+			ModuleDigest:          c.ModuleDigest,
+			FunctionContextDigest: c.FunctionContextDigest,
+		}.ToGRPCMD())
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := (&net.Dialer{
-		Cancel:    ctx.Done(),
-		KeepAlive: -1, // disable for now
-	}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
-	if err != nil {
-		return nil, err
-	}
 	go func() {
 		<-c.closeCtx.Done()
 		cancel()
@@ -521,7 +549,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	resp, err := c.httpClient.Do(&http.Request{
+	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
 			Scheme: "http",
@@ -530,7 +558,9 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		Header: r.Header,
 		Body:   r.Body,
-	})
+	}
+	proxyReq = proxyReq.WithContext(ctx)
+	resp, err := c.httpClient.Do(proxyReq)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("http do: " + err.Error()))
@@ -545,6 +575,11 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
 	}
+}
+
+// A client to the Dagger API hooked up directly with this engine client.
+func (c *Client) Dagger() *dagger.Client {
+	return c.daggerClient
 }
 
 // Local dir imports
@@ -741,4 +776,27 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 		req.Header[k] = v
 	}
 	return d.inner.Do(req)
+}
+
+func EngineConn(engineClient *Client) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		req.SetBasicAuth(engineClient.SecretToken, "")
+		resp := httptest.NewRecorder()
+		engineClient.ServeHTTP(resp, req)
+		return resp.Result(), nil
+	}
+}
+
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f DirectConn) Host() string {
+	return ":mem:"
+}
+
+func (f DirectConn) Close() error {
+	return nil
 }
