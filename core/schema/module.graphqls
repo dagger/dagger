@@ -57,6 +57,7 @@ type Module {
   serve(environment: [ModuleEnvironmentVariable!]): Void
 }
 
+"A reference to GeneratedCode."
 scalar GeneratedCodeID
 
 extend type Query {

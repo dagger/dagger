@@ -49,11 +49,12 @@ func (ref *Ref) String() string {
 
 func (ref *Ref) Symbolic() string {
 	var root string
-	if ref.Local {
+	switch {
+	case ref.Local:
 		root = ref.Path
-	} else if ref.Git != nil {
+	case ref.Git != nil:
 		root = ref.Git.CloneURL
-	} else {
+	default:
 		panic("invalid module ref")
 	}
 	return path.Join(root, ref.SubPath)

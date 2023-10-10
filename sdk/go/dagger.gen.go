@@ -40,6 +40,7 @@ type FileID string
 // A reference to a Function.
 type FunctionID string
 
+// A reference to GeneratedCode.
 type GeneratedCodeID string
 
 // An arbitrary JSON-encoded value.

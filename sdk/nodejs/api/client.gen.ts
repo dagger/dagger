@@ -593,6 +593,9 @@ export type FunctionCallInput = {
  */
 export type FunctionID = string & { __FunctionID: never }
 
+/**
+ * A reference to GeneratedCode.
+ */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 export type GitRefTreeOpts = {

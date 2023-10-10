@@ -32,7 +32,7 @@ class FunctionID(Scalar):
 
 
 class GeneratedCodeID(Scalar):
-    ...
+    """A reference to GeneratedCode."""
 
 
 class JSON(Scalar):
@@ -2865,6 +2865,11 @@ class GeneratedCode(Type):
         """Note
         ----
         This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        GeneratedCodeID
+            A reference to GeneratedCode.
 
         Raises
         ------
