@@ -1,4 +1,4 @@
-package server
+package schema
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
@@ -193,6 +194,10 @@ func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *
 
 // ServeHTTP provides an entrypoint into executing graphQL queries.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// NOTE: putting this here because we can at this point be relatively sure this is a normal
+	// graphql http request, as opposed to a request that's gonna get hijacked, in which case
+	// writing headers can break stuff
+	w.Header().Add(engine.EngineVersionMetaKey, engine.Version)
 	h.ContextHandler(r.Context(), w, r)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/codegen/generator"
 	"dagger.io/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
@@ -13,8 +14,13 @@ var currentSchema *introspection.Schema
 
 func init() {
 	ctx := context.Background()
-	var err error
-	currentSchema, err = generator.Introspect(ctx, nil)
+
+	c, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	currentSchema, err = generator.Introspect(ctx, c)
 	if err != nil {
 		panic(err)
 	}

@@ -152,7 +152,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		c.httpClient = &http.Client{
 			Transport: &http.Transport{
-				DialContext:       c.NestedDialContext,
+				DialContext:       c.DialContext,
 				DisableKeepAlives: true,
 			},
 		}
@@ -448,47 +448,36 @@ func (c *Client) ID() string {
 	return c.bkSession.ID()
 }
 
-func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, err error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID:              c.ID(),
-		ClientSecretToken:     c.SecretToken,
-		ServerID:              c.ServerID,
-		ClientHostname:        c.hostname,
-		ParentClientIDs:       c.ParentClientIDs,
-		Labels:                c.labels,
-		ModuleDigest:          c.ModuleDigest,
-		FunctionContextDigest: c.FunctionContextDigest,
-	}.ToGRPCMD())
-	if err != nil {
-		return nil, err
-	}
-	go func() {
-		<-c.closeCtx.Done()
-		cancel()
-		conn.Close()
-	}()
-	return conn, nil
-}
 
-func (c *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	isNestedSession := c.nestedSessionPort != 0
+	if isNestedSession {
+		conn, err = (&net.Dialer{
+			Cancel:    ctx.Done(),
+			KeepAlive: -1, // disable for now
+		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
+	} else {
+		conn, err = grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
+			ClientID:              c.ID(),
+			ClientSecretToken:     c.SecretToken,
+			ServerID:              c.ServerID,
+			ClientHostname:        c.hostname,
+			ParentClientIDs:       c.ParentClientIDs,
+			Labels:                c.labels,
+			ModuleDigest:          c.ModuleDigest,
+			FunctionContextDigest: c.FunctionContextDigest,
+		}.ToGRPCMD())
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := (&net.Dialer{
-		Cancel:    ctx.Done(),
-		KeepAlive: -1, // disable for now
-	}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
-	if err != nil {
-		return nil, err
-	}
 	go func() {
 		<-c.closeCtx.Done()
 		cancel()

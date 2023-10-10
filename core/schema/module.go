@@ -566,6 +566,10 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode module: %w", err)
 		}
+
+		if fn.ParentName != "" {
+			args.ParentName = fn.ParentName
+		}
 	}
 
 	if err := s.installDeps(ctx, mod); err != nil {
@@ -599,7 +603,11 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
 	for _, dep := range mod.Dependencies {
 		dirMntPath := filepath.Join(core.ModMetaDirPath, core.ModMetaDepsDirPath, dep.Name, "dir")
-		ctr, err = ctr.WithMountedDirectory(ctx, s.bk, dirMntPath, dep.SourceDirectory, "", true)
+		sourceDir, err := dep.SourceDirectory.Directory(ctx, s.bk, s.services, dep.SourceDirectorySubpath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount dep directory: %w", err)
+		}
+		ctr, err = ctr.WithMountedDirectory(ctx, s.bk, dirMntPath, sourceDir, "", true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to mount dep directory: %w", err)
 		}
@@ -858,8 +866,9 @@ func (cache *FunctionContextCache) WithFunctionContext(ctx *core.Context, fnCtx 
 		return nil, fmt.Errorf("failed to cache function context: %w", err)
 	}
 
-	ctx.Context = engine.ContextWithClientMetadata(ctx.Context, clientMetadata)
-	return ctx, nil
+	ctxCp := *ctx
+	ctxCp.Context = engine.ContextWithClientMetadata(ctx.Context, clientMetadata)
+	return &ctxCp, nil
 }
 
 var errFunctionContextNotFound = fmt.Errorf("function context not found")

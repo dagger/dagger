@@ -32,17 +32,19 @@ const (
 )
 
 func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", moduleURLDefault, "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
+	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
 	moduleFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands.")
 
 	moduleCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	callCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
-	moduleInitCmd.MarkFlagRequired("sdk")
+	moduleInitCmd.MarkPersistentFlagRequired("sdk")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleName, "name", "", "Name of the new module")
-	moduleInitCmd.MarkFlagRequired("name")
+	moduleInitCmd.MarkPersistentFlagRequired("name")
 	moduleInitCmd.PersistentFlags().StringVarP(&moduleRoot, "root", "", "", "Root directory that should be loaded for the full module context. Defaults to the parent directory containing dagger.json.")
 	// also include codegen flags since codegen will run on module init
 
@@ -61,7 +63,7 @@ var moduleCmd = &cobra.Command{
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			mod, err := getModuleFlagConfig(ctx, engineClient.Dagger())
+			mod, _, err := getModuleFlagConfig(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
@@ -103,7 +105,7 @@ var moduleInitCmd = &cobra.Command{
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			mod, err := getModuleFlagConfig(ctx, dag)
+			mod, _, err := getModuleFlagConfig(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
@@ -129,7 +131,7 @@ var moduleUseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			modFlagCfg, err := getModuleFlagConfig(ctx, engineClient.Dagger())
+			modFlagCfg, _, err := getModuleFlagConfig(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
@@ -150,7 +152,7 @@ var moduleUseCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to get module: %w", err)
 				}
-				depSet[depMod.Path] = depMod
+				depSet[depMod.Symbolic()] = depMod
 			}
 
 			modCfg.Dependencies = nil
@@ -171,7 +173,7 @@ var moduleSyncCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			modFlagCfg, err := getModuleFlagConfig(ctx, engineClient.Dagger())
+			modFlagCfg, _, err := getModuleFlagConfig(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
@@ -292,15 +294,26 @@ func updateModuleConfig(
 	return nil
 }
 
-func getModuleFlagConfig(ctx context.Context, dag *dagger.Client) (*moduleFlagConfig, error) {
+func getModuleFlagConfig(ctx context.Context, dag *dagger.Client) (*moduleFlagConfig, bool, error) {
+	wasSet := false
+
 	moduleURL := moduleURL
-	if moduleURL == "" || moduleURL == moduleURLDefault {
+	if moduleURL == "" {
 		// it's unset or default value, use mod if present
 		if v, ok := os.LookupEnv("DAGGER_MODULE"); ok {
 			moduleURL = v
+			wasSet = true
 		}
+
+		// it's still unset, set to the default
+		if moduleURL == "" {
+			moduleURL = moduleURLDefault
+		}
+	} else {
+		wasSet = true
 	}
-	return getModuleFlagConfigFromURL(ctx, dag, moduleURL)
+	cfg, err := getModuleFlagConfigFromURL(ctx, dag, moduleURL)
+	return cfg, wasSet, err
 }
 
 func getModuleFlagConfigFromURL(ctx context.Context, dag *dagger.Client, moduleURL string) (*moduleFlagConfig, error) {
@@ -355,7 +368,6 @@ func (p moduleFlagConfig) modExists(ctx context.Context, c *dagger.Client) (bool
 func loadModCmdWrapper(
 	fn func(context.Context, *client.Client, *dagger.Module, *cobra.Command, []string) error,
 	presetSecretToken string,
-	modIsOptional bool,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
 		return withEngineAndTUI(cmd.Context(), client.Params{
@@ -366,14 +378,10 @@ func loadModCmdWrapper(
 			defer func() { vtx.Done(err) }()
 
 			load := vtx.Task("loading module")
-			loadedMod, err := loadMod(ctx, engineClient.Dagger(), modIsOptional)
+			loadedMod, err := loadMod(ctx, engineClient.Dagger())
 			load.Done(err)
 			if err != nil {
 				return err
-			}
-
-			if !modIsOptional && loadedMod == nil {
-				return fmt.Errorf("no module specified and no default module found in current directory")
 			}
 
 			return fn(ctx, engineClient, loadedMod, cmd, cmdArgs)
@@ -381,8 +389,8 @@ func loadModCmdWrapper(
 	}
 }
 
-func loadMod(ctx context.Context, c *dagger.Client, modIsOptional bool) (*dagger.Module, error) {
-	mod, err := getModuleFlagConfig(ctx, c)
+func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
+	mod, modRequired, err := getModuleFlagConfig(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
@@ -391,11 +399,10 @@ func loadMod(ctx context.Context, c *dagger.Client, modIsOptional bool) (*dagger
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if module exists: %w", err)
 	}
-	if !modExists {
-		if modIsOptional {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("module does not exist")
+	if !modExists && !modRequired {
+		// only allow failing to load the mod when it was explicitly requested
+		// by the user
+		return nil, nil
 	}
 
 	loadedMod, err := mod.load(ctx, c)

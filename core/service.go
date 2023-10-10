@@ -22,6 +22,10 @@ import (
 	"github.com/vito/progrock"
 )
 
+const (
+	ShimEnableTTYEnvVar = "_DAGGER_ENABLE_TTY"
+)
+
 type Service struct {
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
@@ -196,10 +200,18 @@ func (svc *Service) Endpoint(ctx context.Context, svcs *Services, port int, sche
 	return endpoint, nil
 }
 
-func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
+func (svc *Service) Start(
+	ctx context.Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	interactive bool,
+	forwardStdin func(io.Writer, bkgw.ContainerProcess),
+	forwardStdout func(io.Reader),
+	forwardStderr func(io.Reader),
+) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, bk, svcs)
+		return svc.startContainer(ctx, bk, svcs, interactive, forwardStdin, forwardStdout, forwardStderr)
 	case svc.TunnelUpstream != nil:
 		return svc.startTunnel(ctx, bk, svcs)
 	case svc.HostUpstream != "":
@@ -209,7 +221,16 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, svcs *Servic
 	}
 }
 
-func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
+// nolint: gocyclo
+func (svc *Service) startContainer(
+	ctx context.Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	interactive bool,
+	forwardStdin func(io.Writer, bkgw.ContainerProcess),
+	forwardStdout func(io.Reader),
+	forwardStderr func(io.Reader),
+) (running *RunningService, err error) {
 	dig, err := svc.Digest()
 	if err != nil {
 		return nil, err
@@ -344,24 +365,60 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 		return nil, err
 	}
 
+	env := append([]string{}, execOp.Meta.Env...)
+	env = append(env, proxyEnvList(execOp.Meta.ProxyEnv)...)
+	if interactive {
+		env = append(env, ShimEnableTTYEnvVar+"=1")
+	}
+
 	outBuf := new(bytes.Buffer)
+	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
+	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
+	if forwardStdin != nil {
+		stdinCtr, stdinClient = io.Pipe()
+	}
+
+	if forwardStdout != nil {
+		stdoutClient, stdoutCtr = io.Pipe()
+	} else {
+		stdoutCtr = nopCloser{io.MultiWriter(vtx.Stdout(), outBuf)}
+	}
+
+	if forwardStderr != nil {
+		stderrClient, stderrCtr = io.Pipe()
+	} else {
+		stderrCtr = nopCloser{io.MultiWriter(vtx.Stderr(), outBuf)}
+	}
+
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
 		Args:         execOp.Meta.Args,
-		Env:          append(execOp.Meta.Env, proxyEnvList(execOp.Meta.ProxyEnv)...),
+		Env:          env,
 		Cwd:          execOp.Meta.Cwd,
 		User:         execOp.Meta.User,
 		SecretEnv:    execOp.Secretenv,
-		Tty:          false,
-		Stdout:       nopCloser{io.MultiWriter(vtx.Stdout(), outBuf)},
-		Stderr:       nopCloser{io.MultiWriter(vtx.Stderr(), outBuf)},
+		Tty:          interactive,
+		Stdin:        stdinCtr,
+		Stdout:       stdoutCtr,
+		Stderr:       stderrCtr,
 		SecurityMode: execOp.Security,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start container: %w", err)
 	}
 
+	if forwardStdin != nil {
+		forwardStdin(stdinClient, svcProc)
+	}
+	if forwardStdout != nil {
+		forwardStdout(stdoutClient)
+	}
+	if forwardStderr != nil {
+		forwardStderr(stderrClient)
+	}
+
 	exited := make(chan error, 1)
 	go func() {
+		defer close(exited)
 		exited <- svcProc.Wait()
 
 		// detach dependent services when process exits
@@ -404,6 +461,14 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, svc
 				ClientID: clientMetadata.ClientID,
 			},
 			Stop: stopSvc,
+			Wait: func(ctx context.Context) error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case err := <-exited:
+					return err
+				}
+			},
 		}, nil
 	case err := <-exited:
 		if err != nil {

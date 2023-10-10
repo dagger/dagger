@@ -346,6 +346,15 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Return a websocket endpoint that, if connected to, will start the container with a TTY streamed\nover the websocket.\n\nPrimarily intended for internal use with the dagger CLI."
+    @spec shell_endpoint(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def shell_endpoint(%__MODULE__{} = container) do
+      selection = select(container.selection, "shellEndpoint")
+      execute(selection, container.client)
+    end
+  )
+
+  (
     @doc "The error stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
     @spec stderr(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def stderr(%__MODULE__{} = container) do

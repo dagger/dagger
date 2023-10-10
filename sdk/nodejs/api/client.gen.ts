@@ -581,6 +581,9 @@ export type FunctionCallInput = {
  */
 export type FunctionID = string & { __FunctionID: never }
 
+/**
+ * A reference to GeneratedCode.
+ */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 export type GitRefTreeOpts = {
@@ -934,6 +937,7 @@ export class Container extends BaseClient {
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
+  private readonly _shellEndpoint?: string = undefined
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
   private readonly _sync?: ContainerID = undefined
@@ -952,6 +956,7 @@ export class Container extends BaseClient {
     _label?: string,
     _platform?: Platform,
     _publish?: string,
+    _shellEndpoint?: string,
     _stderr?: string,
     _stdout?: string,
     _sync?: ContainerID,
@@ -967,6 +972,7 @@ export class Container extends BaseClient {
     this._label = _label
     this._platform = _platform
     this._publish = _publish
+    this._shellEndpoint = _shellEndpoint
     this._stderr = _stderr
     this._stdout = _stdout
     this._sync = _sync
@@ -1515,6 +1521,30 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
+   * over the websocket.
+   *
+   * Primarily intended for internal use with the dagger CLI.
+   */
+  async shellEndpoint(): Promise<string> {
+    if (this._shellEndpoint) {
+      return this._shellEndpoint
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "shellEndpoint",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -4786,6 +4816,10 @@ export class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Load GeneratedCode by ID, or create a new one if id is unset.
+   */
   generatedCode(opts?: ClientGeneratedCodeOpts): GeneratedCode {
     return new GeneratedCode({
       queryTree: [

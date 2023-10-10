@@ -12,16 +12,8 @@ func ensureChildProcessesAreKilled(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-
-	cmd.SysProcAttr.Setpgid = true
-
 	cmd.Cancel = func() error {
-		pgid, err := syscall.Getpgid(cmd.Process.Pid)
-		if err != nil {
-			return err
-		}
-		return syscall.Kill(-pgid, syscall.SIGTERM)
+		return syscall.Kill(cmd.Process.Pid, syscall.SIGTERM)
 	}
-
 	cmd.WaitDelay = waitDelay
 }
