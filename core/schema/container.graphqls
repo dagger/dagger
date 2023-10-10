@@ -793,7 +793,12 @@ type Container {
     scheme: String
   ): String!
 
-  "TODO"
+  """
+  Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
+  over the websocket.
+
+  Primarily intended for internal use with the dagger CLI.
+  """
   shellEndpoint: String!
 }
 

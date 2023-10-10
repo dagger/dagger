@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/gorilla/websocket"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"golang.org/x/sync/errgroup"
@@ -22,24 +24,21 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string, 
 	shellID := identity.NewID()
 	endpoint := "shells/" + shellID
 	return endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO:
-		bklog.G(r.Context()).Debugf("SHELL HANDLER FOR %s", endpoint)
-
 		clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
 		if err != nil {
 			panic(err)
 		}
 
-		var upgrader = websocket.Upgrader{} // TODO: timeout?
+		var upgrader = websocket.Upgrader{}
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			// FIXME: send error
-			panic(err)
+			bklog.G(r.Context()).WithError(err).Error("shell handler failed to upgrade")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
 		defer ws.Close()
 
-		// TODO:
-		bklog.G(r.Context()).Debugf("SHELL HANDLER FOR %s HAS BEEN UPGRADED", endpoint)
+		bklog.G(r.Context()).Debugf("shell handler for %s has been upgraded", endpoint)
 
 		if err := container.runShell(r.Context(), ws, bk, progSock, clientMetadata, svcs); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
@@ -50,15 +49,6 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string, 
 		}
 	}), nil
 }
-
-var (
-	// TODO:dedupe w/ same thing in cmd/dagger
-	stdinPrefix  = []byte{0, byte(',')}
-	stdoutPrefix = []byte{1, byte(',')}
-	stderrPrefix = []byte{2, byte(',')}
-	resizePrefix = []byte("resize,")
-	exitPrefix   = []byte("exit,")
-)
 
 func (container *Container) runShell(
 	ctx context.Context,
@@ -110,13 +100,13 @@ func (container *Container) runShell(
 						return err
 					}
 					switch {
-					case bytes.HasPrefix(buff, stdinPrefix):
-						_, err = w.Write(bytes.TrimPrefix(buff, stdinPrefix))
+					case bytes.HasPrefix(buff, []byte(engine.StdinPrefix)):
+						_, err = w.Write(bytes.TrimPrefix(buff, []byte(engine.StdinPrefix)))
 						if err != nil {
 							return err
 						}
-					case bytes.HasPrefix(buff, resizePrefix):
-						sizeMessage := string(bytes.TrimPrefix(buff, resizePrefix))
+					case bytes.HasPrefix(buff, []byte(engine.ResizePrefix)):
+						sizeMessage := string(bytes.TrimPrefix(buff, []byte(engine.ResizePrefix)))
 						size := strings.SplitN(sizeMessage, ";", 2)
 						cols, err := strconv.Atoi(size[0])
 						if err != nil {
@@ -129,14 +119,13 @@ func (container *Container) runShell(
 
 						svcProc.Resize(egctx, bkgw.WinSize{Rows: uint32(rows), Cols: uint32(cols)})
 					default:
-						// FIXME: send error message
-						panic("invalid message")
+						return fmt.Errorf("unknown message: %s", buff)
 					}
 				}
 			})
 		},
-		forwardFD(stdoutPrefix),
-		forwardFD(stderrPrefix),
+		forwardFD([]byte(engine.StdoutPrefix)),
+		forwardFD([]byte(engine.StderrPrefix)),
 	)
 	if err != nil {
 		return err
@@ -144,14 +133,17 @@ func (container *Container) runShell(
 
 	// handle shutdown
 	eg.Go(func() error {
-		waitErr := runningSvc.Wait()
+		waitErr := runningSvc.Wait(ctx)
 		var exitCode int
 		if waitErr != nil {
-			// TODO:
 			exitCode = 1
+			var exitErr *bkgwpb.ExitError
+			if errors.As(waitErr, &exitErr) {
+				exitCode = int(exitErr.ExitCode)
+			}
 		}
 
-		message := append([]byte{}, exitPrefix...)
+		message := []byte(engine.ExitPrefix)
 		message = append(message, []byte(fmt.Sprintf("%d", exitCode))...)
 		err := conn.WriteMessage(websocket.BinaryMessage, message)
 		if err != nil {

@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
 	"github.com/opencontainers/go-digest"
@@ -35,15 +36,6 @@ func init() {
 	shellCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "query variable")
 	shellCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "json query variables (overrides --var)")
 }
-
-var (
-	// TODO:dedupe w/ same thing in core
-	stdinPrefix  = []byte{0, byte(',')}
-	stdoutPrefix = []byte{1, byte(',')}
-	stderrPrefix = []byte{2, byte(',')}
-	resizePrefix = []byte("resize,")
-	exitPrefix   = []byte("exit,")
-)
 
 func RunShell(
 	ctx context.Context,
@@ -99,23 +91,14 @@ func RunShell(
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
 	rec := progrock.RecorderFromContext(ctx)
 
-	// TODO:
-	// fmt.Fprintf(os.Stderr, "shell endpoint: %s\n", shellEndpoint)
-
 	dialer := &websocket.Dialer{
-		// TODO: need use DialNestedContext when, well, you know, nested. Fix in engine client
 		NetDialContext: engineClient.DialContext,
-		// TODO:
-		// HandshakeTimeout: 60 * time.Second, // TODO: made up number
 	}
 	wsconn, _, err := dialer.DialContext(ctx, shellEndpoint, nil)
 	if err != nil {
 		return err
 	}
 	// wsconn is closed as part of the caller closing engineClient
-
-	// TODO:
-	// fmt.Fprintf(os.Stderr, "WE ARE SO CONNECTED\n")
 
 	shellStdinR, shellStdinW := io.Pipe()
 
@@ -126,7 +109,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 			term.ForwardResponses = shellStdinW
 			term.CursorVisible = true
 			term.OnResize(func(h, w int) {
-				message := append([]byte{}, resizePrefix...)
+				message := []byte(engine.ResizePrefix)
 				message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
 				// best effort
 				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
@@ -151,12 +134,12 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				return
 			}
 			switch {
-			case bytes.HasPrefix(buff, stdoutPrefix):
-				vtx.Stdout().Write(bytes.TrimPrefix(buff, stdoutPrefix))
-			case bytes.HasPrefix(buff, stderrPrefix):
-				vtx.Stderr().Write(bytes.TrimPrefix(buff, stderrPrefix))
-			case bytes.HasPrefix(buff, exitPrefix):
-				code, err := strconv.Atoi(string(bytes.TrimPrefix(buff, exitPrefix)))
+			case bytes.HasPrefix(buff, []byte(engine.StdoutPrefix)):
+				vtx.Stdout().Write(bytes.TrimPrefix(buff, []byte(engine.StdoutPrefix)))
+			case bytes.HasPrefix(buff, []byte(engine.StderrPrefix)):
+				vtx.Stderr().Write(bytes.TrimPrefix(buff, []byte(engine.StderrPrefix)))
+			case bytes.HasPrefix(buff, []byte(engine.ExitPrefix)):
+				code, err := strconv.Atoi(string(bytes.TrimPrefix(buff, []byte(engine.ExitPrefix))))
 				if err == nil {
 					exitCode = code
 				}
@@ -174,7 +157,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				fmt.Fprintf(os.Stderr, "read: %v\n", err)
 				continue
 			}
-			message := append([]byte{}, stdinPrefix...)
+			message := []byte(engine.StdinPrefix)
 			message = append(message, b[:n]...)
 			err = wsconn.WriteMessage(websocket.BinaryMessage, message)
 			if err != nil {

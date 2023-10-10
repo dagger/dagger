@@ -92,6 +92,23 @@ impl FunctionId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GeneratedCodeId(pub String);
+impl Into<GeneratedCodeId> for &str {
+    fn into(self) -> GeneratedCodeId {
+        GeneratedCodeId(self.to_string())
+    }
+}
+impl Into<GeneratedCodeId> for String {
+    fn into(self) -> GeneratedCodeId {
+        GeneratedCodeId(self.clone())
+    }
+}
+impl GeneratedCodeId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Json(pub String);
 impl Into<Json> for &str {
     fn into(self) -> Json {
@@ -877,6 +894,13 @@ impl Container {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
+    /// over the websocket.
+    /// Primarily intended for internal use with the dagger CLI.
+    pub async fn shell_endpoint(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("shellEndpoint");
+        query.execute(self.graphql_client.clone()).await
     }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
@@ -1843,6 +1867,19 @@ pub struct Directory {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
+    /// A pre-built runtime container to use instead of building one from the
+    /// source code. This is useful for bootstrapping.
+    /// You should ignore this unless you're building a Dagger SDK.
+    #[builder(setter(into, strip_option), default)]
+    pub runtime: Option<ContainerId>,
+    /// An optional subpath of the directory which contains the module's source
+    /// code.
+    /// This is needed when the module code is in a subdirectory but requires
+    /// parent directories to be loaded in order to execute. For example, the
+    /// module source code may need a go.mod, project.toml, package.json, etc. file
+    /// from a parent directory.
+    /// If not set, the module source code is loaded from the root of the
+    /// directory.
     #[builder(setter(into, strip_option), default)]
     pub source_subpath: Option<&'a str>,
 }
@@ -1913,13 +1950,6 @@ pub struct DirectoryWithNewFileOpts {
 }
 impl Directory {
     /// Load the directory as a Dagger module
-    /// sourceSubpath is an optional parameter that, if set, points to a subpath of this
-    /// directory that contains the module's source code. This is needed when the module
-    /// code is in a subdirectory but requires parent directories to be loaded in order
-    /// to execute. For example, the module source code may need a go.mod, project.toml,
-    /// package.json, etc. file from a parent directory.
-    /// If sourceSubpath is not set, the module source code is loaded from the root of
-    /// the directory.
     ///
     /// # Arguments
     ///
@@ -1933,13 +1963,6 @@ impl Directory {
         };
     }
     /// Load the directory as a Dagger module
-    /// sourceSubpath is an optional parameter that, if set, points to a subpath of this
-    /// directory that contains the module's source code. This is needed when the module
-    /// code is in a subdirectory but requires parent directories to be loaded in order
-    /// to execute. For example, the module source code may need a go.mod, project.toml,
-    /// package.json, etc. file from a parent directory.
-    /// If sourceSubpath is not set, the module source code is loaded from the root of
-    /// the directory.
     ///
     /// # Arguments
     ///
@@ -1948,6 +1971,9 @@ impl Directory {
         let mut query = self.selection.select("asModule");
         if let Some(source_subpath) = opts.source_subpath {
             query = query.arg("sourceSubpath", source_subpath);
+        }
+        if let Some(runtime) = opts.runtime {
+            query = query.arg("runtime", runtime);
         }
         return Module {
             proc: self.proc.clone(),
@@ -2733,6 +2759,79 @@ impl FunctionCallArgValue {
     }
 }
 #[derive(Clone)]
+pub struct GeneratedCode {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl GeneratedCode {
+    /// The directory containing the generated code
+    pub fn code(&self) -> Directory {
+        let query = self.selection.select("code");
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    pub async fn id(&self) -> Result<GeneratedCodeId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// List of paths to mark generated in version control (i.e. .gitattributes)
+    pub async fn vcs_generated_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("vcsGeneratedPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// List of paths to ignore in version control (i.e. .gitignore)
+    pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("vcsIgnoredPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Set the directory containing the generated code
+    pub fn with_code(&self, code: Directory) -> GeneratedCode {
+        let mut query = self.selection.select("withCode");
+        query = query.arg_lazy(
+            "code",
+            Box::new(move || {
+                let code = code.clone();
+                Box::pin(async move { code.id().await.unwrap().quote() })
+            }),
+        );
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Set the list of paths to mark generated in version control
+    pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
+        let mut query = self.selection.select("withVCSGeneratedPaths");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Set the list of paths to ignore in version control
+    pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
+        let mut query = self.selection.select("withVCSIgnoredPaths");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+}
+#[derive(Clone)]
 pub struct GitRef {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -2997,6 +3096,15 @@ impl Module {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The code generated by the SDK's runtime
+    pub fn generated_code(&self) -> GeneratedCode {
+        let query = self.selection.select("generatedCode");
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// The ID of the module
     pub async fn id(&self) -> Result<ModuleId, DaggerError> {
         let query = self.selection.select("id");
@@ -3019,6 +3127,11 @@ impl Module {
     /// The SDK used by this module
     pub async fn sdk(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sdk");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The SDK runtime module image ref.
+    pub async fn sdk_runtime(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sdkRuntime");
         query.execute(self.graphql_client.clone()).await
     }
     /// Serve a module's API in the current session.
@@ -3153,6 +3266,11 @@ pub struct QueryContainerOpts {
 pub struct QueryDirectoryOpts {
     #[builder(setter(into, strip_option), default)]
     pub id: Option<DirectoryId>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryGeneratedCodeOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub id: Option<GeneratedCodeId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts {
@@ -3340,6 +3458,33 @@ impl Query {
             }),
         );
         return Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generated_code(&self) -> GeneratedCode {
+        let query = self.selection.select("generatedCode");
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generated_code_opts(&self, opts: QueryGeneratedCodeOpts) -> GeneratedCode {
+        let mut query = self.selection.select("generatedCode");
+        if let Some(id) = opts.id {
+            query = query.arg("id", id);
+        }
+        return GeneratedCode {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

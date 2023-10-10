@@ -55,8 +55,8 @@ type RunningService struct {
 	// have detached, but may also be called manually by the user.
 	Stop func(context.Context) error
 
-	// TODO: doc and/or make method
-	Wait func() error
+	// Block until the service has exited or the provided context is canceled.
+	Wait func(context.Context) error
 }
 
 // ServiceKey is a unique identifier for a service.

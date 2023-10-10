@@ -192,8 +192,7 @@ func shim() (returnExitCode int) {
 	}
 
 	cmd := exec.Command(name, args...)
-	// TODO:
-	_, isTTY := internalEnv("HACK_TO_PASS_TTY_THROUGH")
+	_, isTTY := internalEnv(core.ShimEnableTTYEnvVar)
 	if isTTY {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout

@@ -704,7 +704,10 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// TODO
+// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
+// over the websocket.
+//
+// Primarily intended for internal use with the dagger CLI.
 func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
 	if r.shellEndpoint != nil {
 		return *r.shellEndpoint, nil

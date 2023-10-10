@@ -186,14 +186,8 @@ func (srv *DaggerServer) ServeClientConn(
 		return fmt.Errorf("failed to create http handler: %w", err)
 	}
 	defer func() {
-		select {
-		case <-handlerDone:
-			// TODO:
-			bklog.G(ctx).Trace("handler done")
-			// case <-ctx.Done():
-			// TODO:
-			// bklog.G(ctx).Trace("context done instead of handler")
-		}
+		<-handlerDone
+		bklog.G(ctx).Trace("handler done")
 	}()
 	httpSrv := http.Server{
 		Handler:           handler,
@@ -212,14 +206,11 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer close(doneCh)
 		req = req.WithContext(bklog.WithLogger(req.Context(), lg))
-		bklog.G(req.Context()).Tracef("http handler for client conn")
+		bklog.G(req.Context()).Tracef("http handler for client conn to path %s", req.URL.Path)
 		defer bklog.G(req.Context()).Tracef("http handler for client conn done: %s", clientMetadata.ClientID)
 
 		req = req.WithContext(progrock.RecorderToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
-
-		// TODO:
-		bklog.G(req.Context()).Debugf("http handler for path %s", req.URL.Path)
 
 		handler.ServeHTTP(w, req)
 	}), doneCh, nil

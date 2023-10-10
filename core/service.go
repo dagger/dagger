@@ -20,6 +20,10 @@ import (
 	"github.com/vito/progrock"
 )
 
+const (
+	ShimEnableTTYEnvVar = "_DAGGER_ENABLE_TTY"
+)
+
 type Service struct {
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
@@ -276,8 +280,7 @@ func (svc *Service) startContainer(
 
 	env := append(execOp.Meta.Env, proxyEnvList(execOp.Meta.ProxyEnv)...)
 	if interactive {
-		// TODO:
-		env = append(env, "HACK_TO_PASS_TTY_THROUGH=1")
+		env = append(env, ShimEnableTTYEnvVar+"=1")
 	}
 
 	outBuf := new(bytes.Buffer)
@@ -369,9 +372,13 @@ func (svc *Service) startContainer(
 				ClientID: clientMetadata.ClientID,
 			},
 			Stop: stopSvc,
-			Wait: func() error {
-				<-exited
-				return nil
+			Wait: func(ctx context.Context) error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case err := <-exited:
+					return err
+				}
 			},
 		}, nil
 	case err := <-exited:

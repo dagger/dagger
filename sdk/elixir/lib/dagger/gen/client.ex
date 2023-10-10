@@ -122,6 +122,23 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "## Optional Arguments\n\n* `id` -"
+    @spec generated_code(t(), keyword()) :: Dagger.GeneratedCode.t()
+    def generated_code(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "generatedCode")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.GeneratedCode{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keep_git_dir` - Set to true to keep .git directory.\n* `experimental_service_host` - A service which must be started before the repo is fetched."
     @spec git(t(), Dagger.String.t(), keyword()) :: Dagger.GitRepository.t()
     def git(%__MODULE__{} = query, url, optional_args \\ []) do

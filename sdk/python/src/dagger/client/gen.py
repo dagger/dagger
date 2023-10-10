@@ -31,6 +31,10 @@ class FunctionID(Scalar):
     """A reference to a Function."""
 
 
+class GeneratedCodeID(Scalar):
+    ...
+
+
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
@@ -802,6 +806,32 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    async def shell_endpoint(self) -> str:
+        """Return a websocket endpoint that, if connected to, will start the
+        container with a TTY streamed
+        over the websocket.
+
+        Primarily intended for internal use with the dagger CLI.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("shellEndpoint", _args)
+        return await _ctx.execute(str)
 
     @typecheck
     async def stderr(self) -> str:
@@ -1657,25 +1687,34 @@ class Directory(Type):
         self,
         *,
         source_subpath: Optional[str] = None,
+        runtime: Optional[Container] = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
-        sourceSubpath is an optional parameter that, if set, points to a
-        subpath of this
-        directory that contains the module's source code. This is needed when
-        the module
-        code is in a subdirectory but requires parent directories to be loaded
-        in order
-        to execute. For example, the module source code may need a go.mod,
-        project.toml,
-        package.json, etc. file from a parent directory.
-
-        If sourceSubpath is not set, the module source code is loaded from the
-        root of
-        the directory.
+        Parameters
+        ----------
+        source_subpath:
+            An optional subpath of the directory which contains the module's
+            source
+            code.
+            This is needed when the module code is in a subdirectory but
+            requires
+            parent directories to be loaded in order to execute. For example,
+            the
+            module source code may need a go.mod, project.toml, package.json,
+            etc. file
+            from a parent directory.
+            If not set, the module source code is loaded from the root of the
+            directory.
+        runtime:
+            A pre-built runtime container to use instead of building one from
+            the
+            source code. This is useful for bootstrapping.
+            You should ignore this unless you're building a Dagger SDK.
         """
         _args = [
             Arg("sourceSubpath", source_subpath, None),
+            Arg("runtime", runtime, None),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -2813,6 +2852,121 @@ class FunctionCallArgValue(Type):
         return await _ctx.execute(JSON)
 
 
+class GeneratedCode(Type):
+    @typecheck
+    def code(self) -> Directory:
+        """The directory containing the generated code"""
+        _args: list[Arg] = []
+        _ctx = self._select("code", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    async def id(self) -> GeneratedCodeID:
+        """Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(GeneratedCodeID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return GeneratedCodeID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "generatedCode"
+
+    @typecheck
+    async def vcs_generated_paths(self) -> Optional[list[str]]:
+        """List of paths to mark generated in version control (i.e.
+        .gitattributes)
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("vcsGeneratedPaths", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def vcs_ignored_paths(self) -> Optional[list[str]]:
+        """List of paths to ignore in version control (i.e. .gitignore)
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("vcsIgnoredPaths", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    def with_code(self, code: Directory) -> "GeneratedCode":
+        """Set the directory containing the generated code"""
+        _args = [
+            Arg("code", code),
+        ]
+        _ctx = self._select("withCode", _args)
+        return GeneratedCode(_ctx)
+
+    @typecheck
+    def with_vcs_generated_paths(self, paths: Sequence[str]) -> "GeneratedCode":
+        """Set the list of paths to mark generated in version control"""
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withVCSGeneratedPaths", _args)
+        return GeneratedCode(_ctx)
+
+    @typecheck
+    def with_vcs_ignored_paths(self, paths: Sequence[str]) -> "GeneratedCode":
+        """Set the list of paths to ignore in version control"""
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withVCSIgnoredPaths", _args)
+        return GeneratedCode(_ctx)
+
+    def with_(
+        self, cb: Callable[["GeneratedCode"], "GeneratedCode"]
+    ) -> "GeneratedCode":
+        """Call the provided callable with current GeneratedCode.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
 class GitRef(Type):
     """A git ref (tag, branch or commit)."""
 
@@ -3042,6 +3196,7 @@ class Module(Type):
         "_description",
         "_name",
         "_sdk",
+        "_sdk_runtime",
         "_serve",
         "_source_directory_sub_path",
     )
@@ -3050,6 +3205,7 @@ class Module(Type):
     _description: Optional[str]
     _name: Optional[str]
     _sdk: Optional[str]
+    _sdk_runtime: Optional[str]
     _serve: Optional[Void]
     _source_directory_sub_path: Optional[str]
 
@@ -3063,6 +3219,7 @@ class Module(Type):
             _description="description",
             _name="name",
             _sdk="sdk",
+            _sdk_runtime="sdkRuntime",
             _serve="serve",
             _source_directory_sub_path="sourceDirectorySubPath",
         )
@@ -3115,6 +3272,13 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(Optional[str])
+
+    @typecheck
+    def generated_code(self) -> GeneratedCode:
+        """The code generated by the SDK's runtime"""
+        _args: list[Arg] = []
+        _ctx = self._select("generatedCode", _args)
+        return GeneratedCode(_ctx)
 
     @typecheck
     async def id(self) -> ModuleID:
@@ -3205,6 +3369,30 @@ class Module(Type):
             return self._sdk
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def sdk_runtime(self) -> str:
+        """The SDK runtime module image ref.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_sdk_runtime"):
+            return self._sdk_runtime
+        _args: list[Arg] = []
+        _ctx = self._select("sdkRuntime", _args)
         return await _ctx.execute(str)
 
     @typecheck
@@ -3579,6 +3767,18 @@ class Client(Root):
         ]
         _ctx = self._select("function", _args)
         return Function(_ctx)
+
+    @typecheck
+    def generated_code(
+        self,
+        *,
+        id: Optional[GeneratedCodeID] = None,
+    ) -> GeneratedCode:
+        _args = [
+            Arg("id", id, None),
+        ]
+        _ctx = self._select("generatedCode", _args)
+        return GeneratedCode(_ctx)
 
     @typecheck
     def git(
@@ -4044,6 +4244,7 @@ default_platform = _client.default_platform
 directory = _client.directory
 file = _client.file
 function = _client.function
+generated_code = _client.generated_code
 git = _client.git
 host = _client.host
 http = _client.http
@@ -4081,6 +4282,8 @@ __all__ = [
     "FunctionCallArgValue",
     "FunctionCallInput",
     "FunctionID",
+    "GeneratedCode",
+    "GeneratedCodeID",
     "GitRef",
     "GitRepository",
     "Host",
@@ -4115,6 +4318,7 @@ __all__ = [
     "directory",
     "file",
     "function",
+    "generated_code",
     "git",
     "host",
     "http",
