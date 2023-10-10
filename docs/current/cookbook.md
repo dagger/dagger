@@ -1050,19 +1050,19 @@ The following code listing demonstrates how to use native-language concurrency f
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/concurrency/main.go
+```go file=./cookbook/snippets/concurrency/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/concurrency/index.mts
+```typescript file=./cookbook/snippets/concurrency/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/concurrency/main.py
+```python file=./cookbook/snippets/concurrency/main.py
 ```
 
 </TabItem>
