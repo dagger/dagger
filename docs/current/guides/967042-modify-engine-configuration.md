@@ -7,7 +7,7 @@ authors: ["Tom Chauveau"]
 date: "2023-09-26"
 ---
 
-# Modify Dagger Engine Configuration
+# Modify the Dagger Engine's Configuration
 
 ## Introduction
 
