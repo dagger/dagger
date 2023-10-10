@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/leases"
 	bkcache "github.com/moby/buildkit/cache"
 	cacheutil "github.com/moby/buildkit/cache/util"
 	"github.com/moby/buildkit/client/llb"
@@ -21,6 +22,8 @@ import (
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
+	"github.com/opencontainers/go-digest"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
@@ -127,6 +130,40 @@ func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat
 	return cacheutil.StatFile(ctx, mnt, req.Path)
 }
 
+func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*ocispecs.Descriptor) error {
+	ctx = withOutgoingContext(ctx)
+
+	cacheRef, err := r.CacheRef(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Finalize ensures that there isn't an equalMutable with a different ID and thus different lease. It shouldn't
+	// be called on a ref that actually benefits from having an equalMutable, but that's really only a local dir
+	// sync ref.
+	err = cacheRef.Finalize(ctx)
+	if err != nil {
+		return err
+	}
+
+	// This relies on the lease ID being the ref ID which, while unlikely to change, is worth
+	// keeping in mind:
+	// https://github.com/moby/buildkit/blob/c3c65787b5e2c2c9fcab1d0b9bd1884a37384c90/cache/manager.go#L231
+	leaseID := cacheRef.ID()
+
+	lm := r.c.Worker.LeaseManager()
+	for blobDigest := range blobs {
+		err := lm.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
+			ID:   blobDigest.String(),
+			Type: "content",
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *ref) getMountable(ctx context.Context) (snapshot.Mountable, error) {
 	if r == nil {
 		return nil, nil
@@ -158,6 +195,18 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 		return nil, wrapError(ctx, err, r.c.ID())
 	}
 	return res, nil
+}
+
+func (r *ref) CacheRef(ctx context.Context) (bkcache.ImmutableRef, error) {
+	cacheRes, err := r.Result(ctx)
+	if err != nil {
+		return nil, err
+	}
+	workerRef, ok := cacheRes.Sys().(*bkworker.WorkerRef)
+	if !ok {
+		return nil, fmt.Errorf("invalid ref: %T", cacheRes.Sys())
+	}
+	return workerRef.ImmutableRef, nil
 }
 
 func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*ref]) (*solverresult.Result[bkcache.ImmutableRef], error) {

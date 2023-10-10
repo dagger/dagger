@@ -1,4 +1,3 @@
-//go:generate client-gen -o api.gen.go --package dagger --lang go
 package dagger
 
 import (
@@ -54,6 +53,13 @@ func WithConn(conn engineconn.EngineConn) ClientOpt {
 	})
 }
 
+// WithSkipCompatibilityCheck disables the version compatibility check
+func WithSkipCompatibilityCheck() ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.SkipCompatibilityCheck = true
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	defer func() {
@@ -80,10 +86,12 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		q:    querybuilder.Query(),
 	}
 
-	// Call version compatibility.
-	// If versions are not compatible, a warning will be displayed.
-	if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
-		fmt.Fprintln(os.Stderr, "failed to check version compatibility:", err)
+	if !cfg.SkipCompatibilityCheck {
+		// Call version compatibility.
+		// If versions are not compatible, a warning will be displayed.
+		if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
+			fmt.Fprintln(os.Stderr, "failed to check version compatibility:", err)
+		}
 	}
 
 	return c, nil

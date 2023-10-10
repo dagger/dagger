@@ -2,6 +2,7 @@ package querybuilder
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -113,6 +114,14 @@ func (m *customMarshaller) XXX_GraphQLIDType() string { return "idTypeTest" }
 func (m *customMarshaller) XXX_GraphQLID(context.Context) (string, error) {
 	m.count++
 	return m.v, nil
+}
+
+// nolint
+func (m *customMarshaller) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		v     string
+		count int
+	}{m.v, m.count})
 }
 
 var _ GraphQLMarshaller = &customMarshaller{}

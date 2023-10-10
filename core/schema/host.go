@@ -58,7 +58,7 @@ func (s *hostSchema) setSecretFile(ctx *core.Context, _ any, args setSecretFileA
 		return nil, err
 	}
 
-	return secretID.ToSecret()
+	return secretID.Decode()
 }
 
 type hostDirectoryArgs struct {

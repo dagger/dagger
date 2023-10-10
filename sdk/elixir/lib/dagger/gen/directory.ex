@@ -7,6 +7,31 @@ defmodule Dagger.Directory do
   defstruct [:selection, :client]
 
   (
+    @doc "Load the directory as a Dagger module\n\n\n\n## Optional Arguments\n\n* `source_subpath` - An optional subpath of the directory which contains the module's source\ncode.\n\nThis is needed when the module code is in a subdirectory but requires\nparent directories to be loaded in order to execute. For example, the\nmodule source code may need a go.mod, project.toml, package.json, etc. file\nfrom a parent directory.\n\nIf not set, the module source code is loaded from the root of the\ndirectory.\n* `runtime` - A pre-built runtime container to use instead of building one from the\nsource code. This is useful for bootstrapping.\n\nYou should ignore this unless you're building a Dagger SDK."
+    @spec as_module(t(), keyword()) :: Dagger.Module.t()
+    def as_module(%__MODULE__{} = directory, optional_args \\ []) do
+      selection = select(directory.selection, "asModule")
+
+      selection =
+        if is_nil(optional_args[:source_subpath]) do
+          selection
+        else
+          arg(selection, "sourceSubpath", optional_args[:source_subpath])
+        end
+
+      selection =
+        if is_nil(optional_args[:runtime]) do
+          selection
+        else
+          {:ok, id} = Dagger.Container.id(optional_args[:runtime])
+          arg(selection, "runtime", id)
+        end
+
+      %Dagger.Module{selection: selection, client: directory.client}
+    end
+  )
+
+  (
     @doc "Gets the difference between this directory and an another directory.\n\n## Required Arguments\n\n* `other` - Identifier of the directory to compare."
     @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
     def diff(%__MODULE__{} = directory, other) do

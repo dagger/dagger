@@ -12,7 +12,7 @@ from decimal import Decimal
 from functools import partial
 from itertools import chain, groupby
 from keyword import iskeyword
-from operator import attrgetter, itemgetter
+from operator import itemgetter
 from typing import (
     ClassVar,
     Generic,
@@ -299,11 +299,13 @@ def render_default_client(
     yield from (f"{name} = _client.{name}" for name in names)
     defined.update(names)
 
-    yield textwrap.dedent('''\
+    yield textwrap.dedent(
+        '''\
         def default_client() -> Client:
             """Return the default client instance."""
             return _client
-        ''')
+        '''
+    )
     defined.add("default_client")
 
 
@@ -554,7 +556,13 @@ class _InputField:
     def __str__(self) -> Iterator[str]:
         """Output for an InputObject field."""
         yield ""
-        yield self.as_param()
+
+        field = self.as_param()
+        # Add quotes around types that haven't been defined yet (forward references).
+        if self.ctx.remaining:
+            field = re.sub(rf"\b({'|'.join(self.ctx.remaining)})\b", r'"\1"', field)
+        yield field
+
         if self.description:
             yield doc(self.description)
 
@@ -712,13 +720,15 @@ class _ObjectField:
             msg = f'Method "{self.name}" is deprecated: {deprecated}'.replace(
                 '"', '\\"'
             )
-            yield textwrap.dedent(f"""\
+            yield textwrap.dedent(
+                f"""\
                 warnings.warn(
                     "{msg}",
                     DeprecationWarning,
                     stacklevel=4,
                 )\
-                """)
+                """
+            )
 
         if self.slot_field:
             yield f'if hasattr(self, "{self.slot_field.python_name}"):'
@@ -885,7 +895,10 @@ class ObjectHandler(Handler[_O]):
             str(field)
             # Sorting by graphql name rather than python name for
             # consistency with other SDKs.
-            for field in sorted(self.fields(t), key=attrgetter("graphql_name"))
+            for field in sorted(
+                self.fields(t),
+                key=lambda f: (getattr(f, "has_default", False), f.graphql_name),
+            )
         )
 
 
@@ -923,11 +936,13 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
         if is_self_chainable(t):
             self_name = self.type_name(t)
-            yield textwrap.dedent(f'''
+            yield textwrap.dedent(
+                f'''
                 def with_(self, cb: Callable[["{self_name}"], "{self_name}"]) -> "{self_name}":
                     """Call the provided callable with current {self_name}.
 
                     This is useful for reusability and readability by not breaking the calling chain.
                     """
                     return cb(self)
-                ''')  # noqa: E501
+                '''  # noqa: E501
+            )

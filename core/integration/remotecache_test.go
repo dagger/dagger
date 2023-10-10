@@ -12,32 +12,24 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (devEngine *dagger.Container, endpoint string, err error) {
+func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (*dagger.Container, string, error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	devEngine = devEngineContainer(c)
-	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	entrypoint = strings.ReplaceAll(entrypoint, "10.88.0.0/16", networkCIDR)
-	entrypoint = strings.ReplaceAll(entrypoint, "dagger-dev", fmt.Sprintf("remote-cache-%d", index))
-
-	devEngine = devEngine.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-		Contents: entrypoint,
-	})
-
-	devEngine = devEngine.
+	devEngine := devEngineContainer(c).
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithEnvVariable("ENGINE_ID", id).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec(nil, dagger.ContainerWithExecOpts{
+		WithExec([]string{
+			"--network-name", fmt.Sprintf("remotecache%d", index),
+			"--network-cidr", networkCIDR,
+		}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
-
-	endpoint, err = devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
-
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Port:   1234,
+		Scheme: "tcp",
+	})
 	return devEngine, endpoint, err
 }
 

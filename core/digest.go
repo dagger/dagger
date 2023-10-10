@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -43,7 +43,7 @@ func stableDigest(value any) (digest.Digest, error) {
 	var debugW = io.Discard
 
 	if debugDigest {
-		if x, ok := value.(Digestible); ok && x != nil {
+		if x, ok := value.(resourceid.Digestible); ok && x != nil {
 			debugTag = identity.NewID()
 			debugW = prefixw.New(debugDigestLogsW, fmt.Sprintf("%s %T >> ", debugTag, x))
 			fmt.Fprintln(debugW, "BEGIN")
@@ -61,7 +61,7 @@ func stableDigest(value any) (digest.Digest, error) {
 	}
 
 	if debugDigest {
-		if x, ok := value.(Digestible); ok && x != nil {
+		if x, ok := value.(resourceid.Digestible); ok && x != nil {
 			fmt.Fprintln(debugW, "END", network.HostHash(dig))
 		}
 	}
@@ -79,6 +79,10 @@ func stableDigestInto(value any, dest io.Writer) (err error) {
 	}()
 
 	rt := reflect.TypeOf(value)
+	if rt == nil {
+		_, err := fmt.Fprintln(dest, "nil")
+		return err
+	}
 	rv := reflect.ValueOf(value)
 	if rt.Kind() == reflect.Ptr {
 		if rv.IsNil() {
@@ -141,7 +145,7 @@ func digestInner(value any, dest io.Writer) error {
 
 		return stableDigestInto(stabilized, dest)
 
-	case Digestible:
+	case resourceid.Digestible:
 		digest, err := x.Digest()
 		if err != nil {
 			return err
@@ -207,7 +211,7 @@ func digestMapInto(rv reflect.Value, dest io.Writer) error {
 // data so that it may be used as a cache key that is stable across sessions.
 func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 	def.Source = nil // discard source map
-	dag, err := defToDAG(def)
+	dag, err := buildkit.DefToDAG(def)
 	if err != nil {
 		return nil, err
 	}
@@ -224,11 +228,12 @@ func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 	sort.Slice(def.Def, func(i, j int) bool {
 		return bytes.Compare(def.Def[i], def.Def[j]) < 0
 	})
+	def.Metadata = nil // discard metadata, which has arbitrary names that may include client id
 
 	return def, nil
 }
 
-func stabilizeOp(op *opDAG) error {
+func stabilizeOp(op *buildkit.OpDAG) error {
 	if src := op.GetSource(); src != nil {
 		for k := range src.Attrs {
 			switch k {
@@ -237,11 +242,6 @@ func stabilizeOp(op *opDAG) error {
 				pb.AttrSharedKeyHint: // contains session ID
 				delete(src.Attrs, k)
 			}
-		}
-
-		var localImportOps engine.LocalImportOpts
-		if err := buildkit.DecodeIDHack("local", src.Identifier, &localImportOps); err == nil {
-			src.Identifier = "local://" + localImportOps.Path
 		}
 
 		var httpHack httpdns.DaggerHTTPURLHack

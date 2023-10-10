@@ -1,0 +1,17 @@
+This command builds the Go SDK module runtime container image.
+
+It is currently specific to the Go SDK, but it could be made generic in the
+future, if that's useful.
+
+First the module's runtime container is built natively using the Dagger client,
+using very similar code to the module's own ModuleRuntime function.
+
+Next, the freshly built runtime container is used to load and serve the module
+to the local client.
+
+Finally, the module's moduleRuntime function is invoked via GraphQL with the
+same values provided to the native bootstrap.
+
+The result of the module's moduleRuntime is then sync'd to verify it builds
+correctly, and finally exported and/or published depending on what flags are
+given.
