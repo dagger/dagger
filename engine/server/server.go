@@ -209,7 +209,7 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		bklog.G(req.Context()).Tracef("http handler for client conn to path %s", req.URL.Path)
 		defer bklog.G(req.Context()).Tracef("http handler for client conn done: %s", clientMetadata.ClientID)
 
-		req = req.WithContext(progrock.RecorderToContext(req.Context(), srv.recorder))
+		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
 		handler.ServeHTTP(w, req)

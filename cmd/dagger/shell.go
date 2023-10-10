@@ -44,7 +44,7 @@ func RunShell(
 	cmd *cobra.Command,
 	dynamicCmdArgs []string,
 ) (err error) {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 	vtx := rec.Vertex(
 		digest.Digest("shell"),
 		"shell",
@@ -89,16 +89,19 @@ func RunShell(
 }
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
-	rec := progrock.RecorderFromContext(ctx)
+	rec := progrock.FromContext(ctx)
 
 	dialer := &websocket.Dialer{
 		NetDialContext: engineClient.DialContext,
 	}
-	wsconn, _, err := dialer.DialContext(ctx, shellEndpoint, nil)
+	wsconn, errResp, err := dialer.DialContext(ctx, shellEndpoint, nil)
 	if err != nil {
 		return err
 	}
 	// wsconn is closed as part of the caller closing engineClient
+	if errResp != nil {
+		defer errResp.Body.Close()
+	}
 
 	shellStdinR, shellStdinW := io.Pipe()
 

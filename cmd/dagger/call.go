@@ -136,6 +136,7 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 	}
 
 	for _, function := range modFuncs {
+		function := function
 		// TODO: workaround bug in codegen
 		funcID, err := function.ID(ctx)
 		if err != nil {
@@ -213,6 +214,7 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 			continue
 		}
 		for _, function := range funcs {
+			function := function
 			// TODO: workaround bug in codegen
 			funcID, err := function.ID(ctx)
 			if err != nil {

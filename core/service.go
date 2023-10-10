@@ -135,6 +135,7 @@ func (svc *Service) Start(
 	}
 }
 
+// nolint: gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
 	bk *buildkit.Client,
