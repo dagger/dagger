@@ -27,10 +27,10 @@ func (s *secretSchema) Resolvers() Resolvers {
 			"secret":    ToResolver(s.secret),
 			"setSecret": ToResolver(s.setSecret),
 		},
-		"Secret": ObjectResolver{
+		"Secret": ToIDableObjectResolver(core.SecretID.Decode, ObjectResolver{
 			"id":        ToResolver(s.id),
 			"plaintext": ToResolver(s.plaintext),
-		},
+		}),
 	}
 }
 
@@ -47,7 +47,7 @@ type secretArgs struct {
 }
 
 func (s *secretSchema) secret(ctx *core.Context, parent any, args secretArgs) (*core.Secret, error) {
-	return args.ID.ToSecret()
+	return args.ID.Decode()
 }
 
 type SecretPlaintext string
@@ -68,7 +68,7 @@ func (s *secretSchema) setSecret(ctx *core.Context, parent any, args setSecretAr
 		return nil, err
 	}
 
-	return secretID.ToSecret()
+	return secretID.Decode()
 }
 
 func (s *secretSchema) plaintext(ctx *core.Context, parent *core.Secret, args any) (string, error) {

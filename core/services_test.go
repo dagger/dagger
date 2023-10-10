@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"io"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -303,7 +305,7 @@ func (f *fakeStartable) Digest() (digest.Digest, error) {
 	return f.digest, nil
 }
 
-func (f *fakeStartable) Start(ctx context.Context, bk *buildkit.Client, svcs *core.Services) (*core.RunningService, error) {
+func (f *fakeStartable) Start(context.Context, *buildkit.Client, *core.Services, bool, func(io.Writer, bkgw.ContainerProcess), func(io.Reader), func(io.Reader)) (*core.RunningService, error) {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
 	return res.Started, res.Failed

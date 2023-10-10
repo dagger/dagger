@@ -16,9 +16,10 @@ import (
 )
 
 const (
+	daggerBinName = "dagger" // CLI, not engine!
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
-	golangVersion = "1.20.7"
+	golangVersion = "1.21.2"
 	alpineVersion = "3.18"
 	runcVersion   = "v1.1.9"
 	cniVersion    = "v1.3.0"
@@ -213,6 +214,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
+		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -344,6 +346,28 @@ func engineBin(c *dagger.Client, arch string, version string) *dagger.File {
 		WithEnvVariable("GOARCH", arch).
 		WithExec(buildArgs).
 		File("./bin/" + engineBinName)
+}
+
+func daggerBin(c *dagger.Client, arch string, version string) *dagger.File {
+	buildArgs := []string{
+		"go", "build",
+		"-o", "./bin/" + daggerBinName,
+		"-ldflags",
+	}
+	ldflags := []string{"-s", "-w"}
+	if version != "" {
+		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+version)
+	}
+	buildArgs = append(buildArgs, strings.Join(ldflags, " "))
+	buildArgs = append(buildArgs, "/app/cmd/dagger")
+	return goBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		// dagger CLI must be statically linked, because it gets mounted into
+		// containers when nesting is enabled
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec(buildArgs).
+		File("./bin/" + daggerBinName)
 }
 
 func qemuBins(c *dagger.Client, arch string) *dagger.Directory {

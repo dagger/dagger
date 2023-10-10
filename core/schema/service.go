@@ -51,7 +51,7 @@ type serviceArgs struct {
 }
 
 func (s *serviceSchema) service(ctx *core.Context, parent *core.Query, args serviceArgs) (*core.Service, error) {
-	return args.ID.ToService()
+	return args.ID.Decode()
 }
 
 func (s *serviceSchema) containerService(ctx *core.Context, parent *core.Container, args any) (*core.Service, error) {

@@ -2,7 +2,11 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"runtime/debug"
 	"sort"
 	"sync"
 
@@ -14,7 +18,10 @@ import (
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
+	"github.com/dagger/graphql/gqlerrors"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -33,41 +40,22 @@ type InitializeArgs struct {
 func New(params InitializeArgs) (*MergedSchemas, error) {
 	svcs := core.NewServices(params.BuildkitClient)
 	merged := &MergedSchemas{
-		bk:              params.BuildkitClient,
-		platform:        params.Platform,
-		progSockPath:    params.ProgSockPath,
-		auth:            params.Auth,
-		secrets:         params.Secrets,
-		services:        svcs,
-		separateSchemas: map[string]ExecutableSchema{},
-	}
-	host := core.NewHost()
-	buildCache := core.NewCacheMap[uint64, *core.Container]()
-	err := merged.addSchemas(
-		&querySchema{merged},
-		&directorySchema{merged, host, svcs, buildCache},
-		&fileSchema{merged, host, svcs},
-		&gitSchema{merged, svcs},
-		&containerSchema{
-			merged,
-			host,
-			svcs,
-			params.OCIStore,
-			params.LeaseManager,
-			buildCache,
-			core.NewCacheMap[uint64, *specs.Descriptor](),
-		},
-		&cacheSchema{merged},
-		&secretSchema{merged},
-		&serviceSchema{merged, svcs},
-		&hostSchema{merged, host, svcs},
-		&projectSchema{merged, svcs},
-		&httpSchema{merged, svcs},
-		&platformSchema{merged},
-		&socketSchema{merged, host},
-	)
-	if err != nil {
-		return nil, err
+		bk:           params.BuildkitClient,
+		platform:     params.Platform,
+		progSockPath: params.ProgSockPath,
+		auth:         params.Auth,
+		secrets:      params.Secrets,
+		ociStore:     params.OCIStore,
+		leaseManager: params.LeaseManager,
+		services:     svcs,
+		host:         core.NewHost(),
+
+		buildCache:           core.NewCacheMap[uint64, *core.Container](),
+		importCache:          core.NewCacheMap[uint64, *specs.Descriptor](),
+		functionContextCache: NewFunctionContextCache(),
+		moduleCache:          core.NewCacheMap[digest.Digest, *core.Module](),
+
+		moduleSchemaViews: map[digest.Digest]*moduleSchemaView{},
 	}
 	return merged, nil
 }
@@ -78,17 +66,184 @@ type MergedSchemas struct {
 	progSockPath string
 	auth         *auth.RegistryAuthProvider
 	secrets      *core.SecretStore
+	ociStore     content.Store
+	leaseManager *leaseutil.Manager
+	host         *core.Host
 	services     *core.Services
 
-	schemaMu        sync.RWMutex
+	buildCache           *core.CacheMap[uint64, *core.Container]
+	importCache          *core.CacheMap[uint64, *specs.Descriptor]
+	functionContextCache *FunctionContextCache
+	moduleCache          *core.CacheMap[digest.Digest, *core.Module]
+
+	mu sync.RWMutex
+	// Map of module digest -> schema presented to module.
+	// For the original client not in an module, digest is just "".
+	moduleSchemaViews map[digest.Digest]*moduleSchemaView
+}
+
+// requires s.mu write lock held
+func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*moduleSchemaView, error) {
+	ms := &moduleSchemaView{
+		separateSchemas: map[string]ExecutableSchema{},
+		endpoints:       map[string]http.Handler{},
+		services:        s.services,
+	}
+
+	err := ms.addSchemas(
+		&querySchema{s},
+		&directorySchema{s, s.host, s.services, s.buildCache},
+		&fileSchema{s, s.host, s.services},
+		&gitSchema{s, s.services},
+		&containerSchema{
+			s,
+			s.host,
+			s.services,
+			s.ociStore,
+			s.leaseManager,
+			s.buildCache,
+			s.importCache,
+		},
+		&cacheSchema{s},
+		&secretSchema{s},
+		&serviceSchema{s, s.services},
+		&hostSchema{s, s.host, s.services},
+		&moduleSchema{
+			MergedSchemas:        s,
+			currentSchemaView:    ms,
+			functionContextCache: s.functionContextCache,
+			moduleCache:          s.moduleCache,
+		},
+		&httpSchema{s, s.services},
+		&platformSchema{s},
+		&socketSchema{s, s.host},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	s.moduleSchemaViews[moduleDigest] = ms
+	return ms, nil
+}
+
+func (s *MergedSchemas) getModuleSchemaView(moduleDigest digest.Digest) (*moduleSchemaView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ms, ok := s.moduleSchemaViews[moduleDigest]
+	if !ok {
+		var err error
+		ms, err = s.initializeModuleSchema(moduleDigest)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return ms, nil
+}
+
+func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, error) {
+	ms, err := s.getModuleSchemaView(moduleDigest)
+	if err != nil {
+		return nil, err
+	}
+	return ms.schema(), nil
+}
+
+func (s *MergedSchemas) MuxEndpoint(path string, handler http.Handler, moduleDigest digest.Digest) error {
+	ms, err := s.getModuleSchemaView(moduleDigest)
+	if err != nil {
+		return err
+	}
+	ms.muxEndpoint(path, handler)
+	return nil
+}
+
+func (s *MergedSchemas) HTTPHandler(moduleDigest digest.Digest) (http.Handler, error) {
+	return s.getModuleSchemaView(moduleDigest)
+}
+
+type moduleSchemaView struct {
+	mu              sync.RWMutex
 	separateSchemas map[string]ExecutableSchema
 	mergedSchema    ExecutableSchema
 	compiledSchema  *graphql.Schema
+	endpointMu      sync.RWMutex
+	endpoints       map[string]http.Handler
+	services        *core.Services
 }
 
-func (s *MergedSchemas) Schema() *graphql.Schema {
-	s.schemaMu.RLock()
-	defer s.schemaMu.RUnlock()
+func (s *moduleSchemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(context.TODO()).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+
+			// check whether this is a hijacked connection, if so we can't write any http errors to it
+			_, err := w.Write(nil)
+			if err == http.ErrHijacked {
+				return
+			}
+
+			msg := "Internal Server Error"
+			code := http.StatusInternalServerError
+			switch v := v.(type) {
+			case error:
+				msg = v.Error()
+				if errors.As(v, &InvalidInputError{}) {
+					// panics can happen on invalid input in scalar serde
+					code = http.StatusBadRequest
+				}
+			case string:
+				msg = v
+			}
+			res := graphql.Result{
+				Errors: []gqlerrors.FormattedError{
+					gqlerrors.NewFormattedError(msg),
+				},
+			}
+			bytes, err := json.Marshal(res)
+			if err != nil {
+				panic(err)
+			}
+			http.Error(w, string(bytes), code)
+		}
+	}()
+
+	clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
+	if err != nil {
+		bklog.G(context.TODO()).WithError(err).Error("failed to get client metadata")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/query", NewHandler(&HandlerConfig{
+		Schema: s.schema(),
+	}))
+	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
+		if err := s.services.StopClientServices(ctx, clientMetadata); err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to shutdown")
+		}
+	}))
+
+	s.endpointMu.RLock()
+	for path, handler := range s.endpoints {
+		mux.Handle(path, handler)
+	}
+	s.endpointMu.RUnlock()
+
+	mux.ServeHTTP(w, r)
+}
+
+func (s *moduleSchemaView) muxEndpoint(path string, handler http.Handler) {
+	s.endpointMu.Lock()
+	defer s.endpointMu.Unlock()
+	s.endpoints[path] = handler
+}
+
+func (s *moduleSchemaView) schema() *graphql.Schema {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.compiledSchema
 }
 
@@ -96,9 +251,9 @@ func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.Clien
 	return s.services.StopClientServices(ctx, client)
 }
 
-func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
-	s.schemaMu.Lock()
-	defer s.schemaMu.Unlock()
+func (s *moduleSchemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// make a copy of the current schemas
 	separateSchemas := map[string]ExecutableSchema{}
@@ -152,9 +307,9 @@ func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	return nil
 }
 
-func (s *MergedSchemas) resolvers() Resolvers {
-	s.schemaMu.Lock()
-	defer s.schemaMu.Unlock()
+func (s *moduleSchemaView) resolvers() Resolvers {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.mergedSchema.Resolvers()
 }
 

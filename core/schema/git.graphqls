@@ -8,10 +8,10 @@ extend type Query {
     Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
     Suffix ".git" is optional.
     """
-    url: String!,
+    url: String!
 
     "Set to true to keep .git directory."
-    keepGitDir: Boolean,
+    keepGitDir: Boolean
 
     "A service which must be started before the repo is fetched."
     experimentalServiceHost: ServiceID
@@ -20,7 +20,6 @@ extend type Query {
 
 "A git repository."
 type GitRepository {
-
   """
   Returns details on one branch.
   """

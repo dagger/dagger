@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
+	"github.com/dagger/dagger/engine"
 
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -46,7 +47,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"container": ToResolver(s.container),
 		},
-		"Container": ObjectResolver{
+		"Container": ToIDableObjectResolver(core.ContainerID.Decode, ObjectResolver{
 			"id":                   ToResolver(s.id),
 			"sync":                 ToResolver(s.sync),
 			"from":                 ToResolver(s.from),
@@ -101,7 +102,8 @@ func (s *containerSchema) Resolvers() Resolvers {
 			"withServiceBinding":   ToResolver(s.withServiceBinding),
 			"withFocus":            ToResolver(s.withFocus),
 			"withoutFocus":         ToResolver(s.withoutFocus),
-		},
+			"shellEndpoint":        ToResolver(s.shellEndpoint),
+		}),
 	}
 }
 
@@ -114,15 +116,14 @@ type containerArgs struct {
 	Platform *specs.Platform
 }
 
-func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (*core.Container, error) {
+func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
+	if args.ID != "" {
+		return args.ID.Decode()
+	}
 	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
-		if args.ID != "" {
-			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
-		}
 		platform = *args.Platform
 	}
-
 	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
 	if err != nil {
 		return nil, err
@@ -131,7 +132,7 @@ func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args 
 }
 
 func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any) (core.ContainerID, error) {
-	err := parent.Evaluate(ctx, s.bk, s.svcs)
+	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +160,7 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	dir, err := args.Context.ToDirectory()
+	dir, err := args.Context.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +182,7 @@ type containerWithRootFSArgs struct {
 }
 
 func (s *containerSchema) withRootfs(ctx *core.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	dir, err := args.Directory.ToDirectory()
+	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -431,11 +432,11 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *core.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Source.ToDirectory()
+	dir, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner)
+	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner, false)
 }
 
 type containerPublishArgs struct {
@@ -456,11 +457,11 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx *core.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	file, err := args.Source.ToFile()
+	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner)
+	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner, false)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -475,13 +476,13 @@ func (s *containerSchema) withMountedCache(ctx *core.Context, parent *core.Conta
 	var dir *core.Directory
 	if args.Source != "" {
 		var err error
-		dir, err = args.Source.ToDirectory()
+		dir, err = args.Source.Decode()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cache, err := args.Cache.ToCacheVolume()
+	cache, err := args.Cache.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -569,7 +570,7 @@ type containerWithSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withSecretVariable(ctx *core.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
-	secret, err := args.Secret.ToSecret()
+	secret, err := args.Secret.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +585,7 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx *core.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	secret, err := args.Source.ToSecret()
+	secret, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -597,7 +598,7 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx *core.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Directory.ToDirectory()
+	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +611,7 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx *core.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
-	file, err := args.Source.ToFile()
+	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -633,7 +634,7 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx *core.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	socket, err := args.Source.ToSocket()
+	socket, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -727,7 +728,7 @@ type containerWithServiceBindingArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
-	svc, err := args.Service.ToService()
+	svc, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -812,4 +813,19 @@ func (s *containerSchema) withoutFocus(ctx *core.Context, parent *core.Container
 	child := parent.Clone()
 	child.Focused = false
 	return child, nil
+}
+
+func (s *containerSchema) shellEndpoint(ctx *core.Context, parent *core.Container, args any) (string, error) {
+	endpoint, handler, err := parent.ShellEndpoint(s.bk, s.progSockPath, s.services)
+	if err != nil {
+		return "", err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	s.MuxEndpoint(path.Join("/", endpoint), handler, clientMetadata.ModuleDigest)
+	return "ws://dagger/" + endpoint, nil
 }
