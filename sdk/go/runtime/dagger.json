@@ -1,6 +1,6 @@
 {
   "name": "go-sdk",
   "sdk": "go",
-  "sdkRuntime": "vito/dagger-sdk-go:multi@sha256:f0e8aba7fbb7efd0dbede9eb328eae6b27693c2aade7b184a9f18658124bb1a4",
+  "sdkRuntime": "vito/dagger-sdk-go:no-vcs-flag@sha256:0fcc9d2659cdd551acb7aaf25e77215e9687475eb89ec06cae989eaf332ee480",
   "root": ".."
 }

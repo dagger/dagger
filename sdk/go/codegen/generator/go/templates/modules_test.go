@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"dagger.io/dagger/modules"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 )
@@ -42,7 +43,9 @@ go 1.20
 	require.NoError(t, err)
 
 	funcs := goTemplateFuncs{
-		moduleName: "testMod",
+		module: &modules.Config{
+			Name: "testMod",
+		},
 		modulePkg:  pkgs[0],
 		moduleFset: fset,
 	}
