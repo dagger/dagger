@@ -603,7 +603,11 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
 	for _, dep := range mod.Dependencies {
 		dirMntPath := filepath.Join(core.ModMetaDirPath, core.ModMetaDepsDirPath, dep.Name, "dir")
-		ctr, err = ctr.WithMountedDirectory(ctx, s.bk, dirMntPath, dep.SourceDirectory, "", true)
+		sourceDir, err := dep.SourceDirectory.Directory(ctx, s.bk, s.services, dep.SourceDirectorySubpath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount dep directory: %w", err)
+		}
+		ctr, err = ctr.WithMountedDirectory(ctx, s.bk, dirMntPath, sourceDir, "", true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to mount dep directory: %w", err)
 		}
