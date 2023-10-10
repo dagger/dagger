@@ -3463,6 +3463,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load GeneratedCode by ID, or create a new one if id is unset.
     ///
     /// # Arguments
     ///
@@ -3475,6 +3476,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load GeneratedCode by ID, or create a new one if id is unset.
     ///
     /// # Arguments
     ///

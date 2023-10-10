@@ -4724,6 +4724,10 @@ export class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Load GeneratedCode by ID, or create a new one if id is unset.
+   */
   generatedCode(opts?: ClientGeneratedCodeOpts): GeneratedCode {
     return new GeneratedCode({
       queryTree: [

@@ -49,7 +49,6 @@ type Module {
 
   "This module plus the given Object type and associated functions"
   withObject(object: TypeDefID!): Module! # TODO: ObjectTypeDefID?
-
   """
   Serve a module's API in the current session.
       Note: this can only be called once per session.
@@ -61,6 +60,9 @@ type Module {
 scalar GeneratedCodeID
 
 extend type Query {
+  """
+  Load GeneratedCode by ID, or create a new one if id is unset.
+  """
   generatedCode(id: GeneratedCodeID): GeneratedCode!
 }
 

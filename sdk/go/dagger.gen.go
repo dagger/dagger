@@ -3299,6 +3299,7 @@ type GeneratedCodeOpts struct {
 	ID GeneratedCodeID
 }
 
+// Load GeneratedCode by ID, or create a new one if id is unset.
 func (r *Client) GeneratedCode(opts ...GeneratedCodeOpts) *GeneratedCode {
 	q := r.q.Select("generatedCode")
 	for i := len(opts) - 1; i >= 0; i-- {

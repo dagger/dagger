@@ -3774,6 +3774,7 @@ class Client(Root):
         *,
         id: Optional[GeneratedCodeID] = None,
     ) -> GeneratedCode:
+        """Load GeneratedCode by ID, or create a new one if id is unset."""
         _args = [
             Arg("id", id, None),
         ]

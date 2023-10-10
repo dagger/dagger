@@ -122,7 +122,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "## Optional Arguments\n\n* `id` -"
+    @doc "Load GeneratedCode by ID, or create a new one if id is unset.\n\n\n\n## Optional Arguments\n\n* `id` -"
     @spec generated_code(t(), keyword()) :: Dagger.GeneratedCode.t()
     def generated_code(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "generatedCode")
