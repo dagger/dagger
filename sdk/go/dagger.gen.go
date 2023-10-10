@@ -184,7 +184,7 @@ type ContainerBuildOpts struct {
 	// Default: './Dockerfile'.
 	Dockerfile string
 	// Additional build arguments.
-	BuildArgs []*BuildArg
+	BuildArgs []BuildArg
 	// Target build stage to build.
 	Target string
 	// Secrets to pass to the build.
@@ -610,7 +610,7 @@ type ContainerPipelineOpts struct {
 	// Pipeline description.
 	Description string
 	// Pipeline labels.
-	Labels []*PipelineLabel
+	Labels []PipelineLabel
 }
 
 // Creates a named sub-pipeline
@@ -1527,7 +1527,7 @@ type DirectoryDockerBuildOpts struct {
 	// The platform to build.
 	Platform Platform
 	// Build arguments to use in the build.
-	BuildArgs []*BuildArg
+	BuildArgs []BuildArg
 	// Target build stage to build.
 	Target string
 	// Secrets to pass to the build.
@@ -1660,7 +1660,7 @@ type DirectoryPipelineOpts struct {
 	// Pipeline description.
 	Description string
 	// Pipeline labels.
-	Labels []*PipelineLabel
+	Labels []PipelineLabel
 }
 
 // Creates a named sub-pipeline
@@ -2103,7 +2103,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 
 // FunctionCallOpts contains options for Function.Call
 type FunctionCallOpts struct {
-	Input []*FunctionCallInput
+	Input []FunctionCallInput
 }
 
 // Execute this function using dynamic input+output types.
@@ -2951,7 +2951,7 @@ func (r *Module) SDKRuntime(ctx context.Context) (string, error) {
 
 // ModuleServeOpts contains options for Module.Serve
 type ModuleServeOpts struct {
-	Environment []*ModuleEnvironmentVariable
+	Environment []ModuleEnvironmentVariable
 }
 
 // Serve a module's API in the current session.
@@ -3417,7 +3417,7 @@ type PipelineOpts struct {
 	// Pipeline description.
 	Description string
 	// Pipeline labels.
-	Labels []*PipelineLabel
+	Labels []PipelineLabel
 }
 
 // Creates a named sub-pipeline.

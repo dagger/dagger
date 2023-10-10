@@ -42,17 +42,11 @@ func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName 
 }
 
 func (f *FormatTypeFunc) FormatKindObject(representation string, refName string, input bool) string {
-	if input {
-		representation += "*"
-	}
 	representation += formatName(refName)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindInputObject(representation string, refName string, input bool) string {
-	if input {
-		representation += "*"
-	}
 	representation += formatName(refName)
 	return representation
 }
