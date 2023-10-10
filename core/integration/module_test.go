@@ -546,6 +546,67 @@ func TestModuleGoUseLocal(t *testing.T) {
 	require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
 }
 
+func TestModuleGoUseLocalMulti(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/foo").
+		WithNewFile("/work/foo/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct {}
+
+func (m *Foo) Name() string { return "foo" }
+`,
+		}).
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithWorkdir("/work/bar").
+		WithNewFile("/work/bar/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Bar struct {}
+
+func (m *Bar) Name() string { return "bar" }
+`,
+		}).
+		With(daggerExec("mod", "init", "--name=bar", "--sdk=go")).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
+		With(daggerExec("mod", "use", "./foo")).
+		With(daggerExec("mod", "use", "./bar")).
+		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+import "fmt"
+
+type Use struct {}
+
+func (m *Use) Names(ctx context.Context) ([]string, error) {
+	fooName, err := dag.Foo().Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("foo.name: %w", err)
+	}
+	barName, err := dag.Bar().Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bar.name: %w", err)
+	}
+	return []string{fooName, barName}, nil
+}
+`,
+		}).
+		WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{use{names}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"use":{"names":["foo", "bar"]}}`, out)
+}
+
 //go:embed testdata/modules/go/wrapper/main.go
 var wrapper string
 

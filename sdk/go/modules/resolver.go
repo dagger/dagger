@@ -47,6 +47,18 @@ func (ref *Ref) String() string {
 	return fmt.Sprintf("%s@%s", ref.Path, ref.Version)
 }
 
+func (ref *Ref) Symbolic() string {
+	var root string
+	if ref.Local {
+		root = ref.Path
+	} else if ref.Git != nil {
+		root = ref.Git.CloneURL
+	} else {
+		panic("invalid module ref")
+	}
+	return path.Join(root, ref.SubPath)
+}
+
 func (ref *Ref) LocalSourcePath() (string, error) {
 	if ref.Local {
 		// TODO(vito): This may be worth a rethink, but the idea is for local

@@ -152,7 +152,7 @@ var moduleUseCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to get module: %w", err)
 				}
-				depSet[depMod.Path] = depMod
+				depSet[depMod.Symbolic()] = depMod
 			}
 
 			modCfg.Dependencies = nil

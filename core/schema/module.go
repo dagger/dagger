@@ -866,8 +866,9 @@ func (cache *FunctionContextCache) WithFunctionContext(ctx *core.Context, fnCtx 
 		return nil, fmt.Errorf("failed to cache function context: %w", err)
 	}
 
-	ctx.Context = engine.ContextWithClientMetadata(ctx.Context, clientMetadata)
-	return ctx, nil
+	ctxCp := *ctx
+	ctxCp.Context = engine.ContextWithClientMetadata(ctx.Context, clientMetadata)
+	return &ctxCp, nil
 }
 
 var errFunctionContextNotFound = fmt.Errorf("function context not found")
