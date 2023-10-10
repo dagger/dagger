@@ -31,7 +31,7 @@ As of August 24 2023, the latest source code for Project Zenith is available as 
 
 To get started:
 
-1. Visit the [draft pull request](https://github.com/dagger/dagger/pull/5443)
+1. Visit the [current draft pull request](https://github.com/dagger/dagger/pull/5757) and the [original draft PR (now closed)](https://github.com/dagger/dagger/pull/5443)
 2. Checkout the corresponding branch
 3. Follow the instructions in `./universe/README.md`
 4. Please ask questions and share feedback on the discord channel, we love to hear from you, and there are no stupid questions!
