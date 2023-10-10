@@ -78,6 +78,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			".golangci.yml",
 			"**/README.md", // needed for examples test
 			"**/help.txt",  // needed for linting module bootstrap code
+			"sdk/go/codegen/generator/nodejs/templates/src/testdata/**/*",
 
 			// Go SDK runtime codegen
 			"**/dagger.json",
