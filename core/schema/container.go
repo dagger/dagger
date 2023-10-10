@@ -733,10 +733,6 @@ func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Con
 		return nil, err
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	return parent.WithServiceBinding(ctx, s.svcs, svc, args.Alias)
 }
 
