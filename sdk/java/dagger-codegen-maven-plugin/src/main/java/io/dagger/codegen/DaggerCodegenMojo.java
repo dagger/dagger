@@ -1,8 +1,15 @@
 package io.dagger.codegen;
 
 import com.ongres.process.FluentProcess;
-import io.dagger.codegen.introspection.*;
-import java.io.*;
+import io.dagger.codegen.introspection.CodegenVisitor;
+import io.dagger.codegen.introspection.Schema;
+import io.dagger.codegen.introspection.SchemaVisitor;
+import io.dagger.codegen.introspection.Type;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -115,13 +122,21 @@ public class DaggerCodegenMojo extends AbstractMojo {
 
   private InputStream daggerSchema()
       throws IOException, InterruptedException, MojoFailureException {
-    if ("local".equalsIgnoreCase(version)) {
-      this.version = DaggerCLIUtils.getVersion(this.bin);
-      getLog().info("Querying local dagger CLI for schema");
+    String actualVersion = DaggerCLIUtils.getVersion(this.bin);
+    if ("local".equalsIgnoreCase(version) || "devel".equalsIgnoreCase(version)) {
+      getLog()
+          .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
+      this.version = actualVersion;
       return DaggerCLIUtils.query(
           getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
           this.bin);
     } else {
+      if (!actualVersion.equals(version)) {
+        throw new MojoFailureException(
+            String.format(
+                "Actual dagger CLI version (%s) mismatches expected version (%s)",
+                actualVersion, version));
+      }
       InputStream in =
           getClass()
               .getClassLoader()

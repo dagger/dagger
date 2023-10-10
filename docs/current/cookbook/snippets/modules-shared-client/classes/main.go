@@ -6,7 +6,8 @@ import (
 	"os"
 
 	"dagger.io/dagger"
-	"main/pipelines"
+
+	"main/alpine"
 )
 
 func main() {
@@ -19,6 +20,9 @@ func main() {
 	}
 	defer client.Close()
 
-	// pass client to method imported from another module
-	fmt.Println(pipelines.Version(client))
+	// Create pipeline structure imported from another module passing the client
+	pipeline := alpine.New(client)
+
+	// Call version function
+	fmt.Println(pipeline.Version(ctx))
 }

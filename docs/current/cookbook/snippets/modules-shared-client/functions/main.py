@@ -4,7 +4,7 @@ import anyio
 
 import dagger
 
-from .pipelines import version
+from .alpine import version
 
 
 # initialize Dagger client

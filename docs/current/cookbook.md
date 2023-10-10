@@ -109,55 +109,55 @@ The following code listing obtains a reference to the host working directory con
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
 
-### Mount and read host directory in container
+### Transfer and read host directory in container
 
-The following code listing mounts a host directory in a container at the `/host` container path and then reads the contents of the mounted directory.
+The following code listing writes a host directory to a container at the `/host` container path and then reads the contents of the directory.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/work-with-host-filesystem/mount-dir/main.go
+```go file=./guides/snippets/work-with-host-filesystem/transfer-dir/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./guides/snippets/work-with-host-filesystem/mount-dir/index.mts
+```typescript file=./guides/snippets/work-with-host-filesystem/transfer-dir/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./guides/snippets/work-with-host-filesystem/mount-dir/main.py
+```python file=./guides/snippets/work-with-host-filesystem/transfer-dir/main.py
 ```
 
 </TabItem>
 </Tabs>
 
-### Mount and write to host directory from container
+### Transfer and write to host directory from container
 
-The following code listing shows how to mount a host directory in a container at the `/host` container path, write a file to it, and then export the modified directory back to the host:
+The following code listing writes a host directory to a container at the `/host` container path, adds a file to it, and then exports the modified directory back to the host:
 
 :::note
-Modifications made to a host directory mounted in a container do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
+Modifications made to a host directory written to a container filesystem path do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To write modifications back to the host directory, you must explicitly export the directory back to the host filesystem.
 :::
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/work-with-host-filesystem/mount-dir-export/main.go
+```go file=./guides/snippets/work-with-host-filesystem/transfer-dir-export/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./guides/snippets/work-with-host-filesystem/mount-dir-export/index.mts
+```typescript file=./guides/snippets/work-with-host-filesystem/transfer-dir-export/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./guides/snippets/work-with-host-filesystem/mount-dir-export/main.py
+```python file=./guides/snippets/work-with-host-filesystem/transfer-dir-export/main.py
 ```
 
 </TabItem>
@@ -901,19 +901,19 @@ The following code listing uses a cache volume for application dependencies. Thi
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./quickstart/snippets/caching/main.go
+```go file=./cookbook/snippets/cache-dependencies/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./quickstart/snippets/caching/index.mjs
+```javascript file=./cookbook/snippets/cache-dependencies/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./quickstart/snippets/caching/main.py
+```python file=./cookbook/snippets/cache-dependencies/main.py
 ```
 
 </TabItem>
@@ -973,7 +973,7 @@ The following code listing demonstrates how to add multiple environment variable
 </TabItem>
 </Tabs>
 
-### Organize pipeline code into modules
+### Organize pipeline code into modules & classes
 
 The following code listing demonstrates how to organize Dagger pipeline code into independent modules (or functions/packages, depending on your programming language) to improve code reusability and organization. It also demonstrates how to reuse the Dagger client and, therefore, share the Dagger session between modules.
 
@@ -984,28 +984,60 @@ The same Dagger client can safely be used in concurrent threads/routines. Theref
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go title="main.go" file=./cookbook/snippets/modules-shared-client/main.go
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/functions/main.go
 ```
 
-```go title="pipelines/pipelines.go" file=./cookbook/snippets/modules-shared-client/pipelines/pipelines.go
+```go title="alpine/alpine.go" file=./cookbook/snippets/modules-shared-client/functions/alpine/alpine.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/index.mts
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/functions/index.mts
 ```
 
-```typescript title="pipelines.mts" file=./cookbook/snippets/modules-shared-client/pipelines.mts
+```typescript title="alpine.mts" file=./cookbook/snippets/modules-shared-client/functions/alpine.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python title="main.py" file=./cookbook/snippets/modules-shared-client/main.py
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/functions/main.py
 ```
 
-```python title="pipelines.py" file=./cookbook/snippets/modules-shared-client/pipelines.py
+```python title="alpine.py" file=./cookbook/snippets/modules-shared-client/functions/alpine.py
+```
+
+</TabItem>
+</Tabs>
+
+Another possible approach is to use independent classes (or interfaces, depending on the programming language) with public methods as functions. With this, it is no longer necessary to pass the client to all imported functions. The following code listing demonstrates this approach.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go title="main.go" file=./cookbook/snippets/modules-shared-client/classes/main.go
+```
+
+```go title="alpine/alpine.go" file=./cookbook/snippets/modules-shared-client/classes/alpine/alpine.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript title="index.mts" file=./cookbook/snippets/modules-shared-client/classes/index.mts
+```
+
+```typescript title="alpine.mts" file=./cookbook/snippets/modules-shared-client/classes/alpine.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python title="main.py" file=./cookbook/snippets/modules-shared-client/classes/main.py
+```
+
+```python title="alpine.py" file=./cookbook/snippets/modules-shared-client/classes/alpine.py
 ```
 
 </TabItem>
