@@ -1,4 +1,4 @@
-import Client, { connect } from "@dagger.io/dagger"
+import { connect, Client } from "@dagger.io/dagger"
 
 // initialize Dagger client
 connect(async (client: Client) => {
@@ -18,7 +18,7 @@ connect(async (client: Client) => {
       .withExec(["npm", "install"])
 
     // run tests
-    await runner.withExec(["npm", "test", "--", "--watchAll=false"]).exitCode()
+    await runner.withExec(["npm", "test", "--", "--watchAll=false"]).sync()
 
     // build application using specified Node version
     // write the build output to the host

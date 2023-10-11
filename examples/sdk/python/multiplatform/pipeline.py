@@ -17,7 +17,7 @@ async def pipeline():
         for platform in platforms:
             build = (
             client.container(platform=dagger.Platform(platform))
-            .from_("golang:1.20")
+            .from_("golang:1.21.3-bullseye")
             .with_directory("/src", project)
             .with_workdir("/src")
             .with_mounted_cache("/cache", cache)

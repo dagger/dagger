@@ -28,7 +28,7 @@ func main() {
 
 	for _, platform := range platforms {
 		build := client.Container(dagger.ContainerOpts{Platform: platform}).
-			From("golang:1.20").
+			From("golang:1.21.3-bullseye").
 			WithDirectory("/src", project).
 			WithWorkdir("/src").
 			WithMountedCache("/cache", cache).
