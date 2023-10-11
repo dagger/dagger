@@ -23,7 +23,8 @@ async def main():
             .with_directory(
                 "/src",
                 client.host().directory(
-                    ".", exclude=["node_modules/", "ci/", "build/"]),
+                    ".", exclude=["node_modules/", "ci/", "build/"]
+                ),
             )
             .with_mounted_cache("/src/node_modules", node_cache)
         )
@@ -37,8 +38,7 @@ async def main():
 
         # first stage
         # build application
-        build_dir = test.with_exec(
-            ["npm", "run", "build"]).directory("./build")
+        build_dir = test.with_exec(["npm", "run", "build"]).directory("./build")
 
         # second stage
         # use an nginx:alpine container

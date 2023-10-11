@@ -19,7 +19,8 @@ async def main():
             .with_directory(
                 "/src",
                 client.host().directory(
-                    ".", exclude=["node_modules/", "ci/", "build/"]),
+                    ".", exclude=["node_modules/", "ci/", "build/"]
+                ),
             )
         )
 
