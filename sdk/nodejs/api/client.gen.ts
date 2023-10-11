@@ -724,16 +724,6 @@ export type PortForward = {
   protocol?: NetworkProtocol
 }
 
-/**
- * A unique project command identifier.
- */
-export type ProjectCommandID = string & { __ProjectCommandID: never }
-
-/**
- * A unique project identifier.
- */
-export type ProjectID = string & { __ProjectID: never }
-
 export type ClientContainerOpts = {
   id?: ContainerID
   platform?: Platform
@@ -1265,27 +1255,6 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * A unique identifier for this container.
-   */
-  async id(): Promise<ContainerID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ContainerID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**
@@ -5104,9 +5073,9 @@ export class Secret extends BaseClient {
 }
 
 export class Service extends BaseClient {
+  private readonly _id?: ServiceID = undefined
   private readonly _endpoint?: string = undefined
   private readonly _hostname?: string = undefined
-  private readonly _id?: ServiceID = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
 
@@ -5115,19 +5084,40 @@ export class Service extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: ServiceID,
     _endpoint?: string,
     _hostname?: string,
-    _id?: ServiceID,
     _start?: ServiceID,
     _stop?: ServiceID
   ) {
     super(parent)
 
+    this._id = _id
     this._endpoint = _endpoint
     this._hostname = _hostname
-    this._id = _id
     this._start = _start
     this._stop = _stop
+  }
+
+  /**
+   * A unique identifier for this service.
+   */
+  async id(): Promise<ServiceID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ServiceID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -5171,27 +5161,6 @@ export class Service extends BaseClient {
         ...this._queryTree,
         {
           operation: "hostname",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * A unique identifier for this service.
-   */
-  async id(): Promise<ServiceID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ServiceID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
         },
       ],
       this.client
