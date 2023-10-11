@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/content"
@@ -25,6 +27,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 type InitializeArgs struct {
@@ -400,7 +403,17 @@ func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...Execu
 	// gqlparser has actual validation and errors, unlike the graphql-go library
 	_, err := gqlparser.LoadSchema(&ast.Source{Input: mergedSchema.Schema})
 	if err != nil {
-		return nil, fmt.Errorf("schema validation failed: %w\n%s", err, mergedSchema.Schema)
+		var sourceContext string
+
+		var gqlError *gqlerror.Error
+		if errors.As(err, &gqlError) && len(gqlError.Locations) >= 1 {
+			line := gqlError.Locations[0].Line
+			sourceContext = getSourceContext(mergedSchema.Schema, line, 3)
+		} else {
+			sourceContext = getSourceContext(mergedSchema.Schema, 0, -1)
+		}
+
+		return nil, fmt.Errorf("schema validation failed: %w\n\n%s", err, sourceContext)
 	}
 
 	return StaticSchema(mergedSchema), nil
@@ -453,4 +466,34 @@ func compile(s ExecutableSchema) (*graphql.Schema, error) {
 	}
 
 	return &schema, nil
+}
+
+// getSourceContext is a little helper to extract a target line with a number
+// of lines of surrounding context. If surrounding is negative, then all the
+// lines will be returned.
+func getSourceContext(input string, target int, surrounding int) string {
+	removeLines := surrounding > 0
+
+	output := strings.Builder{}
+	scanner := bufio.NewScanner(strings.NewReader(input))
+
+	padding := len(fmt.Sprint(target + surrounding))
+
+	count := 0
+	if removeLines && target-surrounding > 1 {
+		output.WriteString(fmt.Sprintf(" %*s | ...\n", padding, ""))
+	}
+	for scanner.Scan() {
+		count += 1
+		if removeLines && (count < target-surrounding || count > target+surrounding) {
+			continue
+		}
+		output.WriteString(fmt.Sprintf(" %*d | ", padding, count))
+		output.WriteString(scanner.Text())
+		output.WriteString("\n")
+	}
+	if removeLines && target+surrounding < count {
+		output.WriteString(fmt.Sprintf(" %*s | ...\n", padding, ""))
+	}
+	return output.String()
 }
