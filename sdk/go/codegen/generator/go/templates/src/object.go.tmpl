@@ -1,0 +1,214 @@
+{{- if ne .Name "Query" }}
+{{ .Description | Comment }}
+type {{ .Name | FormatName }} struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+    {{ range $field := .Fields }}
+        {{- if $field.TypeRef.IsScalar }}
+        {{ $field.Name }} *{{ $field.TypeRef | FormatOutputType }}
+        {{- end }}
+	{{- end }}
+}
+{{- end }}
+
+
+{{- if .Type | IsSelfChainable }}
+type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
+
+// With calls the provided function with current {{ .Name | FormatName }}.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{ $.Name | FormatName }} {
+	return f(r)
+}
+
+{{- end }}
+
+{{ range $field := .Fields }}
+{{- if $field.Args.HasOptionals }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionsStructName }} struct {
+	{{- range $arg := $field.Args }}
+	{{- if $arg.TypeRef.IsOptional }}
+	{{ $arg.Description | Comment }}
+	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
+	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatOutputType }}
+	{{- else }}
+	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatInputType }}
+	{{- end }}
+	{{- end }}
+	{{- end }}
+}
+
+{{- end }}
+
+{{ $field.Description | Comment }}
+{{- if $field.IsDeprecated }}
+//
+{{ $field.DeprecationReason | FormatDeprecation }}
+{{- end }}
+{{- $convertID := $field | ConvertID }}
+{{ $field | FieldFunction }} {
+	{{- range $arg := $field.Args }}
+	    {{- if and (IsPointer $arg) (not $arg.TypeRef.IsOptional) }}
+        assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
+        {{- end }}
+    {{- end }}
+
+    {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
+    if r.{{ $field.Name }} != nil {
+        return *r.{{ $field.Name }}, nil
+    }
+    {{- end }}
+	q := r.q.Select("{{ $field.Name }}")
+
+	{{- if $field.Args.HasOptionals }}
+	for i := len(opts) - 1; i >= 0; i-- {
+	{{- range $arg := $field.Args }}
+	{{- if $arg.TypeRef.IsOptional }}
+	// `{{ $arg.Name }}` optional argument
+	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+	}
+	{{- end }}
+	{{- end }}
+	}
+	{{- end }}
+
+
+	{{- range $arg := $field.Args }}
+	{{- if not $arg.TypeRef.IsOptional }}
+	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
+	{{- end }}
+	{{- end }}
+    {{ if $convertID }}
+	return r, q.Execute(ctx, r.c)
+
+	{{- else if $field.TypeRef.IsObject }}
+	{{ $typeName := $field.TypeRef | FormatOutputType }}
+	return &{{ $field.TypeRef | FormatOutputType }} {
+		q: q,
+		c: r.c,
+	}
+
+	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
+		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+    q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
+
+    type {{ $field.Name | ToLowerCase }} struct {
+            {{ range $v := $field | GetArrayField }}
+      {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
+            {{- end }}
+    }
+
+    convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
+        out := {{ $field.TypeRef | FormatOutputType }}{}
+
+        for i := range fields {
+            out = append(out, {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}})
+        }
+
+        return out
+    }
+
+        {{- end }}
+
+
+    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+	var response []{{ $field.Name | ToLowerCase }}
+	{{- else }}
+	var response {{ $field.TypeRef | FormatOutputType }}
+	{{- end  }}
+
+	q = q.Bind(&response)
+	{{- $typeName := $field.TypeRef | FormatOutputType }}
+	{{- if ne $typeName "Client" }}
+	    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+	    return nil, err
+	}
+
+	return convert(response), nil
+	    {{- else }}
+	return response, q.Execute(ctx, r.c)
+	    {{- end }}
+	{{- else }}
+	return response, q.Execute(ctx, r.gql)
+	{{- end }}
+	{{- end }}
+}
+
+{{ if eq $field.Name "id" }}
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLType() string {
+	return "{{ $.Name }}"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLIDType() string {
+	return "{{ $field.TypeRef | FormatOutputType }}"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, error) {
+    id, err := r.ID(ctx)
+    if err != nil {
+        return "", err
+    }
+	return string(id), nil
+}
+
+func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
+  id, err := r.ID(context.Background())
+  if err != nil {
+    return nil, err
+  }
+  return json.Marshal(id)
+}
+
+{{- if $.IsModuleCode }}
+func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
+  var id string
+  err := json.Unmarshal(bs, &id)
+  if err != nil {
+    return err
+  }
+  {{ if eq ($.Name | FormatName) "Container" }}
+    *r = *dag.Container(ContainerOpts{
+      ID: ContainerID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Directory" }}
+    *r = *dag.Directory(DirectoryOpts{
+      ID: DirectoryID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Socket" }}
+    *r = *dag.Socket(SocketOpts{
+      ID: SocketID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Module" }}
+    *r = *dag.Module(ModuleOpts{
+      ID: ModuleID(id),
+    })
+  {{ else if eq ($.Name | FormatName) "Function" }}
+    *r = *dag.Function(FunctionID(id))
+  {{ else if eq ($.Name | FormatName) "File" }}
+    *r = *dag.File(FileID(id))
+  {{ else if eq ($.Name | FormatName) "Secret" }}
+    *r = *dag.Secret(SecretID(id))
+  {{ else if eq ($.Name | FormatName) "Cache" }}
+    cacheID := CacheID(id)
+    *r = CacheVolume{
+      q:  dag.q,
+      c:  dag.c,
+      id: &cacheID,
+    }
+  {{ end }}
+  return nil
+}
+{{- end }}
+
+{{ end }}
+{{ end -}}

@@ -186,12 +186,6 @@ func readTarFile(t *testing.T, pathToTar, pathInTar string) []byte {
 	return nil
 }
 
-func checkNotDisabled(t *testing.T, env string) { //nolint:unparam
-	if os.Getenv(env) == "0" {
-		t.Skipf("disabled via %s=0", env)
-	}
-}
-
 func computeMD5FromReader(reader io.Reader) string {
 	h := md5.New()
 	io.Copy(h, reader)
@@ -240,14 +234,10 @@ type DaggerCLIContainer struct {
 	c   *dagger.Client
 
 	// common
-	ProjectArg string
+	EnvArg  string
+	HelpArg bool
 
-	// "do"
-	OutputArg string
-	TargetArg string
-	UserArgs  map[string]string
-
-	// "project init"
+	// "env init"
 	SDKArg  string
 	NameArg string
 	RootArg string
@@ -255,9 +245,9 @@ type DaggerCLIContainer struct {
 
 const cliContainerRepoMntPath = "/src"
 
-func (ctr DaggerCLIContainer) WithLoadedProject(
-	projectPath string,
-	convertToGitProject bool,
+func (ctr DaggerCLIContainer) WithLoadedEnv(
+	environmentPath string,
+	convertToGitEnv bool,
 ) *DaggerCLIContainer {
 	ctr.t.Helper()
 	thisRepoPath, err := filepath.Abs("../..")
@@ -266,48 +256,31 @@ func (ctr DaggerCLIContainer) WithLoadedProject(
 	thisRepoDir := ctr.c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Include: []string{"core", "sdk", "go.mod", "go.sum"},
 	})
-	projectArg := filepath.Join(cliContainerRepoMntPath, projectPath)
+	environmentArg := filepath.Join(cliContainerRepoMntPath, environmentPath)
 
 	baseCtr := ctr.Container
-	if convertToGitProject {
-		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, thisRepoDir)
+	if convertToGitEnv {
+		branchName := identity.NewID()
+		gitSvc, _ := gitServiceWithBranch(ctr.ctx, ctr.t, ctr.c, thisRepoDir, branchName)
 		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
 
 		endpoint, err := gitSvc.Endpoint(ctr.ctx)
 		require.NoError(ctr.t, err)
-		projectArg = "git://" + endpoint + "/repo.git" + "?ref=main&protocol=git"
-		if projectPath != "" {
-			projectArg += "&subpath=" + projectPath
+		environmentArg = "git://" + endpoint + "/repo.git" + "?ref=" + branchName + "&protocol=git"
+		if environmentPath != "" {
+			environmentArg += "&subpath=" + environmentPath
 		}
 	} else {
 		baseCtr = baseCtr.WithMountedDirectory(cliContainerRepoMntPath, thisRepoDir)
 	}
 
 	ctr.Container = baseCtr
-	ctr.ProjectArg = projectArg
+	ctr.EnvArg = environmentArg
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) WithProjectArg(projectArg string) *DaggerCLIContainer {
-	ctr.ProjectArg = projectArg
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithOutputArg(outputArg string) *DaggerCLIContainer {
-	ctr.OutputArg = outputArg
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithTarget(target string) *DaggerCLIContainer {
-	ctr.TargetArg = target
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithUserArg(key, value string) *DaggerCLIContainer {
-	if ctr.UserArgs == nil {
-		ctr.UserArgs = map[string]string{}
-	}
-	ctr.UserArgs[key] = value
+func (ctr DaggerCLIContainer) WithEnvArg(environmentArg string) *DaggerCLIContainer {
+	ctr.EnvArg = environmentArg
 	return &ctr
 }
 
@@ -321,35 +294,43 @@ func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--debug", "do"}
-	if ctr.ProjectArg != "" {
-		args = append(args, "--project", ctr.ProjectArg)
+func (ctr DaggerCLIContainer) WithHelpArg(help bool) *DaggerCLIContainer {
+	ctr.HelpArg = help
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallChecks(selectedChecks ...string) *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--progress=plain"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
 	}
-	if ctr.OutputArg != "" {
-		args = append(args, "--output", ctr.OutputArg)
+	args = append(args, "checks")
+	if len(selectedChecks) > 0 {
+		args = append(args, selectedChecks...)
 	}
-	args = append(args, ctr.TargetArg)
-	for k, v := range ctr.UserArgs {
-		args = append(args, "--"+k, v)
+	if ctr.HelpArg {
+		args = append(args, "--help")
 	}
 	ctr.Container = ctr.Container.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "project"}
-	if ctr.ProjectArg != "" {
-		args = append(args, "--project", ctr.ProjectArg)
+func (ctr DaggerCLIContainer) CallEnv() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }
 
-func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "project", "init"}
-	if ctr.ProjectArg != "" {
-		args = append(args, "--project", ctr.ProjectArg)
+func (ctr DaggerCLIContainer) CallEnvInit() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env", "init"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
 	}
 	if ctr.SDKArg != "" {
 		args = append(args, "--sdk", ctr.SDKArg)
@@ -359,6 +340,36 @@ func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
 	}
 	if ctr.RootArg != "" {
 		args = append(args, "--root", ctr.RootArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallEnvExtend(extensions ...string) *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env", "extend"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
+	}
+	for _, ext := range extensions {
+		args = append(args, ext)
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallEnvSync() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "env", "sync"}
+	if ctr.EnvArg != "" {
+		args = append(args, "--env", ctr.EnvArg)
+	}
+	if ctr.HelpArg {
+		args = append(args, "--help")
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr

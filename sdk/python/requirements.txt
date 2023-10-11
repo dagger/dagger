@@ -12,9 +12,9 @@ attrs==23.1.0
     # via cattrs
 backoff==2.2.1
     # via gql
-beartype==0.15.0
+beartype==0.16.1
     # via -r -
-black==23.7.0
+black==23.9.1
     # via -r -
 cattrs==23.1.2
     # via -r -
@@ -23,23 +23,18 @@ certifi==2023.7.22
     #   httpcore
     #   httpx
 click==8.1.7
-    # via
-    #   black
-    #   typer
-colorama==0.4.6
-    # via typer
+    # via black
 gql==3.4.1
     # via -r -
 graphql-core==3.2.3
     # via
     #   -r -
     #   gql
-    #   strawberry-graphql
 h11==0.14.0
     # via httpcore
-httpcore==0.17.3
+httpcore==0.18.0
     # via httpx
-httpx==0.24.1
+httpx==0.25.0
     # via
     #   -r -
     #   pytest-httpx
@@ -72,14 +67,14 @@ pluggy==1.3.0
     # via pytest
 pygments==2.16.1
     # via rich
-pytest==7.4.0
+pytest==7.4.2
     # via
     #   -r -
     #   pytest-httpx
     #   pytest-lazy-fixture
     #   pytest-mock
     #   pytest-subprocess
-pytest-httpx==0.23.1
+pytest-httpx==0.26.0
     # via -r -
 pytest-lazy-fixture==0.6.3
     # via -r -
@@ -87,31 +82,16 @@ pytest-mock==3.11.1
     # via -r -
 pytest-subprocess==1.5.0
     # via -r -
-python-dateutil==2.8.2
-    # via strawberry-graphql
-rich==13.5.2
-    # via
-    #   -r -
-    #   typer
-ruff==0.0.286
+rich==13.5.3
     # via -r -
-shellingham==1.5.3
-    # via typer
-six==1.16.0
-    # via python-dateutil
+ruff==0.0.290
+    # via -r -
 sniffio==1.3.0
     # via
     #   anyio
     #   httpcore
     #   httpx
-strawberry-graphql==0.205.0
+typing-extensions==4.8.0
     # via -r -
-typer[all]==0.9.0
-    # via -r -
-typing-extensions==4.7.1
-    # via
-    #   -r -
-    #   strawberry-graphql
-    #   typer
 yarl==1.9.2
     # via gql

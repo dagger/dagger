@@ -61,7 +61,7 @@ func (s *hostSchema) setSecretFile(ctx *core.Context, _ any, args setSecretFileA
 		return nil, err
 	}
 
-	return secretID.ToSecret()
+	return secretID.Decode()
 }
 
 type hostDirectoryArgs struct {
@@ -97,7 +97,7 @@ type hostTunnelArgs struct {
 }
 
 func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
-	svc, err := args.Service.ToService()
+	svc, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
 	}

@@ -53,7 +53,7 @@ The first step is to create a Dagger pipeline to build a ZIP archive of the func
     - It uses the client's `SetSecret()` method to set the AWS credentials as secrets for the Dagger pipeline.
     - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `ci` directory. This reference is stored in the `source` variable.
     - It uses the client's `Container().From()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `WithDirectory()` method to mount the host directory into the container image at the `/src` mount point, and the `WithWorkdir()` method to set the working directory in the container image.
+    - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
     - It chains together a series of `WithExec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
     - It uses the client's `Container().From()` method to initialize a new `aws-cli` AWS CLI container image.
     - It uses the `Container` object's `WithSecretVariable()` and `WithEnvVariable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
@@ -87,7 +87,7 @@ The first step is to create a Dagger pipeline to build a ZIP archive of the func
     - It uses the client's `setSecret()` method to set the AWS credentials as secrets for the Dagger pipeline.
     - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
     - It uses the client's `container().from()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `withDirectory()` method to mount the host directory into the container image at the `/src` mount point, and the `withWorkdir()` method to set the working directory in the container image.
+    - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
     - It chains together a series of `withExec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
     - It uses the client's `container().from()` method to initialize a new `aws-cli` AWS CLI container image.
     - It uses the `Container` object's `withSecretVariable()` and `withEnvVariable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.

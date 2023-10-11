@@ -76,19 +76,21 @@ public class Helpers {
           put("ServiceID", "Service");
           put("SocketID", "Socket");
           put("CacheID", "CacheVolume");
-          put("ProjectID", "Project");
-          put("ProjectCommandID", "ProjectCommand");
+          put("ModuleID", "Module");
+          put("FunctionID", "Function");
+          put("TypeDefID", "TypeDef");
+          put("GeneratedCodeID", "GeneratedCode");
+          put("Platform", "Platform");
+          put("JSON", "JSON");
+          put("Void", "Void");
         }
       };
 
   static boolean isScalar(String typeName) {
-    return CUSTOM_SCALARS.containsKey(typeName) || "Platform".equals(typeName);
+    return CUSTOM_SCALARS.containsKey(typeName);
   }
 
   static ClassName convertScalarToObject(String typeName) {
-    if ("Platform".equals(typeName)) {
-      return ClassName.bestGuess(typeName);
-    }
     if (CUSTOM_SCALARS.containsKey(typeName)) {
       return ClassName.bestGuess(CUSTOM_SCALARS.get(typeName));
     }

@@ -52,6 +52,29 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "The FunctionCall context that the SDK caller is currently executing in.\nIf the caller is not currently executing in a function, this will return\nan error."
+    @spec current_function_call(t()) :: Dagger.FunctionCall.t()
+    def current_function_call(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentFunctionCall")
+      %Dagger.FunctionCall{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "The module currently being served in the session, if any."
+    @spec current_module(t()) :: {:ok, Dagger.Module.t() | nil} | {:error, term()}
+    def current_module(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentModule")
+
+      case execute(selection, query.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.Module)
+        error -> error
+      end
+    end
+  )
+
+  (
     @doc "The default platform of the builder."
     @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
     def default_platform(%__MODULE__{} = query) do
@@ -85,6 +108,33 @@ defmodule Dagger.Client do
       selection = select(query.selection, "file")
       selection = arg(selection, "id", file)
       %Dagger.File{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a function by ID\n\n## Required Arguments\n\n* `id` -"
+    @spec function(t(), Dagger.Function.t()) :: Dagger.Function.t()
+    def function(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "function")
+      selection = arg(selection, "id", id)
+      %Dagger.Function{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load GeneratedCode by ID, or create a new one if id is unset.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec generated_code(t(), keyword()) :: Dagger.GeneratedCode.t()
+    def generated_code(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "generatedCode")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.GeneratedCode{selection: selection, client: query.client}
     end
   )
 
@@ -141,6 +191,34 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a module by ID, or create a new one if id is unset.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec module(t(), keyword()) :: Dagger.Module.t()
+    def module(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "module")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.Module{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Create a new function from the provided definition.\n\n## Required Arguments\n\n* `name` - \n* `return_type` -"
+    @spec new_function(t(), Dagger.String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
+    def new_function(%__MODULE__{} = query, name, return_type) do
+      selection = select(query.selection, "newFunction")
+      selection = arg(selection, "name", name)
+      selection = arg(selection, "returnType", return_type)
+      %Dagger.Function{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
     @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Client.t()
     def pipeline(%__MODULE__{} = query, name, optional_args \\ []) do
@@ -162,42 +240,6 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Client{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Load a project from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec project(t(), keyword()) :: Dagger.Project.t()
-    def project(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "project")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.Project.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
-      %Dagger.Project{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Load a project command from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec project_command(t(), keyword()) :: Dagger.ProjectCommand.t()
-    def project_command(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "projectCommand")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.ProjectCommand.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
-      %Dagger.ProjectCommand{selection: selection, client: query.client}
     end
   )
 
@@ -247,6 +289,23 @@ defmodule Dagger.Client do
         end
 
       %Dagger.Socket{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "## Optional Arguments\n\n* `id` -"
+    @spec type_def(t(), keyword()) :: Dagger.TypeDef.t()
+    def type_def(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "typeDef")
+
+      selection =
+        if is_nil(optional_args[:id]) do
+          selection
+        else
+          arg(selection, "id", optional_args[:id])
+        end
+
+      %Dagger.TypeDef{selection: selection, client: query.client}
     end
   )
 end

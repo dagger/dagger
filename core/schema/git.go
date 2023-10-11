@@ -71,7 +71,7 @@ func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gi
 		Pipeline:   parent.PipelinePath(),
 	}
 	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.ToService()
+		svc, err := args.ExperimentalServiceHost.Decode()
 		if err != nil {
 			return gitRepository{}, nil
 		}

@@ -26,9 +26,9 @@ func (s *cacheSchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"cacheVolume": ToResolver(s.cacheVolume),
 		},
-		"CacheVolume": ObjectResolver{
+		"CacheVolume": ToIDableObjectResolver(core.CacheID.Decode, ObjectResolver{
 			"id": ToResolver(s.id),
-		},
+		}),
 	}
 }
 

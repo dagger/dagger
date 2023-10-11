@@ -1,0 +1,1 @@
+MissingType = type(object)

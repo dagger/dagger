@@ -29,9 +29,9 @@ func (s *socketSchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"socket": ToResolver(s.socket),
 		},
-		"Socket": ObjectResolver{
+		"Socket": ToIDableObjectResolver(socket.ID.Decode, ObjectResolver{
 			"id": ToResolver(s.id),
-		},
+		}),
 	}
 }
 
@@ -49,5 +49,5 @@ type socketArgs struct {
 
 // nolint: unparam
 func (s *socketSchema) socket(_ *core.Context, _ any, args socketArgs) (*socket.Socket, error) {
-	return args.ID.ToSocket()
+	return args.ID.Decode()
 }
