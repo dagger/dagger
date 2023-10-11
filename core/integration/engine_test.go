@@ -91,7 +91,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 		WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"}).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		}).Service()
+		})
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine.Service())
 	require.NoError(t, err)
