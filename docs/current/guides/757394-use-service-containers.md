@@ -12,6 +12,9 @@ import TabItem from "@theme/TabItem";
 import Embed from '@site/src/components/atoms/embed.js'
 
 # Use Service Containers in Dagger
+:::warning
+Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call Container.service to get a service instead of binding directly to a container. See [service containers to containers](#container-services-to-containers) for examples.
+:::
 
 ## Introduction
 
@@ -29,8 +32,8 @@ This tutorial teaches you the basics of using service containers in Dagger.
 
 This tutorial assumes that:
 
-- You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
-- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md) or [Node.js](../sdk/nodejs/835948-install.md) SDK.
+- You have a Go, Python, or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/), or [Node.js](https://nodejs.org/en/download/).
+- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md), or [Node.js](../sdk/nodejs/835948-install.md) SDK.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Key concepts
@@ -121,7 +124,7 @@ Dagger offers two methods to work with service ports:
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-- Use the `WithExposedPort()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `WithExposedPort()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
 - Use the `Endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
 
 Here's an example:
@@ -152,10 +155,19 @@ Here's an example:
 </Tabs>
 
 ## Bind services
+Binding a service to a container or the host creates a dependency in your Dagger pipeline. The service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
+
+You can bind a service with Dagger in three ways:
+* [A service container to a client container](use-service-containers#container-services-to-containers)
+* [A host service to a client container](use-service-containers#host-services-to-containers)
+* [A container service to the host](use-service-containers#container-services-to-the-host)
+
+### Container services to containers
+:::warning
+Dagger v0.8.8 includes a breaking change for binding service containers to containers. The examples below have been updated.
+:::
 
 Dagger enables users to bind a service container to a client container with an alias (such as `redis`) that the client container can use as a hostname.
-
-Binding a service to a container expresses a dependency: the service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
 
 Here's an example of an HTTP service automatically starting in tandem with a client container. The service binding enables the client container to access the HTTP service using the alias `www`.
 
@@ -201,7 +213,145 @@ When a service is bound to a container, it also conveys to any outputs of that c
 </TabItem>
 </Tabs>
 
-## Understand the service lifecycle
+### Host services to containers
+Starting with Dagger v0.8.8, you can bind host services to client containers. 
+
+This type of service binding is useful when you need services on the host to communicate TO one or more containers. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. 
+
+In your Dagger pipeline, call `Host.tunnel(service).start`. By default, Dagger will let the operating system randomly choose which port to use based on the available ports on the host's side. You then call `endpoint` to get the final `addr` with whichever port is bound.
+
+Here is an example of how to instantiate host services with Dagger:
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+<Embed id="" />
+
+</TabItem>
+<TabItem value="Node.js">
+
+<Embed id="" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="" />
+
+</TabItem>
+</Tabs>
+
+### Container services to the host
+Starting with Dagger v0.8.8, you can client containers to the host.
+
+This type of container networking is useful when you need a client container to be able to access services running on the host. 
+
+Call `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. You then set the service binding on the client container to the host.
+
+Here's an example:
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+<Embed id="" />
+
+</TabItem>
+<TabItem value="Node.js">
+
+<Embed id="" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="" />
+
+</TabItem>
+</Tabs>
+
+:::note 
+The Dagger implementation is a new flavor of `Socket` and is similar to `Host.unixSocket`.
+:::
+
+## Persist service state
+
+Another way to avoid relying on the grace period is to use a cache volume to persist a service's data, as in the following example:
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+<Embed id="23lXKbJiCz0" />
+
+</TabItem>
+<TabItem value="Node.js">
+
+<Embed id="zhQX8VN750_A" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="uMNx2j1-GTt" />
+
+</TabItem>
+</Tabs>
+
+:::info
+This example uses Redis's `SAVE` command to ensure data is synced. By default, Redis flushes data to disk periodically.
+:::
+
+## Start and stop services
+Starting with Dagger v0.8.8, you can explicitly start and stop services in your pipelines.
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+<Embed id="" />
+
+</TabItem>
+<TabItem value="Node.js">
+
+<Embed id="" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="" />
+
+</TabItem>
+</Tabs>
+
+## Example: MariaDB database service for application tests
+
+The following example demonstrates service containers in action, by creating a MariaDB database service container for use in application unit/integration testing.
+
+The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests).
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+```go file=./snippets/use-services/use-db-service/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/use-services/use-db-service/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/use-services/use-db-service/main.py
+```
+
+</TabItem>
+</Tabs>
+
+This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
+
+:::tip
+Explicitly specifying the service container port with `WithExposedPort()` (Go), `withExposedPort()` (Node.js) or `with_exposed_port()` (Python) is particularly important here. Without it, Dagger will start the service container and immediately allow access to service clients. With it, Dagger will wait for the service to be listening first.
+:::
+
+## Reference: How service binding works for container services
 
 If you're not interested in what's happening in the background, you can skip this section and just trust that services are running when they need to be. If you're interested in the theory, keep reading.
 
@@ -303,65 +453,6 @@ Note that this example relies on the 10-second grace period, which you should tr
 
 :::note
 Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
-:::
-
-## Persist service state
-
-Another way to avoid relying on the grace period is to use a cache volume to persist a service's data, as in the following example:
-
-<Tabs groupId="language" className="embeds">
-<TabItem value="Go">
-
-<Embed id="23lXKbJiCz0" />
-
-</TabItem>
-<TabItem value="Node.js">
-
-<Embed id="zhQX8VN750_A" />
-
-</TabItem>
-<TabItem value="Python">
-
-<Embed id="uMNx2j1-GTt" />
-
-</TabItem>
-</Tabs>
-
-:::info
-This example uses Redis's `SAVE` command to ensure data is synced. By default, Redis flushes data to disk periodically.
-:::
-
-## Example: MariaDB database service for application tests
-
-The following example demonstrates service containers in action, by creating a MariaDB database service container for use in application unit/integration testing.
-
-The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests).
-
-<Tabs groupId="language" className="embeds">
-<TabItem value="Go">
-
-```go file=./snippets/use-services/use-db-service/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```javascript file=./snippets/use-services/use-db-service/index.ts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/use-services/use-db-service/main.py
-```
-
-</TabItem>
-</Tabs>
-
-This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
-
-:::tip
-Explicitly specifying the service container port with `WithExposedPort()` (Go), `withExposedPort()` (Node.js) or `with_exposed_port()` (Python) is particularly important here. Without it, Dagger will start the service container and immediately allow access to service clients. With it, Dagger will wait for the service to be listening first.
 :::
 
 ## Conclusion
