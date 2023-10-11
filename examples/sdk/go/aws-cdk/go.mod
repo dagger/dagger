@@ -3,7 +3,7 @@ module main
 go 1.19
 
 require (
-	dagger.io/dagger v0.8.7
+	dagger.io/dagger v0.8.8
 	github.com/aws/aws-sdk-go-v2/config v1.18.12
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.18.3
@@ -26,15 +26,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.18.3 // indirect
 	github.com/aws/smithy-go v1.13.5 // indirect
-	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/mattn/go-isatty v0.0.17 // indirect
+	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.6 // indirect
 	github.com/yuin/goldmark v1.4.13 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
-	golang.org/x/mod v0.10.0 // indirect
+	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
-	golang.org/x/tools v0.8.0 // indirect
+	golang.org/x/tools v0.13.0 // indirect
 )
