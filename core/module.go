@@ -221,7 +221,7 @@ func (mod *Module) FromConfig(
 
 	if mod.Runtime == nil {
 		if err := installRuntime(mod); err != nil {
-			return nil, fmt.Errorf("failed to get runtime: %w", err)
+			return nil, fmt.Errorf("failed to get runtime for %q: %w", mod.Name, err)
 		}
 	}
 

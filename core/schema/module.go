@@ -276,7 +276,7 @@ func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Dire
 		return s.installRuntime(ctx, m)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create module from config: %w", err)
+        return nil, fmt.Errorf("failed to create module from config `%s::%s`: %w", sourceDir.Dir, args.SourceSubpath, err)
 	}
 
 	return s.loadModuleFromRuntime(ctx, mod)
@@ -330,10 +330,12 @@ func (s *moduleSchema) loadRuntimeModule(ctx *core.Context, mod *core.Module) (*
 		return nil, fmt.Errorf("failed to create sdk module from config: %w", err)
 	}
 
+    name := sdkMod.Name
+
 	// call the canned "" entrypoint to load the module's definitions
 	sdkMod, err = s.loadModuleFromRuntime(ctx, sdkMod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load sdk module functions: %w", err)
+		return nil, fmt.Errorf("failed to load sdk module %q functions: %w", name, err)
 	}
 
 	return sdkMod, nil
@@ -348,7 +350,7 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 
 	sdkMod, err := s.loadRuntimeModule(ctx, mod)
 	if err != nil {
-		return fmt.Errorf("failed to load sdk module: %w", err)
+		return fmt.Errorf("failed to load sdk runtime module for %q: %w", mod.Name, err)
 	}
 
 	moduleName := gqlObjectName(sdkMod.Name)
@@ -689,7 +691,7 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		Filename: core.ModMetaOutputPath,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read function output file: %w", err)
+		return nil, fmt.Errorf("failed to read function `%s.%s` output file (result -> %v): %w", mod.Name, fn.Name, result, err)
 	}
 
 	var rawOutput any
@@ -955,7 +957,7 @@ func (s *moduleSchema) loadModuleFromRuntime(ctx *core.Context, mod *core.Module
 			Cache: true,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to call module to get functions: %w", err)
+			return nil, fmt.Errorf("failed to call module %q to get functions: %w", mod.Name, err)
 		}
 		idStr, ok := result.(string)
 		if !ok {
