@@ -103,12 +103,11 @@ To get started, clone or pull this branch:
 
 ```sh
 # fresh clone
-git clone https://github.com/shykes/dagger --branch zenith-functions ./dagger/
+git clone https://github.com/dagger/dagger
 
 # OR pull branch
-git remote add shykes https://github.com/shykes/dagger
-git fetch shykes zenith-functions
-git checkout zenith-functions
+git fetch origin
+git switch -c main origin/main
 ```
 
 Next, build the dev `dagger` CLI and start the dev engine:
