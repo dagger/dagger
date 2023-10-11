@@ -2649,7 +2649,7 @@ type HostServiceOpts struct {
 }
 
 // Creates a service that forwards traffic to a specified address via the host.
-func (r *Host) Service(ports []*PortForward, opts ...HostServiceOpts) *Service {
+func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 	q := r.q.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `host` optional argument
@@ -2695,7 +2695,7 @@ type HostTunnelOpts struct {
 	// each port maps to a random port chosen by the host.
 	//
 	// If ports are given and native is true, the ports are additive.
-	Ports []*PortForward
+	Ports []PortForward
 }
 
 // Creates a tunnel that forwards traffic from the host to a service.
