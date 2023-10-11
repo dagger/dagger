@@ -162,7 +162,7 @@ Operations are automatically cached every time a Dagger pipeline runs. [Cache vo
 
 ### Can I run the Dagger Engine as a "rootless" container?
 
-No. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not have "root" privileges for all devices on the host system. Currently, the Dagger Engine cannot be run as a rootless container; network, platform and volume constraints related to rootless usage would significantly limit its capabilities and performance. [Read more about these constraints](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
+No. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the "root" user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would significantly limit its capabilities and performance. [Read more about these constraints](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
 
 ### I am stuck. How can I get help?
 
