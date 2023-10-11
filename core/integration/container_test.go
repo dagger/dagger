@@ -188,7 +188,7 @@ CMD goenv
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []*dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
+		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
