@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,52 +14,54 @@ import (
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
 	"golang.org/x/term"
 )
 
-// TODO: This is highly WIP!
-// - [ ] Add support for passing arguments to functions.
-// - [ ] Add support for getting objects/functions by name in the API instead of having to loop.
-// - [ ] Create cobra subcommands for functions.
-// - [ ] Create multiple "verb" commands for calling functions with different intents.
-// - [ ] Add `dagger shell` as a high priority for its debugging usefulness.
-// - [ ] Add a --help flag to list available functions.
-// - [ ] Maybe a list/functions command to list all functions and compatible verbs that can be used to call them.
-// - [ ] Maybe compose a query instead of using `Function.call`?
-// - [ ] Use `dagger run` instead of `dagger call` for generic execution.
-//       Detect if running in the context of a module for backwards compatibility.
-// - [ ] Improve progrock usage.
-// - [ ] Support non-progrock (e.g., --progress plain) output.
-// - [ ] Fix Go SDK's listing bug.
-// - [ ] Add support for chaining function calls.
+var callFlags = pflag.NewFlagSet("call", pflag.ContinueOnError)
 
-// outputPath is the host directory to export assets to.
-// var outputPath string
-
-var callCmd = &cobra.Command{
-	Use:    "call [function]",
-	Long:   `Call a module's function.`,
-	RunE:   loadModCmdWrapper(RunFunction, ""),
+var funcsCmd = &cobra.Command{
+	Use:    "functions",
+	Long:   `List all functions in a module.`,
 	Hidden: true,
+	RunE:   loadModCmdWrapper(ListFunctions, ""),
 }
 
-func init() {
-	rootCmd.AddCommand(callCmd)
+var callCmd = &cobra.Command{
+	Use:                "call",
+	Short:              `Call a module's function.`,
+	DisableFlagParsing: true,
+	Hidden:             true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		callFlags.SetInterspersed(false)
+		callFlags.AddFlagSet(cmd.Flags())
+		callFlags.AddFlagSet(cmd.PersistentFlags())
 
-	// TODO: Use `dagger download` verb.
-	// callCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the function returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the module's root directory when using a module loaded from a local dir.")
-	callCmd.PersistentFlags().BoolVar(&focus, "focus", true, "Only show output for focused commands.")
+		err := callFlags.Parse(args)
+		if err != nil {
+			return fmt.Errorf("failed to parse top-level flags: %w", err)
+		}
 
-	callCmd.AddCommand(
-		&cobra.Command{
-			Use:          "list",
-			Long:         `List your module's functions.`,
-			SilenceUsage: true,
-			RunE:         loadModCmdWrapper(ListFunctions, ""),
-			Hidden:       true,
-		},
-	)
+		return loadModCmdWrapper(RunFunction, "")(cmd, args)
+	},
+}
+
+type callFunction struct {
+	Name        string
+	CmdName     string
+	Description string
+	Args        []callFunctionArg
+	orig        dagger.Function
+}
+
+type callFunctionArg struct {
+	Name         string
+	FlagName     string
+	Description  string
+	Optional     bool
+	DefaultValue any
+	orig         dagger.FunctionArg
 }
 
 func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger.Module, cmd *cobra.Command, cmdArgs []string) (err error) {
@@ -66,41 +69,16 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 		return fmt.Errorf("no module specified and no default module found in current directory")
 	}
 
+	dag := engineClient.Dagger()
 	rec := progrock.FromContext(ctx)
 	vtx := rec.Vertex("cmd-list-functions", "list functions", progrock.Focused())
 	defer func() { vtx.Done(err) }()
 
-	modName, err := mod.Name(ctx)
+	loadFuncs := vtx.Task("loading functions")
+	funcs, err := loadFunctions(ctx, dag, mod)
+	loadFuncs.Done(err)
 	if err != nil {
-		return fmt.Errorf("failed to get module name: %w", err)
-	}
-
-	modObjs, err := mod.Objects(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get module objects: %w", err)
-	}
-
-	var modFuncs []dagger.Function
-	for _, def := range modObjs {
-		objDef := def.AsObject()
-		objName, err := objDef.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get object name: %w", err)
-		}
-
-		// TODO: Only list top level functions for now (i.e., type name matches module name).
-		if strcase.ToLowerCamel(objName) != strcase.ToLowerCamel(modName) {
-			continue
-		}
-
-		funcs, err := objDef.Functions(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get object functions: %w", err)
-		}
-		if funcs == nil {
-			continue
-		}
-		modFuncs = append(modFuncs, funcs...)
+		return fmt.Errorf("failed to load functions: %w", err)
 	}
 
 	tw := tabwriter.NewWriter(vtx.Stdout(), 0, 0, 2, ' ', 0)
@@ -109,27 +87,9 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 		fmt.Fprintf(tw, "%s\t%s\n", termenv.String("function name").Bold(), termenv.String("description").Bold())
 	}
 
-	printFunc := func(function *dagger.Function) error {
-		name, err := function.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get function name: %w", err)
-		}
-		name = strcase.ToKebab(name)
-
-		descr, err := function.Description(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get function description: %w", err)
-		}
-		fmt.Fprintf(tw, "%s\t%s\n", name, strings.TrimSpace(descr))
-		return nil
-	}
-
-	for _, function := range modFuncs {
-		function := function
-		err = printFunc(&function)
-		if err != nil {
-			return err
-		}
+	for _, function := range funcs {
+		// TODO: Add a third column with available verbs.
+		fmt.Fprintf(tw, "%s\t%s\n", function.Name, function.Description)
 	}
 
 	return tw.Flush()
@@ -140,114 +100,313 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 		return fmt.Errorf("no module specified and no default module found in current directory")
 	}
 
-	// TODO: Add supporting fields in the API to get module object and function
-	// by name instead of looping and dealing with codegen bug.
-
-	// TODO: Parse args and pass them to the function. Make a Directory/file
-	// from a host path, for example.
-	target := cmdArgs[0]
-	gqlFuncName := strcase.ToLowerCamel(target)
-
 	dag := engineClient.Dagger()
 	rec := progrock.FromContext(ctx)
-	vtx := rec.Vertex("cmd-call-function", fmt.Sprintf("call function: %s", target), progrock.Focused())
+	vtx := rec.Vertex("cmd-func-loader", strings.Join(append([]string{cmd.Name()}, callFlags.Args()...), " "), progrock.Focused())
 	defer func() { vtx.Done(err) }()
 
-	modName, err := mod.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get module name: %w", err)
+	var stdout io.Writer
+	var stderr io.Writer
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		stdout = os.Stdout
+		stderr = os.Stderr
+	} else {
+		stdout = vtx.Stdout()
+		stderr = vtx.Stderr()
 	}
 
-	gqlModName := strcase.ToLowerCamel(modName)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+
+	funcs, err := loadFunctions(ctx, dag, mod)
+	if err != nil {
+		return fmt.Errorf("failed to load functions: %w", err)
+	}
+
+	for _, fn := range funcs {
+		subCmd, err := addCmd(ctx, dag, mod, fn, vtx)
+		if err != nil {
+			return fmt.Errorf("failed to add cmd: %w", err)
+		}
+		cmd.AddCommand(subCmd)
+	}
+
+	subCmd, subArgs, err := cmd.Find(callFlags.Args())
+	if err != nil {
+		return fmt.Errorf("failed to find command: %w", err)
+	}
+
+	if help, _ := callFlags.GetBool("help"); help {
+		return cmd.Help()
+	}
+
+	if subCmd.Name() == cmd.Name() {
+		if len(subArgs) > 0 {
+			return fmt.Errorf("unknown command %q for %q", subArgs[0], cmd.CommandPath())
+		}
+		return cmd.Help()
+	}
+
+	err = subCmd.RunE(subCmd, subArgs)
+	if err != nil {
+		return fmt.Errorf("failed to execute command: %w", err)
+	}
+
+	return nil
+}
+
+func addCmd(ctx context.Context, dag *dagger.Client, mod *dagger.Module, fn *callFunction, vtx *progrock.VertexRecorder) (sub *cobra.Command, err error) {
+	subCmd := &cobra.Command{
+		Use:   strcase.ToKebab(fn.Name),
+		Short: fn.Description,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Only load function arguments when it's actually needed.
+			if err = loadArguments(ctx, dag, fn); err != nil {
+				return err
+			}
+
+			for _, arg := range fn.Args {
+				arg := arg
+
+				// TODO: handle more types
+				/*
+				   switch kind {
+				   case dagger.Stringkind:
+				       subCmd.Flags().String(flagName, "", argDescription)
+				   default:
+				       // TODO: Handle more types.
+				       continue
+				   }
+				*/
+
+				// TODO: handle default value properly
+
+				defaultVal, ok := arg.DefaultValue.(string)
+				if !ok {
+					defaultVal = ""
+				}
+
+				cmd.Flags().String(arg.FlagName, defaultVal, arg.Description)
+
+				/*
+					// TODO: This won't work on its own because cobra checks required
+					// flags before the RunE function is called. We need to manually
+					// check the flags after parsing them.
+					if !arg.Optional && defaultVal != "" {
+						cmd.MarkFlagRequired(arg.FlagName)
+					}
+				*/
+			}
+
+			if err = cmd.ParseFlags(args); err != nil {
+				return fmt.Errorf("failed to parse subcommand flags: %w", err)
+			}
+
+			if help, _ := cmd.Flags().GetBool("help"); help {
+				return cmd.Help()
+			}
+
+			var inputs []dagger.FunctionCallInput
+
+			for _, arg := range fn.Args {
+				arg := arg
+
+				// TODO: Handle various types.
+				flagVal, err := cmd.Flags().GetString(arg.FlagName)
+				if err != nil {
+					return fmt.Errorf("failed to get flag %q: %w", arg.FlagName, err)
+				}
+
+				jsonVal, err := json.Marshal(flagVal)
+				if err != nil {
+					return fmt.Errorf("failed to marshal flag value %q: %w", arg.FlagName, err)
+				}
+
+				inputs = append(inputs, dagger.FunctionCallInput{
+					Name:  arg.Name,
+					Value: dagger.JSON(string(jsonVal)),
+				})
+			}
+
+			// TODO: Use query builder for chainable calls, but need to make it public.
+			res, err := fn.orig.Call(ctx, dagger.FunctionCallOpts{
+				Input: inputs,
+			})
+
+			if err != nil {
+				return fmt.Errorf("failed to call function: %w", err)
+			}
+
+			var result interface{}
+
+			if err = json.Unmarshal([]byte(res), &result); err != nil {
+				return fmt.Errorf("failed to unmarshal result: %w", err)
+			}
+
+			// TODO: Figure out what makes sense based on return type. For example,
+			// if a File or Directory, export to `outputPath`.
+			cmd.Println(result)
+
+			return nil
+		},
+	}
+
+	subCmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Show help for '%s'", fn.CmdName))
+
+	return subCmd, nil
+}
+
+func loadFunctions(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (callFuncs []*callFunction, err error) {
+	modName, err := mod.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module name: %w", err)
+	}
+
+	// Normalize module name like a GraphQL field name for comparison later on.
+	gqlFieldName := strcase.ToLowerCamel(modName)
 
 	modObjs, err := mod.Objects(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get module objects: %w", err)
+		return nil, fmt.Errorf("failed to get module objects: %w", err)
 	}
 
-	var currFunc *dagger.Function
-
 	for _, def := range modObjs {
+		def := def
+
+		// TODO: workaround bug in codegen
+		objID, err := def.ID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get object id: %w", err)
+		}
+		def = *dag.TypeDef(
+			dagger.TypeDefOpts{
+				ID: objID,
+			},
+		)
+
 		objDef := def.AsObject()
 		objName, err := objDef.Name(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get object name: %w", err)
+			return nil, fmt.Errorf("failed to get object name: %w", err)
 		}
 
 		// Only list top level functions (i.e., type name matches module name).
-		if strcase.ToLowerCamel(objName) != gqlModName {
+		if strcase.ToLowerCamel(objName) != gqlFieldName {
 			continue
 		}
 
-		funcs, err := objDef.Functions(ctx)
+		objFuncs, err := objDef.Functions(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get object functions: %w", err)
+			return nil, fmt.Errorf("failed to get object functions: %w", err)
 		}
-		if funcs == nil {
+		if objFuncs == nil {
 			continue
 		}
-		for _, function := range funcs {
-			function := function
-			funcName, err := function.Name(ctx)
+		for _, objFunc := range objFuncs {
+			objFunc := objFunc
+
+			// TODO: workaround bug in codegen
+			funcID, err := objFunc.ID(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get function name: %w", err)
+				return nil, fmt.Errorf("failed to get function id: %w", err)
 			}
-			if strcase.ToLowerCamel(funcName) == gqlFuncName {
-				currFunc = &function
-				break
+			fn := *dag.Function(funcID)
+			if err != nil {
+				return nil, err
 			}
+
+			name, err := fn.Name(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get function name: %w", err)
+			}
+
+			description, err := fn.Description(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get function description: %w", err)
+			}
+
+			// Some descriptions have a trailing newline, which is not desirable.
+			description = strings.TrimSpace(description)
+
+			callFuncs = append(callFuncs, &callFunction{
+				orig:        fn,
+				Name:        name,
+				CmdName:     strcase.ToKebab(name),
+				Description: description,
+			})
 		}
 	}
 
-	if currFunc == nil {
-		return fmt.Errorf("function %q not found", target)
+	return callFuncs, nil
+}
+
+func loadArguments(ctx context.Context, _ *dagger.Client, fn *callFunction) error {
+	if fn.Args != nil {
+		return fmt.Errorf("function arguments already loaded")
 	}
 
-	// TODO: Fix Function.call: Unexpected end of JSON input.
-	// result, err := currFunc.Call(ctx)
-
-	// TODO: Easier to use querybuilder but it's internal right now.
-	var res struct {
-		CurrMod struct {
-			CurrFunc string
-		}
-	}
-
-	query := fmt.Sprintf(
-		`
-        query {
-            currMod: %s {
-                currFunc: %s
-            }
-        }
-        `,
-		gqlModName,
-		gqlFuncName,
-	)
-
-	err = dag.Do(ctx, &dagger.Request{
-		Query:     query,
-		Variables: map[string]interface{}{},
-	}, &dagger.Response{
-		Data: &res,
-	})
-
+	funcArgs, err := fn.orig.Args(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to call function: %w", err)
+		return fmt.Errorf("failed to get function args: %w", err)
 	}
 
-	result := res.CurrMod.CurrFunc
+	for _, funcArg := range funcArgs {
+		funcArg := funcArg
 
-	var out io.Writer
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		out = os.Stdout
-	} else {
-		out = vtx.Stdout()
+		// TODO: workaround bug in codegen
+		// TODO: Need constructor for dagger.FunctionArg
+		/*
+		   argID, err := funcArg.ID(ctx)
+		   if err != nil {
+		       return nil, fmt.Errorf("failed to get arg id: %w", err)
+		   }
+		*/
+
+		name, err := funcArg.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get arg name: %w", err)
+		}
+
+		description, err := funcArg.Description(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get arg description: %w", err)
+		}
+
+		defaultJSON, err := funcArg.DefaultValue(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get arg default value: %w", err)
+		}
+
+		var defaultVal any
+		if defaultJSON != "" {
+			if err = json.Unmarshal([]byte(defaultJSON), &defaultVal); err != nil {
+				return fmt.Errorf("failed to unmarshal arg default value (%v): %w", defaultJSON, err)
+			}
+		}
+
+		// TODO: Can't get Kind with go codegen bug. Need to make FunctionArg
+		// an idable type.
+
+		/*
+		   kind, err := funcArg.TypeDef().Kind(ctx)
+		   if err != nil {
+		       return nil, fmt.Errorf("failed to get arg type: %w", err)
+		   }
+
+		   optional, err := funcArg.TypeDef().Optional(ctx)
+		   if err != nil {
+		       return nil, fmt.Errorf("failed to check if arg is optional: %w", err)
+		   }
+		*/
+
+		fn.Args = append(fn.Args, callFunctionArg{
+			orig:         funcArg,
+			Name:         name,
+			FlagName:     strcase.ToKebab(name),
+			Description:  strings.TrimSpace(description),
+			DefaultValue: defaultVal,
+		})
 	}
-
-	// TODO: Figure out what makes sense based on return type. For example,
-	// if a File or Directory, export to `outputPath`.
-	fmt.Fprintln(out, result)
 
 	return nil
 }

@@ -38,6 +38,7 @@ func init() {
 		queryCmd,
 		runCmd,
 		moduleCmd,
+		funcsCmd,
 		callCmd,
 		sessionCmd(),
 	)

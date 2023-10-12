@@ -38,6 +38,7 @@ func init() {
 	moduleCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	funcsCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	callCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
