@@ -6,41 +6,16 @@ import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.TypeName;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import javax.lang.model.element.Modifier;
 
 public class Helpers {
 
-  private static final Map<String, String> CUSTOM_SCALARS =
-      new HashMap<>() {
-        {
-          put("ContainerID", "Container");
-          put("FileID", "File");
-          put("DirectoryID", "Directory");
-          put("SecretID", "Secret");
-          put("SocketID", "Socket");
-          put("CacheVolumeID", "CacheVolume");
-          put("ModuleID", "Module");
-          put("FunctionID", "Function");
-          put("TypeDefID", "TypeDef");
-          put("GeneratedCodeID", "GeneratedCode");
-          put("Platform", "Platform");
-          put("JSON", "JSON");
-          put("Void", "Void");
-        }
-      };
-
-  static boolean isScalar(String typeName) {
-    return CUSTOM_SCALARS.containsKey(typeName);
-  }
-
   static ClassName convertScalarToObject(String typeName) {
-    if (CUSTOM_SCALARS.containsKey(typeName)) {
-      return ClassName.bestGuess(CUSTOM_SCALARS.get(typeName));
+    if (typeName.endsWith("ID")) {
+      return ClassName.bestGuess(typeName.substring(0, typeName.length() - 2));
     }
-    throw new IllegalArgumentException(String.format("Unsupported Scalar type: %s", typeName));
+    return ClassName.bestGuess(typeName);
   }
 
   /** returns true if the field returns an ID that should be converted into an object. */
@@ -50,7 +25,11 @@ public class Helpers {
         && field
             .getParentObject()
             .getName()
-            .equals(CUSTOM_SCALARS.get(field.getTypeRef().getTypeName()));
+            .equals(
+                field
+                    .getTypeRef()
+                    .getTypeName()
+                    .substring(0, field.getTypeRef().getTypeName().length() - 2));
   }
 
   static List<Field> getArrayField(Field field, Schema schema) {

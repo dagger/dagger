@@ -32,7 +32,6 @@ class ObjectVisitor extends AbstractVisitor {
         TypeSpec.classBuilder(Helpers.formatName(type))
             .addJavadoc(type.getDescription())
             .addModifiers(Modifier.PUBLIC)
-            // .addSuperinterface(ClassName.bestGuess("IdProvider"))
             .addField(
                 FieldSpec.builder(
                         ClassName.bestGuess("QueryBuilder"), "queryBuilder", Modifier.PRIVATE)
@@ -71,14 +70,15 @@ class ObjectVisitor extends AbstractVisitor {
               .build();
       classBuilder.addMethod(constructor);
 
+      // If Object has an "id" field, implement IDAble interface
+      if (type.providesId()) {
+        classBuilder.addSuperinterface(
+            ParameterizedTypeName.get(
+                ClassName.bestGuess("IDAble"), type.getIdField().getTypeRef().formatOutput()));
+      }
+
       for (Field scalarField :
           type.getFields().stream().filter(f -> f.getTypeRef().isScalar()).toList()) {
-        // If Object has an "id" field, implement IdProvider interface
-        if ("id".equals(scalarField.getName())) {
-          classBuilder.addSuperinterface(
-              ParameterizedTypeName.get(
-                  ClassName.bestGuess("IdProvider"), scalarField.getTypeRef().formatOutput()));
-        }
         classBuilder.addField(
             scalarField.getTypeRef().formatOutput(), scalarField.getName(), Modifier.PRIVATE);
       }
