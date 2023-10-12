@@ -6,7 +6,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   alias Dagger.Codegen.Elixir.Type
 
   @id_modules [
-    "CacheID",
+    "CacheVolumeID",
     "ContainerID",
     "DirectoryID",
     "FileID",

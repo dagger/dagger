@@ -37,10 +37,10 @@ func connect(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Co
 	return client, ctx
 }
 
-func newCache(t *testing.T) core.CacheID {
+func newCache(t *testing.T) core.CacheVolumeID {
 	var res struct {
 		CacheVolume struct {
-			ID core.CacheID
+			ID core.CacheVolumeID
 		}
 	}
 

@@ -75,7 +75,7 @@ public class Helpers {
           put("SecretID", "Secret");
           put("ServiceID", "Service");
           put("SocketID", "Socket");
-          put("CacheID", "CacheVolume");
+          put("CacheVolumeID", "CacheVolume");
           put("ModuleID", "Module");
           put("FunctionID", "Function");
           put("TypeDefID", "TypeDef");

@@ -103,12 +103,11 @@ To get started, clone or pull this branch:
 
 ```sh
 # fresh clone
-git clone https://github.com/shykes/dagger --branch zenith-functions ./dagger/
+git clone https://github.com/dagger/dagger
 
 # OR pull branch
-git remote add shykes https://github.com/shykes/dagger
-git fetch shykes zenith-functions
-git checkout zenith-functions
+git fetch origin
+git switch -c main origin/main
 ```
 
 Next, build the dev `dagger` CLI and start the dev engine:
@@ -369,7 +368,7 @@ EOF
 #### Publishing your own modules
 
 You can publish your own modules to the
-[Daggerverse](https://daggerverse.fly.dev), so that other users can easily
+[Daggerverse](https://daggerverse.dev), so that other users can easily
 discover them. At the moment, the Daggerverse is only used to discover other
 modules, all the data is stored and fetched from GitHub.
 
@@ -385,7 +384,7 @@ git remote add origin git@github.com:<user>/daggerverse.git
 git push origin main
 ```
 
-Next, navigate to <https://daggerverse.fly.dev>, and use the top-module bar to
+Next, navigate to <https://daggerverse.dev>, and use the top-module bar to
 paste the GitHub link to your module (`github.com/<user>/daggerverse.git`),
 then click "Crawl".
 

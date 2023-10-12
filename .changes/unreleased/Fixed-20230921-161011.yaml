@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'cli: restart manually stopped engine containers'
-time: 2023-09-21T16:10:11.609465898+01:00
-custom:
-  Author: jedevc
-  PR: "5811"

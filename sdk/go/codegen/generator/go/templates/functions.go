@@ -55,6 +55,9 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ToUpperCase":      funcs.ToUpperCase,
 		"ConvertID":        funcs.ConvertID,
 		"IsSelfChainable":  funcs.IsSelfChainable,
+		"IsIDableObject":   funcs.IsIDableObject,
+		"InnerType":        funcs.InnerType,
+		"ObjectName":       funcs.ObjectName,
 
 		// go specific
 		"Comment":                 funcs.comment,

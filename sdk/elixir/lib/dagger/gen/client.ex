@@ -27,7 +27,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Loads a container from ID.\n\nNull ID returns an empty container (scratch).\nOptional platform argument initializes new containers to execute and publish as that platform.\nPlatform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `id` - \n* `platform` -"
+    @doc "Creates a scratch container or loads one by ID.\n\nOptional platform argument initializes new containers to execute and publish\nas that platform. Platform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `id` - \n* `platform` -"
     @spec container(t(), keyword()) :: Dagger.Container.t()
     def container(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "container")
@@ -84,7 +84,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a directory by ID. No argument produces an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @doc "Creates an empty directory or loads one by ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
     @spec directory(t(), keyword()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "directory")
@@ -103,6 +103,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
+    @deprecated "Use `load_file_from_id` instead"
     @spec file(t(), Dagger.FileID.t()) :: {:ok, Dagger.File.t() | nil} | {:error, term()}
     def file(%__MODULE__{} = query, file) do
       selection = select(query.selection, "file")
@@ -112,27 +113,26 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a function by ID\n\n## Required Arguments\n\n* `id` -"
-    @spec function(t(), Dagger.Function.t()) :: Dagger.Function.t()
-    def function(%__MODULE__{} = query, id) do
+    @doc "Create a function.\n\n## Required Arguments\n\n* `name` - \n* `return_type` -"
+    @spec function(t(), Dagger.String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
+    def function(%__MODULE__{} = query, name, return_type) do
       selection = select(query.selection, "function")
-      selection = arg(selection, "id", id)
+      selection = arg(selection, "name", name)
+      selection = arg(selection, "returnType", return_type)
       %Dagger.Function{selection: selection, client: query.client}
     end
   )
 
   (
-    @doc "Load GeneratedCode by ID, or create a new one if id is unset.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec generated_code(t(), keyword()) :: Dagger.GeneratedCode.t()
-    def generated_code(%__MODULE__{} = query, optional_args \\ []) do
+    @doc "Create a code generation result, given a directory containing the generated\ncode.\n\n## Required Arguments\n\n* `code` -"
+    @spec generated_code(t(), Dagger.Directory.t()) :: Dagger.GeneratedCode.t()
+    def generated_code(%__MODULE__{} = query, code) do
       selection = select(query.selection, "generatedCode")
 
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          arg(selection, "id", optional_args[:id])
-        end
+      (
+        {:ok, id} = Dagger.Directory.id(code)
+        selection = arg(selection, "code", id)
+      )
 
       %Dagger.GeneratedCode{selection: selection, client: query.client}
     end
@@ -191,30 +191,151 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a module by ID, or create a new one if id is unset.\n\n\n\n## Optional Arguments\n\n* `id` -"
-    @spec module(t(), keyword()) :: Dagger.Module.t()
-    def module(%__MODULE__{} = query, optional_args \\ []) do
-      selection = select(query.selection, "module")
+    @doc "Load a CacheVolume from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_cache_volume_from_id(t(), Dagger.CacheVolume.t()) :: Dagger.CacheVolume.t()
+    def load_cache_volume_from_id(%__MODULE__{} = query, cache_volume) do
+      selection = select(query.selection, "loadCacheVolumeFromID")
 
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          arg(selection, "id", optional_args[:id])
-        end
+      (
+        {:ok, id} = Dagger.CacheVolume.id(cache_volume)
+        selection = arg(selection, "id", id)
+      )
 
+      %Dagger.CacheVolume{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Loads a container from an ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_container_from_id(t(), Dagger.Container.t()) :: Dagger.Container.t()
+    def load_container_from_id(%__MODULE__{} = query, container) do
+      selection = select(query.selection, "loadContainerFromID")
+
+      (
+        {:ok, id} = Dagger.Container.id(container)
+        selection = arg(selection, "id", id)
+      )
+
+      %Dagger.Container{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a Directory from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_directory_from_id(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
+    def load_directory_from_id(%__MODULE__{} = query, directory) do
+      selection = select(query.selection, "loadDirectoryFromID")
+
+      (
+        {:ok, id} = Dagger.Directory.id(directory)
+        selection = arg(selection, "id", id)
+      )
+
+      %Dagger.Directory{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a File from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_file_from_id(t(), Dagger.File.t()) :: Dagger.File.t()
+    def load_file_from_id(%__MODULE__{} = query, file) do
+      selection = select(query.selection, "loadFileFromID")
+
+      (
+        {:ok, id} = Dagger.File.id(file)
+        selection = arg(selection, "id", id)
+      )
+
+      %Dagger.File{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a function argument by ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_function_arg_from_id(t(), Dagger.FunctionArg.t()) :: Dagger.FunctionArg.t()
+    def load_function_arg_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadFunctionArgFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.FunctionArg{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a function by ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_function_from_id(t(), Dagger.Function.t()) :: Dagger.Function.t()
+    def load_function_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadFunctionFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.Function{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a GeneratedCode by ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_generated_code_from_id(t(), Dagger.GeneratedCode.t()) :: Dagger.GeneratedCode.t()
+    def load_generated_code_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadGeneratedCodeFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.GeneratedCode{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a module by ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_module_from_id(t(), Dagger.Module.t()) :: Dagger.Module.t()
+    def load_module_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadModuleFromID")
+      selection = arg(selection, "id", id)
       %Dagger.Module{selection: selection, client: query.client}
     end
   )
 
   (
-    @doc "Create a new function from the provided definition.\n\n## Required Arguments\n\n* `name` - \n* `return_type` -"
-    @spec new_function(t(), Dagger.String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
-    def new_function(%__MODULE__{} = query, name, return_type) do
-      selection = select(query.selection, "newFunction")
-      selection = arg(selection, "name", name)
-      selection = arg(selection, "returnType", return_type)
-      %Dagger.Function{selection: selection, client: query.client}
+    @doc "Load a Secret from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_secret_from_id(t(), Dagger.Secret.t()) :: Dagger.Secret.t()
+    def load_secret_from_id(%__MODULE__{} = query, secret) do
+      selection = select(query.selection, "loadSecretFromID")
+
+      (
+        {:ok, id} = Dagger.Secret.id(secret)
+        selection = arg(selection, "id", id)
+      )
+
+      %Dagger.Secret{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a Socket from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_socket_from_id(t(), Dagger.Socket.t()) :: Dagger.Socket.t()
+    def load_socket_from_id(%__MODULE__{} = query, socket) do
+      selection = select(query.selection, "loadSocketFromID")
+
+      (
+        {:ok, id} = Dagger.Socket.id(socket)
+        selection = arg(selection, "id", id)
+      )
+
+      %Dagger.Socket{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a TypeDef by ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_type_def_from_id(t(), Dagger.TypeDef.t()) :: Dagger.TypeDef.t()
+    def load_type_def_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadTypeDefFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.TypeDef{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Create a new module."
+    @spec module(t()) :: Dagger.Module.t()
+    def module(%__MODULE__{} = query) do
+      selection = select(query.selection, "module")
+      %Dagger.Module{selection: selection, client: query.client}
     end
   )
 
@@ -245,6 +366,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @deprecated "Use `load_secret_from_id` instead"
     @spec secret(t(), Dagger.SecretID.t()) :: Dagger.Secret.t()
     def secret(%__MODULE__{} = query, secret) do
       selection = select(query.selection, "secret")
@@ -276,6 +398,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Loads a socket by its ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @deprecated "Use `load_socket_from_id` instead"
     @spec socket(t(), keyword()) :: Dagger.Socket.t()
     def socket(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "socket")
@@ -293,18 +416,10 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "## Optional Arguments\n\n* `id` -"
-    @spec type_def(t(), keyword()) :: Dagger.TypeDef.t()
-    def type_def(%__MODULE__{} = query, optional_args \\ []) do
+    @doc "Create a new TypeDef."
+    @spec type_def(t()) :: Dagger.TypeDef.t()
+    def type_def(%__MODULE__{} = query) do
       selection = select(query.selection, "typeDef")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          arg(selection, "id", optional_args[:id])
-        end
-
       %Dagger.TypeDef{selection: selection, client: query.client}
     end
   )

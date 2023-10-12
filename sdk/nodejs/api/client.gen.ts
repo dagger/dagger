@@ -74,11 +74,6 @@ export type BuildArg = {
 }
 
 /**
- * A global cache volume identifier.
- */
-export type CacheID = string & { __CacheID: never }
-
-/**
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
@@ -98,6 +93,11 @@ export enum CacheSharingMode {
    */
   Shared = "SHARED",
 }
+/**
+ * A global cache volume identifier.
+ */
+export type CacheVolumeID = string & { __CacheVolumeID: never }
+
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
@@ -564,6 +564,11 @@ export type FunctionWithArgOpts = {
   defaultValue?: JSON
 }
 
+/**
+ * A reference to a FunctionArg.
+ */
+export type FunctionArgID = string & { __FunctionArgID: never }
+
 export type FunctionCallInput = {
   /**
    * The name of the argument to the function
@@ -733,10 +738,6 @@ export type ClientDirectoryOpts = {
   id?: DirectoryID
 }
 
-export type ClientGeneratedCodeOpts = {
-  id?: GeneratedCodeID
-}
-
 export type ClientGitOpts = {
   /**
    * Set to true to keep .git directory.
@@ -756,10 +757,6 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Service
 }
 
-export type ClientModuleOpts = {
-  id?: ModuleID
-}
-
 export type ClientPipelineOpts = {
   /**
    * Pipeline description.
@@ -774,10 +771,6 @@ export type ClientPipelineOpts = {
 
 export type ClientSocketOpts = {
   id?: SocketID
-}
-
-export type ClientTypeDefOpts = {
-  id?: TypeDefID
 }
 
 /**
@@ -884,25 +877,25 @@ export type __TypeFieldsOpts = {
  * A directory whose contents persist across runs.
  */
 export class CacheVolume extends BaseClient {
-  private readonly _id?: CacheID = undefined
+  private readonly _id?: CacheVolumeID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _id?: CacheID
+    _id?: CacheVolumeID
   ) {
     super(parent)
 
     this._id = _id
   }
-  async id(): Promise<CacheID> {
+  async id(): Promise<CacheVolumeID> {
     if (this._id) {
       return this._id
     }
 
-    const response: Awaited<CacheID> = await computeQuery(
+    const response: Awaited<CacheVolumeID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3081,9 +3074,7 @@ export class Function_ extends BaseClient {
    */
   async args(): Promise<FunctionArg[]> {
     type args = {
-      defaultValue: JSON
-      description: string
-      name: string
+      id: FunctionArgID
     }
 
     const response: Awaited<args[]> = await computeQuery(
@@ -3093,7 +3084,7 @@ export class Function_ extends BaseClient {
           operation: "args",
         },
         {
-          operation: "defaultValue description name",
+          operation: "id",
         },
       ],
       this.client
@@ -3107,9 +3098,7 @@ export class Function_ extends BaseClient {
             host: this.clientHost,
             sessionToken: this.sessionToken,
           },
-          r.defaultValue,
-          r.description,
-          r.name
+          r.id
         )
     )
   }
@@ -3259,6 +3248,7 @@ export class Function_ extends BaseClient {
  * argument passed at function call time.
  */
 export class FunctionArg extends BaseClient {
+  private readonly _id?: FunctionArgID = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -3268,15 +3258,38 @@ export class FunctionArg extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: FunctionArgID,
     _defaultValue?: JSON,
     _description?: string,
     _name?: string
   ) {
     super(parent)
 
+    this._id = _id
     this._defaultValue = _defaultValue
     this._description = _description
     this._name = _name
+  }
+
+  /**
+   * The ID of the argument
+   */
+  async id(): Promise<FunctionArgID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<FunctionArgID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -3649,23 +3662,6 @@ export class GeneratedCode extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Set the directory containing the generated code
-   */
-  withCode(code: Directory): GeneratedCode {
-    return new GeneratedCode({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withCode",
-          args: { code },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
   }
 
   /**
@@ -4664,11 +4660,10 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Loads a container from ID.
+   * Creates a scratch container or loads one by ID.
    *
-   * Null ID returns an empty container (scratch).
-   * Optional platform argument initializes new containers to execute and publish as that platform.
-   * Platform defaults to that of the builder's host.
+   * Optional platform argument initializes new containers to execute and publish
+   * as that platform. Platform defaults to that of the builder's host.
    */
   container(opts?: ClientContainerOpts): Container {
     return new Container({
@@ -4736,7 +4731,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a directory by ID. No argument produces an empty directory.
+   * Creates an empty directory or loads one by ID.
    */
   directory(opts?: ClientDirectoryOpts): Directory {
     return new Directory({
@@ -4754,6 +4749,7 @@ export class Client extends BaseClient {
 
   /**
    * Loads a file by ID.
+   * @deprecated Use loadFileFromID instead.
    */
   file(id: FileID): File {
     return new File({
@@ -4770,15 +4766,15 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a function by ID
+   * Create a function.
    */
-  function_(id: FunctionID): Function_ {
+  function_(name: string, returnType: TypeDef): Function_ {
     return new Function_({
       queryTree: [
         ...this._queryTree,
         {
           operation: "function",
-          args: { id },
+          args: { name, returnType },
         },
       ],
       host: this.clientHost,
@@ -4787,15 +4783,16 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load GeneratedCode by ID, or create a new one if id is unset.
+   * Create a code generation result, given a directory containing the generated
+   * code.
    */
-  generatedCode(opts?: ClientGeneratedCodeOpts): GeneratedCode {
+  generatedCode(code: Directory): GeneratedCode {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
         {
           operation: "generatedCode",
-          args: { ...opts },
+          args: { code },
         },
       ],
       host: this.clientHost,
@@ -4861,15 +4858,15 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a module by ID, or create a new one if id is unset.
+   * Load a CacheVolume from its ID.
    */
-  module_(opts?: ClientModuleOpts): Module_ {
-    return new Module_({
+  loadCacheVolumeFromID(id: CacheVolumeID): CacheVolume {
+    return new CacheVolume({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "module",
-          args: { ...opts },
+          operation: "loadCacheVolumeFromID",
+          args: { id },
         },
       ],
       host: this.clientHost,
@@ -4878,15 +4875,184 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a new function from the provided definition.
+   * Loads a container from an ID.
    */
-  newFunction(name: string, returnType: TypeDef): Function_ {
+  loadContainerFromID(id: ContainerID): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadContainerFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a Directory from its ID.
+   */
+  loadDirectoryFromID(id: DirectoryID): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDirectoryFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a File from its ID.
+   */
+  loadFileFromID(id: FileID): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadFileFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a function argument by ID.
+   */
+  loadFunctionArgFromID(id: FunctionArgID): FunctionArg {
+    return new FunctionArg({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadFunctionArgFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a function by ID.
+   */
+  loadFunctionFromID(id: FunctionID): Function_ {
     return new Function_({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "newFunction",
-          args: { name, returnType },
+          operation: "loadFunctionFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a GeneratedCode by ID.
+   */
+  loadGeneratedCodeFromID(id: GeneratedCodeID): GeneratedCode {
+    return new GeneratedCode({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadGeneratedCodeFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a module by ID.
+   */
+  loadModuleFromID(id: ModuleID): Module_ {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadModuleFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a Secret from its ID.
+   */
+  loadSecretFromID(id: SecretID): Secret {
+    return new Secret({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadSecretFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a Socket from its ID.
+   */
+  loadSocketFromID(id: SocketID): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadSocketFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a TypeDef by ID.
+   */
+  loadTypeDefFromID(id: TypeDefID): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadTypeDefFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Create a new module.
+   */
+  module_(): Module_ {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "module",
         },
       ],
       host: this.clientHost,
@@ -4916,6 +5082,7 @@ export class Client extends BaseClient {
 
   /**
    * Loads a secret from its ID.
+   * @deprecated Use loadSecretFromID instead
    */
   secret(id: SecretID): Secret {
     return new Secret({
@@ -4970,6 +5137,7 @@ export class Client extends BaseClient {
 
   /**
    * Loads a socket by its ID.
+   * @deprecated Use loadSocketFromID instead.
    */
   socket(opts?: ClientSocketOpts): Socket {
     return new Socket({
@@ -4984,13 +5152,16 @@ export class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  typeDef(opts?: ClientTypeDefOpts): TypeDef {
+
+  /**
+   * Create a new TypeDef.
+   */
+  typeDef(): TypeDef {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
         {
           operation: "typeDef",
-          args: { ...opts },
         },
       ],
       host: this.clientHost,

@@ -11,6 +11,12 @@ type GeneratedCode struct {
 	VCSGeneratedPaths []string   `json:"vcsGeneratedPaths,omitempty"`
 }
 
+func NewGeneratedCode(code *Directory) *GeneratedCode {
+	return &GeneratedCode{
+		Code: code,
+	}
+}
+
 func (code *GeneratedCode) ID() (GeneratedCodeID, error) {
 	return resourceid.Encode(code)
 }
@@ -25,12 +31,6 @@ func (code GeneratedCode) Clone() *GeneratedCode {
 		cp.Code = cp.Code.Clone()
 	}
 	return &cp
-}
-
-func (code *GeneratedCode) WithCode(dir *Directory) *GeneratedCode {
-	code = code.Clone()
-	code.Code = dir
-	return code
 }
 
 func (code *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {

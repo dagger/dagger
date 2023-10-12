@@ -609,7 +609,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a cache volume mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\").\n* `cache` - Identifier of the cache volume to mount.\n\n## Optional Arguments\n\n* `source` - Identifier of the directory to use as the cache volume's root.\n* `sharing` - Sharing mode of the cache volume.\n* `owner` - A user:group to set for the mounted cache directory.\n\nNote that this changes the ownership of the specified mount along with the\ninitial filesystem provided by source (if any). It does not have any effect\nif/when the cache has already been created.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_mounted_cache(t(), Dagger.String.t(), Dagger.Cache.t(), keyword()) ::
+    @spec with_mounted_cache(t(), Dagger.String.t(), Dagger.CacheVolume.t(), keyword()) ::
             Dagger.Container.t()
     def with_mounted_cache(%__MODULE__{} = container, path, cache, optional_args \\ []) do
       selection = select(container.selection, "withMountedCache")

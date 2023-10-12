@@ -1,6 +1,6 @@
 package templates
 
-import "dagger.io/dagger/codegen/generator"
+import "strings"
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
 // to format GraphQL type into Golang.
@@ -32,8 +32,8 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 }
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
-	if alias, ok := generator.CustomScalar[refName]; ok && input {
-		representation += "*" + alias
+	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
+		representation += "*" + obj
 	} else {
 		representation += refName
 	}

@@ -1,6 +1,11 @@
 extend type Query {
   "Loads a socket by its ID."
-  socket(id: SocketID): Socket!
+  socket(id: SocketID): Socket! @deprecated(reason: "Use `loadSocketFromID` instead.")
+
+  """
+  Load a Socket from its ID.
+  """
+  loadSocketFromID(id: SocketID!): Socket!
 }
 
 "A content-addressed socket identifier."

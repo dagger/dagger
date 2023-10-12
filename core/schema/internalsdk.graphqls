@@ -1,8 +1,8 @@
 extend type Query {
   """
-  Create a new function from the provided definition.
+  Create a function.
   """
-  newFunction(name: String!, returnType: TypeDefID!): Function!
+  function(name: String!, returnType: TypeDefID!): Function!
 
   """
   The FunctionCall context that the SDK caller is currently executing in.

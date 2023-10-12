@@ -16,7 +16,7 @@ type CacheVolume struct {
 	Keys []string `json:"keys"`
 }
 
-var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cacheVolume")
+var ErrInvalidCacheVolumeID = errors.New("invalid cache ID; create one using cacheVolume")
 
 func NewCache(keys ...string) *CacheVolume {
 	return &CacheVolume{Keys: keys}
@@ -42,7 +42,7 @@ func (cache *CacheVolume) Sum() string {
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
-func (cache *CacheVolume) ID() (CacheID, error) {
+func (cache *CacheVolume) ID() (CacheVolumeID, error) {
 	return resourceid.Encode(cache)
 }
 

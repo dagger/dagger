@@ -3,9 +3,14 @@ scalar ModuleID
 
 extend type Query {
   """
-  Load a module by ID, or create a new one if id is unset.
+  Create a new module.
   """
-  module(id: ModuleID): Module!
+  module: Module!
+
+  """
+  Load a module by ID.
+  """
+  loadModuleFromID(id: ModuleID!): Module!
 
   """
   The module currently being served in the session, if any.
@@ -49,6 +54,7 @@ type Module {
 
   "This module plus the given Object type and associated functions"
   withObject(object: TypeDefID!): Module! # TODO: ObjectTypeDefID?
+
   """
   Serve a module's API in the current session.
       Note: this can only be called once per session.
@@ -62,9 +68,15 @@ scalar GeneratedCodeID
 
 extend type Query {
   """
-  Load GeneratedCode by ID, or create a new one if id is unset.
+  Create a code generation result, given a directory containing the generated
+  code.
   """
-  generatedCode(id: GeneratedCodeID): GeneratedCode!
+  generatedCode(code: DirectoryID!): GeneratedCode!
+
+  """
+  Load a GeneratedCode by ID.
+  """
+  loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
 }
 
 type GeneratedCode {
@@ -72,8 +84,6 @@ type GeneratedCode {
 
   "The directory containing the generated code"
   code: Directory!
-  "Set the directory containing the generated code"
-  withCode(code: DirectoryID!): GeneratedCode!
 
   "List of paths to ignore in version control (i.e. .gitignore)"
   vcsIgnoredPaths: [String!]

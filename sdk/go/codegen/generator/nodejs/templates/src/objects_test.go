@@ -50,7 +50,7 @@ var objectsJSON = `
                 "name": null,
                 "ofType": {
                   "kind": "SCALAR",
-                  "name": "CacheID",
+                  "name": "CacheVolumeID",
                   "ofType": null
                 }
               }

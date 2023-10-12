@@ -21,23 +21,22 @@ func (s *fileSchema) Schema() string {
 	return File
 }
 
-var fileIDResolver = stringResolver(core.FileID(""))
-
 func (s *fileSchema) Resolvers() Resolvers {
-	return Resolvers{
-		"FileID": fileIDResolver,
+	rs := Resolvers{
 		"Query": ObjectResolver{
 			"file": ToResolver(s.file),
 		},
-		"File": ToIDableObjectResolver(core.FileID.Decode, ObjectResolver{
-			"id":             ToResolver(s.id),
-			"sync":           ToResolver(s.sync),
-			"contents":       ToResolver(s.contents),
-			"size":           ToResolver(s.size),
-			"export":         ToResolver(s.export),
-			"withTimestamps": ToResolver(s.withTimestamps),
-		}),
 	}
+
+	ResolveIDable[core.File](rs, "File", ObjectResolver{
+		"sync":           ToResolver(s.sync),
+		"contents":       ToResolver(s.contents),
+		"size":           ToResolver(s.size),
+		"export":         ToResolver(s.export),
+		"withTimestamps": ToResolver(s.withTimestamps),
+	})
+
+	return rs
 }
 
 func (s *fileSchema) Dependencies() []ExecutableSchema {
@@ -50,10 +49,6 @@ type fileArgs struct {
 
 func (s *fileSchema) file(ctx *core.Context, parent any, args fileArgs) (*core.File, error) {
 	return args.ID.Decode()
-}
-
-func (s *fileSchema) id(ctx *core.Context, parent *core.File, args any) (core.FileID, error) {
-	return parent.ID()
 }
 
 func (s *fileSchema) sync(ctx *core.Context, parent *core.File, _ any) (core.FileID, error) {

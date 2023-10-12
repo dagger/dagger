@@ -1043,6 +1043,31 @@ Another possible approach is to use independent classes (or interfaces, dependin
 </TabItem>
 </Tabs>
 
+### Execute pipeline operations concurrently
+
+The following code listing demonstrates how to use native-language concurrency features ([goroutines](https://gobyexample.com/goroutines) in Go, [promises](https://basarat.gitbook.io/typescript/future-javascript/promise) in TypeScript, and [task groups](https://anyio.readthedocs.io/en/stable/) in Python) to execute pipeline operations in parallel.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/concurrency/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./cookbook/snippets/concurrency/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/concurrency/main.py
+```
+
+</TabItem>
+</Tabs>
+
 ## Integrations
 
 ### Docker Engine

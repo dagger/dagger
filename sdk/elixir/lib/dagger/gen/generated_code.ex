@@ -42,21 +42,6 @@ defmodule Dagger.GeneratedCode do
   )
 
   (
-    @doc "Set the directory containing the generated code\n\n## Required Arguments\n\n* `code` -"
-    @spec with_code(t(), Dagger.Directory.t()) :: Dagger.GeneratedCode.t()
-    def with_code(%__MODULE__{} = generated_code, code) do
-      selection = select(generated_code.selection, "withCode")
-
-      (
-        {:ok, id} = Dagger.Directory.id(code)
-        selection = arg(selection, "code", id)
-      )
-
-      %Dagger.GeneratedCode{selection: selection, client: generated_code.client}
-    end
-  )
-
-  (
     @doc "Set the list of paths to mark generated in version control\n\n## Required Arguments\n\n* `paths` -"
     @spec with_vcs_generated_paths(t(), [Dagger.String.t()]) :: Dagger.GeneratedCode.t()
     def with_vcs_generated_paths(%__MODULE__{} = generated_code, paths) do

@@ -97,29 +97,33 @@ type {{ $field | FieldOptionsStructName }} struct {
     q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
 
     type {{ $field.Name | ToLowerCase }} struct {
-            {{ range $v := $field | GetArrayField }}
+      {{ range $v := $field | GetArrayField }}
       {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
-            {{- end }}
+      {{- end }}
     }
 
+    {{$eleType := $field.TypeRef | InnerType}}
     convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
         out := {{ $field.TypeRef | FormatOutputType }}{}
 
         for i := range fields {
-            out = append(out, {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}})
+            val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
+            {{- if $eleType | IsIDableObject }}
+              val.q = querybuilder.Query().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+              val.c = r.c
+            {{- end }}
+            out = append(out, val)
         }
 
         return out
     }
-
-        {{- end }}
-
+    {{- end }}
 
     {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 	var response []{{ $field.Name | ToLowerCase }}
-	{{- else }}
+    {{- else }}
 	var response {{ $field.TypeRef | FormatOutputType }}
-	{{- end  }}
+    {{- end  }}
 
 	q = q.Bind(&response)
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
@@ -176,36 +180,7 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  {{ if eq ($.Name | FormatName) "Container" }}
-    *r = *dag.Container(ContainerOpts{
-      ID: ContainerID(id),
-    })
-  {{ else if eq ($.Name | FormatName) "Directory" }}
-    *r = *dag.Directory(DirectoryOpts{
-      ID: DirectoryID(id),
-    })
-  {{ else if eq ($.Name | FormatName) "Socket" }}
-    *r = *dag.Socket(SocketOpts{
-      ID: SocketID(id),
-    })
-  {{ else if eq ($.Name | FormatName) "Module" }}
-    *r = *dag.Module(ModuleOpts{
-      ID: ModuleID(id),
-    })
-  {{ else if eq ($.Name | FormatName) "Function" }}
-    *r = *dag.Function(FunctionID(id))
-  {{ else if eq ($.Name | FormatName) "File" }}
-    *r = *dag.File(FileID(id))
-  {{ else if eq ($.Name | FormatName) "Secret" }}
-    *r = *dag.Secret(SecretID(id))
-  {{ else if eq ($.Name | FormatName) "Cache" }}
-    cacheID := CacheID(id)
-    *r = CacheVolume{
-      q:  dag.q,
-      c:  dag.c,
-      id: &cacheID,
-    }
-  {{ end }}
+  *r = *dag.Load{{ $.Name | FormatName }}FromID({{$.Name | FormatName}}ID(id))
   return nil
 }
 {{- end }}

@@ -9,6 +9,6 @@
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {
-    "@dagger.io/dagger": "^0.6.4"
+    "@dagger.io/dagger": "^0.8.8"
   }
 }

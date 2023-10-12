@@ -224,7 +224,7 @@ type ContainerMount struct {
 	Target string `json:"target"`
 
 	// Persist changes to the mount under this cache ID.
-	CacheID string `json:"cache_id,omitempty"`
+	CacheVolumeID string `json:"cache_volume_id,omitempty"`
 
 	// How to share the cache across concurrent runs.
 	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
@@ -569,7 +569,7 @@ func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.C
 
 	mount := ContainerMount{
 		Target:           target,
-		CacheID:          cache.Sum(),
+		CacheVolumeID:    cache.Sum(),
 		CacheSharingMode: sharingMode,
 	}
 
@@ -815,7 +815,7 @@ func locatePath[T *File | *Directory](
 				return nil, nil, fmt.Errorf("%s: cannot retrieve path from tmpfs", containerPath)
 			}
 
-			if mnt.CacheID != "" {
+			if mnt.CacheVolumeID != "" {
 				return nil, nil, fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
 			}
 
@@ -1171,7 +1171,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
 
-		if mnt.CacheID != "" {
+		if mnt.CacheVolumeID != "" {
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
 			case CacheSharingModeShared:
@@ -1184,7 +1184,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
 			}
 
-			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheID, sharingMode))
+			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheVolumeID, sharingMode))
 		}
 
 		if mnt.Tmpfs {
@@ -1224,7 +1224,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	container.Meta = metaDef.ToPB()
 
 	for i, mnt := range mounts {
-		if mnt.Tmpfs || mnt.CacheID != "" {
+		if mnt.Tmpfs || mnt.CacheVolumeID != "" {
 			continue
 		}
 

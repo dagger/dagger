@@ -2,6 +2,7 @@
 	{{- $enumName := .Name }}
 type {{ $enumName }} string
 
+func ({{ $enumName }}) IsEnum() {}
 
 const (
 	{{- range $index, $field :=  .EnumValues | SortEnumFields }}
