@@ -124,7 +124,8 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		Service()
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
