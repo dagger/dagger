@@ -33,7 +33,7 @@ connect(
       .withEnvVariable("MARIADB_DATABASE", "petclinic")
       .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
       .withExposedPort(3306)
-      .withExec([])
+      .service()
 
     // use maven:3.9 container
     // mount cache and source code volumes
