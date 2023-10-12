@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -95,13 +96,18 @@ func (c *Client) ExportContainerImage(
 		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
 	}
 
-	// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
-	sess, err := c.newFileSendServerProxySession(ctx, destPath)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get requester session ID from client metadata: %s", err)
 	}
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, sess.ID())
+	ctx = engine.LocalExportOpts{
+		DestClientID: clientMetadata.ClientID,
+		Path:         destPath,
+		IsFileStream: true,
+	}.AppendToOutgoingContext(ctx)
+
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, clientMetadata.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %s", err)
 	}
