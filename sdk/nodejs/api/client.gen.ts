@@ -5076,7 +5076,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a new TypeDef with a given kind.
+   * Create a new TypeDef.
    */
   typeDef(): TypeDef {
     return new TypeDef({

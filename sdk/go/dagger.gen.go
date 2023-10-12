@@ -3320,7 +3320,7 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 
 // Loads a file by ID.
 //
-// Deprecated: Use loadFileFromID instead.
+// Deprecated: Use LoadFileFromID instead.
 func (r *Client) File(id FileID) *File {
 	q := r.q.Select("file")
 	q = q.Arg("id", id)
@@ -3581,7 +3581,7 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 
 // Loads a secret from its ID.
 //
-// Deprecated: Use loadSecretFromID instead
+// Deprecated: Use LoadSecretFromID instead
 func (r *Client) Secret(id SecretID) *Secret {
 	q := r.q.Select("secret")
 	q = q.Arg("id", id)
@@ -3612,7 +3612,7 @@ type SocketOpts struct {
 
 // Loads a socket by its ID.
 //
-// Deprecated: Use loadSocketFromID instead.
+// Deprecated: Use LoadSocketFromID instead.
 func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	q := r.q.Select("socket")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3628,7 +3628,7 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 }
 
-// Create a new TypeDef with a given kind.
+// Create a new TypeDef.
 func (r *Client) TypeDef() *TypeDef {
 	q := r.q.Select("typeDef")
 

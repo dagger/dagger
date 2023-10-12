@@ -3835,7 +3835,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Create a new TypeDef with a given kind.
+    /// Create a new TypeDef.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
         return TypeDef {

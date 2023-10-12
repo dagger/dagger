@@ -3789,10 +3789,10 @@ class Client(Root):
         """Loads a file by ID.
 
         .. deprecated::
-            Use loadFileFromID instead.
+            Use :py:meth:`load_file_from_id` instead.
         """
         warnings.warn(
-            'Method "file" is deprecated: Use loadFileFromID instead.',
+            'Method "file" is deprecated: Use "load_file_from_id" instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -4022,10 +4022,10 @@ class Client(Root):
         """Loads a secret from its ID.
 
         .. deprecated::
-            Use loadSecretFromID instead
+            Use :py:meth:`load_secret_from_id` instead
         """
         warnings.warn(
-            'Method "secret" is deprecated: Use loadSecretFromID instead',
+            'Method "secret" is deprecated: Use "load_secret_from_id" instead',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -4060,10 +4060,10 @@ class Client(Root):
         """Loads a socket by its ID.
 
         .. deprecated::
-            Use loadSocketFromID instead.
+            Use :py:meth:`load_socket_from_id` instead.
         """
         warnings.warn(
-            'Method "socket" is deprecated: Use loadSocketFromID instead.',
+            'Method "socket" is deprecated: Use "load_socket_from_id" instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -4075,7 +4075,7 @@ class Client(Root):
 
     @typecheck
     def type_def(self) -> "TypeDef":
-        """Create a new TypeDef with a given kind."""
+        """Create a new TypeDef."""
         _args: list[Arg] = []
         _ctx = self._select("typeDef", _args)
         return TypeDef(_ctx)
