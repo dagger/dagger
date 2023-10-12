@@ -7,18 +7,18 @@ use std::sync::Arc;
 use tokio::process::Child;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct CacheId(pub String);
-impl Into<CacheId> for &str {
-    fn into(self) -> CacheId {
-        CacheId(self.to_string())
+pub struct CacheVolumeId(pub String);
+impl Into<CacheVolumeId> for &str {
+    fn into(self) -> CacheVolumeId {
+        CacheVolumeId(self.to_string())
     }
 }
-impl Into<CacheId> for String {
-    fn into(self) -> CacheId {
-        CacheId(self.clone())
+impl Into<CacheVolumeId> for String {
+    fn into(self) -> CacheVolumeId {
+        CacheVolumeId(self.clone())
     }
 }
-impl CacheId {
+impl CacheVolumeId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -70,6 +70,23 @@ impl Into<FileId> for String {
     }
 }
 impl FileId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct FunctionArgId(pub String);
+impl Into<FunctionArgId> for &str {
+    fn into(self) -> FunctionArgId {
+        FunctionArgId(self.to_string())
+    }
+}
+impl Into<FunctionArgId> for String {
+    fn into(self) -> FunctionArgId {
+        FunctionArgId(self.clone())
+    }
+}
+impl FunctionArgId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -254,7 +271,7 @@ pub struct CacheVolume {
     pub graphql_client: DynGraphQLClient,
 }
 impl CacheVolume {
-    pub async fn id(&self) -> Result<CacheId, DaggerError> {
+    pub async fn id(&self) -> Result<CacheVolumeId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
@@ -2684,6 +2701,11 @@ impl FunctionArg {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The ID of the argument
+    pub async fn id(&self) -> Result<FunctionArgId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The name of the argument
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -2787,22 +2809,6 @@ impl GeneratedCode {
     pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("vcsIgnoredPaths");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Set the directory containing the generated code
-    pub fn with_code(&self, code: Directory) -> GeneratedCode {
-        let mut query = self.selection.select("withCode");
-        query = query.arg_lazy(
-            "code",
-            Box::new(move || {
-                let code = code.clone();
-                Box::pin(async move { code.id().await.unwrap().quote() })
-            }),
-        );
-        return GeneratedCode {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
     }
     /// Set the list of paths to mark generated in version control
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
@@ -3268,11 +3274,6 @@ pub struct QueryDirectoryOpts {
     pub id: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryGeneratedCodeOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub id: Option<GeneratedCodeId>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
@@ -3288,11 +3289,6 @@ pub struct QueryHttpOpts {
     pub experimental_service_host: Option<ContainerId>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryModuleOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub id: Option<ModuleId>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QueryPipelineOpts<'a> {
     /// Pipeline description.
     #[builder(setter(into, strip_option), default)]
@@ -3305,11 +3301,6 @@ pub struct QueryPipelineOpts<'a> {
 pub struct QuerySocketOpts {
     #[builder(setter(into, strip_option), default)]
     pub id: Option<SocketId>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct QueryTypeDefOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub id: Option<TypeDefId>,
 }
 impl Query {
     /// Constructs a cache volume for a given cache key.
@@ -3339,10 +3330,9 @@ impl Query {
         query = query.arg("version", version.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Loads a container from ID.
-    /// Null ID returns an empty container (scratch).
-    /// Optional platform argument initializes new containers to execute and publish as that platform.
-    /// Platform defaults to that of the builder's host.
+    /// Creates a scratch container or loads one by ID.
+    /// Optional platform argument initializes new containers to execute and publish
+    /// as that platform. Platform defaults to that of the builder's host.
     ///
     /// # Arguments
     ///
@@ -3355,10 +3345,9 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Loads a container from ID.
-    /// Null ID returns an empty container (scratch).
-    /// Optional platform argument initializes new containers to execute and publish as that platform.
-    /// Platform defaults to that of the builder's host.
+    /// Creates a scratch container or loads one by ID.
+    /// Optional platform argument initializes new containers to execute and publish
+    /// as that platform. Platform defaults to that of the builder's host.
     ///
     /// # Arguments
     ///
@@ -3402,7 +3391,7 @@ impl Query {
         let query = self.selection.select("defaultPlatform");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Load a directory by ID. No argument produces an empty directory.
+    /// Creates an empty directory or loads one by ID.
     ///
     /// # Arguments
     ///
@@ -3415,7 +3404,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load a directory by ID. No argument produces an empty directory.
+    /// Creates an empty directory or loads one by ID.
     ///
     /// # Arguments
     ///
@@ -3447,14 +3436,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load a function by ID
-    pub fn function(&self, id: Function) -> Function {
+    /// Create a function.
+    pub fn function(&self, name: impl Into<String>, return_type: TypeDef) -> Function {
         let mut query = self.selection.select("function");
+        query = query.arg("name", name.into());
         query = query.arg_lazy(
-            "id",
+            "returnType",
             Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                let return_type = return_type.clone();
+                Box::pin(async move { return_type.id().await.unwrap().quote() })
             }),
         );
         return Function {
@@ -3463,29 +3453,17 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load GeneratedCode by ID, or create a new one if id is unset.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn generated_code(&self) -> GeneratedCode {
-        let query = self.selection.select("generatedCode");
-        return GeneratedCode {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Load GeneratedCode by ID, or create a new one if id is unset.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn generated_code_opts(&self, opts: QueryGeneratedCodeOpts) -> GeneratedCode {
+    /// Create a code generation result, given a directory containing the generated
+    /// code.
+    pub fn generated_code(&self, code: Directory) -> GeneratedCode {
         let mut query = self.selection.select("generatedCode");
-        if let Some(id) = opts.id {
-            query = query.arg("id", id);
-        }
+        query = query.arg_lazy(
+            "code",
+            Box::new(move || {
+                let code = code.clone();
+                Box::pin(async move { code.id().await.unwrap().quote() })
+            }),
+        );
         return GeneratedCode {
             proc: self.proc.clone(),
             selection: query,
@@ -3574,47 +3552,186 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load a module by ID, or create a new one if id is unset.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module(&self) -> Module {
-        let query = self.selection.select("module");
-        return Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Load a module by ID, or create a new one if id is unset.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_opts(&self, opts: QueryModuleOpts) -> Module {
-        let mut query = self.selection.select("module");
-        if let Some(id) = opts.id {
-            query = query.arg("id", id);
-        }
-        return Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Create a new function from the provided definition.
-    pub fn new_function(&self, name: impl Into<String>, return_type: TypeDef) -> Function {
-        let mut query = self.selection.select("newFunction");
-        query = query.arg("name", name.into());
+    /// Load a CacheVolume from its ID.
+    pub fn load_cache_volume_from_id(&self, id: CacheVolume) -> CacheVolume {
+        let mut query = self.selection.select("loadCacheVolumeFromID");
         query = query.arg_lazy(
-            "returnType",
+            "id",
             Box::new(move || {
-                let return_type = return_type.clone();
-                Box::pin(async move { return_type.id().await.unwrap().quote() })
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Loads a container from an ID.
+    pub fn load_container_from_id(&self, id: Container) -> Container {
+        let mut query = self.selection.select("loadContainerFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a Directory from its ID.
+    pub fn load_directory_from_id(&self, id: Directory) -> Directory {
+        let mut query = self.selection.select("loadDirectoryFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a File from its ID.
+    pub fn load_file_from_id(&self, id: File) -> File {
+        let mut query = self.selection.select("loadFileFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a function argument by ID.
+    pub fn load_function_arg_from_id(&self, id: FunctionArg) -> FunctionArg {
+        let mut query = self.selection.select("loadFunctionArgFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return FunctionArg {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a function by ID.
+    pub fn load_function_from_id(&self, id: Function) -> Function {
+        let mut query = self.selection.select("loadFunctionFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
         return Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a GeneratedCode by ID.
+    pub fn load_generated_code_from_id(&self, id: GeneratedCode) -> GeneratedCode {
+        let mut query = self.selection.select("loadGeneratedCodeFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a module by ID.
+    pub fn load_module_from_id(&self, id: Module) -> Module {
+        let mut query = self.selection.select("loadModuleFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a Secret from its ID.
+    pub fn load_secret_from_id(&self, id: Secret) -> Secret {
+        let mut query = self.selection.select("loadSecretFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a Socket from its ID.
+    pub fn load_socket_from_id(&self, id: Socket) -> Socket {
+        let mut query = self.selection.select("loadSocketFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Socket {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a TypeDef by ID.
+    pub fn load_type_def_from_id(&self, id: TypeDef) -> TypeDef {
+        let mut query = self.selection.select("loadTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Create a new module.
+    pub fn module(&self) -> Module {
+        let query = self.selection.select("module");
+        return Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -3718,27 +3835,9 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    /// Create a new TypeDef with a given kind.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
-        return TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn type_def_opts(&self, opts: QueryTypeDefOpts) -> TypeDef {
-        let mut query = self.selection.select("typeDef");
-        if let Some(id) = opts.id {
-            query = query.arg("id", id);
-        }
         return TypeDef {
             proc: self.proc.clone(),
             selection: query,
