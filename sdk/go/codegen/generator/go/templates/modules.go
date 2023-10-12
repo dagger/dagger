@@ -626,7 +626,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 		return nil, fmt.Errorf("method %s has too many return values", fn.Name())
 	}
 
-	fnDef := Qual("dag", "NewFunction").Call(Lit(fn.Name()), Add(Line(), fnReturnType))
+	fnDef := Qual("dag", "Function").Call(Lit(fn.Name()), Add(Line(), fnReturnType))
 
 	funcDecl, err := ps.declForFunc(fn)
 	if err != nil {

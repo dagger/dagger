@@ -47,8 +47,7 @@ func (m *GoSdk) Codegen(modSource *Directory, opts RuntimeOpts) *GeneratedCode {
 		}).
 		Directory(".")
 
-	return dag.GeneratedCode().
-		WithCode(base.Directory(".").Diff(codegen)).
+	return dag.GeneratedCode(base.Directory(".").Diff(codegen)).
 		WithVCSIgnoredPaths([]string{
 			"dagger.gen.go",
 			"internal/querybuilder/",

@@ -66,7 +66,6 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 		return fmt.Errorf("no module specified and no default module found in current directory")
 	}
 
-	dag := engineClient.Dagger()
 	rec := progrock.FromContext(ctx)
 	vtx := rec.Vertex("cmd-list-functions", "list functions", progrock.Focused())
 	defer func() { vtx.Done(err) }()
@@ -83,16 +82,6 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 
 	var modFuncs []dagger.Function
 	for _, def := range modObjs {
-		// TODO: workaround bug in codegen
-		objID, err := def.ID(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get object id: %w", err)
-		}
-		def = *dag.TypeDef(
-			dagger.TypeDefOpts{
-				ID: objID,
-			},
-		)
 		objDef := def.AsObject()
 		objName, err := objDef.Name(ctx)
 		if err != nil {
@@ -137,12 +126,6 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 
 	for _, function := range modFuncs {
 		function := function
-		// TODO: workaround bug in codegen
-		funcID, err := function.ID(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get function id: %w", err)
-		}
-		function = *engineClient.Dagger().Function(funcID)
 		err = printFunc(&function)
 		if err != nil {
 			return err
@@ -185,16 +168,6 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 	var currFunc *dagger.Function
 
 	for _, def := range modObjs {
-		// TODO: workaround bug in codegen
-		objID, err := def.ID(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get object id: %w", err)
-		}
-		def = *engineClient.Dagger().TypeDef(
-			dagger.TypeDefOpts{
-				ID: objID,
-			},
-		)
 		objDef := def.AsObject()
 		objName, err := objDef.Name(ctx)
 		if err != nil {
@@ -215,15 +188,6 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 		}
 		for _, function := range funcs {
 			function := function
-			// TODO: workaround bug in codegen
-			funcID, err := function.ID(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get function id: %w", err)
-			}
-			function = *dag.Function(funcID)
-			if err != nil {
-				return err
-			}
 			funcName, err := function.Name(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get function name: %w", err)

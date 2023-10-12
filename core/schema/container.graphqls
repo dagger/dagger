@@ -1,12 +1,19 @@
 extend type Query {
   """
-  Loads a container from ID.
+  Creates a scratch container or loads one by ID.
 
-  Null ID returns an empty container (scratch).
-  Optional platform argument initializes new containers to execute and publish as that platform.
-  Platform defaults to that of the builder's host.
+  Optional platform argument initializes new containers to execute and publish
+  as that platform. Platform defaults to that of the builder's host.
   """
-  container(id: ContainerID, platform: Platform): Container!
+  container(
+    id: ContainerID @deprecated(reason: "Use loadContainerFromID instead.")
+    platform: Platform
+  ): Container!
+
+  """
+  Loads a container from an ID.
+  """
+  loadContainerFromID(id: ContainerID!): Container!
 }
 
 "A unique container identifier. Null designates an empty container (scratch)."
@@ -322,7 +329,7 @@ type Container {
     path: String!
 
     "Identifier of the cache volume to mount."
-    cache: CacheID!
+    cache: CacheVolumeID!
 
     "Identifier of the directory to use as the cache volume's root."
     source: DirectoryID

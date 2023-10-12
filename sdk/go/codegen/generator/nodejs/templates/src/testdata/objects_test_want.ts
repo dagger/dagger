@@ -3,25 +3,25 @@
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
-  private readonly _id?: CacheID = undefined
+  private readonly _id?: CacheVolumeID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
     parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
-     _id?: CacheID,
+     _id?: CacheVolumeID,
    ) {
      super(parent)
 
      this._id = _id
    }
-  async id(): Promise<CacheID> {
+  async id(): Promise<CacheVolumeID> {
     if (this._id) {
       return this._id
     }
 
-    const response: Awaited<CacheID> = await computeQuery(
+    const response: Awaited<CacheVolumeID> = await computeQuery(
       [
         ...this._queryTree,
         {

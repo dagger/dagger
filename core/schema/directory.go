@@ -26,33 +26,32 @@ func (s *directorySchema) Schema() string {
 	return Directory
 }
 
-var directoryIDResolver = stringResolver(core.DirectoryID(""))
-
 func (s *directorySchema) Resolvers() Resolvers {
-	return Resolvers{
-		"DirectoryID": directoryIDResolver,
+	rs := Resolvers{
 		"Query": ObjectResolver{
 			"directory": ToResolver(s.directory),
 		},
-		"Directory": ToIDableObjectResolver(core.DirectoryID.Decode, ObjectResolver{
-			"id":               ToResolver(s.id),
-			"sync":             ToResolver(s.sync),
-			"pipeline":         ToResolver(s.pipeline),
-			"entries":          ToResolver(s.entries),
-			"file":             ToResolver(s.file),
-			"withFile":         ToResolver(s.withFile),
-			"withNewFile":      ToResolver(s.withNewFile),
-			"withoutFile":      ToResolver(s.withoutFile),
-			"directory":        ToResolver(s.subdirectory),
-			"withDirectory":    ToResolver(s.withDirectory),
-			"withTimestamps":   ToResolver(s.withTimestamps),
-			"withNewDirectory": ToResolver(s.withNewDirectory),
-			"withoutDirectory": ToResolver(s.withoutDirectory),
-			"diff":             ToResolver(s.diff),
-			"export":           ToResolver(s.export),
-			"dockerBuild":      ToResolver(s.dockerBuild),
-		}),
 	}
+
+	ResolveIDable[core.Directory](rs, "Directory", ObjectResolver{
+		"sync":             ToResolver(s.sync),
+		"pipeline":         ToResolver(s.pipeline),
+		"entries":          ToResolver(s.entries),
+		"file":             ToResolver(s.file),
+		"withFile":         ToResolver(s.withFile),
+		"withNewFile":      ToResolver(s.withNewFile),
+		"withoutFile":      ToResolver(s.withoutFile),
+		"directory":        ToResolver(s.subdirectory),
+		"withDirectory":    ToResolver(s.withDirectory),
+		"withTimestamps":   ToResolver(s.withTimestamps),
+		"withNewDirectory": ToResolver(s.withNewDirectory),
+		"withoutDirectory": ToResolver(s.withoutDirectory),
+		"diff":             ToResolver(s.diff),
+		"export":           ToResolver(s.export),
+		"dockerBuild":      ToResolver(s.dockerBuild),
+	})
+
+	return rs
 }
 
 func (s *directorySchema) Dependencies() []ExecutableSchema {
@@ -79,10 +78,6 @@ func (s *directorySchema) directory(ctx *core.Context, parent *core.Query, args 
 	}
 	platform := s.platform
 	return core.NewScratchDirectory(parent.PipelinePath(), platform), nil
-}
-
-func (s *directorySchema) id(ctx *core.Context, parent *core.Directory, args any) (core.DirectoryID, error) {
-	return parent.ID()
 }
 
 func (s *directorySchema) sync(ctx *core.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {

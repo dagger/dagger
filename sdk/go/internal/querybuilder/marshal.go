@@ -40,7 +40,7 @@ var (
 		"DirectoryID":     {},
 		"SecretID":        {},
 		"SocketID":        {},
-		"CacheID":         {},
+		"CacheVolumeID":   {},
 		"ModuleID":        {},
 		"FunctionID":      {},
 		"TypeDefID":       {},

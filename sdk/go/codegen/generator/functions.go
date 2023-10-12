@@ -21,7 +21,7 @@ var CustomScalar = map[string]string{
 	"DirectoryID":     "Directory",
 	"SecretID":        "Secret",
 	"SocketID":        "Socket",
-	"CacheID":         "CacheVolume",
+	"CacheVolumeID":   "CacheVolume",
 	"ModuleID":        "Module",
 	"FunctionID":      "Function",
 	"TypeDefID":       "TypeDef",
@@ -63,6 +63,50 @@ func (c *CommonFunctions) IsSelfChainable(t introspection.Type) bool {
 		}
 	}
 	return false
+}
+
+func (c *CommonFunctions) InnerType(t *introspection.TypeRef) *introspection.TypeRef {
+	switch t.Kind {
+	case introspection.TypeKindNonNull:
+		return c.InnerType(t.OfType)
+	case introspection.TypeKindList:
+		return c.InnerType(t.OfType)
+	default:
+		return t
+	}
+}
+
+func (c *CommonFunctions) ObjectName(t *introspection.TypeRef) string {
+	switch t.Kind {
+	case introspection.TypeKindNonNull:
+		return c.ObjectName(t.OfType)
+	case introspection.TypeKindObject:
+		return t.Name
+	default:
+		panic(fmt.Sprintf("unexpected type kind %s", t.Kind))
+	}
+}
+
+func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) bool {
+	schema := GetSchema()
+	switch t.Kind {
+	case introspection.TypeKindNonNull:
+		return c.IsIDableObject(t.OfType)
+	case introspection.TypeKindObject:
+		schemaType := schema.Types.Get(t.Name)
+		if schemaType == nil {
+			panic(fmt.Sprintf("schema type %s is nil", t.Name))
+		}
+
+		for _, f := range schemaType.Fields {
+			if f.Name == "id" {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 // FormatReturnType formats a GraphQL type into the SDK language output,
