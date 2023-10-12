@@ -383,6 +383,8 @@ github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21 h1:6H/36Lk+mcSXxlbj
 github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21/go.mod h1:jxe8vuRdvEbdLR5nrc6F7gLPmPeJhGe2DbIgEok+pCA=
 github.com/dagger/graphql-go-tools v0.0.0-20230919175228-6b7534b060ab h1:IwFA67qEtlZJ/fo58LWVoEq2Cok1/ye8WaG4pMz21R0=
 github.com/dagger/graphql-go-tools v0.0.0-20230919175228-6b7534b060ab/go.mod h1:SXt7tSY8l+OVghRddofY+eDdv8EK82N0JlrrfrkqFEw=
+github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e h1:5fyK89J8og+XMW5JetgXzaxRhoI9UrS0BhrNskj4cuA=
+github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e/go.mod h1:SXt7tSY8l+OVghRddofY+eDdv8EK82N0JlrrfrkqFEw=
 github.com/davecgh/go-spew v0.0.0-20151105211317-5215b55f46b2/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

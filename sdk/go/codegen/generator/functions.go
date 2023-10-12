@@ -12,22 +12,6 @@ const (
 	QueryStructClientName = "Client"
 )
 
-// CustomScalar registers custom Dagger type.
-// TODO: This may done it dynamically later instead of a static
-// map.
-var CustomScalar = map[string]string{
-	"ContainerID":     "Container",
-	"FileID":          "File",
-	"DirectoryID":     "Directory",
-	"SecretID":        "Secret",
-	"SocketID":        "Socket",
-	"CacheID":         "CacheVolume",
-	"ModuleID":        "Module",
-	"FunctionID":      "Function",
-	"TypeDefID":       "TypeDef",
-	"GeneratedCodeID": "GeneratedCode",
-}
-
 // FormatTypeFuncs is an interface to format any GraphQL type.
 // Each generator has to implement this interface.
 type FormatTypeFuncs interface {
@@ -63,6 +47,50 @@ func (c *CommonFunctions) IsSelfChainable(t introspection.Type) bool {
 		}
 	}
 	return false
+}
+
+func (c *CommonFunctions) InnerType(t *introspection.TypeRef) *introspection.TypeRef {
+	switch t.Kind {
+	case introspection.TypeKindNonNull:
+		return c.InnerType(t.OfType)
+	case introspection.TypeKindList:
+		return c.InnerType(t.OfType)
+	default:
+		return t
+	}
+}
+
+func (c *CommonFunctions) ObjectName(t *introspection.TypeRef) string {
+	switch t.Kind {
+	case introspection.TypeKindNonNull:
+		return c.ObjectName(t.OfType)
+	case introspection.TypeKindObject:
+		return t.Name
+	default:
+		panic(fmt.Sprintf("unexpected type kind %s", t.Kind))
+	}
+}
+
+func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) bool {
+	schema := GetSchema()
+	switch t.Kind {
+	case introspection.TypeKindNonNull:
+		return c.IsIDableObject(t.OfType)
+	case introspection.TypeKindObject:
+		schemaType := schema.Types.Get(t.Name)
+		if schemaType == nil {
+			panic(fmt.Sprintf("schema type %s is nil", t.Name))
+		}
+
+		for _, f := range schemaType.Fields {
+			if f.Name == "id" {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 // FormatReturnType formats a GraphQL type into the SDK language output,
@@ -137,21 +165,10 @@ func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
 	if ref.Kind != introspection.TypeKindScalar {
 		return false
 	}
-
-	// FIXME: As of now all custom scalars are IDs. If that changes we
-	// need to make sure we can tell the difference.
-	alias, ok := CustomScalar[ref.Name]
-
-	// FIXME: We don't have a simple way to convert any ID to its
-	// corresponding object (in codegen) so for now just return the
-	// current instance. Currently, `sync` is the only field where
-	// the error is what we care about but more could be added later.
-	// To avoid wasting a result, we return the ID which is a leaf value
-	// and triggers execution, but then convert to object in the SDK to
-	// allow continued chaining. For this, we're assuming the returned
-	// ID represents the exact same object but if that changes, we'll
-	// need to adjust.
-	return ok && alias == f.ParentObject.Name
+	// NB: we only concern ourselves with the ID of the parent class, since this
+	// is really only meant for ID and Sync, the only cases where we
+	// intentionally return an ID (leaf node) instead of an object.
+	return ref.Name == f.ParentObject.Name+"ID"
 }
 
 // FormatInputType formats a GraphQL type into the SDK language input

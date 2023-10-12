@@ -2,8 +2,10 @@
 scalar FunctionID
 
 extend type Query {
-  "Load a function by ID"
-  function(id: FunctionID!): Function!
+  """
+  Load a function by ID.
+  """
+  loadFunctionFromID(id: FunctionID!): Function!
 }
 
 """
@@ -55,6 +57,16 @@ type Function {
   call(input: [FunctionCallInput!]): JSON!
 }
 
+"A reference to a FunctionArg."
+scalar FunctionArgID
+
+extend type Query {
+  """
+  Load a function argument by ID.
+  """
+  loadFunctionArgFromID(id: FunctionArgID!): FunctionArg!
+}
+
 """
 An argument accepted by a function.
 
@@ -62,8 +74,11 @@ This is a specification for an argument at function definition time, not an
 argument passed at function call time.
 """
 type FunctionArg {
+  "The ID of the argument"
+  id: FunctionArgID!
+
   "The name of the argument"
-  name: String
+  name: String!
 
   "A doc string for the argument, if any"
   description: String
@@ -87,7 +102,15 @@ input FunctionCallInput {
 scalar TypeDefID
 
 extend type Query {
-  typeDef(id: TypeDefID): TypeDef!
+  """
+  Create a new TypeDef.
+  """
+  typeDef: TypeDef!
+
+  """
+  Load a TypeDef by ID.
+  """
+  loadTypeDefFromID(id: TypeDefID!): TypeDef!
 }
 
 """

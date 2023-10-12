@@ -2,7 +2,7 @@ defmodule Dagger.Codegen.Elixir.Module do
   @moduledoc false
 
   @id_modules_map %{
-    "CacheID" => "CacheVolume",
+    "CacheVolumeID" => "CacheVolume",
     "ContainerID" => "Container",
     "DirectoryID" => "Directory",
     "FileID" => "File",

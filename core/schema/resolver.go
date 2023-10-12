@@ -143,3 +143,27 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 		return nil, err
 	})
 }
+
+func ResolveIDable[T any](rs Resolvers, name string, obj ObjectResolver) {
+	// Add resolver for the type.
+	rs[name] = ToIDableObjectResolver(resourceid.ID[T].Decode, obj)
+
+	// Add field for querying the object's ID.
+	obj["id"] = ToResolver(func(ctx *core.Context, obj *T, args any) (_ resourceid.ID[T], rerr error) {
+		return resourceid.Encode(obj)
+	})
+
+	// Add resolver for its ID type.
+	rs[name+"ID"] = stringResolver[resourceid.ID[T]]()
+
+	// Add global constructor from ID.
+	query, hasQuery := rs["Query"].(ObjectResolver)
+	if !hasQuery {
+		query = ObjectResolver{}
+		rs["Query"] = query
+	}
+	loaderName := fmt.Sprintf("load%sFromID", name)
+	query[loaderName] = ToResolver(func(ctx *core.Context, _ any, args struct{ ID resourceid.ID[T] }) (*T, error) {
+		return resourceid.ID[T].Decode(args.ID)
+	})
+}

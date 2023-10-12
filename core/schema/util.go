@@ -10,7 +10,8 @@ import (
 )
 
 // stringResolver is used to generate a scalar resolver for a stringable type.
-func stringResolver[T ~string](sample T) ScalarResolver {
+func stringResolver[T ~string]() ScalarResolver {
+	var sample T
 	return ScalarResolver{
 		Serialize: func(value any) (any, error) {
 			switch v := value.(type) {
