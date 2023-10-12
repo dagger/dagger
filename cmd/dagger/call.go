@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -61,7 +63,13 @@ type callFunctionArg struct {
 	Description  string
 	Optional     bool
 	DefaultValue any
+	AsObject     *objectType
+	Kind         dagger.TypeDefKind
 	orig         dagger.FunctionArg
+}
+
+type objectType struct {
+	Name string
 }
 
 func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger.Module, cmd *cobra.Command, cmdArgs []string) (err error) {
@@ -161,41 +169,25 @@ func addCmd(ctx context.Context, dag *dagger.Client, mod *dagger.Module, fn *cal
 		Short: fn.Description,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Only load function arguments when it's actually needed.
-			if err = loadArguments(ctx, dag, fn); err != nil {
+			if err = fn.loadArguments(ctx); err != nil {
 				return err
 			}
 
+			// Set flags from the command line.
 			for _, arg := range fn.Args {
 				arg := arg
 
-				// TODO: handle more types
-				/*
-				   switch kind {
-				   case dagger.Stringkind:
-				       subCmd.Flags().String(flagName, "", argDescription)
-				   default:
-				       // TODO: Handle more types.
-				       continue
-				   }
-				*/
-
-				// TODO: handle default value properly
-
-				defaultVal, ok := arg.DefaultValue.(string)
-				if !ok {
-					defaultVal = ""
+				err = arg.SetFlag(cmd.Flags())
+				if err != nil {
+					return fmt.Errorf("failed to set flag %q: %w", arg.FlagName, err)
 				}
 
-				cmd.Flags().String(arg.FlagName, defaultVal, arg.Description)
-
-				/*
-					// TODO: This won't work on its own because cobra checks required
-					// flags before the RunE function is called. We need to manually
-					// check the flags after parsing them.
-					if !arg.Optional && defaultVal != "" {
-						cmd.MarkFlagRequired(arg.FlagName)
-					}
-				*/
+				// TODO: This won't work on its own because cobra checks required
+				// flags before the RunE function is called. We need to manually
+				// check the flags after parsing them.
+				if !arg.Optional {
+					cmd.MarkFlagRequired(arg.FlagName)
+				}
 			}
 
 			if err = cmd.ParseFlags(args); err != nil {
@@ -211,20 +203,21 @@ func addCmd(ctx context.Context, dag *dagger.Client, mod *dagger.Module, fn *cal
 			for _, arg := range fn.Args {
 				arg := arg
 
-				// TODO: Handle various types.
-				flagVal, err := cmd.Flags().GetString(arg.FlagName)
+				// TODO: Check required flags.
+
+				val, err := arg.GetValue(dag, cmd.Flags())
 				if err != nil {
-					return fmt.Errorf("failed to get flag %q: %w", arg.FlagName, err)
+					return fmt.Errorf("failed to get value for flag %q: %w", arg.FlagName, err)
 				}
 
-				jsonVal, err := json.Marshal(flagVal)
+				jval, err := json.Marshal(val)
 				if err != nil {
 					return fmt.Errorf("failed to marshal flag value %q: %w", arg.FlagName, err)
 				}
 
 				inputs = append(inputs, dagger.FunctionCallInput{
 					Name:  arg.Name,
-					Value: dagger.JSON(string(jsonVal)),
+					Value: dagger.JSON(string(jval)),
 				})
 			}
 
@@ -244,7 +237,8 @@ func addCmd(ctx context.Context, dag *dagger.Client, mod *dagger.Module, fn *cal
 			}
 
 			// TODO: Figure out what makes sense based on return type. For example,
-			// if a File or Directory, export to `outputPath`.
+			// if a File or Directory, export to `outputPath`. If a Container, call
+			// stdout?
 			cmd.Println(result)
 
 			return nil
@@ -271,19 +265,6 @@ func loadFunctions(ctx context.Context, dag *dagger.Client, mod *dagger.Module) 
 	}
 
 	for _, def := range modObjs {
-		def := def
-
-		// TODO: workaround bug in codegen
-		objID, err := def.ID(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get object id: %w", err)
-		}
-		def = *dag.TypeDef(
-			dagger.TypeDefOpts{
-				ID: objID,
-			},
-		)
-
 		objDef := def.AsObject()
 		objName, err := objDef.Name(ctx)
 		if err != nil {
@@ -302,18 +283,8 @@ func loadFunctions(ctx context.Context, dag *dagger.Client, mod *dagger.Module) 
 		if objFuncs == nil {
 			continue
 		}
-		for _, objFunc := range objFuncs {
-			objFunc := objFunc
-
-			// TODO: workaround bug in codegen
-			funcID, err := objFunc.ID(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get function id: %w", err)
-			}
-			fn := *dag.Function(funcID)
-			if err != nil {
-				return nil, err
-			}
+		for _, fn := range objFuncs {
+			fn := fn
 
 			name, err := fn.Name(ctx)
 			if err != nil {
@@ -340,7 +311,7 @@ func loadFunctions(ctx context.Context, dag *dagger.Client, mod *dagger.Module) 
 	return callFuncs, nil
 }
 
-func loadArguments(ctx context.Context, _ *dagger.Client, fn *callFunction) error {
+func (fn *callFunction) loadArguments(ctx context.Context) error {
 	if fn.Args != nil {
 		return fmt.Errorf("function arguments already loaded")
 	}
@@ -352,15 +323,6 @@ func loadArguments(ctx context.Context, _ *dagger.Client, fn *callFunction) erro
 
 	for _, funcArg := range funcArgs {
 		funcArg := funcArg
-
-		// TODO: workaround bug in codegen
-		// TODO: Need constructor for dagger.FunctionArg
-		/*
-		   argID, err := funcArg.ID(ctx)
-		   if err != nil {
-		       return nil, fmt.Errorf("failed to get arg id: %w", err)
-		   }
-		*/
 
 		name, err := funcArg.Name(ctx)
 		if err != nil {
@@ -384,29 +346,90 @@ func loadArguments(ctx context.Context, _ *dagger.Client, fn *callFunction) erro
 			}
 		}
 
-		// TODO: Can't get Kind with go codegen bug. Need to make FunctionArg
-		// an idable type.
+		kind, err := funcArg.TypeDef().Kind(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get arg type: %w", err)
+		}
 
-		/*
-		   kind, err := funcArg.TypeDef().Kind(ctx)
-		   if err != nil {
-		       return nil, fmt.Errorf("failed to get arg type: %w", err)
-		   }
+		optional, err := funcArg.TypeDef().Optional(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check if arg is optional: %w", err)
+		}
 
-		   optional, err := funcArg.TypeDef().Optional(ctx)
-		   if err != nil {
-		       return nil, fmt.Errorf("failed to check if arg is optional: %w", err)
-		   }
-		*/
-
-		fn.Args = append(fn.Args, callFunctionArg{
+		arg := callFunctionArg{
 			orig:         funcArg,
 			Name:         name,
 			FlagName:     strcase.ToKebab(name),
 			Description:  strings.TrimSpace(description),
+			Kind:         kind,
+			Optional:     optional,
 			DefaultValue: defaultVal,
-		})
+		}
+
+		if kind == dagger.Objectkind {
+			name, err := funcArg.TypeDef().AsObject().Name(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get object name: %w", err)
+			}
+			arg.AsObject = &objectType{
+				Name: name,
+			}
+		}
+
+		fn.Args = append(fn.Args, arg)
 	}
 
 	return nil
+}
+
+func (r *callFunctionArg) SetFlag(flags *pflag.FlagSet) error {
+	switch r.Kind {
+	case dagger.Stringkind:
+		val, _ := r.DefaultValue.(string)
+		flags.String(r.FlagName, val, r.Description)
+	case dagger.Integerkind:
+		val, _ := r.DefaultValue.(int)
+		flags.Int(r.FlagName, val, r.Description)
+	case dagger.Booleankind:
+		val, _ := r.DefaultValue.(bool)
+		flags.Bool(r.FlagName, val, r.Description)
+	case dagger.Objectkind:
+		switch r.AsObject.Name {
+		case "Directory", "File", "Secret":
+			flags.String(r.FlagName, "", r.Description)
+		}
+	default:
+		return fmt.Errorf("unsupported type %q", r.Kind)
+	}
+	return nil
+}
+
+func (r *callFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (any, error) {
+	switch r.Kind {
+	case dagger.Stringkind:
+		return flags.GetString(r.FlagName)
+	case dagger.Integerkind:
+		return flags.GetInt(r.FlagName)
+	case dagger.Booleankind:
+		return flags.GetBool(r.FlagName)
+	case dagger.Objectkind:
+		val, err := flags.GetString(r.FlagName)
+		if err != nil {
+			return nil, err
+		}
+		switch r.AsObject.Name {
+		case "Directory":
+			return dag.Host().Directory(val), nil
+		case "File":
+			return dag.Host().File(val), nil
+		case "Secret":
+			hash := sha256.Sum256([]byte(val))
+			name := hex.EncodeToString(hash[:])
+			return dag.SetSecret(name, val), nil
+		default:
+			return nil, fmt.Errorf("unsupported object type %q", r.AsObject.Name)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported type %q", r.Kind)
+	}
 }
