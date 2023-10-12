@@ -4054,6 +4054,8 @@ func (r *TypeDef) WithOptional(optional bool) *TypeDef {
 
 type CacheSharingMode string
 
+func (CacheSharingMode) IsEnum() {}
+
 const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
@@ -4061,6 +4063,8 @@ const (
 )
 
 type ImageLayerCompression string
+
+func (ImageLayerCompression) IsEnum() {}
 
 const (
 	Estargz      ImageLayerCompression = "EStarGZ"
@@ -4071,6 +4075,8 @@ const (
 
 type ImageMediaTypes string
 
+func (ImageMediaTypes) IsEnum() {}
+
 const (
 	Dockermediatypes ImageMediaTypes = "DockerMediaTypes"
 	Ocimediatypes    ImageMediaTypes = "OCIMediaTypes"
@@ -4078,12 +4084,16 @@ const (
 
 type NetworkProtocol string
 
+func (NetworkProtocol) IsEnum() {}
+
 const (
 	Tcp NetworkProtocol = "TCP"
 	Udp NetworkProtocol = "UDP"
 )
 
 type TypeDefKind string
+
+func (TypeDefKind) IsEnum() {}
 
 const (
 	Booleankind TypeDefKind = "BooleanKind"
