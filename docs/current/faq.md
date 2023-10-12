@@ -160,6 +160,10 @@ Dagger is able to cache:
 
 Operations are automatically cached every time a Dagger pipeline runs. [Cache volumes](./quickstart/635927-caching.mdx) must be explicity defined and used in your Dagger pipeline code.
 
+### Can I run the Dagger Engine as a "rootless" container?
+
+No. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the "root" user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would significantly limit its capabilities and performance. [Read more about these constraints](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
+
 ### I am stuck. How can I get help?
 
 Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
