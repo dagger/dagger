@@ -11,7 +11,7 @@ type ContainerID = resourceid.ID[Container]
 
 type ServiceID = resourceid.ID[Service]
 
-type CacheID = resourceid.ID[CacheVolume]
+type CacheVolumeID = resourceid.ID[CacheVolume]
 
 type DirectoryID = resourceid.ID[Directory]
 
@@ -38,8 +38,8 @@ func ResourceFromID(id string) (any, error) {
 	switch typeName {
 	case ContainerID.ResourceTypeName(""):
 		return ContainerID(id).Decode()
-	case CacheID.ResourceTypeName(""):
-		return CacheID(id).Decode()
+	case CacheVolumeID.ResourceTypeName(""):
+		return CacheVolumeID(id).Decode()
 	case DirectoryID.ResourceTypeName(""):
 		return DirectoryID(id).Decode()
 	case FileID.ResourceTypeName(""):

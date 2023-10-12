@@ -19,11 +19,11 @@ func TestCacheVolume(t *testing.T) {
 
 	type creatVolumeRes struct {
 		CacheVolume struct {
-			ID core.CacheID
+			ID core.CacheVolumeID
 		}
 	}
 
-	var idOrig, idSame, idDiff core.CacheID
+	var idOrig, idSame, idDiff core.CacheVolumeID
 
 	t.Run("creating from a key", func(t *testing.T) {
 		var res creatVolumeRes

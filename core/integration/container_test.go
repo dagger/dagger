@@ -1411,7 +1411,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 		}
 	}{}
 
-	query := `query Test($cache: CacheID!, $rand: String!) {
+	query := `query Test($cache: CacheVolumeID!, $rand: String!) {
 			container {
 				from(address: "` + alpineImage + `") {
 					withEnvVariable(name: "RAND", value: $rand) {
@@ -1485,7 +1485,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		}
 	}{}
 
-	query := `query Test($cache: CacheID!, $rand: String!, $init: DirectoryID!) {
+	query := `query Test($cache: CacheVolumeID!, $rand: String!, $init: DirectoryID!) {
 			container {
 				from(address: "` + alpineImage + `") {
 					withEnvVariable(name: "RAND", value: $rand) {
@@ -1980,7 +1980,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 
 	cacheID := newCache(t)
 	err = testutil.Query(
-		`query Test($cache: CacheID!) {
+		`query Test($cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2215,7 +2215,7 @@ func TestContainerFileErrors(t *testing.T) {
 
 	cacheID := newCache(t)
 	err = testutil.Query(
-		`query Test($cache: CacheID!) {
+		`query Test($cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2359,7 +2359,7 @@ func TestContainerRelativePaths(t *testing.T) {
 
 	cacheID := newCache(t)
 	err = testutil.Query(
-		`query Test($id: DirectoryID!, $cache: CacheID!) {
+		`query Test($id: DirectoryID!, $cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["mkdir", "-p", "/mnt/sub"]) {

@@ -43,16 +43,11 @@ func (s *moduleSchema) Schema() string {
 }
 
 func (s *moduleSchema) Resolvers() Resolvers {
-	return Resolvers{
-		"ModuleID":        stringResolver(core.ModuleID("")),
-		"FunctionID":      stringResolver(core.FunctionID("")),
-		"TypeDefID":       stringResolver(core.TypeDefID("")),
-		"GeneratedCodeID": stringResolver(core.GeneratedCodeID("")),
+	rs := Resolvers{
 		"Query": ObjectResolver{
 			"module":              ToResolver(s.module),
 			"currentModule":       ToResolver(s.currentModule),
 			"function":            ToResolver(s.function),
-			"newFunction":         ToResolver(s.newFunction),
 			"currentFunctionCall": ToResolver(s.currentFunctionCall),
 			"typeDef":             ToResolver(s.typeDef),
 			"generatedCode":       ToResolver(s.generatedCode),
@@ -60,48 +55,54 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"Directory": ObjectResolver{
 			"asModule": ToResolver(s.directoryAsModule),
 		},
-		"Module": ToIDableObjectResolver(core.ModuleID.Decode, ObjectResolver{
-			"id":            ToResolver(s.moduleID),
-			"withObject":    ToResolver(s.moduleWithObject),
-			"generatedCode": ToResolver(s.moduleGeneratedCode),
-			"serve":         ToVoidResolver(s.moduleServe),
-		}),
-		"Function": ToIDableObjectResolver(core.FunctionID.Decode, ObjectResolver{
-			"id":              ToResolver(s.functionID),
-			"withDescription": ToResolver(s.functionWithDescription),
-			"withArg":         ToResolver(s.functionWithArg),
-			"call":            ToResolver(s.functionCall),
-		}),
 		"FunctionCall": ObjectResolver{
 			"returnValue": ToVoidResolver(s.functionCallReturnValue),
 			"parent":      ToResolver(s.functionCallParent),
 		},
-		"TypeDef": ToIDableObjectResolver(core.TypeDefID.Decode, ObjectResolver{
-			"id":           ToResolver(s.typeDefID),
-			"kind":         ToResolver(s.typeDefKind),
-			"withOptional": ToResolver(s.typeDefWithOptional),
-			"withKind":     ToResolver(s.typeDefWithKind),
-			"withListOf":   ToResolver(s.typeDefWithListOf),
-			"withObject":   ToResolver(s.typeDefWithObject),
-			"withField":    ToResolver(s.typeDefWithObjectField),
-			"withFunction": ToResolver(s.typeDefWithObjectFunction),
-		}),
-		"GeneratedCode": ToIDableObjectResolver(core.GeneratedCodeID.Decode, ObjectResolver{
-			"id":                    ToResolver(s.generatedCodeID),
-			"withCode":              ToResolver(s.generatedCodeWithCode),
-			"withVCSIgnoredPaths":   ToResolver(s.generatedCodeWithVCSIgnoredPaths),
-			"withVCSGeneratedPaths": ToResolver(s.generatedCodeWithVCSGeneratedPaths),
-		}),
 	}
+
+	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
+		"withObject":    ToResolver(s.moduleWithObject),
+		"generatedCode": ToResolver(s.moduleGeneratedCode),
+		"serve":         ToVoidResolver(s.moduleServe),
+	})
+
+	ResolveIDable[core.Function](rs, "Function", ObjectResolver{
+		"withDescription": ToResolver(s.functionWithDescription),
+		"withArg":         ToResolver(s.functionWithArg),
+		"call":            ToResolver(s.functionCall),
+	})
+
+	ResolveIDable[core.FunctionArg](rs, "FunctionArg", ObjectResolver{})
+
+	ResolveIDable[core.TypeDef](rs, "TypeDef", ObjectResolver{
+		"kind":         ToResolver(s.typeDefKind),
+		"withOptional": ToResolver(s.typeDefWithOptional),
+		"withKind":     ToResolver(s.typeDefWithKind),
+		"withListOf":   ToResolver(s.typeDefWithListOf),
+		"withObject":   ToResolver(s.typeDefWithObject),
+		"withField":    ToResolver(s.typeDefWithObjectField),
+		"withFunction": ToResolver(s.typeDefWithObjectFunction),
+	})
+
+	ResolveIDable[core.GeneratedCode](rs, "GeneratedCode", ObjectResolver{
+		"withVCSIgnoredPaths":   ToResolver(s.generatedCodeWithVCSIgnoredPaths),
+		"withVCSGeneratedPaths": ToResolver(s.generatedCodeWithVCSGeneratedPaths),
+	})
+
+	return rs
 }
 
 func (s *moduleSchema) typeDef(ctx *core.Context, _ *core.Query, args struct {
-	ID core.TypeDefID
+	ID   core.TypeDefID
+	Kind core.TypeDefKind
 }) (*core.TypeDef, error) {
 	if args.ID != "" {
 		return args.ID.Decode()
 	}
-	return &core.TypeDef{}, nil
+	return &core.TypeDef{
+		Kind: args.Kind,
+	}, nil
 }
 
 func (s *moduleSchema) typeDefWithOptional(ctx *core.Context, def *core.TypeDef, args struct {
@@ -155,35 +156,18 @@ func (s *moduleSchema) typeDefWithObjectFunction(ctx *core.Context, def *core.Ty
 	return def.WithObjectFunction(fn)
 }
 
-func (s *moduleSchema) typeDefID(ctx *core.Context, def *core.TypeDef, args any) (core.TypeDefID, error) {
-	return def.ID()
-}
-
 func (s *moduleSchema) typeDefKind(ctx *core.Context, def *core.TypeDef, args any) (string, error) {
 	return def.Kind.String(), nil
 }
 
 func (s *moduleSchema) generatedCode(ctx *core.Context, _ *core.Query, args struct {
-	ID core.GeneratedCodeID
-}) (*core.GeneratedCode, error) {
-	if args.ID != "" {
-		return args.ID.Decode()
-	}
-	return &core.GeneratedCode{}, nil
-}
-
-func (s *moduleSchema) generatedCodeID(ctx *core.Context, code *core.GeneratedCode, args any) (core.GeneratedCodeID, error) {
-	return code.ID()
-}
-
-func (s *moduleSchema) generatedCodeWithCode(ctx *core.Context, code *core.GeneratedCode, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
 	dir, err := args.Code.Decode()
 	if err != nil {
 		return nil, err
 	}
-	return code.WithCode(dir), nil
+	return core.NewGeneratedCode(dir), nil
 }
 
 func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx *core.Context, code *core.GeneratedCode, args struct {
@@ -223,15 +207,7 @@ func (s *moduleSchema) currentModule(ctx *core.Context, _ *core.Query, _ any) (*
 	return fnCtx.Module, nil
 }
 
-type queryFunctionArgs struct {
-	ID core.FunctionID
-}
-
-func (s *moduleSchema) function(ctx *core.Context, _ *core.Query, args queryFunctionArgs) (*core.Function, error) {
-	return args.ID.Decode()
-}
-
-func (s *moduleSchema) newFunction(ctx *core.Context, _ *core.Query, args struct {
+func (s *moduleSchema) function(ctx *core.Context, _ *core.Query, args struct {
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
@@ -404,10 +380,6 @@ func (s *moduleSchema) installRuntime(ctx *core.Context, mod *core.Module) error
 	return nil
 }
 
-func (s *moduleSchema) moduleID(ctx *core.Context, module *core.Module, args any) (_ core.ModuleID, rerr error) {
-	return module.ID()
-}
-
 func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, args any) (*core.GeneratedCode, error) {
 	sdkMod, err := s.loadRuntimeModule(ctx, mod)
 	if err != nil {
@@ -487,10 +459,6 @@ func (s *moduleSchema) moduleWithObject(ctx *core.Context, module *core.Module, 
 		return nil, err
 	}
 	return module.WithObject(def)
-}
-
-func (s *moduleSchema) functionID(ctx *core.Context, fn *core.Function, _ any) (core.FunctionID, error) {
-	return fn.ID()
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx *core.Context, fnCall *core.FunctionCall, args struct{ Value any }) error {

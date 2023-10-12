@@ -9,15 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type customStringType string
+type enumType string
+
+func (c enumType) IsEnum() {}
 
 func TestMarshalGQL(t *testing.T) {
 	var (
 		str         = "hello world"
 		unicode     = "∆?–∂∂√˛viÙ˜Ÿ¿GÆÓ∂Ó˘◊ñ" //nolint:stylecheck
 		strNullPtr  *string
-		strPtrSlice                  = []*string{&str}
-		customStr   customStringType = "test"
+		strPtrSlice          = []*string{&str}
+		enumVal     enumType = "test"
 	)
 
 	testCases := []struct {
@@ -70,7 +72,7 @@ func TestMarshalGQL(t *testing.T) {
 			expect: `["hello world"]`,
 		},
 		{
-			v:      customStr,
+			v:      enumVal,
 			expect: "test",
 		},
 	}

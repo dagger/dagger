@@ -21,7 +21,7 @@ public class Helpers {
           put("DirectoryID", "Directory");
           put("SecretID", "Secret");
           put("SocketID", "Socket");
-          put("CacheID", "CacheVolume");
+          put("CacheVolumeID", "CacheVolume");
           put("ModuleID", "Module");
           put("FunctionID", "Function");
           put("TypeDefID", "TypeDef");

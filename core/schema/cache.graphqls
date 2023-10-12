@@ -1,5 +1,5 @@
 "A global cache volume identifier."
-scalar CacheID
+scalar CacheVolumeID
 
 "Sharing mode of the cache volume."
 enum CacheSharingMode {
@@ -26,9 +26,14 @@ extend type Query {
     """
     key: String!
   ): CacheVolume!
+
+  """
+  Load a CacheVolume from its ID.
+  """
+  loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 }
 
 "A directory whose contents persist across runs."
 type CacheVolume {
-  id: CacheID!
+  id: CacheVolumeID!
 }

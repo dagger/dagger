@@ -311,7 +311,7 @@ fn format_function_args(
 
                     let t = funcs.format_input_type(&s.input_value.type_);
 
-                    let t = t.trim_end_matches("Id").replace("Cache", "CacheVolume");
+                    let t = t.trim_end_matches("Id");
                     let n = format_struct_name(&s.input_value.name);
 
                     if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
@@ -387,7 +387,7 @@ fn format_required_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
-                    let t = t.trim_end_matches("Id").replace("Cache", "CacheVolume");
+                    let t = t.trim_end_matches("Id");
                     let n = format_struct_name(&s.input_value.name);
 
                     Some(quote! {

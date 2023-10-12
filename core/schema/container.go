@@ -42,71 +42,72 @@ func (s *containerSchema) Schema() string {
 }
 
 func (s *containerSchema) Resolvers() Resolvers {
-	return Resolvers{
-		"ContainerID": stringResolver(core.ContainerID("")),
+	rs := Resolvers{
 		"Query": ObjectResolver{
 			"container": ToResolver(s.container),
 		},
-		"Container": ToIDableObjectResolver(core.ContainerID.Decode, ObjectResolver{
-			"id":                   ToResolver(s.id),
-			"sync":                 ToResolver(s.sync),
-			"from":                 ToResolver(s.from),
-			"build":                ToResolver(s.build),
-			"rootfs":               ToResolver(s.rootfs),
-			"pipeline":             ToResolver(s.pipeline),
-			"withRootfs":           ToResolver(s.withRootfs),
-			"file":                 ToResolver(s.file),
-			"directory":            ToResolver(s.directory),
-			"user":                 ToResolver(s.user),
-			"withUser":             ToResolver(s.withUser),
-			"workdir":              ToResolver(s.workdir),
-			"withWorkdir":          ToResolver(s.withWorkdir),
-			"envVariables":         ToResolver(s.envVariables),
-			"envVariable":          ToResolver(s.envVariable),
-			"withEnvVariable":      ToResolver(s.withEnvVariable),
-			"withSecretVariable":   ToResolver(s.withSecretVariable),
-			"withoutEnvVariable":   ToResolver(s.withoutEnvVariable),
-			"withLabel":            ToResolver(s.withLabel),
-			"label":                ToResolver(s.label),
-			"labels":               ToResolver(s.labels),
-			"withoutLabel":         ToResolver(s.withoutLabel),
-			"entrypoint":           ToResolver(s.entrypoint),
-			"withEntrypoint":       ToResolver(s.withEntrypoint),
-			"defaultArgs":          ToResolver(s.defaultArgs),
-			"withDefaultArgs":      ToResolver(s.withDefaultArgs),
-			"mounts":               ToResolver(s.mounts),
-			"withMountedDirectory": ToResolver(s.withMountedDirectory),
-			"withMountedFile":      ToResolver(s.withMountedFile),
-			"withMountedTemp":      ToResolver(s.withMountedTemp),
-			"withMountedCache":     ToResolver(s.withMountedCache),
-			"withMountedSecret":    ToResolver(s.withMountedSecret),
-			"withUnixSocket":       ToResolver(s.withUnixSocket),
-			"withoutUnixSocket":    ToResolver(s.withoutUnixSocket),
-			"withoutMount":         ToResolver(s.withoutMount),
-			"withFile":             ToResolver(s.withFile),
-			"withNewFile":          ToResolver(s.withNewFile),
-			"withDirectory":        ToResolver(s.withDirectory),
-			"withExec":             ToResolver(s.withExec),
-			"stdout":               ToResolver(s.stdout),
-			"stderr":               ToResolver(s.stderr),
-			"publish":              ToResolver(s.publish),
-			"platform":             ToResolver(s.platform),
-			"export":               ToResolver(s.export),
-			"import":               ToResolver(s.import_),
-			"withRegistryAuth":     ToResolver(s.withRegistryAuth),
-			"withoutRegistryAuth":  ToResolver(s.withoutRegistryAuth),
-			"imageRef":             ToResolver(s.imageRef),
-			"withExposedPort":      ToResolver(s.withExposedPort),
-			"withoutExposedPort":   ToResolver(s.withoutExposedPort),
-			"exposedPorts":         ToResolver(s.exposedPorts),
-			"hostname":             ToResolver(s.hostname),
-			"endpoint":             ToResolver(s.endpoint),
-			"withServiceBinding":   ToResolver(s.withServiceBinding),
-			"withFocus":            ToResolver(s.withFocus),
-			"withoutFocus":         ToResolver(s.withoutFocus),
-			"shellEndpoint":        ToResolver(s.shellEndpoint),
-		}),
 	}
+
+	ResolveIDable[core.Container](rs, "Container", ObjectResolver{
+		"sync":                 ToResolver(s.sync),
+		"from":                 ToResolver(s.from),
+		"build":                ToResolver(s.build),
+		"rootfs":               ToResolver(s.rootfs),
+		"pipeline":             ToResolver(s.pipeline),
+		"withRootfs":           ToResolver(s.withRootfs),
+		"file":                 ToResolver(s.file),
+		"directory":            ToResolver(s.directory),
+		"user":                 ToResolver(s.user),
+		"withUser":             ToResolver(s.withUser),
+		"workdir":              ToResolver(s.workdir),
+		"withWorkdir":          ToResolver(s.withWorkdir),
+		"envVariables":         ToResolver(s.envVariables),
+		"envVariable":          ToResolver(s.envVariable),
+		"withEnvVariable":      ToResolver(s.withEnvVariable),
+		"withSecretVariable":   ToResolver(s.withSecretVariable),
+		"withoutEnvVariable":   ToResolver(s.withoutEnvVariable),
+		"withLabel":            ToResolver(s.withLabel),
+		"label":                ToResolver(s.label),
+		"labels":               ToResolver(s.labels),
+		"withoutLabel":         ToResolver(s.withoutLabel),
+		"entrypoint":           ToResolver(s.entrypoint),
+		"withEntrypoint":       ToResolver(s.withEntrypoint),
+		"defaultArgs":          ToResolver(s.defaultArgs),
+		"withDefaultArgs":      ToResolver(s.withDefaultArgs),
+		"mounts":               ToResolver(s.mounts),
+		"withMountedDirectory": ToResolver(s.withMountedDirectory),
+		"withMountedFile":      ToResolver(s.withMountedFile),
+		"withMountedTemp":      ToResolver(s.withMountedTemp),
+		"withMountedCache":     ToResolver(s.withMountedCache),
+		"withMountedSecret":    ToResolver(s.withMountedSecret),
+		"withUnixSocket":       ToResolver(s.withUnixSocket),
+		"withoutUnixSocket":    ToResolver(s.withoutUnixSocket),
+		"withoutMount":         ToResolver(s.withoutMount),
+		"withFile":             ToResolver(s.withFile),
+		"withNewFile":          ToResolver(s.withNewFile),
+		"withDirectory":        ToResolver(s.withDirectory),
+		"withExec":             ToResolver(s.withExec),
+		"stdout":               ToResolver(s.stdout),
+		"stderr":               ToResolver(s.stderr),
+		"publish":              ToResolver(s.publish),
+		"platform":             ToResolver(s.platform),
+		"export":               ToResolver(s.export),
+		"import":               ToResolver(s.import_),
+		"withRegistryAuth":     ToResolver(s.withRegistryAuth),
+		"withoutRegistryAuth":  ToResolver(s.withoutRegistryAuth),
+		"imageRef":             ToResolver(s.imageRef),
+		"withExposedPort":      ToResolver(s.withExposedPort),
+		"withoutExposedPort":   ToResolver(s.withoutExposedPort),
+		"exposedPorts":         ToResolver(s.exposedPorts),
+		"hostname":             ToResolver(s.hostname),
+		"endpoint":             ToResolver(s.endpoint),
+		"withServiceBinding":   ToResolver(s.withServiceBinding),
+		"withFocus":            ToResolver(s.withFocus),
+		"withoutFocus":         ToResolver(s.withoutFocus),
+		"shellEndpoint":        ToResolver(s.shellEndpoint),
+	})
+
+	return rs
 }
 
 func (s *containerSchema) Dependencies() []ExecutableSchema {
@@ -138,10 +139,6 @@ func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any)
 	if err != nil {
 		return "", err
 	}
-	return parent.ID()
-}
-
-func (s *containerSchema) id(ctx *core.Context, parent *core.Container, args any) (core.ContainerID, error) {
 	return parent.ID()
 }
 
@@ -468,7 +465,7 @@ func (s *containerSchema) withMountedFile(ctx *core.Context, parent *core.Contai
 
 type containerWithMountedCacheArgs struct {
 	Path        string
-	Cache       core.CacheID
+	Cache       core.CacheVolumeID
 	Source      core.DirectoryID
 	Concurrency core.CacheSharingMode
 	Owner       string

@@ -1,6 +1,15 @@
 extend type Query {
-  "Load a directory by ID. No argument produces an empty directory."
-  directory(id: DirectoryID): Directory!
+  """
+  Creates an empty directory or loads one by ID.
+  """
+  directory(
+    id: DirectoryID @deprecated(reason: "Use `loadDirectoryFromID` instead.")
+  ): Directory!
+
+  """
+  Load a Directory from its ID.
+  """
+  loadDirectoryFromID(id: DirectoryID!): Directory!
 }
 
 "A content-addressed directory identifier."
