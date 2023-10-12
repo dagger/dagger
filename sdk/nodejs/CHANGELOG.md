@@ -16,7 +16,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.8`. [See what changed in that
 
 
 ### Dependencies
-- Bump Engine to v0.8.8 by @github-actions in https://github.com/dagger/dagger/pull/5795
+- Bump Engine to v0.8.8 by @github-actions in https://github.com/dagger/dagger/pull/5877
 
 ### What to do next
 - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
@@ -24,14 +24,14 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.8`. [See what changed in that
 - Follow us on [Twitter](https://twitter.com/dagger_io)
 ## sdk/nodejs/v0.8.7 - 2023-09-18
 
-This SDK uses 🚙 Engine + 🚗 CLI version `<no value>`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/<no value>).
+This SDK uses 🚙 Engine + 🚗 CLI version `v0.8.7`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/v0.8.7).
 
 ⬢ https://www.npmjs.com/package/@dagger.io/dagger
 📒 https://docs.dagger.io/current/sdk/nodejs/reference/modules/api_client_gen
 
 
 ### Dependencies
-- Bump Engine to v0.8.7 by @github-actions in https://github.com/dagger/dagger/pull/5795
+- Bump Engine to v0.8.7 by @github-actions in https://github.com/dagger/dagger/pull/5799
 
 ### What to do next
 - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
