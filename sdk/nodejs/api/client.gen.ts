@@ -5011,6 +5011,23 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Loads a service from ID.
+   */
+  loadServiceFromID(id: ServiceID): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadServiceFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Load a Socket from its ID.
    */
   loadSocketFromID(id: SocketID): Socket {
@@ -5090,23 +5107,6 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "secret",
-          args: { id },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Loads a service from ID.
-   */
-  service(id: ServiceID): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "service",
           args: { id },
         },
       ],

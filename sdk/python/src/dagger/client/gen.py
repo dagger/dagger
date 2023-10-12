@@ -3980,6 +3980,15 @@ class Client(Root):
         return Secret(_ctx)
 
     @typecheck
+    def load_service_from_id(self, id: ServiceID) -> "Service":
+        """Loads a service from ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadServiceFromID", _args)
+        return Service(_ctx)
+
+    @typecheck
     def load_socket_from_id(self, id: SocketID) -> "Socket":
         """Load a Socket from its ID."""
         _args = [
@@ -4048,15 +4057,6 @@ class Client(Root):
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
-
-    @typecheck
-    def service(self, id: ServiceID) -> "Service":
-        """Loads a service from ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("service", _args)
-        return Service(_ctx)
 
     @typecheck
     def set_secret(self, name: str, plaintext: str) -> "Secret":
@@ -4267,7 +4267,7 @@ class Service(Type):
 
     @classmethod
     def _from_id_query_field(cls):
-        return "service"
+        return "loadServiceFromID"
 
     @typecheck
     async def ports(self) -> list[Port]:
@@ -4297,7 +4297,7 @@ class Service(Type):
         _args: list[Arg] = []
         _ctx = self._select("start", _args)
         _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("service", [Arg("id", _id)])
+        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
         return Service(_ctx)
 
     @typecheck
@@ -4314,7 +4314,7 @@ class Service(Type):
         _args: list[Arg] = []
         _ctx = self._select("stop", _args)
         _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("service", [Arg("id", _id)])
+        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
         return Service(_ctx)
 
 
@@ -4576,12 +4576,12 @@ load_function_from_id = _client.load_function_from_id
 load_generated_code_from_id = _client.load_generated_code_from_id
 load_module_from_id = _client.load_module_from_id
 load_secret_from_id = _client.load_secret_from_id
+load_service_from_id = _client.load_service_from_id
 load_socket_from_id = _client.load_socket_from_id
 load_type_def_from_id = _client.load_type_def_from_id
 module = _client.module
 pipeline = _client.pipeline
 secret = _client.secret
-service = _client.service
 set_secret = _client.set_secret
 socket = _client.socket
 type_def = _client.type_def
@@ -4665,12 +4665,12 @@ __all__ = [
     "load_generated_code_from_id",
     "load_module_from_id",
     "load_secret_from_id",
+    "load_service_from_id",
     "load_socket_from_id",
     "load_type_def_from_id",
     "module",
     "pipeline",
     "secret",
-    "service",
     "set_secret",
     "socket",
     "type_def",

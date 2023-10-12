@@ -306,6 +306,16 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Loads a service from ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_service_from_id(t(), Dagger.Service.t()) :: Dagger.Service.t()
+    def load_service_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadServiceFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.Service{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a Socket from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_socket_from_id(t(), Dagger.Socket.t()) :: Dagger.Socket.t()
     def load_socket_from_id(%__MODULE__{} = query, socket) do
@@ -372,16 +382,6 @@ defmodule Dagger.Client do
       selection = select(query.selection, "secret")
       selection = arg(selection, "id", secret)
       %Dagger.Secret{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Loads a service from ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec service(t(), Dagger.Service.t()) :: Dagger.Service.t()
-    def service(%__MODULE__{} = query, id) do
-      selection = select(query.selection, "service")
-      selection = arg(selection, "id", id)
-      %Dagger.Service{selection: selection, client: query.client}
     end
   )
 

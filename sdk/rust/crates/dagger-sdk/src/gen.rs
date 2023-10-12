@@ -3788,6 +3788,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Loads a service from ID.
+    pub fn load_service_from_id(&self, id: Service) -> Service {
+        let mut query = self.selection.select("loadServiceFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Load a Socket from its ID.
     pub fn load_socket_from_id(&self, id: Socket) -> Socket {
         let mut query = self.selection.select("loadSocketFromID");
@@ -3876,22 +3892,6 @@ impl Query {
             }),
         );
         return Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Loads a service from ID.
-    pub fn service(&self, id: Service) -> Service {
-        let mut query = self.selection.select("service");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
-            }),
-        );
-        return Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

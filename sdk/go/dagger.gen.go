@@ -3547,6 +3547,17 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
+// Loads a service from ID.
+func (r *Client) LoadServiceFromID(id ServiceID) *Service {
+	q := r.q.Select("loadServiceFromID")
+	q = q.Arg("id", id)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a Socket from its ID.
 func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	q := r.q.Select("loadSocketFromID")
@@ -3616,17 +3627,6 @@ func (r *Client) Secret(id SecretID) *Secret {
 	q = q.Arg("id", id)
 
 	return &Secret{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Loads a service from ID.
-func (r *Client) Service(id ServiceID) *Service {
-	q := r.q.Select("service")
-	q = q.Arg("id", id)
-
-	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -3855,7 +3855,8 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 		out := []Port{}
 
 		for i := range fields {
-			out = append(out, Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol})
+			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
+			out = append(out, val)
 		}
 
 		return out
