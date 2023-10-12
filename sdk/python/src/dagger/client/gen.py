@@ -28,7 +28,7 @@ class FileID(Scalar):
 
 
 class FunctionArgID(Scalar):
-    ...
+    """A reference to a FunctionArg."""
 
 
 class FunctionID(Scalar):
@@ -2676,6 +2676,11 @@ class FunctionArg(Type):
         Note
         ----
         This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        FunctionArgID
+            A reference to a FunctionArg.
 
         Raises
         ------

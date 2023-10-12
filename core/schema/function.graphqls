@@ -57,6 +57,7 @@ type Function {
   call(input: [FunctionCallInput!]): JSON!
 }
 
+"A reference to a FunctionArg."
 scalar FunctionArgID
 
 extend type Query {

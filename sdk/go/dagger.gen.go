@@ -37,6 +37,7 @@ type DirectoryID string
 // A file identifier.
 type FileID string
 
+// A reference to a FunctionArg.
 type FunctionArgID string
 
 // A reference to a Function.

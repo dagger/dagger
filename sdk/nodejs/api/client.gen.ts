@@ -576,6 +576,9 @@ export type FunctionWithArgOpts = {
   defaultValue?: JSON
 }
 
+/**
+ * A reference to a FunctionArg.
+ */
 export type FunctionArgID = string & { __FunctionArgID: never }
 
 export type FunctionCallInput = {
