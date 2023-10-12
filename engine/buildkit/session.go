@@ -7,6 +7,7 @@ import (
 	"net"
 
 	"github.com/containerd/containerd/content"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
@@ -27,6 +28,8 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
 	sess.Allow(&socketProxy{c})
 	sess.Allow(&authProxy{c})
+	sess.Allow(&client.AnyDirSource{})
+	sess.Allow(&client.AnyDirTarget{})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
@@ -57,9 +60,9 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		if err != nil {
 			lg := bklog.G(ctx).WithError(err)
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
-				lg.Debug("client session in dagger frontend ended")
+				lg.Debug("client session ended")
 			} else {
-				lg.Error("failed to run dagger frontend session")
+				lg.Error("failed to run session")
 			}
 		}
 	}()

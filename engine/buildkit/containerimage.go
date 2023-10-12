@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vito/progrock"
 )
 
 type ContainerExport struct {
@@ -115,6 +117,78 @@ func (c *Client) ExportContainerImage(
 		descRef.Release()
 	}
 	return resp, nil
+}
+
+func (c *Client) ContainerImageToTarball(
+	ctx context.Context,
+	engineHostPlatform specs.Platform,
+	fileName string,
+	inputByPlatform map[string]ContainerExport,
+	opts map[string]string,
+) (*bksolverpb.Definition, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
+	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
+	if err != nil {
+		return nil, err
+	}
+
+	exporterName := bkclient.ExporterDocker
+	if len(combinedResult.Refs) > 1 {
+		exporterName = bkclient.ExporterOCI
+	}
+
+	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	if err != nil {
+		return nil, err
+	}
+
+	expInstance, err := exporter.Resolve(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "dagger-tarball")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp dir for tarball export: %s", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	destPath := path.Join(tmpDir, fileName)
+
+	ctx = engine.LocalExportOpts{
+		DestClientID: c.ID(),
+		Path:         destPath,
+		IsFileStream: true,
+	}.AppendToOutgoingContext(ctx)
+
+	_, descRef, err := expInstance.Export(ctx, combinedResult, c.ID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to export: %s", err)
+	}
+	if descRef != nil {
+		defer descRef.Release()
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get hostname for container image to tarball: %s", err)
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:       c.ID(), // we are exporting to our own filesystem in the engine container
+		ClientHostname: hostname,
+	})
+
+	ctx, recorder := progrock.WithGroup(ctx, "container image to tarball")
+	pbDef, err := c.LocalImport(ctx, recorder, engineHostPlatform, tmpDir, nil, []string{fileName})
+	if err != nil {
+		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %s", err)
+	}
+
+	return pbDef, nil
 }
 
 func (c *Client) getContainerResult(

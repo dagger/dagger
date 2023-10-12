@@ -98,6 +98,30 @@ export enum CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ContainerAsTarballOpts = {
+  /**
+   * Identifiers for other platform specific containers.
+   * Used for multi-platform image.
+   */
+  platformVariants?: Container[]
+
+  /**
+   * Force each layer of the image to use the specified compression algorithm.
+   * If this is unset, then if a layer already has a compressed blob in the engine's
+   * cache, that will be used (this can result in a mix of compression algorithms for
+   * different layers). If this is unset and a layer has no compressed blob in the
+   * engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Use the specified media types for the image's layers. Defaults to OCI, which
+   * is largely compatible with most recent container runtimes, but Docker may be needed
+   * for older runtimes without OCI support.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
@@ -935,6 +959,38 @@ export class Container extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Returns a File representing the container serialized to a tarball.
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+   * Used for multi-platform image.
+   * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
+   * If this is unset, then if a layer already has a compressed blob in the engine's
+   * cache, that will be used (this can result in a mix of compression algorithms for
+   * different layers). If this is unset and a layer has no compressed blob in the
+   * engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the image's layers. Defaults to OCI, which
+   * is largely compatible with most recent container runtimes, but Docker may be needed
+   * for older runtimes without OCI support.
+   */
+  asTarball(opts?: ContainerAsTarballOpts): File {
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asTarball",
+          args: { ...opts, __metadata: metadata },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**

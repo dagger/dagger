@@ -283,6 +283,25 @@ pub struct Container {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerAsTarballOpts {
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's
+    /// cache, that will be used (this can result in a mix of compression algorithms for
+    /// different layers). If this is unset and a layer has no compressed blob in the
+    /// engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the image's layers. Defaults to OCI, which
+    /// is largely compatible with most recent container runtimes, but Docker may be needed
+    /// for older runtimes without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+    /// Identifiers for other platform specific containers.
+    /// Used for multi-platform image.
+    #[builder(setter(into, strip_option), default)]
+    pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerBuildOpts<'a> {
     /// Additional build arguments.
     #[builder(setter(into, strip_option), default)]
@@ -515,6 +534,41 @@ pub struct ContainerWithoutExposedPortOpts {
     pub protocol: Option<NetworkProtocol>,
 }
 impl Container {
+    /// Returns a File representing the container serialized to a tarball.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_tarball(&self) -> File {
+        let query = self.selection.select("asTarball");
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Returns a File representing the container serialized to a tarball.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_tarball_opts(&self, opts: ContainerAsTarballOpts) -> File {
+        let mut query = self.selection.select("asTarball");
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
+        }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg_enum("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg_enum("mediaTypes", media_types);
+        }
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Initializes this container from a Dockerfile build.
     ///
     /// # Arguments

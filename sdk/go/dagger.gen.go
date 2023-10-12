@@ -180,6 +180,47 @@ func (r *Container) With(f WithContainerFunc) *Container {
 	return f(r)
 }
 
+// ContainerAsTarballOpts contains options for Container.AsTarball
+type ContainerAsTarballOpts struct {
+	// Identifiers for other platform specific containers.
+	// Used for multi-platform image.
+	PlatformVariants []*Container
+	// Force each layer of the image to use the specified compression algorithm.
+	// If this is unset, then if a layer already has a compressed blob in the engine's
+	// cache, that will be used (this can result in a mix of compression algorithms for
+	// different layers). If this is unset and a layer has no compressed blob in the
+	// engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Use the specified media types for the image's layers. Defaults to OCI, which
+	// is largely compatible with most recent container runtimes, but Docker may be needed
+	// for older runtimes without OCI support.
+	MediaTypes ImageMediaTypes
+}
+
+// Returns a File representing the container serialized to a tarball.
+func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
+	q := r.q.Select("asTarball")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platformVariants` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+		}
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
+}
+
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.

@@ -224,6 +224,46 @@ class Container(Type):
     """An OCI-compatible container, also known as a docker container."""
 
     @typecheck
+    def as_tarball(
+        self,
+        *,
+        platform_variants: Optional[Sequence["Container"]] = None,
+        forced_compression: Optional[ImageLayerCompression] = None,
+        media_types: Optional[ImageMediaTypes] = None,
+    ) -> "File":
+        """Returns a File representing the container serialized to a tarball.
+
+        Parameters
+        ----------
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's
+            cache, that will be used (this can result in a mix of compression
+            algorithms for
+            different layers). If this is unset and a layer has no compressed
+            blob in the
+            engine's cache, then it will be compressed using Gzip.
+        media_types:
+            Use the specified media types for the image's layers. Defaults to
+            OCI, which
+            is largely compatible with most recent container runtimes, but
+            Docker may be needed
+            for older runtimes without OCI support.
+        """
+        _args = [
+            Arg("platformVariants", platform_variants, None),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, None),
+        ]
+        _ctx = self._select("asTarball", _args)
+        return File(_ctx)
+
+    @typecheck
     def build(
         self,
         context: "Directory",
