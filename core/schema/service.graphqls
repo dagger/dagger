@@ -2,7 +2,7 @@ extend type Query {
   """
   Loads a service from ID.
   """
-  service(id: ServiceID!): Service!
+  loadServiceFromID(id: ServiceID!): Service!
 }
 
 "A unique service identifier."

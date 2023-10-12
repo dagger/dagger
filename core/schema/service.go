@@ -23,43 +23,29 @@ func (s *serviceSchema) Schema() string {
 }
 
 func (s *serviceSchema) Resolvers() Resolvers {
-	return Resolvers{
-		"ServiceID": stringResolver(core.ServiceID("")),
-		"Query": ObjectResolver{
-			"service": ToResolver(s.service),
-		},
+	rs := Resolvers{
 		"Container": ObjectResolver{
 			"service": ToResolver(s.containerService),
 		},
-		"Service": ObjectResolver{
-			"id":       ToResolver(s.id),
-			"hostname": ToResolver(s.hostname),
-			"ports":    ToResolver(s.ports),
-			"endpoint": ToResolver(s.endpoint),
-			"start":    ToResolver(s.start),
-			"stop":     ToResolver(s.stop),
-		},
 	}
+
+	ResolveIDable[core.Service](rs, "Service", ObjectResolver{
+		"hostname": ToResolver(s.hostname),
+		"ports":    ToResolver(s.ports),
+		"endpoint": ToResolver(s.endpoint),
+		"start":    ToResolver(s.start),
+		"stop":     ToResolver(s.stop),
+	})
+
+	return rs
 }
 
 func (s *serviceSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-type serviceArgs struct {
-	ID core.ServiceID
-}
-
-func (s *serviceSchema) service(ctx *core.Context, parent *core.Query, args serviceArgs) (*core.Service, error) {
-	return args.ID.Decode()
-}
-
 func (s *serviceSchema) containerService(ctx *core.Context, parent *core.Container, args any) (*core.Service, error) {
 	return parent.Service(ctx, s.bk, s.progSockPath)
-}
-
-func (s *serviceSchema) id(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
-	return parent.ID()
 }
 
 func (s *serviceSchema) hostname(ctx *core.Context, parent *core.Service, args any) (string, error) {
