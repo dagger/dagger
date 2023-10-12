@@ -33,6 +33,12 @@ curl -L https://dl.dagger.io/dagger/install.sh | sh
 
 The above will create `./bin/dagger`.
 
+If your user account doesn't have sufficient privileges to install in the specified location and `sudo` is available, use the following command instead:
+
+```shell
+curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
+```
+
 Homebrew users can alternatively use the following commands:
 
 ```shell
