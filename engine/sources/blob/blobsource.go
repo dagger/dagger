@@ -2,6 +2,7 @@ package blob
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -133,5 +134,28 @@ func (bs *blobSourceInstance) Snapshot(ctx context.Context, _ session.Group) (ca
 		// TODO: could also include description of original blob source by passing along more metadata
 		cache.WithDescription(fmt.Sprintf("dagger blob source for %s", bs.id.Digest)),
 	}
-	return bs.cache.GetByBlob(ctx, bs.id.Descriptor, nil, opts...)
+	ref, err := bs.cache.GetByBlob(ctx, bs.id.Descriptor, nil, opts...)
+	var needsRemoteProviders cache.NeedsRemoteProviderError
+	if errors.As(err, &needsRemoteProviders) {
+		if optGetter := solver.CacheOptGetterOf(ctx); optGetter != nil {
+			var keys []interface{}
+			for _, dgst := range needsRemoteProviders {
+				keys = append(keys, cache.DescHandlerKey(dgst))
+			}
+			descHandlers := cache.DescHandlers(make(map[digest.Digest]*cache.DescHandler))
+			for k, v := range optGetter(true, keys...) {
+				if key, ok := k.(cache.DescHandlerKey); ok {
+					if handler, ok := v.(*cache.DescHandler); ok {
+						descHandlers[digest.Digest(key)] = handler
+					}
+				}
+			}
+			opts = append(opts, descHandlers)
+			ref, err = bs.cache.GetByBlob(ctx, bs.id.Descriptor, nil, opts...)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load ref for blob snapshot: %w", err)
+	}
+	return ref, nil
 }

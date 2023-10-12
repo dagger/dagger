@@ -105,6 +105,78 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	require.Equal(t, shaA, shaB)
 }
 
+/*
+	Regression test for https://github.com/dagger/dagger/pull/5885
+
+Idea is to:
+1. Load in a local dir, use it to force evaluation
+2. Export remote cache for the load
+3. Load exact same local dir in a new engine that imports the cache
+4. Make sure that works and there's no errors about lazy blobs missing
+The linked PR description above has more details.
+*/
+func TestRemoteCacheLazyBlobs(t *testing.T) {
+	c, ctx := connect(t)
+
+	registry := c.Pipeline("registry").Container().From("registry:2").
+		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
+
+	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
+
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 10)
+	require.NoError(t, err)
+
+	daggerCli := daggerCliFile(t, c)
+
+	cliBinPath := "/.dagger-cli"
+
+	outputA, err := c.Container().From(alpineImage).
+		WithDirectory("/foo", c.Directory().WithDirectory("bar", c.Directory().WithNewFile("baz", "blah")).WithTimestamps(0)).
+		WithServiceBinding("dev-engine", devEngineA).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				host {
+					directory(path: "/foo/bar") {
+						entries
+					}
+				}
+			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
+		}).Stdout(ctx)
+	require.NoErrorf(t, err, "outputA: %s", outputA)
+
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 11)
+	require.NoError(t, err)
+
+	outputB, err := c.Container().From(alpineImage).
+		WithDirectory("/foo", c.Directory().WithDirectory("bar", c.Directory().WithNewFile("baz", "blah")).WithTimestamps(0)).
+		WithServiceBinding("dev-engine", devEngineB).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				host {
+					directory(path: "/foo/bar") {
+						entries
+					}
+				}
+			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
+		}).Stdout(ctx)
+	require.NoErrorf(t, err, "outputB: %s", outputB)
+}
+
 func TestRemoteCacheS3(t *testing.T) {
 	t.Run("buildkit s3 caching", func(t *testing.T) {
 		c, ctx := connect(t)
