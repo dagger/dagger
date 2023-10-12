@@ -19,5 +19,5 @@ package modules
 // building a Dockerfile. We would still want some sort of shorthand though. No
 // one wants to type dagger mod init --sdk=github.com/dagger/dagger-sdk-go.
 var WellKnownSDKRuntimes = map[string]string{
-	"go": "vito/dagger-sdk-go:f239c6f6c3ceaa1f760b589fac43b1d0704e45d3@sha256:915f41b414b12a878c60d96869f8ff8155e6ce122b1849303b995b65a343591f",
+	"go": "vito/dagger-sdk-go:b0b1458855f193526e52d3d70c32119228a21db0@sha256:e64d7b200b83cffaa30ab8e5a6ba4cef43e1ba212edd27a35cb44ee227c2e721",
 }
