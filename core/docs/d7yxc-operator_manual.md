@@ -106,7 +106,6 @@ To ensure that an SDK will be used with a compatible CLI and runner:
 
 Not at this time. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the "root" user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would currently significantly limit its capabilities and performance.
 
-
 #### Filesystem constraints
 
 The Dagger Engine relies on the `overlayfs` snapshotter for efficient construction of container filesystems. However, only relatively recent Linux kernel versions fully support `overlayfs` inside of rootless user namespaces. On older kernels, there are fallback options such as [`fuse-overlayfs`](https://github.com/containers/fuse-overlayfs), but they come with their own complications in terms of degraded performance and host-specific setup.
@@ -115,7 +114,7 @@ We've not yet invested in the significant work it would take to support+document
 
 #### Network constraints
 
-Running the Dagger Engine in rootless mode constrains network management due to the fact that it's not possible for a rootless container to move a network device from the host network namespace to its own network namespace. 
+Running the Dagger Engine in rootless mode constrains network management due to the fact that it's not possible for a rootless container to move a network device from the host network namespace to its own network namespace.
 
 It is possible to use userspace TCP/IP implementations such as [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but they often significantly decrease network performance. This [comparison table of network drivers](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers) shows that `slirp` is at least five times slower than a root-privileged network driver.
 
@@ -187,6 +186,8 @@ However if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` env var is set, then the CLI w
 
 1. `docker-container://<container name>` - Connect to the runner inside the given docker container.
    - Requires the docker CLI be present and usable. Will result in shelling out to `docker exec`.
+1. `docker-image://<container image reference>` - Start the runner in docker using the provided container image, pulling it locally if needed
+   - Requires the docker CLI be present and usable.
 1. `podman-container://<container name>` - Connect to the runner inside the given podman container.
 1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given k8s pod. Query strings params like context and namespace are optional.
 1. `unix://<path to unix socket>` - Connect to the runner over the provided unix socket.
