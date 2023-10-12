@@ -187,13 +187,13 @@ When a service is bound to a container, it also conveys to any outputs of that c
 </TabItem>
 </Tabs>
 
-### Bind host services to containers
+### Expose service containers to the host
 
-Starting with Dagger v0.8.8, you can bind host services to client containers.
+Starting with Dagger v0.8.8, you can expose service container ports directly to the host.
 
-This type of service binding is useful when you need services on the host to communicate with one or more containers. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests.
+This is useful when you need clients on the host to communicate with Services running in Dagger. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. You might also use this to access a web UI in a browser on your desktop.
 
-Here is an example of how to instantiate host services with Dagger.
+Here is an example of how to expose Dagger services to the host.
 
 <Tabs groupId="language">
 <TabItem value="Go">
