@@ -82,7 +82,7 @@ pytest-mock==3.11.1
     # via -r -
 pytest-subprocess==1.5.0
     # via -r -
-rich==13.5.3
+rich==13.6.0
     # via -r -
 ruff==0.0.290
     # via -r -
