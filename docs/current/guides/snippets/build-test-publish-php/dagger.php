@@ -86,12 +86,10 @@ class DaggerPipeline {
     query {
       container (id: "$runtime") {
         withDirectory(path: "/var/www", directory: "$sourceDir") {
-          withWorkdir(path: "/var/www") {
-            withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
-              withExec(args: ["chmod", "-R", "777", "/var/www/storage"]) {
-                withExec(args: ["chmod", "+x", "/var/www/docker-entrypoint.sh"]) {
-                  id
-                }
+          withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
+            withExec(args: ["chmod", "-R", "777", "/var/www/storage"]) {
+              withExec(args: ["chmod", "+x", "/var/www/docker-entrypoint.sh"]) {
+                id
               }
             }
           }
