@@ -1,6 +1,6 @@
 extend type Query {
   "Loads a file by ID."
-  file(id: FileID!): File @deprecated(reason: "Use loadFileFromID instead.")
+  file(id: FileID!): File @deprecated(reason: "Use `loadFileFromID` instead.")
 
   """
   Load a File from its ID.

@@ -102,7 +102,7 @@ scalar TypeDefID
 
 extend type Query {
   """
-  Create a new TypeDef with a given kind.
+  Create a new TypeDef.
   """
   typeDef: TypeDef!
 

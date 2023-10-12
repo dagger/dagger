@@ -6,7 +6,7 @@ extend type Query {
   as that platform. Platform defaults to that of the builder's host.
   """
   container(
-    id: ContainerID @deprecated(reason: "Use loadContainerFromID instead.")
+    id: ContainerID @deprecated(reason: "Use `loadContainerFromID` instead.")
     platform: Platform
   ): Container!
 

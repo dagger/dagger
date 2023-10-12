@@ -1,6 +1,6 @@
 extend type Query {
   "Loads a socket by its ID."
-  socket(id: SocketID): Socket! @deprecated(reason: "Use loadSocketFromID instead.")
+  socket(id: SocketID): Socket! @deprecated(reason: "Use `loadSocketFromID` instead.")
 
   """
   Load a Socket from its ID.

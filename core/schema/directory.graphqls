@@ -3,7 +3,7 @@ extend type Query {
   Creates an empty directory or loads one by ID.
   """
   directory(
-    id: DirectoryID @deprecated(reason: "Use loadDirectoryFromID instead.")
+    id: DirectoryID @deprecated(reason: "Use `loadDirectoryFromID` instead.")
   ): Directory!
 
   """
