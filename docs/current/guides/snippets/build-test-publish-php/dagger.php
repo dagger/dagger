@@ -178,7 +178,7 @@ class DaggerPipeline {
               withEnvVariable(name: "MARIADB_PASSWORD", value: "t_password") {
                 withEnvVariable(name: "MARIADB_ROOT_PASSWORD", value: "root") {
                   withExposedPort(port: 3306) {
-                    withExec(args: []) {
+                    service() {
                       id
                     }
                   }

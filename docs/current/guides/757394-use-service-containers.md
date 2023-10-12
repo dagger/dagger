@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["go", "python", "nodejs"]
 authors: ["Alex Suraci"]
-date: "2023-03-09"
+date: "2023-10-12"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -12,8 +12,9 @@ import TabItem from "@theme/TabItem";
 import Embed from '@site/src/components/atoms/embed.js'
 
 # Use Service Containers in Dagger
+
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call `Container.service()` to get a service instead of binding directly to a container. See [service containers to containers](#container-services-to-containers) for examples.
+Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call `Container.service()` (Node.js and Python) or `Container.Service()` (Go) to get a service instead of binding directly to a container. See the section on [binding container services to containers](#bind-container-services-to-containers) for examples.
 :::
 
 ## Introduction
@@ -53,64 +54,25 @@ Service containers come with the following built-in features:
 
 ## Use hostnames
 
-Service containers run in a bridge network. Each container has its own IP address that other containers can reach. Here's a simple example:
-
-<Tabs groupId="language" className="embeds">
-<TabItem value="Go">
-
-<Embed id="blm2lRNoYzE" />
-
-</TabItem>
-<TabItem value="Node.js">
-
-<Embed id="fR2OAVbNUVH" />
-
-</TabItem>
-<TabItem value="Python">
-
-<Embed id="bhx9i4LCcD9" />
-
-</TabItem>
-</Tabs>
-
-Service containers never use IP addresses to reach each other directly. IP addresses are ephemeral, so doing so would nullify the cache. Instead, Dagger gives each container a unique but deterministic hostname, which doubles as a DNS address. Here's an example:
-
-<Tabs groupId="language" className="embeds">
-<TabItem value="Go">
-
-<Embed id="H5Eb0Hs7JMd" />
-
-</TabItem>
-<TabItem value="Node.js">
-
-<Embed id="Bpu7I8URtpg" />
-
-</TabItem>
-<TabItem value="Python">
-
-<Embed id="2qLVfgdsnI6" />
-
-</TabItem>
-</Tabs>
-
-This hash value is derived from the same value that determines whether an operation is a cache hit in Buildkit: the vertex digest.
-
 To get a container's address, you wouldn't normally run the `hostname` command, because you'd just be getting the hostname of a container that runs `hostname`, which isn't very helpful. Instead, you would use the `Hostname()` (Go) or `hostname()` (Python and Node.js) SDK method, which returns a domain name reachable by other containers:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="cwmeT7388mg" />
+```go file=./snippets/use-services/use-hostnames-3/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="uCP-rb3rLeK" />
+```typescript file=./snippets/use-services/use-hostnames-3/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="YGkCbitVTYY" />
+```python file=./snippets/use-services/use-hostnames-3/main.py
+```
 
 </TabItem>
 </Tabs>
@@ -121,7 +83,7 @@ In practice, you are more likely to use aliases with service bindings or endpoin
 
 Dagger offers two methods to work with service ports:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
 - Use the `WithExposedPort()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
@@ -129,62 +91,71 @@ Dagger offers two methods to work with service ports:
 
 Here's an example:
 
-<Embed id="kDBfYoh2uau" />
+```go file=./snippets/use-services/expose-ports/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-- Use the `withExposedPort()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `withExposedPort()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
 - Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
 
 Here's an example:
 
-<Embed id="cx-3lzMDn5i" />
+```typescript file=./snippets/use-services/expose-ports/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-- Use the `with_exposed_port()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `with_exposed_port()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
 - Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
 
 Here's an example:
 
-<Embed id="OPUGXdIujRC" />
+```python file=./snippets/use-services/expose-ports/main.py
+```
 
 </TabItem>
 </Tabs>
 
 ## Bind services
+
 Binding a service to a container or the host creates a dependency in your Dagger pipeline. The service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
 
 You can bind a service with Dagger in three ways:
-* [A service container to a client container](use-service-containers#container-services-to-containers)
-* [A host service to a client container](use-service-containers#host-services-to-containers)
-* [A container service to the host](use-service-containers#container-services-to-the-host)
+
+* [A service container to a client container](#bind-container-services-to-containers)
+* [A host service to a client container](#bind-host-services-to-containers)
+* [A container service to the host](#bind-container-services-to-the-host)
 
 ### Bind container services to containers
+
 :::warning
 Dagger v0.8.8 includes a breaking change for binding service containers to containers. The examples below have been updated.
 :::
 
-Dagger enables users to bind a service container to a client container with an alias (such as `redis`) that the client container can use as a hostname.
+Dagger enables users to bind a service running in a container to another (client) container with an alias that the client container can use as a hostname to communicate with the service.
 
 Here's an example of an HTTP service automatically starting in tandem with a client container. The service binding enables the client container to access the HTTP service using the alias `www`.
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="pQoE-5_0Ghg" />
+```go file=./snippets/use-services/bind-services-1/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="VIFYGYc8YRN" />
+```typescript file=./snippets/use-services/bind-services-1/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="FkPqDoW3Oo-" />
+```python file=./snippets/use-services/bind-services-1/main.py
+```
 
 </TabItem>
 </Tabs>
@@ -195,79 +166,80 @@ Services in service containers should be configured to listen on the IP address 
 
 When a service is bound to a container, it also conveys to any outputs of that container, such as files or directories. The service will be started whenever the output is used, so you can also do things like this:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="Qoljk5SEPuu" />
+```go file=./snippets/use-services/bind-services-2/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="RhA4m6ji1js" />
+```typescript file=./snippets/use-services/bind-services-2/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="WG0Pqr49pKK" />
+```python file=./snippets/use-services/bind-services-2/main.py
+```
 
 </TabItem>
 </Tabs>
 
 ### Bind host services to containers
-Starting with Dagger v0.8.8, you can bind host services to client containers. 
 
-This type of service binding is useful when you need services on the host to communicate TO one or more containers. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. 
+Starting with Dagger v0.8.8, you can bind host services to client containers.
 
-In your Dagger pipeline, call `Host.tunnel(service).start`. By default, Dagger will let the operating system randomly choose which port to use based on the available ports on the host's side. You then call `endpoint` to get the final `addr` with whichever port is bound.
+This type of service binding is useful when you need services on the host to communicate with one or more containers. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests.
 
-Here is an example of how to instantiate host services with Dagger:
+Here is an example of how to instantiate host services with Dagger.
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="" />
+TODO: The Dagger pipeline calls `Host.tunnel(service).start`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `endpoint` gets the final `addr` with whichever port is bound.
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+TODO: The Dagger pipeline calls `Host.tunnel(service).start`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `endpoint` gets the final `addr` with whichever port is bound.
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="" />
+TODO: The Dagger pipeline calls `Host.tunnel(service).start`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `endpoint` gets the final `addr` with whichever port is bound.
 
 </TabItem>
 </Tabs>
 
 ### Bind container services to the host
+
 Starting with Dagger v0.8.8, you can bind client containers to the host.
 
-This type of container networking is useful when you need a client container to access services running on the host. 
-
-Call `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. You then set the service binding on the client container to the host.
+This type of container networking is useful when you need a client container to access services running on the host.
 
 Here's an example:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="" />
+TODO: This example calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. It then sets the service binding on the client container to the host.
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+TODO: This example calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. It then sets the service binding on the client container to the host.
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="" />
+TODO: This example calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. It then sets the service binding on the client container to the host.
 
 </TabItem>
 </Tabs>
 
-:::note 
+:::note
 The Dagger implementation is a new flavor of `Socket` and is similar to `Host.unixSocket`.
 :::
 
@@ -275,20 +247,23 @@ The Dagger implementation is a new flavor of `Socket` and is similar to `Host.un
 
 Another way to avoid relying on the grace period is to use a cache volume to persist a service's data, as in the following example:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="23lXKbJiCz0" />
+```go file=./snippets/use-services/persist-service-state/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="zhQX8VN750_A" />
+```typescript file=./snippets/use-services/persist-service-state/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="uMNx2j1-GTt" />
+```python file=./snippets/use-services/persist-service-state/main.py
+```
 
 </TabItem>
 </Tabs>
@@ -298,22 +273,23 @@ This example uses Redis's `SAVE` command to ensure data is synced. By default, R
 :::
 
 ## Start and stop services
+
 Starting with Dagger v0.8.8, you can explicitly start and stop services in your pipelines.
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="" />
+TODO
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+TODO
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="" />
+TODO
 
 </TabItem>
 </Tabs>
@@ -324,7 +300,7 @@ The following example demonstrates service containers in action, by creating a M
 
 The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests).
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/use-db-service/main.go
@@ -333,7 +309,7 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./snippets/use-services/use-db-service/index.ts
+```typescript file=./snippets/use-services/use-db-service/index.ts
 ```
 
 </TabItem>
@@ -357,10 +333,11 @@ If you're not interested in what's happening in the background, you can skip thi
 
 Consider this example:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="JwuCvswjsEM" />
+```go file=./snippets/use-services/test-service-lifecycle-1/main.go
+```
 
 Here's what happens on the last line:
 
@@ -373,7 +350,8 @@ Here's what happens on the last line:
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="WRo9QMK9GKZ" />
+```typescript file=./snippets/use-services/test-service-lifecycle-1/index.ts
+```
 
 Here's what happens on the last line:
 
@@ -386,7 +364,8 @@ Here's what happens on the last line:
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="vtG-PyKz2E5" />
+```python file=./snippets/use-services/test-service-lifecycle-1/main.py
+```
 
 Here's what happens on the last line:
 
@@ -413,40 +392,46 @@ If you need multiple instances of a service, just attach something unique to eac
 
 Here's a more detailed client-server example of running commands against a Redis service:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="d4SIgAW2Feo" />
+```go file=./snippets/use-services/test-service-lifecycle-2/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="zowrSKqU_0u" />
+```typescript file=./snippets/use-services/test-service-lifecycle-2/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="D80RyJ7f8h0" />
+```python file=./snippets/use-services/test-service-lifecycle-2/main.py
+```
 
 </TabItem>
 </Tabs>
 
 Note that this example relies on the 10-second grace period, which you should try to avoid. It would be better to chain both commands together, which ensures that the service stays running for both:
 
-<Tabs groupId="language" className="embeds">
+<Tabs groupId="language">
 <TabItem value="Go">
 
-<Embed id="avO1QVAIwBZ" />
+```go file=./snippets/use-services/test-service-lifecycle-3/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="ptz9Tj6pDLY" />
+```typescript file=./snippets/use-services/test-service-lifecycle-3/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="0EGmAzoPXPM" />
+```python file=./snippets/use-services/test-service-lifecycle-3/main.py
+```
 
 </TabItem>
 </Tabs>

@@ -55,22 +55,22 @@ The first step is to create a Dagger pipeline to build and test a container imag
   ```
 
   This Dagger pipeline performs a number of different operations:
-    - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cache_volume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
-    - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
-    - It uses the client's `container().from_()` method to initialize three new containers, each of which is returned as a `Container` object:
+    - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connect()`. This client provides an interface for executing commands against the Dagger engine.
+    - It uses the client's `SetSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `CacheVolume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
+    - It uses the client's `Host().Directory()` method to obtain a reference to the source code directory on the host.
+    - It uses the client's `Container().From()` method to initialize three new containers, each of which is returned as a `Container` object:
         - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests;
         - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
         - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
     - For the MariaDB database container:
-        - It chains multiple `with_env_variable()` methods to configure the database service, and uses the `with_exposed_port()` method to ensure that the service is available to clients.
+        - It chains multiple `WithEnvVariable()` methods to configure the database service, and uses the `WithExposedPort()` and `Service()` methods to ensure that the service is available to clients.
     -  For the Maven container:
-        - It uses the `with_mounted_directory()` and `with_mounted_cache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `with_workdir()` method to set the working directory in the container.
-        - It adds a service binding for the database service to the Maven container using the `with_service_binding()` method and sets the JDBC URL for the application test suite as an environment using the `with_env_variable()` method.
-        - Finally, it uses the `with_exec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
+        - It uses the `WithMountedDirectory()` and `WithMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `WithWorkdir()` method to set the working directory in the container.
+        - It adds a service binding for the database service to the Maven container using the `WithServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `With_EnvVariable()` method.
+        - Finally, it uses the `WithExec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
     -  For the Eclipse Temurin container:
-        - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `with_directory()` method, and sets the container entrypoint to start the Spring application using the `with_entrypoint()` method.
-    - It uses the `with_registry_auth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
+        - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `WithDirectory()` method, and sets the container entrypoint to start the Spring application using the `WithEntrypoint()` method.
+    - It uses the `WithRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `Publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
 
 1. Run the following command to update `go.sum`:
 
@@ -101,7 +101,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
         - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
         - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
     - For the MariaDB database container:
-        - It chains multiple `withEnvVariable()` methods to configure the database service, and uses the `withExposedPort()` method to ensure that the service is available to clients.
+        - It chains multiple `withEnvVariable()` methods to configure the database service, and uses the `withExposedPort()` and `service()` methods to ensure that the service is available to clients.
     - For the Maven container:
         - It uses the `withMountedDirectory()` and `withMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `withWorkdir()` method to set the working directory in the container.
         - It adds a service binding for the database service to the Maven container using the `withServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `withEnvVariable()` method.
@@ -133,7 +133,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
         - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
         - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
     - For the MariaDB database container:
-        - It chains multiple `with_env_variable()` methods to configure the database service, and uses the `with_exposed_port()` method to ensure that the service is available to clients.
+        - It chains multiple `with_env_variable()` methods to configure the database service, and uses the `with_exposed_port()` and `service()` methods to ensure that the service is available to clients.
     - For the Maven container:
         - It uses the `with_mounted_directory()` and `with_mounted_cache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `with_workdir()` method to set the working directory in the container.
         - It adds a service binding for the database service to the Maven container using the `with_service_binding()` method and sets the JDBC URL for the application test suite as an environment using the `with_env_variable()` method.
