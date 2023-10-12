@@ -13,7 +13,7 @@ import Embed from '@site/src/components/atoms/embed.js'
 
 # Use Service Containers in Dagger
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call Container.service to get a service instead of binding directly to a container. See [service containers to containers](#container-services-to-containers) for examples.
+Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call `Container.service()` to get a service instead of binding directly to a container. See [service containers to containers](#container-services-to-containers) for examples.
 :::
 
 ## Introduction
@@ -162,7 +162,7 @@ You can bind a service with Dagger in three ways:
 * [A host service to a client container](use-service-containers#host-services-to-containers)
 * [A container service to the host](use-service-containers#container-services-to-the-host)
 
-### Container services to containers
+### Bind container services to containers
 :::warning
 Dagger v0.8.8 includes a breaking change for binding service containers to containers. The examples below have been updated.
 :::
@@ -213,7 +213,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 </TabItem>
 </Tabs>
 
-### Host services to containers
+### Bind host services to containers
 Starting with Dagger v0.8.8, you can bind host services to client containers. 
 
 This type of service binding is useful when you need services on the host to communicate TO one or more containers. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. 
@@ -240,10 +240,10 @@ Here is an example of how to instantiate host services with Dagger:
 </TabItem>
 </Tabs>
 
-### Container services to the host
-Starting with Dagger v0.8.8, you can client containers to the host.
+### Bind container services to the host
+Starting with Dagger v0.8.8, you can bind client containers to the host.
 
-This type of container networking is useful when you need a client container to be able to access services running on the host. 
+This type of container networking is useful when you need a client container to access services running on the host. 
 
 Call `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. You then set the service binding on the client container to the host.
 
