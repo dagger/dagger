@@ -17,8 +17,7 @@ values={[
 
 <TabItem value="macos">
 
-We assume that you have [Homebrew](https://brew.sh/) installed.
-If you do, you can install `dagger` with a single command:
+We assume that you have [Homebrew](https://brew.sh/) installed. If you do, you can install `dagger` with a single command:
 
 ```shell
 brew install dagger/tap/dagger
@@ -37,10 +36,18 @@ dagger is /usr/local/bin/dagger
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
 ```shell
+cd /usr/local
 curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.6.2 sh
 
 ./bin/dagger version
 dagger 0.6.2 (GIT_SHA) darwin/arm64
+```
+
+If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
+
+```shell
+cd /usr/local
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.6.2 sudo sh
 ```
 
 </TabItem>
@@ -61,7 +68,18 @@ type dagger
 dagger is /usr/local/bin/dagger
 ```
 
-If you want to install the Dagger Engine to a different location, `cd` where you want `./bin/dagger` in.
+If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
+
+```shell
+cd /usr/local
+curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
+```
+
+Alternatively, install the Dagger Engine to a different location, such as your home directory:
+
+```shell
+cd ~
+curl -L https://dl.dagger.io/dagger/install.sh | sh
 
 If you want to install a specific version of `dagger`, you can run:
 
@@ -84,7 +102,7 @@ If you want to use the installation script, PowerShell 7.0 or newer is required.
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression
 ```
 
-If you want to install dagger to a different location, pass in a location to the script with the `-InstallPath` parameter.
+If you want to install Dagger to a different location, pass in a location to the script with the `-InstallPath` parameter.
 
 ```Powershell
 $script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
