@@ -23,7 +23,6 @@ import (
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
-	bksolver "github.com/moby/buildkit/solver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/compression"
@@ -85,28 +84,14 @@ func (c *Client) LocalImport(
 
 	RecordVertexes(recorder, copyPB)
 
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	res, err := c.Solve(ctx, bkgw.SolveRequest{
+		Definition: copyPB,
+		Evaluate:   true,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
-	ctx = withOutgoingContext(ctx)
-
-	llbRes, err := c.llbBridge.Solve(ctx, bkgw.SolveRequest{
-		Definition: copyPB,
-		Evaluate:   true,
-	}, c.ID())
-	if err != nil {
-		return nil, wrapError(ctx, err, c.ID())
-	}
-	defer func() {
-		if llbRes != nil {
-			llbRes.EachRef(func(rp bksolver.ResultProxy) error {
-				return rp.Release(context.Background())
-			})
-		}
-	}()
-	resultProxy, err := llbRes.SingleRef()
+	resultProxy, err := res.SingleRef()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get single ref: %s", err)
 	}
