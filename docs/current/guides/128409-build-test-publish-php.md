@@ -201,14 +201,12 @@ class DaggerPipeline {
     $appQuery = <<<QUERY
     query {
       container (id: "$runtime") {
-        withDirectory(path: "/mnt", directory: "$sourceDir") {
-          withWorkdir(path: "/mnt") {
-            withExec(args: ["cp", "-R", ".", "/var/www"]) {
-              withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
-                withExec(args: ["chmod", "-R", "777", "/var/www/storage"]) {
-                  withExec(args: ["chmod", "+x", "/var/www/docker-entrypoint.sh"]) {
-                    id
-                  }
+        withDirectory(path: "/var/www", directory: "$sourceDir") {
+          withWorkdir(path: "/var/www") {
+            withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
+              withExec(args: ["chmod", "-R", "777", "/var/www/storage"]) {
+                withExec(args: ["chmod", "+x", "/var/www/docker-entrypoint.sh"]) {
+                  id
                 }
               }
             }
@@ -245,7 +243,7 @@ class DaggerPipeline {
 1. The `buildRuntimeImage()` method executes a GraphQL query to construct a runtime image. This runtime image consists of the PHP interpreter, Apache webserver, and required tools and extensions. It uses the `container.from()` method to initialize a new container from the `php:8.2-apache-buster` image. It then chains multiple `container.withExec()` methods to add tools, PHP extensions and Apache configuration to the image.
 1. The `buildApplicationImage()` method uses the image produced by `buildRuntimeImage()` and executes three additional GraphQL queries:
     - The first query obtains a reference to the source code directory of the application on the host using the `host.directory()` API method.
-    - The next query continues building the image. It uses the `container.withDirectory()` method to return the container with the source code directory written at `/mnt`. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
+    - The next query continues building the image. It uses the `container.withDirectory()` method to return the container with the source code directory written at `/var/www`. It then chains multiple `container.withExec()` methods to set various file permissions and environment variables.
     - The final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
 
 :::info
@@ -331,7 +329,7 @@ class DaggerPipeline {
               withEnvVariable(name: "DB_PASSWORD", value: "t_password") {
                 withEnvVariable(name: "DB_DATABASE", value: "t_db") {
                   withWorkdir(path: "/var/www") {
-                    withExec(args: ["./vendor/bin/phpunit", "-vv"]) {
+                    withExec(args: ["./vendor/bin/phpunit"]) {
                       stdout
                     }
                   }
@@ -507,7 +505,7 @@ Here is an example of the output from an unsuccessful run due to a failed unit t
 Building test image...
 Test image built.
 Running tests in test image...
-process "docker-php-entrypoint ./vendor/bin/phpunit -vv" did not complete successfully: exit code: 2
+process "docker-php-entrypoint ./vendor/bin/phpunit" did not complete successfully: exit code: 2
 Stdout:
 ...
 2) Tests\Feature\ProfileTest::test_profile_information_can_be_updated
