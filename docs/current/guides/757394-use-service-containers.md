@@ -125,9 +125,9 @@ Binding a service to a container or the host creates a dependency in your Dagger
 
 You can bind a service with Dagger in three ways:
 
-* [A service container to a client container](#bind-container-services-to-containers)
-* [A host service to a client container](#bind-host-services-to-containers)
-* [A container service to the host](#bind-container-services-to-the-host)
+- [A service container to a client container](#bind-container-services-to-containers)
+- [A host service to a client container](#bind-host-services-to-containers)
+- [A container service to the host](#bind-container-services-to-the-host)
 
 ### Bind container services to containers
 
