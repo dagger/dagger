@@ -17,10 +17,7 @@ connect(
       .asService()
 
     // expose HTTP service to host
-    const tunnel = client
-      .host()
-      .tunnel(httpSrv)
-      .start()
+    const tunnel = client.host().tunnel(httpSrv).start()
 
     // get HTTP service address
     const srvAddr = tunnel.endpoint()
@@ -28,8 +25,8 @@ connect(
     // access HTTP service from host
     // print response
     await fetch("http://" + srvAddr)
-      .then(res => res.text())
-      .then(body => console.log(body));
+      .then((res) => res.text())
+      .then((body) => console.log(body));
   },
   { LogOutput: process.stderr }
 )

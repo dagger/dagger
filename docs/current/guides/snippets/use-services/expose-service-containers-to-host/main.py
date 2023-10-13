@@ -2,6 +2,7 @@ import sys
 
 import anyio
 import requests
+
 import dagger
 
 
@@ -33,9 +34,8 @@ async def main():
         srv_addr = tunnel.endpoint()
 
         # access HTTP service from host
-        response = requests.get("http://" + srv_addr)
+        response = requests.get("http://" + srv_addr, timeout=180)
 
-    # print response
     print(response.text)
 
 
