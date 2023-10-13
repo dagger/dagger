@@ -1,5 +1,5 @@
 ---
-slug: /757394/use-service-containers
+slug: /757394/use-services
 displayed_sidebar: "current"
 category: "guides"
 tags: ["go", "python", "nodejs"]
@@ -11,10 +11,10 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import Embed from '@site/src/components/atoms/embed.js'
 
-# Use Service Containers in Dagger
+# Use Services in Dagger
 
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call `Container.service()` (Node.js and Python) or `Container.Service()` (Go) to get a service instead of binding directly to a container. See the section on [binding container services to containers](#bind-container-services-to-containers) for examples.
+Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call `Container.service()` (Node.js and Python) or `Container.Service()` (Go) to get a service instead of binding directly to a container. See the section on [binding container services to containers](#bind-service-containers-to-containers) for examples.
 :::
 
 ## Introduction
@@ -27,7 +27,7 @@ Some common use cases for service containers are:
 - Run end-to-end integration tests
 - Run sidecar services
 
-This guide teaches you the basics of using service containers in Dagger.
+This guide teaches you the basics of using services and service containers in Dagger.
 
 ## Requirements
 
@@ -104,7 +104,6 @@ This example uses the `withExposedPort()` method to set ports on which the servi
 
 This example uses the `with_exposed_port()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
 
-
 ```python file=./snippets/use-services/expose-ports/main.py
 ```
 
@@ -113,11 +112,9 @@ This example uses the `with_exposed_port()` method to set ports on which the ser
 
 In practice, you are more likely to set your own hostname aliases with service bindings, which are covered in the next section.
 
-## Bind services
+## Working with services
 
-Binding a service to a container or the host creates a dependency in your Dagger pipeline. The service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
-
-You can use services with Dagger in three ways:
+You can use services in Dagger in three ways:
 
 - [Bind service containers to client containers](#bind-service-containers-to-containers)
 - [Expose service containers to the host](#expose-service-containers-to-the-host)
@@ -130,6 +127,8 @@ Dagger v0.8.8 includes a breaking change for binding service containers to clien
 :::
 
 Dagger enables users to bind a service running in a container to another (client) container with an alias that the client container can use as a hostname to communicate with the service.
+
+Binding a service to a container or the host creates a dependency in your Dagger pipeline. The service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
 
 Here's an example of an HTTP service automatically starting in tandem with a client container. The service binding enables the client container to access the HTTP service using the alias `www`.
 
