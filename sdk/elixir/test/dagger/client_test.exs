@@ -256,4 +256,16 @@ defmodule Dagger.ClientTest do
     container = Client.container(client)
     assert %Container{} = Client.container(client, id: container)
   end
+
+  test "env variable expand", %{client: client} do
+    {:ok, env} =
+      client
+      |> Client.container()
+      |> Container.from("alpine:3.16.2")
+      |> Container.with_env_variable("A", "B")
+      |> Container.with_env_variable("A", "C:${A}", expand: true)
+      |> Container.env_variable("A")
+
+    assert env == "C:B"
+  end
 end

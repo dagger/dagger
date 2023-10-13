@@ -33,6 +33,12 @@ curl -L https://dl.dagger.io/dagger/install.sh | sh
 
 The above will create `./bin/dagger`.
 
+If your user account doesn't have sufficient privileges to install in the specified location and `sudo` is available, use the following command instead:
+
+```shell
+curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
+```
+
 Homebrew users can alternatively use the following commands:
 
 ```shell
@@ -159,6 +165,10 @@ Dagger is able to cache:
 - Volumes, such as data caches or package manager caches
 
 Operations are automatically cached every time a Dagger pipeline runs. [Cache volumes](./quickstart/635927-caching.mdx) must be explicity defined and used in your Dagger pipeline code.
+
+### Can I run the Dagger Engine as a "rootless" container?
+
+No. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the "root" user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would significantly limit its capabilities and performance. [Read more about these constraints](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
 
 ### I am stuck. How can I get help?
 
