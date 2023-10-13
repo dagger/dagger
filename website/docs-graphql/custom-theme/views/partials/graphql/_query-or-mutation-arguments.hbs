@@ -1,0 +1,33 @@
+{{#if args}}
+  <div class="operation-arguments test doc-copy-section">
+    <h5>Arguments</h5>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {{#each args}}
+          <tr>
+            <td>
+              {{! The Name column }}
+              {{~> graphql/name-and-type }}
+            </td>
+            <td>
+              {{! The Description column }}
+              {{>graphql/_description-with-defaults}}
+                {{#if (and deprecationReason (not @root.info.x-hideDeprecationReason))}}
+                  <div class="deprecation-reason">
+                    {{ md deprecationReason stripParagraph=true }}
+                  </div>
+                {{/if}}
+            </td>
+          </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+{{/if}}
