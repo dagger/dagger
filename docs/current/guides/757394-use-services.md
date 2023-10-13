@@ -21,7 +21,7 @@ Dagger v0.8.8 includes a breaking change for binding service containers to conta
 
 Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced service containers, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines. Dagger v0.8.8 further improved this implementation, enabling support for container-to-host networking and host-to-container networking.
 
-Some common use cases for service containers are:
+Some common use cases for services and service containers are:
 
 - Run a test database
 - Run end-to-end integration tests
