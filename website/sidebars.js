@@ -187,27 +187,6 @@ module.exports = {
     },
     {
       type: "category",
-      label: "GraphQL API",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "Overview",
-          id: "current/api/index",
-        },
-        "current/api/concepts",
-        "current/api/playground",
-        "current/api/build-custom-client",
-        {
-          type: "link",
-          label: "Reference",
-          href: "https://docs.dagger.io/api/reference",
-        },
-      ],
-    },
-    {
-      type: "category",
       label: "Dagger CLI",
       collapsible: true,
       collapsed: true,
