@@ -1,7 +1,6 @@
 import sys
 
 import anyio
-import requests
 
 import dagger
 
@@ -24,20 +23,13 @@ async def main():
         )
 
         # expose HTTP service to host
-        tunnel = (
-            client.host().
-            tunnel(http_srv).
-            start()
-        )
+        tunnel = client.host().tunnel(http_srv).start()
 
         # get HTTP service address
-        srv_addr = tunnel.endpoint()
+        tunnel.endpoint()
 
         # access HTTP service from host
         # commenting below as it's a blocking function, needs changes
-        # response = requests.get("http://" + srv_addr, timeout=180)
-
-    # print(response.text)
 
 
 anyio.run(main)
