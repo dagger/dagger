@@ -19,7 +19,7 @@ async def main():
             .with_workdir("/srv")
             .with_exec(["python", "-m", "http.server", "8080"])
             .with_exposed_port(8080)
-            .service()
+            .as_service()
         )
 
         # create client container with service binding

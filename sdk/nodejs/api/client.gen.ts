@@ -985,6 +985,24 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Turn the container into a Service.
+   *
+   * Be sure to set any exposed ports before this conversion.
+   */
+  asService(): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asService",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Initializes this container from a Dockerfile build.
    * @param context Directory context used by the Dockerfile.
    * @param opts.dockerfile Path to the Dockerfile to use.
@@ -1462,22 +1480,6 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "rootfs",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Retrieves a service that will run the container.
-   */
-  service(): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "service",
         },
       ],
       host: this.clientHost,

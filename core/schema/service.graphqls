@@ -49,7 +49,9 @@ type Service {
 
 extend type Container {
   """
-  Retrieves a service that will run the container.
+  Turn the container into a Service.
+
+  Be sure to set any exposed ports before this conversion.
   """
-  service: Service!
+  asService: Service!
 }

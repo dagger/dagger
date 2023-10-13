@@ -13,7 +13,7 @@ connect(
       .withWorkdir("/srv")
       .withExec(["python", "-m", "http.server", "8080"])
       .withExposedPort(8080)
-      .service()
+      .asService()
 
     // get HTTP endpoint
     let val = await httpSrv.endpoint()

@@ -52,7 +52,7 @@ func TestHTTPServiceStableDigest(t *testing.T) {
 			WithMountedFile("/index.html", c.HTTP(url, dagger.HTTPOpts{
 				ExperimentalServiceHost: svc,
 			})).
-			Service().
+			AsService().
 			Hostname(ctx)
 		require.NoError(t, err)
 		return hn

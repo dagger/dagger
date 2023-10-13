@@ -63,7 +63,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
         - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
         - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
     - For the MariaDB database container:
-        - It chains multiple `WithEnvVariable()` methods to configure the database service, and uses the `WithExposedPort()` and `Service()` methods to ensure that the service is available to clients.
+        - It chains multiple `WithEnvVariable()` methods to configure the database service, and uses the `WithExposedPort()` and `AsService()` methods to ensure that the service is available to clients.
     -  For the Maven container:
         - It uses the `WithMountedDirectory()` and `WithMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `WithWorkdir()` method to set the working directory in the container.
         - It adds a service binding for the database service to the Maven container using the `WithServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `With_EnvVariable()` method.

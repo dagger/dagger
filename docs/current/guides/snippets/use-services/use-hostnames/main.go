@@ -22,8 +22,7 @@ func main() {
 	// get hostname of service container via API
 	val, err := client.Container().
 		From("python").
-		WithExec([]string{"python", "-m", "http.server"}).
-		Service().
+		WithExec([]string{"python", "-m", "http.server"}).AsService().
 		Hostname(ctx)
 
 	if err != nil {

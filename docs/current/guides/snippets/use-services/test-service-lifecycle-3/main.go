@@ -22,8 +22,7 @@ func main() {
 	// create Redis service container
 	redisSrv := client.Container().
 		From("redis").
-		WithExposedPort(6379).
-		Service()
+		WithExposedPort(6379).AsService()
 
 	// create Redis client container
 	redisCLI := client.Container().

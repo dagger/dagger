@@ -20,7 +20,7 @@ public class TestWithDatabase {
               .withEnvVariable("MARIADB_DATABASE", "drupal")
               .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
               .withExposedPort(3306)
-              .service();
+              .asService();
 
       // get Drupal base image
       // install additional dependencies

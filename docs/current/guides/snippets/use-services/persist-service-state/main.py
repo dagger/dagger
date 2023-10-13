@@ -15,7 +15,7 @@ async def main():
             .with_exposed_port(6379)
             .with_mounted_cache("/data", client.cache_volume("my-redis"))
             .with_workdir("/data")
-            .service()
+            .as_service()
         )
 
         # create Redis client container

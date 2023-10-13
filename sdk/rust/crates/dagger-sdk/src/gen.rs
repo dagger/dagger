@@ -529,6 +529,16 @@ pub struct ContainerWithoutExposedPortOpts {
     pub protocol: Option<NetworkProtocol>,
 }
 impl Container {
+    /// Turn the container into a Service.
+    /// Be sure to set any exposed ports before this conversion.
+    pub fn as_service(&self) -> Service {
+        let query = self.selection.select("asService");
+        return Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Initializes this container from a Dockerfile build.
     ///
     /// # Arguments
@@ -881,15 +891,6 @@ impl Container {
     pub fn rootfs(&self) -> Directory {
         let query = self.selection.select("rootfs");
         return Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Retrieves a service that will run the container.
-    pub fn service(&self) -> Service {
-        let query = self.selection.select("service");
-        return Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

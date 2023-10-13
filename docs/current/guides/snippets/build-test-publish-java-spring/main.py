@@ -34,7 +34,7 @@ async def main():
             .with_env_variable("MARIADB_DATABASE", "petclinic")
             .with_env_variable("MARIADB_ROOT_PASSWORD", "root")
             .with_exposed_port(3306)
-            .service()
+            .as_service()
         )
 
         # use maven:3.9 container

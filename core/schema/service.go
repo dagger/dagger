@@ -25,7 +25,7 @@ func (s *serviceSchema) Schema() string {
 func (s *serviceSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Container": ObjectResolver{
-			"service": ToResolver(s.containerService),
+			"asService": ToResolver(s.containerAsService),
 		},
 	}
 
@@ -44,7 +44,7 @@ func (s *serviceSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *serviceSchema) containerService(ctx *core.Context, parent *core.Container, args any) (*core.Service, error) {
+func (s *serviceSchema) containerAsService(ctx *core.Context, parent *core.Container, args any) (*core.Service, error) {
 	return parent.Service(ctx, s.bk, s.progSockPath)
 }
 

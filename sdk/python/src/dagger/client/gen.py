@@ -242,6 +242,16 @@ class Container(Type):
     """An OCI-compatible container, also known as a docker container."""
 
     @typecheck
+    def as_service(self) -> "Service":
+        """Turn the container into a Service.
+
+        Be sure to set any exposed ports before this conversion.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asService", _args)
+        return Service(_ctx)
+
+    @typecheck
     def build(
         self,
         context: "Directory",
@@ -757,13 +767,6 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
-
-    @typecheck
-    def service(self) -> "Service":
-        """Retrieves a service that will run the container."""
-        _args: list[Arg] = []
-        _ctx = self._select("service", _args)
-        return Service(_ctx)
 
     @typecheck
     async def shell_endpoint(self) -> str:

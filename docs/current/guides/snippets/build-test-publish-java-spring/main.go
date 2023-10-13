@@ -46,12 +46,11 @@ func main() {
 		WithEnvVariable("MARIADB_PASSWORD", "petclinic").
 		WithEnvVariable("MARIADB_DATABASE", "petclinic").
 		WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
-		WithExposedPort(3306).
-		Service()
+		WithExposedPort(3306).AsService()
 
-		// use maven:3.9 container
-		// mount cache and source code volumes
-		// set working directory
+	// use maven:3.9 container
+	// mount cache and source code volumes
+	// set working directory
 	app := client.Container().
 		From("maven:3.9-eclipse-temurin-17").
 		WithMountedCache("/root/.m2", mavenCache).

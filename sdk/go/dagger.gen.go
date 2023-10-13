@@ -193,6 +193,18 @@ func (r *Container) With(f WithContainerFunc) *Container {
 	return f(r)
 }
 
+// Turn the container into a Service.
+//
+// Be sure to set any exposed ports before this conversion.
+func (r *Container) AsService() *Service {
+	q := r.q.Select("asService")
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.
@@ -665,16 +677,6 @@ func (r *Container) Rootfs() *Directory {
 	q := r.q.Select("rootfs")
 
 	return &Directory{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Retrieves a service that will run the container.
-func (r *Container) Service() *Service {
-	q := r.q.Select("service")
-
-	return &Service{
 		q: q,
 		c: r.c,
 	}
