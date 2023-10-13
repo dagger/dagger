@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"go.opentelemetry.io/otel"
@@ -17,13 +18,13 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/ssh"
 )
 
-func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, error) {
+func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, *bkclient.Info, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
 		buildkitdHost, err = dockerImageProvider(ctx, remote, userAgent)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -34,7 +35,7 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 
 	exp, err := detect.Exporter()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if td, ok := exp.(bkclient.TracerDelegate); ok {
 		opts = append(opts, bkclient.WithTracerDelegate(td))
@@ -42,14 +43,22 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 
 	c, err := bkclient.New(ctx, buildkitdHost, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("buildkit client: %w", err)
+		return nil, nil, fmt.Errorf("buildkit client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	if err := c.Wait(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return c, nil
+	info, err := c.Info(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if info.BuildkitVersion.Package != engine.Package {
+		return nil, nil, fmt.Errorf("remote is not a valid dagger server (expected %q, got %q)", engine.Package, info.BuildkitVersion.Package)
+	}
+
+	return c, info, nil
 }

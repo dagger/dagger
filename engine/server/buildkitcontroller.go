@@ -443,8 +443,9 @@ func (e *BuildkitController) Prune(req *controlapi.PruneRequest, stream controla
 func (e *BuildkitController) Info(ctx context.Context, r *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{
-			Package: e.EngineName,
-			Version: engine.Version,
+			Package:  engine.Package,
+			Version:  engine.Version,
+			Revision: e.EngineName,
 		},
 	}, nil
 }
