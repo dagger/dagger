@@ -46,7 +46,8 @@ func main() {
 		WithEnvVariable("MARIADB_PASSWORD", "petclinic").
 		WithEnvVariable("MARIADB_DATABASE", "petclinic").
 		WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
-		WithExposedPort(3306).AsService()
+		WithExposedPort(3306).
+		AsService()
 
 	// use maven:3.9 container
 	// mount cache and source code volumes

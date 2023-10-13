@@ -27,7 +27,8 @@ func main() {
 		WithDirectory("/srv", client.Directory().WithNewFile("index.html", "Hello, world!")).
 		WithWorkdir("/srv").
 		WithExec([]string{"python", "-m", "http.server", "8080"}).
-		WithExposedPort(8080).AsService()
+		WithExposedPort(8080).
+		AsService()
 
 	// expose HTTP service to host
 	tunnel, err := client.Host().Tunnel(httpSrv).Start(ctx)
