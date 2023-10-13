@@ -210,7 +210,8 @@ func updateModuleConfig(
 	}
 
 	// pin dagger.json to the current runtime image version
-	modCfg.SyncSDKRuntime()
+	// TODO: resolve moving refs?
+	// modCfg.SyncSDKRuntime()
 
 	configPath := filepath.Join(moduleDir, modules.Filename)
 

@@ -173,21 +173,11 @@ func (c *Client) ContainerImageToTarball(
 		defer descRef.Release()
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get hostname for container image to tarball: %s", err)
-	}
-	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
-		ClientID:       c.ID(), // we are exporting to our own filesystem in the engine container
-		ClientHostname: hostname,
-	})
-
 	ctx, recorder := progrock.WithGroup(ctx, "container image to tarball")
-	pbDef, err := c.LocalImport(ctx, recorder, engineHostPlatform, tmpDir, nil, []string{fileName})
+	pbDef, err := c.EngineContainerLocalImport(ctx, recorder, engineHostPlatform, tmpDir, nil, []string{fileName})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %s", err)
 	}
-
 	return pbDef, nil
 }
 

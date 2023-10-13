@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -26,7 +25,8 @@ const (
 	ModMetaDepsDirPath = "deps"
 
 	ModSourceDirPath      = "/src"
-	runtimeExecutablePath = "/runtime"
+	SDKModDirPath         = "/sdk"
+	RuntimeExecutablePath = "/runtime"
 )
 
 type Module struct {
@@ -42,12 +42,6 @@ type Module struct {
 	// The doc string of the module, if any
 	Description string `json:"description"`
 
-	// The name of the well-known SDK configured by the module, if any.
-	SDK string `json:"sdk,omitempty"`
-
-	// The SDK runtime module image ref configured by the module.
-	SDKRuntime string `json:"sdkRuntime"`
-
 	// Dependencies of the module
 	Dependencies []*Module `json:"dependencies"`
 
@@ -57,14 +51,22 @@ type Module struct {
 	// The module's objects
 	Objects []*TypeDef `json:"objects,omitempty"`
 
-	// (Not in public API) The container used to execute the module's functions,
+	// TODO: doc
+	SDK string `json:"sdk,omitempty"`
+
+	// Below are not in public graphql API
+
+	// TODO: doc or remove if not needed? SDK field above may invalidate again
+	Config *modules.Config `json:"config,omitempty"`
+
+	// The container used to execute the module's functions,
 	// derived from the SDK, source directory, and workdir.
 	Runtime *Container `json:"runtime,omitempty"`
 
-	// (Not in public API) The module's platform
+	// The module's platform
 	Platform ocispecs.Platform `json:"platform,omitempty"`
 
-	// (Not in public API) The pipeline in which the module was created
+	// The pipeline in which the module was created
 	Pipeline pipeline.Path `json:"pipeline,omitempty"`
 }
 
@@ -120,15 +122,59 @@ func NewModule(platform ocispecs.Platform, pipeline pipeline.Path) *Module {
 	}
 }
 
+// TODO: doc
+func (mod *Module) FromRef(
+	ctx *Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	progSock string,
+	parentSrcDir *Directory, // nil if not being loaded as a dep of another mod
+	parentSrcSubpath string, // "" if not being loaded as a dep of another mod
+	moduleRefStr string,
+	getRuntime func(*Context, *Module) (*Container, error),
+) (*Module, error) {
+	// TODO: support moving refs here? Or handle elsewhere?
+	modRef, err := modules.ResolveStableRef(moduleRefStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse dependency url %q: %w", moduleRefStr, err)
+	}
+
+	// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
+	// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
+	// May need to have `dagger mod use` and `dagger mod sync` automatically include dependency include/exclude filters in
+	// dagger.json.
+	var sourceDir *Directory
+	var configPath string
+	switch {
+	case modRef.Local:
+		if parentSrcDir == nil {
+			return nil, fmt.Errorf("invalid local module ref is local relative to nil parent %q", moduleRefStr)
+		}
+		sourceDir = parentSrcDir
+		configPath = modules.NormalizeConfigPath(path.Join("/", path.Dir(parentSrcSubpath), modRef.Path))
+	case modRef.Git != nil:
+		var err error
+		sourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create git directory: %w", err)
+		}
+		configPath = modules.NormalizeConfigPath(modRef.SubPath)
+	default:
+		return nil, fmt.Errorf("invalid module ref %q", moduleRefStr)
+	}
+
+	return mod.FromConfig(ctx, bk, svcs, progSock, sourceDir, configPath, getRuntime)
+}
+
 // FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
-	ctx context.Context,
+	ctx *Context,
 	bk *buildkit.Client,
 	svcs *Services,
 	progSock string,
 	sourceDir *Directory,
 	configPath string,
-	installRuntime func(*Module) error,
+	getRuntime func(*Context, *Module) (*Container, error),
 ) (*Module, error) {
 	configPath = modules.NormalizeConfigPath(configPath)
 
@@ -152,35 +198,9 @@ func (mod *Module) FromConfig(
 	for i, depURL := range cfg.Dependencies {
 		i, depURL := i, depURL
 		eg.Go(func() error {
-			modRef, err := modules.ResolveStableRef(depURL)
+			depMod, err := NewModule(mod.Platform, mod.Pipeline).FromRef(ctx, bk, svcs, progSock, sourceDir, configPath, depURL, getRuntime)
 			if err != nil {
-				return fmt.Errorf("failed to parse dependency url %q: %w", depURL, err)
-			}
-
-			// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
-			// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
-			// May need to have `dagger mod use` and `dagger mod sync` automatically include dependency include/exclude filters in
-			// dagger.json.
-			var depSourceDir *Directory
-			var depConfigPath string
-			switch {
-			case modRef.Local:
-				depSourceDir = sourceDir
-				depConfigPath = modules.NormalizeConfigPath(path.Join("/", path.Dir(configPath), modRef.Path))
-			case modRef.Git != nil:
-				var err error
-				depSourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
-				if err != nil {
-					return fmt.Errorf("failed to create git directory: %w", err)
-				}
-				depConfigPath = modules.NormalizeConfigPath(modRef.SubPath)
-			default:
-				return fmt.Errorf("invalid dependency url from %q", depURL)
-			}
-
-			depMod, err := NewModule(mod.Platform, mod.Pipeline).FromConfig(ctx, bk, svcs, progSock, depSourceDir, depConfigPath, installRuntime)
-			if err != nil {
-				return fmt.Errorf("failed to get dependency mod from config %q: %w", depURL, err)
+				return fmt.Errorf("failed to get dependency mod from ref %q: %w", depURL, err)
 			}
 			mod.Dependencies[i] = depMod
 			return nil
@@ -203,26 +223,16 @@ func (mod *Module) FromConfig(
 		}
 	}
 
-	// TODO: for backwards-compatibility pre-merge, we'll adopt the current ref.
-	// This would normally be weird to do, since it'll point to the version
-	// _before_ shipping the SDK (assuming it uses engineconn.CLIVersion). Better
-	// to always have it required, and automate it with the CLI.
-	if cfg.SDKRuntime == "" {
-		cfg.SyncSDKRuntime()
-	}
-
 	// fill in the module settings and set the runtime container
 	mod.SourceDirectory = sourceDir
 	mod.SourceDirectorySubpath = filepath.Dir(configPath)
 	mod.Name = cfg.Name
-	mod.SDK = cfg.SDKName
-	mod.SDKRuntime = cfg.SDKRuntime
 	mod.DependencyConfig = cfg.Dependencies
-
-	if mod.Runtime == nil {
-		if err := installRuntime(mod); err != nil {
-			return nil, fmt.Errorf("failed to get runtime: %w", err)
-		}
+	mod.SDK = cfg.SDK
+	mod.Config = &cfg
+	mod.Runtime, err = getRuntime(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get runtime: %w", err)
 	}
 
 	return mod, mod.updateMod()

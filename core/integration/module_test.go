@@ -144,10 +144,16 @@ func TestModuleGoInit(t *testing.T) {
 				Contents: `
 					package main
 
+					import "os"
+
 					type Child struct{}
 
 					func (m *Child) Root() *Directory {
-						return dag.Host().Directory(".")
+						wd, err := os.Getwd()
+						if err != nil {
+							panic(err)
+						}
+						return dag.Host().Directory(wd+"/..")
 					}
 				`,
 			})
@@ -195,10 +201,16 @@ func TestModuleGoInit(t *testing.T) {
 				Contents: `
 					package main
 
+					import "os"
+
 					type Child struct{}
 
 					func (m *Child) Root() *Directory {
-						return dag.Host().Directory(".")
+						wd, err := os.Getwd()
+						if err != nil {
+							panic(err)
+						}
+						return dag.Host().Directory(wd+"/..")
 					}
 				`,
 			})
@@ -1039,6 +1051,7 @@ func daggerQuery(query string) dagger.WithContainerFunc {
 }
 
 func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
+	t.Helper()
 	return c.Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
@@ -1049,6 +1062,7 @@ func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
 }
 
 func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
+	t.Helper()
 	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
 	require.NoError(t, err)
 

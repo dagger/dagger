@@ -148,6 +148,27 @@ func (c *Client) LocalImport(
 	return blobPB, nil
 }
 
+// Import a directory from the engine container, as opposed to from a client
+func (c *Client) EngineContainerLocalImport(
+	ctx context.Context,
+	recorder *progrock.Recorder,
+	platform specs.Platform,
+	srcPath string,
+	excludePatterns []string,
+	includePatterns []string,
+) (*bksolverpb.Definition, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get hostname for engine local import: %s", err)
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:       c.ID(),
+		ClientHostname: hostname,
+	})
+
+	return c.LocalImport(ctx, recorder, platform, srcPath, excludePatterns, includePatterns)
+}
+
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {

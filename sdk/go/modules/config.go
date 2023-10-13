@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// TODO: move this code back to `core`?
+
 // Filename is the name of the module config file.
 const Filename = "dagger.json"
 
@@ -15,18 +17,12 @@ type Config struct {
 	// The name of the module.
 	Name string `json:"name"`
 
-	// The name of a well-known SDK recognized by Dagger. Used for automatically
-	// bumping the SDKRuntime field as the user upgrades Dagger.
-	//
-	// May be omitted if you're bringing your own custom SDK runtime.
-	SDKName string `json:"sdk,omitempty"`
-
-	// An image ref to a SDK module runtime.
-	SDKRuntime string `json:"sdkRuntime"`
-
 	// The root directory of the module's project, which may be above the module
 	// source code.
 	Root string `json:"root,omitempty"`
+
+	// TODO: doc
+	SDK string `json:"sdk,omitempty"`
 
 	// Include only these file globs when loading the module root.
 	Include []string `json:"include,omitempty"`
@@ -38,31 +34,14 @@ type Config struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 
-// SyncRuntime sets the SDKRuntime field to the current image ref for the
-// well-known runtime for the SDKName field.
-func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
+// TODO: is this still useful?
+func NewConfig(name, sdk, rootPath string) *Config {
 	cfg := &Config{
 		Name: name,
 		Root: rootPath,
-	}
-	if ref, found := WellKnownSDKRuntimes[sdkNameOrRef]; found {
-		cfg.SDKName = sdkNameOrRef
-		cfg.SDKRuntime = ref
-	} else {
-		cfg.SDKRuntime = sdkNameOrRef
+		SDK:  sdk,
 	}
 	return cfg
-}
-
-// SyncSDKRuntime sets the SDKRuntime field to the current image ref for the
-// well-known runtime for the SDKName field.
-func (cfg *Config) SyncSDKRuntime() {
-	if cfg.SDKName == "" {
-		// assume hand-configured
-		return
-	}
-
-	cfg.SDKRuntime = WellKnownSDKRuntimes[cfg.SDKName]
 }
 
 func (cfg *Config) RootAndSubpath(moduleSourceDir string) (string, string, error) {
