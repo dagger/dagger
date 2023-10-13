@@ -30,7 +30,7 @@ func main() {
 	out, err := client.Container().
 		From("mariadb:10.11.2").
 		WithServiceBinding("db", hostSrv).
-		WithExec([]string{"/usr/bin/mysql", "--user=", "root", "--password=", "secret", "--host=", "db", "-e", "SELECT * FROM mysql.user"}).
+		WithExec([]string{"/bin/sh", "-c", "/usr/bin/mysql --user=root --password=secret --host=db -e 'SELECT * FROM mysql.user'"}).
 		Stdout(ctx)
 	if err != nil {
 		panic(err)

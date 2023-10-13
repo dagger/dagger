@@ -50,6 +50,7 @@ func main() {
 	}
 	defer res.Body.Close()
 
+	// print response
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		panic(err)

@@ -14,7 +14,6 @@ func TestFoo(t *testing.T) {
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 
-	// ... somewhere in your test suite setup
 	dockerd, err := c.Container().From("docker:dind").AsService().Start(ctx)
 	require.NoError(t, err)
 
@@ -30,7 +29,7 @@ func TestFoo(t *testing.T) {
 	require.NoError(t, err)
 
 	// or, if you prefer
-	// trust `Endpoint()` to construct the address.
+	// trust `Endpoint()` to construct the address
 	//
 	// note that this has the exact same non-cache-busting semantics as WithServiceBinding,
 	// since hostnames are stable and content-addressed
