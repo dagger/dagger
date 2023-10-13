@@ -19,7 +19,7 @@ Dagger v0.8.8 includes a breaking change for binding service containers to conta
 
 ## Introduction
 
-Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced service containers, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines.
+Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced service containers, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines. Dagger v0.8.8 further improved this implementation, enabling support for container-to-host networking and host-to-container networking.
 
 Some common use cases for service containers are:
 
@@ -27,11 +27,11 @@ Some common use cases for service containers are:
 - Run end-to-end integration tests
 - Run sidecar services
 
-This tutorial teaches you the basics of using service containers in Dagger.
+This guide teaches you the basics of using service containers in Dagger.
 
 ## Requirements
 
-This tutorial assumes that:
+This guide assumes that:
 
 - You have a Go, Python, or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/), or [Node.js](https://nodejs.org/en/download/).
 - You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md), or [Node.js](../sdk/nodejs/835948-install.md) SDK.
@@ -41,10 +41,8 @@ This tutorial assumes that:
 
 Dagger's service containers have the following characteristics:
 
-- Each service container has its own network namespace and IP address
-- Each service container has a unique, deterministic DNS address
-- Service containers can expose ports and endpoints
-- Service containers can bind other containers as services
+- Each service container has a canonical, content-addressed hostname and an optional set of exposed ports
+- Service containers can bind to other containers as services
 
 Service containers come with the following built-in features:
 
@@ -52,44 +50,43 @@ Service containers come with the following built-in features:
 - Service containers are health checked prior to running clients
 - Service containers are given an alias for the client container to use as its hostname
 
-## Use hostnames
+## Working with service hostnames and ports
 
-To get a container's address, you wouldn't normally run the `hostname` command, because you'd just be getting the hostname of a container that runs `hostname`, which isn't very helpful. Instead, you would use the `Hostname()` (Go) or `hostname()` (Python and Node.js) SDK method, which returns a domain name reachable by other containers:
+Each service container has a canonical, content-addressed hostname and an optional set of exposed ports.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/use-services/use-hostnames-3/main.go
+You can query a service container's canonical hostname by calling the `Service.Hostname()` SDK method.
+
+```go file=./snippets/use-services/use-hostnames/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/use-services/use-hostnames-3/index.ts
+You can query a service container's canonical hostname by calling the `Service.hostname()` SDK method.
+
+```typescript file=./snippets/use-services/use-hostnames/index.ts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/use-services/use-hostnames-3/main.py
+You can query a service container's canonical hostname by calling the `Service.hostname()` SDK method.
+
+```python file=./snippets/use-services/use-hostnames/main.py
 ```
 
 </TabItem>
 </Tabs>
 
-In practice, you are more likely to use aliases with service bindings or endpoints, which are covered in the next section.
-
-## Expose ports
-
-Dagger offers two methods to work with service ports:
+You can also define the ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-- Use the `WithExposedPort()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `Endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
-
-Here's an example:
+This example uses the `WithExposedPort()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `Endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
 
 ```go file=./snippets/use-services/expose-ports/main.go
 ```
@@ -97,10 +94,7 @@ Here's an example:
 </TabItem>
 <TabItem value="Node.js">
 
-- Use the `withExposedPort()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
-
-Here's an example:
+This example uses the `withExposedPort()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
 
 ```typescript file=./snippets/use-services/expose-ports/index.ts
 ```
@@ -108,10 +102,8 @@ Here's an example:
 </TabItem>
 <TabItem value="Python">
 
-- Use the `with_exposed_port()` method to set ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
+This example uses the `with_exposed_port()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
 
-Here's an example:
 
 ```python file=./snippets/use-services/expose-ports/main.py
 ```
@@ -119,20 +111,22 @@ Here's an example:
 </TabItem>
 </Tabs>
 
+In practice, you are more likely to set your own hostname aliases with service bindings, which are covered in the next section.
+
 ## Bind services
 
 Binding a service to a container or the host creates a dependency in your Dagger pipeline. The service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
 
-You can bind a service with Dagger in three ways:
+You can use services with Dagger in three ways:
 
-- [A service container to a client container](#bind-container-services-to-containers)
-- [A host service to a client container](#bind-host-services-to-containers)
-- [A container service to the host](#bind-container-services-to-the-host)
+- [Bind service containers to client containers](#bind-service-containers-to-containers)
+- [Expose service containers to the host](#expose-service-containers-to-the-host)
+- [Expose host services to client containers](#expose-host-services-to-containers)
 
-### Bind container services to containers
+### Bind service containers to containers
 
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to containers. The examples below have been updated.
+Dagger v0.8.8 includes a breaking change for binding service containers to client containers. The examples below have been updated.
 :::
 
 Dagger enables users to bind a service running in a container to another (client) container with an alias that the client container can use as a hostname to communicate with the service.
@@ -142,19 +136,19 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/use-services/bind-services-1/main.go
+```go file=./snippets/use-services/bind-service-containers-1/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/use-services/bind-services-1/index.ts
+```typescript file=./snippets/use-services/bind-service-containers-1/index.ts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/use-services/bind-services-1/main.py
+```python file=./snippets/use-services/bind-service-containers-1/main.py
 ```
 
 </TabItem>
@@ -169,19 +163,19 @@ When a service is bound to a container, it also conveys to any outputs of that c
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/use-services/bind-services-2/main.go
+```go file=./snippets/use-services/bind-service-containers-2/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/use-services/bind-services-2/index.ts
+```typescript file=./snippets/use-services/bind-service-containers-2/index.ts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/use-services/bind-services-2/main.py
+```python file=./snippets/use-services/bind-service-containers-2/main.py
 ```
 
 </TabItem>
@@ -189,52 +183,64 @@ When a service is bound to a container, it also conveys to any outputs of that c
 
 ### Expose service containers to the host
 
-Starting with Dagger v0.8.8, you can expose service container ports directly to the host.
+Starting with Dagger v0.8.8, you can expose service container ports directly to the host. This enables clients on the host to communicate with services running in Dagger.
 
-This is useful when you need clients on the host to communicate with Services running in Dagger. One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. You might also use this to access a web UI in a browser on your desktop.
+One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. You might also use this to access a web UI in a browser on your desktop.
 
-Here is an example of how to expose Dagger services to the host.
+Here's an example of how to use Dagger services on the host. In this example, the host makes HTTP requests to an HTTP service running in a container.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-TODO: The Dagger pipeline calls `Host.tunnel(service).start`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `endpoint` gets the final `addr` with whichever port is bound.
+```go file=./snippets/use-services/expose-service-containers-host/main.go
+```
+
+The Dagger pipeline calls `Host.Tunnel(service).Start()`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
 
 </TabItem>
 <TabItem value="Node.js">
 
-TODO: The Dagger pipeline calls `Host.tunnel(service).start`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `endpoint` gets the final `addr` with whichever port is bound.
+TODO
 
 </TabItem>
 <TabItem value="Python">
 
-TODO: The Dagger pipeline calls `Host.tunnel(service).start`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `endpoint` gets the final `addr` with whichever port is bound.
+TODO
 
 </TabItem>
 </Tabs>
 
-### Bind container services to the host
+### Expose host services to containers
 
-Starting with Dagger v0.8.8, you can bind client containers to the host.
+Starting with Dagger v0.8.8, you can bind client containers to the host. This enables client containers in Dagger pipelines to communicate with services running on the host.
 
-This type of container networking is useful when you need a client container to access services running on the host.
+:::note
+This implies that a service is already listening on a port on the host, out-of-band of Dagger.
+:::
 
-Here's an example:
+Here's an example of how a container running in a Dagger pipeline can access a service on the host. In this example, a  container in a Dagger pipeline queries a MariaDB database service running on the host. Before running the pipeline, use the following command to start a MariaDB database service on the host:
+
+```shell
+docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSWORD=secret  mariadb:10.11.2
+```
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-TODO: This example calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. It then sets the service binding on the client container to the host.
+```go file=./snippets/use-services/expose-host-services-container/main.go
+```
+
+This Dagger pipeline calls `Host.Service([]PortForward)` to create a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
 
 </TabItem>
 <TabItem value="Node.js">
 
-TODO: This example calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. It then sets the service binding on the client container to the host.
+TODO
 
 </TabItem>
 <TabItem value="Python">
 
-TODO: This example calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured ports. It then sets the service binding on the client container to the host.
+TODO
 
 </TabItem>
 </Tabs>
@@ -274,12 +280,15 @@ This example uses Redis's `SAVE` command to ensure data is synced. By default, R
 
 ## Start and stop services
 
-Starting with Dagger v0.8.8, you can explicitly start and stop services in your pipelines.
+Services are designed to be expressed as a Directed Acyclic Graph (DAG) with explicit bindings allowing services to be started lazily, just like every other DAG node. But sometimes, you may need to explicitly manage the lifecycle. Starting with Dagger v0.8.8, you can explicitly start and stop services in your pipelines.
+
+Here's an example which demonstrates explicitly starting a Docker daemon for use in a test suite:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-TODO
+```go file=./snippets/use-services/start-stop-services/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
@@ -296,7 +305,7 @@ TODO
 
 ## Example: MariaDB database service for application tests
 
-The following example demonstrates service containers in action, by creating a MariaDB database service container for use in application unit/integration testing.
+The following example demonstrates service containers in action, by creating and binding a MariaDB database service container for use in application unit/integration testing.
 
 The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests).
 
@@ -321,7 +330,7 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 </TabItem>
 </Tabs>
 
-This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
+This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container (client) and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
 
 :::tip
 Explicitly specifying the service container port with `WithExposedPort()` (Go), `withExposedPort()` (Node.js) or `with_exposed_port()` (Python) is particularly important here. Without it, Dagger will start the service container and immediately allow access to service clients. With it, Dagger will wait for the service to be listening first.
@@ -382,9 +391,9 @@ Here's what happens on the last line:
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
 :::
 
-It's worth noting that services are just containers, and all containers in Dagger have run-exactly-once semantics. Concurrent runs of the same container synchronize and attach to the same run with progress/logs multiplexed to each caller. Canceling a run only interrupts the container process when all runs are canceled, so new clients can come and go throughout a service run.
+Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will  each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.
 
-Run-exactly-once semantics are very convenient. You don't have to come up with names and maintain instances of services; they're content-addressed, so you just use them by value. You also don't have to manage the state of the service; you can just trust that it will be running when needed and stopped when not.
+Content-addressed services are very convenient. You don't have to come up with names and maintain instances of services; just use them by value. You also don't have to manage the state of the service; you can just trust that it will be running when needed and stopped when not.
 
 :::tip
 If you need multiple instances of a service, just attach something unique to each one, such as an instance ID.
@@ -442,6 +451,6 @@ Depending on the 10-second grace period is risky because there are many factors 
 
 ## Conclusion
 
-This tutorial walked you through the basics of using service containers with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger.
+This tutorial walked you through the basics of using service containers with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service containers to the host, exposiing host services to containers and persisting service state using Dagger.
 
 Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
