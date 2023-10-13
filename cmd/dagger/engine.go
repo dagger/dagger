@@ -45,6 +45,11 @@ func init() {
 // show only focused vertices
 var focus bool
 
+// show errored vertices even if focused
+//
+// set this to false if your command handles errors (e.g. dagger checks)
+var revealErrored = true
+
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
 type runClientCallback func(context.Context, *client.Client) error
@@ -158,6 +163,8 @@ func inlineTUI(
 	tape := progrock.NewTape()
 	tape.ShowInternal(debug)
 	tape.Focus(focus)
+	tape.RevealErrored(revealErrored)
+
 	if debug {
 		tape.MessageLevel(progrock.MessageLevel_DEBUG)
 	}
