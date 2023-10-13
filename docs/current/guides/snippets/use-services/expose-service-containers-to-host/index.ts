@@ -26,7 +26,7 @@ connect(
     // print response
     await fetch("http://" + srvAddr)
       .then((res) => res.text())
-      .then((body) => console.log(body));
+      .then((body) => console.log(body))
   },
   { LogOutput: process.stderr }
 )
