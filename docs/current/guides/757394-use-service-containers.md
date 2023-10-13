@@ -191,7 +191,7 @@ Here's an example of how to use Dagger services on the host. In this example, th
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/use-services/expose-service-containers-host/main.go
+```go file=./snippets/use-services/expose-service-containers-to-host/main.go
 ```
 
 The Dagger pipeline calls `Host.Tunnel(service).Start()`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
@@ -226,7 +226,7 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/use-services/expose-host-services-container/main.go
+```go file=./snippets/use-services/expose-host-services-to-container/main.go
 ```
 
 This Dagger pipeline calls `Host.Service([]PortForward)` to create a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
