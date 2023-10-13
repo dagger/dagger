@@ -34,9 +34,10 @@ async def main():
         srv_addr = tunnel.endpoint()
 
         # access HTTP service from host
-        response = requests.get("http://" + srv_addr, timeout=180)
+        # commenting below as it's a blocking function, needs changes
+        # response = requests.get("http://" + srv_addr, timeout=180)
 
-    print(response.text)
+    # print(response.text)
 
 
 anyio.run(main)
