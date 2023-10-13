@@ -14,7 +14,7 @@ import Embed from '@site/src/components/atoms/embed.js'
 # Use Services in Dagger
 
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to containers. You must call `Container.service()` (Node.js and Python) or `Container.Service()` (Go) to get a service instead of binding directly to a container. See the section on [binding container services to containers](#bind-service-containers-to-containers) for examples.
+Dagger v0.8.8 includes a breaking change for binding service containers to containers. The `Container.withServiceBinding` API now takes a `Service` instead of a `Container`, so you must call `Container.asService` on its argument. See the section on [binding container services to containers](#bind-service-containers-to-containers) for examples.
 :::
 
 ## Introduction
@@ -86,7 +86,7 @@ You can also define the ports on which the service container will listen. Dagger
 <Tabs groupId="language">
 <TabItem value="Go">
 
-This example uses the `WithExposedPort()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `Endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
+This example uses the `WithExposedPort()` method to set ports on which the service container will listen. Note also the `Endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
 
 ```go file=./snippets/use-services/expose-ports/main.go
 ```
@@ -94,7 +94,7 @@ This example uses the `WithExposedPort()` method to set ports on which the servi
 </TabItem>
 <TabItem value="Node.js">
 
-This example uses the `withExposedPort()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
+This example uses the `withExposedPort()` method to set ports on which the service container will listen. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
 
 ```typescript file=./snippets/use-services/expose-ports/index.ts
 ```
@@ -102,7 +102,7 @@ This example uses the `withExposedPort()` method to set ports on which the servi
 </TabItem>
 <TabItem value="Python">
 
-This example uses the `with_exposed_port()` method to set ports on which the service container will listen. You can either specify a port or let Dagger pick the first exposed port. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme.
+This example uses the `with_exposed_port()` method to set ports on which the service container will listen. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
 
 ```python file=./snippets/use-services/expose-ports/main.py
 ```
@@ -184,7 +184,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 
 Starting with Dagger v0.8.8, you can expose service container ports directly to the host. This enables clients on the host to communicate with services running in Dagger.
 
-One use case is for testing, where you need to be able to spin up ephemeral containers to run tests. You might also use this to access a web UI in a browser on your desktop.
+One use case is for testing, where you need to be able to spin up ephemeral databases to run tests against. You might also use this to access a web UI in a browser on your desktop.
 
 Here's an example of how to use Dagger services on the host. In this example, the host makes HTTP requests to an HTTP service running in a container.
 
@@ -211,13 +211,13 @@ TODO
 
 ### Expose host services to containers
 
-Starting with Dagger v0.8.8, you can bind client containers to the host. This enables client containers in Dagger pipelines to communicate with services running on the host.
+Starting with Dagger v0.8.8, you can bind containers to host services. This enables client containers in Dagger pipelines to communicate with services running on the host.
 
 :::note
 This implies that a service is already listening on a port on the host, out-of-band of Dagger.
 :::
 
-Here's an example of how a container running in a Dagger pipeline can access a service on the host. In this example, a  container in a Dagger pipeline queries a MariaDB database service running on the host. Before running the pipeline, use the following command to start a MariaDB database service on the host:
+Here's an example of how a container running in a Dagger pipeline can access a service on the host. In this example, a container in a Dagger pipeline queries a MariaDB database service running on the host. Before running the pipeline, use the following command to start a MariaDB database service on the host:
 
 ```shell
 docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSWORD=secret  mariadb:10.11.2
@@ -229,7 +229,7 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 ```go file=./snippets/use-services/expose-host-services-to-container/main.go
 ```
 
-This Dagger pipeline calls `Host.Service([]PortForward)` to create a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
+This Dagger pipeline calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
 
 </TabItem>
 <TabItem value="Node.js">
@@ -245,7 +245,7 @@ TODO
 </Tabs>
 
 :::note
-The Dagger implementation is a new flavor of `Socket` and is similar to `Host.unixSocket`.
+To connect client containers to Unix sockets on the host instead of TCP, see `Host.unixSocket`.
 :::
 
 ## Persist service state
