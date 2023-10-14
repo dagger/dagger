@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -54,37 +52,47 @@ var callCmd = &cobra.Command{
 	},
 }
 
-type callObjectType struct {
+// modTypeDef is a representation of dagger.TypeDef
+type modTypeDef struct {
+	Kind     dagger.TypeDefKind
+	Optional bool
+	AsObject *modObject
+}
+
+// modObject is a representation of dagger.ObjectTypeDef
+type modObject struct {
 	Name      string
-	Functions []*callFunction
-	orig      *dagger.ObjectTypeDef
+	Functions []*modFunction
 }
 
-type callFunction struct {
+// modFunction is a representation of dagger.Function
+type modFunction struct {
 	Name        string
-	CmdName     string
 	Description string
-	Args        []*callFunctionArg
-	Kind        dagger.TypeDefKind
-	AsObject    *callObjectType
-	orig        dagger.Function
+	ReturnType  modTypeDef
+	Args        []*modFunctionArg
 }
 
-type callFunctionArg struct {
-	Name         string
-	FlagName     string
-	Description  string
-	Optional     bool
-	DefaultValue any
-	AsObject     *callObjectType
-	Kind         dagger.TypeDefKind
-	orig         dagger.FunctionArg
+// modFunctionArg is a representation of dagger.FunctionArg
+type modFunctionArg struct {
+	Name        string
+	Description string
+	TypeDef     modTypeDef
+	flagName    string
 }
 
+func (r *modFunctionArg) FlagName() string {
+	if r.flagName == "" {
+		r.flagName = strcase.ToKebab(r.Name)
+	}
+	return r.flagName
+}
+
+// callContext holds the execution context for a function call.
 type callContext struct {
 	c       graphql.Client
 	q       *querybuilder.Selection
-	modObjs []*callObjectType
+	modObjs []*modObject
 	vtx     *progrock.VertexRecorder
 }
 
@@ -96,7 +104,7 @@ func (c *callContext) Arg(name string, value any) {
 	c.q = c.q.Arg(gqlArgName(name), value)
 }
 
-func (c *callContext) AddCommand(cmd *cobra.Command) {
+func (c *callContext) StartCommand(cmd *cobra.Command) {
 	// TODO: Is there a way to update the name of the vertex?
 	// This is a hack to avoid showing secrets by only presenting the
 	// chain of functions as they're discovered. Need a more robust way
@@ -179,7 +187,7 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 	c.Select(obj.Name)
 
 	// Add main object's functions as subcommands
-	obj.AddSubCommands(ctx, dag, cmd, c)
+	obj.AddSubCommands(ctx, dag, c, cmd)
 
 	if help, _ := callFlags.GetBool("help"); help {
 		return cmd.Help()
@@ -204,14 +212,58 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 	return nil
 }
 
-// loadModuleContext returns an execution context for the query builder and the module's main object
-func loadModuleContext(ctx context.Context, dag *dagger.Client, mod *dagger.Module, vtx *progrock.VertexRecorder) (*callContext, *callObjectType, error) {
-	// TODO: Use a GraphQL query to get all the properties we need
-	// in a single request.
+// loadModuleContext returns an execution context for the query builder and the module's main object.
+func loadModuleContext(ctx context.Context, dag *dagger.Client, mod *dagger.Module, vtx *progrock.VertexRecorder) (*callContext, *modObject, error) {
+	var res struct {
+		Module struct {
+			Name    string
+			Objects []*modTypeDef
+		}
+	}
 
-	objs, err := mod.Objects(ctx)
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `
+            query Objects($module: ModuleID!) {
+                module: loadModuleFromID(id: $module) {
+                    name
+                    objects {
+                        asObject {
+                            name
+                            functions {
+                                name
+                                description
+                                returnType {
+                                    kind
+                                    asObject {
+                                        name
+                                    }
+                                }
+                                args {
+                                    name
+                                    description
+                                    typeDef {
+                                        kind
+                                        optional
+                                        asObject {
+                                            name
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+        `,
+		Variables: map[string]interface{}{
+			"module": mod,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("get module objects: %w", err)
+		return nil, nil, fmt.Errorf("query module objects: %w", err)
 	}
 
 	c := &callContext{
@@ -220,39 +272,27 @@ func loadModuleContext(ctx context.Context, dag *dagger.Client, mod *dagger.Modu
 		vtx: vtx,
 	}
 
-	// Load all objects into the context so we can get return type definitions
-	// that include the object's functions later on.
-	for _, def := range objs {
-		def := def
-
-		obj, err := newObjectType(ctx, def.AsObject())
-		if err != nil {
-			return nil, nil, fmt.Errorf("create object type: %w", err)
+	// Function return types as objects don't include their functions so load
+	// all module objects with included functions here in order to reuse later.
+	for _, typeDef := range res.Module.Objects {
+		if obj := typeDef.AsObject; obj != nil {
+			c.modObjs = append(c.modObjs, obj)
 		}
-
-		c.modObjs = append(c.modObjs, obj)
 	}
 
-	modName, err := mod.Name(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("get module name: %w", err)
-	}
-
-	obj := c.GetObject(modName)
+	obj := c.GetObject(res.Module.Name)
 	if obj == nil {
 		return nil, nil, fmt.Errorf("main object not found")
-	}
-
-	if err := obj.LoadFunctions(ctx, dag, c); err != nil {
-		return nil, nil, fmt.Errorf("load main object's functions: %w", err)
 	}
 
 	return c, obj, nil
 }
 
-func (c *callContext) GetObject(name string) *callObjectType {
+// GetObject retrieves a saved object type definition from the module.
+func (c *callContext) GetObject(name string) *modObject {
 	for _, obj := range c.modObjs {
 		// Normalize name in case an SDK uses a different convention for object names.
+		// Otherwise we could just convert `name` to upper camel case.
 		if gqlFieldName(obj.Name) == gqlFieldName(name) {
 			return obj
 		}
@@ -260,208 +300,52 @@ func (c *callContext) GetObject(name string) *callObjectType {
 	return nil
 }
 
-func newObjectType(ctx context.Context, def *dagger.ObjectTypeDef) (*callObjectType, error) {
-	if def == nil {
-		return nil, fmt.Errorf("not an object type")
-	}
-
-	name, err := def.Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get object name: %w", err)
-	}
-
-	return &callObjectType{
-		Name: name,
-		orig: def,
-	}, nil
-}
-
-func (o *callObjectType) LoadFunctions(ctx context.Context, dag *dagger.Client, c *callContext) error {
-	// TODO: User a GraphQL query to get all the properties we need
-	// in a single request.
-
-	if o.Functions != nil {
-		return nil
-	}
-
-	funcs, err := o.orig.Functions(ctx)
-	if err != nil {
-		return fmt.Errorf("get functions: %w", err)
-	}
-
-	if funcs == nil {
-		return nil
-	}
-
-	for _, fn := range funcs {
-		fn := fn
-
-		name, err := fn.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get function name: %w", err)
+// AddSubCommands creates and adds sub commands for all functions returned on an object type.
+func (o *modObject) AddSubCommands(ctx context.Context, dag *dagger.Client, c *callContext, cmd *cobra.Command) {
+	if o != nil {
+		for _, fn := range o.Functions {
+			subCmd := fn.MakeCmd(ctx, dag, c)
+			cmd.AddCommand(subCmd)
 		}
-
-		description, err := fn.Description(ctx)
-		if err != nil {
-			return fmt.Errorf("get function description: %w", err)
-		}
-
-		kind, err := fn.ReturnType().Kind(ctx)
-		if err != nil {
-			return fmt.Errorf("get function return type: %w", err)
-		}
-
-		f := &callFunction{
-			orig:        fn,
-			Name:        name,
-			CmdName:     cliName(name),
-			Kind:        kind,
-			Description: strings.TrimSpace(description),
-		}
-
-		if kind == dagger.Objectkind {
-			obj, err := newObjectType(ctx, fn.ReturnType().AsObject())
-			if err != nil {
-				return fmt.Errorf("create object type for function: %w", err)
-			}
-
-			// If the function returns a type that's declared in this module
-			// replace the type def with the one loaded in the beginning
-			// because type defs from return type don't include the object's
-			// functions.
-			if cached := c.GetObject(obj.Name); cached != nil {
-				obj = cached
-			}
-
-			f.AsObject = obj
-		}
-
-		o.Functions = append(o.Functions, f)
-	}
-	return nil
-}
-
-func (o *callObjectType) AddSubCommands(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, c *callContext) {
-	for _, fn := range o.Functions {
-		subCmd := fn.MakeCmd(ctx, dag, c)
-		cmd.AddCommand(subCmd)
 	}
 }
 
-func (fn *callFunction) LoadArguments(ctx context.Context) error {
-	// TODO: User a GraphQL query to get all the properties we need
-	// in a single request.
-
-	if fn.Args != nil {
-		return nil
+// Load attempts to replace an object's type definition with the one initially
+// loaded in the call context if present. This is necessary to recover missing
+// function definitions when chaining functions.
+func (t *modTypeDef) Load(c *callContext) {
+	if t.AsObject != nil && t.AsObject.Functions == nil {
+		obj := c.GetObject(t.AsObject.Name)
+		if obj != nil {
+			t.AsObject = obj
+		}
 	}
-
-	args, err := fn.orig.Args(ctx)
-	if err != nil {
-		return fmt.Errorf("get args: %w", err)
-	}
-
-	for _, arg := range args {
-		arg := arg
-
-		name, err := arg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("get arg name: %w", err)
-		}
-
-		description, err := arg.Description(ctx)
-		if err != nil {
-			return fmt.Errorf("get arg %q description: %w", name, err)
-		}
-
-		defaultJSON, err := arg.DefaultValue(ctx)
-		if err != nil {
-			return fmt.Errorf("get arg %q default value: %w", name, err)
-		}
-
-		var defaultVal any
-		if defaultJSON != "" {
-			if err = json.Unmarshal([]byte(defaultJSON), &defaultVal); err != nil {
-				return fmt.Errorf("unmarshal arg %q default value: %w", name, err)
-			}
-		}
-
-		kind, err := arg.TypeDef().Kind(ctx)
-		if err != nil {
-			return fmt.Errorf("get arg %q type: %w", name, err)
-		}
-
-		optional, err := arg.TypeDef().Optional(ctx)
-		if err != nil {
-			return fmt.Errorf("check if arg %q is optional: %w", name, err)
-		}
-
-		r := &callFunctionArg{
-			orig:         arg,
-			Name:         name,
-			FlagName:     cliName(name),
-			Description:  strings.TrimSpace(description),
-			Kind:         kind,
-			Optional:     optional,
-			DefaultValue: defaultVal,
-		}
-
-		if kind == dagger.Objectkind {
-			obj, err := newObjectType(ctx, arg.TypeDef().AsObject())
-			if err != nil {
-				return fmt.Errorf("create object type for function: %w", err)
-			}
-			r.AsObject = obj
-		}
-
-		fn.Args = append(fn.Args, r)
-	}
-
-	return nil
 }
 
-func (fn *callFunction) MakeCmd(ctx context.Context, dag *dagger.Client, c *callContext) *cobra.Command {
-	newCmd := &cobra.Command{
-		Use:   fn.CmdName,
+// LoadObjects loads return and argument object types.
+func (fn *modFunction) LoadObjects(c *callContext) {
+	fn.ReturnType.Load(c)
+	for _, arg := range fn.Args {
+		arg.TypeDef.Load(c)
+	}
+}
+
+// MakeCmd creates a Cobra command for the function.
+func (fn *modFunction) MakeCmd(ctx context.Context, dag *dagger.Client, c *callContext) *cobra.Command {
+	return &cobra.Command{
+		Use:   cliName(fn.Name),
 		Short: fn.Description,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c.AddCommand(cmd)
+			c.StartCommand(cmd)
 
-			// Only load function arguments in RunE, when it's actually needed.
-			if err := fn.LoadArguments(ctx); err != nil {
-				return fmt.Errorf("load function %q arguments: %w", fn.Name, err)
-			}
-
-			for _, arg := range fn.Args {
-				arg := arg
-
-				err := arg.SetFlag(cmd.Flags())
-				if err != nil {
-					return fmt.Errorf("set flag %q: %w", arg.FlagName, err)
-				}
-
-				// TODO: This won't work on its own because cobra checks required
-				// flags before the RunE function is called. We need to manually
-				// check the flags after parsing them.
-				if !arg.Optional {
-					cmd.MarkFlagRequired(arg.FlagName)
-				}
-			}
-
-			// Possibly add a few helping flags based on the function's return type.
-			fn.SetReturnFlag(cmd.Flags())
+			fn.LoadObjects(c)
+			fn.SetFlags(cmd)
 
 			if err := cmd.ParseFlags(args); err != nil {
 				return fmt.Errorf("parse sub-command flags: %w", err)
 			}
 
-			// Load functions before selection in order to detect supported objects.
-			if fn.AsObject != nil {
-				if err := fn.AsObject.LoadFunctions(ctx, dag, c); err != nil {
-					return fmt.Errorf("load functions from %q: %w", fn.AsObject.Name, err)
-				}
-				fn.AsObject.AddSubCommands(ctx, dag, cmd, c)
-			}
+			fn.ReturnType.AsObject.AddSubCommands(ctx, dag, c, cmd)
 
 			// Need to make the query selection before chaining off.
 			kind, err := fn.Select(c, dag, cmd.Flags())
@@ -518,7 +402,7 @@ func (fn *callFunction) MakeCmd(ctx context.Context, dag *dagger.Client, c *call
 				return err
 			}
 
-			if fn.Kind == dagger.Voidkind {
+			if kind == dagger.Voidkind {
 				return nil
 			}
 
@@ -528,31 +412,46 @@ func (fn *callFunction) MakeCmd(ctx context.Context, dag *dagger.Client, c *call
 			return nil
 		},
 	}
-
-	newCmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Show help for '%s'", fn.CmdName))
-	newCmd.Flags().SetInterspersed(false)
-
-	return newCmd
 }
 
-// SetReturnFlag adds an extra flag on supported types to select a leaf value.
-func (fn *callFunction) SetReturnFlag(flags *pflag.FlagSet) {
-	// TODO: Replace this with command verbs.
-	// TODO: Handle more types. These are just examples to get started.
-	if fn.Kind == dagger.Objectkind {
-		switch fn.AsObject.Name {
-		case Directory, File:
-			flags.String("export-path", "", "Path to export the result to")
-		case Container:
-			flags.Bool("stdout", true, "Print the container's stdout")
+// SetFlags adds flags to the Cobra sub-command corresponding to this function..
+func (fn *modFunction) SetFlags(cmd *cobra.Command) error {
+	// Every command gets a --help flag.
+	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Show help for '%s'", cmd.Name()))
+	cmd.Flags().SetInterspersed(false)
+
+	for _, arg := range fn.Args {
+		err := arg.SetFlag(cmd.Flags())
+		if err != nil {
+			return fmt.Errorf("set flag %q: %w", arg.FlagName(), err)
+		}
+
+		// TODO: This won't work on its own because cobra checks required
+		// flags before the RunE function is called. We need to manually
+		// check the flags after parsing them.
+		if !arg.TypeDef.Optional {
+			cmd.MarkFlagRequired(arg.FlagName())
 		}
 	}
+
+	// TODO: Replace this with command verbs.
+	// TODO: Handle more types. These are just examples to get started.
+	if fn.ReturnType.Kind == dagger.Objectkind {
+		switch fn.ReturnType.AsObject.Name {
+		case Directory, File:
+			cmd.Flags().String("export-path", "", "Path to export the result to")
+		case Container:
+			cmd.Flags().Bool("stdout", true, "Print the container's stdout")
+		}
+	}
+
+	return nil
 }
 
 // Select adds the function selection to the query.
 // The type can change if there's an extra selection for supported types.
-func (fn *callFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.FlagSet) (dagger.TypeDefKind, error) {
-	kind := fn.Kind
+func (fn *modFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.FlagSet) (dagger.TypeDefKind, error) {
+	kind := fn.ReturnType.Kind
 	c.Select(fn.Name)
 
 	// TODO: Check required flags.
@@ -561,7 +460,7 @@ func (fn *callFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.
 
 		val, err := arg.GetValue(dag, flags)
 		if err != nil {
-			return "", fmt.Errorf("get value for flag %q: %w", arg.FlagName, err)
+			return "", fmt.Errorf("get value for flag %q: %w", arg.FlagName(), err)
 		}
 
 		c.Arg(arg.Name, val)
@@ -571,10 +470,10 @@ func (fn *callFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.
 	// TODO: Handle more types. These are just examples to get started.
 	switch kind {
 	case dagger.Objectkind:
-		if len(fn.AsObject.Functions) > 0 {
+		if len(fn.ReturnType.AsObject.Functions) > 0 {
 			return kind, nil
 		}
-		switch fn.AsObject.Name {
+		switch fn.ReturnType.AsObject.Name {
 		case Directory, File:
 			val, err := flags.GetString("export-path")
 			if err != nil {
@@ -595,7 +494,7 @@ func (fn *callFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.
 				kind = dagger.Stringkind
 			}
 		default:
-			return "", fmt.Errorf("unsupported object return type %q", fn.AsObject.Name)
+			return "", fmt.Errorf("unsupported object return type %q", fn.ReturnType.AsObject.Name)
 		}
 	case dagger.Listkind:
 		return "", fmt.Errorf("unsupported list return type")
@@ -603,46 +502,43 @@ func (fn *callFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.
 	return kind, nil
 }
 
-func (r *callFunctionArg) SetFlag(flags *pflag.FlagSet) error {
+func (r *modFunctionArg) SetFlag(flags *pflag.FlagSet) error {
 	// TODO: Handle more types
-	switch r.Kind {
+	switch r.TypeDef.Kind {
 	case dagger.Stringkind:
-		val, _ := r.DefaultValue.(string)
-		flags.String(r.FlagName, val, r.Description)
+		flags.String(r.FlagName(), "", r.Description)
 	case dagger.Integerkind:
-		val, _ := r.DefaultValue.(int)
-		flags.Int(r.FlagName, val, r.Description)
+		flags.Int(r.FlagName(), 0, r.Description)
 	case dagger.Booleankind:
-		val, _ := r.DefaultValue.(bool)
-		flags.Bool(r.FlagName, val, r.Description)
+		flags.Bool(r.FlagName(), false, r.Description)
 	case dagger.Objectkind:
-		switch r.AsObject.Name {
+		switch r.TypeDef.AsObject.Name {
 		case Directory, File, Secret:
-			flags.String(r.FlagName, "", r.Description)
+			flags.String(r.FlagName(), "", r.Description)
 		default:
-			return fmt.Errorf("unsupported object type %q", r.AsObject.Name)
+			return fmt.Errorf("unsupported object type %q", r.TypeDef.AsObject.Name)
 		}
 	default:
-		return fmt.Errorf("unsupported type %q", r.Kind)
+		return fmt.Errorf("unsupported type %q", r.TypeDef.Kind)
 	}
 	return nil
 }
 
-func (r *callFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (any, error) {
+func (r *modFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (any, error) {
 	// TODO: Handle more types
-	switch r.Kind {
+	switch r.TypeDef.Kind {
 	case dagger.Stringkind:
-		return flags.GetString(r.FlagName)
+		return flags.GetString(r.FlagName())
 	case dagger.Integerkind:
-		return flags.GetInt(r.FlagName)
+		return flags.GetInt(r.FlagName())
 	case dagger.Booleankind:
-		return flags.GetBool(r.FlagName)
+		return flags.GetBool(r.FlagName())
 	case dagger.Objectkind:
-		val, err := flags.GetString(r.FlagName)
+		val, err := flags.GetString(r.FlagName())
 		if err != nil {
 			return nil, err
 		}
-		switch r.AsObject.Name {
+		switch r.TypeDef.AsObject.Name {
 		case Directory:
 			return dag.Host().Directory(val), nil
 		case File:
@@ -652,10 +548,10 @@ func (r *callFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (an
 			name := hex.EncodeToString(hash[:])
 			return dag.SetSecret(name, val), nil
 		default:
-			return nil, fmt.Errorf("unsupported object type %q", r.AsObject.Name)
+			return nil, fmt.Errorf("unsupported object type %q", r.TypeDef.AsObject.Name)
 		}
 	default:
-		return nil, fmt.Errorf("unsupported type %q", r.Kind)
+		return nil, fmt.Errorf("unsupported type %q", r.TypeDef.Kind)
 	}
 }
 
