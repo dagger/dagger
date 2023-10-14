@@ -467,14 +467,6 @@ export type DirectoryAsModuleOpts = {
    * directory.
    */
   sourceSubpath?: string
-
-  /**
-   * A pre-built runtime container to use instead of building one from the
-   * source code. This is useful for bootstrapping.
-   *
-   * You should ignore this unless you're building a Dagger SDK.
-   */
-  runtime?: Container
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -2416,10 +2408,6 @@ export class Directory extends BaseClient {
    *
    * If not set, the module source code is loaded from the root of the
    * directory.
-   * @param opts.runtime A pre-built runtime container to use instead of building one from the
-   * source code. This is useful for bootstrapping.
-   *
-   * You should ignore this unless you're building a Dagger SDK.
    */
   asModule(opts?: DirectoryAsModuleOpts): Module_ {
     return new Module_({
@@ -4058,7 +4046,6 @@ export class Module_ extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sdk?: string = undefined
-  private readonly _sdkRuntime?: string = undefined
   private readonly _serve?: Void = undefined
   private readonly _sourceDirectorySubPath?: string = undefined
 
@@ -4071,7 +4058,6 @@ export class Module_ extends BaseClient {
     _description?: string,
     _name?: string,
     _sdk?: string,
-    _sdkRuntime?: string,
     _serve?: Void,
     _sourceDirectorySubPath?: string
   ) {
@@ -4081,7 +4067,6 @@ export class Module_ extends BaseClient {
     this._description = _description
     this._name = _name
     this._sdk = _sdk
-    this._sdkRuntime = _sdkRuntime
     this._serve = _serve
     this._sourceDirectorySubPath = _sourceDirectorySubPath
   }
@@ -4251,7 +4236,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The SDK used by this module
+   * The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
    */
   async sdk(): Promise<string> {
     if (this._sdk) {
@@ -4263,27 +4248,6 @@ export class Module_ extends BaseClient {
         ...this._queryTree,
         {
           operation: "sdk",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The SDK runtime module image ref.
-   */
-  async sdkRuntime(): Promise<string> {
-    if (this._sdkRuntime) {
-      return this._sdkRuntime
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "sdkRuntime",
         },
       ],
       this.client

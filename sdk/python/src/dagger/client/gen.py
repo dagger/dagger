@@ -1737,7 +1737,6 @@ class Directory(Type):
         self,
         *,
         source_subpath: Optional[str] = None,
-        runtime: Optional[Container] = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
@@ -1756,15 +1755,9 @@ class Directory(Type):
             from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
-        runtime:
-            A pre-built runtime container to use instead of building one from
-            the
-            source code. This is useful for bootstrapping.
-            You should ignore this unless you're building a Dagger SDK.
         """
         _args = [
             Arg("sourceSubpath", source_subpath, None),
-            Arg("runtime", runtime, None),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -3276,7 +3269,6 @@ class Module(Type):
         "_description",
         "_name",
         "_sdk",
-        "_sdk_runtime",
         "_serve",
         "_source_directory_sub_path",
     )
@@ -3285,7 +3277,6 @@ class Module(Type):
     _description: Optional[str]
     _name: Optional[str]
     _sdk: Optional[str]
-    _sdk_runtime: Optional[str]
     _serve: Optional[Void]
     _source_directory_sub_path: Optional[str]
 
@@ -3299,7 +3290,6 @@ class Module(Type):
             _description="description",
             _name="name",
             _sdk="sdk",
-            _sdk_runtime="sdkRuntime",
             _serve="serve",
             _source_directory_sub_path="sourceDirectorySubPath",
         )
@@ -3429,7 +3419,8 @@ class Module(Type):
 
     @typecheck
     async def sdk(self) -> str:
-        """The SDK used by this module
+        """The SDK used by this module. Either a name of a builtin SDK or a
+        module ref pointing to the SDK's implementation.
 
         Returns
         -------
@@ -3449,30 +3440,6 @@ class Module(Type):
             return self._sdk
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def sdk_runtime(self) -> str:
-        """The SDK runtime module image ref.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_sdk_runtime"):
-            return self._sdk_runtime
-        _args: list[Arg] = []
-        _ctx = self._select("sdkRuntime", _args)
         return await _ctx.execute(str)
 
     @typecheck

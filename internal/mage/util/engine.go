@@ -17,15 +17,17 @@ import (
 )
 
 const (
-	daggerBinName      = "dagger" // CLI, not engine!
-	engineBinName      = "dagger-engine"
-	shimBinName        = "dagger-shim"
+	daggerBinName = "dagger" // CLI, not engine!
+	engineBinName = "dagger-engine"
+	shimBinName   = "dagger-shim"
+
 	goModuleSDKTarName = "go-module-sdk-image.tar"
-	golangVersion      = "1.21.2"
-	alpineVersion      = "3.18"
-	runcVersion        = "v1.1.9"
-	cniVersion         = "v1.3.0"
-	qemuBinImage       = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
+
+	golangVersion = "1.21.2"
+	alpineVersion = "3.18"
+	runcVersion   = "v1.1.9"
+	cniVersion    = "v1.3.0"
+	qemuBinImage  = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
@@ -219,6 +221,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
 		WithFile("/usr/local/share/dagger/"+goModuleSDKTarName, goSDKImageTarBall(c, arch)).
+		WithDirectory("/usr/local/share/dagger/python-sdk", pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -243,6 +246,10 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 }
 
 // helper functions for building the dev engine container
+
+func pythonSDK(c *dagger.Client) *dagger.Directory {
+	return Repository(c).Directory("sdk/python")
+}
 
 func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
 	// TODO: update this to use Container.AsTarball once released

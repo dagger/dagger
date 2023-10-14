@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedCode id name objects sdk sdkRuntime serve sourceDirectory sourceDirectorySubPath withObject"
+          "dependencies dependencyConfig description generatedCode id name objects sdk serve sourceDirectory sourceDirectorySubPath withObject"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -78,19 +78,10 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "The SDK used by this module"
+    @doc "The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation."
     @spec sdk(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def sdk(%__MODULE__{} = module) do
       selection = select(module.selection, "sdk")
-      execute(selection, module.client)
-    end
-  )
-
-  (
-    @doc "The SDK runtime module image ref."
-    @spec sdk_runtime(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def sdk_runtime(%__MODULE__{} = module) do
-      selection = select(module.selection, "sdkRuntime")
       execute(selection, module.client)
     end
   )

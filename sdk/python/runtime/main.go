@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path"
 	"path/filepath"
 )
@@ -8,21 +9,16 @@ import (
 type PythonSdk struct{}
 
 const (
+	// TODO: would be nice to not hardcode these in every SDK module, put in api somewhere? Or does it need to be flexible? Still could go in api
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
 )
 
-type RuntimeOpts struct {
-	SubPath  string   `doc:"Sub-path of the source directory that contains the module config."`
-	Platform Platform `doc:"Platform to build for."`
-}
-
-func (m *PythonSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Container {
-	modSubPath := filepath.Join(ModSourceDirPath, opts.SubPath)
-	return m.Base(opts.Platform).
+func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string) *Container {
+	modSubPath := filepath.Join(ModSourceDirPath, subPath)
+	return m.Base().
 		WithDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(modSubPath).
-		WithExec([]string{"sh", "-c", "ls -lha"}).
 		WithExec([]string{"codegen", "generate", "/sdk/src/dagger/client/gen.py"}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
@@ -36,14 +32,13 @@ func (m *PythonSdk) ModuleRuntime(modSource *Directory, opts RuntimeOpts) *Conta
 		}).
 		WithWorkdir(ModSourceDirPath).
 		WithDefaultArgs().
-		WithEntrypoint([]string{RuntimeExecutablePath}).
-		WithLabel("io.dagger.module.config", modSubPath)
+		WithEntrypoint([]string{RuntimeExecutablePath})
 }
 
-func (m *PythonSdk) Codegen(modSource *Directory, opts RuntimeOpts) *GeneratedCode {
-	base := m.Base(opts.Platform).
+func (m *PythonSdk) Codegen(modSource *Directory, subPath string) *GeneratedCode {
+	base := m.Base().
 		WithMountedDirectory(ModSourceDirPath, modSource).
-		WithWorkdir(path.Join(ModSourceDirPath, opts.SubPath))
+		WithWorkdir(path.Join(ModSourceDirPath, subPath))
 
 	codegen := base.
 		WithExec([]string{"codegen", "generate", "/sdk/src/dagger/client/gen.py"}, ContainerWithExecOpts{
@@ -51,22 +46,21 @@ func (m *PythonSdk) Codegen(modSource *Directory, opts RuntimeOpts) *GeneratedCo
 		}).
 		Directory("/sdk")
 
-	return dag.GeneratedCode().
-		WithCode(dag.Directory().WithDirectory("sdk", codegen)).
+	return dag.GeneratedCode(dag.Directory().WithDirectory("sdk", codegen)).
 		WithVCSIgnoredPaths([]string{
 			"sdk",
 		})
 }
 
-func (m *PythonSdk) Base(platform Platform) *Container {
-	return m.pyBase(platform).
-		WithDirectory("/sdk", dag.Host().Directory(".")).
-		WithFile("/usr/bin/codegen", m.CodegenBin(platform))
+func (m *PythonSdk) Base() *Container {
+	return m.pyBase().
+		WithDirectory("/sdk", dag.Host().Directory(root())).
+		WithFile("/usr/bin/codegen", m.CodegenBin())
 }
 
-func (m *PythonSdk) CodegenBin(platform Platform) *File {
-	return m.pyBase(platform).
-		WithMountedDirectory("/sdk", dag.Host().Directory(".")).
+func (m *PythonSdk) CodegenBin() *File {
+	return m.pyBase().
+		WithMountedDirectory("/sdk", dag.Host().Directory(root())).
 		WithExec([]string{
 			"shiv",
 			"-e", "dagger:_codegen.cli:main",
@@ -77,14 +71,19 @@ func (m *PythonSdk) CodegenBin(platform Platform) *File {
 		File("/bin/codegen")
 }
 
-func (m *PythonSdk) pyBase(platform Platform) *Container {
-	opts := ContainerOpts{}
-	if platform != "" {
-		opts.Platform = platform
-	}
-	return dag.Container(opts).
+func (m *PythonSdk) pyBase() *Container {
+	return dag.Container().
 		From("python:3.11-alpine").
 		WithExec([]string{"apk", "add", "--no-cache", "git"}).
 		WithMountedCache("/root/.cache/pip", dag.CacheVolume("modpythonpipcache")).
 		WithExec([]string{"pip", "install", "shiv"})
+}
+
+// TODO: fix .. restriction
+func root() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Join(wd, "..")
 }

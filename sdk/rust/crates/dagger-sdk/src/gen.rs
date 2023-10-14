@@ -1938,11 +1938,6 @@ pub struct Directory {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
-    /// A pre-built runtime container to use instead of building one from the
-    /// source code. This is useful for bootstrapping.
-    /// You should ignore this unless you're building a Dagger SDK.
-    #[builder(setter(into, strip_option), default)]
-    pub runtime: Option<ContainerId>,
     /// An optional subpath of the directory which contains the module's source
     /// code.
     /// This is needed when the module code is in a subdirectory but requires
@@ -2042,9 +2037,6 @@ impl Directory {
         let mut query = self.selection.select("asModule");
         if let Some(source_subpath) = opts.source_subpath {
             query = query.arg("sourceSubpath", source_subpath);
-        }
-        if let Some(runtime) = opts.runtime {
-            query = query.arg("runtime", runtime);
         }
         return Module {
             proc: self.proc.clone(),
@@ -3184,14 +3176,9 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
-    /// The SDK used by this module
+    /// The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
     pub async fn sdk(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sdk");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The SDK runtime module image ref.
-    pub async fn sdk_runtime(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sdkRuntime");
         query.execute(self.graphql_client.clone()).await
     }
     /// Serve a module's API in the current session.

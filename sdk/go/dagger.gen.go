@@ -1515,11 +1515,6 @@ type DirectoryAsModuleOpts struct {
 	// If not set, the module source code is loaded from the root of the
 	// directory.
 	SourceSubpath string
-	// A pre-built runtime container to use instead of building one from the
-	// source code. This is useful for bootstrapping.
-	//
-	// You should ignore this unless you're building a Dagger SDK.
-	Runtime *Container
 }
 
 // Load the directory as a Dagger module
@@ -1529,10 +1524,6 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 		// `sourceSubpath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceSubpath) {
 			q = q.Arg("sourceSubpath", opts[i].SourceSubpath)
-		}
-		// `runtime` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Runtime) {
-			q = q.Arg("runtime", opts[i].Runtime)
 		}
 	}
 
@@ -2840,7 +2831,6 @@ type Module struct {
 	id                     *ModuleID
 	name                   *string
 	sdk                    *string
-	sdkRuntime             *string
 	serve                  *Void
 	sourceDirectorySubPath *string
 }
@@ -3007,25 +2997,12 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// The SDK used by this module
+// The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
 func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
 	}
 	q := r.q.Select("sdk")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// The SDK runtime module image ref.
-func (r *Module) SDKRuntime(ctx context.Context) (string, error) {
-	if r.sdkRuntime != nil {
-		return *r.sdkRuntime, nil
-	}
-	q := r.q.Select("sdkRuntime")
 
 	var response string
 
