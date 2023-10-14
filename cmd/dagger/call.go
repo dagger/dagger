@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
+	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/iancoleman/strcase"
 	"github.com/juju/ansiterm/tabwriter"
@@ -21,7 +23,10 @@ import (
 	"golang.org/x/term"
 )
 
-var callFlags = pflag.NewFlagSet("call", pflag.ContinueOnError)
+var (
+	callFlags = pflag.NewFlagSet("call", pflag.ContinueOnError)
+	errUsage  = fmt.Errorf("run with --help for usage")
+)
 
 var funcsCmd = &cobra.Command{
 	Use:    "functions",
@@ -42,18 +47,26 @@ var callCmd = &cobra.Command{
 
 		err := callFlags.Parse(args)
 		if err != nil {
-			return fmt.Errorf("failed to parse top-level flags: %w", err)
+			return fmt.Errorf("parse command flags: %w", err)
 		}
 
 		return loadModCmdWrapper(RunFunction, "")(cmd, args)
 	},
 }
 
+type callObjectType struct {
+	Name      string
+	Functions []*callFunction
+	orig      *dagger.ObjectTypeDef
+}
+
 type callFunction struct {
 	Name        string
 	CmdName     string
 	Description string
-	Args        []callFunctionArg
+	Args        []*callFunctionArg
+	Kind        dagger.TypeDefKind
+	AsObject    *callObjectType
 	orig        dagger.Function
 }
 
@@ -63,14 +76,45 @@ type callFunctionArg struct {
 	Description  string
 	Optional     bool
 	DefaultValue any
-	AsObject     *objectType
+	AsObject     *callObjectType
 	Kind         dagger.TypeDefKind
 	orig         dagger.FunctionArg
 }
 
-type objectType struct {
-	Name string
+type callContext struct {
+	c       graphql.Client
+	q       *querybuilder.Selection
+	modObjs []*callObjectType
+	vtx     *progrock.VertexRecorder
 }
+
+func (c *callContext) Select(name string) {
+	c.q = c.q.Select(gqlFieldName(name))
+}
+
+func (c *callContext) Arg(name string, value any) {
+	c.q = c.q.Arg(gqlArgName(name), value)
+}
+
+func (c *callContext) AddCommand(cmd *cobra.Command) {
+	// TODO: Is there a way to update the name of the vertex?
+	// This is a hack to avoid showing secrets by only presenting the
+	// chain of functions as they're discovered. Need a more robust way
+	// of handling it though.
+	c.vtx.Vertex.Name = cmd.CommandPath()
+	c.vtx.Recorder.Record(&progrock.StatusUpdate{
+		Vertexes: []*progrock.Vertex{
+			c.vtx.Vertex,
+		},
+	})
+}
+
+const (
+	Directory string = "Directory"
+	Container string = "Container"
+	File      string = "File"
+	Secret    string = "Secret"
+)
 
 func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger.Module, cmd *cobra.Command, cmdArgs []string) (err error) {
 	if mod == nil {
@@ -83,10 +127,10 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 	defer func() { vtx.Done(err) }()
 
 	loadFuncs := vtx.Task("loading functions")
-	funcs, err := loadFunctions(ctx, dag, mod)
+	_, obj, err := loadModuleContext(ctx, dag, mod, vtx)
 	loadFuncs.Done(err)
 	if err != nil {
-		return fmt.Errorf("failed to load functions: %w", err)
+		return fmt.Errorf("load module context: %w", err)
 	}
 
 	tw := tabwriter.NewWriter(vtx.Stdout(), 0, 0, 2, ' ', 0)
@@ -95,9 +139,9 @@ func ListFunctions(ctx context.Context, engineClient *client.Client, mod *dagger
 		fmt.Fprintf(tw, "%s\t%s\n", termenv.String("function name").Bold(), termenv.String("description").Bold())
 	}
 
-	for _, function := range funcs {
+	for _, fn := range obj.Functions {
 		// TODO: Add a third column with available verbs.
-		fmt.Fprintf(tw, "%s\t%s\n", function.Name, function.Description)
+		fmt.Fprintf(tw, "%s\t%s\n", fn.Name, fn.Description)
 	}
 
 	return tw.Flush()
@@ -110,7 +154,7 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 
 	dag := engineClient.Dagger()
 	rec := progrock.FromContext(ctx)
-	vtx := rec.Vertex("cmd-func-loader", strings.Join(append([]string{cmd.Name()}, callFlags.Args()...), " "), progrock.Focused())
+	vtx := rec.Vertex("cmd-func-loader", cmd.Name(), progrock.Focused())
 	defer func() { vtx.Done(err) }()
 
 	var stdout io.Writer
@@ -126,26 +170,24 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 
-	funcs, err := loadFunctions(ctx, dag, mod)
+	c, obj, err := loadModuleContext(ctx, dag, mod, vtx)
 	if err != nil {
-		return fmt.Errorf("failed to load functions: %w", err)
+		return fmt.Errorf("load module context: %w", err)
 	}
 
-	for _, fn := range funcs {
-		subCmd, err := addCmd(ctx, dag, mod, fn, vtx)
-		if err != nil {
-			return fmt.Errorf("failed to add cmd: %w", err)
-		}
-		cmd.AddCommand(subCmd)
+	// Select constructor
+	c.Select(obj.Name)
+
+	// Add main object's functions as subcommands
+	obj.AddSubCommands(ctx, dag, cmd, c)
+
+	if help, _ := callFlags.GetBool("help"); help {
+		return cmd.Help()
 	}
 
 	subCmd, subArgs, err := cmd.Find(callFlags.Args())
 	if err != nil {
-		return fmt.Errorf("failed to find command: %w", err)
-	}
-
-	if help, _ := callFlags.GetBool("help"); help {
-		return cmd.Help()
+		return fmt.Errorf("find command: %w", err)
 	}
 
 	if subCmd.Name() == cmd.Name() {
@@ -155,31 +197,247 @@ func RunFunction(ctx context.Context, engineClient *client.Client, mod *dagger.M
 		return cmd.Help()
 	}
 
-	err = subCmd.RunE(subCmd, subArgs)
-	if err != nil {
-		return fmt.Errorf("failed to execute command: %w", err)
+	if err = subCmd.RunE(subCmd, subArgs); err != nil {
+		return fmt.Errorf("execute command %q: %w", subCmd.Name(), err)
 	}
 
 	return nil
 }
 
-func addCmd(ctx context.Context, dag *dagger.Client, mod *dagger.Module, fn *callFunction, vtx *progrock.VertexRecorder) (sub *cobra.Command, err error) {
-	subCmd := &cobra.Command{
-		Use:   strcase.ToKebab(fn.Name),
-		Short: fn.Description,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Only load function arguments when it's actually needed.
-			if err = fn.loadArguments(ctx); err != nil {
-				return err
+// loadModuleContext returns an execution context for the query builder and the module's main object
+func loadModuleContext(ctx context.Context, dag *dagger.Client, mod *dagger.Module, vtx *progrock.VertexRecorder) (*callContext, *callObjectType, error) {
+	// TODO: Use a GraphQL query to get all the properties we need
+	// in a single request.
+
+	objs, err := mod.Objects(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get module objects: %w", err)
+	}
+
+	c := &callContext{
+		q:   querybuilder.Query(),
+		c:   dag.GraphQLClient(),
+		vtx: vtx,
+	}
+
+	// Load all objects into the context so we can get return type definitions
+	// that include the object's functions later on.
+	for _, def := range objs {
+		def := def
+
+		obj, err := newObjectType(ctx, def.AsObject())
+		if err != nil {
+			return nil, nil, fmt.Errorf("create object type: %w", err)
+		}
+
+		c.modObjs = append(c.modObjs, obj)
+	}
+
+	modName, err := mod.Name(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get module name: %w", err)
+	}
+
+	obj := c.GetObject(modName)
+	if obj == nil {
+		return nil, nil, fmt.Errorf("main object not found")
+	}
+
+	if err := obj.LoadFunctions(ctx, dag, c); err != nil {
+		return nil, nil, fmt.Errorf("load main object's functions: %w", err)
+	}
+
+	return c, obj, nil
+}
+
+func (c *callContext) GetObject(name string) *callObjectType {
+	for _, obj := range c.modObjs {
+		// Normalize name in case an SDK uses a different convention for object names.
+		if gqlFieldName(obj.Name) == gqlFieldName(name) {
+			return obj
+		}
+	}
+	return nil
+}
+
+func newObjectType(ctx context.Context, def *dagger.ObjectTypeDef) (*callObjectType, error) {
+	if def == nil {
+		return nil, fmt.Errorf("not an object type")
+	}
+
+	name, err := def.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get object name: %w", err)
+	}
+
+	return &callObjectType{
+		Name: name,
+		orig: def,
+	}, nil
+}
+
+func (o *callObjectType) LoadFunctions(ctx context.Context, dag *dagger.Client, c *callContext) error {
+	// TODO: User a GraphQL query to get all the properties we need
+	// in a single request.
+
+	if o.Functions != nil {
+		return nil
+	}
+
+	funcs, err := o.orig.Functions(ctx)
+	if err != nil {
+		return fmt.Errorf("get functions: %w", err)
+	}
+
+	if funcs == nil {
+		return nil
+	}
+
+	for _, fn := range funcs {
+		fn := fn
+
+		name, err := fn.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("get function name: %w", err)
+		}
+
+		description, err := fn.Description(ctx)
+		if err != nil {
+			return fmt.Errorf("get function description: %w", err)
+		}
+
+		kind, err := fn.ReturnType().Kind(ctx)
+		if err != nil {
+			return fmt.Errorf("get function return type: %w", err)
+		}
+
+		f := &callFunction{
+			orig:        fn,
+			Name:        name,
+			CmdName:     cliName(name),
+			Kind:        kind,
+			Description: strings.TrimSpace(description),
+		}
+
+		if kind == dagger.Objectkind {
+			obj, err := newObjectType(ctx, fn.ReturnType().AsObject())
+			if err != nil {
+				return fmt.Errorf("create object type for function: %w", err)
 			}
 
-			// Set flags from the command line.
+			// If the function returns a type that's declared in this module
+			// replace the type def with the one loaded in the beginning
+			// because type defs from return type don't include the object's
+			// functions.
+			if cached := c.GetObject(obj.Name); cached != nil {
+				obj = cached
+			}
+
+			f.AsObject = obj
+		}
+
+		o.Functions = append(o.Functions, f)
+	}
+	return nil
+}
+
+func (o *callObjectType) AddSubCommands(ctx context.Context, dag *dagger.Client, cmd *cobra.Command, c *callContext) {
+	for _, fn := range o.Functions {
+		subCmd := fn.MakeCmd(ctx, dag, c)
+		cmd.AddCommand(subCmd)
+	}
+}
+
+func (fn *callFunction) LoadArguments(ctx context.Context) error {
+	// TODO: User a GraphQL query to get all the properties we need
+	// in a single request.
+
+	if fn.Args != nil {
+		return nil
+	}
+
+	args, err := fn.orig.Args(ctx)
+	if err != nil {
+		return fmt.Errorf("get args: %w", err)
+	}
+
+	for _, arg := range args {
+		arg := arg
+
+		name, err := arg.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("get arg name: %w", err)
+		}
+
+		description, err := arg.Description(ctx)
+		if err != nil {
+			return fmt.Errorf("get arg %q description: %w", name, err)
+		}
+
+		defaultJSON, err := arg.DefaultValue(ctx)
+		if err != nil {
+			return fmt.Errorf("get arg %q default value: %w", name, err)
+		}
+
+		var defaultVal any
+		if defaultJSON != "" {
+			if err = json.Unmarshal([]byte(defaultJSON), &defaultVal); err != nil {
+				return fmt.Errorf("unmarshal arg %q default value: %w", name, err)
+			}
+		}
+
+		kind, err := arg.TypeDef().Kind(ctx)
+		if err != nil {
+			return fmt.Errorf("get arg %q type: %w", name, err)
+		}
+
+		optional, err := arg.TypeDef().Optional(ctx)
+		if err != nil {
+			return fmt.Errorf("check if arg %q is optional: %w", name, err)
+		}
+
+		r := &callFunctionArg{
+			orig:         arg,
+			Name:         name,
+			FlagName:     cliName(name),
+			Description:  strings.TrimSpace(description),
+			Kind:         kind,
+			Optional:     optional,
+			DefaultValue: defaultVal,
+		}
+
+		if kind == dagger.Objectkind {
+			obj, err := newObjectType(ctx, arg.TypeDef().AsObject())
+			if err != nil {
+				return fmt.Errorf("create object type for function: %w", err)
+			}
+			r.AsObject = obj
+		}
+
+		fn.Args = append(fn.Args, r)
+	}
+
+	return nil
+}
+
+func (fn *callFunction) MakeCmd(ctx context.Context, dag *dagger.Client, c *callContext) *cobra.Command {
+	newCmd := &cobra.Command{
+		Use:   fn.CmdName,
+		Short: fn.Description,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c.AddCommand(cmd)
+
+			// Only load function arguments in RunE, when it's actually needed.
+			if err := fn.LoadArguments(ctx); err != nil {
+				return fmt.Errorf("load function %q arguments: %w", fn.Name, err)
+			}
+
 			for _, arg := range fn.Args {
 				arg := arg
 
-				err = arg.SetFlag(cmd.Flags())
+				err := arg.SetFlag(cmd.Flags())
 				if err != nil {
-					return fmt.Errorf("failed to set flag %q: %w", arg.FlagName, err)
+					return fmt.Errorf("set flag %q: %w", arg.FlagName, err)
 				}
 
 				// TODO: This won't work on its own because cobra checks required
@@ -190,199 +448,163 @@ func addCmd(ctx context.Context, dag *dagger.Client, mod *dagger.Module, fn *cal
 				}
 			}
 
-			if err = cmd.ParseFlags(args); err != nil {
-				return fmt.Errorf("failed to parse subcommand flags: %w", err)
+			// Possibly add a few helping flags based on the function's return type.
+			fn.SetReturnFlag(cmd.Flags())
+
+			if err := cmd.ParseFlags(args); err != nil {
+				return fmt.Errorf("parse sub-command flags: %w", err)
 			}
 
-			if help, _ := cmd.Flags().GetBool("help"); help {
+			// Load functions before selection in order to detect supported objects.
+			if fn.AsObject != nil {
+				if err := fn.AsObject.LoadFunctions(ctx, dag, c); err != nil {
+					return fmt.Errorf("load functions from %q: %w", fn.AsObject.Name, err)
+				}
+				fn.AsObject.AddSubCommands(ctx, dag, cmd, c)
+			}
+
+			// Need to make the query selection before chaining off.
+			kind, err := fn.Select(c, dag, cmd.Flags())
+			if err != nil {
+				return fmt.Errorf("query selection: %w", err)
+			}
+
+			leaf := isLeaf(kind)
+			help, _ := cmd.Flags().GetBool("help")
+			cmdArgs := cmd.Flags().Args()
+
+			// Easy check, but could have invalid arguments.
+			if !leaf && !help && len(cmdArgs) == 0 {
+				return fmt.Errorf("missing argument: %v", errUsage)
+			}
+
+			subCmd, subArgs, err := cmd.Find(cmdArgs)
+			if err != nil {
+				return fmt.Errorf("find sub-command: %w", err)
+			}
+
+			// If a subcommand was found, run it instead.
+			if subCmd != cmd {
+				if err = subCmd.RunE(subCmd, subArgs); err != nil {
+					return fmt.Errorf("execute sub-command %q: %w", subCmd.Name(), err)
+				}
+				return nil
+			}
+
+			// Make sure --help is running on the leaf command (subCmd == cmd),
+			// otherwise the first command in the chain swallows it.
+			if help {
 				return cmd.Help()
 			}
 
-			var inputs []dagger.FunctionCallInput
-
-			for _, arg := range fn.Args {
-				arg := arg
-
-				// TODO: Check required flags.
-
-				val, err := arg.GetValue(dag, cmd.Flags())
-				if err != nil {
-					return fmt.Errorf("failed to get value for flag %q: %w", arg.FlagName, err)
+			// At this point there should be invalid arguments if not a leaf.
+			if !leaf {
+				// to be safe!
+				if len(subArgs) > 0 {
+					return fmt.Errorf("invalid argument %q: %w", subArgs[0], errUsage)
 				}
-
-				jval, err := json.Marshal(val)
-				if err != nil {
-					return fmt.Errorf("failed to marshal flag value %q: %w", arg.FlagName, err)
-				}
-
-				inputs = append(inputs, dagger.FunctionCallInput{
-					Name:  arg.Name,
-					Value: dagger.JSON(string(jval)),
-				})
+				return fmt.Errorf("missing argument: %w", errUsage)
 			}
 
-			// TODO: Use query builder for chainable calls, but need to make it public.
-			res, err := fn.orig.Call(ctx, dagger.FunctionCallOpts{
-				Input: inputs,
-			})
+			query, _ := c.q.Build(ctx)
+			rec := progrock.FromContext(ctx)
+			rec.Debug("executing", progrock.Labelf("query", "%+v", query))
 
-			if err != nil {
-				return fmt.Errorf("failed to call function: %w", err)
+			var response any
+
+			q := c.q.Bind(&response)
+
+			if err := q.Execute(ctx, c.c); err != nil {
+				return err
 			}
 
-			var result interface{}
-
-			if err = json.Unmarshal([]byte(res), &result); err != nil {
-				return fmt.Errorf("failed to unmarshal result: %w", err)
+			if fn.Kind == dagger.Voidkind {
+				return nil
 			}
 
-			// TODO: Figure out what makes sense based on return type. For example,
-			// if a File or Directory, export to `outputPath`. If a Container, call
-			// stdout?
-			cmd.Println(result)
+			// TODO: Handle different return types.
+			cmd.Println(response)
 
 			return nil
 		},
 	}
 
-	subCmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Show help for '%s'", fn.CmdName))
+	newCmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Show help for '%s'", fn.CmdName))
+	newCmd.Flags().SetInterspersed(false)
 
-	return subCmd, nil
+	return newCmd
 }
 
-func loadFunctions(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (callFuncs []*callFunction, err error) {
-	modName, err := mod.Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module name: %w", err)
-	}
-
-	// Normalize module name like a GraphQL field name for comparison later on.
-	gqlFieldName := strcase.ToLowerCamel(modName)
-
-	modObjs, err := mod.Objects(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module objects: %w", err)
-	}
-
-	for _, def := range modObjs {
-		objDef := def.AsObject()
-		objName, err := objDef.Name(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get object name: %w", err)
-		}
-
-		// Only list top level functions (i.e., type name matches module name).
-		if strcase.ToLowerCamel(objName) != gqlFieldName {
-			continue
-		}
-
-		objFuncs, err := objDef.Functions(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get object functions: %w", err)
-		}
-		if objFuncs == nil {
-			continue
-		}
-		for _, fn := range objFuncs {
-			fn := fn
-
-			name, err := fn.Name(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get function name: %w", err)
-			}
-
-			description, err := fn.Description(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get function description: %w", err)
-			}
-
-			// Some descriptions have a trailing newline, which is not desirable.
-			description = strings.TrimSpace(description)
-
-			callFuncs = append(callFuncs, &callFunction{
-				orig:        fn,
-				Name:        name,
-				CmdName:     strcase.ToKebab(name),
-				Description: description,
-			})
+// SetReturnFlag adds an extra flag on supported types to select a leaf value.
+func (fn *callFunction) SetReturnFlag(flags *pflag.FlagSet) {
+	// TODO: Replace this with command verbs.
+	// TODO: Handle more types. These are just examples to get started.
+	if fn.Kind == dagger.Objectkind {
+		switch fn.AsObject.Name {
+		case Directory, File:
+			flags.String("export-path", "", "Path to export the result to")
+		case Container:
+			flags.Bool("stdout", true, "Print the container's stdout")
 		}
 	}
-
-	return callFuncs, nil
 }
 
-func (fn *callFunction) loadArguments(ctx context.Context) error {
-	if fn.Args != nil {
-		return fmt.Errorf("function arguments already loaded")
+// Select adds the function selection to the query.
+// The type can change if there's an extra selection for supported types.
+func (fn *callFunction) Select(c *callContext, dag *dagger.Client, flags *pflag.FlagSet) (dagger.TypeDefKind, error) {
+	kind := fn.Kind
+	c.Select(fn.Name)
+
+	// TODO: Check required flags.
+	for _, arg := range fn.Args {
+		arg := arg
+
+		val, err := arg.GetValue(dag, flags)
+		if err != nil {
+			return "", fmt.Errorf("get value for flag %q: %w", arg.FlagName, err)
+		}
+
+		c.Arg(arg.Name, val)
 	}
 
-	funcArgs, err := fn.orig.Args(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get function args: %w", err)
-	}
-
-	for _, funcArg := range funcArgs {
-		funcArg := funcArg
-
-		name, err := funcArg.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get arg name: %w", err)
+	// TODO: Replace this with command verbs.
+	// TODO: Handle more types. These are just examples to get started.
+	switch kind {
+	case dagger.Objectkind:
+		if len(fn.AsObject.Functions) > 0 {
+			return kind, nil
 		}
-
-		description, err := funcArg.Description(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get arg description: %w", err)
-		}
-
-		defaultJSON, err := funcArg.DefaultValue(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get arg default value: %w", err)
-		}
-
-		var defaultVal any
-		if defaultJSON != "" {
-			if err = json.Unmarshal([]byte(defaultJSON), &defaultVal); err != nil {
-				return fmt.Errorf("failed to unmarshal arg default value (%v): %w", defaultJSON, err)
-			}
-		}
-
-		kind, err := funcArg.TypeDef().Kind(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get arg type: %w", err)
-		}
-
-		optional, err := funcArg.TypeDef().Optional(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to check if arg is optional: %w", err)
-		}
-
-		arg := callFunctionArg{
-			orig:         funcArg,
-			Name:         name,
-			FlagName:     strcase.ToKebab(name),
-			Description:  strings.TrimSpace(description),
-			Kind:         kind,
-			Optional:     optional,
-			DefaultValue: defaultVal,
-		}
-
-		if kind == dagger.Objectkind {
-			name, err := funcArg.TypeDef().AsObject().Name(ctx)
+		switch fn.AsObject.Name {
+		case Directory, File:
+			val, err := flags.GetString("export-path")
 			if err != nil {
-				return fmt.Errorf("failed to get object name: %w", err)
+				return "", err
 			}
-			arg.AsObject = &objectType{
-				Name: name,
+			if val != "" {
+				c.Select("export")
+				c.Arg("path", val)
+				kind = dagger.Booleankind
 			}
+		case Container:
+			val, err := flags.GetBool("stdout")
+			if err != nil {
+				return "", err
+			}
+			if val {
+				c.Select("stdout")
+				kind = dagger.Stringkind
+			}
+		default:
+			return "", fmt.Errorf("unsupported object return type %q", fn.AsObject.Name)
 		}
-
-		fn.Args = append(fn.Args, arg)
+	case dagger.Listkind:
+		return "", fmt.Errorf("unsupported list return type")
 	}
-
-	return nil
+	return kind, nil
 }
 
 func (r *callFunctionArg) SetFlag(flags *pflag.FlagSet) error {
+	// TODO: Handle more types
 	switch r.Kind {
 	case dagger.Stringkind:
 		val, _ := r.DefaultValue.(string)
@@ -395,8 +617,10 @@ func (r *callFunctionArg) SetFlag(flags *pflag.FlagSet) error {
 		flags.Bool(r.FlagName, val, r.Description)
 	case dagger.Objectkind:
 		switch r.AsObject.Name {
-		case "Directory", "File", "Secret":
+		case Directory, File, Secret:
 			flags.String(r.FlagName, "", r.Description)
+		default:
+			return fmt.Errorf("unsupported object type %q", r.AsObject.Name)
 		}
 	default:
 		return fmt.Errorf("unsupported type %q", r.Kind)
@@ -405,6 +629,7 @@ func (r *callFunctionArg) SetFlag(flags *pflag.FlagSet) error {
 }
 
 func (r *callFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (any, error) {
+	// TODO: Handle more types
 	switch r.Kind {
 	case dagger.Stringkind:
 		return flags.GetString(r.FlagName)
@@ -418,11 +643,11 @@ func (r *callFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (an
 			return nil, err
 		}
 		switch r.AsObject.Name {
-		case "Directory":
+		case Directory:
 			return dag.Host().Directory(val), nil
-		case "File":
+		case File:
 			return dag.Host().File(val), nil
-		case "Secret":
+		case Secret:
 			hash := sha256.Sum256([]byte(val))
 			name := hex.EncodeToString(hash[:])
 			return dag.SetSecret(name, val), nil
@@ -432,4 +657,24 @@ func (r *callFunctionArg) GetValue(dag *dagger.Client, flags *pflag.FlagSet) (an
 	default:
 		return nil, fmt.Errorf("unsupported type %q", r.Kind)
 	}
+}
+
+// isLeaf returns true if a return type is a leaf, which requires execution
+func isLeaf(kind dagger.TypeDefKind) bool {
+	return kind != dagger.Objectkind
+}
+
+// gqlFieldName converts casing to a GraphQL object field name
+func gqlFieldName(name string) string {
+	return strcase.ToLowerCamel(name)
+}
+
+// gqlArgName converts casing to a GraphQL field argument name
+func gqlArgName(name string) string {
+	return strcase.ToLowerCamel(name)
+}
+
+// cliName converts casing to the CLI convention (kebab)
+func cliName(name string) string {
+	return strcase.ToKebab(name)
 }
