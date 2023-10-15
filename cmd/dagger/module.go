@@ -12,6 +12,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
@@ -38,9 +39,8 @@ func init() {
 	moduleCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	funcsCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	callCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	funcCmds.AddFlagSet(moduleFlags)
 
 	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.MarkPersistentFlagRequired("sdk")
@@ -429,4 +429,159 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 	}
 
 	return loadedMod, nil
+}
+
+// loadModObjects loads the objects defined by the given module in an easier to use data structure.
+func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
+	var res struct {
+		Module *moduleDef
+	}
+
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `
+            query Objects($module: ModuleID!) {
+                module: loadModuleFromID(id: $module) {
+                    name
+                    objects {
+                        asObject {
+                            name
+                            functions {
+                                name
+                                description
+                                returnType {
+                                    kind
+                                    asObject {
+                                        name
+                                    }
+                                }
+                                args {
+                                    name
+                                    description
+                                    typeDef {
+                                        kind
+                                        optional
+                                        asObject {
+                                            name
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        `,
+		Variables: map[string]interface{}{
+			"module": mod,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+
+	if err != nil {
+		err = fmt.Errorf("query module objects: %w", err)
+	}
+
+	return res.Module, err
+}
+
+// moduleDef is a representation of dagger.Module.
+type moduleDef struct {
+	Name    string
+	Objects []*modTypeDef
+}
+
+// AsObjects returns the module's object type definitions.
+func (m *moduleDef) AsObjects() []*modObject {
+	var defs []*modObject
+	for _, typeDef := range m.Objects {
+		if typeDef.AsObject != nil {
+			defs = append(defs, typeDef.AsObject)
+		}
+	}
+	return defs
+}
+
+// GetObject retrieves a saved object type definition from the module.
+func (m *moduleDef) GetObject(name string) *modObject {
+	for _, obj := range m.AsObjects() {
+		// Normalize name in case an SDK uses a different convention for object names.
+		if gqlObjectName(obj.Name) == gqlObjectName(name) {
+			return obj
+		}
+	}
+	return nil
+}
+
+func (m *moduleDef) GetMainObject() *modObject {
+	return m.GetObject(m.Name)
+}
+
+// LoadObject attempts to replace a function's return object type or argument's
+// object type with with one from the module's object type definitions, to
+// recover missing function definitions in those places when chaining functions.
+func (m *moduleDef) LoadObject(typeDef *modTypeDef) {
+	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil {
+		obj := m.GetObject(typeDef.AsObject.Name)
+		if obj != nil {
+			typeDef.AsObject = obj
+		}
+	}
+}
+
+// modTypeDef is a representation of dagger.TypeDef.
+type modTypeDef struct {
+	Kind     dagger.TypeDefKind
+	Optional bool
+	AsObject *modObject
+}
+
+// modObject is a representation of dagger.ObjectTypeDef.
+type modObject struct {
+	Name      string
+	Functions []*modFunction
+}
+
+// modFunction is a representation of dagger.Function.
+type modFunction struct {
+	Name        string
+	Description string
+	ReturnType  *modTypeDef
+	Args        []*modFunctionArg
+}
+
+// modFunctionArg is a representation of dagger.FunctionArg.
+type modFunctionArg struct {
+	Name        string
+	Description string
+	TypeDef     *modTypeDef
+	flagName    string
+}
+
+// FlagName returns the name of the argument using CLI naming conventions.
+func (r *modFunctionArg) FlagName() string {
+	if r.flagName == "" {
+		r.flagName = cliName(r.Name)
+	}
+	return r.flagName
+}
+
+// gqlObjectName converts casing to a GraphQL object  name
+func gqlObjectName(name string) string {
+	return strcase.ToCamel(name)
+}
+
+// gqlFieldName converts casing to a GraphQL object field name
+func gqlFieldName(name string) string {
+	return strcase.ToLowerCamel(name)
+}
+
+// gqlArgName converts casing to a GraphQL field argument name
+func gqlArgName(name string) string {
+	return strcase.ToLowerCamel(name)
+}
+
+// cliName converts casing to the CLI convention (kebab)
+func cliName(name string) string {
+	return strcase.ToKebab(name)
 }
