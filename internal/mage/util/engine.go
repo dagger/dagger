@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -207,6 +206,12 @@ func DevEngineContainer(c *dagger.Client, arches []string, version string, opts 
 	return devEngineContainers(c, arches, version, opts...)
 }
 
+// DevEngineContainerWithGPUSUpport returns a container that runs a dev engine
+func DevEngineContainerWithGPUSupport(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	containers := devEngineContainersWithGPUSupport(c, arches, version, opts...)
+	return containers
+}
+
 func devEngineContainer(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
@@ -249,12 +254,65 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 	return container.WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
 
+func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+	engineConfig, err := getConfig(opts...)
+	if err != nil {
+		panic(err)
+	}
+	engineEntrypoint, err := getEntrypoint(opts...)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("arch", arch)
+
+	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From("ubuntu:"+ubuntuVersion).
+		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{
+			"apt-get", "install", "-y",
+			"iptables", "git", "dnsmasq-base", "network-manager",
+			"gpg", "curl",
+		}).
+		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
+			Permissions: 0o700,
+		}).
+		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
+		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
+		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
+		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
+		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
+		WithDirectory("/", cniPlugins(c, arch, true)).
+		WithDirectory(EngineDefaultStateDir, c.Directory()).
+		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
+			Contents:    engineConfig,
+			Permissions: 0o600,
+		}).
+		WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
+			Contents:    engineEntrypoint,
+			Permissions: 0o755,
+		}).
+		With(nvidiaSetup)
+
+	return container.WithEntrypoint([]string{"dagger-entrypoint.sh"})
+}
+
 func devEngineContainers(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
 		platformVariants = append(platformVariants, devEngineContainer(c, arch, version, opts...))
 	}
 
+	return platformVariants
+}
+
+func devEngineContainersWithGPUSupport(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	platformVariants := make([]*dagger.Container, 0, len(arches))
+	// Restrict GPU images to amd64:
+	platformVariants = append(platformVariants, devEngineContainerWithGPUSupport(c, "amd64", version, opts...))
 	return platformVariants
 }
 

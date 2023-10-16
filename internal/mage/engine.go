@@ -89,6 +89,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		password    = c.SetSecret("DAGGER_ENGINE_IMAGE_PASSWORD", util.GetHostEnv("DAGGER_ENGINE_IMAGE_PASSWORD"))
 		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
 		ref         = fmt.Sprintf("%s:%s", engineImage, version)
+		gpuRef      = fmt.Sprintf("%s:%s-gpu", engineImage, version)
 	)
 
 	digest, err := c.Container().
@@ -98,6 +99,13 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 			// use gzip to avoid incompatibility w/ older docker versions
 			ForcedCompression: dagger.Gzip,
 		})
+	if err != nil {
+		return err
+	}
+
+	gpuDigest, err := c.Container().Publish(ctx, gpuRef, dagger.ContainerPublishOpts{
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedEngineArches, version),
+	})
 	if err != nil {
 		return err
 	}
@@ -113,6 +121,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
 	fmt.Println("PUBLISHED IMAGE REF:", digest)
+	fmt.Println("PUBLISHED IMAGE REF:", gpuDigest)
 
 	return nil
 }
