@@ -56,7 +56,7 @@ type Module {
       Note: this can only be called once per session.
       In the future, it could return a stream or service to remove the side effect.
   """
-  serve(environment: [ModuleEnvironmentVariable!]): Void
+  serve: Void
 }
 
 "A reference to GeneratedCode."
@@ -111,9 +111,4 @@ extend type Directory {
     """
     sourceSubpath: String
   ): Module!
-}
-
-input ModuleEnvironmentVariable {
-  name: String!
-  value: String
 }
