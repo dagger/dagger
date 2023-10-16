@@ -363,6 +363,8 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 	committedModGen := goGitBase(t, c).
 		With(daggerExec("mod", "init", "--name=bare", "--sdk=go")).
 		WithExec([]string{"rm", ".gitignore"}).
+		// simulate old path scheme to show we ignore it too to help transition
+		WithExec([]string{"cp", "-a", "./querybuilder", "./internal/querybuilder"}).
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init with generated files"})
 
@@ -376,6 +378,8 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 	require.Contains(t, changedAfterSync, "D  dagger.gen.go\n")
 	require.Contains(t, changedAfterSync, "D  querybuilder/marshal.go\n")
 	require.Contains(t, changedAfterSync, "D  querybuilder/querybuilder.go\n")
+    require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
+	require.Contains(t, changedAfterSync, "D  internal/querybuilder/querybuilder.go\n")
 }
 
 //go:embed testdata/modules/go/minimal/main.go
