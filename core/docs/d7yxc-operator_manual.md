@@ -143,7 +143,13 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 ### Configuration
 
-Right now very few configuration knobs are suppported as we are still working out the best interface for exposing them.
+Right now very few configuration knobs are supported as we are still working out the best interface for exposing them.
+
+To start a Dagger Engine with the custom `engine.toml`, you can run the following command:
+
+```shell
+docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.8.8
+```
 
 Currently supported is:
 
