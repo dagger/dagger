@@ -89,6 +89,10 @@ Once you have a token, the general procedure to connect Dagger Cloud with a CI p
 You must store the Dagger Cloud token as a secret (not plaintext) with your CI provider and reference it in your CI’s workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project.
 :::
 
+:::danger
+When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a common source of unexpected network charges. It's advisable to setup an Amazon S3 Gateway for these cases. Refer to the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) for detailed information on how to do this.
+:::
+
 <Tabs groupId="ci">
 <TabItem value="GitHub Actions">
 
@@ -182,11 +186,26 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 :::
 
 </TabItem>
-</Tabs>
+<TabItem value="Argo Workflows">
 
-:::danger
-When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a common source of unexpected network charges. It's advisable to setup an Amazon S3 Gateway for these cases. Refer to the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) for detailed information on how to do this.
+1. Create a new Kubernetes secret named `dagger-cloud` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). An example command to achieve this is shown below (replace the `TOKEN` placeholder with your actual token value). Refer to the Kubernetes documentation [on creating secrets](https://kubernetes.io/docs/concepts/configuration/secret/).
+
+  ```shell
+  kubectl create secret generic dagger-cloud --from-literal=token=TOKEN
+  ```
+
+1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
+
+Here is a sample Argo Workflows specification with Dagger Cloud integration:
+
+```yaml title="workflow.yaml" file=../guides/snippets/argo-workflows/workflow.yaml
+```
+
+:::tip
+Learn more about [using Dagger with Argo Workflows](../guides/324301-argo-workflows.md).
 :::
+</TabItem>
+</Tabs>
 
 ## Step 3: Visualize a CI run with Dagger Cloud
 
