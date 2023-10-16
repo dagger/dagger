@@ -47,13 +47,10 @@ type Module struct {
 	// The module's objects
 	Objects []*TypeDef `json:"objects,omitempty"`
 
-	// TODO: doc
+	// The module's SDK, as set in the module config file
 	SDK string `json:"sdk,omitempty"`
 
 	// Below are not in public graphql API
-
-	// TODO: doc or remove if not needed? SDK field above may invalidate again
-	Config *modules.Config `json:"config,omitempty"`
 
 	// The container used to execute the module's functions,
 	// derived from the SDK, source directory, and workdir.
@@ -118,51 +115,7 @@ func NewModule(platform ocispecs.Platform, pipeline pipeline.Path) *Module {
 	}
 }
 
-// TODO: doc
-func (mod *Module) FromRef(
-	ctx *Context,
-	bk *buildkit.Client,
-	svcs *Services,
-	progSock string,
-	parentSrcDir *Directory, // nil if not being loaded as a dep of another mod
-	parentSrcSubpath string, // "" if not being loaded as a dep of another mod
-	moduleRefStr string,
-	getRuntime func(*Context, *Module) (*Container, error),
-) (*Module, error) {
-	// TODO: support moving refs here? Or handle elsewhere?
-	modRef, err := modules.ResolveStableRef(moduleRefStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse dependency url %q: %w", moduleRefStr, err)
-	}
-
-	// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
-	// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
-	// May need to have `dagger mod use` and `dagger mod sync` automatically include dependency include/exclude filters in
-	// dagger.json.
-	var sourceDir *Directory
-	var configPath string
-	switch {
-	case modRef.Local:
-		if parentSrcDir == nil {
-			return nil, fmt.Errorf("invalid local module ref is local relative to nil parent %q", moduleRefStr)
-		}
-		sourceDir = parentSrcDir
-		configPath = modules.NormalizeConfigPath(path.Join("/", path.Dir(parentSrcSubpath), modRef.Path))
-	case modRef.Git != nil:
-		var err error
-		sourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create git directory: %w", err)
-		}
-		configPath = modules.NormalizeConfigPath(modRef.SubPath)
-	default:
-		return nil, fmt.Errorf("invalid module ref %q", moduleRefStr)
-	}
-
-	return mod.FromConfig(ctx, bk, svcs, progSock, sourceDir, configPath, getRuntime)
-}
-
-// TODO: doc
+// Load the module config as parsed from the given File
 func LoadModuleConfigFromFile(
 	ctx *Context,
 	bk *buildkit.Client,
@@ -180,7 +133,7 @@ func LoadModuleConfigFromFile(
 	return &cfg, nil
 }
 
-// TODO: doc
+// Load the module config from the module from the given diretory at the given path
 func LoadModuleConfig(
 	ctx *Context,
 	bk *buildkit.Client,
@@ -200,6 +153,10 @@ func LoadModuleConfig(
 	return configPath, cfg, nil
 }
 
+// callback for retrieving the runtime container for a module; needs to be callback since only the schema/module.go implementation
+// knows how to call modules to get the container
+type getRuntimeFunc func(ctx *Context, sourceDir *Directory, sourceDirSubpath string, sdkName string) (*Container, error)
+
 // FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
 	ctx *Context,
@@ -208,7 +165,7 @@ func (mod *Module) FromConfig(
 	progSock string,
 	sourceDir *Directory,
 	configPath string,
-	getRuntime func(*Context, *Module) (*Container, error),
+	getRuntime getRuntimeFunc,
 ) (*Module, error) {
 	configPath, cfg, err := LoadModuleConfig(ctx, bk, svcs, sourceDir, configPath)
 	if err != nil {
@@ -252,13 +209,56 @@ func (mod *Module) FromConfig(
 	mod.Name = cfg.Name
 	mod.DependencyConfig = cfg.Dependencies
 	mod.SDK = cfg.SDK
-	mod.Config = cfg
-	mod.Runtime, err = getRuntime(ctx, mod)
+	mod.Runtime, err = getRuntime(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath, mod.SDK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime: %w", err)
 	}
 
 	return mod, mod.updateMod()
+}
+
+// Load the module from the given module reference. parentSrcDir and parentSrcSubpath are used to resolve local module refs
+// if needed (i.e. this is a local dep of another module)
+func (mod *Module) FromRef(
+	ctx *Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	progSock string,
+	parentSrcDir *Directory, // nil if not being loaded as a dep of another mod
+	parentSrcSubpath string, // "" if not being loaded as a dep of another mod
+	moduleRefStr string,
+	getRuntime getRuntimeFunc,
+) (*Module, error) {
+	modRef, err := modules.ResolveStableRef(moduleRefStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse dependency url %q: %w", moduleRefStr, err)
+	}
+
+	// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
+	// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
+	// May need to have `dagger mod use` and `dagger mod sync` automatically include dependency include/exclude filters in
+	// dagger.json.
+	var sourceDir *Directory
+	var configPath string
+	switch {
+	case modRef.Local:
+		if parentSrcDir == nil {
+			return nil, fmt.Errorf("invalid local module ref is local relative to nil parent %q", moduleRefStr)
+		}
+		sourceDir = parentSrcDir
+		configPath = modules.NormalizeConfigPath(path.Join("/", path.Dir(parentSrcSubpath), modRef.Path))
+	case modRef.Git != nil:
+		var err error
+		sourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create git directory: %w", err)
+		}
+		configPath = modules.NormalizeConfigPath(modRef.SubPath)
+	default:
+		return nil, fmt.Errorf("invalid module ref %q", moduleRefStr)
+	}
+
+	return mod.FromConfig(ctx, bk, svcs, progSock, sourceDir, configPath, getRuntime)
 }
 
 func (mod *Module) WithObject(def *TypeDef) (*Module, error) {

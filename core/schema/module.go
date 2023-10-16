@@ -265,7 +265,7 @@ func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Dire
 }
 
 func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, _ any) (*core.GeneratedCode, error) {
-	sdk, err := s.sdkForModule(ctx, mod)
+	sdk, err := s.sdkForModule(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath, mod.SDK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module %s: %w", mod.Name, err)
 	}
