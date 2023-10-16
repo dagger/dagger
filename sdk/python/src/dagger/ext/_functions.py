@@ -17,7 +17,7 @@ FunctionReturnType: TypeAlias = Any
 class FunctionResolver(Resolver[FunctionReturnType]):
     @override
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
-        fn = dagger.new_function(self.graphql_name, to_typedef(self.return_type))
+        fn = dagger.function(self.graphql_name, to_typedef(self.return_type))
 
         if self.description:
             fn = fn.with_description(self.description)
