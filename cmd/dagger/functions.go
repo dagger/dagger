@@ -12,6 +12,8 @@ import (
 	"dagger.io/dagger/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/juju/ansiterm/tabwriter"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -31,42 +33,71 @@ var funcGroup = &cobra.Group{
 }
 
 var funcCmds = FuncCommands{
+	funcListCmd,
 	callCmd,
+	shellCmd,
+	exportCmd,
+}
+
+var funcListCmd = &FuncCommand{
+	Name:  "functions",
+	Short: `List all functions in a module.`,
+	Execute: func(c *callContext, cmd *cobra.Command) error {
+		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			termenv.String("object name").Bold(),
+			termenv.String("function name").Bold(),
+			termenv.String("description").Bold(),
+			termenv.String("return type").Bold(),
+		)
+
+		for _, o := range c.m.Objects {
+			if o.AsObject != nil {
+				for _, fn := range o.AsObject.Functions {
+					objName := o.AsObject.Name
+					if gqlObjectName(objName) == gqlObjectName(c.m.Name) {
+						objName = "*" + objName
+					}
+
+					// TODO: Add another column with available verbs.
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+						objName,
+						fn.Name,
+						fn.Description,
+						printReturnType(fn.ReturnType),
+					)
+				}
+			}
+		}
+
+		return tw.Flush()
+	},
+}
+
+func printReturnType(returnType *modTypeDef) (n string) {
+	defer func() {
+		if !returnType.Optional {
+			n += "!"
+		}
+	}()
+	switch returnType.Kind {
+	case dagger.Stringkind:
+		return "String"
+	case dagger.Integerkind:
+		return "Int"
+	case dagger.Booleankind:
+		return "Boolean"
+	case dagger.Objectkind:
+		return returnType.AsObject.Name
+	case dagger.Listkind:
+		return fmt.Sprintf("[%s]", printReturnType(returnType.AsList.ElementTypeDef))
+	default:
+		return ""
+	}
 }
 
 type FuncCommands []*FuncCommand
-
-// TODO: Replace with something more native
-var errUsage = fmt.Errorf("run with --help for usage")
-
-// TODO: Implement as another verb
-/*
-var listCmd = &cobra.Command{
-	Use:    "functions",
-	Long:   `List all functions in a module.`,
-	Hidden: true,
-	   RunE:   loadFuncsCmdWrapper(func(_ context.Context, _ *dagger.Client, c *callContext, cmd *cobra.Command, _ []string) (err error) {
-	       tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-
-	       if stdoutIsTTY {
-	           fmt.Fprintf(tw, "%s\t%s\t%s\n",
-	               termenv.String("object name").Bold(),
-	               termenv.String("function name").Bold(),
-	               termenv.String("description").Bold(),
-	           )
-	       }
-
-	       for _, o := range c.m.Objects {
-	           for _, fn := range o.Functions {
-	               // TODO: Add another column with available verbs.
-	               fmt.Fprintf(tw, "%s\t%s\t%s\n", o.Name, fn.Name, fn.Description)
-	           }
-	       }
-
-	       return tw.Flush()
-	   })
-}
-*/
 
 func (fcs FuncCommands) AddFlagSet(flags *pflag.FlagSet) {
 	for _, cmd := range fcs.All() {
@@ -90,8 +121,9 @@ func (fcs FuncCommands) All() []*cobra.Command {
 // callContext holds the execution context for a function call.
 type callContext struct {
 	m *moduleDef
-	c graphql.Client
 	q *querybuilder.Selection
+	e *client.Client
+	c graphql.Client
 }
 
 func (c *callContext) Select(name string) {
@@ -126,11 +158,51 @@ func setCmdOutput(cmd *cobra.Command, vtx *progrock.VertexRecorder) {
 	cmd.SetErr(stderr)
 }
 
+// FuncCommand is a config object used to create a dynamic set of commands
+// for querying a module's functions.
 type FuncCommand struct {
-	Name    string
-	Short   string
+	// The name of the command (or verb), as shown in usage.
+	Name string
+
+	// Short is the short description shown in the 'help' output.
+	Short string
+
+	// Example is examples of how to use the command.
 	Example string
-	cmd     *cobra.Command
+
+	// Execute circumvents the default behavior of adding subcommands and
+	// executing them.
+	Execute func(*callContext, *cobra.Command) error
+
+	// OnSetFlags is called when the flags have finished being set for a subcommand.
+	OnSetFlags func(*cobra.Command, *modTypeDef) error
+
+	// OnSelectObject is called when building the query on a function that
+	// returns a "leaf" object (e.g., Container). This is useful to add an
+	// additional field selection to the object. If the new selection changes
+	// the return type of the function, return the new type definition.
+	OnSelectObject func(*callContext, string) (*modTypeDef, error)
+
+	// OnSelectObjectList is called when building the query on a function that
+	// returns a list of objects. This is useful to add an additional field
+	// selection to the objects. If the new selection changes the return type
+	// of the function, return the new type definition.
+	OnSelectObjectList func(*callContext, *modObject) (*modTypeDef, error)
+
+	// OnSelectFunc is called after making a selection on a function to build
+	// the query. This can be useful to validate the return type or make
+	// any last minute changes to the query. If the new selection changes the
+	// return type of the function, return the new type definition.
+	OnSelectFunc func(*callContext, *modTypeDef) (*modTypeDef, error)
+
+	// CheckReturnType is called before the query is built, to validate
+	// the return type of the function. Can also be used as a last effort
+	// to select a sub-field.
+	CheckReturnType func(*callContext, *modTypeDef) error
+
+	// OnResult is called when the query has completed and returned a result.
+	OnResult func(*callContext, *cobra.Command, modTypeDef, *any) error
+	cmd      *cobra.Command
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -158,7 +230,7 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse command flags: %w", err)
 	}
 
-	err = withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+	return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 		dag := engineClient.Dagger()
 		rec := progrock.FromContext(ctx)
 
@@ -210,6 +282,16 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 			m: modDef,
 			q: querybuilder.Query(),
 			c: dag.GraphQLClient(),
+			e: engineClient,
+		}
+
+		help, _ := cmd.Flags().GetBool("help")
+
+		if fc.Execute != nil {
+			if help {
+				return cmd.Help()
+			}
+			return fc.Execute(c, cmd)
 		}
 
 		// Select constructor
@@ -218,17 +300,11 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 		// Add main object's functions as subcommands
 		fc.addSubCommands(ctx, dag, obj, c, cmd)
 
-		// Re-parse
-		err = cmd.Flags().Parse(args)
-		if err != nil {
-			return fmt.Errorf("parse command flags: %w", err)
-		}
-
-		if help, _ := cmd.Flags().GetBool("help"); help {
+		if help {
 			return cmd.Help()
 		}
 
-		subCmd, subArgs, err := cmd.Traverse(cmd.Flags().Args())
+		subCmd, subArgs, err := cmd.Find(cmd.Flags().Args())
 		if err != nil {
 			return fmt.Errorf("find command: %w", err)
 		}
@@ -242,13 +318,6 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 
 		return fc.run(subCmd, subArgs)
 	})
-	if err != nil {
-		return err
-	}
-
-	cmd.DebugFlags()
-
-	return nil
 }
 
 func (*FuncCommand) run(cmd *cobra.Command, args []string) error {
@@ -273,6 +342,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 		Use:   cliName(fn.Name),
 		Short: fn.Description,
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			cmd.SetContext(ctx)
 			rec := progrock.FromContext(ctx)
 
 			c.m.LoadObject(fn.ReturnType)
@@ -290,19 +360,14 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
 
 			// Need to make the query selection before chaining off.
-			kind, err := fc.selectFunc(fn, c, cmd.Flags(), dag)
+			returnType, err := fc.selectFunc(fn, c, cmd.Flags(), dag)
 			if err != nil {
 				return fmt.Errorf("query selection: %w", err)
 			}
 
-			leaf := isLeaf(kind)
+			// leaf := isLeaf(returnType.Kind)
 			help, _ := cmd.Flags().GetBool("help")
 			cmdArgs := cmd.Flags().Args()
-
-			// Easy check, but could have invalid arguments.
-			if !leaf && !help && len(cmdArgs) == 0 {
-				return fmt.Errorf("missing argument: %v", errUsage)
-			}
 
 			subCmd, subArgs, err := cmd.Find(cmdArgs)
 			if err != nil {
@@ -312,6 +377,12 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			// If a subcommand was found, run it instead.
 			if subCmd != cmd {
 				return fc.run(subCmd, subArgs)
+			}
+
+			if fc.CheckReturnType != nil {
+				if err = fc.CheckReturnType(c, returnType); err != nil {
+					return fmt.Errorf("return type: %w", err)
+				}
 			}
 
 			vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
@@ -325,15 +396,6 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return cmd.Help()
 			}
 
-			// At this point there should be invalid arguments if not a leaf.
-			if !leaf {
-				// to be safe!
-				if len(subArgs) > 0 {
-					return fmt.Errorf("invalid argument %q: %w", subArgs[0], errUsage)
-				}
-				return fmt.Errorf("missing argument: %w", errUsage)
-			}
-
 			query, _ := c.q.Build(ctx)
 			rec.Debug("executing", progrock.Labelf("query", "%+v", query))
 
@@ -345,8 +407,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return err
 			}
 
-			if kind != dagger.Voidkind {
-				// TODO: Handle different return types.
+			if fc.OnResult != nil {
+				return fc.OnResult(c, cmd, *returnType, &response)
+			}
+
+			if returnType.Kind != dagger.Voidkind {
 				cmd.Println(response)
 			}
 
@@ -380,15 +445,8 @@ func (fc *FuncCommand) setFlags(cmd *cobra.Command, fn *modFunction) error {
 		}
 	}
 
-	// TODO: Replace this with command verbs.
-	// TODO: Handle more types. These are just examples to get started.
-	if fn.ReturnType.Kind == dagger.Objectkind {
-		switch fn.ReturnType.AsObject.Name {
-		case Directory, File:
-			cmd.Flags().String("export-path", "", "Path to export the result to")
-		case Container:
-			cmd.Flags().Bool("stdout", true, "Print the container's stdout")
-		}
+	if fc.OnSetFlags != nil {
+		return fc.OnSetFlags(cmd, fn.ReturnType)
 	}
 
 	return nil
@@ -396,9 +454,10 @@ func (fc *FuncCommand) setFlags(cmd *cobra.Command, fn *modFunction) error {
 
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, flags *pflag.FlagSet, dag *dagger.Client) (dagger.TypeDefKind, error) {
-	kind := fn.ReturnType.Kind
+func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, flags *pflag.FlagSet, dag *dagger.Client) (*modTypeDef, error) {
 	c.Select(fn.Name)
+
+	ret := fn.ReturnType
 
 	// TODO: Check required flags.
 	for _, arg := range fn.Args {
@@ -406,46 +465,51 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, flags *pflag.
 
 		val, err := fc.getValue(flags, arg, dag)
 		if err != nil {
-			return "", fmt.Errorf("get value for flag %q: %w", arg.FlagName(), err)
+			return nil, fmt.Errorf("get value for flag %q: %w", arg.FlagName(), err)
 		}
 
 		c.Arg(arg.Name, val)
 	}
 
-	// TODO: Replace this with command verbs.
-	// TODO: Handle more types. These are just examples to get started.
-	switch kind {
+	switch ret.Kind {
 	case dagger.Objectkind:
-		if len(fn.ReturnType.AsObject.Functions) > 0 {
-			return kind, nil
+		// Possible to continue chaining.
+		if len(ret.AsObject.Functions) > 0 {
+			break
 		}
-		switch fn.ReturnType.AsObject.Name {
-		case Directory, File:
-			val, err := flags.GetString("export-path")
+		// Otherwise this is a leaf.
+		if fc.OnSelectObject != nil {
+			newRet, err := fc.OnSelectObject(c, ret.AsObject.Name)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
-			if val != "" {
-				c.Select("export")
-				c.Arg("path", val)
-				kind = dagger.Booleankind
+			if newRet != nil {
+				return newRet, nil
 			}
-		case Container:
-			val, err := flags.GetBool("stdout")
-			if err != nil {
-				return "", err
-			}
-			if val {
-				c.Select("stdout")
-				kind = dagger.Stringkind
-			}
-		default:
-			return "", fmt.Errorf("unsupported object return type %q", fn.ReturnType.AsObject.Name)
 		}
 	case dagger.Listkind:
-		return "", fmt.Errorf("unsupported list return type")
+		if fc.OnSelectObjectList != nil && ret.AsList.ElementTypeDef.AsObject != nil {
+			newRet, err := fc.OnSelectObjectList(c, ret.AsList.ElementTypeDef.AsObject)
+			if err != nil {
+				return nil, err
+			}
+			if newRet != nil {
+				return newRet, nil
+			}
+		}
 	}
-	return kind, nil
+
+	if fc.OnSelectFunc != nil {
+		newRet, err := fc.OnSelectFunc(c, ret)
+		if err != nil {
+			return nil, err
+		}
+		if newRet != nil {
+			return newRet, nil
+		}
+	}
+
+	return ret, nil
 }
 
 func (*FuncCommand) setFlag(cmd *cobra.Command, arg *modFunctionArg) error {
@@ -507,9 +571,4 @@ func (*FuncCommand) getValue(flags *pflag.FlagSet, arg *modFunctionArg, dag *dag
 	default:
 		return nil, fmt.Errorf("unsupported type %q", arg.TypeDef.Kind)
 	}
-}
-
-// isLeaf returns true if a return type is a leaf, which requires execution
-func isLeaf(kind dagger.TypeDefKind) bool {
-	return kind != dagger.Objectkind
 }

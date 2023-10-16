@@ -41,7 +41,7 @@ func init() {
 		sessionCmd(),
 	)
 
-    funcCmds.AddParent(rootCmd)
+	funcCmds.AddParent(rootCmd)
 }
 
 var rootCmd = &cobra.Command{

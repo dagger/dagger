@@ -39,7 +39,6 @@ func init() {
 	moduleCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
 
 	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
@@ -453,6 +452,14 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
                                     asObject {
                                         name
                                     }
+                                    asList {
+                                        elementTypeDef {
+                                            kind
+                                            asObject {
+                                                name
+                                            }
+                                        }
+                                    }
                                 }
                                 args {
                                     name
@@ -462,6 +469,14 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
                                         optional
                                         asObject {
                                             name
+                                        }
+                                        asList {
+                                            elementTypeDef {
+                                                kind
+                                                asObject {
+                                                    name
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -534,12 +549,18 @@ type modTypeDef struct {
 	Kind     dagger.TypeDefKind
 	Optional bool
 	AsObject *modObject
+	AsList   *modList
 }
 
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
 	Name      string
 	Functions []*modFunction
+}
+
+// modList is a representation of dagger.ListTypeDef.
+type modList struct {
+	ElementTypeDef *modTypeDef
 }
 
 // modFunction is a representation of dagger.Function.

@@ -13,79 +13,48 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
-	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock"
 )
 
-var shellCmd = &cobra.Command{
-	Use:                   "shell",
-	DisableFlagsInUseLine: true,
-	Hidden:                true, // for now, remove once we're ready for primetime
-	RunE: func(cmd *cobra.Command, args []string) error {
-		focus = queryFocus
-		return loadModCmdWrapper(RunShell, "")(cmd, args)
-	},
-}
+var shellIsContainer bool
 
-func init() {
-	rootCmd.AddCommand(shellCmd)
-
-	shellCmd.Flags().StringVar(&queryFile, "doc", "", "document query file")
-	shellCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "query variable")
-	shellCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "json query variables (overrides --var)")
-}
-
-func RunShell(
-	ctx context.Context,
-	engineClient *client.Client,
-	_ *dagger.Module,
-	cmd *cobra.Command,
-	dynamicCmdArgs []string,
-) (err error) {
-	rec := progrock.FromContext(ctx)
-	vtx := rec.Vertex(
-		digest.Digest("shell"),
-		"shell",
-	)
-	defer func() { vtx.Done(err) }()
-
-	cmd.SetOut(vtx.Stdout())
-	cmd.SetErr(vtx.Stderr())
-
-	res, err := runQuery(ctx, engineClient, dynamicCmdArgs)
-	if err != nil {
-		return fmt.Errorf("failed to run query: %w", err)
-	}
-
-	var getCtrID func(x any) (string, error)
-	getCtrID = func(x any) (string, error) {
-		switch x := x.(type) {
-		case map[string]any:
-			for _, v := range x {
-				return getCtrID(v)
-			}
-			return "", fmt.Errorf("no container found")
-		case string:
-			return x, nil
-		default:
-			return "", fmt.Errorf("unexpected type %T", x)
+var shellCmd = &FuncCommand{
+	Name:  "shell",
+	Short: "Open a shell in a container",
+	OnSelectObject: func(c *callContext, name string) (*modTypeDef, error) {
+		if name == Container {
+			c.Select("id")
+			shellIsContainer = true
+			return &modTypeDef{Kind: dagger.Stringkind}, nil
 		}
-	}
-	ctrID, err := getCtrID(res)
-	if err != nil {
-		return fmt.Errorf("failed to get container id: %w", err)
-	}
+		return nil, nil
+	},
+	CheckReturnType: func(_ *callContext, _ *modTypeDef) error {
+		if !shellIsContainer {
+			return fmt.Errorf("shell can only be called on a container")
+		}
+		return nil
+	},
+	OnResult: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, result *any) error {
+		ctrID, ok := (*result).(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T", result)
+		}
 
-	dag := engineClient.Dagger()
-	ctr := dag.Container(dagger.ContainerOpts{ID: dagger.ContainerID(ctrID)})
+		ctx := cmd.Context()
+		ctr := c.e.Dagger().Container(dagger.ContainerOpts{
+			ID: dagger.ContainerID(ctrID),
+		})
 
-	shellEndpoint, err := ctr.ShellEndpoint(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get shell endpoint: %w", err)
-	}
-	return attachToShell(ctx, engineClient, shellEndpoint)
+		shellEndpoint, err := ctr.ShellEndpoint(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get shell endpoint: %w", err)
+		}
+
+		return attachToShell(ctx, c.e, shellEndpoint)
+	},
 }
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
