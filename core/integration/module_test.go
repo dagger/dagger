@@ -647,6 +647,41 @@ func TestModuleGoWrapping(t *testing.T) {
 		out)
 }
 
+func TestModulePython(t *testing.T) {
+	// TODO: simple e2e test for now, can be split out into many different tests with different focuses
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithNewFile("./pyproject.toml", dagger.ContainerWithNewFileOpts{
+			Contents: `[project]
+name = "test"
+version = "0.0.0"
+`,
+		}).
+		WithNewFile("./src/main.py", dagger.ContainerWithNewFileOpts{
+			Contents: `from dagger.ext import function
+
+
+@function
+def hello(name: str) -> str:
+    """Say hello to someone."""
+    return f"Hello, {name}!"
+`,
+		}).
+		With(daggerExec("mod", "init", "--name=test", "--sdk=python"))
+
+	t.Run("func Hello() string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{test{hello(name: "there")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"hello":"Hello, there!"}}`, out)
+	})
+}
+
 func TestEnvCmd(t *testing.T) {
 	t.Skip("pending conversion to modules")
 
