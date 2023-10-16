@@ -23,10 +23,6 @@ const (
 	ModMetaInputPath   = "input.json"
 	ModMetaOutputPath  = "output.json"
 	ModMetaDepsDirPath = "deps"
-
-	ModSourceDirPath      = "/src"
-	SDKModDirPath         = "/sdk"
-	RuntimeExecutablePath = "/runtime"
 )
 
 type Module struct {

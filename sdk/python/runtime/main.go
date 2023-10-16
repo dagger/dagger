@@ -9,7 +9,6 @@ import (
 type PythonSdk struct{}
 
 const (
-	// TODO: would be nice to not hardcode these in every SDK module, put in api somewhere? Or does it need to be flexible? Still could go in api
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
 )
@@ -30,7 +29,7 @@ func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string) *Contain
 			"/sdk",
 			".",
 		}).
-		WithWorkdir(ModSourceDirPath).
+		WithWorkdir(modSubPath).
 		WithDefaultArgs().
 		WithEntrypoint([]string{RuntimeExecutablePath})
 }

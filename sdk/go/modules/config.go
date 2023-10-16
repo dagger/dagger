@@ -34,12 +34,11 @@ type Config struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 
-// TODO: is this still useful?
-func NewConfig(name, sdk, rootPath string) *Config {
+func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
 	cfg := &Config{
 		Name: name,
 		Root: rootPath,
-		SDK:  sdk,
+		SDK:  sdkNameOrRef,
 	}
 	return cfg
 }

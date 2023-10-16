@@ -209,10 +209,6 @@ func updateModuleConfig(
 		return err
 	}
 
-	// pin dagger.json to the current runtime image version
-	// TODO: resolve moving refs?
-	// modCfg.SyncSDKRuntime()
-
 	configPath := filepath.Join(moduleDir, modules.Filename)
 
 	cfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
@@ -256,7 +252,7 @@ func updateModuleConfig(
 		// remove it if it didn't exist already and something goes wrong
 		defer func() {
 			if rerr != nil {
-				os.RemoveAll(configPath)
+				os.Remove(configPath)
 			}
 		}()
 	default:

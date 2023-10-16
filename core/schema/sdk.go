@@ -49,8 +49,6 @@ func (s *moduleSchema) builtinSDK(ctx *core.Context, sdkName string) (SDK, error
 			name: sdkName,
 			// TODO: don't hardcode paths here, dedupe w/ CI
 			engineContainerModulePath: "/usr/local/share/dagger/python-sdk/runtime",
-			// TODO: excludePaths, or just read from dagger.json?
-			// TODO: includePaths, or just read from dagger.json?
 		})
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
@@ -191,8 +189,6 @@ func (sdk *moduleSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sour
 type builtinSDKParams struct {
 	name                      string
 	engineContainerModulePath string
-	excludePaths              []string
-	includePaths              []string
 }
 
 func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParams) (*moduleSDK, error) {
@@ -224,8 +220,8 @@ func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParam
 		recorder,
 		s.platform,
 		modRootPath,
-		params.excludePaths,
-		params.includePaths,
+		modCfg.Exclude,
+		modCfg.Include,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import module sdk %s from engine container filesystem: %s", params.name, err)
@@ -239,6 +235,11 @@ func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParam
 	return s.newModuleSDK(ctx, core.NewDirectory(ctx, pbDef, "/", nil, s.platform, nil), cfgRelPath)
 }
 
+const (
+	goSDKUserModSourceDirPath = "/src"
+	goSDKRuntimePath          = "/runtime"
+)
+
 type goSDK struct {
 	*moduleSchema
 }
@@ -249,7 +250,7 @@ func (sdk *goSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDi
 		return nil, err
 	}
 
-	modifiedSrcDir, err := ctr.Directory(ctx, sdk.bk, sdk.services, core.ModSourceDirPath)
+	modifiedSrcDir, err := ctr.Directory(ctx, sdk.bk, sdk.services, goSDKUserModSourceDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
 	}
@@ -283,7 +284,7 @@ func (sdk *goSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDi
 	ctr, err = ctr.WithExec(ctx, sdk.bk, sdk.progSockPath, sdk.platform, core.ContainerExecOpts{
 		Args: []string{
 			"go", "build",
-			"-o", core.RuntimeExecutablePath,
+			"-o", goSDKRuntimePath,
 			".",
 		},
 		SkipEntrypoint:                true,
@@ -294,7 +295,7 @@ func (sdk *goSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDi
 	}
 
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{core.RuntimeExecutablePath}
+		cfg.Entrypoint = []string{goSDKRuntimePath}
 		return cfg
 	})
 	if err != nil {
@@ -310,12 +311,12 @@ func (sdk *goSDK) baseWithCodegen(ctx *core.Context, sourceDir *core.Directory, 
 		return nil, err
 	}
 
-	ctr, err = ctr.WithMountedDirectory(ctx, sdk.bk, core.ModSourceDirPath, sourceDir, "", false)
+	ctr, err = ctr.WithMountedDirectory(ctx, sdk.bk, goSDKUserModSourceDirPath, sourceDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount module source into go module sdk container codegen: %w", err)
 	}
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = filepath.Join(core.ModSourceDirPath, sourceDirSubpath)
+		cfg.WorkingDir = filepath.Join(goSDKUserModSourceDirPath, sourceDirSubpath)
 		cfg.Cmd = nil
 		return cfg
 	})
