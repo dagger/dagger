@@ -166,6 +166,24 @@ func (mod *Module) FromRef(
 	return mod.FromConfig(ctx, bk, svcs, progSock, sourceDir, configPath, getRuntime)
 }
 
+// TODO: doc
+func LoadModuleConfig(
+	ctx *Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	configFile *File,
+) (*modules.Config, error) {
+	configBytes, err := configFile.Contents(ctx, bk, svcs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	var cfg modules.Config
+	if err := json.Unmarshal(configBytes, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	return &cfg, nil
+}
+
 // FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
 	ctx *Context,
@@ -183,13 +201,9 @@ func (mod *Module) FromConfig(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config file: %w", err)
 	}
-	configBytes, err := configFile.Contents(ctx, bk, svcs)
+	cfg, err := LoadModuleConfig(ctx, bk, svcs, configFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-	var cfg modules.Config
-	if err := json.Unmarshal(configBytes, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Recursively load the configs of all the dependencies
@@ -229,7 +243,7 @@ func (mod *Module) FromConfig(
 	mod.Name = cfg.Name
 	mod.DependencyConfig = cfg.Dependencies
 	mod.SDK = cfg.SDK
-	mod.Config = &cfg
+	mod.Config = cfg
 	mod.Runtime, err = getRuntime(ctx, mod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime: %w", err)

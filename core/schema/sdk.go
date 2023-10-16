@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"dagger.io/dagger/modules"
 	"github.com/dagger/dagger/core"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
@@ -47,8 +48,7 @@ func (s *moduleSchema) builtinSDK(ctx *core.Context, sdkName string) (SDK, error
 		return s.loadBuiltinSDK(ctx, &builtinSDKParams{
 			name: sdkName,
 			// TODO: don't hardcode paths here, dedupe w/ CI
-			engineContainerRootDirPath: "/usr/local/share/dagger/python-sdk",
-			moduleConfigPath:           "runtime",
+			engineContainerModulePath: "/usr/local/share/dagger/python-sdk/runtime",
 			// TODO: excludePaths, or just read from dagger.json?
 			// TODO: includePaths, or just read from dagger.json?
 		})
@@ -189,21 +189,41 @@ func (sdk *moduleSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sour
 }
 
 type builtinSDKParams struct {
-	name                       string
-	engineContainerRootDirPath string
-	moduleConfigPath           string
-	excludePaths               []string
-	includePaths               []string
+	name                      string
+	engineContainerModulePath string
+	excludePaths              []string
+	includePaths              []string
 }
 
 func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParams) (*moduleSDK, error) {
 	progCtx, recorder := progrock.WithGroup(ctx.Context, fmt.Sprintf("load builtin module sdk %s", params.name))
 	ctx.Context = progCtx
+
+	cfgPath := modules.NormalizeConfigPath(params.engineContainerModulePath)
+	cfgPBDef, err := s.bk.EngineContainerLocalImport(
+		ctx,
+		recorder,
+		s.platform,
+		filepath.Dir(cfgPath),
+		nil,
+		[]string{filepath.Base(cfgPath)},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to import module sdk config file %s from engine container filesystem: %s", params.name, err)
+	}
+
+	cfgFile := core.NewFile(ctx, cfgPBDef, filepath.Base(cfgPath), nil, s.platform, nil)
+	modCfg, err := core.LoadModuleConfig(ctx, s.bk, s.services, cfgFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module sdk config file %s: %w", params.name, err)
+	}
+
+	modRootPath := filepath.Join(filepath.Dir(cfgPath), modCfg.Root)
 	pbDef, err := s.bk.EngineContainerLocalImport(
 		ctx,
 		recorder,
 		s.platform,
-		params.engineContainerRootDirPath,
+		modRootPath,
 		params.excludePaths,
 		params.includePaths,
 	)
@@ -211,7 +231,12 @@ func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParam
 		return nil, fmt.Errorf("failed to import module sdk %s from engine container filesystem: %s", params.name, err)
 	}
 
-	return s.newModuleSDK(ctx, core.NewDirectory(ctx, pbDef, "/", nil, s.platform, nil), params.moduleConfigPath)
+	cfgRelPath, err := filepath.Rel(modRootPath, cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relative path of module sdk config file %s: %w", params.name, err)
+	}
+
+	return s.newModuleSDK(ctx, core.NewDirectory(ctx, pbDef, "/", nil, s.platform, nil), cfgRelPath)
 }
 
 type goSDK struct {
