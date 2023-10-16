@@ -7,13 +7,35 @@ import (
 
 	"dagger.io/dagger/modules"
 	"github.com/dagger/dagger/core"
+	ciutil "github.com/dagger/dagger/internal/mage/util"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
 )
 
-// TODO: doc
+/*
+An SDK is an implementation of the functionality needed to generate code for and execute a module.
+
+There is one special SDK, the Go SDK, which is implemented in `goSDK` below. It's used as the "seed" for all
+other SDK implementations.
+
+All other SDKs are themselves implemented as Modules, with Functions matching the two defined in this SDK interface.
+
+An SDK Module needs to choose its own SDK for its implementation. This can be "well-known" built-in SDKs like "go",
+"python", etc. Or it can be any external module as specified with a module ref.
+
+Built-in SDKs are also a bit special in that they come bundled w/ the engine container image, which allows them
+to be used without hard dependencies on the internet. They are loaded w/ the `loadBuiltinSDK` function below, which
+loads them as modules from the engine container.
+*/
 type SDK interface {
+	/* Codegen generates code for the module at the given source directory and subpath.
+
+	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
+	in the case where that's different than the root of the sourceDir.
+	*/
 	Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error)
+
+	// Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
 	Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error)
 }
 
@@ -46,9 +68,8 @@ func (s *moduleSchema) builtinSDK(ctx *core.Context, sdkName string) (SDK, error
 		return &goSDK{moduleSchema: s}, nil
 	case "python":
 		return s.loadBuiltinSDK(ctx, &builtinSDKParams{
-			name: sdkName,
-			// TODO: don't hardcode paths here, dedupe w/ CI
-			engineContainerModulePath: "/usr/local/share/dagger/python-sdk/runtime",
+			name:                      sdkName,
+			engineContainerModulePath: ciutil.PythonSDKEngineContainerModulePath,
 		})
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
@@ -240,6 +261,7 @@ const (
 	goSDKRuntimePath          = "/runtime"
 )
 
+// TODO: doc
 type goSDK struct {
 	*moduleSchema
 }
@@ -339,16 +361,13 @@ func (sdk *goSDK) baseWithCodegen(ctx *core.Context, sourceDir *core.Directory, 
 }
 
 func (sdk *goSDK) base(ctx *core.Context) (*core.Container, error) {
-	// TODO: don't hardcode path here, dedupe w/ CI
-	tarballPath := "/usr/local/share/dagger/go-module-sdk-image.tar"
-
 	progCtx, recorder := progrock.WithGroup(ctx.Context, "load builtin module sdk go")
 	ctx.Context = progCtx
-	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(tarballPath), nil, []string{filepath.Base(tarballPath)})
+	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(ciutil.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(ciutil.GoSDKEngineContainerTarballPath)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)
 	}
-	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(tarballPath), nil, sdk.platform, nil)
+	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(ciutil.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
 	tarballFileID, err := tarballFile.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go module sdk tarball file id: %w", err)

@@ -4,12 +4,14 @@ go 1.20
 
 replace dagger.io/dagger => ./sdk/go
 
+replace github.com/dagger/dagger/internal/mage => ./internal/mage
+
 // needed to resolve "ambiguous import: found package cloud.google.com/go/compute/metadata in multiple modules"
 replace cloud.google.com/go => cloud.google.com/go v0.100.2
 
 require (
-	dagger.io/dagger v0.7.2
-	github.com/99designs/gqlgen v0.17.31 // indirect
+	dagger.io/dagger v0.8.8
+	github.com/99designs/gqlgen v0.17.34 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
@@ -61,6 +63,7 @@ require (
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/charmbracelet/lipgloss v0.8.0
+	github.com/dagger/dagger/internal/mage v0.0.0-00010101000000-000000000000
 	github.com/go-git/go-git/v5 v5.9.0
 	github.com/google/go-github/v50 v50.2.0
 	github.com/gorilla/websocket v1.5.0
@@ -70,7 +73,7 @@ require (
 	github.com/juju/ansiterm v1.0.0
 	github.com/koron-go/prefixw v1.0.0
 	github.com/mackerelio/go-osstat v0.2.4
-	github.com/mattn/go-isatty v0.0.18
+	github.com/mattn/go-isatty v0.0.19
 	github.com/moby/sys/mount v0.3.3
 	github.com/muesli/termenv v0.15.2
 	github.com/nxadm/tail v1.4.8
