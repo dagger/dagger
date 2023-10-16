@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/codegen/introspection"
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")

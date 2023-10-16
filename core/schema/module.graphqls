@@ -112,3 +112,31 @@ extend type Directory {
     sourceSubpath: String
   ): Module!
 }
+
+"Static configuration for a module (e.g. parsed contents of dagger.json)"
+type ModuleConfig {
+  "The name of the module."
+  name: String!
+
+  "The root directory of the module's project, which may be above the module source code."
+  root: String
+
+  "Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation."
+  sdk: String!
+
+  "Include only these file globs when loading the module root."
+  include: [String!]
+
+  "Exclude these file globs when loading the module root."
+  exclude: [String!]
+
+  "Modules that this module depends on."
+  dependencies: [String!]
+}
+
+extend type Query {
+  """
+  Load the static configuration for a module from the given source directory and optional subpath.
+  """
+  moduleConfig(sourceDirectory: DirectoryID!, subpath: String): ModuleConfig!
+}

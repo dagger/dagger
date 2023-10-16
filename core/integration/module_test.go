@@ -647,6 +647,32 @@ func TestModuleGoWrapping(t *testing.T) {
 		out)
 }
 
+func TestModuleConfigAPI(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	moduleDir := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/subdir").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go", "--root=..")).
+		Directory("/work")
+
+	cfg := c.ModuleConfig(moduleDir, dagger.ModuleConfigOpts{Subpath: "subdir"})
+
+	name, err := cfg.Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "test", name)
+
+	sdk, err := cfg.SDK(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "go", sdk)
+
+	root, err := cfg.Root(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "..", root)
+}
+
 func TestModulePython(t *testing.T) {
 	// TODO: simple e2e test for now, can be split out into many different tests with different focuses
 	t.Parallel()

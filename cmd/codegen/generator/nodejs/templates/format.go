@@ -3,7 +3,7 @@ package templates
 import (
 	"strings"
 
-	"dagger.io/dagger/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator"
 )
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface

@@ -9,9 +9,8 @@ import (
 	"github.com/vito/progrock/console"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/codegen"
-	"dagger.io/dagger/codegen/generator"
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/core/modules"
 )
 
 var (
@@ -84,7 +83,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		cfg.ModuleConfig = modCfg
 	}
 
-	return codegen.Generate(ctx, cfg, dag)
+	return Generate(ctx, cfg, dag)
 }
 
 func main() {

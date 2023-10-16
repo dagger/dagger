@@ -1,6 +1,6 @@
 package generator
 
-import "dagger.io/dagger/codegen/introspection"
+import "github.com/dagger/dagger/cmd/codegen/introspection"
 
 var _schema *introspection.Schema
 

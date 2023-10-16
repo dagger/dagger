@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -163,7 +163,7 @@ func (mod *Module) FromRef(
 }
 
 // TODO: doc
-func LoadModuleConfig(
+func LoadModuleConfigFromFile(
 	ctx *Context,
 	bk *buildkit.Client,
 	svcs *Services,
@@ -180,6 +180,26 @@ func LoadModuleConfig(
 	return &cfg, nil
 }
 
+// TODO: doc
+func LoadModuleConfig(
+	ctx *Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	sourceDir *Directory,
+	configPath string,
+) (string, *modules.Config, error) {
+	configPath = modules.NormalizeConfigPath(configPath)
+	configFile, err := sourceDir.File(ctx, bk, svcs, configPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get config file: %w", err)
+	}
+	cfg, err := LoadModuleConfigFromFile(ctx, bk, svcs, configFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	return configPath, cfg, nil
+}
+
 // FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
 	ctx *Context,
@@ -190,16 +210,9 @@ func (mod *Module) FromConfig(
 	configPath string,
 	getRuntime func(*Context, *Module) (*Container, error),
 ) (*Module, error) {
-	configPath = modules.NormalizeConfigPath(configPath)
-
-	// Read the config file
-	configFile, err := sourceDir.File(ctx, bk, svcs, configPath)
+	configPath, cfg, err := LoadModuleConfig(ctx, bk, svcs, sourceDir, configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config file: %w", err)
-	}
-	cfg, err := LoadModuleConfig(ctx, bk, svcs, configFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, err
 	}
 
 	// Recursively load the configs of all the dependencies

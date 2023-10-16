@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/codegen/generator"
-	"dagger.io/dagger/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
 

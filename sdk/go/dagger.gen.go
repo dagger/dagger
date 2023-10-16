@@ -88,12 +88,6 @@ type FunctionCallInput struct {
 	Value JSON `json:"value,omitempty"`
 }
 
-type ModuleEnvironmentVariable struct {
-	Name string `json:"name,omitempty"`
-
-	Value string `json:"value,omitempty"`
-}
-
 // Key value object that represents a Pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -3010,26 +3004,15 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ModuleServeOpts contains options for Module.Serve
-type ModuleServeOpts struct {
-	Environment []ModuleEnvironmentVariable
-}
-
 // Serve a module's API in the current session.
 //
 //	Note: this can only be called once per session.
 //	In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) (Void, error) {
+func (r *Module) Serve(ctx context.Context) (Void, error) {
 	if r.serve != nil {
 		return *r.serve, nil
 	}
 	q := r.q.Select("serve")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `environment` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Environment) {
-			q = q.Arg("environment", opts[i].Environment)
-		}
-	}
 
 	var response Void
 
@@ -3070,6 +3053,85 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Static configuration for a module (e.g. parsed contents of dagger.json)
+type ModuleConfig struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	name *string
+	root *string
+	sdk  *string
+}
+
+// Modules that this module depends on.
+func (r *ModuleConfig) Dependencies(ctx context.Context) ([]string, error) {
+	q := r.q.Select("dependencies")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Exclude these file globs when loading the module root.
+func (r *ModuleConfig) Exclude(ctx context.Context) ([]string, error) {
+	q := r.q.Select("exclude")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Include only these file globs when loading the module root.
+func (r *ModuleConfig) Include(ctx context.Context) ([]string, error) {
+	q := r.q.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the module.
+func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The root directory of the module's project, which may be above the module source code.
+func (r *ModuleConfig) Root(ctx context.Context) (string, error) {
+	if r.root != nil {
+		return *r.root, nil
+	}
+	q := r.q.Select("root")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
+func (r *ModuleConfig) SDK(ctx context.Context) (string, error) {
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
+	q := r.q.Select("sdk")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A definition of a custom object defined in a Module.
@@ -3564,6 +3626,29 @@ func (r *Client) Module() *Module {
 	q := r.q.Select("module")
 
 	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ModuleConfigOpts contains options for Client.ModuleConfig
+type ModuleConfigOpts struct {
+	Subpath string
+}
+
+// Load the static configuration for a module from the given source directory and optional subpath.
+func (r *Client) ModuleConfig(sourceDirectory *Directory, opts ...ModuleConfigOpts) *ModuleConfig {
+	assertNotNil("sourceDirectory", sourceDirectory)
+	q := r.q.Select("moduleConfig")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `subpath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subpath) {
+			q = q.Arg("subpath", opts[i].Subpath)
+		}
+	}
+	q = q.Arg("sourceDirectory", sourceDirectory)
+
+	return &ModuleConfig{
 		q: q,
 		c: r.c,
 	}

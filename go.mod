@@ -64,6 +64,9 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/charmbracelet/lipgloss v0.8.0
 	github.com/dagger/dagger/internal/mage v0.0.0-00010101000000-000000000000
+	github.com/dave/jennifer v1.7.0
+	github.com/dschmidt/go-layerfs v0.1.0
+	github.com/fatih/structtag v1.2.0
 	github.com/go-git/go-git/v5 v5.9.0
 	github.com/google/go-github/v50 v50.2.0
 	github.com/gorilla/websocket v1.5.0
@@ -80,6 +83,7 @@ require (
 	github.com/opencontainers/runc v1.1.9
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.12.0
+	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
 	github.com/rs/cors v1.10.0
 	github.com/rs/zerolog v1.30.0
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
@@ -270,7 +274,7 @@ require (
 	golang.org/x/net v0.16.0
 	golang.org/x/text v0.13.0
 	golang.org/x/time v0.3.0 // indirect
-	golang.org/x/tools v0.13.0 // indirect
+	golang.org/x/tools v0.13.0
 	google.golang.org/genproto v0.0.0-20230526203410-71b5a4ffd15e // indirect
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1

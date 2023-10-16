@@ -662,15 +662,6 @@ export enum ImageMediaTypes {
  */
 export type JSON = string & { __JSON: never }
 
-export type ModuleServeOpts = {
-  environment?: ModuleEnvironmentVariable[]
-}
-
-export type ModuleEnvironmentVariable = {
-  name: string
-  value?: string
-}
-
 /**
  * A reference to a Module.
  */
@@ -735,6 +726,10 @@ export type ClientHttpOpts = {
    * A service which must be started before the URL is fetched.
    */
   experimentalServiceHost?: Container
+}
+
+export type ClientModuleConfigOpts = {
+  subpath?: string
 }
 
 export type ClientPipelineOpts = {
@@ -4261,7 +4256,7 @@ export class Module_ extends BaseClient {
    *     Note: this can only be called once per session.
    *     In the future, it could return a stream or service to remove the side effect.
    */
-  async serve(opts?: ModuleServeOpts): Promise<Void> {
+  async serve(): Promise<Void> {
     if (this._serve) {
       return this._serve
     }
@@ -4271,7 +4266,6 @@ export class Module_ extends BaseClient {
         ...this._queryTree,
         {
           operation: "serve",
-          args: { ...opts },
         },
       ],
       this.client
@@ -4341,6 +4335,145 @@ export class Module_ extends BaseClient {
    */
   with(arg: (param: Module_) => Module_) {
     return arg(this)
+  }
+}
+
+/**
+ * Static configuration for a module (e.g. parsed contents of dagger.json)
+ */
+export class ModuleConfig extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _root?: string = undefined
+  private readonly _sdk?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _root?: string,
+    _sdk?: string
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._root = _root
+    this._sdk = _sdk
+  }
+
+  /**
+   * Modules that this module depends on.
+   */
+  async dependencies(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "dependencies",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Exclude these file globs when loading the module root.
+   */
+  async exclude(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exclude",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Include only these file globs when loading the module root.
+   */
+  async include(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "include",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the module.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The root directory of the module's project, which may be above the module source code.
+   */
+  async root(): Promise<string> {
+    if (this._root) {
+      return this._root
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "root",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
+   */
+  async sdk(): Promise<string> {
+    if (this._sdk) {
+      return this._sdk
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sdk",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 }
 
@@ -5015,6 +5148,26 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "module",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load the static configuration for a module from the given source directory and optional subpath.
+   */
+  moduleConfig(
+    sourceDirectory: Directory,
+    opts?: ClientModuleConfigOpts
+  ): ModuleConfig {
+    return new ModuleConfig({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "moduleConfig",
+          args: { sourceDirectory, ...opts },
         },
       ],
       host: this.clientHost,

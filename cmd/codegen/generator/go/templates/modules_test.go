@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 )

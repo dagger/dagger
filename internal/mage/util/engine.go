@@ -284,11 +284,10 @@ func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
 		WithEnvVariable("GOARCH", arch).
 		WithExec([]string{
 			"go", "build",
-			"-C", "/app/sdk/go",
 			"-o", "./bin/codegen",
 			"./cmd/codegen",
 		}).
-		File("/app/sdk/go/bin/codegen")
+		File("./bin/codegen")
 }
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {

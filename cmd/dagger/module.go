@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"

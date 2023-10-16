@@ -1,4 +1,4 @@
-package codegen
+package main
 
 import (
 	"context"
@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/codegen/generator"
-	gogenerator "dagger.io/dagger/codegen/generator/go"
-	nodegenerator "dagger.io/dagger/codegen/generator/nodejs"
-	"dagger.io/dagger/codegen/introspection"
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
+	nodegenerator "github.com/dagger/dagger/cmd/codegen/generator/nodejs"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"

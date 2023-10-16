@@ -8,8 +8,8 @@ import (
 
 	"github.com/iancoleman/strcase"
 
-	"dagger.io/dagger/codegen/generator"
-	"dagger.io/dagger/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 var (

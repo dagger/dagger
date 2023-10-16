@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-// TODO: move this code back to `core`?
-
 // Filename is the name of the module config file.
 const Filename = "dagger.json"
 
@@ -21,7 +19,7 @@ type Config struct {
 	// source code.
 	Root string `json:"root,omitempty"`
 
-	// TODO: doc
+	// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
 	SDK string `json:"sdk,omitempty"`
 
 	// Include only these file globs when loading the module root.

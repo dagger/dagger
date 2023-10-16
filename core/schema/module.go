@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/graphql"
@@ -54,6 +55,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"currentFunctionCall": ToResolver(s.currentFunctionCall),
 			"typeDef":             ToResolver(s.typeDef),
 			"generatedCode":       ToResolver(s.generatedCode),
+			"moduleConfig":        ToResolver(s.moduleConfig),
 		},
 		"Directory": ObjectResolver{
 			"asModule": ToResolver(s.directoryAsModule),
@@ -194,6 +196,21 @@ func (s *moduleSchema) module(ctx *core.Context, query *core.Query, args moduleA
 		return core.NewModule(s.platform, query.PipelinePath()), nil
 	}
 	return args.ID.Decode()
+}
+
+type moduleConfigArgs struct {
+	SourceDirectory core.DirectoryID
+	Subpath         string
+}
+
+func (s *moduleSchema) moduleConfig(ctx *core.Context, query *core.Query, args moduleConfigArgs) (*modules.Config, error) {
+	srcDir, err := args.SourceDirectory.Decode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode source directory: %w", err)
+	}
+
+	_, cfg, err := core.LoadModuleConfig(ctx, s.bk, s.services, srcDir, args.Subpath)
+	return cfg, err
 }
 
 func (s *moduleSchema) currentModule(ctx *core.Context, _ *core.Query, _ any) (*core.Module, error) {

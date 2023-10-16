@@ -5,9 +5,9 @@ import (
 	"context"
 	"sort"
 
-	"dagger.io/dagger/codegen/generator"
-	"dagger.io/dagger/codegen/generator/nodejs/templates"
-	"dagger.io/dagger/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/nodejs/templates"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/psanford/memfs"
 )
 

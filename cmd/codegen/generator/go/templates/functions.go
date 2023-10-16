@@ -12,9 +12,9 @@ import (
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 
-	"dagger.io/dagger/codegen/generator"
-	"dagger.io/dagger/codegen/introspection"
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 func GoTemplateFuncs(

@@ -87,18 +87,10 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "Serve a module's API in the current session.\n    Note: this can only be called once per session.\n    In the future, it could return a stream or service to remove the side effect.\n\n\n\n## Optional Arguments\n\n* `environment` -"
-    @spec serve(t(), keyword()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
-    def serve(%__MODULE__{} = module, optional_args \\ []) do
+    @doc "Serve a module's API in the current session.\n    Note: this can only be called once per session.\n    In the future, it could return a stream or service to remove the side effect."
+    @spec serve(t()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
+    def serve(%__MODULE__{} = module) do
       selection = select(module.selection, "serve")
-
-      selection =
-        if is_nil(optional_args[:environment]) do
-          selection
-        else
-          arg(selection, "environment", optional_args[:environment])
-        end
-
       execute(selection, module.client)
     end
   )

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"dagger.io/dagger/modules"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	ciutil "github.com/dagger/dagger/internal/mage/util"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
@@ -22,6 +22,9 @@ All other SDKs are themselves implemented as Modules, with Functions matching th
 
 An SDK Module needs to choose its own SDK for its implementation. This can be "well-known" built-in SDKs like "go",
 "python", etc. Or it can be any external module as specified with a module ref.
+
+You can thus think of SDK Modules as a DAG of dependencies, with each SDK using a different SDK to implement its Module,
+with the Go SDK as the root of the DAG and the only one without any dependencies.
 
 Built-in SDKs are also a bit special in that they come bundled w/ the engine container image, which allows them
 to be used without hard dependencies on the internet. They are loaded w/ the `loadBuiltinSDK` function below, which
@@ -226,11 +229,11 @@ func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParam
 		[]string{filepath.Base(cfgPath)},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to import module sdk config file %s from engine container filesystem: %s", params.name, err)
+		return nil, fmt.Errorf("failed to import module sdk config file %s from engine container filesystem: %w", params.name, err)
 	}
 
 	cfgFile := core.NewFile(ctx, cfgPBDef, filepath.Base(cfgPath), nil, s.platform, nil)
-	modCfg, err := core.LoadModuleConfig(ctx, s.bk, s.services, cfgFile)
+	modCfg, err := core.LoadModuleConfigFromFile(ctx, s.bk, s.services, cfgFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load module sdk config file %s: %w", params.name, err)
 	}
@@ -245,7 +248,7 @@ func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, params *builtinSDKParam
 		modCfg.Include,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to import module sdk %s from engine container filesystem: %s", params.name, err)
+		return nil, fmt.Errorf("failed to import module sdk %s from engine container filesystem: %w", params.name, err)
 	}
 
 	cfgRelPath, err := filepath.Rel(modRootPath, cfgPath)
