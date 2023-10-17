@@ -342,28 +342,6 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load the static configuration for a module from the given source directory and optional subpath.\n\n## Required Arguments\n\n* `source_directory` - \n\n## Optional Arguments\n\n* `subpath` -"
-    @spec module_config(t(), Dagger.Directory.t(), keyword()) :: Dagger.ModuleConfig.t()
-    def module_config(%__MODULE__{} = query, source_directory, optional_args \\ []) do
-      selection = select(query.selection, "moduleConfig")
-
-      (
-        {:ok, id} = Dagger.Directory.id(source_directory)
-        selection = arg(selection, "sourceDirectory", id)
-      )
-
-      selection =
-        if is_nil(optional_args[:subpath]) do
-          selection
-        else
-          arg(selection, "subpath", optional_args[:subpath])
-        end
-
-      %Dagger.ModuleConfig{selection: selection, client: query.client}
-    end
-  )
-
-  (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
     @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Client.t()
     def pipeline(%__MODULE__{} = query, name, optional_args \\ []) do
