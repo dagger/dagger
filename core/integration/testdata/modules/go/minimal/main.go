@@ -22,6 +22,21 @@ func (m *Minimal) Echo(msg string) string {
 	})
 }
 
+func (m *Minimal) EchoPointer(msg *string) *string {
+	v := m.Echo(*msg)
+	return &v
+}
+
+func (m *Minimal) EchoPointerPointer(msg **string) **string {
+	v := m.Echo(**msg)
+	v2 := &v
+	return &v2
+}
+
+func (m *Minimal) Echoes(msgs []string) []string {
+	return []string{m.Echo(strings.Join(msgs, " "))}
+}
+
 func (m *Minimal) HelloContext(ctx context.Context) string {
 	return "hello context"
 }
