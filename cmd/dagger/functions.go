@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -52,11 +50,11 @@ var funcListCmd = &FuncCommand{
 			termenv.String("return type").Bold(),
 		)
 
-		for _, o := range c.m.Objects {
+		for _, o := range c.mod.Objects {
 			if o.AsObject != nil {
 				for _, fn := range o.AsObject.Functions {
 					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(c.m.Name) {
+					if gqlObjectName(objName) == gqlObjectName(c.mod.Name) {
 						objName = "*" + objName
 					}
 
@@ -120,10 +118,11 @@ func (fcs FuncCommands) All() []*cobra.Command {
 
 // callContext holds the execution context for a function call.
 type callContext struct {
-	m *moduleDef
-	q *querybuilder.Selection
-	e *client.Client
-	c graphql.Client
+	q      *querybuilder.Selection
+	e      *client.Client
+	c      graphql.Client
+	mod    *moduleDef
+	loader *progrock.VertexRecorder
 }
 
 func (c *callContext) Select(name string) {
@@ -174,6 +173,9 @@ type FuncCommand struct {
 	// executing them.
 	Execute func(*callContext, *cobra.Command) error
 
+	// OnInit is called when the command is created and initialized, before execution.
+	OnInit func(*cobra.Command)
+
 	// OnSetFlags is called when the flags have finished being set for a subcommand.
 	OnSetFlags func(*cobra.Command, *modTypeDef) error
 
@@ -219,6 +221,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		}
 
 		fc.cmd.Flags().SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+
+		if fc.OnInit != nil {
+			fc.OnInit(fc.cmd)
+		}
 	}
 	return fc.cmd
 }
@@ -279,10 +285,11 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 		*/
 
 		c := &callContext{
-			m: modDef,
-			q: querybuilder.Query(),
-			c: dag.GraphQLClient(),
-			e: engineClient,
+			q:      querybuilder.Query(),
+			c:      dag.GraphQLClient(),
+			e:      engineClient,
+			mod:    modDef,
+			loader: vtx,
 		}
 
 		help, _ := cmd.Flags().GetBool("help")
@@ -345,13 +352,32 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			cmd.SetContext(ctx)
 			rec := progrock.FromContext(ctx)
 
-			c.m.LoadObject(fn.ReturnType)
+			c.mod.LoadObject(fn.ReturnType)
 
 			for _, arg := range fn.Args {
-				c.m.LoadObject(arg.TypeDef)
+				c.mod.LoadObject(arg.TypeDef)
 			}
 
-			fc.setFlags(cmd, fn)
+			argValues := make(map[string]any)
+
+			for _, arg := range fn.Args {
+				p, err := arg.AddFlag(cmd.Flags(), dag)
+				if err != nil {
+					return fmt.Errorf("set flag %q: %w", arg.FlagName(), err)
+				}
+				argValues[arg.Name] = p
+
+				// TODO: This won't work on its own because cobra checks required
+				// flags before the RunE function is called. We need to manually
+				// check the flags after parsing them.
+				if !arg.TypeDef.Optional {
+					cmd.MarkFlagRequired(arg.FlagName())
+				}
+			}
+
+			if fc.OnSetFlags != nil {
+				return fc.OnSetFlags(cmd, fn.ReturnType)
+			}
 
 			if err := cmd.ParseFlags(args); err != nil {
 				return fmt.Errorf("parse sub-command flags: %w", err)
@@ -360,12 +386,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
 
 			// Need to make the query selection before chaining off.
-			returnType, err := fc.selectFunc(fn, c, cmd.Flags(), dag)
+			returnType, err := fc.selectFunc(fn, c, argValues, dag)
 			if err != nil {
 				return fmt.Errorf("query selection: %w", err)
 			}
 
-			// leaf := isLeaf(returnType.Kind)
 			help, _ := cmd.Flags().GetBool("help")
 			cmdArgs := cmd.Flags().Args()
 
@@ -381,11 +406,17 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 
 			if fc.CheckReturnType != nil {
 				if err = fc.CheckReturnType(c, returnType); err != nil {
-					return fmt.Errorf("return type: %w", err)
+					return err
 				}
 			}
 
-			vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
+			c.loader.Complete()
+
+			vtx := rec.Vertex(
+				"cmd-func-exec",
+				fmt.Sprintf("running %q", cmd.CommandPath()),
+				progrock.Focused(),
+			)
 			defer func() { vtx.Done(err) }()
 
 			setCmdOutput(cmd, vtx)
@@ -429,47 +460,31 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 	return newCmd
 }
 
-// setFlags adds flags to the Cobra sub-command corresponding to this function..
-func (fc *FuncCommand) setFlags(cmd *cobra.Command, fn *modFunction) error {
-	for _, arg := range fn.Args {
-		err := fc.setFlag(cmd, arg)
-		if err != nil {
-			return fmt.Errorf("set flag %q: %w", arg.FlagName(), err)
-		}
-
-		// TODO: This won't work on its own because cobra checks required
-		// flags before the RunE function is called. We need to manually
-		// check the flags after parsing them.
-		if !arg.TypeDef.Optional {
-			cmd.MarkFlagRequired(arg.FlagName())
-		}
-	}
-
-	if fc.OnSetFlags != nil {
-		return fc.OnSetFlags(cmd, fn.ReturnType)
-	}
-
-	return nil
-}
-
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, flags *pflag.FlagSet, dag *dagger.Client) (*modTypeDef, error) {
+func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, argValues map[string]any, dag *dagger.Client) (*modTypeDef, error) {
 	c.Select(fn.Name)
 
-	ret := fn.ReturnType
-
 	// TODO: Check required flags.
+	// TODO: Handle default values.
+
 	for _, arg := range fn.Args {
-		arg := arg
-
-		val, err := fc.getValue(flags, arg, dag)
-		if err != nil {
-			return nil, fmt.Errorf("get value for flag %q: %w", arg.FlagName(), err)
+		val, ok := argValues[arg.Name]
+		if !ok {
+			return nil, fmt.Errorf("no value for argument: %s", arg.Name)
 		}
-
+		dv, ok := val.(DaggerValue)
+		if ok {
+			obj := dv.Get(dag)
+			if obj == nil {
+				return nil, fmt.Errorf("no value for argument: %s", arg.Name)
+			}
+			val = obj
+		}
 		c.Arg(arg.Name, val)
 	}
+
+	ret := fn.ReturnType
 
 	switch ret.Kind {
 	case dagger.Objectkind:
@@ -510,65 +525,4 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, flags *pflag.
 	}
 
 	return ret, nil
-}
-
-func (*FuncCommand) setFlag(cmd *cobra.Command, arg *modFunctionArg) error {
-	flags := cmd.Flags()
-
-	// TODO: Handle more types
-	switch arg.TypeDef.Kind {
-	case dagger.Stringkind:
-		flags.String(arg.FlagName(), "", arg.Description)
-	case dagger.Integerkind:
-		flags.Int(arg.FlagName(), 0, arg.Description)
-	case dagger.Booleankind:
-		flags.Bool(arg.FlagName(), false, arg.Description)
-	case dagger.Objectkind:
-		switch arg.TypeDef.AsObject.Name {
-		case Directory, File, Secret:
-			flags.String(arg.FlagName(), "", arg.Description)
-			switch arg.TypeDef.AsObject.Name {
-			case Directory:
-				return cmd.MarkFlagDirname(arg.flagName)
-			case File:
-				return cmd.MarkFlagFilename(arg.flagName)
-			}
-		default:
-			return fmt.Errorf("unsupported object type %q", arg.TypeDef.AsObject.Name)
-		}
-	default:
-		return fmt.Errorf("unsupported type %q", arg.TypeDef.Kind)
-	}
-	return nil
-}
-
-func (*FuncCommand) getValue(flags *pflag.FlagSet, arg *modFunctionArg, dag *dagger.Client) (any, error) {
-	// TODO: Handle more types
-	switch arg.TypeDef.Kind {
-	case dagger.Stringkind:
-		return flags.GetString(arg.FlagName())
-	case dagger.Integerkind:
-		return flags.GetInt(arg.FlagName())
-	case dagger.Booleankind:
-		return flags.GetBool(arg.FlagName())
-	case dagger.Objectkind:
-		val, err := flags.GetString(arg.FlagName())
-		if err != nil {
-			return nil, err
-		}
-		switch arg.TypeDef.AsObject.Name {
-		case Directory:
-			return dag.Host().Directory(val), nil
-		case File:
-			return dag.Host().File(val), nil
-		case Secret:
-			hash := sha256.Sum256([]byte(val))
-			name := hex.EncodeToString(hash[:])
-			return dag.SetSecret(name, val), nil
-		default:
-			return nil, fmt.Errorf("unsupported object type %q", arg.TypeDef.AsObject.Name)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported type %q", arg.TypeDef.Kind)
-	}
 }
