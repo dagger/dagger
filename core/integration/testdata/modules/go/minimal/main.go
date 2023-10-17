@@ -37,6 +37,10 @@ func (m *Minimal) Echoes(msgs []string) []string {
 	return []string{m.Echo(strings.Join(msgs, " "))}
 }
 
+func (m *Minimal) EchoesVariadic(msgs ...string) string {
+	return m.Echo(strings.Join(msgs, " "))
+}
+
 func (m *Minimal) HelloContext(ctx context.Context) string {
 	return "hello context"
 }

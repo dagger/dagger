@@ -481,6 +481,13 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
+	t.Run("func Echoes(...string) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: "hello")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
+	})
+
 	t.Run("func HelloContext(context.Context) string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)

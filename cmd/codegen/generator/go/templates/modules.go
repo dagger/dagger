@@ -321,6 +321,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 		for i := 0; i < sig.Params().Len(); i++ {
 			arg := sig.Params().At(i)
+			variadic := sig.Variadic() && i == sig.Params().Len()-1
 
 			if i == 0 && arg.Type().String() == "context.Context" {
 				fnCallArgs = append(fnCallArgs, Id("ctx"))
@@ -347,7 +348,11 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 						))
 				}
 
-				fnCallArgs = append(fnCallArgs, Id(optsName))
+				if variadic {
+					fnCallArgs = append(fnCallArgs, Id(optsName).Op("..."))
+				} else {
+					fnCallArgs = append(fnCallArgs, Id(optsName))
+				}
 			} else {
 				argName := strcase.ToLowerCamel(arg.Name())
 
@@ -360,7 +365,11 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 					checkErrStatement,
 				)
 
-				fnCallArgs = append(fnCallArgs, Id(argName))
+				if variadic {
+					fnCallArgs = append(fnCallArgs, Id(argName).Op("..."))
+				} else {
+					fnCallArgs = append(fnCallArgs, Id(argName))
+				}
 			}
 		}
 
