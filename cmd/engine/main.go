@@ -274,9 +274,12 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting up engine tracing")
+
 		tp, err := detect.TracerProvider()
 		if err != nil {
-			return err
+			// just log it, this can happen when there's mismatching versions of otel libraries in your
+			// module dependency DAG...
+			bklog.G(ctx).WithError(err).Error("failed to create tracer provider")
 		}
 
 		streamTracer := otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
@@ -711,7 +714,9 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 
 	tc, err := detect.Exporter()
 	if err != nil {
-		return nil, nil, err
+		// just log it, this can happen when there's mismatching versions of otel libraries in your
+		// module dependency DAG...
+		bklog.G(ctx).WithError(err).Error("failed to create tracer exporter")
 	}
 
 	var traceSocket string

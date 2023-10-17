@@ -333,6 +333,17 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 }
 
 func buildctlBin(c *dagger.Client, arch string) *dagger.File {
+	/* TODO: the commented code is what we *should* be doing, but need this PR to be merged:
+	https://github.com/moby/buildkit/pull/4318
+
+	The reason being that when we build buildctl using our go.mod, we end up
+	with conflicting otel deps w/ buildkit's upstream go.mod, which can cause
+	buildctl to crash.
+
+	So for now, we are falling back to just using buildctl from upstream's
+	image. This is okay temporarily because we don't need any customizations
+	to it.
+
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
@@ -343,6 +354,11 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 			"github.com/moby/buildkit/cmd/buildctl",
 		}).
 		File("./bin/buildctl")
+	*/
+
+	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From("moby/buildkit:master@sha256:f73a7d2d2441cfa5ced27bee8283f3b090a2232698484f7e4876e69a16d68a07").
+		File("/usr/bin/buildctl")
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
