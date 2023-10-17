@@ -32,23 +32,23 @@ Readers wishing to implement the recommended architecture pattern with GitLab CI
 
 
 First create a `values.yaml` to configure our Dagger Helm deployment.
-We are going to create a set of labels for the affinity and the taints/tolerations.
-In this example we choose the label `builder-node=true` to taint the nodes, on which the Dagger engineshoud be deployed on.   
+Then create a set of labels for the affinity and the taints/tolerations.
+In this example we choose the label `builder-node=true` to taint the nodes, on which the Dagger engine should be deployed on.   
 
 ```yaml file=./snippets/openshift-gitlab/values.yaml
 ```
 
-Before we deploy the engine, we have to execute following command for each node we want to run an engine on it.
+Before deploy the engine, execute following command for each node you want to run an engine on it.
 
 `oc adm taint nodes <node_name> builder-node=true:NoSchedule`
 
-Next we can execute the helm upgrade command to install the Dagger engine
+Next execute the helm upgrade command to install the Dagger engine
 
 ```bash
 helm upgrade --create-namespace --install --namespace dagger dagger oci://registry.dagger.io/dagger-helm -f values.yaml
 ```
 
-Next you have to grant the permissions for to the `default` Service Account in the dagger Namespace.
+Next grant the permissions for to the `default` Service Account in the dagger Namespace.
 This is necessary, otherwise OpenShift will prevent the Pod from creating due the lack of permissions to execute privileged containers with fixed user IDs and host path volume mounts.
 
 ```bash
@@ -59,7 +59,8 @@ oc adm policy add-scc-to-user privileged -z default -n dagger
 
 If you are not familliar with configuring GitLab Runners, then please read the documentation about how to [Configuring GitLab Runner on OpenShift](https://docs.gitlab.com/runner/configuration/configuring_runner_operator.html) first.
 
-First create the configuration for the Dagger GitLab Runner. Make sure to replace `<your_gitlab_url>` with your GitLab url (either with your self hosted instance or gitlab.com)
+First create the configuration for the Dagger GitLab Runner. Make sure to replace `<your_gitlab_url>` with your GitLab url (either with your self hosted instance or gitlab.com).
+In this file is also a matching configuration for the taint tolerations and the pod affinity. This ensures that the GitLab builder pod is running on nodes with a dagger eninge on it only.
 
 ```yaml file=./snippets/openshift-gitlab/runner-config.yaml
 ```
@@ -74,6 +75,7 @@ oc apply -f runner-config.yaml -n dagger
 ```yaml file=./snippets/openshift-gitlab/runner.yaml
 ```
 
+Then deploy the GitLab Runner itself. The Runner will take the ConfigMap with the name `dagger-custom-config-toml` for its configuration.
 
 ```bash
 oc apply -f runner.yaml -n dagger
