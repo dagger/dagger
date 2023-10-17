@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
+	"github.com/vito/progrock"
 	"go.opentelemetry.io/otel"
 
 	// load connection helpers
@@ -18,7 +19,7 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/ssh"
 )
 
-func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, *bkclient.Info, error) {
+func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string, loader *progrock.VertexRecorder) (*bkclient.Client, *bkclient.Info, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
@@ -34,11 +35,12 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 	}
 
 	exp, err := detect.Exporter()
-	if err != nil {
-		return nil, nil, err
-	}
-	if td, ok := exp.(bkclient.TracerDelegate); ok {
-		opts = append(opts, bkclient.WithTracerDelegate(td))
+	if err == nil {
+		if td, ok := exp.(bkclient.TracerDelegate); ok {
+			opts = append(opts, bkclient.WithTracerDelegate(td))
+		}
+	} else {
+		fmt.Fprintln(loader.Stdout(), "failed to detect opentelemetry exporter: ", err)
 	}
 
 	c, err := bkclient.New(ctx, buildkitdHost, opts...)
