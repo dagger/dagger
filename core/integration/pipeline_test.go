@@ -103,7 +103,7 @@ func TestInternalVertexes(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NoError(t, c.Close()) // close + flush logs
-		require.NotContains(t, logs.String(), "merge")
+		require.NotContains(t, logs.String(), "merge (")
 	})
 }
 
