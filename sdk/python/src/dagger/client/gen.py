@@ -169,13 +169,6 @@ class FunctionCallInput(Input):
 
 
 @dataclass(slots=True)
-class ModuleEnvironmentVariable(Input):
-    name: str
-
-    value: Optional[str] = None
-
-
-@dataclass(slots=True)
 class PipelineLabel(Input):
     """Key value object that represents a Pipeline label."""
 
@@ -222,6 +215,46 @@ class CacheVolume(Type):
 
 class Container(Type):
     """An OCI-compatible container, also known as a docker container."""
+
+    @typecheck
+    def as_tarball(
+        self,
+        *,
+        platform_variants: Optional[Sequence["Container"]] = None,
+        forced_compression: Optional[ImageLayerCompression] = None,
+        media_types: Optional[ImageMediaTypes] = None,
+    ) -> "File":
+        """Returns a File representing the container serialized to a tarball.
+
+        Parameters
+        ----------
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's
+            cache, that will be used (this can result in a mix of compression
+            algorithms for
+            different layers). If this is unset and a layer has no compressed
+            blob in the
+            engine's cache, then it will be compressed using Gzip.
+        media_types:
+            Use the specified media types for the image's layers. Defaults to
+            OCI, which
+            is largely compatible with most recent container runtimes, but
+            Docker may be needed
+            for older runtimes without OCI support.
+        """
+        _args = [
+            Arg("platformVariants", platform_variants, None),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, None),
+        ]
+        _ctx = self._select("asTarball", _args)
+        return File(_ctx)
 
     @typecheck
     def build(
@@ -1697,7 +1730,6 @@ class Directory(Type):
         self,
         *,
         source_subpath: Optional[str] = None,
-        runtime: Optional[Container] = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
@@ -1716,15 +1748,9 @@ class Directory(Type):
             from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
-        runtime:
-            A pre-built runtime container to use instead of building one from
-            the
-            source code. This is useful for bootstrapping.
-            You should ignore this unless you're building a Dagger SDK.
         """
         _args = [
             Arg("sourceSubpath", source_subpath, None),
-            Arg("runtime", runtime, None),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -3236,7 +3262,6 @@ class Module(Type):
         "_description",
         "_name",
         "_sdk",
-        "_sdk_runtime",
         "_serve",
         "_source_directory_sub_path",
     )
@@ -3245,7 +3270,6 @@ class Module(Type):
     _description: Optional[str]
     _name: Optional[str]
     _sdk: Optional[str]
-    _sdk_runtime: Optional[str]
     _serve: Optional[Void]
     _source_directory_sub_path: Optional[str]
 
@@ -3259,7 +3283,6 @@ class Module(Type):
             _description="description",
             _name="name",
             _sdk="sdk",
-            _sdk_runtime="sdkRuntime",
             _serve="serve",
             _source_directory_sub_path="sourceDirectorySubPath",
         )
@@ -3389,7 +3412,8 @@ class Module(Type):
 
     @typecheck
     async def sdk(self) -> str:
-        """The SDK used by this module
+        """The SDK used by this module. Either a name of a builtin SDK or a
+        module ref pointing to the SDK's implementation.
 
         Returns
         -------
@@ -3412,35 +3436,7 @@ class Module(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def sdk_runtime(self) -> str:
-        """The SDK runtime module image ref.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_sdk_runtime"):
-            return self._sdk_runtime
-        _args: list[Arg] = []
-        _ctx = self._select("sdkRuntime", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def serve(
-        self,
-        *,
-        environment: Optional[Sequence[ModuleEnvironmentVariable]] = None,
-    ) -> Optional[Void]:
+    async def serve(self) -> Optional[Void]:
         """Serve a module's API in the current session.
             Note: this can only be called once per session.
             In the future, it could return a stream or service to remove the
@@ -3461,9 +3457,7 @@ class Module(Type):
         """
         if hasattr(self, "_serve"):
             return self._serve
-        _args = [
-            Arg("environment", environment, None),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("serve", _args)
         return await _ctx.execute(Optional[Void])
 
@@ -3513,6 +3507,145 @@ class Module(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+class ModuleConfig(Type):
+    """Static configuration for a module (e.g. parsed contents of
+    dagger.json)"""
+
+    @typecheck
+    async def dependencies(self) -> Optional[list[str]]:
+        """Modules that this module depends on.
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def exclude(self) -> Optional[list[str]]:
+        """Exclude these file globs when loading the module root.
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("exclude", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def include(self) -> Optional[list[str]]:
+        """Include only these file globs when loading the module root.
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("include", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def root(self) -> Optional[str]:
+        """The root directory of the module's project, which may be above the
+        module source code.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("root", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def sdk(self) -> str:
+        """Either the name of a built-in SDK ('go', 'python', etc.) OR a module
+        reference pointing to the SDK's module implementation.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sdk", _args)
+        return await _ctx.execute(str)
 
 
 class ObjectTypeDef(Type):
@@ -3996,6 +4129,23 @@ class Client(Root):
         return Module(_ctx)
 
     @typecheck
+    def module_config(
+        self,
+        source_directory: Directory,
+        *,
+        subpath: Optional[str] = None,
+    ) -> ModuleConfig:
+        """Load the static configuration for a module from the given source
+        directory and optional subpath.
+        """
+        _args = [
+            Arg("sourceDirectory", source_directory),
+            Arg("subpath", subpath, None),
+        ]
+        _ctx = self._select("moduleConfig", _args)
+        return ModuleConfig(_ctx)
+
+    @typecheck
     def pipeline(
         self,
         name: str,
@@ -4413,6 +4563,7 @@ load_secret_from_id = _client.load_secret_from_id
 load_socket_from_id = _client.load_socket_from_id
 load_type_def_from_id = _client.load_type_def_from_id
 module = _client.module
+module_config = _client.module_config
 pipeline = _client.pipeline
 secret = _client.secret
 set_secret = _client.set_secret
@@ -4457,7 +4608,7 @@ __all__ = [
     "Label",
     "ListTypeDef",
     "Module",
-    "ModuleEnvironmentVariable",
+    "ModuleConfig",
     "ModuleID",
     "NetworkProtocol",
     "ObjectTypeDef",
@@ -4498,6 +4649,7 @@ __all__ = [
     "load_socket_from_id",
     "load_type_def_from_id",
     "module",
+    "module_config",
     "pipeline",
     "secret",
     "set_secret",

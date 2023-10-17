@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/modules"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -209,9 +209,6 @@ func updateModuleConfig(
 		return err
 	}
 
-	// pin dagger.json to the current runtime image version
-	modCfg.SyncSDKRuntime()
-
 	configPath := filepath.Join(moduleDir, modules.Filename)
 
 	cfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
@@ -255,7 +252,7 @@ func updateModuleConfig(
 		// remove it if it didn't exist already and something goes wrong
 		defer func() {
 			if rerr != nil {
-				os.RemoveAll(configPath)
+				os.Remove(configPath)
 			}
 		}()
 	default:

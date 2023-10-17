@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -19,6 +20,10 @@ const (
 	daggerBinName = "dagger" // CLI, not engine!
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
+
+	GoSDKEngineContainerTarballPath    = "/usr/local/share/dagger/go-module-sdk-image.tar"
+	PythonSDKEngineContainerModulePath = "/usr/local/share/dagger/python-sdk/runtime"
+
 	golangVersion = "1.21.2"
 	alpineVersion = "3.18"
 	runcVersion   = "v1.1.9"
@@ -216,6 +221,8 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
+		WithFile(GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -240,6 +247,48 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 }
 
 // helper functions for building the dev engine container
+
+func pythonSDK(c *dagger.Client) *dagger.Directory {
+	return Repository(c).Directory("sdk/python")
+}
+
+func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
+	// TODO: update this to use Container.AsTarball once released
+	ctx := context.Background()
+	tmpDir, err := os.MkdirTemp("", "dagger-go-sdk")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	tarballPath := filepath.Join(tmpDir, filepath.Base(GoSDKEngineContainerTarballPath))
+
+	_, err = c.Container().
+		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		WithFile("/usr/local/bin/codegen", goSDKCodegenBin(c, arch)).
+		WithEntrypoint([]string{"/usr/local/bin/codegen"}).
+		Export(ctx, tarballPath)
+	if err != nil {
+		panic(err)
+	}
+
+	f, err := c.Host().File(tarballPath).Sync(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
+func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
+	return goBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/codegen",
+			"./cmd/codegen",
+		}).
+		File("./bin/codegen")
+}
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that

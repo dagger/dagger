@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedCode id name objects sdk sdkRuntime serve sourceDirectory sourceDirectorySubPath withObject"
+          "dependencies dependencyConfig description generatedCode id name objects sdk serve sourceDirectory sourceDirectorySubPath withObject"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -78,7 +78,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "The SDK used by this module"
+    @doc "The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation."
     @spec sdk(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def sdk(%__MODULE__{} = module) do
       selection = select(module.selection, "sdk")
@@ -87,27 +87,10 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "The SDK runtime module image ref."
-    @spec sdk_runtime(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def sdk_runtime(%__MODULE__{} = module) do
-      selection = select(module.selection, "sdkRuntime")
-      execute(selection, module.client)
-    end
-  )
-
-  (
-    @doc "Serve a module's API in the current session.\n    Note: this can only be called once per session.\n    In the future, it could return a stream or service to remove the side effect.\n\n\n\n## Optional Arguments\n\n* `environment` -"
-    @spec serve(t(), keyword()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
-    def serve(%__MODULE__{} = module, optional_args \\ []) do
+    @doc "Serve a module's API in the current session.\n    Note: this can only be called once per session.\n    In the future, it could return a stream or service to remove the side effect."
+    @spec serve(t()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
+    def serve(%__MODULE__{} = module) do
       selection = select(module.selection, "serve")
-
-      selection =
-        if is_nil(optional_args[:environment]) do
-          selection
-        else
-          arg(selection, "environment", optional_args[:environment])
-        end
-
       execute(selection, module.client)
     end
   )

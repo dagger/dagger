@@ -669,6 +669,33 @@ type Container {
   ): Boolean!
 
   """
+  Returns a File representing the container serialized to a tarball.
+  """
+  asTarball(
+    """
+    Identifiers for other platform specific containers.
+    Used for multi-platform image.
+    """
+    platformVariants: [ContainerID!]
+
+    """
+    Force each layer of the image to use the specified compression algorithm.
+    If this is unset, then if a layer already has a compressed blob in the engine's
+    cache, that will be used (this can result in a mix of compression algorithms for
+    different layers). If this is unset and a layer has no compressed blob in the
+    engine's cache, then it will be compressed using Gzip.
+    """
+    forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the image's layers. Defaults to OCI, which
+    is largely compatible with most recent container runtimes, but Docker may be needed
+    for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
+  ): File!
+
+  """
   Reads the container from an OCI tarball.
 
   NOTE: this involves unpacking the tarball to an OCI store on the host at
