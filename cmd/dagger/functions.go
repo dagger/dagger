@@ -52,6 +52,20 @@ var funcListCmd = &FuncCommand{
 
 		for _, o := range c.mod.Objects {
 			if o.AsObject != nil {
+				for _, fn := range o.AsObject.Fields {
+					objName := o.AsObject.Name
+					if gqlObjectName(objName) == gqlObjectName(c.mod.Name) {
+						objName = "*" + objName
+					}
+
+					// TODO: Add another column with available verbs.
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+						objName,
+						fn.Name,
+						fn.Description,
+						printReturnType(fn.TypeDef),
+					)
+				}
 				for _, fn := range o.AsObject.Functions {
 					objName := o.AsObject.Name
 					if gqlObjectName(objName) == gqlObjectName(c.mod.Name) {
@@ -341,6 +355,10 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, dag *dagger.Client, o
 			subCmd := fc.makeSubCmd(ctx, dag, fn, c)
 			cmd.AddCommand(subCmd)
 		}
+		for _, field := range obj.Fields {
+			subCmd := fc.makeSubCmd(ctx, dag, &modFunction{Name: field.Name, Description: field.Description, ReturnType: field.TypeDef}, c)
+			cmd.AddCommand(subCmd)
+		}
 	}
 }
 
@@ -489,7 +507,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, argValues map
 	switch ret.Kind {
 	case dagger.Objectkind:
 		// Possible to continue chaining.
-		if len(ret.AsObject.Functions) > 0 {
+		if len(ret.AsObject.Functions) > 0 || len(ret.AsObject.Fields) > 0 {
 			break
 		}
 		// Otherwise this is a leaf.

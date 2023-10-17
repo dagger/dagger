@@ -481,6 +481,25 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
                                     }
                                 }
                             }
+                            fields {
+                                name
+                                description
+                                typeDef {
+                                    kind
+                                    optional
+                                    asObject {
+                                        name
+                                    }
+                                    asList {
+                                        elementTypeDef {
+                                            kind
+                                            asObject {
+                                                name
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -536,7 +555,7 @@ func (m *moduleDef) GetMainObject() *modObject {
 // object type with with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
 func (m *moduleDef) LoadObject(typeDef *modTypeDef) {
-	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil {
+	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
 		obj := m.GetObject(typeDef.AsObject.Name)
 		if obj != nil {
 			typeDef.AsObject = obj
@@ -556,11 +575,19 @@ type modTypeDef struct {
 type modObject struct {
 	Name      string
 	Functions []*modFunction
+	Fields    []*modField
 }
 
 // modList is a representation of dagger.ListTypeDef.
 type modList struct {
 	ElementTypeDef *modTypeDef
+}
+
+// modField is a representation of dagger.FieldTypeDef.
+type modField struct {
+	Name        string
+	Description string
+	TypeDef     *modTypeDef
 }
 
 // modFunction is a representation of dagger.Function.
