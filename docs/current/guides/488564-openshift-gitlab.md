@@ -11,7 +11,7 @@ date: "2023-09-22"
 
 ## Introduction
 
-This guide outlines how to set up a Continuous Integration (CI) environment with the Dagger Engine on OpenShift. It describes and explains the recommended architecture pattern and components, together with optional optimizations.
+This guide outlines how to set up a Continuous Integration (CI) environment with the Dagger Engine on OpenShift in combination with GitLab runners.
 
 ## Assumptions
 
@@ -19,12 +19,13 @@ This guide assumes that you have:
 
 - A good understanding of how OpenShift works, and of key Kubernetes components and add-ons.
 - A good understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/index.mdx).
+- Helm v3 installed on your local machine to deploy the Dagger engine
+- OC CLI installed on your local machine to communicate with the OpenShift cluster
 
 Readers wishing to implement the recommended architecture pattern with GitLab CI Runners, as described in the later section of this guide, should additionally have:
 
 - An functional OpenShift cluster with [Gitlab Runner Operator](https://docs.gitlab.com/runner/install/operator.html) installed.
 - A GitLab account or self hosted instance. If not, [sign up for a free GitLab account](https://gitlab.com/signup).
-- A Dagger Cloud account. If not, [sign up for Dagger Cloud](https://dagger.io/cloud).
 
 
 
