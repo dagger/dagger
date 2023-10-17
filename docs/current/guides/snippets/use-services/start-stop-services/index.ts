@@ -1,5 +1,4 @@
 import { connect, Client } from "@dagger.io/dagger"
-import fetch from "node-fetch"
 
 connect(
   async (client: Client) => {
