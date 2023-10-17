@@ -2,19 +2,6 @@ nameOverride: ""
 fullnameOverride: ""
 
 engine:
-  # Set engine.config if you needa custom Dagger Engine config file
-  # config: |
-  #  [[worker.oci.gcpolicy]]
-  #    keepBytes = "21474836480"
-  #    keepDuration="48h"
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: 2000m
-      memory: 6Gi
-
   image:
     repository: registry.dagger.io/engine
     tag: v0.8.2
@@ -29,12 +16,3 @@ engine:
         - matchExpressions:
           - key: builder-node
             operator: Exists
-  readinessProbeSettings: 
-    initialDelaySeconds: 5
-    timeoutSeconds: 30
-    periodSeconds: 15
-    successThreshold: 1
-    failureThreshold: 10
-  terminationGracePeriodSeconds: 300
-magicache:
-  enabled: false
