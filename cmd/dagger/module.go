@@ -371,7 +371,6 @@ func loadModCmdWrapper(
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.FromContext(ctx)
-			// TODO: printing os.Args can expose secret values passed as flags.
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 
