@@ -11,12 +11,14 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
-	"github.com/fatih/structtag"
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 )
 
-const daggerGenFilename = "dagger.gen.go"
+const (
+	daggerGenFilename = "dagger.gen.go"
+	contextTypename   = "context.Context"
+)
 
 /* TODO:
 * Handle types from 3rd party imports in the type signature
@@ -265,9 +267,44 @@ func renderNameOrStruct(t types.Type) string {
 	if ptr, ok := t.(*types.Pointer); ok {
 		return "*" + renderNameOrStruct(ptr.Elem())
 	}
+	if sl, ok := t.(*types.Slice); ok {
+		return "[]" + renderNameOrStruct(sl.Elem())
+	}
+	if st, ok := t.(*types.Struct); ok {
+		result := "struct {\n"
+		for i := 0; i < st.NumFields(); i++ {
+			if !st.Field(i).Embedded() {
+				result += st.Field(i).Name() + " "
+			}
+			result += renderNameOrStruct(st.Field(i).Type())
+			if tag := st.Tag(i); tag != "" {
+				result += " `" + tag + "`"
+			}
+			result += "\n"
+		}
+		result += "}"
+		return result
+	}
 	if named, ok := t.(*types.Named); ok {
-		// assume local
-		return named.Obj().Name()
+		// Assume local
+		//
+		// TODO: this isn't always true - we likely want to support returning
+		// types from other packages as well. However, this is tricky - how
+		// should we handle returning *time.Time? We should probably convert
+		// this to a graphql type that all langs can convert to their native
+		// representation.
+		base := named.Obj().Name()
+		if typeArgs := named.TypeArgs(); typeArgs.Len() > 0 {
+			base += "["
+			for i := 0; i < typeArgs.Len(); i++ {
+				if i > 0 {
+					base += ", "
+				}
+				base += renderNameOrStruct(typeArgs.At(i))
+			}
+			base += "]"
+		}
+		return base
 	}
 	// HACK(vito): this is passed to Id(), which is a bit weird, but works
 	return t.String()
@@ -304,7 +341,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 	}
 
 	for _, method := range methods {
-		fnName, sig := method.name, method.sig
+		fnName, sig := method.fn.Name(), method.fn.Type().(*types.Signature)
 
 		statements := []Code{
 			Var().Id("err").Error(),
@@ -319,58 +356,51 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 		fnCallArgs := []Code{Op("&").Id(parentVarName)}
 
-		for i := 0; i < sig.Params().Len(); i++ {
-			arg := sig.Params().At(i)
-			variadic := sig.Variadic() && i == sig.Params().Len()-1
-
-			if i == 0 && arg.Type().String() == "context.Context" {
+		vars := map[string]struct{}{}
+		for i, spec := range method.paramSpecs {
+			if i == 0 && spec.paramType.String() == contextTypename {
 				fnCallArgs = append(fnCallArgs, Id("ctx"))
 				continue
 			}
 
-			if opts, ok := namedOrDirectStruct(arg.Type()); ok {
-				optsName := arg.Name()
-
-				statements = append(statements,
-					Var().Id(optsName).Id(renderNameOrStruct(arg.Type())))
-
-				for f := 0; f < opts.NumFields(); f++ {
-					param := opts.Field(f)
-
-					argName := strcase.ToLowerCamel(param.Name())
-					statements = append(statements,
-						If(Id(inputArgsVar).Index(Lit(argName)).Op("!=").Nil()).Block(
-							Err().Op("=").Qual("json", "Unmarshal").Call(
-								Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argName))),
-								Op("&").Id(optsName).Dot(param.Name()),
-							),
-							checkErrStatement,
-						))
+			var target *Statement
+			if spec.parent == nil {
+				argName := strcase.ToLowerCamel(spec.name)
+				if _, ok := vars[argName]; !ok {
+					tp, access := findOptsAccessPattern(spec.paramType, Id(argName))
+					statements = append(statements, Var().Id(argName).Id(renderNameOrStruct(tp)))
+					if spec.variadic {
+						fnCallArgs = append(fnCallArgs, access.Op("..."))
+					} else {
+						fnCallArgs = append(fnCallArgs, access)
+					}
+					vars[argName] = struct{}{}
 				}
 
-				if variadic {
-					fnCallArgs = append(fnCallArgs, Id(optsName).Op("..."))
-				} else {
-					fnCallArgs = append(fnCallArgs, Id(optsName))
-				}
+				target = Id(argName)
 			} else {
-				argName := strcase.ToLowerCamel(arg.Name())
+				if _, ok := vars[spec.parent.name]; !ok {
+					tp, access := findOptsAccessPattern(spec.parent.paramType, Id(spec.parent.name))
+					statements = append(statements, Var().Id(spec.parent.name).Id(renderNameOrStruct(tp)))
+					if spec.variadic {
+						fnCallArgs = append(fnCallArgs, access.Op("..."))
+					} else {
+						fnCallArgs = append(fnCallArgs, access)
+					}
+					vars[spec.parent.name] = struct{}{}
+				}
 
-				statements = append(statements,
-					Var().Id(argName).Id(renderNameOrStruct(arg.Type())),
+				target = Id(spec.parent.name).Dot(spec.name)
+			}
+
+			statements = append(statements,
+				If(Id(inputArgsVar).Index(Lit(spec.graphqlName())).Op("!=").Nil()).Block(
 					Err().Op("=").Qual("json", "Unmarshal").Call(
-						Index().Byte().Parens(Id(inputArgsVar).Index(Lit(argName))),
-						Op("&").Id(argName),
+						Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.graphqlName()))),
+						Op("&").Add(target),
 					),
 					checkErrStatement,
-				)
-
-				if variadic {
-					fnCallArgs = append(fnCallArgs, Id(argName).Op("..."))
-				} else {
-					fnCallArgs = append(fnCallArgs, Id(argName))
-				}
-			}
+				))
 		}
 
 		results := sig.Results()
@@ -451,8 +481,9 @@ type parseState struct {
 }
 
 type method struct {
-	name string
-	sig  *types.Signature
+	fn *types.Func
+
+	paramSpecs []paramSpec
 }
 
 func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*Statement, error) {
@@ -643,12 +674,11 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 
 	// stash away the method signature so we can remember details on how it's
 	// invoked (e.g. no error return, no ctx arg, error-only return, etc)
-	ps.methods[typeName] = append(ps.methods[typeName], method{
-		name: fn.Name(),
-		sig:  methodSig,
-	})
-
-	var err error
+	specs, err := ps.parseParamSpecs(fn)
+	if err != nil {
+		return nil, err
+	}
+	ps.methods[typeName] = append(ps.methods[typeName], method{fn: fn, paramSpecs: specs})
 
 	var fnReturnType *Statement
 
@@ -686,99 +716,190 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 		fnDef = dotLine(fnDef, "WithDescription").Call(Lit(doc.Text()))
 	}
 
-	for i := 0; i < methodSig.Params().Len(); i++ {
-		param := methodSig.Params().At(i)
-
-		if i == 0 && param.Type().String() == "context.Context" {
+	for i, spec := range specs {
+		if i == 0 && spec.paramType.String() == contextTypename {
 			// ignore ctx arg
 			continue
 		}
 
-		if opts, ok := namedOrDirectStruct(param.Type()); ok {
-			for f := 0; f < opts.NumFields(); f++ {
-				param := opts.Field(f)
-
-				tags, err := structtag.Parse(opts.Tag(f))
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse struct tag: %w", err)
-				}
-
-				argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert param type: %w", err)
-				}
-
-				argOptional := true
-				if tags != nil {
-					if tag, err := tags.Get("required"); err == nil {
-						argOptional = tag.Value() == "true"
-					}
-				}
-
-				// all values in a struct are optional
-				argTypeDef = argTypeDef.Dot("WithOptional").Call(Lit(argOptional))
-
-				// arguments to WithArg
-				argArgs := []Code{
-					Lit(param.Name()),
-					argTypeDef,
-				}
-
-				argOpts := []Code{}
-
-				if tags != nil {
-					// TODO: support this?
-					// if tag, err := tags.Get("name"); err == nil {
-					// 	def.Name = tag.Value()
-					// }
-
-					if tag, err := tags.Get("doc"); err == nil {
-						argOpts = append(argOpts, Id("Description").Op(":").Lit(tag.Value()))
-					}
-
-					if tag, err := tags.Get("default"); err == nil {
-						var jsonEnc string
-						if param.Type().String() == "string" {
-							enc, err := json.Marshal(tag.Value())
-							if err != nil {
-								return nil, fmt.Errorf("failed to marshal default value: %w", err)
-							}
-							jsonEnc = string(enc)
-						} else {
-							jsonEnc = tag.Value() // assume JSON encoded
-						}
-						argOpts = append(argOpts, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(jsonEnc)))
-					}
-				}
-
-				if len(argOpts) > 0 {
-					argArgs = append(argArgs, Id("FunctionWithArgOpts").Values(argOpts...))
-				}
-
-				fnDef = dotLine(fnDef, "WithArg").Call(argArgs...)
-			}
-		} else {
-			argTypeDef, err := ps.goTypeToAPIType(param.Type(), nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert param type: %w", err)
-			}
-
-			fnDef = dotLine(fnDef, "WithArg").Call(Lit(param.Name()), argTypeDef)
+		typeDef, err := ps.goTypeToAPIType(spec.baseType, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert param type: %w", err)
 		}
+		if spec.optional {
+			typeDef = typeDef.Dot("WithOptional").Call(Lit(true))
+		}
+
+		// arguments to WithArg
+		args := []Code{Lit(spec.graphqlName()), typeDef}
+
+		argOpts := []Code{}
+		if spec.description != "" {
+			argOpts = append(argOpts, Id("Description").Op(":").Lit(spec.description))
+		}
+		if spec.defaultValue != "" {
+			var jsonEnc string
+			if spec.baseType.String() == "string" {
+				enc, err := json.Marshal(spec.defaultValue)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal default value: %w", err)
+				}
+				jsonEnc = string(enc)
+			} else {
+				jsonEnc = spec.defaultValue
+			}
+			argOpts = append(argOpts, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(jsonEnc)))
+		}
+		if len(argOpts) > 0 {
+			args = append(args, Id("FunctionWithArgOpts").Values(argOpts...))
+		}
+
+		fnDef = dotLine(fnDef, "WithArg").Call(args...)
 	}
 
 	return fnDef, nil
 }
 
-func namedOrDirectStruct(t types.Type) (*types.Struct, bool) {
-	switch x := t.(type) {
-	case *types.Named:
-		return namedOrDirectStruct(x.Underlying())
-	case *types.Struct:
-		return x, true
-	default:
-		return nil, false
+func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
+	sig := fn.Type().(*types.Signature)
+	params := sig.Params()
+	if params.Len() == 0 {
+		return nil, nil
 	}
+
+	specs := make([]paramSpec, 0, params.Len())
+
+	i := 0
+	if params.At(i).Type().String() == contextTypename {
+		spec, err := ps.parseParamSpecVar(params.At(i))
+		if err != nil {
+			return nil, err
+		}
+		specs = append(specs, spec)
+
+		i++
+	}
+
+	fnDecl, err := ps.declForFunc(fn)
+	if err != nil {
+		return nil, err
+	}
+
+	if i+1 == params.Len() {
+		param := params.At(i)
+		paramType, ok := asInlineStruct(param.Type())
+		if ok {
+			stype, ok := asInlineStructAst(fnDecl.Type.Params.List[i].Type)
+			if !ok {
+				return nil, fmt.Errorf("expected struct type for %s", param.Name())
+			}
+
+			parent := &paramSpec{
+				name:      params.At(i).Name(),
+				paramType: param.Type(),
+				baseType:  param.Type(),
+			}
+
+			for f := 0; f < paramType.NumFields(); f++ {
+				spec, err := ps.parseParamSpecVar(paramType.Field(f))
+				if err != nil {
+					return nil, err
+				}
+				spec.parent = parent
+				spec.description = stype.Fields.List[f].Doc.Text()
+				if spec.description == "" {
+					spec.description = stype.Fields.List[f].Comment.Text()
+				}
+				spec.description = strings.TrimSpace(spec.description)
+				specs = append(specs, spec)
+			}
+			return specs, nil
+		}
+	}
+
+	for ; i < params.Len(); i++ {
+		spec, err := ps.parseParamSpecVar(params.At(i))
+		if err != nil {
+			return nil, err
+		}
+		if sig.Variadic() && i == params.Len()-1 {
+			spec.variadic = true
+		}
+
+		pos := fnDecl.Type.Params.List[i].Pos()
+		if cmt, err := ps.commentForPos(pos - 1); err == nil {
+			spec.description = cmt.Text()
+			spec.description = strings.TrimSpace(spec.description)
+		}
+
+		specs = append(specs, spec)
+	}
+	return specs, nil
+}
+
+func (ps *parseState) parseParamSpecVar(field *types.Var) (paramSpec, error) {
+	if _, ok := field.Type().(*types.Struct); ok {
+		return paramSpec{}, fmt.Errorf("nested structs are not supported")
+	}
+
+	paramType := field.Type()
+	baseType := paramType
+	for {
+		ptr, ok := baseType.(*types.Pointer)
+		if !ok {
+			break
+		}
+		baseType = ptr.Elem()
+	}
+
+	optional := false
+	if named, ok := baseType.(*types.Named); ok {
+		if named.Obj().Name() == "Optional" {
+			typeArgs := named.TypeArgs()
+			if typeArgs.Len() != 1 {
+				return paramSpec{}, fmt.Errorf("optional type must have exactly one type argument")
+			}
+			optional = true
+
+			baseType = typeArgs.At(0)
+			for {
+				ptr, ok := baseType.(*types.Pointer)
+				if !ok {
+					break
+				}
+				baseType = ptr.Elem()
+			}
+		}
+	}
+
+	return paramSpec{
+		name:      field.Name(),
+		paramType: paramType,
+		baseType:  baseType,
+		optional:  optional,
+	}, nil
+}
+
+type paramSpec struct {
+	name        string
+	description string
+
+	// paramType is the full type declared in the function signature, which may
+	// include pointer types, Optional, etc
+	paramType types.Type
+	// baseType is the simplified base type derived from the function signature
+	baseType types.Type
+
+	optional bool
+	variadic bool
+
+	defaultValue string
+
+	parent *paramSpec
+}
+
+func (spec *paramSpec) graphqlName() string {
+	return strcase.ToLowerCamel(spec.name)
 }
 
 // typeSpecForNamedType returns the *ast* type spec for the given Named type. This is needed
@@ -832,4 +953,75 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 		}
 	}
 	return nil, fmt.Errorf("no decl for %s", fnType.Name())
+}
+
+// commentForPos returns the *ast* comment group for the given position. This
+// is needed because function args (despite being fields) don't have comments
+// associated with them, so this is a neat little hack to get them out.
+func (ps *parseState) commentForPos(pos token.Pos) (*ast.CommentGroup, error) {
+	tokenFile := ps.fset.File(pos)
+	if tokenFile == nil {
+		return nil, fmt.Errorf("no file for position %d", pos)
+	}
+	for _, f := range ps.pkg.Syntax {
+		if ps.fset.File(f.Pos()) != tokenFile {
+			continue
+		}
+
+		// take the last position in the last line, and try and find a comment
+		// that contains it
+		line := tokenFile.Line(pos)
+		pos := tokenFile.LineStart(line) - 1
+		for _, comment := range f.Comments {
+			if pos >= comment.Pos() && pos <= comment.End() {
+				return comment, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("no decl for position %d", pos)
+}
+
+// findOptsAccessPattern takes a type and a base statement (the name of a
+// variable that has the target type) and produces a type that can be used in a
+// variable declaration, as well as a statement that has the same type as the
+// target statement.
+//
+// This is essentially for helping resolve the pointeriness of types: a type of
+// **T and a variable p becomes T and &&p. This means we can *always* construct
+// an Opts object and unmarshal into it without having nil dereferences.
+func findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statement) {
+	switch t := t.(type) {
+	case *types.Pointer:
+		// taking the address of an address isn't allowed - so we use a ptr
+		// helper function
+		t2, val := findOptsAccessPattern(t.Elem(), access)
+		return t2, Id("ptr").Call(val)
+	// case *types.Slice:
+	// 	t2, val := findOptsAccessPattern(t.Elem(), access)
+	// 	return t2, Index().Id(renderNameOrStruct(t.Elem())).Values(val)
+	default:
+		return t, access
+	}
+}
+
+func asInlineStruct(t types.Type) (*types.Struct, bool) {
+	switch t := t.(type) {
+	case *types.Pointer:
+		return asInlineStruct(t.Elem())
+	case *types.Struct:
+		return t, true
+	default:
+		return nil, false
+	}
+}
+
+func asInlineStructAst(t ast.Node) (*ast.StructType, bool) {
+	switch t := t.(type) {
+	case *ast.StarExpr:
+		return asInlineStructAst(t.X)
+	case *ast.StructType:
+		return t, true
+	default:
+		return nil, false
+	}
 }

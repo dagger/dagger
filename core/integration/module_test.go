@@ -16,6 +16,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -474,6 +475,16 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoPointerPointer":"hello...hello...hello..."}}`, out)
 	})
 
+	t.Run("func EchoOptional(string) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptional":"hello...hello...hello..."}}`, out)
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptional}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
+	})
+
 	t.Run("func Echoes([]string) []string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
@@ -481,7 +492,7 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
-	t.Run("func Echoes(...string) string", func(t *testing.T) {
+	t.Run("func EchoesVariadic(...string) string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -523,29 +534,200 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"helloVoidError":null}}`, out)
 	})
 
-	t.Run("func EchoOpts(string, Opts) error", func(t *testing.T) {
+	t.Run("func EchoOpts(string, string, int) error", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"echoOpts":"hi...hi...hi..."}}`, out)
+		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
 
 		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 	})
 
-	t.Run("func EchoOptsInline(string, struct{Suffix string, Times int}) error", func(t *testing.T) {
+	t.Run("func EchoOptsInline(struct{string, string, int}) error", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi...hi...hi..."}}`, out)
+		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi"}}`, out)
 
 		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi!hi!"}}`, out)
 	})
+
+	t.Run("func EchoOptsInlinePointer(*struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlinePointer(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlinePointer":"hi"}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlinePointer(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlinePointer":"hi!hi!"}}`, out)
+	})
+
+	t.Run("func EchoOptsInlineCtx(ctx, struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineCtx(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlineCtx":"hi"}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlineCtx(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlineCtx":"hi!hi!"}}`, out)
+	})
+
+	t.Run("func EchoOptsInlineTags(struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineTags(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi"}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlineTags(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi!hi!"}}`, out)
+	})
+}
+
+func TestModuleGoDocs(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: goSignatures,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	inspectModule := daggerQuery(`
+query {
+  host {
+    directory(path: ".") {
+      asModule {
+        objects {
+          asObject {
+            name
+            functions {
+              name
+              description
+              args {
+                name
+                description
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+	`)
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	require.Equal(t, "Minimal", obj.Get("name").String())
+
+	hello := obj.Get(`functions.#(name="hello")`)
+	require.Equal(t, "hello", hello.Get("name").String())
+	require.Empty(t, hello.Get("description").String())
+	require.Empty(t, hello.Get("args").Array())
+
+	// test the args-based form
+	echoOpts := obj.Get(`functions.#(name="echoOpts")`)
+	require.Equal(t, "echoOpts", echoOpts.Get("name").String())
+	require.Equal(t, "EchoOpts does some opts things", echoOpts.Get("description").String())
+	require.Len(t, echoOpts.Get("args").Array(), 3)
+	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+
+	// test the inline struct form
+	echoOpts = obj.Get(`functions.#(name="echoOptsInline")`)
+	require.Equal(t, "echoOptsInline", echoOpts.Get("name").String())
+	require.Equal(t, "EchoOptsInline does some opts things", echoOpts.Get("description").String())
+	require.Len(t, echoOpts.Get("args").Array(), 3)
+	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+}
+
+func TestModuleGoSignaturesMixMatch(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
+	return name
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	require.Error(t, err)
+}
+
+func TestModuleGoSignaturesIDable(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+type Custom struct {
+	Data string
+}
+
+func (m *Minimal) Hello() string {
+	return "hello"
+}
+
+func (m *Minimal) UseCustom(custom *Custom) string {
+	return custom.Data
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	// Currently, IDable modules are *not* supported, and should fail with an
+	// error that fails to find the ID type.
+	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Undefined type MinimalCustomID")
 }
 
 //go:embed testdata/modules/go/extend/main.go

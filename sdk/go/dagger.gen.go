@@ -25,6 +25,42 @@ func assertNotNil(argName string, value any) {
 	}
 }
 
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+type Optional[T comparable] struct {
+	value T
+	isSet bool
+}
+
+func Opt[T comparable](v T) Optional[T] {
+	return Optional[T]{value: v, isSet: true}
+}
+
+func (o Optional[T]) Get() (T, bool) {
+	var zero T
+	return o.value, o.isSet || o.value != zero
+}
+
+func (o Optional[T]) GetOr(defaultValue T) T {
+	value, ok := o.Get()
+	if !ok {
+		return defaultValue
+	}
+	return value
+}
+
+func (o *Optional[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&o.value)
+}
+
+func (o *Optional[T]) UnmarshalJSON(dt []byte) error {
+	o.isSet = true
+	return json.Unmarshal(dt, &o.value)
+}
+
 // A global cache volume identifier.
 type CacheVolumeID string
 
