@@ -7,6 +7,44 @@ defmodule Dagger.Container do
   defstruct [:selection, :client]
 
   (
+    @doc "Returns a File representing the container serialized to a tarball.\n\n\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip.\n* `media_types` - Use the specified media types for the image's layers. Defaults to OCI, which\nis largely compatible with most recent container runtimes, but Docker may be needed\nfor older runtimes without OCI support."
+    @spec as_tarball(t(), keyword()) :: Dagger.File.t()
+    def as_tarball(%__MODULE__{} = container, optional_args \\ []) do
+      selection = select(container.selection, "asTarball")
+
+      selection =
+        if is_nil(optional_args[:platform_variants]) do
+          selection
+        else
+          ids =
+            optional_args[:platform_variants]
+            |> Enum.map(fn value ->
+              {:ok, id} = Dagger.Container.id(value)
+              id
+            end)
+
+          arg(selection, "platformVariants", ids)
+        end
+
+      selection =
+        if is_nil(optional_args[:forced_compression]) do
+          selection
+        else
+          arg(selection, "forcedCompression", optional_args[:forced_compression])
+        end
+
+      selection =
+        if is_nil(optional_args[:media_types]) do
+          selection
+        else
+          arg(selection, "mediaTypes", optional_args[:media_types])
+        end
+
+      %Dagger.File{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n\nDefault: './Dockerfile'.\n* `build_args` - Additional build arguments.\n* `target` - Target build stage to build.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name] in the build container\n\nThey can be accessed in the Dockerfile using the \"secret\" mount type\nand mount path /run/secrets/[secret-name]\ne.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)\""
     @spec build(t(), Dagger.Directory.t(), keyword()) :: Dagger.Container.t()
     def build(%__MODULE__{} = container, context, optional_args \\ []) do

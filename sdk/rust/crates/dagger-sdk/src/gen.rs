@@ -255,11 +255,6 @@ pub struct FunctionCallInput {
     pub value: Json,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct ModuleEnvironmentVariable {
-    pub name: String,
-    pub value: String,
-}
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
     pub name: String,
     pub value: String,
@@ -281,6 +276,25 @@ pub struct Container {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerAsTarballOpts {
+    /// Force each layer of the image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's
+    /// cache, that will be used (this can result in a mix of compression algorithms for
+    /// different layers). If this is unset and a layer has no compressed blob in the
+    /// engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the image's layers. Defaults to OCI, which
+    /// is largely compatible with most recent container runtimes, but Docker may be needed
+    /// for older runtimes without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+    /// Identifiers for other platform specific containers.
+    /// Used for multi-platform image.
+    #[builder(setter(into, strip_option), default)]
+    pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerBuildOpts<'a> {
@@ -515,6 +529,41 @@ pub struct ContainerWithoutExposedPortOpts {
     pub protocol: Option<NetworkProtocol>,
 }
 impl Container {
+    /// Returns a File representing the container serialized to a tarball.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_tarball(&self) -> File {
+        let query = self.selection.select("asTarball");
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Returns a File representing the container serialized to a tarball.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_tarball_opts(&self, opts: ContainerAsTarballOpts) -> File {
+        let mut query = self.selection.select("asTarball");
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
+        }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg_enum("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg_enum("mediaTypes", media_types);
+        }
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Initializes this container from a Dockerfile build.
     ///
     /// # Arguments
@@ -1884,11 +1933,6 @@ pub struct Directory {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
-    /// A pre-built runtime container to use instead of building one from the
-    /// source code. This is useful for bootstrapping.
-    /// You should ignore this unless you're building a Dagger SDK.
-    #[builder(setter(into, strip_option), default)]
-    pub runtime: Option<ContainerId>,
     /// An optional subpath of the directory which contains the module's source
     /// code.
     /// This is needed when the module code is in a subdirectory but requires
@@ -1988,9 +2032,6 @@ impl Directory {
         let mut query = self.selection.select("asModule");
         if let Some(source_subpath) = opts.source_subpath {
             query = query.arg("sourceSubpath", source_subpath);
-        }
-        if let Some(runtime) = opts.runtime {
-            query = query.arg("runtime", runtime);
         }
         return Module {
             proc: self.proc.clone(),
@@ -3077,11 +3118,6 @@ pub struct Module {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleServeOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub environment: Option<Vec<ModuleEnvironmentVariable>>,
-}
 impl Module {
     /// Modules used by this module
     pub fn dependencies(&self) -> Vec<Module> {
@@ -3130,39 +3166,16 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
-    /// The SDK used by this module
+    /// The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
     pub async fn sdk(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sdk");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The SDK runtime module image ref.
-    pub async fn sdk_runtime(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sdkRuntime");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session.
     /// In the future, it could return a stream or service to remove the side effect.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn serve(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("serve");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Serve a module's API in the current session.
-    /// Note: this can only be called once per session.
-    /// In the future, it could return a stream or service to remove the side effect.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn serve_opts(&self, opts: ModuleServeOpts) -> Result<Void, DaggerError> {
-        let mut query = self.selection.select("serve");
-        if let Some(environment) = opts.environment {
-            query = query.arg("environment", environment);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The directory containing the module's source code
@@ -3194,6 +3207,44 @@ impl Module {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+}
+#[derive(Clone)]
+pub struct ModuleConfig {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ModuleConfig {
+    /// Modules that this module depends on.
+    pub async fn dependencies(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("dependencies");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Exclude these file globs when loading the module root.
+    pub async fn exclude(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("exclude");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Include only these file globs when loading the module root.
+    pub async fn include(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("include");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the module.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The root directory of the module's project, which may be above the module source code.
+    pub async fn root(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("root");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
+    pub async fn sdk(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sdk");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -3287,6 +3338,11 @@ pub struct QueryHttpOpts {
     /// A service which must be started before the URL is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ContainerId>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryModuleConfigOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub subpath: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryPipelineOpts<'a> {
@@ -3732,6 +3788,53 @@ impl Query {
     pub fn module(&self) -> Module {
         let query = self.selection.select("module");
         return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load the static configuration for a module from the given source directory and optional subpath.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_config(&self, source_directory: Directory) -> ModuleConfig {
+        let mut query = self.selection.select("moduleConfig");
+        query = query.arg_lazy(
+            "sourceDirectory",
+            Box::new(move || {
+                let source_directory = source_directory.clone();
+                Box::pin(async move { source_directory.id().await.unwrap().quote() })
+            }),
+        );
+        return ModuleConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load the static configuration for a module from the given source directory and optional subpath.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_config_opts<'a>(
+        &self,
+        source_directory: Directory,
+        opts: QueryModuleConfigOpts<'a>,
+    ) -> ModuleConfig {
+        let mut query = self.selection.select("moduleConfig");
+        query = query.arg_lazy(
+            "sourceDirectory",
+            Box::new(move || {
+                let source_directory = source_directory.clone();
+                Box::pin(async move { source_directory.id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(subpath) = opts.subpath {
+            query = query.arg("subpath", subpath);
+        }
+        return ModuleConfig {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

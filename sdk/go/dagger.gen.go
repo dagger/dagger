@@ -88,12 +88,6 @@ type FunctionCallInput struct {
 	Value JSON `json:"value,omitempty"`
 }
 
-type ModuleEnvironmentVariable struct {
-	Name string `json:"name,omitempty"`
-
-	Value string `json:"value,omitempty"`
-}
-
 // Key value object that represents a Pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -178,6 +172,47 @@ type WithContainerFunc func(r *Container) *Container
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *Container) With(f WithContainerFunc) *Container {
 	return f(r)
+}
+
+// ContainerAsTarballOpts contains options for Container.AsTarball
+type ContainerAsTarballOpts struct {
+	// Identifiers for other platform specific containers.
+	// Used for multi-platform image.
+	PlatformVariants []*Container
+	// Force each layer of the image to use the specified compression algorithm.
+	// If this is unset, then if a layer already has a compressed blob in the engine's
+	// cache, that will be used (this can result in a mix of compression algorithms for
+	// different layers). If this is unset and a layer has no compressed blob in the
+	// engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Use the specified media types for the image's layers. Defaults to OCI, which
+	// is largely compatible with most recent container runtimes, but Docker may be needed
+	// for older runtimes without OCI support.
+	MediaTypes ImageMediaTypes
+}
+
+// Returns a File representing the container serialized to a tarball.
+func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
+	q := r.q.Select("asTarball")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platformVariants` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+		}
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
 }
 
 // ContainerBuildOpts contains options for Container.Build
@@ -1474,11 +1509,6 @@ type DirectoryAsModuleOpts struct {
 	// If not set, the module source code is loaded from the root of the
 	// directory.
 	SourceSubpath string
-	// A pre-built runtime container to use instead of building one from the
-	// source code. This is useful for bootstrapping.
-	//
-	// You should ignore this unless you're building a Dagger SDK.
-	Runtime *Container
 }
 
 // Load the directory as a Dagger module
@@ -1488,10 +1518,6 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 		// `sourceSubpath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceSubpath) {
 			q = q.Arg("sourceSubpath", opts[i].SourceSubpath)
-		}
-		// `runtime` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Runtime) {
-			q = q.Arg("runtime", opts[i].Runtime)
 		}
 	}
 
@@ -2799,7 +2825,6 @@ type Module struct {
 	id                     *ModuleID
 	name                   *string
 	sdk                    *string
-	sdkRuntime             *string
 	serve                  *Void
 	sourceDirectorySubPath *string
 }
@@ -2966,7 +2991,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// The SDK used by this module
+// The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
 func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
@@ -2979,39 +3004,15 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The SDK runtime module image ref.
-func (r *Module) SDKRuntime(ctx context.Context) (string, error) {
-	if r.sdkRuntime != nil {
-		return *r.sdkRuntime, nil
-	}
-	q := r.q.Select("sdkRuntime")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// ModuleServeOpts contains options for Module.Serve
-type ModuleServeOpts struct {
-	Environment []ModuleEnvironmentVariable
-}
-
 // Serve a module's API in the current session.
 //
 //	Note: this can only be called once per session.
 //	In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) (Void, error) {
+func (r *Module) Serve(ctx context.Context) (Void, error) {
 	if r.serve != nil {
 		return *r.serve, nil
 	}
 	q := r.q.Select("serve")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `environment` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Environment) {
-			q = q.Arg("environment", opts[i].Environment)
-		}
-	}
 
 	var response Void
 
@@ -3052,6 +3053,85 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Static configuration for a module (e.g. parsed contents of dagger.json)
+type ModuleConfig struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	name *string
+	root *string
+	sdk  *string
+}
+
+// Modules that this module depends on.
+func (r *ModuleConfig) Dependencies(ctx context.Context) ([]string, error) {
+	q := r.q.Select("dependencies")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Exclude these file globs when loading the module root.
+func (r *ModuleConfig) Exclude(ctx context.Context) ([]string, error) {
+	q := r.q.Select("exclude")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Include only these file globs when loading the module root.
+func (r *ModuleConfig) Include(ctx context.Context) ([]string, error) {
+	q := r.q.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the module.
+func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The root directory of the module's project, which may be above the module source code.
+func (r *ModuleConfig) Root(ctx context.Context) (string, error) {
+	if r.root != nil {
+		return *r.root, nil
+	}
+	q := r.q.Select("root")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
+func (r *ModuleConfig) SDK(ctx context.Context) (string, error) {
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
+	q := r.q.Select("sdk")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A definition of a custom object defined in a Module.
@@ -3546,6 +3626,29 @@ func (r *Client) Module() *Module {
 	q := r.q.Select("module")
 
 	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ModuleConfigOpts contains options for Client.ModuleConfig
+type ModuleConfigOpts struct {
+	Subpath string
+}
+
+// Load the static configuration for a module from the given source directory and optional subpath.
+func (r *Client) ModuleConfig(sourceDirectory *Directory, opts ...ModuleConfigOpts) *ModuleConfig {
+	assertNotNil("sourceDirectory", sourceDirectory)
+	q := r.q.Select("moduleConfig")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `subpath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subpath) {
+			q = q.Arg("subpath", opts[i].Subpath)
+		}
+	}
+	q = q.Arg("sourceDirectory", sourceDirectory)
+
+	return &ModuleConfig{
 		q: q,
 		c: r.c,
 	}
