@@ -18,11 +18,17 @@ import (
 	"github.com/vito/progrock"
 )
 
-var shellIsContainer bool
+var (
+	shellIsContainer bool
+	shellEntrypoint  []string
+)
 
 var shellCmd = &FuncCommand{
 	Name:  "shell",
 	Short: "Open a shell in a container",
+	OnInit: func(cmd *cobra.Command) {
+		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
+	},
 	OnSelectObject: func(c *callContext, name string) (*modTypeDef, error) {
 		if name == Container {
 			c.Select("id")
@@ -35,6 +41,17 @@ var shellCmd = &FuncCommand{
 		if !shellIsContainer {
 			return fmt.Errorf("shell can only be called on a container")
 		}
+
+		// Even though these flags are global, we only check them just before query
+		// execution because you may want to debug an error during loading or for
+		// --help.
+		if silent || !(progress == "auto" && autoTTY || progress == "tty") {
+			return fmt.Errorf("running shell without the TUI is not supported")
+		}
+		if debug {
+			return fmt.Errorf("running shell with --debug is not supported")
+		}
+
 		return nil
 	},
 	OnResult: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, result *any) error {
@@ -47,6 +64,12 @@ var shellCmd = &FuncCommand{
 		ctr := c.e.Dagger().Container(dagger.ContainerOpts{
 			ID: dagger.ContainerID(ctrID),
 		})
+
+		if shellEntrypoint != nil {
+			ctr = ctr.WithExec(shellEntrypoint, dagger.ContainerWithExecOpts{
+				SkipEntrypoint: true,
+			})
+		}
 
 		shellEndpoint, err := ctr.ShellEndpoint(ctx)
 		if err != nil {
