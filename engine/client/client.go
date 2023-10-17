@@ -188,7 +188,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 
 	engineTask := loader.Task("starting engine")
-	bkClient, err := newBuildkitClient(ctx, remote, c.UserAgent)
+	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.UserAgent)
 	engineTask.Done(err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
@@ -202,11 +202,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}()
 
 	if c.EngineNameCallback != nil {
-		info, err := c.bkClient.Info(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("get info: %w", err)
-		}
-		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
+		engineName := fmt.Sprintf("%s (version %s)", bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
 		c.EngineNameCallback(engineName)
 	}
 

@@ -10,6 +10,8 @@ import (
 
 var (
 	EngineImageRepo = "registry.dagger.io/engine"
+
+	Package = "github.com/dagger/dagger"
 )
 
 var DevelopmentVersion = fmt.Sprintf("devel (%s)", vcsRevision())
