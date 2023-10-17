@@ -1,0 +1,11 @@
+apiVersion: apps.gitlab.com/v1beta2
+kind: Runner
+metadata:
+  name: dagger-runner
+  namespace: dagger
+spec:
+  config: dagger-custom-config-toml
+  gitlabUrl: <your_gitlab_url>
+  tags: dagger
+  token: <gitlab-runner-token-ref>
+  runUntagged: false

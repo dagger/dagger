@@ -1,0 +1,20 @@
+stages:
+  - build
+
+
+.dagger:
+  timeout: 2h
+  image: registry.puzzle.ch/cicd/dagger-golang:latest
+  tags:
+    - dagger
+  variables:
+    "_EXPERIMENTAL_DAGGER_RUNNER_HOST": "unix:///var/run/dagger/buildkitd.sock"
+
+
+build:
+  stage: build
+  extends: .dagger
+  script:
+  - mkdir -p ~/.local/bin && cd ~/.local && curl -L https://dl.dagger.io/dagger/install.sh | sh
+  - dagger run go run -v dagger/main.go
+
