@@ -172,7 +172,7 @@ No. "Rootless mode" means running the Dagger Engine as a container without the `
 
 ### Can I configure the Dagger Engine Runner?
 
-Yes. By replacing the `/etc/dagger/engine.toml` with yours, you can configure the runner with CA certs, registry mirrors or privileges. However, this is a temporary solution until we develop a better interface later. [Read more about Engine configuration](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
+Yes. By replacing the `/etc/dagger/engine.toml` file with your custom configuration, you can configure the Dagger Engine with CA certs, registry mirrors or additional privileges. However, note that this is a temporary solution and may change in future. [Read more about Dagger Engine configuration](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
 
 ### I am stuck. How can I get help?
 
