@@ -96,7 +96,7 @@ Service containers never use IP addresses to reach each other directly. IP addre
 
 This hash value is derived from the same value that determines whether an operation is a cache hit in Buildkit: the vertex digest.
 
-To get a container's address, you wouldn't normally run the `hostname` command, because you'd just be getting the hostname of a container that runs `hostname`, which isn't very helpful. Instead, you would use the `Hostname()` (Go) or `hostname()` (Python and Node.js) SDK method, which returns a domain name reachable by other containers:
+To get a container's address, you wouldn't normally run the `hostname` command, because you'd just be getting the hostname of a container that runs `hostname`, which isn't very helpful. Instead, you would use the `hostname` field (or equivalent SDK method), which returns a domain name reachable by other containers:
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
@@ -365,7 +365,7 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
 
 :::tip
-Explicitly specifying the service container port with `WithExposedPort()` (Go), `withExposedPort()` (Node.js) or `with_exposed_port()` (Python) is particularly important here. Without it, Dagger will start the service container and immediately allow access to service clients. With it, Dagger will wait for the service to be listening first.
+Explicitly specifying the service container port with the `Container.withExposedPort` field (via the equivalent SDK method) is particularly important here. Without it, Dagger will start the service container and immediately allow access to service clients. With it, Dagger will wait for the service to be listening first.
 :::
 
 ## Conclusion
