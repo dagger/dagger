@@ -21,6 +21,10 @@ const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
 
+	// NB: Keep these in sync with core/schema/sdk.go. It can't directly depend
+	// on this because that means backwards-incompatible changes will break the
+	// build; internal/mage has to point to a stable SDK, while
+	// github.com/dagger/dagger has to point to the dev SDK.
 	GoSDKEngineContainerTarballPath    = "/usr/local/share/dagger/go-module-sdk-image.tar"
 	PythonSDKEngineContainerModulePath = "/usr/local/share/dagger/python-sdk/runtime"
 
