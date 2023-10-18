@@ -302,14 +302,21 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
-		ctx, cancel := context.WithTimeout(connectRetryCtx, bo.NextBackOff())
+		nextBackoff := bo.NextBackOff()
+		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
 		defer cancel()
+
 		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 		if innerErr != nil {
-			fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+			// only show errors once the time between attempts exceeds this threshold, otherwise common
+			// cases of 1 or 2 retries become too noisy
+			if nextBackoff > time.Second {
+				fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+			}
 		} else {
 			fmt.Fprintln(loader.Stdout(), "OK!")
 		}
+
 		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))
 
