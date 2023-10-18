@@ -357,7 +357,7 @@ The `runUnitTests()` method executes two GraphQL queries:
 1. The second query uses the test image returned by the `buildTestImage()` method and adds a service binding for the database service to it using the `container.withServiceBinding()` API method. It then chains multiple `container.withEnvVariable()` methods to configure the database service credentials for the Laravel application. Finally, it uses the `container.withExec()` method to launch the PHPUnit test runner and return the output stream (the test summary).
 
 :::tip
-When creating the database service container, using the `Container.withExposedPort` field is important. Without this field, Dagger will start the service container and immediately allow access to the test runner, without waiting for the service to start listening. This can result in test failures if the test runner is unable to connect to the service. With this field, Dagger will wait for the service to be listening first before allowing the test runner access to it. [Learn more about service containers in Dagger](./757394-use-service-containers.md).
+When creating the database service container, using the `Container.withExposedPort` field is important. Without this field, Dagger will start the service container and immediately allow access to the test runner, without waiting for the service to start listening. This can result in test failures if the test runner is unable to connect to the service. With this field, Dagger will wait for the service to be listening first before allowing the test runner access to it. [Learn more about service containers in Dagger](./757394-use-services.md).
 :::
 
 ### Build a production image
