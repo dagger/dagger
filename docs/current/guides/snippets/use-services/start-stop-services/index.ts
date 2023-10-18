@@ -20,7 +20,7 @@ connect(
       .withExec(["go", "test", "./..."])
       .sync()
 
-    console.log("test:", test)
+    console.log("test: ", test)
 
     // or, if you prefer
     // trust `endpoint()` to construct the address
