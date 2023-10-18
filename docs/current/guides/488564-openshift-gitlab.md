@@ -84,6 +84,7 @@ oc apply -f runner.yaml -n dagger
 
 The last step is to configure an `.gitlab-ci.yml` file which makes use of the deployed Dagger engine.
 The most important parts in this file are:
+
 - `tags: [dagger]` this tells GitLab to use the GitLab Runner which is connectec to th Dagger engine
 - `"_EXPERIMENTAL_DAGGER_RUNNER_HOST": "unix:///var/run/dagger/buildkitd.sock"` in the variable section. With this env var the Dagger CLI will connect to the socket, which connects the GitLab runner to the Dagger engine.
 
