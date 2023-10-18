@@ -154,8 +154,6 @@ func HostDaggerBinary(c *dagger.Client) *dagger.File {
 // CodegenBinary returns a binary for generating the Go and NodeJS SDKs.
 func CodegenBinary(c *dagger.Client) *dagger.File {
 	return goBase(c).
-		WithWorkdir("sdk/go").
-		// TODO(vito): this currently lives in sdk/go which is a bit odd
 		WithExec([]string{"go", "build", "-o", "./bin/codegen", "-ldflags", "-s -w", "./cmd/codegen"}).
 		File("./bin/codegen")
 }

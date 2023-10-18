@@ -37,6 +37,9 @@
   ```
 
 - Use API Playground embeds where possible (see "API Playground embeds" section below).
+- In inline text, when referring to an SDK method, instead of explicitly specifying the name for each language method (they have minor differences), use the GraphQL API type and field instead e.g `Container.withServiceBinding` instead of `Container.WithServiceBinding (Go), Container.with_service_binding (Python) and Container.withServiceBinding (Node.js)`.
+  - Always `Capitalize` types, and always `lowerCamelCase` fields, to match GraphQL syntax as the common compromise.
+  - Omit the `()` since a lot of the time it's either not necessary, or implies no args are needed, and sometimes you just want to refer to a method call and ignore its required args e.g. `Container.asService`.
 
 ## Images
 

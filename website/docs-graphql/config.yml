@@ -13,6 +13,7 @@ introspection:
   metadatas: true
   hideMutationsWithUndocumentedReturnType: false
   hideUnusedTypes: false
+  inputValueDeprecation: true
 
 extensions:
   graphqlScalarExamples: true
@@ -24,3 +25,5 @@ info:
   #   - title: Welcome! 
   #     description: We are using a GraphQL server as the API to interact with our engine. This allows us to make interoperation between programming languages possible.
   x-url: https://api.dagger.cloud/playgrounds
+  x-hideIsDeprecated: false
+  x-hideDeprecationReason: false

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,19 +18,13 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
-	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/compression"
 	bkworker "github.com/moby/buildkit/worker"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	filesynctypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 func (c *Client) LocalImport(
@@ -155,6 +148,27 @@ func (c *Client) LocalImport(
 	return blobPB, nil
 }
 
+// Import a directory from the engine container, as opposed to from a client
+func (c *Client) EngineContainerLocalImport(
+	ctx context.Context,
+	recorder *progrock.Recorder,
+	platform specs.Platform,
+	srcPath string,
+	excludePatterns []string,
+	includePatterns []string,
+) (*bksolverpb.Definition, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get hostname for engine local import: %s", err)
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:       c.ID(),
+		ClientHostname: hostname,
+	})
+
+	return c.LocalImport(ctx, recorder, platform, srcPath, excludePatterns, includePatterns)
+}
+
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
@@ -236,7 +250,7 @@ func (c *Client) LocalDirExport(
 		Path:         destPath,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, c.ID())
+	_, descRef, err := expInstance.Export(ctx, cacheRes, clientMetadata.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
 	}
@@ -415,142 +429,4 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		return fmt.Errorf("unexpected closing recv msg: %s", err)
 	}
 	return nil
-}
-
-type localExportOpts struct {
-	*engine.LocalExportOpts
-	session bksession.Caller
-}
-
-func (c *Client) getLocalExportOpts(stream grpc.ServerStream) (context.Context, *localExportOpts, error) {
-	opts, err := engine.LocalExportOptsFromContext(stream.Context())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get local export opts: %w", err)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(stream.Context())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
-	// for now, require that the requester is the owner of the session, i.e. you
-	// can only export to yourself, not to others
-	if clientMetadata.ClientID != opts.DestClientID {
-		return nil, nil, errors.New("local dir export requester is not the owner of the dest session")
-	}
-
-	if opts.Path == "" {
-		return nil, nil, fmt.Errorf("missing local dir export path")
-	}
-
-	sess, err := c.SessionManager.Get(stream.Context(), opts.DestClientID, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	md := opts.ToGRPCMD()
-	ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
-	ctx = metadata.NewOutgoingContext(ctx, md)
-	return ctx, &localExportOpts{
-		LocalExportOpts: opts,
-		session:         sess,
-	}, nil
-}
-
-// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
-func (c *Client) newFileSendServerProxySession(ctx context.Context, destPath string) (*bksession.Session, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get requester client metadata: %s", err)
-	}
-	sess, err := bksession.NewSession(ctx, identity.NewID(), "")
-	if err != nil {
-		return nil, err
-	}
-	proxy := &fileSendServerProxy{c: c, destClientID: clientMetadata.ClientID, destPath: destPath}
-	sess.Allow(proxy)
-
-	clientConn, serverConn := net.Pipe()
-	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) { // nolint: unparam
-		go func() {
-			defer serverConn.Close()
-			err := c.SessionManager.HandleConn(ctx, serverConn, meta)
-			if err != nil {
-				lg := bklog.G(ctx).WithError(err)
-				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
-					lg.Debug("session conn ended")
-				} else {
-					lg.Error("failed to handle session conn")
-				}
-			}
-		}()
-		return clientConn, nil
-	}
-	go func() {
-		defer clientConn.Close()
-		defer sess.Close()
-		err := sess.Run(ctx, dialer)
-		if err != nil {
-			lg := bklog.G(ctx).WithError(err)
-			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
-				lg.Debug("client session in dagger frontend ended")
-			} else {
-				lg.Error("failed to run dagger frontend session")
-			}
-		}
-	}()
-
-	return sess, nil
-}
-
-// for local dir exports
-type fileSendServerProxy struct {
-	c *Client
-	// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
-	destClientID string
-	destPath     string
-}
-
-func (p *fileSendServerProxy) Register(srv *grpc.Server) {
-	filesync.RegisterFileSendServer(srv, p)
-}
-
-func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr error) {
-	ctx := stream.Context()
-	var diffCopyClient filesync.FileSend_DiffCopyClient
-	var err error
-	var useBytesMessageType bool
-	if p.destClientID == "" {
-		var opts *localExportOpts
-		ctx, opts, err = p.c.getLocalExportOpts(stream)
-		if err != nil {
-			return err
-		}
-		diffCopyClient, err = filesync.NewFileSendClient(opts.session.Conn()).DiffCopy(ctx)
-		if err != nil {
-			return err
-		}
-	} else {
-		// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
-		useBytesMessageType = true
-		ctx = engine.LocalExportOpts{
-			DestClientID: p.destClientID,
-			Path:         p.destPath,
-			IsFileStream: true,
-		}.AppendToOutgoingContext(ctx)
-
-		destCaller, err := p.c.SessionManager.Get(ctx, p.destClientID, false)
-		if err != nil {
-			return fmt.Errorf("failed to get requester client session: %s", err)
-		}
-		diffCopyClient, err = filesync.NewFileSendClient(destCaller.Conn()).DiffCopy(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	if useBytesMessageType {
-		return proxyStream[filesync.BytesMessage](ctx, diffCopyClient, stream)
-	}
-	return proxyStream[filesynctypes.Packet](ctx, diffCopyClient, stream)
 }

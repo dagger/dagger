@@ -144,10 +144,16 @@ func TestModuleGoInit(t *testing.T) {
 				Contents: `
 					package main
 
+					import "os"
+
 					type Child struct{}
 
 					func (m *Child) Root() *Directory {
-						return dag.Host().Directory(".")
+						wd, err := os.Getwd()
+						if err != nil {
+							panic(err)
+						}
+						return dag.Host().Directory(wd+"/..")
 					}
 				`,
 			})
@@ -195,10 +201,16 @@ func TestModuleGoInit(t *testing.T) {
 				Contents: `
 					package main
 
+					import "os"
+
 					type Child struct{}
 
 					func (m *Child) Root() *Directory {
-						return dag.Host().Directory(".")
+						wd, err := os.Getwd()
+						if err != nil {
+							panic(err)
+						}
+						return dag.Host().Directory(wd+"/..")
 					}
 				`,
 			})
@@ -508,6 +520,37 @@ func TestModuleGoCustomTypes(t *testing.T) {
 	require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 }
 
+func TestModuleGoReturnTypeDetection(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct {}
+
+type X struct {
+	Message string ` + "`json:\"message\"`" + `
+}
+
+func (m *Foo) MyFunction() X {
+	return X{Message: "foo"}
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{myFunction{message}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo"}}}`, out)
+}
+
 //go:embed testdata/modules/go/use/dep/main.go
 var useInner string
 
@@ -633,6 +676,67 @@ func TestModuleGoWrapping(t *testing.T) {
 	require.JSONEq(t,
 		fmt.Sprintf(`{"wrapper":{"container":{"echo":{"unwrap":{"stdout":%q}}}}}`, id),
 		out)
+}
+
+func TestModuleConfigAPI(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	moduleDir := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/subdir").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go", "--root=..")).
+		Directory("/work")
+
+	cfg := c.ModuleConfig(moduleDir, dagger.ModuleConfigOpts{Subpath: "subdir"})
+
+	name, err := cfg.Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "test", name)
+
+	sdk, err := cfg.SDK(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "go", sdk)
+
+	root, err := cfg.Root(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "..", root)
+}
+
+func TestModulePython(t *testing.T) {
+	// TODO: simple e2e test for now, can be split out into many different tests with different focuses
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithNewFile("./pyproject.toml", dagger.ContainerWithNewFileOpts{
+			Contents: `[project]
+name = "test"
+version = "0.0.0"
+`,
+		}).
+		WithNewFile("./src/main.py", dagger.ContainerWithNewFileOpts{
+			Contents: `from dagger.ext import function
+
+
+@function
+def hello(name: str) -> str:
+    """Say hello to someone."""
+    return f"Hello, {name}!"
+`,
+		}).
+		With(daggerExec("mod", "init", "--name=test", "--sdk=python"))
+
+	t.Run("func Hello() string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{test{hello(name: "there")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"hello":"Hello, there!"}}`, out)
+	})
 }
 
 func TestEnvCmd(t *testing.T) {
@@ -1039,6 +1143,7 @@ func daggerQuery(query string) dagger.WithContainerFunc {
 }
 
 func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
+	t.Helper()
 	return c.Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "dagger@example.com"}).
@@ -1049,6 +1154,7 @@ func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
 }
 
 func logGen(ctx context.Context, t *testing.T, modSrc *dagger.Directory) {
+	t.Helper()
 	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
 	require.NoError(t, err)
 

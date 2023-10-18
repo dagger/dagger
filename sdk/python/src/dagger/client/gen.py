@@ -57,10 +57,6 @@ class SecretID(Scalar):
     """A unique identifier for a secret."""
 
 
-class ServiceID(Scalar):
-    """A unique service identifier."""
-
-
 class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
@@ -173,13 +169,6 @@ class FunctionCallInput(Input):
 
 
 @dataclass(slots=True)
-class ModuleEnvironmentVariable(Input):
-    name: str
-
-    value: Optional[str] = None
-
-
-@dataclass(slots=True)
 class PipelineLabel(Input):
     """Key value object that represents a Pipeline label."""
 
@@ -188,20 +177,6 @@ class PipelineLabel(Input):
 
     value: str
     """Label value."""
-
-
-@dataclass(slots=True)
-class PortForward(Input):
-    """Port forwarding rules for tunneling network traffic."""
-
-    backend: int
-    """Destination port for traffic."""
-
-    frontend: Optional[int] = None
-    """Port to expose to clients. If unspecified, a default will be chosen."""
-
-    protocol: Optional[NetworkProtocol] = None
-    """Protocol to use for traffic."""
 
 
 class CacheVolume(Type):
@@ -242,14 +217,44 @@ class Container(Type):
     """An OCI-compatible container, also known as a docker container."""
 
     @typecheck
-    def as_service(self) -> "Service":
-        """Turn the container into a Service.
+    def as_tarball(
+        self,
+        *,
+        platform_variants: Optional[Sequence["Container"]] = None,
+        forced_compression: Optional[ImageLayerCompression] = None,
+        media_types: Optional[ImageMediaTypes] = None,
+    ) -> "File":
+        """Returns a File representing the container serialized to a tarball.
 
-        Be sure to set any exposed ports before this conversion.
+        Parameters
+        ----------
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
+        forced_compression:
+            Force each layer of the image to use the specified compression
+            algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's
+            cache, that will be used (this can result in a mix of compression
+            algorithms for
+            different layers). If this is unset and a layer has no compressed
+            blob in the
+            engine's cache, then it will be compressed using Gzip.
+        media_types:
+            Use the specified media types for the image's layers. Defaults to
+            OCI, which
+            is largely compatible with most recent container runtimes, but
+            Docker may be needed
+            for older runtimes without OCI support.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("asService", _args)
-        return Service(_ctx)
+        _args = [
+            Arg("platformVariants", platform_variants, None),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, None),
+        ]
+        _ctx = self._select("asTarball", _args)
+        return File(_ctx)
 
     @typecheck
     def build(
@@ -332,6 +337,52 @@ class Container(Type):
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
+
+    @typecheck
+    async def endpoint(
+        self,
+        *,
+        port: Optional[int] = None,
+        scheme: Optional[str] = None,
+    ) -> str:
+        """Retrieves an endpoint that clients can use to reach this container.
+
+        If no port is specified, the first exposed port is used. If none exist
+        an error is returned.
+
+        If a scheme is specified, a URL is returned. Otherwise, a host:port
+        pair is returned.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
+        Parameters
+        ----------
+        port:
+            The exposed port number for the endpoint
+        scheme:
+            Return a URL with the given scheme, eg. http for http://
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("port", port, None),
+            Arg("scheme", scheme, None),
+        ]
+        _ctx = self._select("endpoint", _args)
+        return await _ctx.execute(str)
 
     @typecheck
     async def entrypoint(self) -> Optional[list[str]]:
@@ -462,6 +513,9 @@ class Container(Type):
 
         This includes ports already exposed by the image, even if not
         explicitly added with dagger.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
         """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
@@ -505,6 +559,32 @@ class Container(Type):
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
+
+    @typecheck
+    async def hostname(self) -> str:
+        """Retrieves a hostname which can be used by clients to reach this
+        container.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hostname", _args)
+        return await _ctx.execute(str)
 
     @typecheck
     async def id(self) -> ContainerID:
@@ -1068,6 +1148,9 @@ class Container(Type):
           - For health checks and introspection, when running services
           - For setting the EXPOSE OCI field when publishing the container
 
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
         Parameters
         ----------
         port:
@@ -1400,7 +1483,7 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_service_binding(self, alias: str, service: "Service") -> "Container":
+    def with_service_binding(self, alias: str, service: "Container") -> "Container":
         """Establish a runtime dependency on a service.
 
         The service will be started automatically when needed and detached
@@ -1412,6 +1495,9 @@ class Container(Type):
 
         The service dependency will also convey to any files or directories
         produced by the container.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1511,6 +1597,9 @@ class Container(Type):
         protocol: Optional[NetworkProtocol] = None,
     ) -> "Container":
         """Unexpose a previously exposed port.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1641,7 +1730,6 @@ class Directory(Type):
         self,
         *,
         source_subpath: Optional[str] = None,
-        runtime: Optional[Container] = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
@@ -1660,15 +1748,9 @@ class Directory(Type):
             from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
-        runtime:
-            A pre-built runtime container to use instead of building one from
-            the
-            source code. This is useful for bootstrapping.
-            You should ignore this unless you're building a Dagger SDK.
         """
         _args = [
             Arg("sourceSubpath", source_subpath, None),
-            Arg("runtime", runtime, None),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -3068,35 +3150,6 @@ class Host(Type):
         return File(_ctx)
 
     @typecheck
-    def service(
-        self,
-        ports: Sequence[PortForward],
-        *,
-        host: Optional[str] = "localhost",
-    ) -> "Service":
-        """Creates a service that forwards traffic to a specified address via the
-        host.
-
-        Parameters
-        ----------
-        ports:
-            Ports to expose via the service, forwarding through the host
-            network.
-            If a port's frontend is unspecified or 0, it defaults to the same
-            as the
-            backend port.
-            An empty set of ports is not valid; an error will be returned.
-        host:
-            Upstream host to forward traffic to.
-        """
-        _args = [
-            Arg("ports", ports),
-            Arg("host", host, "localhost"),
-        ]
-        _ctx = self._select("service", _args)
-        return Service(_ctx)
-
-    @typecheck
     def set_secret_file(self, name: str, path: str) -> "Secret":
         """Sets a secret given a user-defined name and the file path on the host,
         and returns the secret.
@@ -3115,45 +3168,6 @@ class Host(Type):
         ]
         _ctx = self._select("setSecretFile", _args)
         return Secret(_ctx)
-
-    @typecheck
-    def tunnel(
-        self,
-        service: "Service",
-        *,
-        native: Optional[bool] = False,
-        ports: Optional[Sequence[PortForward]] = None,
-    ) -> "Service":
-        """Creates a tunnel that forwards traffic from the host to a service.
-
-        Parameters
-        ----------
-        service:
-            Service to send traffic from the tunnel.
-        native:
-            Map each service port to the same port on the host, as if the
-            service were
-            running natively.
-            Note: enabling may result in port conflicts.
-        ports:
-            Configure explicit port forwarding rules for the tunnel.
-            If a port's frontend is unspecified or 0, a random port will be
-            chosen by
-            the host.
-            If no ports are given, all of the service's ports are forwarded.
-            If native
-            is true, each port maps to the same port on the host. If native is
-            false,
-            each port maps to a random port chosen by the host.
-            If ports are given and native is true, the ports are additive.
-        """
-        _args = [
-            Arg("service", service),
-            Arg("native", native, False),
-            Arg("ports", ports, None),
-        ]
-        _ctx = self._select("tunnel", _args)
-        return Service(_ctx)
 
     @typecheck
     def unix_socket(self, path: str) -> "Socket":
@@ -3248,7 +3262,6 @@ class Module(Type):
         "_description",
         "_name",
         "_sdk",
-        "_sdk_runtime",
         "_serve",
         "_source_directory_sub_path",
     )
@@ -3257,7 +3270,6 @@ class Module(Type):
     _description: Optional[str]
     _name: Optional[str]
     _sdk: Optional[str]
-    _sdk_runtime: Optional[str]
     _serve: Optional[Void]
     _source_directory_sub_path: Optional[str]
 
@@ -3271,7 +3283,6 @@ class Module(Type):
             _description="description",
             _name="name",
             _sdk="sdk",
-            _sdk_runtime="sdkRuntime",
             _serve="serve",
             _source_directory_sub_path="sourceDirectorySubPath",
         )
@@ -3401,7 +3412,8 @@ class Module(Type):
 
     @typecheck
     async def sdk(self) -> str:
-        """The SDK used by this module
+        """The SDK used by this module. Either a name of a builtin SDK or a
+        module ref pointing to the SDK's implementation.
 
         Returns
         -------
@@ -3424,35 +3436,7 @@ class Module(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def sdk_runtime(self) -> str:
-        """The SDK runtime module image ref.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_sdk_runtime"):
-            return self._sdk_runtime
-        _args: list[Arg] = []
-        _ctx = self._select("sdkRuntime", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def serve(
-        self,
-        *,
-        environment: Optional[Sequence[ModuleEnvironmentVariable]] = None,
-    ) -> Optional[Void]:
+    async def serve(self) -> Optional[Void]:
         """Serve a module's API in the current session.
             Note: this can only be called once per session.
             In the future, it could return a stream or service to remove the
@@ -3473,9 +3457,7 @@ class Module(Type):
         """
         if hasattr(self, "_serve"):
             return self._serve
-        _args = [
-            Arg("environment", environment, None),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("serve", _args)
         return await _ctx.execute(Optional[Void])
 
@@ -3525,6 +3507,145 @@ class Module(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+class ModuleConfig(Type):
+    """Static configuration for a module (e.g. parsed contents of
+    dagger.json)"""
+
+    @typecheck
+    async def dependencies(self) -> Optional[list[str]]:
+        """Modules that this module depends on.
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def exclude(self) -> Optional[list[str]]:
+        """Exclude these file globs when loading the module root.
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("exclude", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def include(self) -> Optional[list[str]]:
+        """Include only these file globs when loading the module root.
+
+        Returns
+        -------
+        Optional[list[str]]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("include", _args)
+        return await _ctx.execute(Optional[list[str]])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the module.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def root(self) -> Optional[str]:
+        """The root directory of the module's project, which may be above the
+        module source code.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("root", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def sdk(self) -> str:
+        """Either the name of a built-in SDK ('go', 'python', etc.) OR a module
+        reference pointing to the SDK's module implementation.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sdk", _args)
+        return await _ctx.execute(str)
 
 
 class ObjectTypeDef(Type):
@@ -3847,7 +3968,7 @@ class Client(Root):
         url: str,
         *,
         keep_git_dir: Optional[bool] = None,
-        experimental_service_host: Optional["Service"] = None,
+        experimental_service_host: Optional[Container] = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -3883,7 +4004,7 @@ class Client(Root):
         self,
         url: str,
         *,
-        experimental_service_host: Optional["Service"] = None,
+        experimental_service_host: Optional[Container] = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -3983,15 +4104,6 @@ class Client(Root):
         return Secret(_ctx)
 
     @typecheck
-    def load_service_from_id(self, id: ServiceID) -> "Service":
-        """Loads a service from ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadServiceFromID", _args)
-        return Service(_ctx)
-
-    @typecheck
     def load_socket_from_id(self, id: SocketID) -> "Socket":
         """Load a Socket from its ID."""
         _args = [
@@ -4015,6 +4127,23 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
         return Module(_ctx)
+
+    @typecheck
+    def module_config(
+        self,
+        source_directory: Directory,
+        *,
+        subpath: Optional[str] = None,
+    ) -> ModuleConfig:
+        """Load the static configuration for a module from the given source
+        directory and optional subpath.
+        """
+        _args = [
+            Arg("sourceDirectory", source_directory),
+            Arg("subpath", subpath, None),
+        ]
+        _ctx = self._select("moduleConfig", _args)
+        return ModuleConfig(_ctx)
 
     @typecheck
     def pipeline(
@@ -4171,154 +4300,6 @@ class Secret(Type):
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
         return await _ctx.execute(str)
-
-
-class Service(Type):
-    @typecheck
-    async def endpoint(
-        self,
-        *,
-        port: Optional[int] = None,
-        scheme: Optional[str] = None,
-    ) -> str:
-        """Retrieves an endpoint that clients can use to reach this container.
-
-        If no port is specified, the first exposed port is used. If none exist
-        an error is returned.
-
-        If a scheme is specified, a URL is returned. Otherwise, a host:port
-        pair is returned.
-
-        Parameters
-        ----------
-        port:
-            The exposed port number for the endpoint
-        scheme:
-            Return a URL with the given scheme, eg. http for http://
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("port", port, None),
-            Arg("scheme", scheme, None),
-        ]
-        _ctx = self._select("endpoint", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def hostname(self) -> str:
-        """Retrieves a hostname which can be used by clients to reach this
-        container.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("hostname", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
-    async def id(self) -> ServiceID:
-        """A unique identifier for this service.
-
-        Note
-        ----
-        This is lazyly evaluated, no operation is actually run.
-
-        Returns
-        -------
-        ServiceID
-            A unique service identifier.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(ServiceID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ServiceID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadServiceFromID"
-
-    @typecheck
-    async def ports(self) -> list[Port]:
-        """Retrieves the list of ports provided by the service."""
-        _args: list[Arg] = []
-        _ctx = self._select("ports", _args)
-        _ctx = Port(_ctx)._select_multiple(
-            _description="description",
-            _port="port",
-            _protocol="protocol",
-        )
-        return await _ctx.execute(list[Port])
-
-    @typecheck
-    async def start(self) -> "Service":
-        """Start the service and wait for its health checks to succeed.
-
-        Services bound to a Container do not need to be manually started.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("start", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
-
-    @typecheck
-    async def stop(self) -> "Service":
-        """Stop the service.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("stop", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
 
 
 class Socket(Type):
@@ -4579,10 +4560,10 @@ load_function_from_id = _client.load_function_from_id
 load_generated_code_from_id = _client.load_generated_code_from_id
 load_module_from_id = _client.load_module_from_id
 load_secret_from_id = _client.load_secret_from_id
-load_service_from_id = _client.load_service_from_id
 load_socket_from_id = _client.load_socket_from_id
 load_type_def_from_id = _client.load_type_def_from_id
 module = _client.module
+module_config = _client.module_config
 pipeline = _client.pipeline
 secret = _client.secret
 set_secret = _client.set_secret
@@ -4627,18 +4608,15 @@ __all__ = [
     "Label",
     "ListTypeDef",
     "Module",
-    "ModuleEnvironmentVariable",
+    "ModuleConfig",
     "ModuleID",
     "NetworkProtocol",
     "ObjectTypeDef",
     "PipelineLabel",
     "Platform",
     "Port",
-    "PortForward",
     "Secret",
     "SecretID",
-    "Service",
-    "ServiceID",
     "Socket",
     "SocketID",
     "TypeDef",
@@ -4668,10 +4646,10 @@ __all__ = [
     "load_generated_code_from_id",
     "load_module_from_id",
     "load_secret_from_id",
-    "load_service_from_id",
     "load_socket_from_id",
     "load_type_def_from_id",
     "module",
+    "module_config",
     "pipeline",
     "secret",
     "set_secret",

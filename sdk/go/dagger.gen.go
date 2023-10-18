@@ -60,9 +60,6 @@ type Platform string
 // A unique identifier for a secret.
 type SecretID string
 
-// A unique service identifier.
-type ServiceID string
-
 // A content-addressed socket identifier.
 type SocketID string
 
@@ -77,45 +74,27 @@ type Void string
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 
 	// The build argument value.
-	Value string `json:"value"`
+	Value string `json:"value,omitempty"`
 }
 
 type FunctionCallInput struct {
 	// The name of the argument to the function
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 
 	// The value of the argument represented as a string of the JSON serialization.
-	Value JSON `json:"value"`
-}
-
-type ModuleEnvironmentVariable struct {
-	Name string `json:"name"`
-
-	Value string `json:"value"`
+	Value JSON `json:"value,omitempty"`
 }
 
 // Key value object that represents a Pipeline label.
 type PipelineLabel struct {
 	// Label name.
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 
 	// Label value.
-	Value string `json:"value"`
-}
-
-// Port forwarding rules for tunneling network traffic.
-type PortForward struct {
-	// Destination port for traffic.
-	Backend int `json:"backend"`
-
-	// Port to expose to clients. If unspecified, a default will be chosen.
-	Frontend int `json:"frontend"`
-
-	// Protocol to use for traffic.
-	Protocol NetworkProtocol `json:"protocol,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 // A directory whose contents persist across runs.
@@ -170,8 +149,10 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	endpoint      *string
 	envVariable   *string
 	export        *bool
+	hostname      *string
 	id            *ContainerID
 	imageRef      *string
 	label         *string
@@ -193,13 +174,42 @@ func (r *Container) With(f WithContainerFunc) *Container {
 	return f(r)
 }
 
-// Turn the container into a Service.
-//
-// Be sure to set any exposed ports before this conversion.
-func (r *Container) AsService() *Service {
-	q := r.q.Select("asService")
+// ContainerAsTarballOpts contains options for Container.AsTarball
+type ContainerAsTarballOpts struct {
+	// Identifiers for other platform specific containers.
+	// Used for multi-platform image.
+	PlatformVariants []*Container
+	// Force each layer of the image to use the specified compression algorithm.
+	// If this is unset, then if a layer already has a compressed blob in the engine's
+	// cache, that will be used (this can result in a mix of compression algorithms for
+	// different layers). If this is unset and a layer has no compressed blob in the
+	// engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
+	// Use the specified media types for the image's layers. Defaults to OCI, which
+	// is largely compatible with most recent container runtimes, but Docker may be needed
+	// for older runtimes without OCI support.
+	MediaTypes ImageMediaTypes
+}
 
-	return &Service{
+// Returns a File representing the container serialized to a tarball.
+func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
+	q := r.q.Select("asTarball")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `platformVariants` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
+			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+		}
+		// `forcedCompression` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
+		}
+	}
+
+	return &File{
 		q: q,
 		c: r.c,
 	}
@@ -276,6 +286,43 @@ func (r *Container) Directory(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// ContainerEndpointOpts contains options for Container.Endpoint
+type ContainerEndpointOpts struct {
+	// The exposed port number for the endpoint
+	Port int
+	// Return a URL with the given scheme, eg. http for http://
+	Scheme string
+}
+
+// Retrieves an endpoint that clients can use to reach this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
+	if r.endpoint != nil {
+		return *r.endpoint, nil
+	}
+	q := r.q.Select("endpoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `port` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+		}
+		// `scheme` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves entrypoint to be prepended to the arguments of all commands.
@@ -387,6 +434,8 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 //
 // This includes ports already exposed by the image, even if not
 // explicitly added with dagger.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
@@ -442,6 +491,21 @@ func (r *Container) From(address string) *Container {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Retrieves a hostname which can be used by clients to reach this container.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+func (r *Container) Hostname(ctx context.Context) (string, error) {
+	if r.hostname != nil {
+		return *r.hostname, nil
+	}
+	q := r.q.Select("hostname")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this container.
@@ -921,6 +985,8 @@ type ContainerWithExposedPortOpts struct {
 // Exposed ports serve two purposes:
 //   - For health checks and introspection, when running services
 //   - For setting the EXPOSE OCI field when publishing the container
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1241,7 +1307,9 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service will be reachable from the container via the provided hostname alias.
 //
 // The service dependency will also convey to any files or directories produced by the container.
-func (r *Container) WithServiceBinding(alias string, service *Service) *Container {
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
 	assertNotNil("service", service)
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
@@ -1322,6 +1390,8 @@ type ContainerWithoutExposedPortOpts struct {
 }
 
 // Unexpose a previously exposed port.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
 	q := r.q.Select("withoutExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1439,11 +1509,6 @@ type DirectoryAsModuleOpts struct {
 	// If not set, the module source code is loaded from the root of the
 	// directory.
 	SourceSubpath string
-	// A pre-built runtime container to use instead of building one from the
-	// source code. This is useful for bootstrapping.
-	//
-	// You should ignore this unless you're building a Dagger SDK.
-	Runtime *Container
 }
 
 // Load the directory as a Dagger module
@@ -1453,10 +1518,6 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 		// `sourceSubpath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceSubpath) {
 			q = q.Arg("sourceSubpath", opts[i].SourceSubpath)
-		}
-		// `runtime` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Runtime) {
-			q = q.Arg("runtime", opts[i].Runtime)
 		}
 	}
 
@@ -2681,29 +2742,6 @@ func (r *Host) File(path string) *File {
 	}
 }
 
-// HostServiceOpts contains options for Host.Service
-type HostServiceOpts struct {
-	// Upstream host to forward traffic to.
-	Host string
-}
-
-// Creates a service that forwards traffic to a specified address via the host.
-func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
-	q := r.q.Select("service")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `host` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Host) {
-			q = q.Arg("host", opts[i].Host)
-		}
-	}
-	q = q.Arg("ports", ports)
-
-	return &Service{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 // The file is limited to a size of 512000 bytes.
 func (r *Host) SetSecretFile(name string, path string) *Secret {
@@ -2712,48 +2750,6 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q = q.Arg("path", path)
 
 	return &Secret{
-		q: q,
-		c: r.c,
-	}
-}
-
-// HostTunnelOpts contains options for Host.Tunnel
-type HostTunnelOpts struct {
-	// Map each service port to the same port on the host, as if the service were
-	// running natively.
-	//
-	// Note: enabling may result in port conflicts.
-	Native bool
-	// Configure explicit port forwarding rules for the tunnel.
-	//
-	// If a port's frontend is unspecified or 0, a random port will be chosen by
-	// the host.
-	//
-	// If no ports are given, all of the service's ports are forwarded. If native
-	// is true, each port maps to the same port on the host. If native is false,
-	// each port maps to a random port chosen by the host.
-	//
-	// If ports are given and native is true, the ports are additive.
-	Ports []PortForward
-}
-
-// Creates a tunnel that forwards traffic from the host to a service.
-func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
-	assertNotNil("service", service)
-	q := r.q.Select("tunnel")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `native` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Native) {
-			q = q.Arg("native", opts[i].Native)
-		}
-		// `ports` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ports) {
-			q = q.Arg("ports", opts[i].Ports)
-		}
-	}
-	q = q.Arg("service", service)
-
-	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -2829,7 +2825,6 @@ type Module struct {
 	id                     *ModuleID
 	name                   *string
 	sdk                    *string
-	sdkRuntime             *string
 	serve                  *Void
 	sourceDirectorySubPath *string
 }
@@ -2996,7 +2991,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// The SDK used by this module
+// The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
 func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
@@ -3009,39 +3004,15 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The SDK runtime module image ref.
-func (r *Module) SDKRuntime(ctx context.Context) (string, error) {
-	if r.sdkRuntime != nil {
-		return *r.sdkRuntime, nil
-	}
-	q := r.q.Select("sdkRuntime")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// ModuleServeOpts contains options for Module.Serve
-type ModuleServeOpts struct {
-	Environment []ModuleEnvironmentVariable
-}
-
 // Serve a module's API in the current session.
 //
 //	Note: this can only be called once per session.
 //	In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context, opts ...ModuleServeOpts) (Void, error) {
+func (r *Module) Serve(ctx context.Context) (Void, error) {
 	if r.serve != nil {
 		return *r.serve, nil
 	}
 	q := r.q.Select("serve")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `environment` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Environment) {
-			q = q.Arg("environment", opts[i].Environment)
-		}
-	}
 
 	var response Void
 
@@ -3082,6 +3053,85 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Static configuration for a module (e.g. parsed contents of dagger.json)
+type ModuleConfig struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	name *string
+	root *string
+	sdk  *string
+}
+
+// Modules that this module depends on.
+func (r *ModuleConfig) Dependencies(ctx context.Context) ([]string, error) {
+	q := r.q.Select("dependencies")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Exclude these file globs when loading the module root.
+func (r *ModuleConfig) Exclude(ctx context.Context) ([]string, error) {
+	q := r.q.Select("exclude")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Include only these file globs when loading the module root.
+func (r *ModuleConfig) Include(ctx context.Context) ([]string, error) {
+	q := r.q.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the module.
+func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The root directory of the module's project, which may be above the module source code.
+func (r *ModuleConfig) Root(ctx context.Context) (string, error) {
+	if r.root != nil {
+		return *r.root, nil
+	}
+	q := r.q.Select("root")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
+func (r *ModuleConfig) SDK(ctx context.Context) (string, error) {
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
+	q := r.q.Select("sdk")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A definition of a custom object defined in a Module.
@@ -3393,7 +3443,7 @@ type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Service
+	ExperimentalServiceHost *Container
 }
 
 // Queries a git repository.
@@ -3430,7 +3480,7 @@ func (r *Client) Host() *Host {
 // HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
-	ExperimentalServiceHost *Service
+	ExperimentalServiceHost *Container
 }
 
 // Returns a file containing an http remote url content.
@@ -3549,17 +3599,6 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
-// Loads a service from ID.
-func (r *Client) LoadServiceFromID(id ServiceID) *Service {
-	q := r.q.Select("loadServiceFromID")
-	q = q.Arg("id", id)
-
-	return &Service{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Load a Socket from its ID.
 func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	q := r.q.Select("loadSocketFromID")
@@ -3587,6 +3626,29 @@ func (r *Client) Module() *Module {
 	q := r.q.Select("module")
 
 	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ModuleConfigOpts contains options for Client.ModuleConfig
+type ModuleConfigOpts struct {
+	Subpath string
+}
+
+// Load the static configuration for a module from the given source directory and optional subpath.
+func (r *Client) ModuleConfig(sourceDirectory *Directory, opts ...ModuleConfigOpts) *ModuleConfig {
+	assertNotNil("sourceDirectory", sourceDirectory)
+	q := r.q.Select("moduleConfig")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `subpath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subpath) {
+			q = q.Arg("subpath", opts[i].Subpath)
+		}
+	}
+	q = q.Arg("sourceDirectory", sourceDirectory)
+
+	return &ModuleConfig{
 		q: q,
 		c: r.c,
 	}
@@ -3740,155 +3802,6 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
-}
-
-type Service struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	endpoint *string
-	hostname *string
-	id       *ServiceID
-	start    *ServiceID
-	stop     *ServiceID
-}
-
-// ServiceEndpointOpts contains options for Service.Endpoint
-type ServiceEndpointOpts struct {
-	// The exposed port number for the endpoint
-	Port int
-	// Return a URL with the given scheme, eg. http for http://
-	Scheme string
-}
-
-// Retrieves an endpoint that clients can use to reach this container.
-//
-// If no port is specified, the first exposed port is used. If none exist an error is returned.
-//
-// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-func (r *Service) Endpoint(ctx context.Context, opts ...ServiceEndpointOpts) (string, error) {
-	if r.endpoint != nil {
-		return *r.endpoint, nil
-	}
-	q := r.q.Select("endpoint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `port` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Port) {
-			q = q.Arg("port", opts[i].Port)
-		}
-		// `scheme` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Scheme) {
-			q = q.Arg("scheme", opts[i].Scheme)
-		}
-	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// Retrieves a hostname which can be used by clients to reach this container.
-func (r *Service) Hostname(ctx context.Context) (string, error) {
-	if r.hostname != nil {
-		return *r.hostname, nil
-	}
-	q := r.q.Select("hostname")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// A unique identifier for this service.
-func (r *Service) ID(ctx context.Context) (ServiceID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.q.Select("id")
-
-	var response ServiceID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Service) XXX_GraphQLType() string {
-	return "Service"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Service) XXX_GraphQLIDType() string {
-	return "ServiceID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Service) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Service) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Retrieves the list of ports provided by the service.
-func (r *Service) Ports(ctx context.Context) ([]Port, error) {
-	q := r.q.Select("ports")
-
-	q = q.Select("description port protocol")
-
-	type ports struct {
-		Description string
-		Port        int
-		Protocol    NetworkProtocol
-	}
-
-	convert := func(fields []ports) []Port {
-		out := []Port{}
-
-		for i := range fields {
-			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []ports
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Start the service and wait for its health checks to succeed.
-//
-// Services bound to a Container do not need to be manually started.
-func (r *Service) Start(ctx context.Context) (*Service, error) {
-	q := r.q.Select("start")
-
-	return r, q.Execute(ctx, r.c)
-}
-
-// Stop the service.
-func (r *Service) Stop(ctx context.Context) (*Service, error) {
-	q := r.q.Select("stop")
-
-	return r, q.Execute(ctx, r.c)
 }
 
 type Socket struct {

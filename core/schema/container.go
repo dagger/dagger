@@ -92,6 +92,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"publish":              ToResolver(s.publish),
 		"platform":             ToResolver(s.platform),
 		"export":               ToResolver(s.export),
+		"asTarball":            ToResolver(s.asTarball),
 		"import":               ToResolver(s.import_),
 		"withRegistryAuth":     ToResolver(s.withRegistryAuth),
 		"withoutRegistryAuth":  ToResolver(s.withoutRegistryAuth),
@@ -663,6 +664,16 @@ func (s *containerSchema) export(ctx *core.Context, parent *core.Container, args
 	}
 
 	return true, nil
+}
+
+type containerAsTarballArgs struct {
+	PlatformVariants  []core.ContainerID
+	ForcedCompression core.ImageLayerCompression
+	MediaTypes        core.ImageMediaTypes
+}
+
+func (s *containerSchema) asTarball(ctx *core.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
+	return parent.AsTarball(ctx, s.bk, s.MergedSchemas.platform, s.svcs, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerImportArgs struct {

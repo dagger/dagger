@@ -23,6 +23,7 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -1472,6 +1473,80 @@ func (container *Container) Export(
 
 	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
 	return err
+}
+
+func (container *Container) AsTarball(
+	ctx context.Context,
+	bk *buildkit.Client,
+	engineHostPlatform specs.Platform,
+	svcs *Services,
+	platformVariants []ContainerID,
+	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
+) (*File, error) {
+	if mediaTypes == "" {
+		mediaTypes = OCIMediaTypes
+	}
+
+	inputByPlatform := map[string]buildkit.ContainerExport{}
+	id, err := container.ID()
+	if err != nil {
+		return nil, err
+	}
+	services := ServiceBindings{}
+	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
+		variant, err := variantID.Decode()
+		if err != nil {
+			return nil, err
+		}
+		if variant.FS == nil {
+			continue
+		}
+		st, err := variant.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		def, err := st.Marshal(ctx, llb.Platform(variant.Platform))
+		if err != nil {
+			return nil, err
+		}
+
+		platformString := platforms.Format(variant.Platform)
+		if _, ok := inputByPlatform[platformString]; ok {
+			return nil, fmt.Errorf("duplicate platform %q", platformString)
+		}
+		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.ContainerExport{
+			Definition: def.ToPB(),
+			Config:     variant.Config,
+		}
+		services.Merge(variant.Services)
+	}
+	if len(inputByPlatform) == 0 {
+		return nil, errors.New("no containers to export")
+	}
+
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	detach, _, err := svcs.StartBindings(ctx, bk, services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+
+	fileName := identity.NewID() + ".tar"
+	pbDef, err := bk.ContainerImageToTarball(ctx, engineHostPlatform, fileName, inputByPlatform, opts)
+	if err != nil {
+		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
+	}
+	return NewFile(ctx, pbDef, fileName, container.Pipeline, engineHostPlatform, nil), nil
 }
 
 func (container *Container) Import(

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -19,6 +20,10 @@ const (
 	daggerBinName = "dagger" // CLI, not engine!
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
+
+	GoSDKEngineContainerTarballPath    = "/usr/local/share/dagger/go-module-sdk-image.tar"
+	PythonSDKEngineContainerModulePath = "/usr/local/share/dagger/python-sdk/runtime"
+
 	golangVersion = "1.21.2"
 	alpineVersion = "3.18"
 	runcVersion   = "v1.1.9"
@@ -215,6 +220,8 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
+		WithFile(GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -239,6 +246,48 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 }
 
 // helper functions for building the dev engine container
+
+func pythonSDK(c *dagger.Client) *dagger.Directory {
+	return Repository(c).Directory("sdk/python")
+}
+
+func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
+	// TODO: update this to use Container.AsTarball once released
+	ctx := context.Background()
+	tmpDir, err := os.MkdirTemp("", "dagger-go-sdk")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	tarballPath := filepath.Join(tmpDir, filepath.Base(GoSDKEngineContainerTarballPath))
+
+	_, err = c.Container().
+		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		WithFile("/usr/local/bin/codegen", goSDKCodegenBin(c, arch)).
+		WithEntrypoint([]string{"/usr/local/bin/codegen"}).
+		Export(ctx, tarballPath)
+	if err != nil {
+		panic(err)
+	}
+
+	f, err := c.Host().File(tarballPath).Sync(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
+func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
+	return goBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/codegen",
+			"./cmd/codegen",
+		}).
+		File("./bin/codegen")
+}
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
@@ -283,6 +332,17 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 }
 
 func buildctlBin(c *dagger.Client, arch string) *dagger.File {
+	/* TODO: the commented code is what we *should* be doing, but need this PR to be merged:
+	https://github.com/moby/buildkit/pull/4318
+
+	The reason being that when we build buildctl using our go.mod, we end up
+	with conflicting otel deps w/ buildkit's upstream go.mod, which can cause
+	buildctl to crash.
+
+	So for now, we are falling back to just using buildctl from upstream's
+	image. This is okay temporarily because we don't need any customizations
+	to it.
+
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
@@ -293,6 +353,11 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 			"github.com/moby/buildkit/cmd/buildctl",
 		}).
 		File("./bin/buildctl")
+	*/
+
+	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From("moby/buildkit:master@sha256:f73a7d2d2441cfa5ced27bee8283f3b090a2232698484f7e4876e69a16d68a07").
+		File("/usr/bin/buildctl")
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {

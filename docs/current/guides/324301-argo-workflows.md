@@ -41,6 +41,7 @@ A few important points to note:
 - `unix:///var/run/dagger/buildkitd.sock` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
 - The Dagger CLI `dagger_v0.8.7_linux_amd64.tar.gz` is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project.
 - The image `golang:1.21.0-bookworm` is used as the runtime for the pipeline because the example project requires Go.
+- Setting the `DAGGER_CLOUD_TOKEN` environment variable is only necessary if integrating with [Dagger Cloud](https://dagger.cloud/).
 
 The workflow uses a PersistentVolumeClaim for the runtime dependencies of the pipeline, such as the Dagger Go SDK.
 

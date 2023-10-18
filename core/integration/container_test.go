@@ -2567,37 +2567,48 @@ func TestContainerExport(t *testing.T) {
 		WithEntrypoint(entrypoint)
 
 	t.Run("to absolute dir", func(t *testing.T) {
-		imagePath := filepath.Join(dest, "image.tar")
+		for _, useAsTarball := range []bool{true, false} {
+			t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
+				imagePath := filepath.Join(dest, "image.tar")
 
-		ok, err := ctr.Export(ctx, imagePath)
-		require.NoError(t, err)
-		require.True(t, ok)
+				if useAsTarball {
+					tarFile := ctr.AsTarball()
+					ok, err := tarFile.Export(ctx, imagePath)
+					require.NoError(t, err)
+					require.True(t, ok)
+				} else {
+					ok, err := ctr.Export(ctx, imagePath)
+					require.NoError(t, err)
+					require.True(t, ok)
+				}
 
-		stat, err := os.Stat(imagePath)
-		require.NoError(t, err)
-		require.NotZero(t, stat.Size())
-		require.EqualValues(t, 0o600, stat.Mode().Perm())
+				stat, err := os.Stat(imagePath)
+				require.NoError(t, err)
+				require.NotZero(t, stat.Size())
+				require.EqualValues(t, 0o600, stat.Mode().Perm())
 
-		entries := tarEntries(t, imagePath)
-		require.Contains(t, entries, "oci-layout")
-		require.Contains(t, entries, "index.json")
+				entries := tarEntries(t, imagePath)
+				require.Contains(t, entries, "oci-layout")
+				require.Contains(t, entries, "index.json")
 
-		// a single-platform image includes a manifest.json, making it
-		// compatible with docker load
-		require.Contains(t, entries, "manifest.json")
+				// a single-platform image includes a manifest.json, making it
+				// compatible with docker load
+				require.Contains(t, entries, "manifest.json")
 
-		dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
-		// NOTE: this is what buildkit integ tests do, use a one-off struct rather than actual defined type
-		var dockerManifest []struct {
-			Config string
+				dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
+				// NOTE: this is what buildkit integ tests do, use a one-off struct rather than actual defined type
+				var dockerManifest []struct {
+					Config string
+				}
+				require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
+				require.Len(t, dockerManifest, 1)
+				configPath := dockerManifest[0].Config
+				configBytes := readTarFile(t, imagePath, configPath)
+				var img ocispecs.Image
+				require.NoError(t, json.Unmarshal(configBytes, &img))
+				require.Equal(t, entrypoint, img.Config.Entrypoint)
+			})
 		}
-		require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
-		require.Len(t, dockerManifest, 1)
-		configPath := dockerManifest[0].Config
-		configBytes := readTarFile(t, imagePath, configPath)
-		var img ocispecs.Image
-		require.NoError(t, json.Unmarshal(configBytes, &img))
-		require.Equal(t, entrypoint, img.Config.Entrypoint)
 	})
 
 	t.Run("to workdir", func(t *testing.T) {
@@ -2632,6 +2643,21 @@ func TestContainerExport(t *testing.T) {
 		require.Error(t, err)
 		require.False(t, ok)
 	})
+}
+
+// NOTE: more test coverage of Container.AsTarball are in TestContainerExport and TestContainerMultiPlatformExport
+func TestContainerAsTarball(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	ctr := c.Container().From(alpineImage)
+	output, err := ctr.
+		WithMountedFile("/foo.tar", ctr.AsTarball()).
+		WithExec([]string{"apk", "add", "file"}).
+		WithExec([]string{"file", "/foo.tar"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/foo.tar: POSIX tar archive\n", output)
 }
 
 func TestContainerImport(t *testing.T) {
@@ -2725,62 +2751,75 @@ func TestContainerFromIDPlatform(t *testing.T) {
 }
 
 func TestContainerMultiPlatformExport(t *testing.T) {
-	c, ctx := connect(t)
+	for _, useAsTarball := range []bool{true, false} {
+		t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
+			c, ctx := connect(t)
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
-	for platform, uname := range platformToUname {
-		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From(alpineImage).
-			WithExec([]string{"uname", "-m"}).
-			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
-			WithEntrypoint([]string{"echo", uname})
-		variants = append(variants, ctr)
+			variants := make([]*dagger.Container, 0, len(platformToUname))
+			for platform, uname := range platformToUname {
+				ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+					From(alpineImage).
+					WithExec([]string{"uname", "-m"}).
+					WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+					WithEntrypoint([]string{"echo", uname})
+				variants = append(variants, ctr)
+			}
+
+			dest := filepath.Join(t.TempDir(), "image.tar")
+
+			if useAsTarball {
+				tarFile := c.Container().AsTarball(dagger.ContainerAsTarballOpts{
+					PlatformVariants: variants,
+				})
+				ok, err := tarFile.Export(ctx, dest)
+				require.NoError(t, err)
+				require.True(t, ok)
+			} else {
+				ok, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+					PlatformVariants: variants,
+				})
+				require.NoError(t, err)
+				require.True(t, ok)
+			}
+
+			entries := tarEntries(t, dest)
+			require.Contains(t, entries, "oci-layout")
+			// multi-platform images don't contain a manifest.json
+			require.NotContains(t, entries, "manifest.json")
+
+			indexBytes := readTarFile(t, dest, "index.json")
+			var index ocispecs.Index
+			require.NoError(t, json.Unmarshal(indexBytes, &index))
+			// index is nested (search "nested index" in spec here):
+			// https://github.com/opencontainers/image-spec/blob/main/image-index.md
+			nestedIndexDigest := index.Manifests[0].Digest
+			indexBytes = readTarFile(t, dest, "blobs/sha256/"+nestedIndexDigest.Encoded())
+			index = ocispecs.Index{}
+			require.NoError(t, json.Unmarshal(indexBytes, &index))
+
+			// make sure all the platforms we expected are there
+			exportedPlatforms := make(map[string]struct{})
+			for _, desc := range index.Manifests {
+				require.NotNil(t, desc.Platform)
+				platformStr := platforms.Format(*desc.Platform)
+				exportedPlatforms[platformStr] = struct{}{}
+
+				manifestDigest := desc.Digest
+				manifestBytes := readTarFile(t, dest, "blobs/sha256/"+manifestDigest.Encoded())
+				var manifest ocispecs.Manifest
+				require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
+				configDigest := manifest.Config.Digest
+				configBytes := readTarFile(t, dest, "blobs/sha256/"+configDigest.Encoded())
+				var config ocispecs.Image
+				require.NoError(t, json.Unmarshal(configBytes, &config))
+				require.Equal(t, []string{"echo", platformToUname[dagger.Platform(platformStr)]}, config.Config.Entrypoint)
+			}
+			for platform := range platformToUname {
+				delete(exportedPlatforms, string(platform))
+			}
+			require.Empty(t, exportedPlatforms)
+		})
 	}
-
-	dest := filepath.Join(t.TempDir(), "image.tar")
-
-	ok, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
-		PlatformVariants: variants,
-	})
-	require.NoError(t, err)
-	require.True(t, ok)
-
-	entries := tarEntries(t, dest)
-	require.Contains(t, entries, "oci-layout")
-	// multi-platform images don't contain a manifest.json
-	require.NotContains(t, entries, "manifest.json")
-
-	indexBytes := readTarFile(t, dest, "index.json")
-	var index ocispecs.Index
-	require.NoError(t, json.Unmarshal(indexBytes, &index))
-	// index is nested (search "nested index" in spec here):
-	// https://github.com/opencontainers/image-spec/blob/main/image-index.md
-	nestedIndexDigest := index.Manifests[0].Digest
-	indexBytes = readTarFile(t, dest, "blobs/sha256/"+nestedIndexDigest.Encoded())
-	index = ocispecs.Index{}
-	require.NoError(t, json.Unmarshal(indexBytes, &index))
-
-	// make sure all the platforms we expected are there
-	exportedPlatforms := make(map[string]struct{})
-	for _, desc := range index.Manifests {
-		require.NotNil(t, desc.Platform)
-		platformStr := platforms.Format(*desc.Platform)
-		exportedPlatforms[platformStr] = struct{}{}
-
-		manifestDigest := desc.Digest
-		manifestBytes := readTarFile(t, dest, "blobs/sha256/"+manifestDigest.Encoded())
-		var manifest ocispecs.Manifest
-		require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
-		configDigest := manifest.Config.Digest
-		configBytes := readTarFile(t, dest, "blobs/sha256/"+configDigest.Encoded())
-		var config ocispecs.Image
-		require.NoError(t, json.Unmarshal(configBytes, &config))
-		require.Equal(t, []string{"echo", platformToUname[dagger.Platform(platformStr)]}, config.Config.Entrypoint)
-	}
-	for platform := range platformToUname {
-		delete(exportedPlatforms, string(platform))
-	}
-	require.Empty(t, exportedPlatforms)
 }
 
 // Multiplatform publish is also tested in more complicated scenarios in platform_test.go

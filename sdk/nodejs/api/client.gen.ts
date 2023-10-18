@@ -98,6 +98,30 @@ export enum CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ContainerAsTarballOpts = {
+  /**
+   * Identifiers for other platform specific containers.
+   * Used for multi-platform image.
+   */
+  platformVariants?: Container[]
+
+  /**
+   * Force each layer of the image to use the specified compression algorithm.
+   * If this is unset, then if a layer already has a compressed blob in the engine's
+   * cache, that will be used (this can result in a mix of compression algorithms for
+   * different layers). If this is unset and a layer has no compressed blob in the
+   * engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Use the specified media types for the image's layers. Defaults to OCI, which
+   * is largely compatible with most recent container runtimes, but Docker may be needed
+   * for older runtimes without OCI support.
+   */
+  mediaTypes?: ImageMediaTypes
+}
+
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
@@ -126,6 +150,18 @@ export type ContainerBuildOpts = {
    * e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)"
    */
   secrets?: Secret[]
+}
+
+export type ContainerEndpointOpts = {
+  /**
+   * The exposed port number for the endpoint
+   */
+  port?: number
+
+  /**
+   * Return a URL with the given scheme, eg. http for http://
+   */
+  scheme?: string
 }
 
 export type ContainerExportOpts = {
@@ -431,14 +467,6 @@ export type DirectoryAsModuleOpts = {
    * directory.
    */
   sourceSubpath?: string
-
-  /**
-   * A pre-built runtime container to use instead of building one from the
-   * source code. This is useful for bootstrapping.
-   *
-   * You should ignore this unless you're building a Dagger SDK.
-   */
-  runtime?: Container
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -608,37 +636,6 @@ export type HostDirectoryOpts = {
   include?: string[]
 }
 
-export type HostServiceOpts = {
-  /**
-   * Upstream host to forward traffic to.
-   */
-  host?: string
-}
-
-export type HostTunnelOpts = {
-  /**
-   * Map each service port to the same port on the host, as if the service were
-   * running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   */
-  native?: boolean
-
-  /**
-   * Configure explicit port forwarding rules for the tunnel.
-   *
-   * If a port's frontend is unspecified or 0, a random port will be chosen by
-   * the host.
-   *
-   * If no ports are given, all of the service's ports are forwarded. If native
-   * is true, each port maps to the same port on the host. If native is false,
-   * each port maps to a random port chosen by the host.
-   *
-   * If ports are given and native is true, the ports are additive.
-   */
-  ports?: PortForward[]
-}
-
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
  */
@@ -664,15 +661,6 @@ export enum ImageMediaTypes {
  * An arbitrary JSON-encoded value.
  */
 export type JSON = string & { __JSON: never }
-
-export type ModuleServeOpts = {
-  environment?: ModuleEnvironmentVariable[]
-}
-
-export type ModuleEnvironmentVariable = {
-  name: string
-  value?: string
-}
 
 /**
  * A reference to a Module.
@@ -712,23 +700,6 @@ export type PipelineLabel = {
  */
 export type Platform = string & { __Platform: never }
 
-export type PortForward = {
-  /**
-   * Destination port for traffic.
-   */
-  backend: number
-
-  /**
-   * Port to expose to clients. If unspecified, a default will be chosen.
-   */
-  frontend?: number
-
-  /**
-   * Protocol to use for traffic.
-   */
-  protocol?: NetworkProtocol
-}
-
 export type ClientContainerOpts = {
   id?: ContainerID
   platform?: Platform
@@ -747,14 +718,18 @@ export type ClientGitOpts = {
   /**
    * A service which must be started before the repo is fetched.
    */
-  experimentalServiceHost?: Service
+  experimentalServiceHost?: Container
 }
 
 export type ClientHttpOpts = {
   /**
    * A service which must be started before the URL is fetched.
    */
-  experimentalServiceHost?: Service
+  experimentalServiceHost?: Container
+}
+
+export type ClientModuleConfigOpts = {
+  subpath?: string
 }
 
 export type ClientPipelineOpts = {
@@ -777,23 +752,6 @@ export type ClientSocketOpts = {
  * A unique identifier for a secret.
  */
 export type SecretID = string & { __SecretID: never }
-
-export type ServiceEndpointOpts = {
-  /**
-   * The exposed port number for the endpoint
-   */
-  port?: number
-
-  /**
-   * Return a URL with the given scheme, eg. http for http://
-   */
-  scheme?: string
-}
-
-/**
- * A unique service identifier.
- */
-export type ServiceID = string & { __ServiceID: never }
 
 /**
  * A content-addressed socket identifier.
@@ -914,8 +872,10 @@ export class CacheVolume extends BaseClient {
  */
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
+  private readonly _endpoint?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _export?: boolean = undefined
+  private readonly _hostname?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
@@ -933,8 +893,10 @@ export class Container extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _id?: ContainerID,
+    _endpoint?: string,
     _envVariable?: string,
     _export?: boolean,
+    _hostname?: string,
     _imageRef?: string,
     _label?: string,
     _platform?: Platform,
@@ -949,8 +911,10 @@ export class Container extends BaseClient {
     super(parent)
 
     this._id = _id
+    this._endpoint = _endpoint
     this._envVariable = _envVariable
     this._export = _export
+    this._hostname = _hostname
     this._imageRef = _imageRef
     this._label = _label
     this._platform = _platform
@@ -985,16 +949,30 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Turn the container into a Service.
-   *
-   * Be sure to set any exposed ports before this conversion.
+   * Returns a File representing the container serialized to a tarball.
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+   * Used for multi-platform image.
+   * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
+   * If this is unset, then if a layer already has a compressed blob in the engine's
+   * cache, that will be used (this can result in a mix of compression algorithms for
+   * different layers). If this is unset and a layer has no compressed blob in the
+   * engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the image's layers. Defaults to OCI, which
+   * is largely compatible with most recent container runtimes, but Docker may be needed
+   * for older runtimes without OCI support.
    */
-  asService(): Service {
-    return new Service({
+  asTarball(opts?: ContainerAsTarballOpts): File {
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
+
+    return new File({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "asService",
+          operation: "asTarball",
+          args: { ...opts, __metadata: metadata },
         },
       ],
       host: this.clientHost,
@@ -1067,6 +1045,36 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   * @param opts.port The exposed port number for the endpoint
+   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
+   */
+  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
+    if (this._endpoint) {
+      return this._endpoint
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -1192,6 +1200,8 @@ export class Container extends BaseClient {
    *
    * This includes ports already exposed by the image, even if not
    * explicitly added with dagger.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async exposedPorts(): Promise<Port[]> {
     type exposedPorts = {
@@ -1266,6 +1276,29 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   */
+  async hostname(): Promise<string> {
+    if (this._hostname) {
+      return this._hostname
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -1726,6 +1759,8 @@ export class Container extends BaseClient {
    * Exposed ports serve two purposes:
    *   - For health checks and introspection, when running services
    *   - For setting the EXPOSE OCI field when publishing the container
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
@@ -2059,10 +2094,12 @@ export class Container extends BaseClient {
    * The service will be reachable from the container via the provided hostname alias.
    *
    * The service dependency will also convey to any files or directories produced by the container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withServiceBinding(alias: string, service: Service): Container {
+  withServiceBinding(alias: string, service: Container): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2160,6 +2197,8 @@ export class Container extends BaseClient {
 
   /**
    * Unexpose a previously exposed port.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
@@ -2364,10 +2403,6 @@ export class Directory extends BaseClient {
    *
    * If not set, the module source code is loaded from the root of the
    * directory.
-   * @param opts.runtime A pre-built runtime container to use instead of building one from the
-   * source code. This is useful for bootstrapping.
-   *
-   * You should ignore this unless you're building a Dagger SDK.
    */
   asModule(opts?: DirectoryAsModuleOpts): Module_ {
     return new Module_({
@@ -3867,30 +3902,6 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Creates a service that forwards traffic to a specified address via the host.
-   * @param ports Ports to expose via the service, forwarding through the host network.
-   *
-   * If a port's frontend is unspecified or 0, it defaults to the same as the
-   * backend port.
-   *
-   * An empty set of ports is not valid; an error will be returned.
-   * @param opts.host Upstream host to forward traffic to.
-   */
-  service(ports: PortForward[], opts?: HostServiceOpts): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "service",
-          args: { ports, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
    * The file is limited to a size of 512000 bytes.
    * @param name The user defined name for this secret.
@@ -3903,38 +3914,6 @@ export class Host extends BaseClient {
         {
           operation: "setSecretFile",
           args: { name, path },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Creates a tunnel that forwards traffic from the host to a service.
-   * @param service Service to send traffic from the tunnel.
-   * @param opts.native Map each service port to the same port on the host, as if the service were
-   * running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   * @param opts.ports Configure explicit port forwarding rules for the tunnel.
-   *
-   * If a port's frontend is unspecified or 0, a random port will be chosen by
-   * the host.
-   *
-   * If no ports are given, all of the service's ports are forwarded. If native
-   * is true, each port maps to the same port on the host. If native is false,
-   * each port maps to a random port chosen by the host.
-   *
-   * If ports are given and native is true, the ports are additive.
-   */
-  tunnel(service: Service, opts?: HostTunnelOpts): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "tunnel",
-          args: { service, ...opts },
         },
       ],
       host: this.clientHost,
@@ -4062,7 +4041,6 @@ export class Module_ extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sdk?: string = undefined
-  private readonly _sdkRuntime?: string = undefined
   private readonly _serve?: Void = undefined
   private readonly _sourceDirectorySubPath?: string = undefined
 
@@ -4075,7 +4053,6 @@ export class Module_ extends BaseClient {
     _description?: string,
     _name?: string,
     _sdk?: string,
-    _sdkRuntime?: string,
     _serve?: Void,
     _sourceDirectorySubPath?: string
   ) {
@@ -4085,7 +4062,6 @@ export class Module_ extends BaseClient {
     this._description = _description
     this._name = _name
     this._sdk = _sdk
-    this._sdkRuntime = _sdkRuntime
     this._serve = _serve
     this._sourceDirectorySubPath = _sourceDirectorySubPath
   }
@@ -4255,7 +4231,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The SDK used by this module
+   * The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
    */
   async sdk(): Promise<string> {
     if (this._sdk) {
@@ -4276,32 +4252,11 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The SDK runtime module image ref.
-   */
-  async sdkRuntime(): Promise<string> {
-    if (this._sdkRuntime) {
-      return this._sdkRuntime
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "sdkRuntime",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
    * Serve a module's API in the current session.
    *     Note: this can only be called once per session.
    *     In the future, it could return a stream or service to remove the side effect.
    */
-  async serve(opts?: ModuleServeOpts): Promise<Void> {
+  async serve(): Promise<Void> {
     if (this._serve) {
       return this._serve
     }
@@ -4311,7 +4266,6 @@ export class Module_ extends BaseClient {
         ...this._queryTree,
         {
           operation: "serve",
-          args: { ...opts },
         },
       ],
       this.client
@@ -4381,6 +4335,145 @@ export class Module_ extends BaseClient {
    */
   with(arg: (param: Module_) => Module_) {
     return arg(this)
+  }
+}
+
+/**
+ * Static configuration for a module (e.g. parsed contents of dagger.json)
+ */
+export class ModuleConfig extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _root?: string = undefined
+  private readonly _sdk?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _root?: string,
+    _sdk?: string
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._root = _root
+    this._sdk = _sdk
+  }
+
+  /**
+   * Modules that this module depends on.
+   */
+  async dependencies(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "dependencies",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Exclude these file globs when loading the module root.
+   */
+  async exclude(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exclude",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Include only these file globs when loading the module root.
+   */
+  async include(): Promise<string[]> {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "include",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the module.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The root directory of the module's project, which may be above the module source code.
+   */
+  async root(): Promise<string> {
+    if (this._root) {
+      return this._root
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "root",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
+   */
+  async sdk(): Promise<string> {
+    if (this._sdk) {
+      return this._sdk
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sdk",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 }
 
@@ -5013,23 +5106,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Loads a service from ID.
-   */
-  loadServiceFromID(id: ServiceID): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadServiceFromID",
-          args: { id },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Load a Socket from its ID.
    */
   loadSocketFromID(id: SocketID): Socket {
@@ -5072,6 +5148,26 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "module",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load the static configuration for a module from the given source directory and optional subpath.
+   */
+  moduleConfig(
+    sourceDirectory: Directory,
+    opts?: ClientModuleConfigOpts
+  ): ModuleConfig {
+    return new ModuleConfig({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "moduleConfig",
+          args: { sourceDirectory, ...opts },
         },
       ],
       host: this.clientHost,
@@ -5242,178 +5338,6 @@ export class Secret extends BaseClient {
     )
 
     return response
-  }
-}
-
-export class Service extends BaseClient {
-  private readonly _id?: ServiceID = undefined
-  private readonly _endpoint?: string = undefined
-  private readonly _hostname?: string = undefined
-  private readonly _start?: ServiceID = undefined
-  private readonly _stop?: ServiceID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _id?: ServiceID,
-    _endpoint?: string,
-    _hostname?: string,
-    _start?: ServiceID,
-    _stop?: ServiceID
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._endpoint = _endpoint
-    this._hostname = _hostname
-    this._start = _start
-    this._stop = _stop
-  }
-
-  /**
-   * A unique identifier for this service.
-   */
-  async id(): Promise<ServiceID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ServiceID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Retrieves an endpoint that clients can use to reach this container.
-   *
-   * If no port is specified, the first exposed port is used. If none exist an error is returned.
-   *
-   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-   * @param opts.port The exposed port number for the endpoint
-   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
-   */
-  async endpoint(opts?: ServiceEndpointOpts): Promise<string> {
-    if (this._endpoint) {
-      return this._endpoint
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "endpoint",
-          args: { ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Retrieves a hostname which can be used by clients to reach this container.
-   */
-  async hostname(): Promise<string> {
-    if (this._hostname) {
-      return this._hostname
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "hostname",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Retrieves the list of ports provided by the service.
-   */
-  async ports(): Promise<Port[]> {
-    type ports = {
-      description: string
-      port: number
-      protocol: NetworkProtocol
-    }
-
-    const response: Awaited<ports[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "ports",
-        },
-        {
-          operation: "description port protocol",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new Port(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.description,
-          r.port,
-          r.protocol
-        )
-    )
-  }
-
-  /**
-   * Start the service and wait for its health checks to succeed.
-   *
-   * Services bound to a Container do not need to be manually started.
-   */
-  async start(): Promise<Service> {
-    await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "start",
-        },
-      ],
-      this.client
-    )
-
-    return this
-  }
-
-  /**
-   * Stop the service.
-   */
-  async stop(): Promise<Service> {
-    await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "stop",
-        },
-      ],
-      this.client
-    )
-
-    return this
   }
 }
 

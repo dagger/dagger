@@ -1,0 +1,5 @@
+{
+  "name": "python-sdk",
+  "root": "..",
+  "sdk": "go"
+}
