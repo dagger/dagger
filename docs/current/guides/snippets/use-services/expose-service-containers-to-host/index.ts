@@ -17,10 +17,10 @@ connect(
       .asService()
 
     // expose HTTP service to host
-    const tunnel = client.host().tunnel(httpSrv).start()
+    const tunnel = await client.host().tunnel(httpSrv).start()
 
     // get HTTP service address
-    const srvAddr = tunnel.endpoint()
+    const srvAddr = await tunnel.endpoint()
 
     // access HTTP service from host
     // print response
