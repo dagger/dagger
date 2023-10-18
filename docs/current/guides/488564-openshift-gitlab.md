@@ -98,4 +98,4 @@ Use the following resources to learn more about the topics discussed in this gui
 
 :::info
 If you need help troubleshooting your Dagger deployment on Kubernetes, let us know in [Discord](https://discord.com/invite/dagger-io) or create a [GitHub issue](https://github.com/dagger/dagger/issues/new/choose).
-::: 
+:::
