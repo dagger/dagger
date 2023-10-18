@@ -736,6 +736,16 @@ export type ClientGitOpts = {
   keepGitDir?: boolean
 
   /**
+   * Set SSH known hosts
+   */
+  sshKnownHosts?: string
+
+  /**
+   * Set SSH auth socket
+   */
+  sshAuthSocket?: Socket
+
+  /**
    * A service which must be started before the repo is fetched.
    */
   experimentalServiceHost?: Service
@@ -3706,15 +3716,39 @@ export class GeneratedCode extends BaseClient {
  * A git ref (tag, branch or commit).
  */
 export class GitRef extends BaseClient {
+  private readonly _commit?: string = undefined
+
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: {
-    queryTree?: QueryTree[]
-    host?: string
-    sessionToken?: string
-  }) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _commit?: string
+  ) {
     super(parent)
+
+    this._commit = _commit
+  }
+
+  /**
+   * The resolved commit id at this ref.
+   */
+  async commit(): Promise<string> {
+    if (this._commit) {
+      return this._commit
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "commit",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -4911,9 +4945,11 @@ export class Client extends BaseClient {
   /**
    * Queries a git repository.
    * @param url Url of the git repository.
-   * Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+   * Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
    * Suffix ".git" is optional.
    * @param opts.keepGitDir Set to true to keep .git directory.
+   * @param opts.sshKnownHosts Set SSH known hosts
+   * @param opts.sshAuthSocket Set SSH auth socket
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {

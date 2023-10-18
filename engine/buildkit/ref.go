@@ -18,6 +18,7 @@ import (
 	bksolver "github.com/moby/buildkit/solver"
 	solvererror "github.com/moby/buildkit/solver/errdefs"
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
+	"github.com/moby/buildkit/solver/llbsolver/provenance"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -197,11 +198,19 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	return res, nil
 }
 
-func (r *ref) Provenance() interface{} {
+func (r *ref) Provenance() *provenance.Capture {
 	if r == nil {
 		return nil
 	}
-	return r.resultProxy.Provenance()
+	pr := r.resultProxy.Provenance()
+	if pr == nil {
+		return nil
+	}
+	p, ok := pr.(*provenance.Capture)
+	if !ok {
+		return nil
+	}
+	return p
 }
 
 func (r *ref) CacheRef(ctx context.Context) (bkcache.ImmutableRef, error) {
