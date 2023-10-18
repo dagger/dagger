@@ -197,6 +197,13 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	return res, nil
 }
 
+func (r *ref) Provenance() interface{} {
+	if r == nil {
+		return nil
+	}
+	return r.resultProxy.Provenance()
+}
+
 func (r *ref) CacheRef(ctx context.Context) (bkcache.ImmutableRef, error) {
 	cacheRes, err := r.Result(ctx)
 	if err != nil {
