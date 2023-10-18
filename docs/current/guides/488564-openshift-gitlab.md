@@ -27,14 +27,11 @@ Readers wishing to implement the recommended architecture pattern with GitLab CI
 - An functional OpenShift cluster with [Gitlab Runner Operator](https://docs.gitlab.com/runner/install/operator.html) installed.
 - A GitLab account or self hosted instance. If not, [sign up for a free GitLab account](https://gitlab.com/signup).
 
-
-
 ## Install Dagger engine
-
 
 First create a `values.yaml` to configure our Dagger Helm deployment.
 Then create a set of labels for the pod affinity and the taints & tolerations.
-In this example we choose the label `builder-node=true` to taint the nodes, on which the Dagger engine should be deployed on.   
+In this example we choose the label `builder-node=true` to taint the nodes, on which the Dagger engine should be deployed on.
 
 ```yaml file=./snippets/openshift-gitlab/values.yaml
 ```
@@ -74,7 +71,6 @@ Apply the the ConfigMap with following command:
 oc apply -f runner-config.yaml -n dagger
 ```
 
-
 ```yaml file=./snippets/openshift-gitlab/runner.yaml
 ```
 
@@ -84,18 +80,15 @@ Then deploy the GitLab Runner itself. The Runner will take the ConfigMap with th
 oc apply -f runner.yaml -n dagger
 ```
 
-
-### Run a GitLab CI job 
+### Run a GitLab CI job
 
 The last step is to configure an `.gitlab-ci.yml` file which makes use of the deployed Dagger engine.
 The most important parts in this file are:
-* `tags: [dagger]` this tells GitLab to use the GitLab Runner which is connectec to th Dagger engine
-* `"_EXPERIMENTAL_DAGGER_RUNNER_HOST": "unix:///var/run/dagger/buildkitd.sock"` in the variable section. With this env var the Dagger CLI will connect to the socket, which connects the GitLab runner to the Dagger engine. 
+- `tags: [dagger]` this tells GitLab to use the GitLab Runner which is connectec to th Dagger engine
+- `"_EXPERIMENTAL_DAGGER_RUNNER_HOST": "unix:///var/run/dagger/buildkitd.sock"` in the variable section. With this env var the Dagger CLI will connect to the socket, which connects the GitLab runner to the Dagger engine.
 
 ```yaml file=./snippets/openshift-gitlab/.gitlab-ci.yml
 ```
-
-
 
 Use the following resources to learn more about the topics discussed in this guide:
 
@@ -105,5 +98,4 @@ Use the following resources to learn more about the topics discussed in this gui
 
 :::info
 If you need help troubleshooting your Dagger deployment on Kubernetes, let us know in [Discord](https://discord.com/invite/dagger-io) or create a [GitHub issue](https://github.com/dagger/dagger/issues/new/choose).
-:::
- 
+::: 
