@@ -520,6 +520,37 @@ func TestModuleGoCustomTypes(t *testing.T) {
 	require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 }
 
+func TestModuleGoReturnTypeDetection(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct {}
+
+type X struct {
+	Message string ` + "`json:\"message\"`" + `
+}
+
+func (m *Foo) MyFunction() X {
+	return X{Message: "foo"}
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{myFunction{message}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo"}}}`, out)
+}
+
 //go:embed testdata/modules/go/use/dep/main.go
 var useInner string
 

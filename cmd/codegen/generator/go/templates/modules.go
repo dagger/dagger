@@ -76,37 +76,60 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 		return objs[i].Pos() < objs[j].Pos()
 	})
 
+	tps := []types.Type{}
 	for _, obj := range objs {
-		named, isNamed := obj.Type().(*types.Named)
-		if !isNamed {
-			continue
+		tps = append(tps, obj.Type())
+	}
+
+	added := map[string]struct{}{}
+	topLevel := true
+
+	for len(tps) != 0 {
+		for _, tp := range tps {
+			named, isNamed := tp.(*types.Named)
+			if !isNamed {
+				continue
+			}
+			obj := named.Obj()
+			if obj.Pkg() != funcs.modulePkg.Types {
+				continue
+			}
+
+			strct, isStruct := named.Underlying().(*types.Struct)
+			if !isStruct {
+				// TODO(vito): could possibly support non-struct types, but why bother
+				continue
+			}
+
+			// avoid adding a struct definition twice (if it's referenced in two function signatures)
+			if _, ok := added[obj.Name()]; ok {
+				continue
+			}
+
+			// TODO(vito): hacky: need to run this before fillObjectFunctionCases so it
+			// collects all the methods
+			objType, err := ps.goStructToAPIType(strct, named)
+			if err != nil {
+				panic(err)
+			}
+
+			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
+				// errors indicate an internal problem rather than something w/ user code, so panic instead
+				panic(err)
+			}
+
+			if topLevel && len(objFunctionCases[obj.Name()]) == 0 {
+				// no functions on this top-level object, so don't add it to the module
+				continue
+			}
+
+			// Add the object to the module
+			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objType))
+			added[obj.Name()] = struct{}{}
 		}
 
-		strct, isStruct := named.Underlying().(*types.Struct)
-		if !isStruct {
-			// TODO(vito): could possibly support non-struct types, but why bother
-			continue
-		}
-
-		// TODO(vito): hacky: need to run this before fillObjectFunctionCases so it
-		// collects all the methods
-		objType, err := ps.goStructToAPIType(strct, named)
-		if err != nil {
-			panic(err)
-		}
-
-		if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
-			// errors indicate an internal problem rather than something w/ user code, so panic instead
-			panic(err)
-		}
-
-		if len(objFunctionCases[obj.Name()]) == 0 {
-			// no functions on this object, so don't add it to the module
-			continue
-		}
-
-		// Add the object to the module
-		createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objType))
+		tps, ps.extraTypes = ps.extraTypes, nil
+		topLevel = false
 	}
 
 	// TODO: sort cases and functions based on their definition order
@@ -397,9 +420,10 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 }
 
 type parseState struct {
-	pkg     *packages.Package
-	fset    *token.FileSet
-	methods map[string][]method
+	pkg        *packages.Package
+	fset       *token.FileSet
+	methods    map[string][]method
+	extraTypes []types.Type
 }
 
 type method struct {
@@ -408,6 +432,7 @@ type method struct {
 }
 
 func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*Statement, error) {
+	ps.extraTypes = append(ps.extraTypes, typ)
 	switch t := typ.(type) {
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
