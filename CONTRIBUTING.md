@@ -285,3 +285,20 @@ git commit --amend -s
 # Force push the new commit to re-run all GitHub Actions jobs:
 git push -f mybranch
 ```
+
+### How to test SDK changes locally?
+
+NodeJS:
+
+- In `sdk/nodejs`, run `npm run build`
+- In your `package.json`, update `@dagger.io/dagger` to reference your local path. For example `"@dagger.io/dagger": "<PATH TO DAGGER FORK>/dagger/sdk/nodejs",`
+
+Python:
+
+- While in a VirtualEnvironment, run `pip install <PATH TO DAGGER FORK>/sdk/python`
+
+Go:
+
+- In your Go project, run `go mod edit -replace dagger.io/dagger=<PATH TO DAGGER FORK>/sdk/go`
+- Then `go mod tidy`
+
