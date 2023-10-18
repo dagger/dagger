@@ -7,6 +7,9 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/llbsolver/provenance"
+	"github.com/pkg/errors"
 )
 
 var _ ExecutableSchema = &gitSchema{}
@@ -36,7 +39,8 @@ func (s *gitSchema) Resolvers() Resolvers {
 			"commit": ToResolver(s.commit),
 		},
 		"GitRef": ObjectResolver{
-			"tree": ToResolver(s.tree),
+			"tree":   ToResolver(s.tree),
+			"commit": ToResolver(s.findCommit),
 		},
 	}
 }
@@ -119,18 +123,6 @@ type gitTreeArgs struct {
 }
 
 func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
-	opts := []llb.GitOption{}
-
-	if parent.Repository.KeepGitDir {
-		opts = append(opts, llb.KeepGitDir())
-	}
-	if args.SSHKnownHosts != "" {
-		opts = append(opts, llb.KnownSSHHosts(args.SSHKnownHosts))
-	}
-	if args.SSHAuthSocket != "" {
-		opts = append(opts, llb.MountSSHSock(string(args.SSHAuthSocket)))
-	}
-
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
 		host, err := parent.Repository.ServiceHost.Hostname(ctx, s.svcs)
@@ -141,6 +133,76 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 			Service:  parent.Repository.ServiceHost,
 			Hostname: host,
 		})
+	}
+
+	st, err := s.getState(ctx, parent, args, svcs)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewDirectorySt(ctx, *st, "", parent.Repository.Pipeline, s.platform, svcs)
+}
+
+func (s *gitSchema) findCommit(ctx *core.Context, parent gitRef, args gitTreeArgs) (string, error) {
+	var svcs core.ServiceBindings
+	if parent.Repository.ServiceHost != nil {
+		host, err := parent.Repository.ServiceHost.Hostname(ctx, s.svcs)
+		if err != nil {
+			return "", err
+		}
+		svcs = append(svcs, core.ServiceBinding{
+			Service:  parent.Repository.ServiceHost,
+			Hostname: host,
+		})
+	}
+
+	st, err := s.getState(ctx, parent, args, svcs)
+	if err != nil {
+		return "", err
+	}
+	p, err := s.getProvenance(ctx, *st)
+	if err != nil {
+		return "", err
+	}
+	if len(p.Sources.Git) == 0 {
+		return "", errors.Errorf("no git commit was resolved")
+	}
+	return p.Sources.Git[0].Commit, nil
+}
+
+func (s *gitSchema) getProvenance(ctx *core.Context, st llb.State) (*provenance.Capture, error) {
+	def, err := st.Marshal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.bk.Solve(ctx, bkgw.SolveRequest{
+		Evaluate:   true,
+		Definition: def.ToPB(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	pr := res.Ref.Provenance()
+	if pr == nil {
+		return nil, errors.Errorf("no provenance was resolved")
+	}
+	p, ok := pr.(*provenance.Capture)
+	if !ok {
+		return nil, errors.Errorf("invalid provenance type %T", pr)
+	}
+	return p, nil
+}
+
+func (s *gitSchema) getState(ctx *core.Context, parent gitRef, args gitTreeArgs, svcs core.ServiceBindings) (*llb.State, error) {
+	opts := []llb.GitOption{}
+
+	if parent.Repository.KeepGitDir {
+		opts = append(opts, llb.KeepGitDir())
+	}
+	if args.SSHKnownHosts != "" {
+		opts = append(opts, llb.KnownSSHHosts(args.SSHKnownHosts))
+	}
+	if args.SSHAuthSocket != "" {
+		opts = append(opts, llb.MountSSHSock(string(args.SSHAuthSocket)))
 	}
 
 	useDNS := len(svcs) > 0
@@ -164,6 +226,5 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 	} else {
 		st = llb.Git(parent.Repository.URL, parent.Name, opts...)
 	}
-
-	return core.NewDirectorySt(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
+	return &st, nil
 }

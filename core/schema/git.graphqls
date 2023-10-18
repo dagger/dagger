@@ -55,4 +55,7 @@ type GitRepository {
 type GitRef {
   "The filesystem tree at this ref."
   tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
+
+  "The resolved commit id at this ref."
+  commit(sshKnownHosts: String, sshAuthSocket: SocketID): String!
 }

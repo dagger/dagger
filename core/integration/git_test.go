@@ -24,14 +24,16 @@ func TestGit(t *testing.T) {
 	res := struct {
 		Git struct {
 			Branch struct {
-				Tree struct {
+				Commit string
+				Tree   struct {
 					File struct {
 						Contents string
 					}
 				}
 			}
 			Commit struct {
-				Tree struct {
+				Commit string
+				Tree   struct {
 					File struct {
 						Contents string
 					}
@@ -44,6 +46,7 @@ func TestGit(t *testing.T) {
 		`{
 			git(url: "github.com/dagger/dagger", keepGitDir: true) {
 				branch(name: "main") {
+					commit
 					tree {
 						file(path: "README.md") {
 							contents
@@ -51,6 +54,7 @@ func TestGit(t *testing.T) {
 					}
 				}
 				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
+					commit
 					tree {
 						file(path: "README.md") {
 							contents
@@ -60,6 +64,8 @@ func TestGit(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
+	require.NotEmpty(t, res.Git.Branch.Commit)
+	require.Equal(t, res.Git.Commit.Commit, "c80ac2c13df7d573a069938e01ca13f7a81f0345")
 	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
 	require.Contains(t, res.Git.Commit.Tree.File.Contents, "Dagger")
 }
