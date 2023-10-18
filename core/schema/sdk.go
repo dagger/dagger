@@ -7,17 +7,9 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	ciutil "github.com/dagger/dagger/internal/mage/util"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
-)
-
-// NB: Keep these in sync with internal/mage/util/engine.go. We can't directly
-// depend on it because that means backwards-incompatible changes will break
-// the build; internal/mage has to point to a stable SDK, while
-// github.com/dagger/dagger has to point to the dev SDK.
-const (
-	GoSDKEngineContainerTarballPath    = "/usr/local/share/dagger/go-module-sdk-image.tar"
-	PythonSDKEngineContainerModulePath = "/usr/local/share/dagger/python-sdk/runtime"
 )
 
 /*
@@ -89,7 +81,7 @@ func (s *moduleSchema) builtinSDK(ctx *core.Context, sdkName string) (SDK, error
 	case "go":
 		return &goSDK{moduleSchema: s}, nil
 	case "python":
-		return s.loadBuiltinSDK(ctx, sdkName, PythonSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, sdkName, ciutil.PythonSDKEngineContainerModulePath)
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}
@@ -389,17 +381,11 @@ func (sdk *goSDK) baseWithCodegen(ctx *core.Context, sourceDir *core.Directory, 
 func (sdk *goSDK) base(ctx *core.Context) (*core.Container, error) {
 	progCtx, recorder := progrock.WithGroup(ctx.Context, "load builtin module sdk go")
 	ctx.Context = progCtx
-	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx,
-		recorder,
-		sdk.platform,
-		filepath.Dir(GoSDKEngineContainerTarballPath),
-		nil, // excludes
-		[]string{filepath.Base(GoSDKEngineContainerTarballPath)},
-	)
+	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(ciutil.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(ciutil.GoSDKEngineContainerTarballPath)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)
 	}
-	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
+	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(ciutil.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
 	tarballFileID, err := tarballFile.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go module sdk tarball file id: %w", err)
