@@ -118,9 +118,18 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 				panic(err)
 			}
 
-			if topLevel && len(objFunctionCases[obj.Name()]) == 0 {
-				// no functions on this top-level object, so don't add it to the module
-				continue
+			if len(objFunctionCases[obj.Name()]) == 0 {
+				if topLevel {
+					// no functions on this top-level object, so don't add it to the module
+					continue
+				}
+
+				tokenFile := ps.fset.File(named.Obj().Pos())
+				isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
+				if isDaggerGenerated {
+					// skip dagger generated objects (not at the top-level)
+					continue
+				}
 			}
 
 			// Add the object to the module
