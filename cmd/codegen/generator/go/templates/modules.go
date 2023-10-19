@@ -16,6 +16,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+const daggerGenFilename = "dagger.gen.go"
+
 /* TODO:
 * Handle types from 3rd party imports in the type signature
    * Add packages.NeedImports and packages.NeedDependencies to packages.Load opts, ensure performance is okay (or deal with that by lazy loading)
@@ -118,9 +120,18 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 				panic(err)
 			}
 
-			if topLevel && len(objFunctionCases[obj.Name()]) == 0 {
-				// no functions on this top-level object, so don't add it to the module
-				continue
+			if len(objFunctionCases[obj.Name()]) == 0 {
+				if topLevel {
+					// no functions on this top-level object, so don't add it to the module
+					continue
+				}
+
+				tokenFile := ps.fset.File(named.Obj().Pos())
+				isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
+				if isDaggerGenerated {
+					// skip dagger generated objects (not at the top-level)
+					continue
+				}
 			}
 
 			// Add the object to the module
@@ -518,7 +529,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	typeDef := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgs...)
 
 	tokenFile := ps.fset.File(named.Obj().Pos())
-	isDaggerGenerated := filepath.Base(tokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
+	isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
 
 	methods := []*types.Func{}
 
@@ -528,7 +539,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	for i := 0; i < methodSet.Len(); i++ {
 		methodObj := methodSet.At(i).Obj()
 		methodTokenFile := ps.fset.File(methodObj.Pos())
-		methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == "dagger.gen.go" // TODO: don't hardcode
+		methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
 		if methodIsDaggerGenerated {
 			// We don't care about pre-existing methods on core types or objects from dependency modules.
 			continue
