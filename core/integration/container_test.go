@@ -2,14 +2,10 @@ package core
 
 import (
 	"bytes"
-	"context"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -2914,84 +2910,6 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
 }
 
-//go:embed testdata/socket-echo.go
-var echoSocketSrc string
-
-func TestContainerWithUnixSocket(t *testing.T) {
-	c, ctx := connect(t)
-
-	tmp := t.TempDir()
-	sock := filepath.Join(tmp, "test.sock")
-
-	l, err := net.Listen("unix", sock)
-	require.NoError(t, err)
-
-	defer l.Close()
-
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				if !errors.Is(err, net.ErrClosed) {
-					t.Logf("accept: %s", err)
-					panic(err)
-				}
-				return
-			}
-
-			n, err := io.Copy(c, c)
-			if err != nil {
-				t.Logf("hello: %s", err)
-				panic(err)
-			}
-
-			t.Logf("copied %d bytes", n)
-
-			err = c.Close()
-			if err != nil {
-				t.Logf("close: %s", err)
-				panic(err)
-			}
-		}
-	}()
-
-	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
-
-	ctr := c.Container().
-		From("golang:1.20.0-alpine").
-		WithMountedFile("/src/main.go", echo).
-		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
-		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})
-
-	stdout, err := ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello\n", stdout)
-
-	t.Run("socket can be removed", func(t *testing.T) {
-		without := ctr.WithoutUnixSocket("/tmp/test.sock").
-			WithExec([]string{"ls", "/tmp"})
-
-		stdout, err = without.Stdout(ctx)
-		require.NoError(t, err)
-		require.Empty(t, stdout)
-	})
-
-	t.Run("replaces existing socket at same path", func(t *testing.T) {
-		repeated := ctr.WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock))
-
-		stdout, err := repeated.Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", stdout)
-
-		without := repeated.WithoutUnixSocket("/tmp/test.sock").
-			WithExec([]string{"ls", "/tmp"})
-
-		stdout, err = without.Stdout(ctx)
-		require.NoError(t, err)
-		require.Empty(t, stdout)
-	})
-}
-
 func TestContainerExecError(t *testing.T) {
 	t.Parallel()
 
@@ -3262,9 +3180,9 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 			"--tls=false",
 		}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).AsService()
 
-	dockerHost, err := dockerd.Endpoint(ctx, dagger.ContainerEndpointOpts{
+	dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Scheme: "tcp",
 	})
 	require.NoError(t, err)
@@ -3559,96 +3477,6 @@ func TestContainerWithMountedSecretOwner(t *testing.T) {
 			Owner: owner,
 		})
 	})
-}
-
-func TestContainerWithUnixSocketOwner(t *testing.T) {
-	c, ctx := connect(t)
-
-	tmp := t.TempDir()
-	sock := filepath.Join(tmp, "test.sock")
-
-	l, err := net.Listen("unix", sock)
-	require.NoError(t, err)
-
-	defer l.Close()
-
-	socket := c.Host().UnixSocket(sock)
-
-	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-		return ctr.WithUnixSocket(name, socket, dagger.ContainerWithUnixSocketOpts{
-			Owner: owner,
-		})
-	})
-}
-
-func testOwnership(
-	ctx context.Context,
-	t *testing.T,
-	c *dagger.Client,
-	addContent func(ctr *dagger.Container, name, owner string) *dagger.Container,
-) {
-	t.Parallel()
-
-	ctr := c.Container().From(alpineImage).
-		WithExec([]string{"adduser", "-D", "inherituser"}).
-		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
-		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
-		WithUser("inherituser").
-		WithWorkdir("/data")
-
-	type example struct {
-		name   string
-		owner  string
-		output string
-	}
-
-	for _, example := range []example{
-		{name: "userid", owner: "1234", output: "auser auser"},
-		{name: "userid-twice", owner: "1234:1234", output: "auser auser"},
-		{name: "username", owner: "auser", output: "auser auser"},
-		{name: "username-twice", owner: "auser:auser", output: "auser auser"},
-		{name: "ids", owner: "1234:4321", output: "auser agroup"},
-		{name: "username-gid", owner: "auser:4321", output: "auser agroup"},
-		{name: "uid-groupname", owner: "1234:agroup", output: "auser agroup"},
-		{name: "names", owner: "auser:agroup", output: "auser agroup"},
-
-		// NB: inheriting the user/group from the container was implemented, but we
-		// decided to back out for a few reasons:
-		//
-		// 1. performance: right now chowning has to be a separate Copy operation,
-		//    which currently literally copies the relevant files even for a chown,
-		//    which seems prohibitively expensive as a default. maybe with metacopy
-		//    support in Buildkit this would become more feasible.
-		// 2. bumping timestamps: chown operations are also technically writes, so
-		//    we would be bumping timestamps all over the place and making builds
-		//    non-reproducible. this has an especially unfortunate interaction with
-		//    WithTimestamps where if you were to pass the timestamped values to
-		//    another container you would immediately lose those timestamps.
-		// 3. no opt-out: what if the user actually _wants_ to keep the permissions
-		//    as they are? we would need to add another API for this. given all of
-		//    the above, making it opt-in seems obvious.
-		{name: "no-inherit", owner: "", output: "root root"},
-	} {
-		example := example
-		t.Run(example.name, func(t *testing.T) {
-			withOwner := addContent(ctr, example.name, example.owner)
-			output, err := withOwner.
-				WithUser("root"). // go back to root so we can see 0400 files
-				WithExec([]string{
-					"sh", "-exc",
-					"find * | xargs stat -c '%U %G'", // stat recursively
-				}).
-				Stdout(ctx)
-			require.NoError(t, err)
-			for _, line := range strings.Split(output, "\n") {
-				if line == "" {
-					continue
-				}
-
-				require.Equal(t, example.output, line)
-			}
-		})
-	}
 }
 
 func TestContainerParallelMutation(t *testing.T) {
@@ -3980,9 +3808,10 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 				"--tls=false",
 			}, dagger.ContainerWithExecOpts{
 				InsecureRootCapabilities: true,
-			})
+			}).
+			AsService()
 
-		dockerHost, err := dockerd.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{
 			Scheme: "tcp",
 		})
 		require.NoError(t, err)

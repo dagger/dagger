@@ -236,7 +236,6 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		// "--rm",
 		"-e", util.CacheConfigEnvName,
-		"-e", util.ServicesDNSEnvName,
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
 		"-v", volumeName + ":" + util.EngineDefaultStateDir,

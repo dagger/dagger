@@ -11,6 +11,7 @@ connect(
       .withEnvVariable("MARIADB_DATABASE", "drupal")
       .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
       .withExposedPort(3306)
+      .asService()
 
     // get Drupal base image
     // install additional dependencies

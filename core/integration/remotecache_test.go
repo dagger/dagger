@@ -12,10 +12,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (*dagger.Container, string, error) {
+func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName, cacheEnv string, index uint8) (*dagger.Service, string, error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	devEngine := devEngineContainer(c).
+	devEngineSvc := devEngineContainer(c).
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithEnvVariable("ENGINE_ID", id).
@@ -25,12 +25,15 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 			"--network-cidr", networkCIDR,
 		}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		}).
+		AsService()
+
+	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Port:   1234,
 		Scheme: "tcp",
 	})
-	return devEngine, endpoint, err
+
+	return devEngineSvc, endpoint, err
 }
 
 func TestRemoteCacheRegistry(t *testing.T) {
@@ -38,7 +41,8 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		AsService()
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
@@ -120,7 +124,8 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		AsService()
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
@@ -186,9 +191,10 @@ func TestRemoteCacheS3(t *testing.T) {
 		s3 := c.Pipeline("s3").Container().From("minio/minio").
 			WithMountedCache("/data", c.CacheVolume("minio-cache")).
 			WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-			WithExec([]string{"server", "/data"})
+			WithExec([]string{"server", "/data"}).
+			AsService()
 
-		s3Endpoint, err := s3.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 9000, Scheme: "http"})
+		s3Endpoint, err := s3.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 9000, Scheme: "http"})
 		require.NoError(t, err)
 
 		minioStdout, err := c.Container().From("minio/mc").

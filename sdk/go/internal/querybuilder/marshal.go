@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	gqlgen "github.com/99designs/gqlgen/graphql"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -97,12 +98,17 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 			i := i
 			eg.Go(func() error {
 				f := t.Field(i)
+				fv := v.Field(i)
 				name := f.Name
-				tag := strings.SplitN(f.Tag.Get("json"), ",", 2)[0]
-				if tag != "" {
-					name = tag
+				jsonTag := strings.Split(f.Tag.Get("json"), ",")
+				if jsonTag[0] != "" {
+					name = jsonTag[0]
 				}
-				m, err := marshalValue(gctx, v.Field(i))
+				isOptional := slices.Contains(jsonTag[1:], "omitempty")
+				if isOptional && IsZeroValue(fv.Interface()) {
+					return nil
+				}
+				m, err := marshalValue(gctx, fv)
 				if err != nil {
 					return err
 				}

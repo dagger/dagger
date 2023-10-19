@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service TunnelListener {
+  rpc Listen(stream ListenRequest) returns (stream ListenResponse);
+}
+
+message ListenRequest {
+	string addr = 1;
+	string protocol = 2;
+
+	string connId = 3;
+	bytes data = 4;
+	bool close = 5;
+}
+
+message ListenResponse {
+	string addr = 1;
+
+	string connId = 2;
+	bytes data = 3;
+	bool close = 4;
+}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
-	ciutil "github.com/dagger/dagger/internal/mage/util"
+	ciconsts "github.com/dagger/dagger/internal/mage/consts"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
 )
@@ -81,7 +81,7 @@ func (s *moduleSchema) builtinSDK(ctx *core.Context, sdkName string) (SDK, error
 	case "go":
 		return &goSDK{moduleSchema: s}, nil
 	case "python":
-		return s.loadBuiltinSDK(ctx, sdkName, ciutil.PythonSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, sdkName, ciconsts.PythonSDKEngineContainerModulePath)
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}
@@ -381,11 +381,11 @@ func (sdk *goSDK) baseWithCodegen(ctx *core.Context, sourceDir *core.Directory, 
 func (sdk *goSDK) base(ctx *core.Context) (*core.Container, error) {
 	progCtx, recorder := progrock.WithGroup(ctx.Context, "load builtin module sdk go")
 	ctx.Context = progCtx
-	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(ciutil.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(ciutil.GoSDKEngineContainerTarballPath)})
+	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(ciconsts.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(ciconsts.GoSDKEngineContainerTarballPath)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)
 	}
-	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(ciutil.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
+	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(ciconsts.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
 	tarballFileID, err := tarballFile.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go module sdk tarball file id: %w", err)
