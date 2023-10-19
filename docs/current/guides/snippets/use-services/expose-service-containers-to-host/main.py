@@ -1,10 +1,9 @@
 import sys
 
 import anyio
+import httpx
 
 import dagger
-
-import httpx
 
 
 async def main():
