@@ -61,13 +61,7 @@ func WithSkipCompatibilityCheck() ClientOpt {
 }
 
 // Connect to a Dagger Engine
-func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
-	defer func() {
-		if rerr != nil {
-			rerr = withErrorHelp(rerr)
-		}
-	}()
-
+func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
 
 	for _, o := range opts {
@@ -169,11 +163,10 @@ type errorWrappedClient struct {
 func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
 	err := c.Client.MakeRequest(ctx, req, resp)
 	if err != nil {
-		// return custom error without wrapping to enable casting
 		if e := getCustomError(err); e != nil {
 			return e
 		}
-		return withErrorHelp(err)
+		return err
 	}
 	return nil
 }
