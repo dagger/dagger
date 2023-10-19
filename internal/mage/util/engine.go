@@ -354,7 +354,7 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 	*/
 
 	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
-		From("moby/buildkit:master@sha256:f73a7d2d2441cfa5ced27bee8283f3b090a2232698484f7e4876e69a16d68a07").
+		From("moby/buildkit:master@sha256:5d05b3dc8dbab4422d3017014e47322b0a6168a5a2f88928baf9c607e3ac9fe1").
 		File("/usr/bin/buildctl")
 }
 

@@ -212,9 +212,9 @@ func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 	return c.Container().
 		From(fmt.Sprintf("python:%s-slim", version)).
 		WithEnvVariable("PIPX_BIN_DIR", "/usr/local/bin").
-		WithMountedCache("/root/.cache/pip", c.CacheVolume("pip_cache")).
-		WithMountedCache("/root/.local/pipx/cache", c.CacheVolume("pipx_cache")).
-		WithMountedCache("/root/.cache/hatch", c.CacheVolume("hatch_cache")).
+		WithMountedCache("/root/.cache/pip", c.CacheVolume("pip_cache_"+version)).
+		WithMountedCache("/root/.local/pipx/cache", c.CacheVolume("pipx_cache_"+version)).
+		WithMountedCache("/root/.cache/hatch", c.CacheVolume("hatch_cache_"+version)).
 		WithMountedFile("/pipx.pyz", pipx).
 		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.7.0"}).
 		WithExec([]string{"python", "-m", "venv", venv}).
