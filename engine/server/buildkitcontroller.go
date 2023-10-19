@@ -218,7 +218,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		authProvider := auth.NewRegistryAuthProvider()
 
 		var cacheImporterCfgs []bkgw.CacheOptionsEntry
-		for _, cacheImportCfg := range opts.UpstreamCacheConfig {
+		for _, cacheImportCfg := range opts.UpstreamCacheImportConfig {
 			_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
 			if !ok {
 				e.serverMu.Unlock()
@@ -332,6 +332,7 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 
 	cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(req.Cache.Exports))
 	for i, cacheExportCfg := range req.Cache.Exports {
+		cacheExportCfg := cacheExportCfg
 		exporterFunc, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
 		if !ok {
 			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
