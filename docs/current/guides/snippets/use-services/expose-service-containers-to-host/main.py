@@ -1,6 +1,7 @@
 import sys
 
 import anyio
+import httpx
 
 import dagger
 
@@ -23,13 +24,16 @@ async def main():
         )
 
         # expose HTTP service to host
-        tunnel = client.host().tunnel(http_srv).start()
+        tunnel = await client.host().tunnel(http_srv).start()
 
         # get HTTP service address
-        tunnel.endpoint()
+        endpoint = await tunnel.endpoint()
 
         # access HTTP service from host
-        # commenting below as it's a blocking function, needs changes
+        async with httpx.AsyncClient() as http:
+            r = await http.get(f"http://{endpoint}")
+            print(r.status_code)
+            print(r.text)
 
 
 anyio.run(main)
