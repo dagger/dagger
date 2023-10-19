@@ -4,7 +4,7 @@ import anyio
 
 import dagger
 
-import requests
+import httpx
 
 
 async def main():
@@ -31,9 +31,10 @@ async def main():
         endpoint = await tunnel.endpoint()
 
         # access HTTP service from host
-        r = requests.get("http://" + endpoint)
-        print(r.status_code)
-        print(r.text)
+        async with httpx.AsyncClient() as http:
+            r = await http.get(f"http://{endpoint}")
+            print(r.status_code)
+            print(r.text)
 
 
 anyio.run(main)
