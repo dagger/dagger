@@ -143,7 +143,7 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 ### Configuration
 
-Right now very few configuration knobs are suppported as we are still working out the best interface for exposing them.
+Right now very few configuration knobs are supported as we are still working out the best interface for exposing them.
 
 Currently supported is:
 
@@ -195,6 +195,35 @@ However if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` env var is set, then the CLI w
 
 > **Warning**
 > Dagger itself does not setup any encryption of data sent on this wire, so it relies on the underlying connection type to implement this when needed. If you are using a connection type that does not layer encryption then all queries and responses will be sent in plaintext over the wire from the CLI to the Runner.
+
+### Examples
+
+This example demonstrates how to configure the Dagger Engine to use a different registry mirror for container images instead of the default (Docker Hub)
+
+1. Create a file named `engine.toml` that contains the registry mirror.
+
+```
+debug = true
+insecure-entitlements = ["security.insecure"]
+
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
+```
+
+2. Manually starts the engine with the custom `engine.toml`:
+
+```shell
+docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.8.8
+```
+
+3. Test the configuration:
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://customized-dagger-engine
+dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+```
+
+You should see the specified `hello-world` container being pulled from the mirror instead of from Docker Hub.
 
 ## CLI Details
 
