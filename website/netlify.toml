@@ -188,6 +188,12 @@ from = "/481031/quickstart-conclusion"
 to = "/quickstart/481031/conclusion"
 status = 302
 
+[[redirects]]
+# redirect services guide to new URL
+from = "/757394/use-service-containers"
+to = "/757394/use-services"
+status = 302
+
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
 [[redirects]]
