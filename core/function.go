@@ -5,20 +5,32 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/resourceid"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 )
 
 type Function struct {
+	// Name is the standardized name of the function (lowerCamelCase), as used for the resolver in the graphql schema
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Args        []*FunctionArg `json:"args"`
 	ReturnType  *TypeDef       `json:"returnType"`
+
+	// Below are not in public API
+
+	// OriginalName of the parent object
+	ParentOriginalName string `json:"parentOriginalName,omitempty"`
+
+	// The original name of the function as provided by the SDK that defined it, used
+	// when invoking the SDK so it doesn't need to think as hard about case conversions
+	OriginalName string `json:"originalName,omitempty"`
 }
 
 func NewFunction(name string, returnType *TypeDef) *Function {
 	return &Function{
-		Name:       name,
-		ReturnType: returnType,
+		Name:         strcase.ToLowerCamel(name),
+		ReturnType:   returnType,
+		OriginalName: name,
 	}
 }
 
@@ -118,10 +130,7 @@ func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
 
 func (typeDef *TypeDef) WithObject(name, desc string) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
-	typeDef.AsObject = &ObjectTypeDef{
-		Name:        name,
-		Description: desc,
-	}
+	typeDef.AsObject = NewObjectTypeDef(name, desc)
 	return typeDef
 }
 
@@ -150,15 +159,30 @@ func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
 	}
 	typeDef = typeDef.Clone()
 	fn = fn.Clone()
+	fn.ParentOriginalName = typeDef.AsObject.OriginalName
 	typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
 	return typeDef, nil
 }
 
 type ObjectTypeDef struct {
+	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Fields      []*FieldTypeDef `json:"fields"`
 	Functions   []*Function     `json:"functions"`
+
+	// Below are not in public API
+
+	// The original name of the object as provided by the SDK that defined it, used
+	// when invoking the SDK so it doesn't need to think as hard about case conversions
+	OriginalName string `json:"originalName,omitempty"`
+}
+
+func NewObjectTypeDef(name, description string) *ObjectTypeDef {
+	return &ObjectTypeDef{
+		Name:         strcase.ToCamel(name),
+		OriginalName: name,
+	}
 }
 
 func (typeDef ObjectTypeDef) Clone() *ObjectTypeDef {

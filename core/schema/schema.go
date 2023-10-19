@@ -88,6 +88,7 @@ type MergedSchemas struct {
 // requires s.mu write lock held
 func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*moduleSchemaView, error) {
 	ms := &moduleSchemaView{
+		viewerDigest:    moduleDigest,
 		separateSchemas: map[string]ExecutableSchema{},
 		endpoints:       map[string]http.Handler{},
 		services:        s.services,
@@ -165,6 +166,9 @@ func (s *MergedSchemas) HTTPHandler(moduleDigest digest.Digest) (http.Handler, e
 }
 
 type moduleSchemaView struct {
+	// the digest of the module this view serves to
+	viewerDigest digest.Digest
+
 	mu              sync.RWMutex
 	separateSchemas map[string]ExecutableSchema
 	mergedSchema    ExecutableSchema

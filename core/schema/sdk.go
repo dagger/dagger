@@ -118,12 +118,14 @@ func (s *moduleSchema) newModuleSDK(ctx *core.Context, sourceDir *core.Directory
 // Codegen calls the Codegen function on the SDK Module
 func (sdk *moduleSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error) {
 	moduleName := gqlObjectName(sdk.mod.Name)
+	var moduleOriginalName string
 	funcName := "Codegen"
 	var codegenFn *core.Function
 	for _, obj := range sdk.mod.Objects {
 		if obj.AsObject.Name == moduleName {
+			moduleOriginalName = obj.AsObject.OriginalName
 			for _, fn := range obj.AsObject.Functions {
-				if fn.Name == funcName {
+				if fn.Name == gqlFieldName(funcName) {
 					codegenFn = fn
 					break
 				}
@@ -148,7 +150,7 @@ func (sdk *moduleSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sour
 			Name:  "subPath",
 			Value: sourceDirSubpath,
 		}},
-		ParentName: moduleName,
+		ParentOriginalName: moduleOriginalName,
 		// TODO: params? somehow? maybe from module config? would be a good way to
 		// e.g. configure the language version.
 		Parent: map[string]any{},
@@ -169,12 +171,14 @@ func (sdk *moduleSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sour
 // Runtime calls the Runtime function on the SDK Module
 func (sdk *moduleSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
 	moduleName := gqlObjectName(sdk.mod.Name)
+	var moduleOriginalName string
 	funcName := "ModuleRuntime"
 	var getRuntimeFn *core.Function
 	for _, obj := range sdk.mod.Objects {
 		if obj.AsObject.Name == moduleName {
+			moduleOriginalName = obj.AsObject.OriginalName
 			for _, fn := range obj.AsObject.Functions {
-				if fn.Name == funcName {
+				if fn.Name == gqlFieldName(funcName) {
 					getRuntimeFn = fn
 					break
 				}
@@ -199,7 +203,7 @@ func (sdk *moduleSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sour
 			Name:  "subPath",
 			Value: sourceDirSubpath,
 		}},
-		ParentName: moduleName,
+		ParentOriginalName: moduleOriginalName,
 		// TODO: params? somehow? maybe from module config? would be a good way to
 		// e.g. configure the language version.
 		Parent: map[string]any{},
