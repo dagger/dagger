@@ -9,7 +9,7 @@ async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # expose host service on port 3306
-        host_srv = client.host().service(frontend=3306, backend=3306)
+        host_srv = client.host().service([dagger.PortForward(frontend=3306, backend=3306, protocol='TCP')])
 
         # create MariaDB container
         # with host service binding

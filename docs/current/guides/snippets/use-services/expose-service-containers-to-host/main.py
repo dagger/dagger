@@ -4,6 +4,8 @@ import anyio
 
 import dagger
 
+import requests
+
 
 async def main():
     # create Dagger client
@@ -23,13 +25,15 @@ async def main():
         )
 
         # expose HTTP service to host
-        tunnel = client.host().tunnel(http_srv).start()
+        tunnel = await client.host().tunnel(http_srv).start()
 
         # get HTTP service address
-        tunnel.endpoint()
+        endpoint = await tunnel.endpoint()
 
         # access HTTP service from host
-        # commenting below as it's a blocking function, needs changes
+        r = requests.get("http://" + endpoint)
+        print(r.status_code)
+        print(r.text)
 
 
 anyio.run(main)
