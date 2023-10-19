@@ -98,7 +98,7 @@ var moduleCmd = &cobra.Command{
 var moduleInitCmd = &cobra.Command{
 	Use:    "init",
 	Short:  "Initialize a new dagger module in a local directory.",
-	Hidden: true,
+	Hidden: false,
 	RunE: func(cmd *cobra.Command, _ []string) (rerr error) {
 		ctx := cmd.Context()
 
@@ -127,7 +127,7 @@ var moduleInitCmd = &cobra.Command{
 var moduleUseCmd = &cobra.Command{
 	Use:    "use",
 	Short:  "Add a new dependency to a dagger module",
-	Hidden: true,
+	Hidden: false,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -169,7 +169,7 @@ var moduleUseCmd = &cobra.Command{
 var moduleSyncCmd = &cobra.Command{
 	Use:    "sync",
 	Short:  "Synchronize a dagger module with the latest version of its extensions",
-	Hidden: true,
+	Hidden: false,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -221,7 +221,7 @@ func updateModuleConfig(
 		// already exists, nothing to do
 	case os.IsNotExist(parentDirStatErr):
 		// make the parent dir, but if something goes wrong, clean it up in the defer
-		if err := os.MkdirAll(moduleDir, 0755); err != nil {
+		if err := os.MkdirAll(moduleDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create module config directory: %w", err)
 		}
 		defer func() {
@@ -233,7 +233,7 @@ func updateModuleConfig(
 		return fmt.Errorf("failed to stat parent directory: %w", parentDirStatErr)
 	}
 
-	var cfgFileMode os.FileMode = 0644
+	var cfgFileMode os.FileMode = 0o644
 	originalContents, configFileReadErr := os.ReadFile(configPath)
 	switch {
 	case configFileReadErr == nil:
