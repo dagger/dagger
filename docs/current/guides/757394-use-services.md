@@ -14,12 +14,12 @@ import Embed from '@site/src/components/atoms/embed.js'
 # Use Services in Dagger
 
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to containers. The `Container.withServiceBinding` API now takes a `Service` instead of a `Container`, so you must call `Container.asService` on its argument. See the section on [binding container services to containers](#bind-service-containers-to-containers) for examples.
+Dagger v0.9.0 includes a breaking change for binding service containers to containers. The `Container.withServiceBinding` API now takes a `Service` instead of a `Container`, so you must call `Container.asService` on its argument. See the section on [binding container services to containers](#bind-service-containers-to-containers) for examples.
 :::
 
 ## Introduction
 
-Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced service containers, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines. Dagger v0.8.8 further improved this implementation, enabling support for container-to-host networking and host-to-container networking.
+Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced service containers, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines. Dagger v0.9.0 further improved this implementation, enabling support for container-to-host networking and host-to-container networking.
 
 Some common use cases for services and service containers are:
 
@@ -123,7 +123,7 @@ You can use services in Dagger in three ways:
 ### Bind service containers to containers
 
 :::warning
-Dagger v0.8.8 includes a breaking change for binding service containers to client containers. The examples below have been updated.
+Dagger v0.9.0 includes a breaking change for binding service containers to client containers. The examples below have been updated.
 :::
 
 Dagger enables users to bind a service running in a container to another (client) container with an alias that the client container can use as a hostname to communicate with the service.
@@ -182,7 +182,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 
 ### Expose service containers to the host
 
-Starting with Dagger v0.8.8, you can expose service container ports directly to the host. This enables clients on the host to communicate with services running in Dagger.
+Starting with Dagger v0.9.0, you can expose service container ports directly to the host. This enables clients on the host to communicate with services running in Dagger.
 
 One use case is for testing, where you need to be able to spin up ephemeral databases to run tests against. You might also use this to access a web UI in a browser on your desktop.
 
@@ -211,7 +211,7 @@ TODO
 
 ### Expose host services to containers
 
-Starting with Dagger v0.8.8, you can bind containers to host services. This enables client containers in Dagger pipelines to communicate with services running on the host.
+Starting with Dagger v0.9.0, you can bind containers to host services. This enables client containers in Dagger pipelines to communicate with services running on the host.
 
 :::note
 This implies that a service is already listening on a port on the host, out-of-band of Dagger.
@@ -279,7 +279,7 @@ This example uses Redis's `SAVE` command to ensure data is synced. By default, R
 
 ## Start and stop services
 
-Services are designed to be expressed as a Directed Acyclic Graph (DAG) with explicit bindings allowing services to be started lazily, just like every other DAG node. But sometimes, you may need to explicitly manage the lifecycle. Starting with Dagger v0.8.8, you can explicitly start and stop services in your pipelines.
+Services are designed to be expressed as a Directed Acyclic Graph (DAG) with explicit bindings allowing services to be started lazily, just like every other DAG node. But sometimes, you may need to explicitly manage the lifecycle. Starting with Dagger v0.9.0, you can explicitly start and stop services in your pipelines.
 
 Here's an example which demonstrates explicitly starting a Docker daemon for use in a test suite:
 
