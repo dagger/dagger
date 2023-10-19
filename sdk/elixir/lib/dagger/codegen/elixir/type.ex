@@ -50,4 +50,12 @@ defmodule Dagger.Codegen.Elixir.Type do
       unquote(mod_name).t()
     end
   end
+
+  def render_type(%{"kind" => "INPUT_OBJECT", "name" => name}) do
+    mod_name = Mod.from_name(name)
+
+    quote do
+      unquote(mod_name).t()
+    end
+  end
 end

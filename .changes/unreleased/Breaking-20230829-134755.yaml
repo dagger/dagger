@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'engine: new services API with container <=> host networking, explicit start/stop'
+time: 2023-08-29T13:47:55.858149706-04:00
+custom:
+  Author: vito
+  PR: "5557"

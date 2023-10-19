@@ -27,3 +27,16 @@ func (proto NetworkProtocol) EnumName() string {
 func (proto NetworkProtocol) Network() string {
 	return strings.ToLower(string(proto))
 }
+
+type PortForward struct {
+	Frontend int             `json:"frontend"`
+	Backend  int             `json:"backend"`
+	Protocol NetworkProtocol `json:"protocol"`
+}
+
+func (pf PortForward) FrontendOrBackendPort() int {
+	if pf.Frontend != 0 {
+		return pf.Frontend
+	}
+	return pf.Backend
+}

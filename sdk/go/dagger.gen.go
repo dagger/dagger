@@ -60,6 +60,9 @@ type Platform string
 // A unique identifier for a secret.
 type SecretID string
 
+// A unique service identifier.
+type ServiceID string
+
 // A content-addressed socket identifier.
 type SocketID string
 
@@ -74,27 +77,39 @@ type Void string
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 
 	// The build argument value.
-	Value string `json:"value,omitempty"`
+	Value string `json:"value"`
 }
 
 type FunctionCallInput struct {
 	// The name of the argument to the function
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 
 	// The value of the argument represented as a string of the JSON serialization.
-	Value JSON `json:"value,omitempty"`
+	Value JSON `json:"value"`
 }
 
 // Key value object that represents a Pipeline label.
 type PipelineLabel struct {
 	// Label name.
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 
 	// Label value.
-	Value string `json:"value,omitempty"`
+	Value string `json:"value"`
+}
+
+// Port forwarding rules for tunneling network traffic.
+type PortForward struct {
+	// Destination port for traffic.
+	Backend int `json:"backend"`
+
+	// Port to expose to clients. If unspecified, a default will be chosen.
+	Frontend int `json:"frontend"`
+
+	// Protocol to use for traffic.
+	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
 // A directory whose contents persist across runs.
@@ -149,10 +164,8 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	endpoint      *string
 	envVariable   *string
 	export        *bool
-	hostname      *string
 	id            *ContainerID
 	imageRef      *string
 	label         *string
@@ -172,6 +185,18 @@ type WithContainerFunc func(r *Container) *Container
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *Container) With(f WithContainerFunc) *Container {
 	return f(r)
+}
+
+// Turn the container into a Service.
+//
+// Be sure to set any exposed ports before this conversion.
+func (r *Container) AsService() *Service {
+	q := r.q.Select("asService")
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
 }
 
 // ContainerAsTarballOpts contains options for Container.AsTarball
@@ -288,43 +313,6 @@ func (r *Container) Directory(path string) *Directory {
 	}
 }
 
-// ContainerEndpointOpts contains options for Container.Endpoint
-type ContainerEndpointOpts struct {
-	// The exposed port number for the endpoint
-	Port int
-	// Return a URL with the given scheme, eg. http for http://
-	Scheme string
-}
-
-// Retrieves an endpoint that clients can use to reach this container.
-//
-// If no port is specified, the first exposed port is used. If none exist an error is returned.
-//
-// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
-	if r.endpoint != nil {
-		return *r.endpoint, nil
-	}
-	q := r.q.Select("endpoint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `port` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Port) {
-			q = q.Arg("port", opts[i].Port)
-		}
-		// `scheme` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Scheme) {
-			q = q.Arg("scheme", opts[i].Scheme)
-		}
-	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // Retrieves entrypoint to be prepended to the arguments of all commands.
 func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	q := r.q.Select("entrypoint")
@@ -434,8 +422,6 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 //
 // This includes ports already exposed by the image, even if not
 // explicitly added with dagger.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
@@ -491,21 +477,6 @@ func (r *Container) From(address string) *Container {
 		q: q,
 		c: r.c,
 	}
-}
-
-// Retrieves a hostname which can be used by clients to reach this container.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) Hostname(ctx context.Context) (string, error) {
-	if r.hostname != nil {
-		return *r.hostname, nil
-	}
-	q := r.q.Select("hostname")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this container.
@@ -985,8 +956,6 @@ type ContainerWithExposedPortOpts struct {
 // Exposed ports serve two purposes:
 //   - For health checks and introspection, when running services
 //   - For setting the EXPOSE OCI field when publishing the container
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1307,9 +1276,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service will be reachable from the container via the provided hostname alias.
 //
 // The service dependency will also convey to any files or directories produced by the container.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+func (r *Container) WithServiceBinding(alias string, service *Service) *Container {
 	assertNotNil("service", service)
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
@@ -1390,8 +1357,6 @@ type ContainerWithoutExposedPortOpts struct {
 }
 
 // Unexpose a previously exposed port.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
 	q := r.q.Select("withoutExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2742,6 +2707,29 @@ func (r *Host) File(path string) *File {
 	}
 }
 
+// HostServiceOpts contains options for Host.Service
+type HostServiceOpts struct {
+	// Upstream host to forward traffic to.
+	Host string
+}
+
+// Creates a service that forwards traffic to a specified address via the host.
+func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
+	q := r.q.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `host` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Host) {
+			q = q.Arg("host", opts[i].Host)
+		}
+	}
+	q = q.Arg("ports", ports)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 // The file is limited to a size of 512000 bytes.
 func (r *Host) SetSecretFile(name string, path string) *Secret {
@@ -2750,6 +2738,48 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q = q.Arg("path", path)
 
 	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
+// HostTunnelOpts contains options for Host.Tunnel
+type HostTunnelOpts struct {
+	// Map each service port to the same port on the host, as if the service were
+	// running natively.
+	//
+	// Note: enabling may result in port conflicts.
+	Native bool
+	// Configure explicit port forwarding rules for the tunnel.
+	//
+	// If a port's frontend is unspecified or 0, a random port will be chosen by
+	// the host.
+	//
+	// If no ports are given, all of the service's ports are forwarded. If native
+	// is true, each port maps to the same port on the host. If native is false,
+	// each port maps to a random port chosen by the host.
+	//
+	// If ports are given and native is true, the ports are additive.
+	Ports []PortForward
+}
+
+// Creates a tunnel that forwards traffic from the host to a service.
+func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
+	assertNotNil("service", service)
+	q := r.q.Select("tunnel")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `native` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Native) {
+			q = q.Arg("native", opts[i].Native)
+		}
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
+		}
+	}
+	q = q.Arg("service", service)
+
+	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -3443,7 +3473,7 @@ type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Container
+	ExperimentalServiceHost *Service
 }
 
 // Queries a git repository.
@@ -3480,7 +3510,7 @@ func (r *Client) Host() *Host {
 // HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
-	ExperimentalServiceHost *Container
+	ExperimentalServiceHost *Service
 }
 
 // Returns a file containing an http remote url content.
@@ -3594,6 +3624,17 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q = q.Arg("id", id)
 
 	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Loads a service from ID.
+func (r *Client) LoadServiceFromID(id ServiceID) *Service {
+	q := r.q.Select("loadServiceFromID")
+	q = q.Arg("id", id)
+
+	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -3802,6 +3843,155 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+type Service struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	endpoint *string
+	hostname *string
+	id       *ServiceID
+	start    *ServiceID
+	stop     *ServiceID
+}
+
+// ServiceEndpointOpts contains options for Service.Endpoint
+type ServiceEndpointOpts struct {
+	// The exposed port number for the endpoint
+	Port int
+	// Return a URL with the given scheme, eg. http for http://
+	Scheme string
+}
+
+// Retrieves an endpoint that clients can use to reach this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+func (r *Service) Endpoint(ctx context.Context, opts ...ServiceEndpointOpts) (string, error) {
+	if r.endpoint != nil {
+		return *r.endpoint, nil
+	}
+	q := r.q.Select("endpoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `port` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+		}
+		// `scheme` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Retrieves a hostname which can be used by clients to reach this container.
+func (r *Service) Hostname(ctx context.Context) (string, error) {
+	if r.hostname != nil {
+		return *r.hostname, nil
+	}
+	q := r.q.Select("hostname")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A unique identifier for this service.
+func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response ServiceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Service) XXX_GraphQLType() string {
+	return "Service"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Service) XXX_GraphQLIDType() string {
+	return "ServiceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Service) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Service) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Retrieves the list of ports provided by the service.
+func (r *Service) Ports(ctx context.Context) ([]Port, error) {
+	q := r.q.Select("ports")
+
+	q = q.Select("description port protocol")
+
+	type ports struct {
+		Description string
+		Port        int
+		Protocol    NetworkProtocol
+	}
+
+	convert := func(fields []ports) []Port {
+		out := []Port{}
+
+		for i := range fields {
+			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []ports
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Start the service and wait for its health checks to succeed.
+//
+// Services bound to a Container do not need to be manually started.
+func (r *Service) Start(ctx context.Context) (*Service, error) {
+	q := r.q.Select("start")
+
+	return r, q.Execute(ctx, r.c)
+}
+
+// Stop the service.
+func (r *Service) Stop(ctx context.Context) (*Service, error) {
+	q := r.q.Select("stop")
+
+	return r, q.Execute(ctx, r.c)
 }
 
 type Socket struct {

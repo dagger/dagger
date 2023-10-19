@@ -3,6 +3,7 @@ package io.dagger.sample;
 import io.dagger.client.Client;
 import io.dagger.client.Container;
 import io.dagger.client.Dagger;
+import io.dagger.client.Service;
 import java.util.List;
 
 public class TestWithDatabase {
@@ -10,7 +11,7 @@ public class TestWithDatabase {
     try (Client client = Dagger.connect()) {
 
       // get MariaDB base image
-      Container mariadb =
+      Service mariadb =
           client
               .container()
               .from("mariadb:10.11.2")
@@ -18,7 +19,8 @@ public class TestWithDatabase {
               .withEnvVariable("MARIADB_PASSWORD", "password")
               .withEnvVariable("MARIADB_DATABASE", "drupal")
               .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
-              .withExposedPort(3306);
+              .withExposedPort(3306)
+              .asService();
 
       // get Drupal base image
       // install additional dependencies

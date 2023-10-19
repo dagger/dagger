@@ -152,18 +152,6 @@ export type ContainerBuildOpts = {
   secrets?: Secret[]
 }
 
-export type ContainerEndpointOpts = {
-  /**
-   * The exposed port number for the endpoint
-   */
-  port?: number
-
-  /**
-   * Return a URL with the given scheme, eg. http for http://
-   */
-  scheme?: string
-}
-
 export type ContainerExportOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -636,6 +624,37 @@ export type HostDirectoryOpts = {
   include?: string[]
 }
 
+export type HostServiceOpts = {
+  /**
+   * Upstream host to forward traffic to.
+   */
+  host?: string
+}
+
+export type HostTunnelOpts = {
+  /**
+   * Map each service port to the same port on the host, as if the service were
+   * running natively.
+   *
+   * Note: enabling may result in port conflicts.
+   */
+  native?: boolean
+
+  /**
+   * Configure explicit port forwarding rules for the tunnel.
+   *
+   * If a port's frontend is unspecified or 0, a random port will be chosen by
+   * the host.
+   *
+   * If no ports are given, all of the service's ports are forwarded. If native
+   * is true, each port maps to the same port on the host. If native is false,
+   * each port maps to a random port chosen by the host.
+   *
+   * If ports are given and native is true, the ports are additive.
+   */
+  ports?: PortForward[]
+}
+
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
  */
@@ -700,6 +719,23 @@ export type PipelineLabel = {
  */
 export type Platform = string & { __Platform: never }
 
+export type PortForward = {
+  /**
+   * Destination port for traffic.
+   */
+  backend: number
+
+  /**
+   * Port to expose to clients. If unspecified, a default will be chosen.
+   */
+  frontend?: number
+
+  /**
+   * Protocol to use for traffic.
+   */
+  protocol?: NetworkProtocol
+}
+
 export type ClientContainerOpts = {
   id?: ContainerID
   platform?: Platform
@@ -718,14 +754,14 @@ export type ClientGitOpts = {
   /**
    * A service which must be started before the repo is fetched.
    */
-  experimentalServiceHost?: Container
+  experimentalServiceHost?: Service
 }
 
 export type ClientHttpOpts = {
   /**
    * A service which must be started before the URL is fetched.
    */
-  experimentalServiceHost?: Container
+  experimentalServiceHost?: Service
 }
 
 export type ClientModuleConfigOpts = {
@@ -752,6 +788,23 @@ export type ClientSocketOpts = {
  * A unique identifier for a secret.
  */
 export type SecretID = string & { __SecretID: never }
+
+export type ServiceEndpointOpts = {
+  /**
+   * The exposed port number for the endpoint
+   */
+  port?: number
+
+  /**
+   * Return a URL with the given scheme, eg. http for http://
+   */
+  scheme?: string
+}
+
+/**
+ * A unique service identifier.
+ */
+export type ServiceID = string & { __ServiceID: never }
 
 /**
  * A content-addressed socket identifier.
@@ -872,10 +925,8 @@ export class CacheVolume extends BaseClient {
  */
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
-  private readonly _endpoint?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _export?: boolean = undefined
-  private readonly _hostname?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
@@ -893,10 +944,8 @@ export class Container extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _id?: ContainerID,
-    _endpoint?: string,
     _envVariable?: string,
     _export?: boolean,
-    _hostname?: string,
     _imageRef?: string,
     _label?: string,
     _platform?: Platform,
@@ -911,10 +960,8 @@ export class Container extends BaseClient {
     super(parent)
 
     this._id = _id
-    this._endpoint = _endpoint
     this._envVariable = _envVariable
     this._export = _export
-    this._hostname = _hostname
     this._imageRef = _imageRef
     this._label = _label
     this._platform = _platform
@@ -946,6 +993,24 @@ export class Container extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Turn the container into a Service.
+   *
+   * Be sure to set any exposed ports before this conversion.
+   */
+  asService(): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asService",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -1045,36 +1110,6 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Retrieves an endpoint that clients can use to reach this container.
-   *
-   * If no port is specified, the first exposed port is used. If none exist an error is returned.
-   *
-   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-   * @param opts.port The exposed port number for the endpoint
-   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
-   */
-  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
-    if (this._endpoint) {
-      return this._endpoint
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "endpoint",
-          args: { ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**
@@ -1200,8 +1235,6 @@ export class Container extends BaseClient {
    *
    * This includes ports already exposed by the image, even if not
    * explicitly added with dagger.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async exposedPorts(): Promise<Port[]> {
     type exposedPorts = {
@@ -1276,29 +1309,6 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Retrieves a hostname which can be used by clients to reach this container.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-   */
-  async hostname(): Promise<string> {
-    if (this._hostname) {
-      return this._hostname
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "hostname",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**
@@ -1759,8 +1769,6 @@ export class Container extends BaseClient {
    * Exposed ports serve two purposes:
    *   - For health checks and introspection, when running services
    *   - For setting the EXPOSE OCI field when publishing the container
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
@@ -2094,12 +2102,10 @@ export class Container extends BaseClient {
    * The service will be reachable from the container via the provided hostname alias.
    *
    * The service dependency will also convey to any files or directories produced by the container.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withServiceBinding(alias: string, service: Container): Container {
+  withServiceBinding(alias: string, service: Service): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2197,8 +2203,6 @@ export class Container extends BaseClient {
 
   /**
    * Unexpose a previously exposed port.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
@@ -3902,6 +3906,30 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Creates a service that forwards traffic to a specified address via the host.
+   * @param ports Ports to expose via the service, forwarding through the host network.
+   *
+   * If a port's frontend is unspecified or 0, it defaults to the same as the
+   * backend port.
+   *
+   * An empty set of ports is not valid; an error will be returned.
+   * @param opts.host Upstream host to forward traffic to.
+   */
+  service(ports: PortForward[], opts?: HostServiceOpts): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "service",
+          args: { ports, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
    * The file is limited to a size of 512000 bytes.
    * @param name The user defined name for this secret.
@@ -3914,6 +3942,38 @@ export class Host extends BaseClient {
         {
           operation: "setSecretFile",
           args: { name, path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Creates a tunnel that forwards traffic from the host to a service.
+   * @param service Service to send traffic from the tunnel.
+   * @param opts.native Map each service port to the same port on the host, as if the service were
+   * running natively.
+   *
+   * Note: enabling may result in port conflicts.
+   * @param opts.ports Configure explicit port forwarding rules for the tunnel.
+   *
+   * If a port's frontend is unspecified or 0, a random port will be chosen by
+   * the host.
+   *
+   * If no ports are given, all of the service's ports are forwarded. If native
+   * is true, each port maps to the same port on the host. If native is false,
+   * each port maps to a random port chosen by the host.
+   *
+   * If ports are given and native is true, the ports are additive.
+   */
+  tunnel(service: Service, opts?: HostTunnelOpts): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "tunnel",
+          args: { service, ...opts },
         },
       ],
       host: this.clientHost,
@@ -5106,6 +5166,23 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Loads a service from ID.
+   */
+  loadServiceFromID(id: ServiceID): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadServiceFromID",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Load a Socket from its ID.
    */
   loadSocketFromID(id: SocketID): Socket {
@@ -5338,6 +5415,178 @@ export class Secret extends BaseClient {
     )
 
     return response
+  }
+}
+
+export class Service extends BaseClient {
+  private readonly _id?: ServiceID = undefined
+  private readonly _endpoint?: string = undefined
+  private readonly _hostname?: string = undefined
+  private readonly _start?: ServiceID = undefined
+  private readonly _stop?: ServiceID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: ServiceID,
+    _endpoint?: string,
+    _hostname?: string,
+    _start?: ServiceID,
+    _stop?: ServiceID
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._endpoint = _endpoint
+    this._hostname = _hostname
+    this._start = _start
+    this._stop = _stop
+  }
+
+  /**
+   * A unique identifier for this service.
+   */
+  async id(): Promise<ServiceID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ServiceID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   * @param opts.port The exposed port number for the endpoint
+   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
+   */
+  async endpoint(opts?: ServiceEndpointOpts): Promise<string> {
+    if (this._endpoint) {
+      return this._endpoint
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   */
+  async hostname(): Promise<string> {
+    if (this._hostname) {
+      return this._hostname
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves the list of ports provided by the service.
+   */
+  async ports(): Promise<Port[]> {
+    type ports = {
+      description: string
+      port: number
+      protocol: NetworkProtocol
+    }
+
+    const response: Awaited<ports[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "ports",
+        },
+        {
+          operation: "description port protocol",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new Port(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.port,
+          r.protocol
+        )
+    )
+  }
+
+  /**
+   * Start the service and wait for its health checks to succeed.
+   *
+   * Services bound to a Container do not need to be manually started.
+   */
+  async start(): Promise<Service> {
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "start",
+        },
+      ],
+      this.client
+    )
+
+    return this
+  }
+
+  /**
+   * Stop the service.
+   */
+  async stop(): Promise<Service> {
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "stop",
+        },
+      ],
+      this.client
+    )
+
+    return this
   }
 }
 

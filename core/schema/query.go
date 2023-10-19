@@ -34,6 +34,9 @@ func (s *querySchema) Resolvers() Resolvers {
 			"pipeline":                  ToResolver(s.pipeline),
 			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),
 		},
+		"Port": ObjectResolver{
+			"protocol": ToResolver(s.portProtocolHack),
+		},
 	}
 }
 
@@ -108,4 +111,11 @@ func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query
 	}
 
 	return true, nil
+}
+
+func (s *querySchema) portProtocolHack(ctx *core.Context, port core.Port, args any) (string, error) {
+	// HACK(vito): this is a little counter-intuitive, but we need to return a
+	// string instead of the core.NetworkProtocol value so the resolver layer can
+	// lookup the enum value by name.
+	return port.Protocol.EnumName(), nil
 }

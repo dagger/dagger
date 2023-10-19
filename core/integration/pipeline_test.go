@@ -12,12 +12,15 @@ import (
 )
 
 func TestPipeline(t *testing.T) {
+	t.Parallel()
+
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("container pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		c, ctx, logs := connectWithLogs(t)
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		_, err := c.
 			Container().
@@ -36,7 +39,8 @@ func TestPipeline(t *testing.T) {
 	t.Run("directory pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		c, ctx, logs := connectWithLogs(t)
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		contents, err := c.
 			Directory().
@@ -56,7 +60,8 @@ func TestPipeline(t *testing.T) {
 	t.Run("service pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		c, ctx, logs := connectWithLogs(t)
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		srv, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -87,7 +92,8 @@ func TestInternalVertexes(t *testing.T) {
 	t.Run("merge pipeline", func(t *testing.T) {
 		t.Parallel()
 
-		c, ctx, logs := connectWithLogs(t)
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 		dirA := c.Directory().WithNewFile("/foo", "foo")
 		dirB := c.Directory().WithNewFile("/bar", "bar")

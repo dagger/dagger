@@ -96,6 +96,12 @@ func internalCommand() int {
 			return errorExitCode
 		}
 		return 0
+	case "tunnel":
+		if err := tunnel(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		return errorExitCode

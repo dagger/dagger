@@ -43,3 +43,6 @@ var Function string
 
 //go:embed internalsdk.graphqls
 var InternalSDK string
+
+//go:embed service.graphqls
+var Service string

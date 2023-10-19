@@ -10,10 +10,6 @@ const engineDefaultStateDir = "/var/lib/dagger"
 // engineDefaultShimBin is the path to the shim binary we use as our oci runtime.
 const engineDefaultShimBin = "/usr/local/bin/dagger-shim"
 
-// servicesDNSEnvName is the feature flag for enabling the services network
-// stack.
-const servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
-
 func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 	if cfg.Root == "" {
 		cfg.Root = engineDefaultStateDir

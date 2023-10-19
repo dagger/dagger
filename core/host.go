@@ -64,5 +64,5 @@ func (host *Host) File(
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*socket.Socket, error) {
-	return socket.NewHostSocket(sockPath), nil
+	return socket.NewHostUnixSocket(sockPath), nil
 }

@@ -21,6 +21,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
+
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -39,6 +40,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/telemetry"
 )
 
@@ -261,6 +263,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	// registry auth
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
+
+	// host=>container networking
+	c.Recorder = progrock.NewRecorder(progMultiW)
+	bkSession.Allow(session.NewTunnelListenerAttachable(c.Recorder))
+	ctx = progrock.ToContext(ctx, c.Recorder)
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started

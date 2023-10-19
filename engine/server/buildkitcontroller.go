@@ -18,6 +18,7 @@ import (
 	apitypes "github.com/moby/buildkit/api/types"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
@@ -73,6 +74,7 @@ type BuildkitControllerOpts struct {
 	TraceCollector         trace.SpanExporter
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
+	DNSConfig              *oci.DNSConfig
 }
 
 func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, error) {
@@ -243,6 +245,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			UpstreamCacheImports:  cacheImporterCfgs,
 			ProgSockPath:          progSockPath,
 			MainClientCaller:      caller,
+			DNSConfig:             e.DNSConfig,
 		})
 		if err != nil {
 			e.serverMu.Unlock()

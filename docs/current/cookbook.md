@@ -503,7 +503,7 @@ The following code listing creates a temporary MariaDB database service and bind
 </TabItem>
 </Tabs>
 
-[Learn more](./guides/757394-use-service-containers.md)
+[Learn more](./guides/757394-use-services.md)
 
 ### Invalidate cache
 
@@ -946,7 +946,7 @@ The following code listing uses a cache volume to persist a service's data acros
 </TabItem>
 </Tabs>
 
-[Learn more](./guides/757394-use-service-containers.md)
+[Learn more](./guides/757394-use-services.md)
 
 ### Add multiple environment variables to a container
 

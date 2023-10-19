@@ -5,17 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
@@ -54,6 +57,7 @@ type Opts struct {
 	// that registry auth and sockets are currently only ever sourced from this caller,
 	// not any nested clients (may change in future).
 	MainClientCaller bksession.Caller
+	DNSConfig        *oci.DNSConfig
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -72,6 +76,8 @@ type Client struct {
 	refsMu       sync.Mutex
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
+
+	dialer *net.Dialer
 
 	closeCtx context.Context
 	cancel   context.CancelFunc
@@ -110,6 +116,32 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 
 	client.llbBridge = client.LLBSolver.Bridge(client.job)
 	client.llbBridge = recordingGateway{client.llbBridge}
+
+	client.dialer = &net.Dialer{}
+
+	if opts.DNSConfig != nil {
+		client.dialer.Resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				if len(opts.DNSConfig.Nameservers) == 0 {
+					return nil, errors.New("no nameservers configured")
+				}
+
+				var errs []error
+				for _, ns := range opts.DNSConfig.Nameservers {
+					conn, err := client.dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
+					if err != nil {
+						errs = append(errs, err)
+						continue
+					}
+
+					return conn, nil
+				}
+
+				return nil, errors.Join(errs...)
+			},
+		}
+	}
 
 	return client, nil
 }
@@ -504,6 +536,132 @@ func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) con
 		}
 		return vals
 	})
+}
+
+func (c *Client) ListenHostToContainer(
+	ctx context.Context,
+	hostListenAddr, proto, upstream string,
+) (*session.ListenResponse, func() error, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to get requester session ID: %s", err)
+	}
+
+	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to get requester session: %s", err)
+	}
+
+	conn := clientCaller.Conn()
+
+	tunnelClient := session.NewTunnelListenerClient(conn)
+
+	listener, err := tunnelClient.Listen(ctx)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to listen: %s", err)
+	}
+
+	err = listener.Send(&session.ListenRequest{
+		Addr:     hostListenAddr,
+		Protocol: proto,
+	})
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to send listen request: %s", err)
+	}
+
+	listenRes, err := listener.Recv()
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to receive listen response: %s", err)
+	}
+
+	conns := map[string]net.Conn{}
+	connsL := &sync.Mutex{}
+	sendL := &sync.Mutex{}
+
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			res, err := listener.Recv()
+			if err != nil {
+				bklog.G(ctx).Warnf("listener recv err: %s", err)
+				return
+			}
+
+			connID := res.GetConnId()
+			if connID == "" {
+				continue
+			}
+
+			connsL.Lock()
+			conn, found := conns[connID]
+			connsL.Unlock()
+
+			if !found {
+				conn, err := c.dialer.Dial(proto, upstream)
+				if err != nil {
+					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
+					return
+				}
+
+				connsL.Lock()
+				conns[connID] = conn
+				connsL.Unlock()
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					data := make([]byte, 32*1024)
+					for {
+						n, err := conn.Read(data)
+						if err != nil {
+							return
+						}
+
+						sendL.Lock()
+						err = listener.Send(&session.ListenRequest{
+							ConnId: connID,
+							Data:   data[:n],
+						})
+						sendL.Unlock()
+						if err != nil {
+							return
+						}
+					}
+				}()
+			}
+
+			if res.Data != nil {
+				_, err = conn.Write(res.Data)
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	return listenRes, func() error {
+		defer cancel()
+		sendL.Lock()
+		err := listener.CloseSend()
+		sendL.Unlock()
+		if err == nil {
+			wg.Wait()
+		}
+		return err
+	}, nil
 }
 
 func withOutgoingContext(ctx context.Context) context.Context {

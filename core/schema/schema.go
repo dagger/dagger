@@ -109,6 +109,7 @@ func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*mod
 		},
 		&cacheSchema{s},
 		&secretSchema{s},
+		&serviceSchema{s, s.services},
 		&hostSchema{s, s.host, s.services},
 		&moduleSchema{
 			MergedSchemas:        s,
