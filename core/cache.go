@@ -3,6 +3,8 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
+	"strings"
 
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/opencontainers/go-digest"
@@ -53,6 +55,29 @@ const (
 	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
 	CacheSharingModeLocked  CacheSharingMode = "LOCKED"
 )
+
+// CacheSharingMode marshals to its lowercased value.
+//
+// NB: as far as I can recall this is purely for ~*aesthetic*~. GraphQL consts
+// are so shouty!
+func (mode CacheSharingMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(strings.ToLower(string(mode)))
+}
+
+// CacheSharingMode marshals to its lowercased value.
+//
+// NB: as far as I can recall this is purely for ~*aesthetic*~. GraphQL consts
+// are so shouty!
+func (mode *CacheSharingMode) UnmarshalJSON(payload []byte) error {
+	var str string
+	if err := json.Unmarshal(payload, &str); err != nil {
+		return err
+	}
+
+	*mode = CacheSharingMode(strings.ToUpper(str))
+
+	return nil
+}
 
 func (cache *CacheVolume) WithKey(key string) *CacheVolume {
 	cache = cache.Clone()

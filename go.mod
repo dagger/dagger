@@ -49,8 +49,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.19.0
 	go.opentelemetry.io/proto/otlp v1.0.0
 	golang.org/x/crypto v0.14.0
-	golang.org/x/mod v0.12.0
-	golang.org/x/sync v0.3.0
+	golang.org/x/mod v0.13.0
+	golang.org/x/sync v0.4.0
 	golang.org/x/sys v0.13.0
 	golang.org/x/term v0.13.0
 	google.golang.org/grpc v1.58.2
@@ -65,9 +65,9 @@ require (
 	github.com/dschmidt/go-layerfs v0.1.0
 	github.com/fatih/structtag v1.2.0
 	github.com/go-git/go-git/v5 v5.9.0
+	github.com/gogo/protobuf v1.3.2
 	github.com/google/go-github/v50 v50.2.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/icholy/replace v0.6.0
 	github.com/jackpal/gateway v1.0.7
 	github.com/juju/ansiterm v1.0.0
@@ -86,9 +86,9 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/vito/midterm v0.1.4
 	github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007
-	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/oauth2 v0.13.0
-	golang.org/x/tools v0.13.0
+	golang.org/x/tools v0.14.0
 )
 
 require (
@@ -154,7 +154,6 @@ require (
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
@@ -165,6 +164,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect

@@ -15,12 +15,13 @@ class ObjectVisitor extends AbstractVisitor {
     super(schema, targetDirectory, encoding);
   }
 
-  private static MethodSpec withMethod(String var, TypeName type, TypeName returnType, String doc) {
-    return MethodSpec.methodBuilder("with" + capitalize(var))
+  private static MethodSpec withMethod(
+      InputValue var, TypeName type, TypeName returnType, String doc) {
+    return MethodSpec.methodBuilder("with" + capitalize(var.getName()))
         .addModifiers(Modifier.PUBLIC)
-        .addParameter(type, var)
+        .addParameter(type, Helpers.formatName(var))
         .returns(returnType)
-        .addStatement("this.$1L = $1L", var)
+        .addStatement("this.$1L = $1L", Helpers.formatName(var))
         .addStatement("return this")
         .addJavadoc(Helpers.escapeJavadoc(doc) + "\n")
         .build();
@@ -134,7 +135,7 @@ class ObjectVisitor extends AbstractVisitor {
                                     && "id".equals(arg.getName())
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
-                            arg.getName())
+                            Helpers.formatName(arg))
                         .addJavadoc(arg.getDescription() + "\n")
                         .build())
             .toList();
@@ -163,7 +164,10 @@ class ObjectVisitor extends AbstractVisitor {
     }
     field
         .getRequiredArgs()
-        .forEach(arg -> fieldMethodBuilder.addStatement("builder.add($1S, $1L)", arg.getName()));
+        .forEach(
+            arg ->
+                fieldMethodBuilder.addStatement(
+                    "builder.add($1S, $2L)", arg.getName(), Helpers.formatName(arg)));
     if (field.hasArgs()) {
       fieldMethodBuilder.addStatement("Arguments fieldArgs = builder.build()");
     }
@@ -249,7 +253,7 @@ class ObjectVisitor extends AbstractVisitor {
                                     && "Query".equals(field.getParentObject().getName())
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
-                            arg.getName(),
+                            Helpers.formatName(arg),
                             Modifier.PRIVATE)
                         .build())
             .toList();
@@ -260,7 +264,7 @@ class ObjectVisitor extends AbstractVisitor {
             .map(
                 arg ->
                     withMethod(
-                        arg.getName(),
+                        arg, // arg.getName(),
                         "id".equals(arg.getName())
                                 && "Query".equals(field.getParentObject().getName())
                             ? arg.getType().formatOutput()
@@ -275,8 +279,9 @@ class ObjectVisitor extends AbstractVisitor {
             .map(
                 arg ->
                     CodeBlock.builder()
-                        .beginControlFlow("if ($1L != null)", arg.getName())
-                        .addStatement("builder.add($1S, this.$1L)", arg.getName())
+                        .beginControlFlow("if ($1L != null)", Helpers.formatName(arg))
+                        .addStatement(
+                            "builder.add($1S, this.$2L)", arg.getName(), Helpers.formatName(arg))
                         .endControlFlow()
                         .build())
             .toList();

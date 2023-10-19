@@ -12,6 +12,7 @@ import (
 	"text/template"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/mage/consts"
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/exp/maps"
 )
@@ -20,9 +21,6 @@ const (
 	daggerBinName = "dagger" // CLI, not engine!
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
-
-	GoSDKEngineContainerTarballPath    = "/usr/local/share/dagger/go-module-sdk-image.tar"
-	PythonSDKEngineContainerModulePath = "/usr/local/share/dagger/python-sdk/runtime"
 
 	golangVersion = "1.21.2"
 	alpineVersion = "3.18"
@@ -37,7 +35,6 @@ const (
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	ServicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh
@@ -221,8 +218,8 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
-		WithFile(GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
-		WithDirectory(filepath.Dir(PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
@@ -260,7 +257,7 @@ func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
 		panic(err)
 	}
 	defer os.RemoveAll(tmpDir)
-	tarballPath := filepath.Join(tmpDir, filepath.Base(GoSDKEngineContainerTarballPath))
+	tarballPath := filepath.Join(tmpDir, filepath.Base(consts.GoSDKEngineContainerTarballPath))
 
 	_, err = c.Container().
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
@@ -357,7 +354,7 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 	*/
 
 	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
-		From("moby/buildkit:master@sha256:f73a7d2d2441cfa5ced27bee8283f3b090a2232698484f7e4876e69a16d68a07").
+		From("moby/buildkit:master@sha256:5d05b3dc8dbab4422d3017014e47322b0a6168a5a2f88928baf9c607e3ac9fe1").
 		File("/usr/bin/buildctl")
 }
 

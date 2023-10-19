@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -27,12 +29,42 @@ const (
 type Service struct {
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
+
+	// TunnelUpstream is the service that this service is tunnelling to.
+	TunnelUpstream *Service `json:"upstream,omitempty"`
+	// TunnelPorts configures the port forwarding rules for the tunnel.
+	TunnelPorts []PortForward `json:"tunnel_ports,omitempty"`
+
+	// HostUpstream is the host address (i.e. hostname or IP) for the reverse
+	// tunnel to request through the host.
+	HostUpstream string `json:"reverse_tunnel_upstream_addr,omitempty"`
+	// HostPorts configures the port forwarding rules for the host.
+	HostPorts []PortForward `json:"host_ports,omitempty"`
 }
 
 func NewContainerService(ctr *Container) *Service {
 	return &Service{
 		Container: ctr,
 	}
+}
+
+func NewTunnelService(upstream *Service, ports []PortForward) *Service {
+	return &Service{
+		TunnelUpstream: upstream,
+		TunnelPorts:    ports,
+	}
+}
+
+func NewHostService(upstream string, ports []PortForward) *Service {
+	return &Service{
+		HostUpstream: upstream,
+		HostPorts:    ports,
+	}
+}
+
+// ID marshals the service into a content-addressed ID.
+func (svc *Service) ID() (ServiceID, error) {
+	return resourceid.Encode(svc)
 }
 
 var _ pipeline.Pipelineable = (*Service)(nil)
@@ -44,6 +76,11 @@ func (svc *Service) Clone() *Service {
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
 	}
+	if cp.TunnelUpstream != nil {
+		cp.TunnelUpstream = cp.TunnelUpstream.Clone()
+	}
+	cp.TunnelPorts = cloneSlice(cp.TunnelPorts)
+	cp.HostPorts = cloneSlice(cp.HostPorts)
 	return &cp
 }
 
@@ -52,6 +89,8 @@ func (svc *Service) PipelinePath() pipeline.Path {
 	switch {
 	case svc.Container != nil:
 		return svc.Container.Pipeline
+	case svc.TunnelUpstream != nil:
+		return svc.TunnelUpstream.PipelinePath()
 	default:
 		return pipeline.Path{}
 	}
@@ -68,7 +107,15 @@ func (svc *Service) Digest() (digest.Digest, error) {
 
 func (svc *Service) Hostname(ctx context.Context, svcs *Services) (string, error) {
 	switch {
-	case svc.Container != nil: // container=>container
+	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
+		upstream, err := svcs.Get(ctx, svc)
+		if err != nil {
+			return "", err
+		}
+
+		return upstream.Host, nil
+	case svc.Container != nil, // container=>container
+		svc.HostUpstream != "": // container=>host
 		dig, err := svc.Digest()
 		if err != nil {
 			return "", err
@@ -82,6 +129,13 @@ func (svc *Service) Hostname(ctx context.Context, svcs *Services) (string, error
 
 func (svc *Service) Ports(ctx context.Context, svcs *Services) ([]Port, error) {
 	switch {
+	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
+		running, err := svcs.Get(ctx, svc)
+		if err != nil {
+			return nil, err
+		}
+
+		return running.Ports, nil
 	case svc.Container != nil:
 		return svc.Container.Ports, nil
 	default:
@@ -105,6 +159,34 @@ func (svc *Service) Endpoint(ctx context.Context, svcs *Services, port int, sche
 			}
 
 			port = svc.Container.Ports[0].Port
+		}
+	case svc.TunnelUpstream != nil:
+		tunnel, err := svcs.Get(ctx, svc)
+		if err != nil {
+			return "", err
+		}
+
+		host = tunnel.Host
+
+		if port == 0 {
+			if len(tunnel.Ports) == 0 {
+				return "", fmt.Errorf("no ports")
+			}
+
+			port = tunnel.Ports[0].Port
+		}
+	case svc.HostUpstream != "":
+		host, err = svc.Hostname(ctx, svcs)
+		if err != nil {
+			return "", err
+		}
+
+		if port == 0 {
+			if len(svc.HostPorts) == 0 {
+				return "", fmt.Errorf("no ports")
+			}
+
+			port = svc.HostPorts[0].FrontendOrBackendPort()
 		}
 	default:
 		return "", fmt.Errorf("unknown service type")
@@ -130,6 +212,10 @@ func (svc *Service) Start(
 	switch {
 	case svc.Container != nil:
 		return svc.startContainer(ctx, bk, svcs, interactive, forwardStdin, forwardStdout, forwardStderr)
+	case svc.TunnelUpstream != nil:
+		return svc.startTunnel(ctx, bk, svcs)
+	case svc.HostUpstream != "":
+		return svc.startReverseTunnel(ctx, bk, svcs)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
@@ -367,8 +453,9 @@ func (svc *Service) startContainer(
 		}
 
 		return &RunningService{
-			Host:  fullHost,
-			Ports: ctr.Ports,
+			Service: svc,
+			Host:    fullHost,
+			Ports:   ctr.Ports,
 			Key: ServiceKey{
 				Digest:   dig,
 				ClientID: clientMetadata.ClientID,
@@ -413,6 +500,172 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 		out = append(out, "ALL_PROXY="+v, "all_proxy="+v)
 	}
 	return out
+}
+
+func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
+	svcCtx, stop := context.WithCancel(context.Background())
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		stop()
+		return nil, err
+	}
+	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
+
+	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
+
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream)
+	if err != nil {
+		stop()
+		return nil, fmt.Errorf("start upstream: %w", err)
+	}
+
+	closers := make([]func() error, len(svc.TunnelPorts))
+	ports := make([]Port, len(svc.TunnelPorts))
+
+	// TODO: make these configurable?
+	const bindHost = "0.0.0.0"
+	const dialHost = "127.0.0.1"
+
+	for i, forward := range svc.TunnelPorts {
+		res, closeListener, err := bk.ListenHostToContainer(
+			svcCtx,
+			fmt.Sprintf("%s:%d", bindHost, forward.Frontend),
+			forward.Protocol.Network(),
+			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
+		)
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("host to container: %w", err)
+		}
+
+		_, portStr, err := net.SplitHostPort(res.GetAddr())
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("split host port: %w", err)
+		}
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("parse port: %w", err)
+		}
+
+		desc := fmt.Sprintf("tunnel %s:%d -> %s:%d", bindHost, port, upstream.Host, forward.Backend)
+
+		ports[i] = Port{
+			Port:        port,
+			Protocol:    forward.Protocol,
+			Description: &desc,
+		}
+
+		closers[i] = closeListener
+	}
+
+	dig, err := svc.Digest()
+	if err != nil {
+		stop()
+		return nil, err
+	}
+
+	return &RunningService{
+		Service: svc,
+		Key: ServiceKey{
+			Digest:   dig,
+			ClientID: clientMetadata.ClientID,
+		},
+		Host:  dialHost,
+		Ports: ports,
+		Stop: func(context.Context) error {
+			stop()
+			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
+			go svcs.Detach(svcCtx, upstream)
+			var errs []error
+			for _, closeListener := range closers {
+				errs = append(errs, closeListener())
+			}
+			return errors.Join(errs...)
+		},
+	}, nil
+}
+
+func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
+	dig, err := svc.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	host, err := svc.Hostname(ctx, svcs)
+	if err != nil {
+		return nil, err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rec := progrock.FromContext(ctx)
+
+	svcCtx, stop := context.WithCancel(context.Background())
+	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
+	svcCtx = progrock.ToContext(svcCtx, rec)
+
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+
+	tunnel := &c2hTunnel{
+		bk:                 bk,
+		upstreamHost:       svc.HostUpstream,
+		tunnelServiceHost:  fullHost,
+		tunnelServicePorts: svc.HostPorts,
+	}
+
+	checkPorts := []Port{}
+	for _, p := range svc.HostPorts {
+		desc := fmt.Sprintf("tunnel %s %d -> %d", p.Protocol, p.FrontendOrBackendPort(), p.Backend)
+		checkPorts = append(checkPorts, Port{
+			Port:        p.FrontendOrBackendPort(),
+			Protocol:    p.Protocol,
+			Description: &desc,
+		})
+	}
+
+	check := newHealth(bk, fullHost, checkPorts)
+
+	exited := make(chan error, 1)
+	go func() {
+		exited <- tunnel.Tunnel(svcCtx)
+	}()
+
+	checked := make(chan error, 1)
+	go func() {
+		checked <- check.Check(svcCtx)
+	}()
+
+	select {
+	case err := <-checked:
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("health check errored: %w", err)
+		}
+
+		return &RunningService{
+			Service: svc,
+			Key: ServiceKey{
+				Digest:   dig,
+				ClientID: clientMetadata.ClientID,
+			},
+			Host:  fullHost,
+			Ports: checkPorts,
+			Stop: func(context.Context) error {
+				stop()
+				return nil
+			},
+		}, nil
+	case err := <-exited:
+		stop()
+		return nil, fmt.Errorf("proxy exited: %w", err)
+	}
 }
 
 type ServiceBindings []ServiceBinding

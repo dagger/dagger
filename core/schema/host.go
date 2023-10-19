@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
@@ -34,6 +35,8 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"file":          ToResolver(s.file),
 			"unixSocket":    ToResolver(s.socket),
 			"setSecretFile": ToResolver(s.setSecretFile),
+			"tunnel":        ToResolver(s.tunnel),
+			"service":       ToResolver(s.service),
 		},
 	}
 }
@@ -85,4 +88,66 @@ type hostFileArgs struct {
 
 func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
 	return s.host.File(ctx, s.bk, s.svcs, args.Path, parent.PipelinePath(), s.platform)
+}
+
+type hostTunnelArgs struct {
+	Service core.ServiceID
+	Ports   []core.PortForward
+	Native  bool
+}
+
+func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
+	svc, err := args.Service.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	if svc.Container == nil {
+		return nil, errors.New("tunneling to non-Container services is not supported")
+	}
+
+	ports := []core.PortForward{}
+
+	if args.Native {
+		for _, port := range svc.Container.Ports {
+			ports = append(ports, core.PortForward{
+				Frontend: port.Port,
+				Backend:  port.Port,
+				Protocol: port.Protocol,
+			})
+		}
+	}
+
+	if len(args.Ports) > 0 {
+		ports = append(ports, args.Ports...)
+	}
+
+	if len(ports) == 0 {
+		for _, port := range svc.Container.Ports {
+			ports = append(ports, core.PortForward{
+				Frontend: 0, // pick a random port on the host
+				Backend:  port.Port,
+				Protocol: port.Protocol,
+			})
+		}
+	}
+
+	if len(ports) == 0 {
+		return nil, errors.New("no ports to forward")
+	}
+
+	return core.NewTunnelService(svc, ports), nil
+}
+
+type hostServiceArgs struct {
+	Host  string
+	Ports []core.PortForward
+}
+
+func (s *hostSchema) service(ctx *core.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+	if len(args.Ports) == 0 {
+		return nil, errors.New("no ports specified")
+	}
+
+	return core.NewHostService(args.Host, args.Ports), nil
 }

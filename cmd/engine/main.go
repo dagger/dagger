@@ -813,6 +813,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		TraceCollector:         tc,
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
+		DNSConfig:              getDNSConfig(cfg.DNS),
 	})
 	if err != nil {
 		return nil, nil, err
@@ -972,10 +973,6 @@ type networkConfig struct {
 }
 
 func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
-	if os.Getenv(servicesDNSEnvName) == "0" {
-		return nil, nil
-	}
-
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("bridge from cidr: %w", err)

@@ -228,7 +228,7 @@ type ContainerMount struct {
 	CacheVolumeID string `json:"cache_volume_id,omitempty"`
 
 	// How to share the cache across concurrent runs.
-	CacheSharingMode string `json:"cache_sharing,omitempty"`
+	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
@@ -559,25 +559,19 @@ func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Cl
 
 var SeenCacheKeys = new(sync.Map)
 
-func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
 
-	cacheSharingMode := ""
-	switch concurrency {
-	case CacheSharingModePrivate:
-		cacheSharingMode = "private"
-	case CacheSharingModeLocked:
-		cacheSharingMode = "locked"
-	default:
-		cacheSharingMode = "shared"
+	if sharingMode == "" {
+		sharingMode = CacheSharingModeShared
 	}
 
 	mount := ContainerMount{
 		Target:           target,
 		CacheVolumeID:    cache.Sum(),
-		CacheSharingMode: cacheSharingMode,
+		CacheSharingMode: sharingMode,
 	}
 
 	if source != nil {
@@ -1181,11 +1175,11 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		if mnt.CacheVolumeID != "" {
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
-			case "shared":
+			case CacheSharingModeShared:
 				sharingMode = llb.CacheMountShared
-			case "private":
+			case CacheSharingModePrivate:
 				sharingMode = llb.CacheMountPrivate
-			case "locked":
+			case CacheSharingModeLocked:
 				sharingMode = llb.CacheMountLocked
 			default:
 				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)

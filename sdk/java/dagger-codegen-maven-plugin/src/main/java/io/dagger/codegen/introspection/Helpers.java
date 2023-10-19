@@ -11,6 +11,59 @@ import javax.lang.model.element.Modifier;
 
 public class Helpers {
 
+  private static final List<String> JAVA_KEYWORDS =
+      List.of(
+          "abstract",
+          "continue",
+          "for",
+          "new",
+          "switch",
+          "assert",
+          "default",
+          "goto",
+          "package",
+          "synchronized",
+          "boolean",
+          "do",
+          "if",
+          "private",
+          "this",
+          "break",
+          "double",
+          "implements",
+          "protected",
+          "throw",
+          "byte",
+          "else",
+          "import",
+          "public",
+          "throws",
+          "case",
+          "enum",
+          "instanceof",
+          "return",
+          "transient",
+          "catch",
+          "extends",
+          "int",
+          "short",
+          "try",
+          "char",
+          "final",
+          "interface",
+          "static",
+          "void",
+          "class",
+          "finally",
+          "long",
+          "strictfp",
+          "volatile",
+          "const",
+          "float",
+          "native",
+          "super",
+          "while");
+
   static ClassName convertScalarToObject(String typeName) {
     if (typeName.endsWith("ID")) {
       return ClassName.bestGuess(typeName.substring(0, typeName.length() - 2));
@@ -69,6 +122,14 @@ public class Helpers {
       return "importTarball";
     } else {
       return field.getName();
+    }
+  }
+
+  static String formatName(InputValue arg) {
+    if (JAVA_KEYWORDS.contains(arg.getName())) {
+      return "_" + arg.getName();
+    } else {
+      return arg.getName();
     }
   }
 

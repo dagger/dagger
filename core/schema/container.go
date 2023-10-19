@@ -100,8 +100,6 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withExposedPort":      ToResolver(s.withExposedPort),
 		"withoutExposedPort":   ToResolver(s.withoutExposedPort),
 		"exposedPorts":         ToResolver(s.exposedPorts),
-		"hostname":             ToResolver(s.hostname),
-		"endpoint":             ToResolver(s.endpoint),
 		"withServiceBinding":   ToResolver(s.withServiceBinding),
 		"withFocus":            ToResolver(s.withFocus),
 		"withoutFocus":         ToResolver(s.withoutFocus),
@@ -732,41 +730,13 @@ func (s *containerSchema) imageRef(ctx *core.Context, parent *core.Container, ar
 	return parent.ImageRefOrErr(ctx, s.bk)
 }
 
-func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	svc, err := parent.Service(ctx, s.bk, s.progSockPath)
-	if err != nil {
-		return "", err
-	}
-
-	return svc.Hostname(ctx, s.svcs)
-}
-
-type containerEndpointArgs struct {
-	Port   int
-	Scheme string
-}
-
-func (s *containerSchema) endpoint(ctx *core.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	svc, err := parent.Service(ctx, s.bk, s.progSockPath)
-	if err != nil {
-		return "", err
-	}
-
-	return svc.Endpoint(ctx, s.svcs, args.Port, args.Scheme)
-}
-
-type containerWithServiceDependencyArgs struct {
-	Service core.ContainerID
+type containerWithServiceBindingArgs struct {
+	Service core.ServiceID
 	Alias   string
 }
 
-func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	ctr, err := args.Service.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	svc, err := ctr.Service(ctx, s.bk, s.progSockPath)
+func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
+	svc, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
 	}

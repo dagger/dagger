@@ -41,6 +41,24 @@ defmodule Dagger.Host do
   )
 
   (
+    @doc "Creates a service that forwards traffic to a specified address via the host.\n\n## Required Arguments\n\n* `ports` - Ports to expose via the service, forwarding through the host network.\n\nIf a port's frontend is unspecified or 0, it defaults to the same as the\nbackend port.\n\nAn empty set of ports is not valid; an error will be returned.\n\n## Optional Arguments\n\n* `host` - Upstream host to forward traffic to."
+    @spec service(t(), [Dagger.PortForward.t()], keyword()) :: Dagger.Service.t()
+    def service(%__MODULE__{} = host, ports, optional_args \\ []) do
+      selection = select(host.selection, "service")
+      selection = arg(selection, "ports", ports)
+
+      selection =
+        if is_nil(optional_args[:host]) do
+          selection
+        else
+          arg(selection, "host", optional_args[:host])
+        end
+
+      %Dagger.Service{selection: selection, client: host.client}
+    end
+  )
+
+  (
     @doc "Sets a secret given a user-defined name and the file path on the host, and returns the secret.\nThe file is limited to a size of 512000 bytes.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret.\n* `path` - Location of the file to set as a secret."
     @spec set_secret_file(t(), Dagger.String.t(), Dagger.String.t()) :: Dagger.Secret.t()
     def set_secret_file(%__MODULE__{} = host, name, path) do
@@ -48,6 +66,31 @@ defmodule Dagger.Host do
       selection = arg(selection, "name", name)
       selection = arg(selection, "path", path)
       %Dagger.Secret{selection: selection, client: host.client}
+    end
+  )
+
+  (
+    @doc "Creates a tunnel that forwards traffic from the host to a service.\n\n## Required Arguments\n\n* `service` - Service to send traffic from the tunnel.\n\n## Optional Arguments\n\n* `native` - Map each service port to the same port on the host, as if the service were\nrunning natively.\n\nNote: enabling may result in port conflicts.\n* `ports` - Configure explicit port forwarding rules for the tunnel.\n\nIf a port's frontend is unspecified or 0, a random port will be chosen by\nthe host.\n\nIf no ports are given, all of the service's ports are forwarded. If native\nis true, each port maps to the same port on the host. If native is false,\neach port maps to a random port chosen by the host.\n\nIf ports are given and native is true, the ports are additive."
+    @spec tunnel(t(), Dagger.Service.t(), keyword()) :: Dagger.Service.t()
+    def tunnel(%__MODULE__{} = host, service, optional_args \\ []) do
+      selection = select(host.selection, "tunnel")
+      selection = arg(selection, "service", service)
+
+      selection =
+        if is_nil(optional_args[:native]) do
+          selection
+        else
+          arg(selection, "native", optional_args[:native])
+        end
+
+      selection =
+        if is_nil(optional_args[:ports]) do
+          selection
+        else
+          arg(selection, "ports", optional_args[:ports])
+        end
+
+      %Dagger.Service{selection: selection, client: host.client}
     end
   )
 

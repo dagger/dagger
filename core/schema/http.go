@@ -37,8 +37,8 @@ func (s *httpSchema) Dependencies() []ExecutableSchema {
 }
 
 type httpArgs struct {
-	URL                     string            `json:"url"`
-	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
+	URL                     string          `json:"url"`
+	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
 }
 
 func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) (*core.File, error) {
@@ -50,11 +50,7 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		ctr, err := args.ExperimentalServiceHost.Decode()
-		if err != nil {
-			return nil, err
-		}
-		svc, err := ctr.Service(ctx, s.bk, s.progSockPath)
+		svc, err := args.ExperimentalServiceHost.Decode()
 		if err != nil {
 			return nil, err
 		}
