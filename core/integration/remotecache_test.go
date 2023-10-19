@@ -12,10 +12,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName, cacheEnv string, index uint8) (*dagger.Service, string, error) {
+func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName string, index uint8) (devEngineSvc *dagger.Service, endpoint string, err error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	devEngineSvc := devEngineContainer(c).
+	devEngineSvc = devEngineContainer(c).
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithEnvVariable("ENGINE_ID", id).
@@ -28,7 +28,7 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 		}).
 		AsService()
 
-	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{
+	endpoint, err = devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Port:   1234,
 		Scheme: "tcp",
 	})
@@ -46,7 +46,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 0)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
 	require.NoError(t, err)
 
 	// This loads the dagger-cli binary from the host into the container, that was set up by
@@ -79,7 +79,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 1)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 1)
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From(alpineImage).
@@ -129,7 +129,7 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 10)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 10)
 	require.NoError(t, err)
 
 	daggerCli := daggerCliFile(t, c)
@@ -157,7 +157,7 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 		}).Stdout(ctx)
 	require.NoErrorf(t, err, "outputA: %s", outputA)
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 11)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 11)
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From(alpineImage).
@@ -207,7 +207,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		s3Env := "type=s3,mode=max,endpoint_url=" + s3Endpoint + ",access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
 
-		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", s3Env, 0)
+		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", 0)
 		require.NoError(t, err)
 
 		cliBinPath := "/.dagger-cli"
@@ -239,7 +239,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 		require.NotEmpty(t, shaA, "shaA is empty")
 
-		devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", s3Env, 1)
+		devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", 1)
 		require.NoError(t, err)
 
 		outputB, err := c.Container().From(alpineImage).
@@ -268,4 +268,244 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		require.Equal(t, shaA, shaB)
 	})
+}
+
+func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	registry := c.Pipeline("registry").Container().From("registry:2").
+		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		AsService()
+
+	cacheConfigEnv1 := "type=registry,ref=registry:5000/test-cache:latest,mode=max"
+	cacheConfigEnv2 := "type=registry,ref=registry:5000/test-cache-b:latest,mode=max"
+	cacheEnv := strings.Join([]string{cacheConfigEnv1, cacheConfigEnv2}, ";")
+
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 20)
+	require.NoError(t, err)
+
+	// This loads the dagger-cli binary from the host into the container, that was set up by
+	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
+	daggerCli := daggerCliFile(t, c)
+
+	cliBinPath := "/.dagger-cli"
+
+	outputA, err := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineA).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+ 				container {
+ 					from(address: "` + alpineImage + `") {
+ 						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+ 							stdout
+ 						}
+ 					}
+ 				}
+ 			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
+		}).Stdout(ctx)
+	require.NoError(t, err)
+	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaA, "shaA is empty")
+
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 21)
+	require.NoError(t, err)
+
+	outputB, err := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineB).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheConfigEnv1).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+ 				container {
+ 					from(address: "` + alpineImage + `") {
+ 						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+ 							stdout
+ 						}
+ 					}
+ 				}
+ 			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
+		}).Stdout(ctx)
+	require.NoError(t, err)
+	shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaB, "shaB is empty")
+
+	require.Equal(t, shaA, shaB)
+
+	devEngineC, endpointC, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 22)
+	require.NoError(t, err)
+
+	outputC, err := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineC).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointC).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheConfigEnv2).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+ 				container {
+ 					from(address: "` + alpineImage + `") {
+ 						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+ 							stdout
+ 						}
+ 					}
+ 				}
+ 			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
+		}).Stdout(ctx)
+	require.NoError(t, err)
+	shaC := strings.TrimSpace(gjson.Get(outputC, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaC, "shaC is empty")
+
+	require.Equal(t, shaA, shaC)
+}
+
+func TestRemoteCacheRegistrySeparateImportExport(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	registry := c.Pipeline("registry").Container().From("registry:2").
+		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		AsService()
+
+	// This loads the dagger-cli binary from the host into the container, that was set up by
+	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
+	daggerCli := daggerCliFile(t, c)
+
+	cliBinPath := "/.dagger-cli"
+
+	cacheEnvA := "type=registry,ref=registry:5000/test-cache-a:latest,mode=max"
+	cacheEnvB := "type=registry,ref=registry:5000/test-cache-b:latest,mode=max"
+	cacheEnvC := "type=registry,ref=registry:5000/test-cache-c:latest,mode=max"
+
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
+	require.NoError(t, err)
+	outputA, err := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineA).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheEnvA).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				container {
+					from(address: "` + alpineImage + `") {
+						withExec(args: ["sh", "-c", "echo A >/dev/null; head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
+			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
+		}).Stdout(ctx)
+	require.NoError(t, err)
+	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaA, "shaA is empty")
+
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 1)
+	require.NoError(t, err)
+	outputB, err := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineB).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheEnvB).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				container {
+					from(address: "` + alpineImage + `") {
+						withExec(args: ["sh", "-c", "echo B >/dev/null; head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
+			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
+		}).Stdout(ctx)
+	require.NoError(t, err)
+	shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaB, "shaB is empty")
+
+	devEngineC, endpointC, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 2)
+	require.NoError(t, err)
+
+	ctrC := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineC).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointC).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG", strings.Join([]string{cacheEnvA, cacheEnvB}, ";")).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheEnvC)
+	outputC, err := ctrC.WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+		Contents: `{
+			container {
+				from(address: "` + alpineImage + `") {
+					outputA: withExec(args: ["sh", "-c", "echo A >/dev/null; head -c 128 /dev/random | sha256sum"]) {
+						stdout
+					}
+					outputB: withExec(args: ["sh", "-c", "echo B >/dev/null; head -c 128 /dev/random | sha256sum"]) {
+						stdout
+					}
+					outputC: withExec(args: ["sh", "-c", "echo C >/dev/null; head -c 128 /dev/random | sha256sum"]) {
+						stdout
+					}
+				}
+			}
+		}`,
+	}).WithExec([]string{
+		"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
+	}).Stdout(ctx)
+	require.NoError(t, err)
+	newA := strings.TrimSpace(gjson.Get(outputC, "container.from.outputA.stdout").String())
+	require.Equal(t, shaA, newA)
+	newB := strings.TrimSpace(gjson.Get(outputC, "container.from.outputB.stdout").String())
+	require.Equal(t, shaB, newB)
+	shaC := strings.TrimSpace(gjson.Get(outputC, "container.from.outputC.stdout").String())
+	require.NotEmpty(t, shaC, "shaC is empty")
+
+	devEngineD, endpointD, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 3)
+	require.NoError(t, err)
+	outputD, err := c.Container().From(alpineImage).
+		WithServiceBinding("dev-engine", devEngineD).
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointD).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG", cacheEnvC).
+		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				container {
+					from(address: "` + alpineImage + `") {
+						outputC: withExec(args: ["sh", "-c", "echo C >/dev/null; head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
+			}`,
+		}).
+		WithExec([]string{
+			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
+		}).Stdout(ctx)
+	require.NoError(t, err)
+	newC := strings.TrimSpace(gjson.Get(outputD, "container.from.outputC.stdout").String())
+	require.Equal(t, shaC, newC)
 }
