@@ -14,7 +14,7 @@ import Embed from '@site/src/components/atoms/embed.js'
 # Use Services in Dagger
 
 :::warning
-Dagger v0.9.0 includes a breaking change for binding service containers to containers. The `Container.withServiceBinding` API now takes a `Service` instead of a `Container`, so you must call `Container.asService` on its argument. See the section on [binding container services to containers](#bind-service-containers-to-containers) for examples.
+Dagger v0.9.0 includes a breaking change for binding service containers. The `Container.withServiceBinding` API now takes a `Service` instead of a `Container`, so you must call `Container.asService` on its argument. See the section on [binding service containers](#bind-service-containers) for examples.
 :::
 
 ## Introduction
@@ -116,14 +116,14 @@ In practice, you are more likely to set your own hostname aliases with service b
 
 You can use services in Dagger in three ways:
 
-- [Bind service containers to client containers](#bind-service-containers-to-containers)
+- [Bind service containers](#bind-service-containers)
 - [Expose service containers to the host](#expose-service-containers-to-the-host)
 - [Expose host services to client containers](#expose-host-services-to-containers)
 
-### Bind service containers to containers
+### Bind service containers
 
 :::warning
-Dagger v0.9.0 includes a breaking change for binding service containers to client containers. The examples below have been updated.
+Dagger v0.9.0 includes a breaking change for binding service containers. The examples below have been updated.
 :::
 
 Dagger enables users to bind a service running in a container to another (client) container with an alias that the client container can use as a hostname to communicate with the service.
@@ -194,17 +194,23 @@ Here's an example of how to use Dagger services on the host. In this example, th
 ```go file=./snippets/use-services/expose-service-containers-to-host/main.go
 ```
 
-The Dagger pipeline calls `Host.Tunnel(service).Start()`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
+The Dagger pipeline calls `Host.Tunnel(service).Start()` to create a new `Service`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
 
 </TabItem>
 <TabItem value="Node.js">
 
-TODO
+```typescript file=./snippets/use-services/expose-service-containers-to-host/index.ts
+```
+
+The Dagger pipeline calls `Host.Tunnel(service).Start()` to create a new `Service`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
 
 </TabItem>
 <TabItem value="Python">
 
-TODO
+```python file=./snippets/use-services/expose-service-containers-to-host/main.py
+```
+
+The Dagger pipeline calls `host.tunnel(service).start()` to create a new `Service`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.endpoint()` gets the final address with whichever port is bound.
 
 </TabItem>
 </Tabs>
@@ -229,20 +235,22 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 ```go file=./snippets/use-services/expose-host-services-to-container/main.go
 ```
 
-This Dagger pipeline calls `Host.service([]PortForward)` to create a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
-
 </TabItem>
 <TabItem value="Node.js">
 
-TODO
+```typescript file=./snippets/use-services/expose-host-services-to-container/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-TODO
+```python file=./snippets/use-services/expose-host-services-to-container/main.py
+```
 
 </TabItem>
 </Tabs>
+
+This Dagger pipeline calls creates a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
 
 :::note
 To connect client containers to Unix sockets on the host instead of TCP, see `Host.unixSocket`.
@@ -292,12 +300,14 @@ Here's an example which demonstrates explicitly starting a Docker daemon for use
 </TabItem>
 <TabItem value="Node.js">
 
-TODO
+```typescript file=./snippets/use-services/start-stop-services/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-TODO
+```python file=./snippets/use-services/start-stop-services/main.py
+```
 
 </TabItem>
 </Tabs>

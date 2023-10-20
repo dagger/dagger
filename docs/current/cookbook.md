@@ -478,33 +478,6 @@ The following code listing demonstrates how to access a private Git repository u
 </TabItem>
 </Tabs>
 
-### Use transient database for application tests
-
-The following code listing creates a temporary MariaDB database service and binds it to an application container for unit/integration testing.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/use-services/use-db-service/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```javascript file=./guides/snippets/use-services/use-db-service/index.ts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/use-services/use-db-service/main.py
-```
-
-</TabItem>
-</Tabs>
-
-[Learn more](./guides/757394-use-services.md)
-
 ### Invalidate cache
 
 The following code listing demonstrates how to invalidate the Dagger pipeline operations cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
@@ -537,6 +510,116 @@ Changes in mounted cache volumes do not invalidate the Dagger pipeline operation
 
 </TabItem>
 </Tabs>
+
+## Services
+
+### Expose service containers to the host
+
+The following code listing makes HTTP requests from the host to an HTTP service running in a Dagger pipeline.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-services/expose-service-containers-to-host/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/use-services/expose-service-containers-to-host/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-services/expose-service-containers-to-host/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/757394-use-services.md)
+
+### Expose host services to containers
+
+The following code listing shows how a database client in a Dagger pipeline can access a database service running on the host.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-services/expose-host-services-to-container/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/use-services/expose-host-services-to-container/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-services/expose-host-services-to-container/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/757394-use-services.md)
+
+### Use transient database service for application tests
+
+The following code listing creates a temporary MariaDB database service and binds it to an application container for unit/integration testing.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-services/use-db-service/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/use-services/use-db-service/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-services/use-db-service/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/757394-use-services.md)
+
+### Start and stop services
+
+The following code listing demonstrates explicitly starting a Docker daemon for use in a test suite.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-services/start-stop-services/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/use-services/start-stop-services/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-services/start-stop-services/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/757394-use-services.md)
 
 ## Outputs
 
