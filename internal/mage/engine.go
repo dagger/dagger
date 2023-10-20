@@ -84,13 +84,18 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	c = c.Pipeline("engine").Pipeline("publish")
 
 	var (
+		registry    = util.GetHostEnv("DAGGER_ENGINE_IMAGE_REGISTRY")
+		username    = util.GetHostEnv("DAGGER_ENGINE_IMAGE_USERNAME")
+		password    = c.SetSecret("DAGGER_ENGINE_IMAGE_PASSWORD", util.GetHostEnv("DAGGER_ENGINE_IMAGE_PASSWORD"))
 		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
 		ref         = fmt.Sprintf("%s:%s", engineImage, version)
 	)
 
-	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
-	})
+	digest, err := c.Container().
+		WithRegistryAuth(registry, username, password).
+		Publish(ctx, ref, dagger.ContainerPublishOpts{
+			PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
+		})
 	if err != nil {
 		return err
 	}

@@ -19,23 +19,18 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
-    # only run this on push events, not in PRs
-    if: github.event_name == 'push' && github.repository == 'dagger/dagger'
+    if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
+    # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
+    runs-on: dagger-runner-16c-64g
     steps:
       - uses: actions/checkout@v3
-
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v4
         with:
           go-version: "1.20"
-
-      - uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-
+          cache-dependency-path: "internal/mage/go.sum"
       - name: "Publish Engine & CLI"
+        run: |
+          ./hack/make dagger:publish ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
@@ -46,10 +41,10 @@ jobs:
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
           HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
-          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-        run: ./hack/make dagger:publish ${{ github.ref_name }}
-
+          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
+          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
       - name: "Bump SDK Engine Dependencies"
         uses: peter-evans/create-pull-request@v3
         if: github.ref_name != 'main'
@@ -66,14 +61,6 @@ jobs:
           delete-branch: true
           branch: bump-engine
           draft: true
-
-      - uses: actions/upload-artifact@v3
-        if: always()
-        name: "Upload journal.log"
-        continue-on-error: true
-        with:
-          name: ${{ github.workflow }}-${{ github.job }}-journal.log
-          path: /tmp/journal.log
 
   scan-engine:
     runs-on: ubuntu-latest
