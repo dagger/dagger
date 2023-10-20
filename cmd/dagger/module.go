@@ -616,9 +616,9 @@ func (r *modFunctionArg) FlagName() string {
 }
 
 func getDefaultValue[T any](r *modFunctionArg) (T, error) {
-    var val T
-    err := json.Unmarshal([]byte(r.DefaultValue), &val)
-    return val, err
+	var val T
+	err := json.Unmarshal([]byte(r.DefaultValue), &val)
+	return val, err
 }
 
 // gqlObjectName converts casing to a GraphQL object  name

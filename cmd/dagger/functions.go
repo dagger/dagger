@@ -399,11 +399,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			}
 
 			help, _ := cmd.Flags().GetBool("help")
-            if !help {
-                if err := cmd.ValidateRequiredFlags(); err != nil {
-                    return err
-                }
-            }
+			if !help {
+				if err := cmd.ValidateRequiredFlags(); err != nil {
+					return err
+				}
+			}
 
 			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
 
