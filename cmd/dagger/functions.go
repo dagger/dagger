@@ -398,9 +398,12 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return fmt.Errorf("parse flags: %w", err)
 			}
 
-			if err := cmd.ValidateRequiredFlags(); err != nil {
-				return err
-			}
+			help, _ := cmd.Flags().GetBool("help")
+            if !help {
+                if err := cmd.ValidateRequiredFlags(); err != nil {
+                    return err
+                }
+            }
 
 			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
 
@@ -410,7 +413,6 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return fmt.Errorf("query selection: %w", err)
 			}
 
-			help, _ := cmd.Flags().GetBool("help")
 			cmdArgs := cmd.Flags().Args()
 
 			subCmd, subArgs, err := cmd.Find(cmdArgs)
