@@ -161,27 +161,31 @@ func (v *secretValue) Get(c *dagger.Client) any {
 
 // AddFlag adds a flag appropriate for the argument type. Should return a pointer to the value.
 func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any, error) {
-	n := r.FlagName()
-	d := r.Description
+	name := r.FlagName()
+	usage := r.Description
 
-	// TODO: Handle default values.
-	// The Go SDK doesn't support them, but Python does.
+	if flag := flags.Lookup(name); flag != nil {
+		return nil, fmt.Errorf("already exists")
+	}
 
 	switch r.TypeDef.Kind {
 	case dagger.Stringkind:
-		return flags.String(n, "", d), nil
+		val, _ := getDefaultValue[string](r)
+		return flags.String(name, val, usage), nil
 
 	case dagger.Integerkind:
-		return flags.Int(n, 0, d), nil
+		val, _ := getDefaultValue[int](r)
+		return flags.Int(name, val, usage), nil
 
 	case dagger.Booleankind:
-		return flags.Bool(n, false, d), nil
+		val, _ := getDefaultValue[bool](r)
+		return flags.Bool(name, val, usage), nil
 
 	case dagger.Objectkind:
 		objName := r.TypeDef.AsObject.Name
 
 		if val := GetCustomFlagValue(objName); val != nil {
-			flags.Var(val, n, d)
+			flags.Var(val, name, usage)
 			return val, nil
 		}
 
@@ -193,13 +197,16 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 
 		switch elementType.Kind {
 		case dagger.Stringkind:
-			return flags.StringSlice(n, nil, d), nil
+			val, _ := getDefaultValue[[]string](r)
+			return flags.StringSlice(name, val, usage), nil
 
 		case dagger.Integerkind:
-			return flags.IntSlice(n, nil, d), nil
+			val, _ := getDefaultValue[[]int](r)
+			return flags.IntSlice(name, val, usage), nil
 
 		case dagger.Booleankind:
-			return flags.BoolSlice(n, nil, d), nil
+			val, _ := getDefaultValue[[]bool](r)
+			return flags.BoolSlice(name, val, usage), nil
 
 		case dagger.Objectkind:
 			return nil, fmt.Errorf("unsupported list of %q objects", elementType.AsObject.Name)

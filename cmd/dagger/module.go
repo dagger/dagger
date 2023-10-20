@@ -463,6 +463,7 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
                                 args {
                                     name
                                     description
+                                    defaultValue
                                     typeDef {
                                         kind
                                         optional
@@ -599,10 +600,11 @@ type modFunction struct {
 
 // modFunctionArg is a representation of dagger.FunctionArg.
 type modFunctionArg struct {
-	Name        string
-	Description string
-	TypeDef     *modTypeDef
-	flagName    string
+	Name         string
+	Description  string
+	TypeDef      *modTypeDef
+	DefaultValue dagger.JSON
+	flagName     string
 }
 
 // FlagName returns the name of the argument using CLI naming conventions.
@@ -611,6 +613,12 @@ func (r *modFunctionArg) FlagName() string {
 		r.flagName = cliName(r.Name)
 	}
 	return r.flagName
+}
+
+func getDefaultValue[T any](r *modFunctionArg) (T, error) {
+	var val T
+	err := json.Unmarshal([]byte(r.DefaultValue), &val)
+	return val, err
 }
 
 // gqlObjectName converts casing to a GraphQL object  name
