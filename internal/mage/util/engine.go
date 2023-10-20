@@ -205,7 +205,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("alpine:"+alpineVersion).
 		WithExec([]string{
-			"apk", "add",
+			"apk", "add", "--no-cache",
 			// for Buildkit
 			"git", "openssh", "pigz", "xz",
 			// for CNI
