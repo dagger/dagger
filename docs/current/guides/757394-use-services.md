@@ -250,7 +250,7 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 </TabItem>
 </Tabs>
 
-This Dagger pipeline calls creates a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
+This Dagger pipeline creates a service that proxies traffic through the host to the configured port. It then sets the service binding on the client container to the host.
 
 :::note
 To connect client containers to Unix sockets on the host instead of TCP, see `Host.unixSocket`.
