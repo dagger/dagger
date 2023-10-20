@@ -1,6 +1,0 @@
-kind: Fixed
-body: fix Dagger.Container.with_env_variable/4 crash
-time: 2023-10-11T21:53:44.664027+07:00
-custom:
-  Author: Thanabodee Charoenpiriyakij
-  PR: "5837"
