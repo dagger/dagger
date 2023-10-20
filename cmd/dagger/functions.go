@@ -486,8 +486,6 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Command, dag *dagger.Client) (*modTypeDef, error) {
 	c.Select(fn.Name)
 
-	// TODO: Check required flags.
-
 	for _, arg := range fn.Args {
 		var val any
 
