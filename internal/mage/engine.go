@@ -95,6 +95,8 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		WithRegistryAuth(registry, username, password).
 		Publish(ctx, ref, dagger.ContainerPublishOpts{
 			PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
+			// use gzip to avoid incompatibility w/ older docker versions
+			ForcedCompression: dagger.Gzip,
 		})
 	if err != nil {
 		return err
