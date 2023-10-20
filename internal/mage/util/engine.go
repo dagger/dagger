@@ -259,7 +259,7 @@ func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
 	defer os.RemoveAll(tmpDir)
 	tarballPath := filepath.Join(tmpDir, filepath.Base(consts.GoSDKEngineContainerTarballPath))
 
-	_, err = c.Container().
+	_, err = c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
 		WithFile("/usr/local/bin/codegen", goSDKCodegenBin(c, arch)).
 		WithEntrypoint([]string{"/usr/local/bin/codegen"}).
