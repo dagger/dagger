@@ -382,18 +382,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				c.mod.LoadObject(arg.TypeDef)
 			}
 
-			argValues := make(map[string]any)
-
 			for _, arg := range fn.Args {
-				p, err := arg.AddFlag(cmd.Flags(), dag)
+				_, err := arg.AddFlag(cmd.Flags(), dag)
 				if err != nil {
-					return fmt.Errorf("set flag %q: %w", arg.FlagName(), err)
+					return fmt.Errorf("add flag %q: %w", arg.FlagName(), err)
 				}
-				argValues[arg.Name] = p
-
-				// TODO: This won't work on its own because cobra checks required
-				// flags before the RunE function is called. We need to manually
-				// check the flags after parsing them.
 				if !arg.TypeDef.Optional {
 					cmd.MarkFlagRequired(arg.FlagName())
 				}
@@ -404,18 +397,24 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			}
 
 			if err := cmd.ParseFlags(args); err != nil {
-				return fmt.Errorf("parse sub-command flags: %w", err)
+				return fmt.Errorf("parse flags: %w", err)
+			}
+
+			help, _ := cmd.Flags().GetBool("help")
+			if !help {
+				if err := cmd.ValidateRequiredFlags(); err != nil {
+					return err
+				}
 			}
 
 			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
 
 			// Need to make the query selection before chaining off.
-			returnType, err := fc.selectFunc(fn, c, argValues, dag)
+			returnType, err := fc.selectFunc(fn, c, cmd, dag)
 			if err != nil {
 				return fmt.Errorf("query selection: %w", err)
 			}
 
-			help, _ := cmd.Flags().GetBool("help")
 			cmdArgs := cmd.Flags().Args()
 
 			subCmd, subArgs, err := cmd.Find(cmdArgs)
@@ -486,17 +485,24 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, argValues map[string]any, dag *dagger.Client) (*modTypeDef, error) {
+func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Command, dag *dagger.Client) (*modTypeDef, error) {
 	c.Select(fn.Name)
 
-	// TODO: Check required flags.
-	// TODO: Handle default values.
-
 	for _, arg := range fn.Args {
-		val, ok := argValues[arg.Name]
-		if !ok {
-			return nil, fmt.Errorf("no value for argument: %s", arg.Name)
+		var val any
+
+		flag := cmd.Flags().Lookup(arg.FlagName())
+		if flag == nil {
+			return nil, fmt.Errorf("no flag for %q", arg.FlagName())
 		}
+
+		// Don't send optional arguments that weren't set.
+		if arg.TypeDef.Optional && !flag.Changed {
+			continue
+		}
+
+		val = flag.Value
+
 		dv, ok := val.(DaggerValue)
 		if ok {
 			obj := dv.Get(dag)

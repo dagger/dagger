@@ -25,7 +25,7 @@ class FunctionResolver(Resolver[FunctionReturnType]):
         for arg_name, param in self.parameters.items():
             fn = fn.with_arg(
                 arg_name,
-                to_typedef(param.signature.annotation),
+                to_typedef(param.signature.annotation).with_optional(param.is_optional),
                 description=param.description,
                 default_value=(
                     dagger.JSON(json.dumps(param.signature.default))
