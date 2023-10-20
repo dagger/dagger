@@ -23,6 +23,7 @@ const (
 	Container string = "Container"
 	File      string = "File"
 	Secret    string = "Secret"
+	Service   string = "Service"
 )
 
 var funcGroup = &cobra.Group{
@@ -35,6 +36,7 @@ var funcCmds = FuncCommands{
 	callCmd,
 	shellCmd,
 	downloadCmd,
+	upCmd,
 }
 
 var funcListCmd = &FuncCommand{
