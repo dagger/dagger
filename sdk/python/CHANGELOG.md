@@ -14,11 +14,17 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.0`. [See what changed in that
 🐍 https://pypi.org/project/dagger-io/v0.9.0/
 📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.9.0/
 
+### 🔥 Breaking Changes
+
+- engine: new services API with container <=> host networking, explicit start/stop by @vito in https://github.com/dagger/dagger/pull/5557
+- implement new conventions for IDable objects by @vito in https://github.com/dagger/dagger/pull/5881
 
 ### Dependencies
+
 - Bump Engine to v0.9.0 by @github-actions in https://github.com/dagger/dagger/pull/5940
 
 ### What to do next
+
 - Read the [documentation](https://docs.dagger.io/sdk/python)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)
