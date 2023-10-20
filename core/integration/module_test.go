@@ -344,7 +344,7 @@ func TestModuleGoGit(t *testing.T) {
 		ignore, err := modGen.File(".gitignore").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, ignore, "/dagger.gen.go\n")
-		require.Contains(t, ignore, "/internal/querybuilder/\n")
+		require.Contains(t, ignore, "/querybuilder/\n")
 	})
 
 	t.Run("configures .gitattributes", func(t *testing.T) {
@@ -364,7 +364,8 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 		With(daggerExec("mod", "init", "--name=bare", "--sdk=go")).
 		WithExec([]string{"rm", ".gitignore"}).
 		// simulate old path scheme to show we ignore it too to help transition
-		WithExec([]string{"cp", "-a", "./internal/querybuilder", "./querybuilder"}).
+		WithExec([]string{"mkdir", "./internal"}).
+		WithExec([]string{"cp", "-a", "./querybuilder", "./internal/querybuilder"}).
 		WithExec([]string{"git", "add", "."}).
 		WithExec([]string{"git", "commit", "-m", "init with generated files"})
 
@@ -378,7 +379,7 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 	require.Contains(t, changedAfterSync, "D  dagger.gen.go\n")
 	require.Contains(t, changedAfterSync, "D  querybuilder/marshal.go\n")
 	require.Contains(t, changedAfterSync, "D  querybuilder/querybuilder.go\n")
-	require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
+    require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
 	require.Contains(t, changedAfterSync, "D  internal/querybuilder/querybuilder.go\n")
 }
 
