@@ -1,6 +1,0 @@
-kind: Changed
-body: Improve cli for calling module functions
-time: 2023-10-16T14:51:49.25083Z
-custom:
-  Author: helderco
-  PR: "5882"
