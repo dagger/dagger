@@ -513,7 +513,7 @@ Changes in mounted cache volumes do not invalidate the Dagger pipeline operation
 
 ## Services
 
-### Expose service containers to the host
+### Expose service containers to host
 
 The following code listing makes HTTP requests from the host to an HTTP service running in a Dagger pipeline.
 
