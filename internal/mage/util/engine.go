@@ -133,10 +133,10 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 	return config, nil
 }
 
-func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Container, string, error) {
-	devEngine := CIDevEngineContainer(c, opts...)
+func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Service, string, error) {
+	devEngine := CIDevEngineContainer(c, opts...).AsService()
 
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		return nil, "", err
 	}
