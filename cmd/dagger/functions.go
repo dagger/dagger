@@ -34,12 +34,12 @@ var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
 	shellCmd,
-	exportCmd,
+	downloadCmd,
 }
 
 var funcListCmd = &FuncCommand{
 	Name:  "functions",
-	Short: `List all functions in a module.`,
+	Short: `List all functions in a module`,
 	Execute: func(c *callContext, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 
@@ -180,6 +180,9 @@ type FuncCommand struct {
 	// Short is the short description shown in the 'help' output.
 	Short string
 
+	// Long is the long message shown in the 'help <this-command>' output.
+	Long string
+
 	// Example is examples of how to use the command.
 	Example string
 
@@ -216,9 +219,9 @@ type FuncCommand struct {
 	// to select a sub-field.
 	CheckReturnType func(*callContext, *modTypeDef) error
 
-	// OnResult is called when the query has completed and returned a result.
-	OnResult func(*callContext, *cobra.Command, modTypeDef, *any) error
-	cmd      *cobra.Command
+	// AfterResponse is called when the query has completed and returned a result.
+	AfterResponse func(*callContext, *cobra.Command, modTypeDef, any) error
+	cmd           *cobra.Command
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -226,6 +229,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd = &cobra.Command{
 			Use:                   fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name),
 			Short:                 fc.Short,
+			Long:                  fc.Long,
 			Example:               fc.Example,
 			DisableFlagsInUseLine: true,
 			DisableFlagParsing:    true,
@@ -344,7 +348,7 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 func (*FuncCommand) run(cmd *cobra.Command, args []string) error {
 	err := cmd.RunE(cmd, args)
 	if err != nil {
-		return fmt.Errorf("execute command %q: %w", cmd.Name(), err)
+		return err
 	}
 	return nil
 }
@@ -422,12 +426,6 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return fc.run(subCmd, subArgs)
 			}
 
-			if fc.CheckReturnType != nil {
-				if err = fc.CheckReturnType(c, returnType); err != nil {
-					return err
-				}
-			}
-
 			c.loader.Complete()
 
 			vtx := rec.Vertex(
@@ -445,6 +443,12 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return cmd.Help()
 			}
 
+			if fc.CheckReturnType != nil {
+				if err = fc.CheckReturnType(c, returnType); err != nil {
+					return err
+				}
+			}
+
 			query, _ := c.q.Build(ctx)
 			rec.Debug("executing", progrock.Labelf("query", "%+v", query))
 
@@ -456,8 +460,8 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return err
 			}
 
-			if fc.OnResult != nil {
-				return fc.OnResult(c, cmd, *returnType, &response)
+			if fc.AfterResponse != nil {
+				return fc.AfterResponse(c, cmd, *returnType, response)
 			}
 
 			if returnType.Kind != dagger.Voidkind {

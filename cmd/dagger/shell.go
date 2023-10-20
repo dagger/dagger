@@ -26,6 +26,7 @@ var (
 var shellCmd = &FuncCommand{
 	Name:  "shell",
 	Short: "Open a shell in a container",
+	Long:  "If no entrypoint is specified and the container doesn't have a default command, `sh` will be used.",
 	OnInit: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
 	},
@@ -54,10 +55,10 @@ var shellCmd = &FuncCommand{
 
 		return nil
 	},
-	OnResult: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, result *any) error {
-		ctrID, ok := (*result).(string)
+	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, response any) error {
+		ctrID, ok := (response).(string)
 		if !ok {
-			return fmt.Errorf("unexpected type %T", result)
+			return fmt.Errorf("unexpected response %T: %+v", response, response)
 		}
 
 		ctx := cmd.Context()
@@ -65,19 +66,35 @@ var shellCmd = &FuncCommand{
 			ID: dagger.ContainerID(ctrID),
 		})
 
-		if shellEntrypoint != nil {
-			ctr = ctr.WithExec(shellEntrypoint, dagger.ContainerWithExecOpts{
-				SkipEntrypoint: true,
-			})
-		}
-
-		shellEndpoint, err := ctr.ShellEndpoint(ctx)
+		shellEndpoint, err := withShellExec(ctx, ctr).ShellEndpoint(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get shell endpoint: %w", err)
 		}
 
 		return attachToShell(ctx, c.e, shellEndpoint)
 	},
+}
+
+func withShellExec(ctx context.Context, ctr *dagger.Container) *dagger.Container {
+	args := shellEntrypoint
+
+	if len(args) == 0 {
+		args, _ = ctr.Entrypoint(ctx)
+
+		if len(args) == 0 {
+			args, _ = ctr.DefaultArgs(ctx)
+		}
+
+		if len(args) > 0 {
+			return ctr.WithExec(nil)
+		}
+
+		args = []string{"sh"}
+	}
+
+	return ctr.WithExec(args, dagger.ContainerWithExecOpts{
+		SkipEntrypoint: true,
+	})
 }
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
