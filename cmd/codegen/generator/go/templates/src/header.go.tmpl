@@ -4,20 +4,20 @@ package {{.PackageName}}
 
 import (
 	"context"
-  "encoding/json"
-  "errors"
-  "fmt"
-  "net"
-  "net/http"
-  "os"
-  "strconv"
-  "runtime"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"strconv"
+	"runtime"
 	"fmt"
 	"reflect"
 
 	"github.com/Khan/genqlient/graphql"
 
-  "{{.PackageImport}}/internal/querybuilder"
+	"{{.PackageImport}}/querybuilder"
 )
 
 // assertNotNil panic if the given value is nil.

@@ -78,7 +78,7 @@ func (s *Selection) marshalArguments(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (s *Selection) build(ctx context.Context) (string, error) {
+func (s *Selection) Build(ctx context.Context) (string, error) {
 	if err := s.marshalArguments(ctx); err != nil {
 		return "", err
 	}
@@ -148,7 +148,7 @@ func (s *Selection) unpack(data interface{}) error {
 }
 
 func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
-	query, err := s.build(ctx)
+	query, err := s.Build(ctx)
 	if err != nil {
 		return err
 	}

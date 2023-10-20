@@ -10,7 +10,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/internal/engineconn"
-	"dagger.io/dagger/internal/querybuilder"
+	"dagger.io/dagger/querybuilder"
 )
 
 // Client is the Dagger Engine Client
@@ -61,13 +61,7 @@ func WithSkipCompatibilityCheck() ClientOpt {
 }
 
 // Connect to a Dagger Engine
-func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
-	defer func() {
-		if rerr != nil {
-			rerr = withErrorHelp(rerr)
-		}
-	}()
-
+func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
 
 	for _, o := range opts {
@@ -95,6 +89,11 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	}
 
 	return c, nil
+}
+
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.c
 }
 
 // Close the engine connection
@@ -164,11 +163,10 @@ type errorWrappedClient struct {
 func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
 	err := c.Client.MakeRequest(ctx, req, resp)
 	if err != nil {
-		// return custom error without wrapping to enable casting
 		if e := getCustomError(err); e != nil {
 			return e
 		}
-		return withErrorHelp(err)
+		return err
 	}
 	return nil
 }

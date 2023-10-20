@@ -4,7 +4,7 @@ import "embed"
 
 // These are exported so that they can be used by codegen.
 
-//go:embed internal/querybuilder/marshal.go internal/querybuilder/querybuilder.go
+//go:embed querybuilder/marshal.go querybuilder/querybuilder.go
 var QueryBuilder embed.FS
 
 //go:embed go.mod
