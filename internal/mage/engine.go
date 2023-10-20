@@ -22,6 +22,8 @@ import (
 
 var publishedEngineArches = []string{"amd64", "arm64"}
 
+var publishedGPUEngineArches = []string{"amd64"}
+
 func parseRef(tag string) error {
 	if tag == "main" {
 		return nil
@@ -103,13 +105,6 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
-	gpuDigest, err := c.Container().Publish(ctx, gpuRef, dagger.ContainerPublishOpts{
-		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedEngineArches, version),
-	})
-	if err != nil {
-		return err
-	}
-
 	if semver.IsValid(version) {
 		sdks := sdk.All{}
 		if err := sdks.Bump(ctx, version); err != nil {
@@ -121,7 +116,16 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
 	fmt.Println("PUBLISHED IMAGE REF:", digest)
-	fmt.Println("PUBLISHED IMAGE REF:", gpuDigest)
+
+	// gpu is experimental, not fatal if publish fails
+	gpuDigest, err := c.Container().Publish(ctx, gpuRef, dagger.ContainerPublishOpts{
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedGPUEngineArches, version),
+	})
+	if err == nil {
+		fmt.Println("PUBLISHED GPU IMAGE REF:", gpuDigest)
+	} else {
+		fmt.Println("GPU IMAGE PUBLISH FAILED: ", err.Error())
+	}
 
 	return nil
 }
@@ -136,9 +140,21 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	defer c.Close()
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
+
 	_, err = c.Container().Export(ctx, "./engine.tar", dagger.ContainerExportOpts{
 		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, ""),
 	})
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Container().Export(ctx, "./engine-gpu.tar", dagger.ContainerExportOpts{
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedGPUEngineArches, ""),
+	})
+	if err != nil {
+		return err
+	}
+
 	return err
 }
 

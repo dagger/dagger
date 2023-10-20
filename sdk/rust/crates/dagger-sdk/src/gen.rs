@@ -681,6 +681,35 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// EXPERIMENTAL API! Subject to change/removal at any time.
+    /// experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
+    /// This currently works for Nvidia devices only.
+    pub fn experimental_with_all_gp_us(&self) -> Container {
+        let query = self.selection.select("experimentalWithAllGPUs");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// EXPERIMENTAL API! Subject to change/removal at any time.
+    /// experimentalWithGPU configures the provided list of devices to be accesible to this container.
+    /// This currently works for Nvidia devices only.
+    pub fn experimental_with_gpu(&self, devices: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("experimentalWithGPU");
+        query = query.arg(
+            "devices",
+            devices
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
     /// Return true on success.
     /// It can also publishes platform variants.

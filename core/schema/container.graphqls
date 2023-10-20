@@ -532,15 +532,6 @@ type Container {
   withoutFocus: Container!
 
   """
-  Sets GPU access parameters for the given container, currently works for Nvidia only.
-  """
-  withGPU(
-    devices: [String!]!
-  ): Container!
-
-  withAllGPUs: Container!
-
-  """
   Retrieves this container after executing the specified command inside it.
   """
   withExec(
@@ -812,6 +803,22 @@ type Container {
   Primarily intended for internal use with the dagger CLI.
   """
   shellEndpoint: String!
+
+  """
+  EXPERIMENTAL API! Subject to change/removal at any time.
+
+  experimentalWithGPU configures the provided list of devices to be accesible to this container.
+  This currently works for Nvidia devices only.
+  """
+  experimentalWithGPU(devices: [String!]!): Container!
+
+  """
+  EXPERIMENTAL API! Subject to change/removal at any time.
+
+  experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
+  This currently works for Nvidia devices only.
+  """
+  experimentalWithAllGPUs: Container!
 }
 
 "A simple key value object that represents an environment variable."

@@ -115,16 +115,20 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		}
 	}
 
+	gpuIsEnabled := os.Getenv(GPUSupportEnvName) != ""
+
 	runArgs := []string{
 		"run",
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
 		"-e", cloudToken,
-		"-e", DaggerCloudCacheToken,
 		"-e", GPUSupportEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
+	}
+	if gpuIsEnabled {
+		runArgs = append(runArgs, "--gpus", "all")
 	}
 	runArgs = append(runArgs, imageRef, "--debug")
 

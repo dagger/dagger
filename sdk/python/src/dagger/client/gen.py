@@ -420,6 +420,32 @@ class Container(Type):
         return await _ctx.execute(list[EnvVariable])
 
     @typecheck
+    def experimental_with_all_gp_us(self) -> "Container":
+        """EXPERIMENTAL API! Subject to change/removal at any time.
+
+        experimentalWithAllGPUs configures all available GPUs on the host to
+        be accessible to this container.
+        This currently works for Nvidia devices only.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("experimentalWithAllGPUs", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def experimental_with_gpu(self, devices: Sequence[str]) -> "Container":
+        """EXPERIMENTAL API! Subject to change/removal at any time.
+
+        experimentalWithGPU configures the provided list of devices to be
+        accesible to this container.
+        This currently works for Nvidia devices only.
+        """
+        _args = [
+            Arg("devices", devices),
+        ]
+        _ctx = self._select("experimentalWithGPU", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def export(
         self,
         path: str,

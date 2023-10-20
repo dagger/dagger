@@ -48,7 +48,8 @@ type Container struct {
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
 
-	EnabledGPUs []string `json:"gpu_config"`
+	// List of GPU devices that will be exposed to the container
+	EnabledGPUs []string `json:"enabledGPUs,omitempty"`
 
 	// Pipeline
 	Pipeline pipeline.Path `json:"pipeline"`
@@ -1015,7 +1016,7 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 }
 
 type ContainerGPUOpts struct {
-	Devices []string
+	Devices []string `json:"devices"`
 }
 
 func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpts) (*Container, error) {

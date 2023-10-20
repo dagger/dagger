@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -32,8 +33,7 @@ const (
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	EngineDefaultStateDir = "/var/lib/dagger"
 
-	engineEntrypointPath  = "/usr/local/bin/dagger-entrypoint.sh"
-	nvidiaSetupHelperPath = "/usr/local/bin/nvidia-helper.sh"
+	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 	GPUSupportEnvName  = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
@@ -65,17 +65,6 @@ insecure-entitlements = ["security.insecure"]
 [{{ $key }}]
 {{ index $.ConfigEntries $key }}
 {{ end -}}
-`
-
-// nvidiaSetupHelper provides the required steps to setup nvidia-container-toolkit:
-const nvidiaSetupHelper = `
-#!/bin/sh
-
-export distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/experimental/$distribution/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-apt-get update
-apt-get install nvidia-container-toolkit -y
 `
 
 // DevEngineOpts are options for the dev engine
@@ -300,6 +289,20 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 	return container.WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
 
+// install nvidia-container-toolkit in the container
+func nvidiaSetup(ctr *dagger.Container) *dagger.Container {
+	return ctr.
+		With(shellExec(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`)).
+		With(shellExec(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`)).
+		With(shellExec(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+}
+
+func shellExec(cmd string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithExec([]string{"sh", "-c", cmd})
+	}
+}
+
 func devEngineContainers(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
@@ -375,7 +378,8 @@ func cniPlugins(c *dagger.Client, arch string, gpuSupportEnabled bool) *dagger.D
 	// If GPU support is enabled use a Debian image:
 	ctr := c.Container()
 	if gpuSupportEnabled {
-		ctr = ctr.From("golang:1.21.1-bullseye").
+		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
+		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", golangVersion)).
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
 	} else {
