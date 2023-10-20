@@ -17,7 +17,7 @@ var (
 
 var upCmd = &FuncCommand{
 	Name:  "up",
-	Short: "Open a up in a container",
+	Short: "Start a service and expose its ports to the host",
 	OnInit: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVarP(&portForwards, "port", "p", nil, "Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format.")
 		cmd.PersistentFlags().BoolVarP(&portForwardsNative, "native", "n", false, "Forward all ports natively, i.e. match frontend port to backend.")
