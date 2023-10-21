@@ -28,7 +28,7 @@ jobs:
       mage-targets: engine:test
       size: dagger-runner-16c-64g
 
-  # Run Egine tests with race condition detection
+  # Run Engine tests with race condition detection
   # https://go.dev/blog/race-detector
   #
   # Run in parallel to the regular tests so that the entire pipeline finishes quicker
@@ -39,14 +39,12 @@ jobs:
       size: dagger-runner-16c-64g
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
-  # It's OK for this one to fail, it's more of an advisory
-  # TODO(vito): re-enable after we ship services v2
-  # testdev:
-  #   uses: ./.github/workflows/_hack_make.yml
-  #   with:
-  #     mage-targets: engine:test
-  #     size: dagger-runner-16c-64g
-  #     dev-engine: true
+  testdev:
+    uses: ./.github/workflows/_hack_make.yml
+    with:
+      mage-targets: engine:test
+      size: dagger-runner-16c-64g
+      dev-engine: true
 
   test-publish-cli:
     uses: ./.github/workflows/_hack_make.yml

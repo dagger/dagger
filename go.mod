@@ -7,7 +7,7 @@ replace dagger.io/dagger => ./sdk/go
 replace github.com/dagger/dagger/internal/mage => ./internal/mage
 
 require (
-	dagger.io/dagger v0.8.8
+	dagger.io/dagger v0.9.0
 	github.com/99designs/gqlgen v0.17.34 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
