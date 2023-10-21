@@ -289,7 +289,7 @@ func (m *Potato) HelloWorld(message string) PotatoMessage {
 ```
 
 ```sh
-echo '{potato{helloWorld(message: "I'm a potato!"){message, from}}}' | dagger query
+echo '{potato{helloWorld(message: "I am a potato!"){message, from}}}' | dagger query
 ```
 
 ## More things you can do
@@ -494,14 +494,14 @@ func (c *Container) AddPotato() *Container {
 
 Next, run `dagger mod sync`.
 
-To run the new function, once again use `dagger query` (this example requires a Snyk token):
+To run the new function, once again use `dagger query`:
 
 ```sh
 dagger query <<EOF
 {
   container {
     from(address:"alpine") {
-      addPotato {
+      potatoAddPotato {
         withExec(args:["cat", "potato"]) {
           stdout
         }
