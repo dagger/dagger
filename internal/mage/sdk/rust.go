@@ -227,7 +227,7 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 	base := c.
 		Container().
 		From(image).
-		WithMountedCache("~/.cargo", c.CacheVolume("rust-cargo")).
+		WithMountedCache("~/.cargo", c.CacheVolume("rust-cargo-"+image)).
 		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
 		WithExec([]string{"cargo", "install", "cargo-chef"}).
 		WithWorkdir(mountPath).
@@ -242,11 +242,9 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 		WithExec([]string{
 			"mkdir", "-p", "/mnt/recipe",
 		}).
-		WithMountedCache("/mnt/recipe", c.CacheVolume("rust-chef-recipe")).
 		WithExec([]string{
 			"cargo", "chef", "prepare", "--recipe-path", "/mnt/recipe/recipe.json",
 		}).
-		WithMountedCache(fmt.Sprintf("%s/target", mountPath), c.CacheVolume("rust-target")).
 		WithExec([]string{
 			"cargo", "chef", "cook", "--release", "--workspace", "--recipe-path", "/mnt/recipe/recipe.json",
 		}).
