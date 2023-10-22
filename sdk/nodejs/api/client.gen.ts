@@ -564,10 +564,6 @@ export type FileExportOpts = {
  */
 export type FileID = string & { __FileID: never }
 
-export type FunctionCallOpts = {
-  input?: FunctionCallInput[]
-}
-
 export type FunctionWithArgOpts = {
   /**
    * A doc string for the argument, if any
@@ -584,18 +580,6 @@ export type FunctionWithArgOpts = {
  * A reference to a FunctionArg.
  */
 export type FunctionArgID = string & { __FunctionArgID: never }
-
-export type FunctionCallInput = {
-  /**
-   * The name of the argument to the function
-   */
-  name: string
-
-  /**
-   * The value of the argument represented as a string of the JSON serialization.
-   */
-  value: JSON
-}
 
 /**
  * A reference to a Function.
@@ -3067,7 +3051,6 @@ export class File extends BaseClient {
  */
 export class Function_ extends BaseClient {
   private readonly _id?: FunctionID = undefined
-  private readonly _call?: JSON = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
 
@@ -3077,14 +3060,12 @@ export class Function_ extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _id?: FunctionID,
-    _call?: JSON,
     _description?: string,
     _name?: string
   ) {
     super(parent)
 
     this._id = _id
-    this._call = _call
     this._description = _description
     this._name = _name
   }
@@ -3142,34 +3123,6 @@ export class Function_ extends BaseClient {
           r.id
         )
     )
-  }
-
-  /**
-   * Execute this function using dynamic input+output types.
-   *
-   * Typically, it's preferable to invoke a function using a type
-   * safe graphql query rather than using this call field. However,
-   * call is useful for some advanced use cases where dynamically
-   * loading arbitrary modules and invoking functions in them is
-   * required.
-   */
-  async call(opts?: FunctionCallOpts): Promise<JSON> {
-    if (this._call) {
-      return this._call
-    }
-
-    const response: Awaited<JSON> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "call",
-          args: { ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**

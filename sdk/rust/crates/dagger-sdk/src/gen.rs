@@ -267,11 +267,6 @@ pub struct BuildArg {
     pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct FunctionCallInput {
-    pub name: String,
-    pub value: Json,
-}
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
     pub name: String,
     pub value: String,
@@ -2558,11 +2553,6 @@ pub struct Function {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct FunctionCallOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub input: Option<Vec<FunctionCallInput>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
     /// A default value to use for this argument if not explicitly set by the caller, if any
     #[builder(setter(into, strip_option), default)]
@@ -2580,37 +2570,6 @@ impl Function {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }];
-    }
-    /// Execute this function using dynamic input+output types.
-    /// Typically, it's preferable to invoke a function using a type
-    /// safe graphql query rather than using this call field. However,
-    /// call is useful for some advanced use cases where dynamically
-    /// loading arbitrary modules and invoking functions in them is
-    /// required.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn call(&self) -> Result<Json, DaggerError> {
-        let query = self.selection.select("call");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Execute this function using dynamic input+output types.
-    /// Typically, it's preferable to invoke a function using a type
-    /// safe graphql query rather than using this call field. However,
-    /// call is useful for some advanced use cases where dynamically
-    /// loading arbitrary modules and invoking functions in them is
-    /// required.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn call_opts(&self, opts: FunctionCallOpts) -> Result<Json, DaggerError> {
-        let mut query = self.selection.select("call");
-        if let Some(input) = opts.input {
-            query = query.arg("input", input);
-        }
-        query.execute(self.graphql_client.clone()).await
     }
     /// A doc string for the function, if any
     pub async fn description(&self) -> Result<String, DaggerError> {

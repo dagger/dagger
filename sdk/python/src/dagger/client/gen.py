@@ -164,15 +164,6 @@ class BuildArg(Input):
 
 
 @dataclass(slots=True)
-class FunctionCallInput(Input):
-    name: str
-    """The name of the argument to the function"""
-
-    value: JSON
-    """The value of the argument represented as a string of the JSON serialization."""
-
-
-@dataclass(slots=True)
 class PipelineLabel(Input):
     """Key value object that represents a Pipeline label."""
 
@@ -2386,12 +2377,10 @@ class Function(Type):
     arguments."""
 
     __slots__ = (
-        "_call",
         "_description",
         "_name",
     )
 
-    _call: Optional[JSON]
     _description: Optional[str]
     _name: Optional[str]
 
@@ -2406,40 +2395,6 @@ class Function(Type):
             _name="name",
         )
         return await _ctx.execute(list[FunctionArg])
-
-    @typecheck
-    async def call(
-        self,
-        *,
-        input: Optional[Sequence[FunctionCallInput]] = None,
-    ) -> JSON:
-        """Execute this function using dynamic input+output types.
-
-        Typically, it's preferable to invoke a function using a type
-        safe graphql query rather than using this call field. However,
-        call is useful for some advanced use cases where dynamically
-        loading arbitrary modules and invoking functions in them is
-        required.
-
-        Returns
-        -------
-        JSON
-            An arbitrary JSON-encoded value.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_call"):
-            return self._call
-        _args = [
-            Arg("input", input, None),
-        ]
-        _ctx = self._select("call", _args)
-        return await _ctx.execute(JSON)
 
     @typecheck
     async def description(self) -> Optional[str]:
@@ -3702,7 +3657,6 @@ class ObjectTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
         _ctx = Function(_ctx)._select_multiple(
-            _call="call",
             _description="description",
             _name="name",
         )
@@ -4765,7 +4719,6 @@ __all__ = [
     "FunctionArgID",
     "FunctionCall",
     "FunctionCallArgValue",
-    "FunctionCallInput",
     "FunctionID",
     "GeneratedCode",
     "GeneratedCodeID",
