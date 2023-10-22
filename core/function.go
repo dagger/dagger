@@ -14,11 +14,8 @@ type Function struct {
 	Args        []*FunctionArg `json:"args"`
 	ReturnType  *TypeDef       `json:"returnType"`
 
-	// (Not in public API) Used to invoke function in the context of its module.
-	// We don't use *Module directly because it causes JSON serialization to fail
-	// due to circular references.
-	ModuleID   ModuleID `json:"moduleID,omitempty"`
-	ParentName string   `json:"parentName,omitempty"`
+	// Below are not in public API
+	ParentName string `json:"parentName,omitempty"`
 }
 
 func NewFunction(name string, returnType *TypeDef) *Function {
