@@ -815,7 +815,11 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		// check whether this is a pre-existing object (from core or another module)
 		_, preExistingObject := dest.resolvers()[objName]
 		if preExistingObject {
-			// we don't support extending objects from outside the module currently, so skip it
+			// modules can reference types from core/other modules as types, but they
+			// can't attach any new fields or functions to them
+			if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
+				return nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
+			}
 			continue
 		}
 

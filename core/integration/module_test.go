@@ -476,6 +476,31 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 }
 
+//go:embed testdata/modules/go/extend/main.go
+var goExtend string
+
+// this is no longer allowed, but verify the SDK errors out
+func TestModuleGoExtendCore(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: goExtend,
+		}).
+		With(daggerExec("mod", "sync")).
+		Sync(ctx)
+
+	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+}
+
 //go:embed testdata/modules/go/custom-types/main.go
 var customTypes string
 
