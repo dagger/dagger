@@ -9,7 +9,7 @@ use crate::gen::Query;
 use crate::logging::StdLogger;
 use crate::querybuilder::query;
 
-pub type DaggerConn = Arc<Query>;
+pub type DaggerConn = Query;
 
 pub async fn connect() -> Result<DaggerConn, ConnectError> {
     let cfg = Config::new(None, None, None, None, Some(Arc::new(StdLogger::default())));
@@ -23,11 +23,11 @@ pub async fn connect_opts(cfg: Config) -> Result<DaggerConn, ConnectError> {
         .await
         .map_err(ConnectError::FailedToConnect)?;
 
-    Ok(Arc::new(Query {
-        proc: proc.map(|p| Arc::new(p)),
+    Ok(Query {
+        proc: proc.map(Arc::new),
         selection: query(),
         graphql_client: Arc::new(DefaultGraphQLClient::new(&conn)),
-    }))
+    })
 }
 
 // Conn will automatically close on drop of proc
