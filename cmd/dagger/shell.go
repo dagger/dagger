@@ -18,10 +18,7 @@ import (
 	"github.com/vito/progrock"
 )
 
-var (
-	shellIsContainer bool
-	shellEntrypoint  []string
-)
+var shellEntrypoint []string
 
 var shellCmd = &FuncCommand{
 	Name:  "shell",
@@ -31,17 +28,13 @@ var shellCmd = &FuncCommand{
 		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
 	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
-		if name == Container {
-			c.Select("id")
-			shellIsContainer = true
+		if name != Container {
+			return fmt.Errorf("shell can only be called on a container")
 		}
+		c.Select("id")
 		return nil
 	},
 	BeforeRequest: func(_ *FuncCommand, _ *modTypeDef) error {
-		if !shellIsContainer {
-			return fmt.Errorf("shell can only be called on a container")
-		}
-
 		// Even though these flags are global, we only check them just before query
 		// execution because you may want to debug an error during loading or for
 		// --help.
@@ -51,7 +44,6 @@ var shellCmd = &FuncCommand{
 		if debug {
 			return fmt.Errorf("running shell with --debug is not supported")
 		}
-
 		return nil
 	},
 	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, returnType *modTypeDef, response any) error {

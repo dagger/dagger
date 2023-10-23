@@ -10,7 +10,6 @@ import (
 )
 
 var (
-	upIsService        bool
 	portForwards       []string
 	portForwardsNative bool
 )
@@ -23,16 +22,10 @@ var upCmd = &FuncCommand{
 		cmd.PersistentFlags().BoolVarP(&portForwardsNative, "native", "n", false, "Forward all ports natively, i.e. match frontend port to backend.")
 	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
-		if name == Service {
-			c.Select("id")
-			upIsService = true
-		}
-		return nil
-	},
-	BeforeRequest: func(_ *FuncCommand, _ *modTypeDef) error {
-		if !upIsService {
+		if name != Service {
 			return fmt.Errorf("up can only be called on a service")
 		}
+		c.Select("id")
 		return nil
 	},
 	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, returnType *modTypeDef, result any) error {

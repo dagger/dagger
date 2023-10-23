@@ -12,20 +12,19 @@ var downloadCmd = &FuncCommand{
 	Name:  "download",
 	Short: "Download an asset to the host (directory, file, container).",
 	Init: func(cmd *cobra.Command) {
-		cmd.PersistentFlags().StringVar(&exportPath, "export-path", "", "Path to export to")
-		cmd.MarkFlagRequired("export-path")
+		cmd.PersistentFlags().StringVar(&exportPath, "export-path", ".", "Path to export to")
 	},
-	OnSelectObjectLeaf: func(c *FuncCommand, _ string) error {
-		c.Select("export")
-		c.Arg("path", exportPath)
+	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
+		switch name {
+		case Directory, File, Container:
+			c.Select("export")
+			c.Arg("path", exportPath)
+		}
 		return nil
 	},
 	BeforeRequest: func(_ *FuncCommand, returnType *modTypeDef) error {
 		switch returnType.ObjectName() {
 		case Directory, File, Container:
-			if exportPath == "" {
-				return fmt.Errorf("missing --export-path flag")
-			}
 			return nil
 		}
 		return fmt.Errorf("return type not supported: %s", printReturnType(returnType))

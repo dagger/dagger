@@ -164,8 +164,8 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 	name := r.FlagName()
 	usage := r.Description
 
-	if flag := flags.Lookup(name); flag != nil {
-		return nil, fmt.Errorf("already exists")
+	if flags.Lookup(name) != nil {
+		return nil, fmt.Errorf("flag already exists: %s", name)
 	}
 
 	switch r.TypeDef.Kind {
@@ -190,7 +190,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 		}
 
 		// TODO: default to JSON?
-		return nil, fmt.Errorf("unsupported object type %q", objName)
+		return nil, fmt.Errorf("unsupported object type %q for flag: %s", objName, name)
 
 	case dagger.Listkind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
@@ -209,10 +209,10 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 			return flags.BoolSlice(name, val, usage), nil
 
 		case dagger.Objectkind:
-			return nil, fmt.Errorf("unsupported list of %q objects", elementType.AsObject.Name)
+			return nil, fmt.Errorf("unsupported list of %q objects for flag: %s", elementType.AsObject.Name, name)
 
 		case dagger.Listkind:
-			return nil, fmt.Errorf("unsupported list of lists")
+			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)
 		}
 	}
 

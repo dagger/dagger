@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
@@ -195,28 +195,65 @@ type FuncCommand struct {
 	// AfterResponse is called when the query has completed and returned a result.
 	AfterResponse func(*FuncCommand, *cobra.Command, *modTypeDef, any) error
 
-	q      *querybuilder.Selection
-	c      *client.Client
-	cmd    *cobra.Command
-	mod    *moduleDef
-	loader *progrock.VertexRecorder
+	// cmd is the parent cobra command.
+	cmd *cobra.Command
+
+	// mod is the loaded module definition.
+	mod *moduleDef
+
+	q *querybuilder.Selection
+	c *client.Client
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
 	if fc.cmd == nil {
 		fc.cmd = &cobra.Command{
-			Use:                   fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name),
-			Short:                 fc.Short,
-			Long:                  fc.Long,
-			Example:               fc.Example,
-			DisableFlagsInUseLine: true,
-			DisableFlagParsing:    true,
-			Hidden:                true, // for now, remove once we're ready for primetime
-			GroupID:               funcGroup.ID,
-			RunE:                  fc.execute,
-		}
+			Use:     fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name),
+			Short:   fc.Short,
+			Long:    fc.Long,
+			Example: fc.Example,
+			RunE:    fc.execute,
+			GroupID: funcGroup.ID,
 
-		fc.cmd.Flags().SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+			// We need to disable flag parsing because it'll act on --help
+			// and validate the args before we have a chance to add the
+			// subcommands.
+			DisableFlagParsing:    true,
+			DisableFlagsInUseLine: true,
+
+			PreRunE: func(c *cobra.Command, a []string) error {
+				// Recover what DisableFlagParsing disabled.
+				// In PreRunE it's, already past the --help check and
+				// args validation, but not flag validation which we want.
+				c.DisableFlagParsing = false
+
+				// Since we disabled flag parsing, we'll get all args,
+				// not just flags. We want to stop parsing at the first
+				// possible dynamic sub-command since they've not been
+				// added yet.
+				c.Flags().SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+
+				// Allow using flags with the the name that was reported
+				// by the SDK. This avoids confusion as users are editing
+				// a module and trying to test its functions.
+				c.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+					return pflag.NormalizedName(cliName(name))
+				})
+
+				err := c.ParseFlags(a)
+				if err != nil {
+					return c.FlagErrorFunc()(c, err)
+				}
+
+				help, _ := c.Flags().GetBool("help")
+				if help {
+					return pflag.ErrHelp
+				}
+
+				return nil
+			},
+			Hidden: true, // for now, remove once we're ready for primetime
+		}
 
 		if fc.Init != nil {
 			fc.Init(fc.cmd)
@@ -225,34 +262,21 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
-func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
-	// Need to parse flags that affect the TUI and module loading before all else.
-	err := cmd.Flags().Parse(args)
-	if err != nil {
-		return fmt.Errorf("parse command flags: %w", err)
-	}
+func (fc *FuncCommand) execute(cmd *cobra.Command, allArgs []string) error {
+	return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+		cmd.SetContext(ctx)
 
-	return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 		fc.c = engineClient
 		dag := engineClient.Dagger()
 		rec := progrock.FromContext(ctx)
 
-		// TODO: Make this vertex unfocused to hide the progress after its done,
-		// but need to handle --help so it's not hidden.
-
 		// Can't print full args because we don't know which ones are secrets
 		// yet and don't want to risk exposing them.
-		vtx := rec.Vertex(
-			digest.Digest(fmt.Sprintf("cmd-func-%s-loader", cmd.Name())),
-			fmt.Sprintf("build %q", cmd.CommandPath()),
-			progrock.Focused(),
-		)
-		defer func() { vtx.Done(err) }()
+		loader := rec.Vertex("cmd-func-loader", "load "+cmd.Name(), progrock.Focused())
+		defer func() { loader.Done(rerr) }()
+		setCmdOutput(cmd, loader)
 
-		setCmdOutput(cmd, vtx)
-		fc.loader = vtx
-
-		load := vtx.Task("loading module")
+		load := loader.Task("loading module")
 		mod, err := loadMod(ctx, dag)
 		load.Done(err)
 		if err != nil {
@@ -262,7 +286,7 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no module specified and no default module found in current directory")
 		}
 
-		load = vtx.Task("loading objects")
+		load = loader.Task("loading objects")
 		modDef, err := loadModObjects(ctx, dag, mod)
 		load.Done(err)
 		if err != nil {
@@ -275,6 +299,10 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 		}
 
 		fc.mod = modDef
+
+		// TODO: Move help output out of the loader vertex, which is unfocused
+		// and has tasks. Could be outside the TUI altogether, by capturing
+		// outside of `withEngineAndTUI`.
 		help, _ := cmd.Flags().GetBool("help")
 
 		if fc.Execute != nil {
@@ -288,53 +316,97 @@ func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
 		fc.Select(obj.Name)
 
 		// Add main object's functions as subcommands
-		fc.addSubCommands(ctx, dag, obj, cmd)
+		fc.addSubCommands(cmd, dag, obj)
 
 		if help {
 			return cmd.Help()
 		}
 
-		subCmd, subArgs, err := cmd.Find(cmd.Flags().Args())
+		// We need to print the errors ourselves because the root command
+		// will print the command path for this one (parent), not any
+		// sub-command.
+		cmd.SilenceErrors = true
+
+		traverse := loader.Task("traversing arguments")
+		subCmd, flags, err := fc.traverse(cmd)
+		traverse.Done(err)
 		if err != nil {
-			return fmt.Errorf("find command: %w", err)
+			if subCmd != nil {
+				cmd = subCmd
+			}
+			if errors.Is(err, pflag.ErrHelp) {
+				return cmd.Help()
+			}
+			cmd.PrintErrln("Error:", err.Error())
+			cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
+			return err
 		}
 
-		if subCmd.Name() == cmd.Name() {
-			if len(subArgs) > 0 {
-				return fmt.Errorf("unknown command %q for %q", subArgs[0], cmd.CommandPath())
-			}
+		loader.Complete()
+
+		vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
+		defer func() { vtx.Done(rerr) }()
+		setCmdOutput(cmd, vtx)
+
+		// There should be no args left, if there are it's an unknown command.
+		if err := cobra.NoArgs(subCmd, flags); err != nil {
+			subCmd.PrintErrln("Error:", err.Error())
+			return err
+		}
+
+		// No args to the parent command, default to showing help.
+		if subCmd == cmd {
 			return cmd.Help()
 		}
 
-		return fc.run(subCmd, subArgs)
+		err = subCmd.RunE(subCmd, flags)
+		if err != nil {
+			subCmd.PrintErrln("Error:", err.Error())
+			return err
+		}
+
+		return nil
 	})
 }
 
-func (*FuncCommand) run(cmd *cobra.Command, args []string) error {
-	err := cmd.RunE(cmd, args)
+// traverse the arguments to build the command tree and return the leaf command.
+func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, error) {
+	cmd, args, err := c.Find(c.Flags().Args())
 	if err != nil {
-		return err
+		return cmd, args, err
 	}
-	return nil
+
+	// Leaf command
+	if cmd == c {
+		return cmd, args, nil
+	}
+
+	cmd.SetContext(c.Context())
+	cmd.InitDefaultHelpFlag()
+
+	// Load and ParseFlags
+	err = cmd.PreRunE(cmd, args)
+	if err != nil {
+		return cmd, args, err
+	}
+
+	return fc.traverse(cmd)
 }
 
-func (fc *FuncCommand) addSubCommands(ctx context.Context, dag *dagger.Client, obj *modObject, cmd *cobra.Command) {
+func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, obj *modObject) {
 	if obj != nil {
 		for _, fn := range obj.GetFunctions() {
-			subCmd := fc.makeSubCmd(ctx, dag, fn)
+			subCmd := fc.makeSubCmd(dag, fn)
 			cmd.AddCommand(subCmd)
 		}
 	}
 }
 
-func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *modFunction) *cobra.Command {
+func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:   cliName(fn.Name),
 		Short: fn.Description,
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			cmd.SetContext(ctx)
-			rec := progrock.FromContext(ctx)
-
+		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
 			fc.mod.LoadObject(fn.ReturnType)
 
 			for _, arg := range fn.Args {
@@ -344,7 +416,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			for _, arg := range fn.Args {
 				_, err := arg.AddFlag(cmd.Flags(), dag)
 				if err != nil {
-					return fmt.Errorf("add flag %q: %w", arg.FlagName(), err)
+					return err
 				}
 				if !arg.TypeDef.Optional {
 					cmd.MarkFlagRequired(arg.FlagName())
@@ -352,11 +424,15 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			}
 
 			if fc.BeforeParse != nil {
-				return fc.BeforeParse(fc, cmd, fn)
+				if err := fc.BeforeParse(fc, cmd, fn); err != nil {
+					return err
+				}
 			}
 
 			if err := cmd.ParseFlags(args); err != nil {
-				return fmt.Errorf("parse flags: %w", err)
+				// This gives a chance for FuncCommand implementations to
+				// handle errors from parsing flags.
+				return cmd.FlagErrorFunc()(cmd, err)
 			}
 
 			help, _ := cmd.Flags().GetBool("help")
@@ -364,51 +440,32 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				if err := cmd.ValidateRequiredFlags(); err != nil {
 					return err
 				}
+				if err := cmd.ValidateFlagGroups(); err != nil {
+					return err
+				}
 			}
 
-			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, cmd)
+			fc.addSubCommands(cmd, dag, fn.ReturnType.AsObject)
+
+			// Show help for first command that has the --help flag.
+			if help {
+				return pflag.ErrHelp
+			}
 
 			// Need to make the query selection before chaining off.
-			if err = fc.selectFunc(fn, cmd, dag); err != nil {
-				return fmt.Errorf("query selection: %w", err)
-			}
-
-			cmdArgs := cmd.Flags().Args()
-
-			subCmd, subArgs, err := cmd.Find(cmdArgs)
-			if err != nil {
-				return fmt.Errorf("find sub-command: %w", err)
-			}
-
-			// If a subcommand was found, run it instead.
-			if subCmd != cmd {
-				return fc.run(subCmd, subArgs)
-			}
-
-			fc.loader.Complete()
-
-			vtx := rec.Vertex(
-				"cmd-func-exec",
-				fmt.Sprintf("running %q", cmd.CommandPath()),
-				progrock.Focused(),
-			)
-			defer func() { vtx.Done(err) }()
-
-			setCmdOutput(cmd, vtx)
-
-			// Make sure --help is running on the leaf command (subCmd == cmd),
-			// otherwise the first command in the chain swallows it.
-			if help {
-				return cmd.Help()
-			}
-
+			return fc.selectFunc(fn, cmd, dag)
+		},
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if fc.BeforeRequest != nil {
 				if err = fc.BeforeRequest(fc, fn.ReturnType); err != nil {
 					return err
 				}
 			}
 
+			ctx := cmd.Context()
 			query, _ := fc.q.Build(ctx)
+
+			rec := progrock.FromContext(ctx)
 			rec.Debug("executing", progrock.Labelf("query", "%+v", query))
 
 			var response any
@@ -416,7 +473,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			q := fc.q.Bind(&response)
 
 			if err := q.Execute(ctx, dag.GraphQLClient()); err != nil {
-				return err
+				return fmt.Errorf("response from query: %w", err)
 			}
 
 			if fc.AfterResponse != nil {
@@ -431,11 +488,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 		},
 	}
 
+	// Allow using the function name from the SDK as an alias for the command.
 	if fn.Name != newCmd.Name() {
 		newCmd.Aliases = append(newCmd.Aliases, fn.Name)
 	}
 
-	newCmd.InitDefaultHelpFlag()
 	newCmd.Flags().SetInterspersed(false)
 
 	return newCmd
