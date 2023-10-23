@@ -27,18 +27,17 @@ var shellCmd = &FuncCommand{
 	Name:  "shell",
 	Short: "Open a shell in a container",
 	Long:  "If no entrypoint is specified and the container doesn't have a default command, `sh` will be used.",
-	OnInit: func(cmd *cobra.Command) {
+	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
 	},
-	OnSelectObject: func(c *callContext, name string) (*modTypeDef, error) {
+	OnSelectObjectLeaf: func(c *callContext, name string) error {
 		if name == Container {
 			c.Select("id")
 			shellIsContainer = true
-			return &modTypeDef{Kind: dagger.Stringkind}, nil
 		}
-		return nil, nil
+		return nil
 	},
-	CheckReturnType: func(_ *callContext, _ *modTypeDef) error {
+	BeforeRequest: func(_ *callContext, _ *modTypeDef) error {
 		if !shellIsContainer {
 			return fmt.Errorf("shell can only be called on a container")
 		}
@@ -55,7 +54,7 @@ var shellCmd = &FuncCommand{
 
 		return nil
 	},
-	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, response any) error {
+	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType *modTypeDef, response any) error {
 		ctrID, ok := (response).(string)
 		if !ok {
 			return fmt.Errorf("unexpected response %T: %+v", response, response)

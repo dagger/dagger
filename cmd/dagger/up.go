@@ -18,26 +18,24 @@ var (
 var upCmd = &FuncCommand{
 	Name:  "up",
 	Short: "Start a service and expose its ports to the host",
-	OnInit: func(cmd *cobra.Command) {
+	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVarP(&portForwards, "port", "p", nil, "Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format.")
 		cmd.PersistentFlags().BoolVarP(&portForwardsNative, "native", "n", false, "Forward all ports natively, i.e. match frontend port to backend.")
 	},
-	OnSelectObject: func(c *callContext, name string) (*modTypeDef, error) {
+	OnSelectObjectLeaf: func(c *callContext, name string) error {
 		if name == Service {
 			c.Select("id")
 			upIsService = true
-			return &modTypeDef{Kind: dagger.Stringkind}, nil
 		}
-		return nil, nil
+		return nil
 	},
-	CheckReturnType: func(_ *callContext, _ *modTypeDef) error {
+	BeforeRequest: func(_ *callContext, _ *modTypeDef) error {
 		if !upIsService {
 			return fmt.Errorf("up can only be called on a service")
 		}
-
 		return nil
 	},
-	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, result any) error {
+	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType *modTypeDef, result any) error {
 		srvID, ok := (result).(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T", result)

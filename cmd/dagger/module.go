@@ -557,6 +557,13 @@ type modTypeDef struct {
 	AsList   *modList
 }
 
+func (t *modTypeDef) ObjectName() string {
+	if t.AsObject != nil {
+		return t.AsObject.Name
+	}
+	return ""
+}
+
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
 	Name      string

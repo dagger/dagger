@@ -12,13 +12,13 @@ import (
 // GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.
 func GetCustomFlagValue(name string) pflag.Value {
 	switch name {
-	case "Container":
+	case Container:
 		return &containerValue{}
-	case "Directory":
+	case Directory:
 		return &directoryValue{}
-	case "File":
+	case File:
 		return &fileValue{}
-	case "Secret":
+	case Secret:
 		return &secretValue{}
 	}
 	return nil
@@ -39,7 +39,7 @@ type containerValue struct {
 }
 
 func (v *containerValue) Type() string {
-	return "Container"
+	return Container
 }
 
 func (v *containerValue) Set(s string) error {
@@ -71,7 +71,7 @@ type directoryValue struct {
 }
 
 func (v *directoryValue) Type() string {
-	return "Directory"
+	return Directory
 }
 
 func (v *directoryValue) Set(s string) error {
@@ -103,7 +103,7 @@ type fileValue struct {
 }
 
 func (v *fileValue) Type() string {
-	return "File"
+	return File
 }
 
 func (v *fileValue) Set(s string) error {
@@ -135,7 +135,7 @@ type secretValue struct {
 }
 
 func (v *secretValue) Type() string {
-	return "Secret"
+	return Secret
 }
 
 func (v *secretValue) Set(s string) error {

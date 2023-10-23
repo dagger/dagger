@@ -188,42 +188,47 @@ type FuncCommand struct {
 	// Example is examples of how to use the command.
 	Example string
 
-	// Execute circumvents the default behavior of adding subcommands and
-	// executing them.
+	// Execute circumvents the default behavior of traversing  subcommands
+	// from the arguments, but still has access to the loaded objects from
+	// the module.
 	Execute func(*callContext, *cobra.Command) error
 
-	// OnInit is called when the command is created and initialized, before execution.
-	OnInit func(*cobra.Command)
+	// Init is called when the command is created and initialized,
+	// before execution.
+	//
+	// It can be useful to add persistent flags for all subcommands here.
+	Init func(*cobra.Command)
 
-	// OnSetFlags is called when the flags have finished being set for a subcommand.
-	OnSetFlags func(*cobra.Command, *modTypeDef) error
+	// BeforeParse is called before parsing the flags for a subcommand.
+	//
+	// It can be useful to add any additional flags for a subcommand here.
+	BeforeParse func(*cobra.Command, *modFunction) error
 
-	// OnSelectObject is called when building the query on a function that
-	// returns a "leaf" object (e.g., Container). This is useful to add an
-	// additional field selection to the object. If the new selection changes
-	// the return type of the function, return the new type definition.
-	OnSelectObject func(*callContext, string) (*modTypeDef, error)
+	// OnSelectObjectLeaf is called when adding a query selection on a
+	// function that returns an object with no subsequent chainable
+	// functions (e.g., Container).
+	//
+	// It can be useful to add an additional field selection for the object.
+	OnSelectObjectLeaf func(*callContext, string) error
 
-	// OnSelectObjectList is called when building the query on a function that
-	// returns a list of objects. This is useful to add an additional field
-	// selection to the objects. If the new selection changes the return type
-	// of the function, return the new type definition.
-	OnSelectObjectList func(*callContext, *modObject) (*modTypeDef, error)
+	// OnSelectObjectList is called when adding a query selection on a
+	// function that returns a list of objects.
+	//
+	// It can be useful to add an additional field selection for each object.
+	OnSelectObjectList func(*callContext, *modObject) error
 
-	// OnSelectFunc is called after making a selection on a function to build
-	// the query. This can be useful to validate the return type or make
-	// any last minute changes to the query. If the new selection changes the
-	// return type of the function, return the new type definition.
-	OnSelectFunc func(*callContext, *modTypeDef) (*modTypeDef, error)
-
-	// CheckReturnType is called before the query is built, to validate
-	// the return type of the function. Can also be used as a last effort
-	// to select a sub-field.
-	CheckReturnType func(*callContext, *modTypeDef) error
+	// BeforeRequest is called before making the request with the query that
+	// contains the whole chain of functions.
+	//
+	// It can be useful to validate the return type of the function or as a
+	// last effort to select a GraphQL sub-field.
+	BeforeRequest func(*callContext, *modTypeDef) error
 
 	// AfterResponse is called when the query has completed and returned a result.
-	AfterResponse func(*callContext, *cobra.Command, modTypeDef, any) error
-	cmd           *cobra.Command
+	AfterResponse func(*callContext, *cobra.Command, *modTypeDef, any) error
+
+	// cmd is the cobra command that is created and returned by Command().
+	cmd *cobra.Command
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -242,8 +247,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 		fc.cmd.Flags().SetInterspersed(false) // stop parsing at first possible dynamic subcommand
 
-		if fc.OnInit != nil {
-			fc.OnInit(fc.cmd)
+		if fc.Init != nil {
+			fc.Init(fc.cmd)
 		}
 	}
 	return fc.cmd
@@ -392,8 +397,8 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				}
 			}
 
-			if fc.OnSetFlags != nil {
-				return fc.OnSetFlags(cmd, fn.ReturnType)
+			if fc.BeforeParse != nil {
+				return fc.BeforeParse(cmd, fn)
 			}
 
 			if err := cmd.ParseFlags(args); err != nil {
@@ -410,8 +415,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
 
 			// Need to make the query selection before chaining off.
-			returnType, err := fc.selectFunc(fn, c, cmd, dag)
-			if err != nil {
+			if err = fc.selectFunc(fn, c, cmd, dag); err != nil {
 				return fmt.Errorf("query selection: %w", err)
 			}
 
@@ -444,8 +448,8 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return cmd.Help()
 			}
 
-			if fc.CheckReturnType != nil {
-				if err = fc.CheckReturnType(c, returnType); err != nil {
+			if fc.BeforeRequest != nil {
+				if err = fc.BeforeRequest(c, fn.ReturnType); err != nil {
 					return err
 				}
 			}
@@ -462,10 +466,10 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			}
 
 			if fc.AfterResponse != nil {
-				return fc.AfterResponse(c, cmd, *returnType, response)
+				return fc.AfterResponse(c, cmd, fn.ReturnType, response)
 			}
 
-			if returnType.Kind != dagger.Voidkind {
+			if fn.ReturnType.Kind != dagger.Voidkind {
 				cmd.Println(response)
 			}
 
@@ -485,7 +489,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Command, dag *dagger.Client) (*modTypeDef, error) {
+func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Command, dag *dagger.Client) error {
 	c.Select(fn.Name)
 
 	for _, arg := range fn.Args {
@@ -493,7 +497,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Co
 
 		flag := cmd.Flags().Lookup(arg.FlagName())
 		if flag == nil {
-			return nil, fmt.Errorf("no flag for %q", arg.FlagName())
+			return fmt.Errorf("no flag for %q", arg.FlagName())
 		}
 
 		// Don't send optional arguments that weren't set.
@@ -507,10 +511,11 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Co
 		if ok {
 			obj := dv.Get(dag)
 			if obj == nil {
-				return nil, fmt.Errorf("no value for argument: %s", arg.Name)
+				return fmt.Errorf("no value for argument: %s", arg.Name)
 			}
 			val = obj
 		}
+
 		c.Arg(arg.Name, val)
 	}
 
@@ -523,36 +528,20 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Co
 			break
 		}
 		// Otherwise this is a leaf.
-		if fc.OnSelectObject != nil {
-			newRet, err := fc.OnSelectObject(c, ret.AsObject.Name)
+		if fc.OnSelectObjectLeaf != nil {
+			err := fc.OnSelectObjectLeaf(c, ret.AsObject.Name)
 			if err != nil {
-				return nil, err
-			}
-			if newRet != nil {
-				return newRet, nil
+				return err
 			}
 		}
 	case dagger.Listkind:
 		if fc.OnSelectObjectList != nil && ret.AsList.ElementTypeDef.AsObject != nil {
-			newRet, err := fc.OnSelectObjectList(c, ret.AsList.ElementTypeDef.AsObject)
+			err := fc.OnSelectObjectList(c, ret.AsList.ElementTypeDef.AsObject)
 			if err != nil {
-				return nil, err
-			}
-			if newRet != nil {
-				return newRet, nil
+				return err
 			}
 		}
 	}
 
-	if fc.OnSelectFunc != nil {
-		newRet, err := fc.OnSelectFunc(c, ret)
-		if err != nil {
-			return nil, err
-		}
-		if newRet != nil {
-			return newRet, nil
-		}
-	}
-
-	return ret, nil
+	return nil
 }
