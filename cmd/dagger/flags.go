@@ -107,7 +107,7 @@ func (v *fileValue) Type() string {
 }
 
 func (v *fileValue) Set(s string) error {
-	if s != "" {
+	if s == "" {
 		return fmt.Errorf("file path cannot be empty")
 	}
 	v.path = s
