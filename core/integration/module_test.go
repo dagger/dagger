@@ -494,9 +494,9 @@ func TestModuleGoExtendCore(t *testing.T) {
 
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err := modGen.With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"hi!")}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{container{from(address:"` + alpineImage + `"){testEcho(msg:"hi!")}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"container":{"from":{"echo":"hi!\n"}}}`, out)
+	require.JSONEq(t, `{"container":{"from":{"testEcho":"hi!\n"}}}`, out)
 }
 
 //go:embed testdata/modules/go/custom-types/main.go
@@ -784,7 +784,7 @@ func TestModuleLotsOfFunctions(t *testing.T) {
 			}
 			eg.Go(func() error {
 				_, err := modGen.
-					With(daggerCall(fmt.Sprintf("Potato%d", i))).
+					With(daggerCall(fmt.Sprintf("potato%d", i))).
 					Sync(ctx)
 				return err
 			})
@@ -838,6 +838,32 @@ version = "0.0.0"
 		}
 		require.NoError(t, eg.Wait())
 	})
+}
+
+func TestModuleNamespacing(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/namespacing")
+	require.NoError(t, err)
+
+	ctr := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithMountedDirectory("/work", c.Host().Directory(moduleSrcPath)).
+		WithWorkdir("/work")
+
+	out, err := ctr.
+		With(daggerQuery(`{test{fn(s:"yo")}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
+
+	out, err = ctr.
+		With(daggerQuery(`{container{testBlah}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"container":{"testBlah":"blurgh"}}`, out)
 }
 
 func TestEnvCmd(t *testing.T) {

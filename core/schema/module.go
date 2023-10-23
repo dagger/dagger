@@ -283,8 +283,12 @@ func (s *moduleSchema) moduleServe(ctx *core.Context, module *core.Module, args 
 	if err != nil {
 		return err
 	}
+	schemaView, err := s.getModuleSchemaView(clientMetadata.ModuleDigest)
+	if err != nil {
+		return err
+	}
 
-	err = s.serveModuleToDigest(ctx, module, clientMetadata.ModuleDigest)
+	err = s.serveModuleToView(ctx, module, schemaView)
 	if err != nil {
 		return err
 	}
@@ -342,11 +346,11 @@ func (s *moduleSchema) functionWithArg(ctx *core.Context, fn *core.Function, arg
 }
 
 type functionCallArgs struct {
-	Input      []*core.CallInput
-	ParentName string
-	Parent     any
-	Module     *core.Module
-	Cache      bool
+	Input              []*core.CallInput
+	ParentOriginalName string
+	Parent             any
+	Module             *core.Module
+	Cache              bool
 }
 
 func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args functionCallArgs) (any, error) {
@@ -363,18 +367,19 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 		return nil, fmt.Errorf("function %s has no module", fn.Name)
 	}
 
-	if err := s.installDeps(ctx, mod); err != nil {
+	_, err := s.installDeps(ctx, mod)
+	if err != nil {
 		return nil, fmt.Errorf("failed to install deps: %w", err)
 	}
 
 	callParams := &core.FunctionCall{
-		Name:       fn.Name,
-		ParentName: args.ParentName,
+		Name:       fn.OriginalName,
+		ParentName: args.ParentOriginalName,
 		Parent:     args.Parent,
 		InputArgs:  args.Input,
 	}
 
-	ctx, err := s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
+	ctx, err = s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
 		Module:      mod,
 		CurrentCall: callParams,
 	})
@@ -675,10 +680,9 @@ func (cache *FunctionContextCache) FunctionContextFrom(ctx context.Context) (*Fu
 	})
 }
 
-// Each Module gets its own Schema where the core API plus its direct deps are served. These "schema views"
-// are keyed by the digest of the module viewing them.
-// serveModuleToDigest stitches in the schema for the given mod to the schema keyed by dependerModDigest.
-func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, dependerModDigest digest.Digest) error {
+// Each Module gets its own isolated "schema view" where the core API plus its direct deps are served.
+// serveModuleToDigest stitches in the schema for the given mod to the given schema view.
+func (s *moduleSchema) serveModuleToView(ctx *core.Context, mod *core.Module, schemaView *moduleSchemaView) error {
 	mod, err := s.loadModuleTypes(ctx, mod)
 	if err != nil {
 		return fmt.Errorf("failed to load dep module functions: %w", err)
@@ -688,19 +692,15 @@ func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, 
 	if err != nil {
 		return fmt.Errorf("failed to get module digest: %w", err)
 	}
-	cacheKey := digest.FromString(modDigest.String() + "." + dependerModDigest.String())
+	cacheKey := digest.FromString(modDigest.String() + "." + schemaView.viewerDigest.String())
 
 	// TODO: it makes no sense to use this cache since we don't need a core.Module, but also doesn't hurt, but make a separate one anyways for clarity
 	_, err = s.moduleCache.GetOrInitialize(cacheKey, func() (*core.Module, error) {
-		dependerView, err := s.getModuleSchemaView(dependerModDigest)
-		if err != nil {
-			return nil, err
-		}
-		executableSchema, err := s.moduleToSchemaFor(ctx, mod, dependerView)
+		executableSchema, err := s.moduleToSchemaFor(ctx, mod, schemaView)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert module to executable schema: %w", err)
 		}
-		if err := dependerView.addSchemas(executableSchema); err != nil {
+		if err := schemaView.addSchemas(executableSchema); err != nil {
 			return nil, fmt.Errorf("failed to install module schema: %w", err)
 		}
 		return mod, nil
@@ -720,25 +720,23 @@ func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*co
 	}
 
 	return s.moduleCache.GetOrInitialize(dgst, func() (*core.Module, error) {
-		if err := s.installDeps(ctx, mod); err != nil {
-			return nil, fmt.Errorf("failed to install module recursive dependencies: %w", err)
+		schemaView, err := s.installDeps(ctx, mod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to install module dependencies: %w", err)
 		}
 
 		// canned function for asking the SDK to return the module + functions it provides
-		getModDefFn := &core.Function{
-			Name: "", // no name indicates that the SDK should return the module
-			ReturnType: &core.TypeDef{
-				Kind: core.TypeDefKindObject,
-				AsObject: &core.ObjectTypeDef{
-					Name: "Module",
-				},
+		getModDefFn := core.NewFunction(
+			"", // no name indicates that the SDK should return the module
+			&core.TypeDef{
+				Kind:     core.TypeDefKindObject,
+				AsObject: core.NewObjectTypeDef("Module", ""),
 			},
-		}
+		)
 		result, err := s.functionCall(ctx, getModDefFn, functionCallArgs{
 			Module: mod,
-			// empty to signify we're querying to get the constructed module
-			// ParentName: gqlObjectName(mod.Name),
-			Cache: true,
+			Cache:  true,
+			// ParentName is empty to signify we're querying to get the constructed module
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to call module %q to get functions: %w", mod.Name, err)
@@ -752,29 +750,43 @@ func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*co
 			return nil, fmt.Errorf("failed to decode module: %w", err)
 		}
 
+		// namespace the module objects + function extensions
+		for _, obj := range mod.Objects {
+			s.namespaceTypeDef(obj, mod, schemaView)
+		}
+
 		return mod, nil
 	})
 }
 
 // installDeps stitches in the schemas for all the deps of the given module to the module's
 // schema view.
-func (s *moduleSchema) installDeps(ctx *core.Context, module *core.Module) error {
+func (s *moduleSchema) installDeps(ctx *core.Context, module *core.Module) (*moduleSchemaView, error) {
 	moduleDigest, err := module.Digest()
 	if err != nil {
-		return err
+		return nil, err
+	}
+	schemaView, err := s.getModuleSchemaView(moduleDigest)
+	if err != nil {
+		return nil, err
 	}
 
 	var eg errgroup.Group
 	for _, dep := range module.Dependencies {
 		dep := dep
 		eg.Go(func() error {
-			if err := s.serveModuleToDigest(ctx, dep, moduleDigest); err != nil {
-				return fmt.Errorf("failed to install module dependency %q: %w", dep.Name, err)
+			if err := s.serveModuleToView(ctx, dep, schemaView); err != nil {
+				return fmt.Errorf("failed to install dependency %q: %w", dep.Name, err)
 			}
 			return nil
 		})
 	}
-	return eg.Wait()
+	err = eg.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return schemaView, nil
 }
 
 /* TODO: for module->schema conversion
@@ -1024,10 +1036,10 @@ func (s *moduleSchema) functionResolver(
 			})
 		}
 		result, err := s.functionCall(ctx, fn, functionCallArgs{
-			Module:     module,
-			Input:      callInput,
-			ParentName: parentObj.Name,
-			Parent:     parent,
+			Module:             module,
+			Input:              callInput,
+			ParentOriginalName: fn.ParentOriginalName,
+			Parent:             parent,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
@@ -1137,6 +1149,42 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 	}
 }
 
+// TODO: Should we handle trying to namespace the object in the doc strings? Or would that require too much magic to accomplish consistently?
+func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module, schemaView *moduleSchemaView) {
+	switch typeDef.Kind {
+	case core.TypeDefKindList:
+		s.namespaceTypeDef(typeDef.AsList.ElementTypeDef, mod, schemaView)
+	case core.TypeDefKindObject:
+		obj := typeDef.AsObject
+		baseObjName := gqlObjectName(obj.Name)
+
+		// check whether this is a pre-existing object from core or another module
+		_, preExistingObject := schemaView.resolvers()[baseObjName]
+
+		// only namespace objects defined in this module
+		if !preExistingObject {
+			obj.Name = namespaceObject(obj.Name, mod.Name)
+		}
+
+		for _, field := range obj.Fields {
+			s.namespaceTypeDef(field.TypeDef, mod, schemaView)
+		}
+
+		for _, fn := range obj.Functions {
+			// namespace any functions extending an object from other modules or core
+			if preExistingObject {
+				fn.Name = namespaceField(fn.Name, mod.Name)
+			}
+
+			s.namespaceTypeDef(fn.ReturnType, mod, schemaView)
+
+			for _, arg := range fn.Args {
+				s.namespaceTypeDef(arg.TypeDef, mod, schemaView)
+			}
+		}
+	}
+}
+
 // TODO: all these should be called during creation of Function+TypeDefs, not scattered all over the place
 
 func gqlObjectName(name string) string {
@@ -1144,9 +1192,21 @@ func gqlObjectName(name string) string {
 	return strcase.ToCamel(name)
 }
 
+func namespaceObject(objName, namespace string) string {
+	// don't namespace the main module object itself (already is named after the module)
+	if gqlObjectName(objName) == gqlObjectName(namespace) {
+		return objName
+	}
+	return gqlObjectName(namespace + "_" + objName)
+}
+
 func gqlFieldName(name string) string {
 	// gql field name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)
+}
+
+func namespaceField(fieldName, namespace string) string {
+	return gqlFieldName(namespace + "_" + fieldName)
 }
 
 func gqlArgName(name string) string {
