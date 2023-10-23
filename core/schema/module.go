@@ -812,9 +812,16 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
 		}
 
-		// check whether this is a pre-existing object (from core or another
-		// module) being extended
+		// check whether this is a pre-existing object (from core or another module)
 		_, preExistingObject := dest.resolvers()[objName]
+		if preExistingObject {
+			// modules can reference types from core/other modules as types, but they
+			// can't attach any new fields or functions to them
+			if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
+				return nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
+			}
+			continue
+		}
 
 		astDef := &ast.Definition{
 			Name:        objName,
@@ -869,19 +876,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		}
 
 		if len(astDef.Fields) > 0 {
-			if preExistingObject {
-				// if there's any new functions added to an existing object from core or another module, include
-				// those in the schema as extensions
-				schemaDoc.Extensions = append(schemaDoc.Extensions, astDef)
-			} else {
-				schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
-			}
-		}
-
-		if preExistingObject {
-			// extending already-existing type, don't need to add a stub for
-			// constructing it
-			continue
+			schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
 		}
 
 		constructorName := gqlFieldName(def.AsObject.Name)
@@ -1171,11 +1166,6 @@ func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module,
 		}
 
 		for _, fn := range obj.Functions {
-			// namespace any functions extending an object from other modules or core
-			if preExistingObject {
-				fn.Name = namespaceField(fn.Name, mod.Name)
-			}
-
 			s.namespaceTypeDef(fn.ReturnType, mod, schemaView)
 
 			for _, arg := range fn.Args {
@@ -1203,10 +1193,6 @@ func namespaceObject(objName, namespace string) string {
 func gqlFieldName(name string) string {
 	// gql field name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)
-}
-
-func namespaceField(fieldName, namespace string) string {
-	return gqlFieldName(namespace + "_" + fieldName)
 }
 
 func gqlArgName(name string) string {
