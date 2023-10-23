@@ -15,22 +15,13 @@ pub fn query() -> Selection {
     Selection::default()
 }
 
-impl Default for Selection {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            alias: Default::default(),
-            args: Default::default(),
-            prev: Default::default(),
-        }
-    }
-}
-
 #[derive(Clone)]
-struct LazyResolve(Arc<dyn Fn() -> Pin<Box<dyn Future<Output = String>>>>);
+struct LazyResolve(Arc<dyn Fn() -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>);
 
 impl LazyResolve {
-    pub fn new(func: Box<dyn Fn() -> Pin<Box<dyn Future<Output = String>>>>) -> Self {
+    pub fn new(
+        func: Box<dyn Fn() -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>,
+    ) -> Self {
         Self(Arc::new(func))
     }
 
@@ -41,7 +32,7 @@ impl LazyResolve {
 }
 
 impl Deref for LazyResolve {
-    type Target = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = String>>>>;
+    type Target = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -54,7 +45,7 @@ impl From<String> for LazyResolve {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Selection {
     name: Option<String>,
     alias: Option<String>,
@@ -107,7 +98,7 @@ impl Selection {
     pub fn arg_lazy(
         &self,
         name: &str,
-        value: Box<dyn Fn() -> Pin<Box<dyn Future<Output = String>>>>,
+        value: Box<dyn Fn() -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>,
     ) -> Selection {
         let mut s = self.clone();
 
@@ -155,7 +146,7 @@ impl Selection {
             if let Some(mut query) = sel.name.map(|q| q.clone()) {
                 if let Some(args) = sel.args {
                     let mut actualargs = Vec::new();
-                    for (name, arg) in args {
+                    for (name, arg) in args.iter() {
                         let arg = arg().await;
                         actualargs.push(format!("{name}:{arg}"));
                     }
