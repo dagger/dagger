@@ -224,14 +224,8 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 
 	mountPath := fmt.Sprintf("/%s", appDir)
 
-	base := c.
-		Container().
+	base := c.Container().
 		From(image).
-		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", c.CacheVolume("rust-cargo-"+image)).
-		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
-		WithExec([]string{"cargo", "install", "cargo-chef"}).
-		WithWorkdir(mountPath).
 		WithDirectory(mountPath, src, dagger.ContainerWithDirectoryOpts{
 			Include: []string{
 				"**/Cargo.toml",
@@ -240,15 +234,16 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 				"**/lib.rs",
 			},
 		}).
-		WithExec([]string{
-			"mkdir", "-p", "/mnt/recipe",
-		}).
-		WithExec([]string{
-			"cargo", "chef", "prepare", "--recipe-path", "/mnt/recipe/recipe.json",
-		}).
-		WithExec([]string{
-			"cargo", "chef", "cook", "--release", "--workspace", "--recipe-path", "/mnt/recipe/recipe.json",
-		}).
+		WithWorkdir(mountPath).
+		WithEnvVariable("CARGO_HOME", "/root/.cargo").
+		WithMountedCache("/root/.cargo", c.CacheVolume("rust-cargo-"+image)).
+		// combine into one layer so there's no assumptions on state of cache volume across steps
+		With(util.ShellCmds(
+			"rustup component add rustfmt",
+			"cargo install cargo-chef",
+			"cargo chef prepare --recipe-path /tmp/recipe.json",
+			"cargo chef cook --release --workspace --recipe-path /tmp/recipe.json",
+		)).
 		WithMountedDirectory(mountPath, src)
 
 	return base
