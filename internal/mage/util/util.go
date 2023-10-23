@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"dagger.io/dagger"
 )
@@ -190,4 +191,14 @@ func GetHostEnv(name string) string {
 		os.Exit(1)
 	}
 	return value
+}
+
+func ShellCmd(cmd string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithExec([]string{"sh", "-c", cmd})
+	}
+}
+
+func ShellCmds(cmds ...string) dagger.WithContainerFunc {
+	return ShellCmd(strings.Join(cmds, " && "))
 }
