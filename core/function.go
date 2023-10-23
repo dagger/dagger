@@ -13,9 +13,6 @@ type Function struct {
 	Description string         `json:"description"`
 	Args        []*FunctionArg `json:"args"`
 	ReturnType  *TypeDef       `json:"returnType"`
-
-	// Below are not in public API
-	ParentName string `json:"parentName,omitempty"`
 }
 
 func NewFunction(name string, returnType *TypeDef) *Function {
@@ -153,7 +150,6 @@ func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
 	}
 	typeDef = typeDef.Clone()
 	fn = fn.Clone()
-	fn.ParentName = typeDef.AsObject.Name
 	typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
 	return typeDef, nil
 }

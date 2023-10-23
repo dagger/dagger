@@ -804,7 +804,7 @@ func TestModuleLotsOfFunctions(t *testing.T) {
 			mainSrc += fmt.Sprintf(`
 @function
 def potato_%d() -> str:
-    return "potato #%d!"
+    return "potato #%d"
 `, i, i)
 		}
 
@@ -813,7 +813,7 @@ def potato_%d() -> str:
 			WithWorkdir("/work").
 			WithNewFile("./pyproject.toml", dagger.ContainerWithNewFileOpts{
 				Contents: `[project]
-name = "test"
+name = "potatoSack"
 version = "0.0.0"
 `,
 			}).
