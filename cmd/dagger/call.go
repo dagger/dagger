@@ -1,13 +1,15 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
 var callCmd = &FuncCommand{
 	Name:  "call",
-	Short: "Call a module's function and print the result",
-	Long:  "On a container, the stdout will be returned. On a directory, the list of entries, and on a file, its contents.",
+	Short: "Call a module function",
+	Long:  "Call a module function and print the result.\n\nOn a container, the stdout will be returned. On a directory, the list of entries, and on a file, its contents.",
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		switch name {
 		case Container:
@@ -18,6 +20,9 @@ var callCmd = &FuncCommand{
 			c.Select("entries")
 		case File:
 			c.Select("contents")
+		default:
+			// TODO: Check if it's a core object and sub-select `id` by default.
+			return fmt.Errorf("return type not supported: %s", name)
 		}
 		return nil
 	},

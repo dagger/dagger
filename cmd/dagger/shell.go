@@ -23,7 +23,7 @@ var shellEntrypoint []string
 var shellCmd = &FuncCommand{
 	Name:  "shell",
 	Short: "Open a shell in a container",
-	Long:  "If no entrypoint is specified and the container doesn't have a default command, `sh` will be used.",
+	Long:  "Open a shell in a container.\n\nIf no entrypoint is specified and the container doesn't have a default command, `sh` will be used.",
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
 	},
@@ -34,7 +34,7 @@ var shellCmd = &FuncCommand{
 		c.Select("id")
 		return nil
 	},
-	BeforeRequest: func(_ *FuncCommand, _ *modTypeDef) error {
+	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, _ *modTypeDef) error {
 		// Even though these flags are global, we only check them just before query
 		// execution because you may want to debug an error during loading or for
 		// --help.

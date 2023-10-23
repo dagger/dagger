@@ -10,7 +10,8 @@ var exportPath string
 
 var downloadCmd = &FuncCommand{
 	Name:  "download",
-	Short: "Download an asset to the host (directory, file, container).",
+	Short: "Download an asset from module function",
+	Long:  "Download an asset returned by a module function and save it to the host.\n\nWorks with a Directory, File or Container.",
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringVar(&exportPath, "export-path", ".", "Path to export to")
 	},
@@ -22,7 +23,7 @@ var downloadCmd = &FuncCommand{
 		}
 		return nil
 	},
-	BeforeRequest: func(_ *FuncCommand, returnType *modTypeDef) error {
+	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, returnType *modTypeDef) error {
 		switch returnType.ObjectName() {
 		case Directory, File, Container:
 			return nil

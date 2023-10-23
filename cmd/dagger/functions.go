@@ -41,7 +41,7 @@ var funcCmds = FuncCommands{
 var funcListCmd = &FuncCommand{
 	Name:  "functions",
 	Short: `List all functions in a module`,
-	Execute: func(c *FuncCommand, cmd *cobra.Command) error {
+	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
@@ -51,11 +51,11 @@ var funcListCmd = &FuncCommand{
 			termenv.String("return type").Bold(),
 		)
 
-		for _, o := range c.mod.Objects {
+		for _, o := range fc.mod.Objects {
 			if o.AsObject != nil {
 				for _, fn := range o.AsObject.GetFunctions() {
 					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(c.mod.Name) {
+					if gqlObjectName(objName) == gqlObjectName(fc.mod.Name) {
 						objName = "*" + objName
 					}
 
@@ -190,7 +190,7 @@ type FuncCommand struct {
 	//
 	// It can be useful to validate the return type of the function or as a
 	// last effort to select a GraphQL sub-field.
-	BeforeRequest func(*FuncCommand, *modTypeDef) error
+	BeforeRequest func(*FuncCommand, *cobra.Command, *modTypeDef) error
 
 	// AfterResponse is called when the query has completed and returned a result.
 	AfterResponse func(*FuncCommand, *cobra.Command, *modTypeDef, any) error
@@ -201,25 +201,40 @@ type FuncCommand struct {
 	// mod is the loaded module definition.
 	mod *moduleDef
 
+	// showHelp is set in the loader vertex to flag whether to show the help
+	// in the execution vertex.
+	showHelp bool
+
+	// showUsage flags whether to show a one-line usage message after error.
+	showUsage bool
+
 	q *querybuilder.Selection
 	c *client.Client
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
 	if fc.cmd == nil {
+		use := fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name)
+		disableFlagsInUse := true
+
+		if fc.Execute != nil {
+			use = fc.Name
+			disableFlagsInUse = false
+		}
+
 		fc.cmd = &cobra.Command{
-			Use:     fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name),
+			Use:     use,
 			Short:   fc.Short,
 			Long:    fc.Long,
 			Example: fc.Example,
-			RunE:    fc.execute,
 			GroupID: funcGroup.ID,
+			Hidden:  true, // for now, remove once we're ready for primetime
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
 			// subcommands.
 			DisableFlagParsing:    true,
-			DisableFlagsInUseLine: true,
+			DisableFlagsInUseLine: disableFlagsInUse,
 
 			PreRunE: func(c *cobra.Command, a []string) error {
 				// Recover what DisableFlagParsing disabled.
@@ -245,14 +260,27 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					return c.FlagErrorFunc()(c, err)
 				}
 
-				help, _ := c.Flags().GetBool("help")
-				if help {
-					return pflag.ErrHelp
-				}
+				fc.showHelp, _ = c.Flags().GetBool("help")
 
 				return nil
 			},
-			Hidden: true, // for now, remove once we're ready for primetime
+
+			// Between PreRunE and RunE, flags are validated.
+			RunE: func(c *cobra.Command, _ []string) error {
+				return withEngineAndTUI(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+					fc.c = engineClient
+
+					// withEngineAndTUI changes the context.
+					c.SetContext(ctx)
+
+					// We need to print the errors ourselves because the root command
+					// will print the command path for this one (parent), not any
+					// sub-command.
+					c.SilenceErrors = true
+
+					return fc.execute(c)
+				})
+			},
 		}
 
 		if fc.Init != nil {
@@ -262,111 +290,135 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
-func (fc *FuncCommand) execute(cmd *cobra.Command, allArgs []string) error {
-	return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
-		cmd.SetContext(ctx)
+func (fc *FuncCommand) execute(c *cobra.Command) (rerr error) {
+	ctx := c.Context()
+	rec := progrock.FromContext(ctx)
 
-		fc.c = engineClient
-		dag := engineClient.Dagger()
-		rec := progrock.FromContext(ctx)
+	// NB: Don't print full os.Args in Vertex name because we don't know which
+	// flags hold a secret value yet and don't want to risk exposing them.
+	// We'll print just the command path when we have the leaf command.
+	loader := rec.Vertex("cmd-func-loader", "load "+c.Name())
+	setCmdOutput(c, loader)
 
-		// Can't print full args because we don't know which ones are secrets
-		// yet and don't want to risk exposing them.
-		loader := rec.Vertex("cmd-func-loader", "load "+cmd.Name(), progrock.Focused())
-		defer func() { loader.Done(rerr) }()
-		setCmdOutput(cmd, loader)
+	cmd, flags, err := fc.load(c, loader)
+	loader.Done(err)
+	if err != nil {
+		return err
+	}
 
-		load := loader.Task("loading module")
-		mod, err := loadMod(ctx, dag)
-		load.Done(err)
-		if err != nil {
-			return err
-		}
-		if mod == nil {
-			return fmt.Errorf("no module specified and no default module found in current directory")
-		}
+	vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
+	setCmdOutput(c, vtx)
 
-		load = loader.Task("loading objects")
-		modDef, err := loadModObjects(ctx, dag, mod)
-		load.Done(err)
-		if err != nil {
-			return err
-		}
+	defer func() {
+		if rerr != nil {
+			cmd.PrintErrln("Error:", rerr.Error())
 
-		obj := modDef.GetMainObject()
-		if obj == nil {
-			return fmt.Errorf("main object not found")
-		}
-
-		fc.mod = modDef
-
-		// TODO: Move help output out of the loader vertex, which is unfocused
-		// and has tasks. Could be outside the TUI altogether, by capturing
-		// outside of `withEngineAndTUI`.
-		help, _ := cmd.Flags().GetBool("help")
-
-		if fc.Execute != nil {
-			if help {
-				return cmd.Help()
+			if fc.showUsage {
+				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
 			}
-			return fc.Execute(fc, cmd)
 		}
+		vtx.Done(rerr)
+	}()
 
-		// Select constructor
-		fc.Select(obj.Name)
+	// TODO: Move help output out of progrock?
+	if fc.showHelp {
+		cmd.Aliases = nil
+		return cmd.Help()
+	}
 
-		// Add main object's functions as subcommands
-		fc.addSubCommands(cmd, dag, obj)
+	// There should be no args left, if there are it's an unknown command.
+	if err := cobra.NoArgs(cmd, flags); err != nil {
+		return err
+	}
 
-		if help {
-			return cmd.Help()
+	if fc.Execute != nil {
+		return fc.Execute(fc, cmd)
+	}
+
+	// No args to the parent command, default to showing help.
+	if cmd == c {
+		return cmd.Help()
+	}
+
+	err = cmd.RunE(cmd, flags)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (fc *FuncCommand) load(c *cobra.Command, vtx *progrock.VertexRecorder) (cmd *cobra.Command, _ []string, rerr error) {
+	ctx := c.Context()
+	dag := fc.c.Dagger()
+
+	// Print error in current vertex, before completing it.
+	defer func() {
+		if cmd == nil {
+			cmd = c
 		}
+		if rerr != nil {
+			cmd.PrintErrln("Error:", rerr.Error())
 
-		// We need to print the errors ourselves because the root command
-		// will print the command path for this one (parent), not any
-		// sub-command.
-		cmd.SilenceErrors = true
-
-		traverse := loader.Task("traversing arguments")
-		subCmd, flags, err := fc.traverse(cmd)
-		traverse.Done(err)
-		if err != nil {
-			if subCmd != nil {
-				cmd = subCmd
+			if fc.showUsage {
+				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
 			}
-			if errors.Is(err, pflag.ErrHelp) {
-				return cmd.Help()
-			}
-			cmd.PrintErrln("Error:", err.Error())
-			cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
-			return err
 		}
+	}()
 
-		loader.Complete()
+	load := vtx.Task("loading module")
+	mod, err := loadMod(ctx, dag)
+	load.Done(err)
+	if err != nil {
+		return nil, nil, err
+	}
+	if mod == nil {
+		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
+	}
 
-		vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
-		defer func() { vtx.Done(rerr) }()
-		setCmdOutput(cmd, vtx)
+	load = vtx.Task("loading objects")
+	modDef, err := loadModObjects(ctx, dag, mod)
+	load.Done(err)
+	if err != nil {
+		return nil, nil, err
+	}
 
-		// There should be no args left, if there are it's an unknown command.
-		if err := cobra.NoArgs(subCmd, flags); err != nil {
-			subCmd.PrintErrln("Error:", err.Error())
-			return err
+	obj := modDef.GetMainObject()
+	if obj == nil {
+		return nil, nil, fmt.Errorf("main object not found")
+	}
+
+	fc.mod = modDef
+
+	if fc.Execute != nil {
+		// if `Execute` is set, there's no need for sub-commands.
+		return nil, nil, nil
+	}
+
+	// Select constructor
+	fc.Select(obj.Name)
+
+	// Add main object's functions as subcommands
+	fc.addSubCommands(c, dag, obj)
+
+	if fc.showHelp {
+		return nil, nil, nil
+	}
+
+	traverse := vtx.Task("traversing arguments")
+	cmd, flags, err := fc.traverse(c)
+	defer func() { traverse.Done(rerr) }()
+
+	if err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			fc.showHelp = true
+			return cmd, flags, nil
 		}
+		fc.showUsage = true
+		return cmd, flags, err
+	}
 
-		// No args to the parent command, default to showing help.
-		if subCmd == cmd {
-			return cmd.Help()
-		}
-
-		err = subCmd.RunE(subCmd, flags)
-		if err != nil {
-			subCmd.PrintErrln("Error:", err.Error())
-			return err
-		}
-
-		return nil
-	})
+	return cmd, flags, nil
 }
 
 // traverse the arguments to build the command tree and return the leaf command.
@@ -456,8 +508,13 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			return fc.selectFunc(fn, cmd, dag)
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			if fn.ReturnType.AsObject != nil && len(fn.ReturnType.AsObject.GetFunctions()) > 0 {
+				fc.showUsage = true
+				return fmt.Errorf("%q requires a sub-command", cmd.Name())
+			}
+
 			if fc.BeforeRequest != nil {
-				if err = fc.BeforeRequest(fc, fn.ReturnType); err != nil {
+				if err = fc.BeforeRequest(fc, cmd, fn.ReturnType); err != nil {
 					return err
 				}
 			}
