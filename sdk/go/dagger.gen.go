@@ -83,14 +83,6 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
-type FunctionCallInput struct {
-	// The name of the argument to the function
-	Name string `json:"name"`
-
-	// The value of the argument represented as a string of the JSON serialization.
-	Value JSON `json:"value"`
-}
-
 // Key value object that represents a Pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -2051,7 +2043,6 @@ type Function struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	call        *JSON
 	description *string
 	id          *FunctionID
 	name        *string
@@ -2097,36 +2088,6 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	}
 
 	return convert(response), nil
-}
-
-// FunctionCallOpts contains options for Function.Call
-type FunctionCallOpts struct {
-	Input []FunctionCallInput
-}
-
-// Execute this function using dynamic input+output types.
-//
-// Typically, it's preferable to invoke a function using a type
-// safe graphql query rather than using this call field. However,
-// call is useful for some advanced use cases where dynamically
-// loading arbitrary modules and invoking functions in them is
-// required.
-func (r *Function) Call(ctx context.Context, opts ...FunctionCallOpts) (JSON, error) {
-	if r.call != nil {
-		return *r.call, nil
-	}
-	q := r.q.Select("call")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `input` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Input) {
-			q = q.Arg("input", opts[i].Input)
-		}
-	}
-
-	var response JSON
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // A doc string for the function, if any

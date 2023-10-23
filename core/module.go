@@ -63,6 +63,22 @@ type Module struct {
 	Pipeline pipeline.Path `json:"pipeline,omitempty"`
 }
 
+func (mod *Module) ID() (ModuleID, error) {
+	return resourceid.Encode(mod)
+}
+
+func (mod *Module) Digest() (digest.Digest, error) {
+	return stableDigest(mod)
+}
+
+// DigestWithoutFunctions gives a digest after unsetting Functions, which is useful
+// as a digest of the "base" Module that's stable before+after loading Functions.
+func (mod *Module) DigestWithoutObjects() (digest.Digest, error) {
+	mod = mod.Clone()
+	mod.Objects = nil
+	return stableDigest(mod)
+}
+
 func (mod *Module) PBDefinitions() ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if mod.SourceDirectory != nil {
@@ -214,7 +230,7 @@ func (mod *Module) FromConfig(
 		return nil, fmt.Errorf("failed to get runtime: %w", err)
 	}
 
-	return mod, mod.updateMod()
+	return mod, nil
 }
 
 // Load the module from the given module reference. parentSrcDir and parentSrcSubpath are used to resolve local module refs
@@ -263,101 +279,9 @@ func (mod *Module) FromRef(
 
 func (mod *Module) WithObject(def *TypeDef) (*Module, error) {
 	mod = mod.Clone()
-	// need to clone def too since updateMod will mutate it
-	def = def.Clone()
 	if def.AsObject == nil {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}
 	mod.Objects = append(mod.Objects, def)
-	return mod, mod.updateMod()
-}
-
-// DigestWithoutFunctions gives a digest after unsetting Functions, which is useful
-// as a digest of the "base" Module that's stable before+after loading Functions.
-func (mod *Module) DigestWithoutObjects() (digest.Digest, error) {
-	mod = mod.Clone()
-	mod.Objects = nil
-	return stableDigest(mod)
-}
-
-/* The code below handles some subtleties around circular references between modules and functions.
-
-The constraints around the problems being solved are:
-1. Modules need to reference the Functions they serve.
-2. Functions need to know the Module they are from so that they can be called in the context of that Module.
-   * This creates headaches in that setting the Module of a Function changes the ID of the Function, which changes the ID of the Module, which goes full-circle and changes the ID of the Function.
-3. If a Module is mutated in any way, its Functions need to be updated to reflect that mutation.
-   * This includes the CurrentModule API needing to return the correct Module (not the Module at the time the Function was registered)
-4. We need to avoid circular references during JSON marshalling
-5. We want to support functions from one Module being registered with a different Module.
-   * This enables extending one Module with functionality from another.
-
-The solution to these problems is:
-1. Modules hold a list of *Function, but Functions hold a ModuleID (avoids circular reference during JSOM marshal)
-2. When a Module is serialized to ID, it unsets the ModuleID value of any Functions it contains that point to itself.
-   * If there is a Function from a different Module registered as part of this one, it's left alone.
-   * This means that the ModuleID set in a Function doesn't need to try to contain a circular reference to the Function.
-3. When a Module is deserialized from ID, it sets the ModuleID value of any Functions it contains that point to itself.
-   * If there is a Function from a different Module registered as part of this one, it's left alone.
-*/
-
-// update existing Functions with the current state of their module
-func (mod *Module) updateMod() error {
-	modID, err := mod.ID()
-	if err != nil {
-		return fmt.Errorf("failed to get module ID: %w", err)
-	}
-	if err := mod.setFunctionMods(modID); err != nil {
-		return fmt.Errorf("failed to set function mods: %w", err)
-	}
-	return nil
-}
-
-func (id ModuleID) String() string {
-	return string(id)
-}
-
-func (id ModuleID) Decode() (*Module, error) {
-	// deserialize the module and then fill in the ModuleID of its functions
-	mod, err := resourceid.ID[Module](id).Decode()
-	if err != nil {
-		return nil, err
-	}
-	if err := mod.setFunctionMods(id); err != nil {
-		return nil, fmt.Errorf("failed to set function mods: %w", err)
-	}
 	return mod, nil
-}
-
-func (mod *Module) ID() (ModuleID, error) {
-	mod = mod.Clone()
-	// unset the ModuleID fields of any of this module's functions and use that to serialize to ID
-	if err := mod.setFunctionMods(""); err != nil {
-		return "", fmt.Errorf("failed to set function mods: %w", err)
-	}
-	id, err := resourceid.Encode(mod)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode module to id: %w", err)
-	}
-	return ModuleID(id), nil
-}
-
-func (mod *Module) Digest() (digest.Digest, error) {
-	mod = mod.Clone()
-	if err := mod.setFunctionMods(""); err != nil {
-		return "", fmt.Errorf("failed to set function mods: %w", err)
-	}
-	return stableDigest(mod)
-}
-
-func (mod *Module) setFunctionMods(id ModuleID) error {
-	for _, def := range mod.Objects {
-		if def.AsObject == nil {
-			return fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
-		}
-		for _, fn := range def.AsObject.Functions {
-			fn.ModuleID = id
-		}
-	}
-	return nil
 }
