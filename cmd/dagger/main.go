@@ -38,9 +38,10 @@ func init() {
 		queryCmd,
 		runCmd,
 		moduleCmd,
-		callCmd,
 		sessionCmd(),
 	)
+
+	funcCmds.AddParent(rootCmd)
 }
 
 var rootCmd = &cobra.Command{

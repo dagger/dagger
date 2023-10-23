@@ -46,6 +46,8 @@ func ResourceFromID(id string) (any, error) {
 		return FileID(id).Decode()
 	case SecretID.ResourceTypeName(""):
 		return SecretID(id).Decode()
+	case ServiceID.ResourceTypeName(""):
+		return ServiceID(id).Decode()
 	case resourceid.ID[Module].ResourceTypeName(""):
 		return ModuleID(id).Decode()
 	case FunctionID.ResourceTypeName(""):
@@ -74,6 +76,8 @@ func ResourceToID(r any) (string, error) {
 	case *File:
 		id, err = r.ID()
 	case *Secret:
+		id, err = r.ID()
+	case *Service:
 		id, err = r.ID()
 	case *Module:
 		id, err = r.ID()

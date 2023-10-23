@@ -133,10 +133,10 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 	return config, nil
 }
 
-func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Container, string, error) {
-	devEngine := CIDevEngineContainer(c, opts...)
+func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Service, string, error) {
+	devEngine := CIDevEngineContainer(c, opts...).AsService()
 
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		return nil, "", err
 	}
@@ -205,7 +205,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("alpine:"+alpineVersion).
 		WithExec([]string{
-			"apk", "add",
+			"apk", "add", "--no-cache",
 			// for Buildkit
 			"git", "openssh", "pigz", "xz",
 			// for CNI
@@ -259,7 +259,7 @@ func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
 	defer os.RemoveAll(tmpDir)
 	tarballPath := filepath.Join(tmpDir, filepath.Base(consts.GoSDKEngineContainerTarballPath))
 
-	_, err = c.Container().
+	_, err = c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
 		WithFile("/usr/local/bin/codegen", goSDKCodegenBin(c, arch)).
 		WithEntrypoint([]string{"/usr/local/bin/codegen"}).

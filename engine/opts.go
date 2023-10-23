@@ -61,14 +61,14 @@ type ClientMetadata struct {
 	// parent of the parent, and so on.
 	ParentClientIDs []string `json:"parent_client_ids"`
 
-	// Import configuration for Buildkit's remote cache
-	UpstreamCacheConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_config"`
-
 	// TODO: doc if stays in
 	ModuleDigest digest.Digest `json:"module_digest"`
 
 	// TODO: doc if stays in
 	FunctionContextDigest digest.Digest `json:"function_context_digest"`
+
+	// Import configuration for Buildkit's remote cache
+	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

@@ -80,6 +80,7 @@ Alternatively, install the Dagger Engine to a different location, such as your h
 ```shell
 cd ~
 curl -L https://dl.dagger.io/dagger/install.sh | sh
+```
 
 If you want to install a specific version of `dagger`, you can run:
 

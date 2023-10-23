@@ -84,13 +84,20 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	c = c.Pipeline("engine").Pipeline("publish")
 
 	var (
+		registry    = util.GetHostEnv("DAGGER_ENGINE_IMAGE_REGISTRY")
+		username    = util.GetHostEnv("DAGGER_ENGINE_IMAGE_USERNAME")
+		password    = c.SetSecret("DAGGER_ENGINE_IMAGE_PASSWORD", util.GetHostEnv("DAGGER_ENGINE_IMAGE_PASSWORD"))
 		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
 		ref         = fmt.Sprintf("%s:%s", engineImage, version)
 	)
 
-	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
-	})
+	digest, err := c.Container().
+		WithRegistryAuth(registry, username, password).
+		Publish(ctx, ref, dagger.ContainerPublishOpts{
+			PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
+			// use gzip to avoid incompatibility w/ older docker versions
+			ForcedCompression: dagger.Gzip,
+		})
 	if err != nil {
 		return err
 	}
@@ -126,13 +133,14 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	return err
 }
 
-func registry(c *dagger.Client) *dagger.Container {
+func registry(c *dagger.Client) *dagger.Service {
 	return c.Pipeline("registry").Container().From("registry:2").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil)
+		WithExec(nil).
+		AsService()
 }
 
-func privateRegistry(c *dagger.Client) *dagger.Container {
+func privateRegistry(c *dagger.Client) *dagger.Service {
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
 	return c.Pipeline("private registry").Container().From("registry:2").
 		WithNewFile("/auth/htpasswd", dagger.ContainerWithNewFileOpts{Contents: htpasswd}).
@@ -140,7 +148,8 @@ func privateRegistry(c *dagger.Client) *dagger.Container {
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil)
+		WithExec(nil).
+		AsService()
 }
 
 // Test runs Engine tests
@@ -342,16 +351,17 @@ func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Containe
 	})
 
 	registrySvc := registry(c)
-	devEngine = devEngine.
+	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).
+		AsService()
 
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -366,7 +376,7 @@ func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Containe
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithWorkdir("/app").
-		WithServiceBinding("dagger-engine", devEngine).
+		WithServiceBinding("dagger-engine", devEngineSvc).
 		WithServiceBinding("registry", registrySvc)
 
 	// TODO use Container.With() to set this. It'll be much nicer.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/opencontainers/go-digest"
@@ -50,7 +51,7 @@ func (fn Function) Clone() *Function {
 
 func (fn *Function) WithDescription(desc string) *Function {
 	fn = fn.Clone()
-	fn.Description = desc
+	fn.Description = strings.TrimSpace(desc)
 	return fn
 }
 

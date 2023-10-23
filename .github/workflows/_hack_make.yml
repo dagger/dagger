@@ -12,10 +12,14 @@ on:
         type: boolean
         default: false
         required: false
+      size:
+        type: string
+        default: "dagger-runner-2c-8g"
+        required: false
 
 jobs:
   # Use a free GitHub Actions runner when
-  # NOT running in the dagger/dagger repo 
+  # NOT running in the dagger/dagger repo
   github-free-runner:
     if: ${{ github.repository != 'dagger/dagger' }}
     runs-on: ubuntu-latest
@@ -27,7 +31,7 @@ jobs:
           cache-dependency-path: "internal/mage/go.sum"
       - name: ${{ inputs.mage-targets }}
         run: |
-          if [ "${{ inputs.dev-engine }}" != "false" ]
+          if [ "${{ inputs.dev-engine }}" == "true" ]
           then
             ./hack/dev
             export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
@@ -41,40 +45,10 @@ jobs:
         if: always()
         run: sudo dmesg
 
-  # Use a larger (paid) GitHub runner when
-  # running the dagger/dagger repo (including PRs)
-  github-paid-runner:
-    if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: ubuntu-22.04-16c-64g-600gb
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: "1.20"
-          cache-dependency-path: "internal/mage/go.sum"
-      - name: ${{ inputs.mage-targets }}
-        run: |
-          if [ "${{ inputs.dev-engine }}" != "false" ]
-          then
-            ./hack/dev
-            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
-            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
-            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
-          fi
-          ./hack/make ${{ inputs.mage-targets }}
-        env:
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: "ALWAYS print kernel logs - especialy useful on failure"
-        if: always()
-        run: sudo dmesg
-
-  # Also use our own Dagger runner when
-  # running in the dagger/dagger repo (including PRs)
-  # CONTINUE ON ERROR until we figure out why multiple runners are trying to use the same Dagger Engine
+  # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
   dagger-runner:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: dagger-runner-16c-64g
-    continue-on-error: true
+    runs-on: ${{ inputs.size }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
@@ -83,9 +57,15 @@ jobs:
           cache-dependency-path: "internal/mage/go.sum"
       - name: ${{ inputs.mage-targets }}
         run: |
+          if [ "${{ inputs.dev-engine }}" == "true" ]
+          then
+            ./hack/dev
+            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+          fi
           ./hack/make ${{ inputs.mage-targets }}
         env:
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
