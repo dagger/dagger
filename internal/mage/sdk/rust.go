@@ -227,7 +227,8 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 	base := c.
 		Container().
 		From(image).
-		WithMountedCache("~/.cargo", c.CacheVolume("rust-cargo-"+image)).
+		WithEnvVariable("CARGO_HOME", "/root/.cargo").
+		WithMountedCache("/root/.cargo", c.CacheVolume("rust-cargo-"+image)).
 		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
 		WithExec([]string{"cargo", "install", "cargo-chef"}).
 		WithWorkdir(mountPath).
