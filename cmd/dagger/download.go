@@ -15,12 +15,12 @@ var downloadCmd = &FuncCommand{
 		cmd.PersistentFlags().StringVar(&exportPath, "export-path", "", "Path to export to")
 		cmd.MarkFlagRequired("export-path")
 	},
-	OnSelectObjectLeaf: func(c *callContext, _ string) error {
+	OnSelectObjectLeaf: func(c *FuncCommand, _ string) error {
 		c.Select("export")
 		c.Arg("path", exportPath)
 		return nil
 	},
-	BeforeRequest: func(_ *callContext, returnType *modTypeDef) error {
+	BeforeRequest: func(_ *FuncCommand, returnType *modTypeDef) error {
 		switch returnType.ObjectName() {
 		case Directory, File, Container:
 			if exportPath == "" {
@@ -30,7 +30,7 @@ var downloadCmd = &FuncCommand{
 		}
 		return fmt.Errorf("return type not supported: %s", printReturnType(returnType))
 	},
-	AfterResponse: func(_ *callContext, cmd *cobra.Command, _ *modTypeDef, response any) error {
+	AfterResponse: func(_ *FuncCommand, cmd *cobra.Command, _ *modTypeDef, response any) error {
 		status, ok := response.(bool)
 		if !ok {
 			return fmt.Errorf("unexpected response %T: %+v", response, response)

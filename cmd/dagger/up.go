@@ -22,20 +22,20 @@ var upCmd = &FuncCommand{
 		cmd.PersistentFlags().StringSliceVarP(&portForwards, "port", "p", nil, "Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format.")
 		cmd.PersistentFlags().BoolVarP(&portForwardsNative, "native", "n", false, "Forward all ports natively, i.e. match frontend port to backend.")
 	},
-	OnSelectObjectLeaf: func(c *callContext, name string) error {
+	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		if name == Service {
 			c.Select("id")
 			upIsService = true
 		}
 		return nil
 	},
-	BeforeRequest: func(_ *callContext, _ *modTypeDef) error {
+	BeforeRequest: func(_ *FuncCommand, _ *modTypeDef) error {
 		if !upIsService {
 			return fmt.Errorf("up can only be called on a service")
 		}
 		return nil
 	},
-	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType *modTypeDef, result any) error {
+	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, returnType *modTypeDef, result any) error {
 		srvID, ok := (result).(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T", result)
@@ -43,7 +43,7 @@ var upCmd = &FuncCommand{
 
 		ctx := cmd.Context()
 
-		srv := c.e.Dagger().LoadServiceFromID(dagger.ServiceID(srvID))
+		srv := c.c.Dagger().LoadServiceFromID(dagger.ServiceID(srvID))
 
 		opts := dagger.HostTunnelOpts{
 			Native: portForwardsNative,
@@ -73,7 +73,7 @@ var upCmd = &FuncCommand{
 			})
 		}
 
-		tunnel, err := c.e.Dagger().Host().Tunnel(srv, opts).Start(ctx)
+		tunnel, err := c.c.Dagger().Host().Tunnel(srv, opts).Start(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to start tunnel: %w", err)
 		}

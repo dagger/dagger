@@ -30,14 +30,14 @@ var shellCmd = &FuncCommand{
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
 	},
-	OnSelectObjectLeaf: func(c *callContext, name string) error {
+	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		if name == Container {
 			c.Select("id")
 			shellIsContainer = true
 		}
 		return nil
 	},
-	BeforeRequest: func(_ *callContext, _ *modTypeDef) error {
+	BeforeRequest: func(_ *FuncCommand, _ *modTypeDef) error {
 		if !shellIsContainer {
 			return fmt.Errorf("shell can only be called on a container")
 		}
@@ -54,14 +54,14 @@ var shellCmd = &FuncCommand{
 
 		return nil
 	},
-	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType *modTypeDef, response any) error {
+	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, returnType *modTypeDef, response any) error {
 		ctrID, ok := (response).(string)
 		if !ok {
 			return fmt.Errorf("unexpected response %T: %+v", response, response)
 		}
 
 		ctx := cmd.Context()
-		ctr := c.e.Dagger().Container(dagger.ContainerOpts{
+		ctr := c.c.Dagger().Container(dagger.ContainerOpts{
 			ID: dagger.ContainerID(ctrID),
 		})
 
@@ -70,7 +70,7 @@ var shellCmd = &FuncCommand{
 			return fmt.Errorf("failed to get shell endpoint: %w", err)
 		}
 
-		return attachToShell(ctx, c.e, shellEndpoint)
+		return attachToShell(ctx, c.c, shellEndpoint)
 	},
 }
 
