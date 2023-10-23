@@ -66,6 +66,20 @@ public class Type {
     // this.fields = fields;
   }
 
+  private static boolean filterIDField(Field f) {
+    return "id".equals(f.getName())
+        && f.getTypeRef().isScalar()
+        && f.getTypeRef().getTypeName().equals(f.getParentObject().getName() + "ID");
+  }
+
+  boolean providesId() {
+    return fields.stream().filter(Type::filterIDField).count() > 0;
+  }
+
+  Field getIdField() {
+    return fields.stream().filter(Type::filterIDField).findFirst().get();
+  }
+
   @Override
   public String toString() {
     return "Type{"
