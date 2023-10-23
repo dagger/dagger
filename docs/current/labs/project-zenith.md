@@ -17,7 +17,7 @@ documentation](../index.md).
 
 ## Overview
 
-*Project Zenith* is the codename of a future release of Dagger, currently in
+_Project Zenith_ is the codename of a future release of Dagger, currently in
 development (and hopefully released soon!)
 
 The goal of the project is to make Dagger more accessible, by delivering it as
@@ -25,21 +25,21 @@ a CLI tool rather than just a library.
 
 Features of Project Zenith include:
 
-* Major expansion of the `dagger` CLI, removing the need to create a custom CLI
+- Major expansion of the `dagger` CLI, removing the need to create a custom CLI
   for each project.
-* Major expansion of the Dagger API, with a complete cross-language extension
+- Major expansion of the Dagger API, with a complete cross-language extension
   and composition system.
-* An open ecosystem of reusable content, to take advantage of the extension and
+- An open ecosystem of reusable content, to take advantage of the extension and
   composition system called the [Daggerverse](https://daggerverse.fly.dev/).
 
 ## How to get involved
 
 The Dagger Engine is developed in the open, and Project Zenith is no exception.
 
-* Discussions take place [on the Dagger Discord](https://discord.gg/dagger-io)
+- Discussions take place [on the Dagger Discord](https://discord.gg/dagger-io)
   in the `#project-zenith` channel. We love to hear from you, and there are no
   stupid questions!
-* Contributors and testers meet every Friday at 09:00 Pacific time [on our
+- Contributors and testers meet every Friday at 09:00 Pacific time [on our
   Discord audio room](https://discord.com/channels/707636530424053791/911305510882513037).
 
 If you get stuck, check out the [Troubleshooting guide](#troubleshooting) below.
@@ -48,8 +48,8 @@ If you get stuck, check out the [Troubleshooting guide](#troubleshooting) below.
 
 Pre-requisites:
 
-* A shell (bash, zsh, etc)
-* [Docker](https://docs.docker.com/engine/install/)
+- A shell (bash, zsh, etc)
+- [Docker](https://docs.docker.com/engine/install/)
 
 ### Downloading an experimental build
 
@@ -125,17 +125,17 @@ running engine.
 
 1. If you use [direnv](https://direnv.net/), you can just:
 
-    ```sh
-    cd ./zenith
-    direnv allow .
-    ```
+   ```sh
+   cd ./zenith
+   direnv allow .
+   ```
 
 2. If not, you can directly `source` the provided `.envrc` file:
 
-    ```sh
-    cd ./zenith
-    source .envrc
-    ```
+   ```sh
+   cd ./zenith
+   source .envrc
+   ```
 
 At this point you should have a fully functioning `dagger` CLI and dev engine.
 
@@ -389,7 +389,7 @@ paste the GitHub link to your module (`github.com/<user>/daggerverse.git`),
 then click "Crawl".
 
 :::note
-You don't *have* to use `daggerverse` as the name of your Git repository -- it's just
+You don't _have_ to use `daggerverse` as the name of your Git repository -- it's just
 a handy way to have all your modules in one Git repository together. But you
 can always split them out into separate repositories, or name it something
 different if you like!
@@ -476,62 +476,26 @@ The result will be:
 }
 ```
 
-### Extend core types
-
-You can add a new function to accept and return a `*Container`.
-
-```go
-package main
-
-type Potato struct{}
-
-func (c *Container) AddPotato() *Container {
-  return c.WithNewFile("/potato", ContainerWithNewFileOpts{
-    Contents: "i'm a potato",
-  })
-}
-```
-
-Next, run `dagger mod sync`.
-
-To run the new function, once again use `dagger query`:
-
-```sh
-dagger query <<EOF
-{
-  container {
-    from(address:"alpine") {
-      potatoAddPotato {
-        withExec(args:["cat", "potato"]) {
-          stdout
-        }
-      }
-    }
-  }
-}
-EOF
-```
-
 ## Known issues
 
-* A module's public fields require a `json:"foo"` tag to be queriable.
-* Custom objects in a module require at least one method to be defined on them
+- A module's public fields require a `json:"foo"` tag to be queriable.
+- Custom objects in a module require at least one method to be defined on them
   to be detected by the codegen.
-* When referencing another module as a local dependency, the dependent module
+- When referencing another module as a local dependency, the dependent module
   must be stored in a sub-directory of the parent module.
-* Custom struct types used as parameters cannot be nested and contain other
+- Custom struct types used as parameters cannot be nested and contain other
   structs themselves.
-* Calls to functions across modules will be run exactly *once* per-session --
+- Calls to functions across modules will be run exactly _once_ per-session --
   after that, the result will be cached, but only until the next session (a new
   `dagger query`, etc).
-  * At some point, we will add more fine-grained cache-control.
-* Currently, Go is the only supported language for module development.
+  - At some point, we will add more fine-grained cache-control.
+- Currently, Go is the only supported language for module development.
 
 ## Tips and tricks
 
-* The context and error return are optional in the module's function signature;
+- The context and error return are optional in the module's function signature;
   remove them if you don't need them.
-* A module's private fields will not be persisted.
+- A module's private fields will not be persisted.
 
 ## Troubleshooting
 

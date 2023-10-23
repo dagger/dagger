@@ -479,24 +479,26 @@ func TestModuleGoSignatures(t *testing.T) {
 //go:embed testdata/modules/go/extend/main.go
 var goExtend string
 
+// this is no longer allowed, but verify the SDK errors out
 func TestModuleGoExtendCore(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
-	modGen := c.Container().From(golangImage).
+	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: goExtend,
-		})
+		}).
+		With(daggerExec("mod", "sync")).
+		Sync(ctx)
 
-	logGen(ctx, t, modGen.Directory("."))
-
-	out, err := modGen.With(daggerQuery(`{container{from(address:"` + alpineImage + `"){testEcho(msg:"hi!")}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"container":{"from":{"testEcho":"hi!\n"}}}`, out)
+	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
 }
 
 //go:embed testdata/modules/go/custom-types/main.go
@@ -858,12 +860,6 @@ func TestModuleNamespacing(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
-
-	out, err = ctr.
-		With(daggerQuery(`{container{testBlah}}`)).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"container":{"testBlah":"blurgh"}}`, out)
 }
 
 func TestEnvCmd(t *testing.T) {
