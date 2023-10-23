@@ -15,23 +15,6 @@ defmodule Dagger.Function do
   )
 
   (
-    @doc "Execute this function using dynamic input+output types.\n\nTypically, it's preferable to invoke a function using a type\nsafe graphql query rather than using this call field. However,\ncall is useful for some advanced use cases where dynamically\nloading arbitrary modules and invoking functions in them is\nrequired.\n\n\n\n## Optional Arguments\n\n* `input` -"
-    @spec call(t(), keyword()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
-    def call(%__MODULE__{} = function, optional_args \\ []) do
-      selection = select(function.selection, "call")
-
-      selection =
-        if is_nil(optional_args[:input]) do
-          selection
-        else
-          arg(selection, "input", optional_args[:input])
-        end
-
-      execute(selection, function.client)
-    end
-  )
-
-  (
     @doc "A doc string for the function, if any"
     @spec description(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def description(%__MODULE__{} = function) do

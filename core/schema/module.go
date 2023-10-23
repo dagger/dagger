@@ -75,7 +75,6 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	ResolveIDable[core.Function](rs, "Function", ObjectResolver{
 		"withDescription": ToResolver(s.functionWithDescription),
 		"withArg":         ToResolver(s.functionWithArg),
-		"call":            ToResolver(s.functionCall),
 	})
 
 	ResolveIDable[core.FunctionArg](rs, "FunctionArg", ObjectResolver{})
@@ -343,9 +342,7 @@ func (s *moduleSchema) functionWithArg(ctx *core.Context, fn *core.Function, arg
 }
 
 type functionCallArgs struct {
-	Input []*core.CallInput
-
-	// Below are not in public API, used internally by Function.call api
+	Input      []*core.CallInput
 	ParentName string
 	Parent     any
 	Module     *core.Module
@@ -354,7 +351,6 @@ type functionCallArgs struct {
 
 func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args functionCallArgs) (any, error) {
 	// TODO: if return type non-null, assert on that here
-	// TODO: handle setting default values, they won't be set when going through "dynamic call" codepath
 
 	// TODO: re-add support for different exit codes
 	cacheExitCode := uint32(0)
@@ -364,21 +360,7 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	mod := args.Module
 
 	if mod == nil {
-		// will not be set for API calls
-
-		if fn.ModuleID == "" {
-			return nil, fmt.Errorf("function %s has no module", fn.Name)
-		}
-
-		var err error
-		mod, err = fn.ModuleID.Decode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode module: %w", err)
-		}
-
-		if fn.ParentName != "" {
-			args.ParentName = fn.ParentName
-		}
+		return nil, fmt.Errorf("function %s has no module", fn.Name)
 	}
 
 	if err := s.installDeps(ctx, mod); err != nil {
@@ -742,10 +724,6 @@ func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*co
 			return nil, fmt.Errorf("failed to install module recursive dependencies: %w", err)
 		}
 
-		modID, err := mod.ID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module ID: %w", err)
-		}
 		// canned function for asking the SDK to return the module + functions it provides
 		getModDefFn := &core.Function{
 			Name: "", // no name indicates that the SDK should return the module
@@ -755,7 +733,6 @@ func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*co
 					Name: "Module",
 				},
 			},
-			ModuleID: modID,
 		}
 		result, err := s.functionCall(ctx, getModDefFn, functionCallArgs{
 			Module: mod,

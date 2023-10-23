@@ -13,12 +13,6 @@ type Function struct {
 	Description string         `json:"description"`
 	Args        []*FunctionArg `json:"args"`
 	ReturnType  *TypeDef       `json:"returnType"`
-
-	// (Not in public API) Used to invoke function in the context of its module.
-	// We don't use *Module directly because it causes JSON serialization to fail
-	// due to circular references.
-	ModuleID   ModuleID `json:"moduleID,omitempty"`
-	ParentName string   `json:"parentName,omitempty"`
 }
 
 func NewFunction(name string, returnType *TypeDef) *Function {
@@ -156,7 +150,6 @@ func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
 	}
 	typeDef = typeDef.Clone()
 	fn = fn.Clone()
-	fn.ParentName = typeDef.AsObject.Name
 	typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
 	return typeDef, nil
 }

@@ -19,7 +19,7 @@ type FileID = resourceid.ID[File]
 
 type SecretID = resourceid.ID[Secret]
 
-type ModuleID resourceid.ID[Module]
+type ModuleID = resourceid.ID[Module]
 
 type FunctionID = resourceid.ID[Function]
 
