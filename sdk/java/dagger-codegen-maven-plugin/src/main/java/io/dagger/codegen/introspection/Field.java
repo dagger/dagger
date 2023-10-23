@@ -105,14 +105,16 @@ public class Field {
         + "name='"
         + name
         + '\''
-        +
-        // ", description='" + description + '\'' +
-        ", args="
+        + ", typeRef="
+        + typeRef
+        + ", args="
         + args
         + ", deprecated="
         + deprecated
-        +
-        // ", DeprecationReason='" + DeprecationReason + '\'' +
-        '}';
+        + ", optionalArgs="
+        + optionalArgs
+        + ", parentObject="
+        + parentObject.getName()
+        + '}';
   }
 }

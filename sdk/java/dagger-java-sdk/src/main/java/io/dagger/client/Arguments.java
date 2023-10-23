@@ -56,8 +56,8 @@ public class Arguments {
       return null;
     } else if (value instanceof Scalar<?>) {
       return ((Scalar<?>) value).convert();
-    } else if (value instanceof IdProvider<?>) {
-      Object id = ((IdProvider<?>) value).id();
+    } else if (value instanceof IDAble<?>) {
+      Object id = ((IDAble<?>) value).id();
       if (id instanceof Scalar<?>) {
         return ((Scalar<?>) id).convert();
       } else {
@@ -117,7 +117,7 @@ public class Arguments {
       return this;
     }
 
-    public <T extends Scalar<?>> Builder add(String name, IdProvider<T> value) {
+    public <T extends Scalar<?>> Builder add(String name, IDAble<T> value) {
       args.put(name, value);
       return this;
     }

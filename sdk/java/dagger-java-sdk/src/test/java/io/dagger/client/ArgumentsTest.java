@@ -65,11 +65,11 @@ public class ArgumentsTest {
 
   @Test
   public void testIdArgument() throws Exception {
-    IdProvider<SimpleId> idProvider = mock(IdProvider.class);
+    IDAble<SimpleId> idAble = mock(IDAble.class);
     SimpleId id = new SimpleId("baz");
-    when(idProvider.id()).thenReturn(id);
-    List<Argument> args = Arguments.newBuilder().add("bar", idProvider).build().toList();
-    verify(idProvider).id();
+    when(idAble.id()).thenReturn(id);
+    List<Argument> args = Arguments.newBuilder().add("bar", idAble).build().toList();
+    verify(idAble).id();
     assertThat(args).hasSize(1);
     assertThat(args.get(0).build()).isEqualTo("bar:\"baz\"");
   }

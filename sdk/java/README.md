@@ -8,6 +8,9 @@
 - Upcoming breaking changes
 - Incomplete or out-of-date documentation
 
+> **Warning**
+> The Dagger Java SDK requires Dagger v0.9.0 or later
+
 # dagger-java-sdk
 
 ![main workflow](https://github.com/dagger/dagger/actions/workflows/test.yml/badge.svg?branch=main)
