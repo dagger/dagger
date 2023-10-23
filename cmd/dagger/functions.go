@@ -246,9 +246,9 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				// not just flags. We want to stop parsing at the first
 				// possible dynamic sub-command since they've not been
 				// added yet.
-				c.Flags().SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+				c.Flags().SetInterspersed(false)
 
-				// Allow using flags with the the name that was reported
+				// Allow using flags with the name that was reported
 				// by the SDK. This avoids confusion as users are editing
 				// a module and trying to test its functions.
 				c.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
@@ -257,6 +257,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 				err := c.ParseFlags(a)
 				if err != nil {
+					// This gives a chance for FuncCommand implementations to
+					// handle errors from parsing flags.
 					return c.FlagErrorFunc()(c, err)
 				}
 
@@ -507,6 +509,9 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			// Need to make the query selection before chaining off.
 			return fc.selectFunc(fn, cmd, dag)
 		},
+
+		// This is going to be executed in the "execution" vertex, when
+		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if fn.ReturnType.AsObject != nil && len(fn.ReturnType.AsObject.GetFunctions()) > 0 {
 				fc.showUsage = true
