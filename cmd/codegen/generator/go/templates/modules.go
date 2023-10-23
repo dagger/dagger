@@ -114,6 +114,10 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			if err != nil {
 				panic(err)
 			}
+			if objType == nil {
+				// not including in module schema, skip it
+				continue
+			}
 
 			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
 				// errors indicate an internal problem rather than something w/ user code, so panic instead
@@ -127,9 +131,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 				}
 
 				tokenFile := ps.fset.File(named.Obj().Pos())
-				isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
+				isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename
 				if isDaggerGenerated {
-					// skip dagger generated objects (not at the top-level)
+					// skip objects from outside this module
 					continue
 				}
 			}
@@ -503,6 +507,13 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		return nil, fmt.Errorf("struct types must be named")
 	}
 
+	tokenFile := ps.fset.File(named.Obj().Pos())
+	isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename
+	if isDaggerGenerated {
+		// we don't support extensions of objects from other modules at this time, skip it
+		return nil, nil
+	}
+
 	typeName := named.Obj().Name()
 	if typeName == "" {
 		return nil, fmt.Errorf("struct types must be named")
@@ -528,9 +539,6 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 
 	typeDef := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgs...)
 
-	tokenFile := ps.fset.File(named.Obj().Pos())
-	isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
-
 	methods := []*types.Func{}
 
 	// Fill out any Functions on the object, which are methods on the struct
@@ -538,12 +546,6 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	methodSet := types.NewMethodSet(types.NewPointer(named))
 	for i := 0; i < methodSet.Len(); i++ {
 		methodObj := methodSet.At(i).Obj()
-		methodTokenFile := ps.fset.File(methodObj.Pos())
-		methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
-		if methodIsDaggerGenerated {
-			// We don't care about pre-existing methods on core types or objects from dependency modules.
-			continue
-		}
 
 		method, ok := methodObj.(*types.Func)
 		if !ok {
@@ -568,13 +570,6 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		}
 
 		typeDef = dotLine(typeDef, "WithFunction").Call(Add(Line(), fnTypeDef))
-	}
-
-	if isDaggerGenerated {
-		// If this object is from the core API or another dependency, we only care
-		// about any new methods being attached to it, so we're all done in this
-		// case
-		return typeDef, nil
 	}
 
 	astStructType, ok := typeSpec.Type.(*ast.StructType)

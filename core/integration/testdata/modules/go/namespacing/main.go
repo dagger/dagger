@@ -24,7 +24,3 @@ func (m *Test) Fn(ctx context.Context, s string) (string, error) {
 
 	return fmt.Sprintf("%s %s", s1, s2), nil
 }
-
-func (ctr *Container) Blah() (string, error) {
-	return "blurgh", nil
-}

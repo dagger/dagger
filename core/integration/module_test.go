@@ -476,29 +476,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 }
 
-//go:embed testdata/modules/go/extend/main.go
-var goExtend string
-
-func TestModuleGoExtendCore(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: goExtend,
-		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	out, err := modGen.With(daggerQuery(`{container{from(address:"` + alpineImage + `"){testEcho(msg:"hi!")}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"container":{"from":{"testEcho":"hi!\n"}}}`, out)
-}
-
 //go:embed testdata/modules/go/custom-types/main.go
 var customTypes string
 
@@ -858,12 +835,6 @@ func TestModuleNamespacing(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
-
-	out, err = ctr.
-		With(daggerQuery(`{container{testBlah}}`)).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"container":{"testBlah":"blurgh"}}`, out)
 }
 
 func TestEnvCmd(t *testing.T) {
