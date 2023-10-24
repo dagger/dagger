@@ -251,7 +251,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			e.serverMu.Unlock()
 			return err
 		}
-		secretStore.SetBuildkitClient(bkClient)
 
 		bklog.G(ctx).Debugf("initialized new server buildkit client")
 

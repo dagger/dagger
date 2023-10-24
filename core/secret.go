@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -47,11 +46,6 @@ var _ secrets.SecretStore = &SecretStore{}
 type SecretStore struct {
 	mu      sync.Mutex
 	secrets map[string][]byte
-	bk      *buildkit.Client
-}
-
-func (store *SecretStore) SetBuildkitClient(bk *buildkit.Client) {
-	store.bk = bk
 }
 
 // AddSecret adds the secret identified by user defined name with its plaintext
