@@ -54,7 +54,7 @@ func (m *PythonSdk) Codegen(modSource *Directory, subPath string) *GeneratedCode
 	ctr := m.CodegenBase(modSource, subPath)
 	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
 		Exclude: []string{
-			"**/_pycache_",
+			"**/__pycache__",
 		},
 	})
 
