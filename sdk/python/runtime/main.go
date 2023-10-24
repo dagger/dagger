@@ -11,9 +11,9 @@ type PythonSdk struct{}
 const (
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
-    sdkSrc                = "/sdk"
+	sdkSrc                = "/sdk"
 	venv                  = "/opt/venv"
-    genDir                = "sdk"
+	genDir                = "sdk"
 	genPath               = "src/dagger/client/gen.py"
 )
 
@@ -22,13 +22,13 @@ name = "main"
 version = "0.0.0"
 `
 
-var srcMainTmpl = `from dagger.ext import function
+var srcMainTmpl = `import dagger
+from dagger.ext import function
 
 
 @function
-def hello() -> str:
-    """Returns a friendly greeting"""
-    return "Hello, world!"
+def my_function(string_arg: str) -> dagger.Container:
+    return dagger.container().from_("alpine:latest").with_exec(["echo", string_arg])
 `
 
 var runtimeTmpl = `#!/usr/bin/env python
@@ -39,50 +39,50 @@ if __name__ == '__main__':
 `
 
 func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string) *Container {
-    return m.CodegenBase(modSource, subPath).
-        WithExec([]string{"python", "-m", "pip", "install", "."}).
+	return m.CodegenBase(modSource, subPath).
+		WithExec([]string{"python", "-m", "pip", "install", "."}).
 		WithWorkdir(ModSourceDirPath).
-        WithNewFile(RuntimeExecutablePath, ContainerWithNewFileOpts{
-            Contents: runtimeTmpl,
-            Permissions:     0755,
-        }).
-        WithEntrypoint([]string{RuntimeExecutablePath}).
-        WithDefaultArgs()
+		WithNewFile(RuntimeExecutablePath, ContainerWithNewFileOpts{
+			Contents:    runtimeTmpl,
+			Permissions: 0755,
+		}).
+		WithEntrypoint([]string{RuntimeExecutablePath}).
+		WithDefaultArgs()
 }
 
 func (m *PythonSdk) Codegen(modSource *Directory, subPath string) *GeneratedCode {
-    ctr := m.CodegenBase(modSource, subPath)
-    ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
-        Exclude: []string{
-            "**/_pycache_",
-        },
-    })
+	ctr := m.CodegenBase(modSource, subPath)
+	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
+		Exclude: []string{
+			"**/_pycache_",
+		},
+	})
 
-    modified := ctr.Directory(ModSourceDirPath)
-    diff := modSource.Diff(modified)
+	modified := ctr.Directory(ModSourceDirPath)
+	diff := modSource.Diff(modified)
 
 	return dag.GeneratedCode(diff).
-        WithVCSIgnoredPaths([]string{
-            genDir,
-        })
+		WithVCSIgnoredPaths([]string{
+			genDir,
+		})
 }
 
 func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string) *Container {
-    return m.Base("").
-        WithMountedDirectory(ModSourceDirPath, modSource).
-        WithWorkdir(path.Join(ModSourceDirPath, subPath)).
-        // Move all of this to a python script.
-        WithNewFile("/templates/pyproject.toml", ContainerWithNewFileOpts{
-            Contents: pyprojectTmpl,
-        }).
-        WithNewFile("/templates/src/main.py", ContainerWithNewFileOpts{
-            Contents: srcMainTmpl,
-        }).
-        WithExec([]string{"python", "-m", "dagger", "generate", path.Join(sdkSrc, genPath)}, ContainerWithExecOpts{
-            ExperimentalPrivilegedNesting: true,
-        }).
-        WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /templates/pyproject.toml ."}).
-        WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /templates/src/main.py src/main.py; }"})
+	return m.Base("").
+		WithMountedDirectory(ModSourceDirPath, modSource).
+		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
+		// Move all of this to a python script.
+		WithNewFile("/templates/pyproject.toml", ContainerWithNewFileOpts{
+			Contents: pyprojectTmpl,
+		}).
+		WithNewFile("/templates/src/main.py", ContainerWithNewFileOpts{
+			Contents: srcMainTmpl,
+		}).
+		WithExec([]string{"python", "-m", "dagger", "generate", path.Join(sdkSrc, genPath)}, ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /templates/pyproject.toml ."}).
+		WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /templates/src/main.py src/main.py; }"})
 }
 
 func (m *PythonSdk) Base(version string) *Container {
@@ -100,7 +100,7 @@ func (m *PythonSdk) Base(version string) *Container {
 		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
 			Exclude: []string{"runtime"},
 		})).
-        WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc})
+		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc})
 }
 
 // TODO: fix .. restriction
