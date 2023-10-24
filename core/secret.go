@@ -2,13 +2,13 @@ package core
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 )
 
 // Secret is a content-addressed secret.
@@ -35,9 +35,6 @@ func (secret *Secret) ID() (SecretID, error) {
 func (secret *Secret) Digest() (digest.Digest, error) {
 	return stableDigest(secret)
 }
-
-// ErrNotFound indicates a secret can not be found.
-var ErrNotFound = errors.New("secret not found")
 
 func NewSecretStore() *SecretStore {
 	return &SecretStore{
@@ -93,7 +90,7 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 
 	plaintext, ok := store.secrets[name]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, errors.Wrapf(secrets.ErrNotFound, "secret %s", name)
 	}
 
 	return plaintext, nil
