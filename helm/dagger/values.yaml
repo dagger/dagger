@@ -45,7 +45,12 @@ engine:
     successThreshold: 1
     failureThreshold: 10
   terminationGracePeriodSeconds: 300
+  serviceAccount:
+    create: false
+  #  name: default
 magicache:
   enabled: false
   url: https://api.dagger.cloud/magicache
   # token: <token>
+  # If secret name is defined, no secret will be created
+  # secretName: mymagicache-secret
