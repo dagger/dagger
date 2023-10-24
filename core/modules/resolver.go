@@ -143,10 +143,14 @@ func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module,
 		if strings.HasPrefix(rootPath, "..") {
 			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.SubPath, rootPath)
 		}
+		relSubPath, err := filepath.Rel(rootPath, ref.SubPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative subpath: %w", err)
+		}
 
 		return c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree().
 			Directory(rootPath).
-			AsModule(), nil
+			AsModule(dagger.DirectoryAsModuleOpts{SourceSubpath: relSubPath}), nil
 
 	default:
 		return nil, fmt.Errorf("invalid module (local=%t, git=%t)", ref.Local, ref.Git != nil)

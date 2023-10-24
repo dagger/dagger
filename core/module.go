@@ -160,7 +160,7 @@ func LoadModuleConfig(
 	configPath = modules.NormalizeConfigPath(configPath)
 	configFile, err := sourceDir.File(ctx, bk, svcs, configPath)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to get config file: %w", err)
+		return "", nil, fmt.Errorf("failed to get config file from path %q: %w", configPath, err)
 	}
 	cfg, err := LoadModuleConfigFromFile(ctx, bk, svcs, configFile)
 	if err != nil {
