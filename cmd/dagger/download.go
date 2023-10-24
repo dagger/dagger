@@ -9,9 +9,10 @@ import (
 var exportPath string
 
 var downloadCmd = &FuncCommand{
-	Name:  "download",
-	Short: "Download an asset from module function",
-	Long:  "Download an asset returned by a module function and save it to the host.\n\nWorks with a Directory, File or Container.",
+	Name:    "download",
+	Aliases: []string{"export", "dl"},
+	Short:   "Download an asset from module function",
+	Long:    "Download an asset returned by a module function and save it to the host.\n\nWorks with a Directory, File or Container.",
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringVar(&exportPath, "export-path", ".", "Path to export to")
 	},

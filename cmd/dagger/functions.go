@@ -147,6 +147,9 @@ type FuncCommand struct {
 	// The name of the command (or verb), as shown in usage.
 	Name string
 
+	// Aliases is an array of aliases that can be used instead of the first word in Use.
+	Aliases []string
+
 	// Short is the short description shown in the 'help' output.
 	Short string
 
@@ -224,6 +227,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 		fc.cmd = &cobra.Command{
 			Use:     use,
+			Aliases: fc.Aliases,
 			Short:   fc.Short,
 			Long:    fc.Long,
 			Example: fc.Example,
@@ -324,7 +328,11 @@ func (fc *FuncCommand) execute(c *cobra.Command) (rerr error) {
 
 	// TODO: Move help output out of progrock?
 	if fc.showHelp {
-		cmd.Aliases = nil
+		// Hide aliases for sub-commands. They just allow using the SDK's
+		// casing for functions but there's no need to advertise.
+		if cmd != c {
+			cmd.Aliases = nil
+		}
 		return cmd.Help()
 	}
 
