@@ -26,9 +26,13 @@ var downloadCmd = &FuncCommand{
 		}
 		return nil
 	},
-	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, returnType *modTypeDef) error {
+	BeforeRequest: func(_ *FuncCommand, cmd *cobra.Command, returnType *modTypeDef) error {
 		switch returnType.ObjectName() {
 		case Directory, File, Container:
+			flag := cmd.Flags().Lookup("export-path")
+			if returnType.ObjectName() == Container && flag != nil && !flag.Changed {
+				return fmt.Errorf("flag --export-path is required for containers")
+			}
 			return nil
 		}
 		return fmt.Errorf("return type not supported: %s", printReturnType(returnType))
