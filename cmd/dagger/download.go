@@ -20,6 +20,9 @@ var downloadCmd = &FuncCommand{
 		case Directory, File, Container:
 			c.Select("export")
 			c.Arg("path", exportPath)
+			if name == File {
+				c.Arg("allowParentDirPath", true)
+			}
 		}
 		return nil
 	},
