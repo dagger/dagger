@@ -71,7 +71,7 @@ func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string) *Container
 	return m.Base("").
 		WithMountedDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
-		// Move all of this to a python script.
+		// TODO: Move all of this to a python script.
 		WithNewFile("/templates/pyproject.toml", ContainerWithNewFileOpts{
 			Contents: pyprojectTmpl,
 		}).
