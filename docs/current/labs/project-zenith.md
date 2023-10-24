@@ -18,7 +18,8 @@ documentation](../index.md).
 ## Overview
 
 _Project Zenith_ is the codename of a future release of Dagger, currently in
-development (and hopefully released soon!)
+development. Certain features of Project Zenith are available in Dagger v0.9
+with more coming rapidly.
 
 The goal of the project is to make Dagger more accessible, by delivering it as
 a CLI tool rather than just a library.
@@ -30,7 +31,7 @@ Features of Project Zenith include:
 - Major expansion of the Dagger API, with a complete cross-language extension
   and composition system.
 - An open ecosystem of reusable content, to take advantage of the extension and
-  composition system called the [Daggerverse](https://daggerverse.fly.dev/).
+  composition system called the [Daggerverse](https://daggerverse.dev/).
 
 ## How to get involved
 
@@ -53,116 +54,11 @@ Pre-requisites:
 
 ### Downloading an experimental build
 
-You can download this experimental build of Dagger from
-[github.com/jpadams/shykes-dagger-zenith-builder](https://github.com/jpadams/shykes-dagger-zenith-builder/releases/tag/nightly).
+Since Dagger version v0.9 ships with Project Zenith functionality enabled, you can simply install the latest v0.9.x release of the Dagger CLI using [the install docs](https://docs.dagger.io/cli/465058/install).
 
-Select the right build using your OS (darwin or linux) and platform (amd64 or
-arm64), and move it to a directory within your path, for example:
-
-```sh
-# create a personal bin directory and add it to the PATH
-mkdir -p ~/bin
-export PATH=$PATH:~/bin
-
-# install the downloaded binary
-mv ~/Downloads/dagger-zenith-linux-amd64 ~/bin/dagger
-```
-
-You should then be able to use the `dagger` command:
-
-```sh
-dagger version
-# dagger devel () (jeremyatdockerhub/dagger-engine-worker-zenith) linux/amd64
-```
-
-You can also run a quick hello world to check everything's working:
-
-```sh
-dagger query <<EOF
-{
-  container {
-    from(address:"alpine") {
-      withExec(args:["echo", "hello daggernauts!"]) {
-        stdout
-      }
-    }
-  }
-}
-EOF
-```
-
-### Building from scratch
-
-Building from scratch is an advanced topic, so you should attempt to download a
-build if you can.
-
-<details>
-<summary>Building from scratch instructions</summary>
-
-To get started, clone or pull this branch:
-
-```sh
-# fresh clone
-git clone https://github.com/dagger/dagger
-
-# OR pull branch
-git fetch origin
-git switch -c main origin/main
-```
-
-Next, build the dev `dagger` CLI and start the dev engine:
-
-```sh
-# cd into repo
-cd ./dagger/
-
-# build dev CLI and engine
-./hack/dev
-```
-
-Finally, you need to configure the Dagger environment variables to point to the
-running engine.
-
-1. If you use [direnv](https://direnv.net/), you can just:
-
-   ```sh
-   cd ./zenith
-   direnv allow .
-   ```
-
-2. If not, you can directly `source` the provided `.envrc` file:
-
-   ```sh
-   cd ./zenith
-   source .envrc
-   ```
-
-At this point you should have a fully functioning `dagger` CLI and dev engine.
-
-You should then be able to use the `dagger` command:
-
-```sh
-./bin/dagger version
-# dagger devel () (registry.dagger.io/engine) linux/amd64
-```
-
-You can also run a quick hello world to check everything's working:
-
-```sh
-./bin/dagger query <<EOF
-{
-  container {
-    from(address:"alpine") {
-      withExec(args:["echo", "hello daggernauts!"]) {
-        stdout
-      }
-    }
-  }
-}
-EOF
-```
-
-</details>
+:::note
+Certain experimental Project Zenith features like `dagger call`, `dagger shell`, and `dagger up` are not shown in top level help output, but have help text under `dagger help call` and `dagger help shell`, etc.
+:::
 
 ## Creating your first Module
 
@@ -175,7 +71,7 @@ mkdir potato/
 cd potato/
 
 # initialize Dagger module
-# NOTE: currently Go is the only supported SDK.
+# NOTE: currently only the Go SDK implements `dagger mod init`, but Python modules also work and are gaining features rapidly. Node.js modules are not yet available, but under development.
 dagger mod init --name=potato --sdk=go
 ```
 
@@ -186,12 +82,23 @@ the generated module code.
 If you like, you can run the generated `main.go` like so:
 
 ```sh
+dagger call my-function --string-arg 'Hello daggernauts!'
+```
+
+or
+
+```sh
 echo '{potato{myFunction(stringArg:"Hello daggernauts!"){id}}}' | dagger query
 ```
 
 :::note
-All names (functions, arguments, struct fields), etc, are converted into a
-langauge-agnostic camel-case style.
+When using `dagger call` to call module functions, do not explicitly use the name of the local or remote module.
+:::
+
+:::note
+When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+
+When using `dagger query` and GraphQL, all names are converted into a language-agnostic "camelCase" style.
 :::
 
 Let's try changing the `main.go`. We named our module `potato`, so that means
@@ -226,7 +133,13 @@ func (m *Potato) HelloWorld(ctx context.Context) (string, error)
 
 :::
 
-To run the new function, once again use `dagger query`:
+To run the new function, once again use `dagger call` or `dagger query`:
+
+```sh
+dagger call hello-world
+```
+
+or
 
 ```sh
 echo '{potato{helloWorld}}' | dagger query
@@ -256,8 +169,17 @@ func (m *Potato) HelloWorld(opts PotatoOptions) string {
 }
 ```
 
-These options can then be set using `dagger query` (exactly as if they'd been
-specified as top-level options):
+:::note
+Use `--help` at the end of `dagger call` to get help on the commands and flags available.
+:::
+
+These options can then be set using `dagger call` or `dagger query` (exactly as if they'd been specified as top-level options):
+
+```sh
+dagger call hello-world --count 10 --mashed true
+```
+
+or
 
 ```sh
 echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
@@ -289,7 +211,14 @@ func (m *Potato) HelloWorld(message string) PotatoMessage {
 ```
 
 ```sh
-echo '{potato{helloWorld(message: "I am a potato!"){message, from}}}' | dagger query
+dagger call hello-world --message "I am a potato" message
+dagger call hello-world --message "I am a potato" from
+```
+
+or
+
+```sh
+echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
 ```
 
 ## More things you can do
@@ -300,14 +229,14 @@ Modules can call each other! To add a dependency to your module, you can use
 `dagger mod use`:
 
 ```sh
-dagger mod use github.com/shykes/daggerverse/helloWorld@dc1c6a243c741e91843fabd34e769cd4d575f46f
+dagger mod use github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
 ```
 
 This module will be added to your `dagger.json`:
 
 ```json
   "dependencies": [
-    "github.com/shykes/daggerverse/helloWorld@22596363b3de40b06f981fb85d82312e8c0ed511"
+    "github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990"
   ]
 ```
 
@@ -327,15 +256,21 @@ func (m *Potato) HelloWorld(ctx context.Context) (string, error) {
 }
 ```
 
-You can find other modules to use on <https://daggerverse.fly.dev>.
+You can find other modules to use on <https://daggerverse.dev>.
 
 #### Module locations
 
 You can consume modules from lots of different sources. The easiest way to
-`dagger use` or `dagger query` a module is to reference it by its GitHub URL
+`dagger use`, `dagger call`, or `dagger query` a module is to reference it by its GitHub URL
 (similar to Go package strings).
 
 For example:
+
+```sh
+dagger call test -m "github.com/user/repo@main"
+```
+
+or
 
 ```sh
 dagger query -m "github.com/user/repo@main" <<EOF
@@ -348,6 +283,12 @@ EOF
 or, if your module is in a subdirectory of the Git repository:
 
 ```sh
+dagger call test -m "github.com/user/repo/subdirectory@main"
+```
+
+or
+
+```sh
 dagger query -m "github.com/user/repo/subdirectory@main" <<EOF
 query test {
    ...
@@ -356,6 +297,12 @@ EOF
 ```
 
 You can also use modules from the local disk, without needing to push them to GitHub!
+
+```sh
+dagger call test -m "./path/to/module" 
+```
+
+or
 
 ```sh
 dagger query -m "./path/to/module" <<EOF
@@ -489,7 +436,9 @@ The result will be:
   after that, the result will be cached, but only until the next session (a new
   `dagger query`, etc).
   - At some point, we will add more fine-grained cache-control.
-- Currently, Go is the only supported language for module development.
+- Currently, Go and Python are the only supported languages for module development.
+  - Python module development is not yet on par with Go.
+  - Node.js modules are not yet available, but under development.
 
 ## Tips and tricks
 
