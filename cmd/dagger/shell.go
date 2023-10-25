@@ -18,31 +18,23 @@ import (
 	"github.com/vito/progrock"
 )
 
-var (
-	shellIsContainer bool
-	shellEntrypoint  []string
-)
+var shellEntrypoint []string
 
 var shellCmd = &FuncCommand{
 	Name:  "shell",
 	Short: "Open a shell in a container",
-	Long:  "If no entrypoint is specified and the container doesn't have a default command, `sh` will be used.",
-	OnInit: func(cmd *cobra.Command) {
+	Long:  "Open a shell in a container.\n\nIf no entrypoint is specified and the container doesn't have a default command, `sh` will be used.",
+	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringSliceVar(&shellEntrypoint, "entrypoint", nil, "entrypoint to use")
 	},
-	OnSelectObject: func(c *callContext, name string) (*modTypeDef, error) {
-		if name == Container {
-			c.Select("id")
-			shellIsContainer = true
-			return &modTypeDef{Kind: dagger.Stringkind}, nil
-		}
-		return nil, nil
-	},
-	CheckReturnType: func(_ *callContext, _ *modTypeDef) error {
-		if !shellIsContainer {
+	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
+		if name != Container {
 			return fmt.Errorf("shell can only be called on a container")
 		}
-
+		c.Select("id")
+		return nil
+	},
+	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, _ *modTypeDef) error {
 		// Even though these flags are global, we only check them just before query
 		// execution because you may want to debug an error during loading or for
 		// --help.
@@ -52,17 +44,16 @@ var shellCmd = &FuncCommand{
 		if debug {
 			return fmt.Errorf("running shell with --debug is not supported")
 		}
-
 		return nil
 	},
-	AfterResponse: func(c *callContext, cmd *cobra.Command, returnType modTypeDef, response any) error {
+	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, returnType *modTypeDef, response any) error {
 		ctrID, ok := (response).(string)
 		if !ok {
 			return fmt.Errorf("unexpected response %T: %+v", response, response)
 		}
 
 		ctx := cmd.Context()
-		ctr := c.e.Dagger().Container(dagger.ContainerOpts{
+		ctr := c.c.Dagger().Container(dagger.ContainerOpts{
 			ID: dagger.ContainerID(ctrID),
 		})
 
@@ -71,7 +62,7 @@ var shellCmd = &FuncCommand{
 			return fmt.Errorf("failed to get shell endpoint: %w", err)
 		}
 
-		return attachToShell(ctx, c.e, shellEndpoint)
+		return attachToShell(ctx, c.c, shellEndpoint)
 	},
 }
 

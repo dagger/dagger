@@ -3,37 +3,42 @@ package main
 import (
 	"fmt"
 
-	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 )
 
 var exportPath string
 
 var downloadCmd = &FuncCommand{
-	Name:  "download",
-	Short: "Download an asset to the host (directory, file, container).",
-	OnInit: func(cmd *cobra.Command) {
-		cmd.PersistentFlags().StringVar(&exportPath, "export-path", "", "Path to export to")
-		cmd.MarkFlagRequired("export-path")
+	Name:    "download",
+	Aliases: []string{"export", "dl"},
+	Short:   "Download an asset from module function",
+	Long:    "Download an asset returned by a module function and save it to the host.\n\nWorks with a Directory, File or Container.",
+	Init: func(cmd *cobra.Command) {
+		cmd.PersistentFlags().StringVar(&exportPath, "export-path", ".", "Path to export to")
 	},
-	OnSelectObject: func(c *callContext, _ string) (*modTypeDef, error) {
-		c.Select("export")
-		c.Arg("path", exportPath)
-		return nil, nil
-	},
-	CheckReturnType: func(_ *callContext, r *modTypeDef) error {
-		if r.Kind == dagger.Objectkind {
-			switch r.AsObject.Name {
-			case Directory, File, Container:
-				if exportPath == "" {
-					return fmt.Errorf("missing --export-path flag")
-				}
-				return nil
+	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
+		switch name {
+		case Directory, File, Container:
+			c.Select("export")
+			c.Arg("path", exportPath)
+			if name == File {
+				c.Arg("allowParentDirPath", true)
 			}
 		}
-		return fmt.Errorf("return type not supported: %s", printReturnType(r))
+		return nil
 	},
-	AfterResponse: func(_ *callContext, cmd *cobra.Command, _ modTypeDef, response any) error {
+	BeforeRequest: func(_ *FuncCommand, cmd *cobra.Command, returnType *modTypeDef) error {
+		switch returnType.ObjectName() {
+		case Directory, File, Container:
+			flag := cmd.Flags().Lookup("export-path")
+			if returnType.ObjectName() == Container && flag != nil && !flag.Changed {
+				return fmt.Errorf("flag --export-path is required for containers")
+			}
+			return nil
+		}
+		return fmt.Errorf("return type not supported: %s", printReturnType(returnType))
+	},
+	AfterResponse: func(_ *FuncCommand, cmd *cobra.Command, _ *modTypeDef, response any) error {
 		status, ok := response.(bool)
 		if !ok {
 			return fmt.Errorf("unexpected response %T: %+v", response, response)
