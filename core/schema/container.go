@@ -224,11 +224,11 @@ type containerGpuArgs struct {
 	core.ContainerGPUOpts
 }
 
-func (s *containerSchema) withGPU(ctx *core.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
+func (s *containerSchema) withGPU(ctx context.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
 	return parent.WithGPU(ctx, args.ContainerGPUOpts)
 }
 
-func (s *containerSchema) withAllGPUs(ctx *core.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
+func (s *containerSchema) withAllGPUs(ctx context.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
 	return parent.WithGPU(ctx, core.ContainerGPUOpts{Devices: []string{"all"}})
 }
 
