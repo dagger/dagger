@@ -2,17 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
-	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
@@ -42,7 +41,7 @@ var funcCmds = FuncCommands{
 var funcListCmd = &FuncCommand{
 	Name:  "functions",
 	Short: `List all functions in a module`,
-	Execute: func(c *callContext, cmd *cobra.Command) error {
+	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
@@ -52,25 +51,11 @@ var funcListCmd = &FuncCommand{
 			termenv.String("return type").Bold(),
 		)
 
-		for _, o := range c.mod.Objects {
+		for _, o := range fc.mod.Objects {
 			if o.AsObject != nil {
-				for _, fn := range o.AsObject.Fields {
+				for _, fn := range o.AsObject.GetFunctions() {
 					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(c.mod.Name) {
-						objName = "*" + objName
-					}
-
-					// TODO: Add another column with available verbs.
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-						objName,
-						fn.Name,
-						fn.Description,
-						printReturnType(fn.TypeDef),
-					)
-				}
-				for _, fn := range o.AsObject.Functions {
-					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(c.mod.Name) {
+					if gqlObjectName(objName) == gqlObjectName(fc.mod.Name) {
 						objName = "*" + objName
 					}
 
@@ -132,23 +117,6 @@ func (fcs FuncCommands) All() []*cobra.Command {
 	return cmds
 }
 
-// callContext holds the execution context for a function call.
-type callContext struct {
-	q      *querybuilder.Selection
-	e      *client.Client
-	c      graphql.Client
-	mod    *moduleDef
-	loader *progrock.VertexRecorder
-}
-
-func (c *callContext) Select(name string) {
-	c.q = c.q.Select(gqlFieldName(name))
-}
-
-func (c *callContext) Arg(name string, value any) {
-	c.q = c.q.Arg(gqlArgName(name), value)
-}
-
 func setCmdOutput(cmd *cobra.Command, vtx *progrock.VertexRecorder) {
 	if silent {
 		return
@@ -179,6 +147,9 @@ type FuncCommand struct {
 	// The name of the command (or verb), as shown in usage.
 	Name string
 
+	// Aliases is an array of aliases that can be used instead of the first word in Use.
+	Aliases []string
+
 	// Short is the short description shown in the 'help' output.
 	Short string
 
@@ -188,216 +159,342 @@ type FuncCommand struct {
 	// Example is examples of how to use the command.
 	Example string
 
-	// Execute circumvents the default behavior of adding subcommands and
-	// executing them.
-	Execute func(*callContext, *cobra.Command) error
+	// Init is called when the command is created and initialized,
+	// before execution.
+	//
+	// It can be useful to add persistent flags for all subcommands here.
+	Init func(*cobra.Command)
 
-	// OnInit is called when the command is created and initialized, before execution.
-	OnInit func(*cobra.Command)
+	// Execute circumvents the default behavior of traversing  subcommands
+	// from the arguments, but still has access to the loaded objects from
+	// the module.
+	Execute func(*FuncCommand, *cobra.Command) error
 
-	// OnSetFlags is called when the flags have finished being set for a subcommand.
-	OnSetFlags func(*cobra.Command, *modTypeDef) error
+	// BeforeParse is called before parsing the flags for a subcommand.
+	//
+	// It can be useful to add any additional flags for a subcommand here.
+	BeforeParse func(*FuncCommand, *cobra.Command, *modFunction) error
 
-	// OnSelectObject is called when building the query on a function that
-	// returns a "leaf" object (e.g., Container). This is useful to add an
-	// additional field selection to the object. If the new selection changes
-	// the return type of the function, return the new type definition.
-	OnSelectObject func(*callContext, string) (*modTypeDef, error)
+	// OnSelectObjectLeaf is called when adding a query selection on a
+	// function that returns an object with no subsequent chainable
+	// functions (e.g., Container).
+	//
+	// It can be useful to add an additional field selection for the object.
+	OnSelectObjectLeaf func(*FuncCommand, string) error
 
-	// OnSelectObjectList is called when building the query on a function that
-	// returns a list of objects. This is useful to add an additional field
-	// selection to the objects. If the new selection changes the return type
-	// of the function, return the new type definition.
-	OnSelectObjectList func(*callContext, *modObject) (*modTypeDef, error)
+	// OnSelectObjectList is called when adding a query selection on a
+	// function that returns a list of objects.
+	//
+	// It can be useful to add an additional field selection for each object.
+	OnSelectObjectList func(*FuncCommand, *modObject) error
 
-	// OnSelectFunc is called after making a selection on a function to build
-	// the query. This can be useful to validate the return type or make
-	// any last minute changes to the query. If the new selection changes the
-	// return type of the function, return the new type definition.
-	OnSelectFunc func(*callContext, *modTypeDef) (*modTypeDef, error)
-
-	// CheckReturnType is called before the query is built, to validate
-	// the return type of the function. Can also be used as a last effort
-	// to select a sub-field.
-	CheckReturnType func(*callContext, *modTypeDef) error
+	// BeforeRequest is called before making the request with the query that
+	// contains the whole chain of functions.
+	//
+	// It can be useful to validate the return type of the function or as a
+	// last effort to select a GraphQL sub-field.
+	BeforeRequest func(*FuncCommand, *cobra.Command, *modTypeDef) error
 
 	// AfterResponse is called when the query has completed and returned a result.
-	AfterResponse func(*callContext, *cobra.Command, modTypeDef, any) error
-	cmd           *cobra.Command
+	AfterResponse func(*FuncCommand, *cobra.Command, *modTypeDef, any) error
+
+	// cmd is the parent cobra command.
+	cmd *cobra.Command
+
+	// mod is the loaded module definition.
+	mod *moduleDef
+
+	// showHelp is set in the loader vertex to flag whether to show the help
+	// in the execution vertex.
+	showHelp bool
+
+	// showUsage flags whether to show a one-line usage message after error.
+	showUsage bool
+
+	q *querybuilder.Selection
+	c *client.Client
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
 	if fc.cmd == nil {
-		fc.cmd = &cobra.Command{
-			Use:                   fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name),
-			Short:                 fc.Short,
-			Long:                  fc.Long,
-			Example:               fc.Example,
-			DisableFlagsInUseLine: true,
-			DisableFlagParsing:    true,
-			Hidden:                true, // for now, remove once we're ready for primetime
-			GroupID:               funcGroup.ID,
-			RunE:                  fc.execute,
+		use := fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name)
+		disableFlagsInUse := true
+
+		if fc.Execute != nil {
+			use = fc.Name
+			disableFlagsInUse = false
 		}
 
-		fc.cmd.Flags().SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+		fc.cmd = &cobra.Command{
+			Use:     use,
+			Aliases: fc.Aliases,
+			Short:   fc.Short,
+			Long:    fc.Long,
+			Example: fc.Example,
+			GroupID: funcGroup.ID,
+			Hidden:  true, // for now, remove once we're ready for primetime
 
-		if fc.OnInit != nil {
-			fc.OnInit(fc.cmd)
+			// We need to disable flag parsing because it'll act on --help
+			// and validate the args before we have a chance to add the
+			// subcommands.
+			DisableFlagParsing:    true,
+			DisableFlagsInUseLine: disableFlagsInUse,
+
+			PreRunE: func(c *cobra.Command, a []string) error {
+				// Recover what DisableFlagParsing disabled.
+				// In PreRunE it's, already past the --help check and
+				// args validation, but not flag validation which we want.
+				c.DisableFlagParsing = false
+
+				// Since we disabled flag parsing, we'll get all args,
+				// not just flags. We want to stop parsing at the first
+				// possible dynamic sub-command since they've not been
+				// added yet.
+				c.Flags().SetInterspersed(false)
+
+				// Allow using flags with the name that was reported
+				// by the SDK. This avoids confusion as users are editing
+				// a module and trying to test its functions.
+				c.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+					return pflag.NormalizedName(cliName(name))
+				})
+
+				err := c.ParseFlags(a)
+				if err != nil {
+					// This gives a chance for FuncCommand implementations to
+					// handle errors from parsing flags.
+					return c.FlagErrorFunc()(c, err)
+				}
+
+				fc.showHelp, _ = c.Flags().GetBool("help")
+
+				return nil
+			},
+
+			// Between PreRunE and RunE, flags are validated.
+			RunE: func(c *cobra.Command, _ []string) error {
+				return withEngineAndTUI(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+					fc.c = engineClient
+
+					// withEngineAndTUI changes the context.
+					c.SetContext(ctx)
+
+					// We need to print the errors ourselves because the root command
+					// will print the command path for this one (parent), not any
+					// sub-command.
+					c.SilenceErrors = true
+
+					return fc.execute(c)
+				})
+			},
+		}
+
+		if fc.Init != nil {
+			fc.Init(fc.cmd)
 		}
 	}
 	return fc.cmd
 }
 
-func (fc *FuncCommand) execute(cmd *cobra.Command, args []string) error {
-	// Need to parse flags that affect the TUI and module loading before all else.
-	err := cmd.Flags().Parse(args)
-	if err != nil {
-		return fmt.Errorf("parse command flags: %w", err)
-	}
+func (fc *FuncCommand) execute(c *cobra.Command) (rerr error) {
+	ctx := c.Context()
+	rec := progrock.FromContext(ctx)
 
-	return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-		dag := engineClient.Dagger()
-		rec := progrock.FromContext(ctx)
+	// NB: Don't print full os.Args in Vertex name because we don't know which
+	// flags hold a secret value yet and don't want to risk exposing them.
+	// We'll print just the command path when we have the leaf command.
+	loader := rec.Vertex("cmd-func-loader", "load "+c.Name())
+	setCmdOutput(c, loader)
 
-		// TODO: Make this vertex unfocused to hide the progress after its done,
-		// but need to handle --help so it's not hidden.
-
-		// Can't print full args because we don't know which ones are secrets
-		// yet and don't want to risk exposing them.
-		vtx := rec.Vertex(
-			digest.Digest(fmt.Sprintf("cmd-func-%s-loader", cmd.Name())),
-			fmt.Sprintf("build %q", cmd.CommandPath()),
-			progrock.Focused(),
-		)
-		defer func() { vtx.Done(err) }()
-
-		setCmdOutput(cmd, vtx)
-
-		load := vtx.Task("loading module")
-		mod, err := loadMod(ctx, dag)
-		load.Done(err)
-		if err != nil {
-			return err
-		}
-		if mod == nil {
-			return fmt.Errorf("no module specified and no default module found in current directory")
-		}
-
-		load = vtx.Task("loading objects")
-		modDef, err := loadModObjects(ctx, dag, mod)
-		load.Done(err)
-		if err != nil {
-			return err
-		}
-
-		obj := modDef.GetMainObject()
-		if obj == nil {
-			return fmt.Errorf("main object not found")
-		}
-
-		// TODO: Build all the commands first, based on the arguments.
-		// Don't build from the subcommands. Then re-enable cobra parsing
-		// and handoff to Execute.
-		/*
-		   build := vtx.Task("building commands from arguments")
-		   build.Done(fc.Parse(ctx, dag, obj, cmd, args))
-		*/
-
-		c := &callContext{
-			q:      querybuilder.Query(),
-			c:      dag.GraphQLClient(),
-			e:      engineClient,
-			mod:    modDef,
-			loader: vtx,
-		}
-
-		help, _ := cmd.Flags().GetBool("help")
-
-		if fc.Execute != nil {
-			if help {
-				return cmd.Help()
-			}
-			return fc.Execute(c, cmd)
-		}
-
-		// Select constructor
-		c.Select(obj.Name)
-
-		// Add main object's functions as subcommands
-		fc.addSubCommands(ctx, dag, obj, c, cmd)
-
-		if help {
-			return cmd.Help()
-		}
-
-		subCmd, subArgs, err := cmd.Find(cmd.Flags().Args())
-		if err != nil {
-			return fmt.Errorf("find command: %w", err)
-		}
-
-		if subCmd.Name() == cmd.Name() {
-			if len(subArgs) > 0 {
-				return fmt.Errorf("unknown command %q for %q", subArgs[0], cmd.CommandPath())
-			}
-			return cmd.Help()
-		}
-
-		return fc.run(subCmd, subArgs)
-	})
-}
-
-func (*FuncCommand) run(cmd *cobra.Command, args []string) error {
-	err := cmd.RunE(cmd, args)
+	cmd, flags, err := fc.load(c, loader)
+	loader.Done(err)
 	if err != nil {
 		return err
 	}
+
+	vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
+	setCmdOutput(c, vtx)
+
+	defer func() {
+		if rerr != nil {
+			cmd.PrintErrln("Error:", rerr.Error())
+
+			if fc.showUsage {
+				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
+			}
+		}
+		vtx.Done(rerr)
+	}()
+
+	// TODO: Move help output out of progrock?
+	if fc.showHelp {
+		// Hide aliases for sub-commands. They just allow using the SDK's
+		// casing for functions but there's no need to advertise.
+		if cmd != c {
+			cmd.Aliases = nil
+		}
+		return cmd.Help()
+	}
+
+	// There should be no args left, if there are it's an unknown command.
+	if err := cobra.NoArgs(cmd, flags); err != nil {
+		return err
+	}
+
+	if fc.Execute != nil {
+		return fc.Execute(fc, cmd)
+	}
+
+	// No args to the parent command, default to showing help.
+	if cmd == c {
+		return cmd.Help()
+	}
+
+	err = cmd.RunE(cmd, flags)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (fc *FuncCommand) addSubCommands(ctx context.Context, dag *dagger.Client, obj *modObject, c *callContext, cmd *cobra.Command) {
-	if obj != nil {
-		for _, fn := range obj.Functions {
-			subCmd := fc.makeSubCmd(ctx, dag, fn, c)
-			cmd.AddCommand(subCmd)
+func (fc *FuncCommand) load(c *cobra.Command, vtx *progrock.VertexRecorder) (cmd *cobra.Command, _ []string, rerr error) {
+	ctx := c.Context()
+	dag := fc.c.Dagger()
+
+	// Print error in current vertex, before completing it.
+	defer func() {
+		if cmd == nil {
+			cmd = c
 		}
-		for _, field := range obj.Fields {
-			subCmd := fc.makeSubCmd(ctx, dag, &modFunction{Name: field.Name, Description: field.Description, ReturnType: field.TypeDef}, c)
+		if rerr != nil {
+			cmd.PrintErrln("Error:", rerr.Error())
+
+			if fc.showUsage {
+				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
+			}
+		}
+	}()
+
+	load := vtx.Task("loading module")
+	mod, err := loadMod(ctx, dag)
+	load.Done(err)
+	if err != nil {
+		return nil, nil, err
+	}
+	if mod == nil {
+		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
+	}
+
+	load = vtx.Task("loading objects")
+	modDef, err := loadModObjects(ctx, dag, mod)
+	load.Done(err)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	obj := modDef.GetMainObject()
+	if obj == nil {
+		return nil, nil, fmt.Errorf("main object not found")
+	}
+
+	fc.mod = modDef
+
+	if fc.Execute != nil {
+		// if `Execute` is set, there's no need for sub-commands.
+		return nil, nil, nil
+	}
+
+	// Select constructor
+	fc.Select(obj.Name)
+
+	// Add main object's functions as subcommands
+	fc.addSubCommands(c, dag, obj)
+
+	if fc.showHelp {
+		return nil, nil, nil
+	}
+
+	traverse := vtx.Task("traversing arguments")
+	cmd, flags, err := fc.traverse(c)
+	defer func() { traverse.Done(rerr) }()
+
+	if err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			fc.showHelp = true
+			return cmd, flags, nil
+		}
+		fc.showUsage = true
+		return cmd, flags, err
+	}
+
+	return cmd, flags, nil
+}
+
+// traverse the arguments to build the command tree and return the leaf command.
+func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, error) {
+	cmd, args, err := c.Find(c.Flags().Args())
+	if err != nil {
+		return cmd, args, err
+	}
+
+	// Leaf command
+	if cmd == c {
+		return cmd, args, nil
+	}
+
+	cmd.SetContext(c.Context())
+	cmd.InitDefaultHelpFlag()
+
+	// Load and ParseFlags
+	err = cmd.PreRunE(cmd, args)
+	if err != nil {
+		return cmd, args, err
+	}
+
+	return fc.traverse(cmd)
+}
+
+func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, obj *modObject) {
+	if obj != nil {
+		for _, fn := range obj.GetFunctions() {
+			subCmd := fc.makeSubCmd(dag, fn)
 			cmd.AddCommand(subCmd)
 		}
 	}
 }
 
-func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *modFunction, c *callContext) *cobra.Command {
+func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:   cliName(fn.Name),
 		Short: fn.Description,
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			cmd.SetContext(ctx)
-			rec := progrock.FromContext(ctx)
-
-			c.mod.LoadObject(fn.ReturnType)
+		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
+			fc.mod.LoadObject(fn.ReturnType)
 
 			for _, arg := range fn.Args {
-				c.mod.LoadObject(arg.TypeDef)
+				fc.mod.LoadObject(arg.TypeDef)
 			}
 
 			for _, arg := range fn.Args {
 				_, err := arg.AddFlag(cmd.Flags(), dag)
 				if err != nil {
-					return fmt.Errorf("add flag %q: %w", arg.FlagName(), err)
+					return err
 				}
 				if !arg.TypeDef.Optional {
 					cmd.MarkFlagRequired(arg.FlagName())
 				}
 			}
 
-			if fc.OnSetFlags != nil {
-				return fc.OnSetFlags(cmd, fn.ReturnType)
+			if fc.BeforeParse != nil {
+				if err := fc.BeforeParse(fc, cmd, fn); err != nil {
+					return err
+				}
 			}
 
 			if err := cmd.ParseFlags(args); err != nil {
-				return fmt.Errorf("parse flags: %w", err)
+				// This gives a chance for FuncCommand implementations to
+				// handle errors from parsing flags.
+				return cmd.FlagErrorFunc()(cmd, err)
 			}
 
 			help, _ := cmd.Flags().GetBool("help")
@@ -405,67 +502,55 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				if err := cmd.ValidateRequiredFlags(); err != nil {
 					return err
 				}
-			}
-
-			fc.addSubCommands(ctx, dag, fn.ReturnType.AsObject, c, cmd)
-
-			// Need to make the query selection before chaining off.
-			returnType, err := fc.selectFunc(fn, c, cmd, dag)
-			if err != nil {
-				return fmt.Errorf("query selection: %w", err)
-			}
-
-			cmdArgs := cmd.Flags().Args()
-
-			subCmd, subArgs, err := cmd.Find(cmdArgs)
-			if err != nil {
-				return fmt.Errorf("find sub-command: %w", err)
-			}
-
-			// If a subcommand was found, run it instead.
-			if subCmd != cmd {
-				return fc.run(subCmd, subArgs)
-			}
-
-			c.loader.Complete()
-
-			vtx := rec.Vertex(
-				"cmd-func-exec",
-				fmt.Sprintf("running %q", cmd.CommandPath()),
-				progrock.Focused(),
-			)
-			defer func() { vtx.Done(err) }()
-
-			setCmdOutput(cmd, vtx)
-
-			// Make sure --help is running on the leaf command (subCmd == cmd),
-			// otherwise the first command in the chain swallows it.
-			if help {
-				return cmd.Help()
-			}
-
-			if fc.CheckReturnType != nil {
-				if err = fc.CheckReturnType(c, returnType); err != nil {
+				if err := cmd.ValidateFlagGroups(); err != nil {
 					return err
 				}
 			}
 
-			query, _ := c.q.Build(ctx)
+			fc.addSubCommands(cmd, dag, fn.ReturnType.AsObject)
+
+			// Show help for first command that has the --help flag.
+			if help {
+				return pflag.ErrHelp
+			}
+
+			// Need to make the query selection before chaining off.
+			return fc.selectFunc(fn, cmd, dag)
+		},
+
+		// This is going to be executed in the "execution" vertex, when
+		// we have the final/leaf command.
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			if fn.ReturnType.AsObject != nil && len(fn.ReturnType.AsObject.GetFunctions()) > 0 {
+				fc.showUsage = true
+				return fmt.Errorf("%q requires a sub-command", cmd.Name())
+			}
+
+			if fc.BeforeRequest != nil {
+				if err = fc.BeforeRequest(fc, cmd, fn.ReturnType); err != nil {
+					return err
+				}
+			}
+
+			ctx := cmd.Context()
+			query, _ := fc.q.Build(ctx)
+
+			rec := progrock.FromContext(ctx)
 			rec.Debug("executing", progrock.Labelf("query", "%+v", query))
 
 			var response any
 
-			q := c.q.Bind(&response)
+			q := fc.q.Bind(&response)
 
-			if err := q.Execute(ctx, c.c); err != nil {
-				return err
+			if err := q.Execute(ctx, dag.GraphQLClient()); err != nil {
+				return fmt.Errorf("response from query: %w", err)
 			}
 
 			if fc.AfterResponse != nil {
-				return fc.AfterResponse(c, cmd, *returnType, response)
+				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
 			}
 
-			if returnType.Kind != dagger.Voidkind {
+			if fn.ReturnType.Kind != dagger.Voidkind {
 				cmd.Println(response)
 			}
 
@@ -473,11 +558,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 		},
 	}
 
+	// Allow using the function name from the SDK as an alias for the command.
 	if fn.Name != newCmd.Name() {
 		newCmd.Aliases = append(newCmd.Aliases, fn.Name)
 	}
 
-	newCmd.InitDefaultHelpFlag()
 	newCmd.Flags().SetInterspersed(false)
 
 	return newCmd
@@ -485,15 +570,15 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Command, dag *dagger.Client) (*modTypeDef, error) {
-	c.Select(fn.Name)
+func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
+	fc.Select(fn.Name)
 
 	for _, arg := range fn.Args {
 		var val any
 
 		flag := cmd.Flags().Lookup(arg.FlagName())
 		if flag == nil {
-			return nil, fmt.Errorf("no flag for %q", arg.FlagName())
+			return fmt.Errorf("no flag for %q", arg.FlagName())
 		}
 
 		// Don't send optional arguments that weren't set.
@@ -507,11 +592,12 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Co
 		if ok {
 			obj := dv.Get(dag)
 			if obj == nil {
-				return nil, fmt.Errorf("no value for argument: %s", arg.Name)
+				return fmt.Errorf("no value for argument: %s", arg.Name)
 			}
 			val = obj
 		}
-		c.Arg(arg.Name, val)
+
+		fc.Arg(arg.Name, val)
 	}
 
 	ret := fn.ReturnType
@@ -519,40 +605,35 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, c *callContext, cmd *cobra.Co
 	switch ret.Kind {
 	case dagger.Objectkind:
 		// Possible to continue chaining.
-		if len(ret.AsObject.Functions) > 0 || len(ret.AsObject.Fields) > 0 {
+		if len(ret.AsObject.GetFunctions()) > 0 {
 			break
 		}
 		// Otherwise this is a leaf.
-		if fc.OnSelectObject != nil {
-			newRet, err := fc.OnSelectObject(c, ret.AsObject.Name)
+		if fc.OnSelectObjectLeaf != nil {
+			err := fc.OnSelectObjectLeaf(fc, ret.AsObject.Name)
 			if err != nil {
-				return nil, err
-			}
-			if newRet != nil {
-				return newRet, nil
+				return err
 			}
 		}
 	case dagger.Listkind:
 		if fc.OnSelectObjectList != nil && ret.AsList.ElementTypeDef.AsObject != nil {
-			newRet, err := fc.OnSelectObjectList(c, ret.AsList.ElementTypeDef.AsObject)
+			err := fc.OnSelectObjectList(fc, ret.AsList.ElementTypeDef.AsObject)
 			if err != nil {
-				return nil, err
-			}
-			if newRet != nil {
-				return newRet, nil
+				return err
 			}
 		}
 	}
 
-	if fc.OnSelectFunc != nil {
-		newRet, err := fc.OnSelectFunc(c, ret)
-		if err != nil {
-			return nil, err
-		}
-		if newRet != nil {
-			return newRet, nil
-		}
-	}
+	return nil
+}
 
-	return ret, nil
+func (fc *FuncCommand) Select(name string) {
+	if fc.q == nil {
+		fc.q = querybuilder.Query()
+	}
+	fc.q = fc.q.Select(gqlFieldName(name))
+}
+
+func (fc *FuncCommand) Arg(name string, value any) {
+	fc.q = fc.q.Arg(gqlArgName(name), value)
 }

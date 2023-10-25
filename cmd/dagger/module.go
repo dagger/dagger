@@ -557,11 +557,33 @@ type modTypeDef struct {
 	AsList   *modList
 }
 
+func (t *modTypeDef) ObjectName() string {
+	if t.AsObject != nil {
+		return t.AsObject.Name
+	}
+	return ""
+}
+
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
 	Name      string
 	Functions []*modFunction
 	Fields    []*modField
+}
+
+// GetFunctions returns the object's function definitions as well as the fields,
+// which are treated as functions with no arguments.
+func (o *modObject) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Functions)+len(o.Fields))
+	for _, f := range o.Fields {
+		fns = append(fns, &modFunction{
+			Name:        f.Name,
+			Description: f.Description,
+			ReturnType:  f.TypeDef,
+		})
+	}
+	fns = append(fns, o.Functions...)
+	return fns
 }
 
 // modList is a representation of dagger.ListTypeDef.
