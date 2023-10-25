@@ -823,7 +823,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 
 		astDef := &ast.Definition{
 			Name:        objName,
-			Description: objTypeDef.Description,
+			Description: formatGqlDescription(objTypeDef.Description),
 			Kind:        ast.Object,
 		}
 
@@ -836,7 +836,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 			fieldName := gqlFieldName(field.Name)
 			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
 				Name:        fieldName,
-				Description: field.Description,
+				Description: formatGqlDescription(field.Description),
 				Type:        fieldASTType,
 			})
 
@@ -907,6 +907,18 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		Schema:    schemaStr,
 		Resolvers: newResolvers,
 	}), nil
+}
+
+/*
+This formats comments in the schema as:
+"""
+comment
+"""
+
+Which avoids corner cases where the comment ends in a `"`.
+*/
+func formatGqlDescription(desc string) string {
+	return "\n" + strings.TrimSpace(desc) + "\n"
 }
 
 func (s *moduleSchema) typeDefToSchema(typeDef *core.TypeDef, isInput bool) (*ast.Type, error) {
@@ -984,7 +996,7 @@ func (s *moduleSchema) functionResolver(
 		}
 		argASTTypes = append(argASTTypes, &ast.ArgumentDefinition{
 			Name:         gqlArgName(fnArg.Name),
-			Description:  fnArg.Description,
+			Description:  formatGqlDescription(fnArg.Description),
 			Type:         argASTType,
 			DefaultValue: defaultValue,
 		})
@@ -992,7 +1004,7 @@ func (s *moduleSchema) functionResolver(
 
 	fieldDef := &ast.FieldDefinition{
 		Name:        fnName,
-		Description: fn.Description,
+		Description: formatGqlDescription(fn.Description),
 		Type:        returnASTType,
 		Arguments:   argASTTypes,
 	}

@@ -41,10 +41,10 @@ func TestModuleGoInit(t *testing.T) {
 		logGen(ctx, t, modGen.Directory("."))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
 	t.Run("kebab-cases Go module name, camel-cases Dagger module name", func(t *testing.T) {
@@ -60,10 +60,10 @@ func TestModuleGoInit(t *testing.T) {
 		logGen(ctx, t, modGen.Directory("."))
 
 		out, err := modGen.
-			With(daggerQuery(`{myModule{myFunction(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"myModule":{"myFunction":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		generated, err := modGen.File("go.mod").Contents(ctx)
 		require.NoError(t, err)
@@ -90,10 +90,10 @@ func TestModuleGoInit(t *testing.T) {
 		logGen(ctx, t, modGen.Directory("."))
 
 		out, err := modGen.
-			With(daggerQuery(`{beneathGoMod{myFunction(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{beneathGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"beneathGoMod":{"myFunction":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"beneathGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("names Go module after Dagger module", func(t *testing.T) {
 			generated, err := modGen.File("go.mod").Contents(ctx)
@@ -116,10 +116,10 @@ func TestModuleGoInit(t *testing.T) {
 		logGen(ctx, t, modGen.Directory("."))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasGoMod{myFunction(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"hasGoMod":{"myFunction":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("preserves module name", func(t *testing.T) {
 			generated, err := modGen.File("go.mod").Contents(ctx)
@@ -360,13 +360,18 @@ func TestModuleGit(t *testing.T) {
 
 			if tc.sdk == "go" {
 				logGen(ctx, t, modGen.Directory("."))
+				out, err := modGen.
+					With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+			} else {
+				out, err := modGen.
+					With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
 			}
-
-			out, err := modGen.
-				With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
 
 			t.Run("configures .gitignore", func(t *testing.T) {
 				ignore, err := modGen.File(".gitignore").Contents(ctx)
