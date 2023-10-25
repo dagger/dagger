@@ -63,7 +63,6 @@ require (
 	github.com/dagger/dagger/internal/mage v0.0.0-00010101000000-000000000000
 	github.com/dave/jennifer v1.7.0
 	github.com/dschmidt/go-layerfs v0.1.0
-	github.com/fatih/structtag v1.2.0
 	github.com/go-git/go-git/v5 v5.9.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/go-github/v50 v50.2.0

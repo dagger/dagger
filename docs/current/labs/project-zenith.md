@@ -146,8 +146,8 @@ echo '{potato{helloWorld}}' | dagger query
 ```
 
 Your functions can accept and return multiple different types, not just basic
-builtin types. For example, to take an object (which you can use to provide
-optional parameters, or to group large numbers of parameters together):
+builtin types. For example, to take multiple parameters (some of which can be
+optional):
 
 ```go
 package main
@@ -156,16 +156,16 @@ import "fmt"
 
 type Potato struct{}
 
-type PotatoOptions struct {
-  Count  int
-  Mashed bool
-}
-
-func (m *Potato) HelloWorld(opts PotatoOptions) string {
-  if opts.Mashed {
-    return fmt.Sprintf("Hello world, I have mashed %d potatoes", opts.Count)
+func (m *Potato) HelloWorld(
+  // the number of potatoes to process
+  count  int,
+  // whether the potatoes are mashed (this is an optional parameter!)
+  mashed Optional[bool],
+) string {
+  if mashed.GetOr(false) {
+    return fmt.Sprintf("Hello world, I have mashed %d potatoes", count)
   }
-  return fmt.Sprintf("Hello world, I have %d potatoes", opts.Count)
+  return fmt.Sprintf("Hello world, I have %d potatoes", count)
 }
 ```
 
@@ -426,12 +426,9 @@ The result will be:
 ## Known issues
 
 - A module's public fields require a `json:"foo"` tag to be queriable.
-- Custom objects in a module require at least one method to be defined on them
-  to be detected by the codegen.
 - When referencing another module as a local dependency, the dependent module
   must be stored in a sub-directory of the parent module.
-- Custom struct types used as parameters cannot be nested and contain other
-  structs themselves.
+- Custom struct types cannot currently be used as parameters.
 - Calls to functions across modules will be run exactly _once_ per-session --
   after that, the result will be cached, but only until the next session (a new
   `dagger query`, etc).
