@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"io/fs"
 
 	"github.com/dagger/dagger/core"
@@ -64,7 +65,7 @@ type directoryPipelineArgs struct {
 	Labels      []pipeline.Label
 }
 
-func (s *directorySchema) pipeline(ctx *core.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
+func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	return parent.WithPipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
@@ -72,7 +73,7 @@ type directoryArgs struct {
 	ID core.DirectoryID
 }
 
-func (s *directorySchema) directory(ctx *core.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
+func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
 	if args.ID != "" {
 		return args.ID.Decode()
 	}
@@ -80,8 +81,8 @@ func (s *directorySchema) directory(ctx *core.Context, parent *core.Query, args 
 	return core.NewScratchDirectory(parent.PipelinePath(), platform), nil
 }
 
-func (s *directorySchema) sync(ctx *core.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
-	_, err := parent.Evaluate(ctx.Context, s.bk, s.svcs)
+func (s *directorySchema) sync(ctx context.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
+	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
@@ -92,7 +93,7 @@ type subdirectoryArgs struct {
 	Path string
 }
 
-func (s *directorySchema) subdirectory(ctx *core.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) subdirectory(ctx context.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
 	return parent.Directory(ctx, s.bk, s.svcs, args.Path)
 }
 
@@ -101,7 +102,7 @@ type withNewDirectoryArgs struct {
 	Permissions fs.FileMode
 }
 
-func (s *directorySchema) withNewDirectory(ctx *core.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withNewDirectory(ctx context.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
 	return parent.WithNewDirectory(ctx, args.Path, args.Permissions)
 }
 
@@ -112,7 +113,7 @@ type withDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *directorySchema) withDirectory(ctx *core.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
 	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
@@ -124,7 +125,7 @@ type dirWithTimestampsArgs struct {
 	Timestamp int
 }
 
-func (s *directorySchema) withTimestamps(ctx *core.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
+func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
 	return parent.WithTimestamps(ctx, args.Timestamp)
 }
 
@@ -132,7 +133,7 @@ type entriesArgs struct {
 	Path string
 }
 
-func (s *directorySchema) entries(ctx *core.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
+func (s *directorySchema) entries(ctx context.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
 	return parent.Entries(ctx, s.bk, s.svcs, args.Path)
 }
 
@@ -140,7 +141,7 @@ type dirFileArgs struct {
 	Path string
 }
 
-func (s *directorySchema) file(ctx *core.Context, parent *core.Directory, args dirFileArgs) (_ *core.File, rerr error) {
+func (s *directorySchema) file(ctx context.Context, parent *core.Directory, args dirFileArgs) (_ *core.File, rerr error) {
 	return parent.File(ctx, s.bk, s.svcs, args.Path)
 }
 
@@ -150,7 +151,7 @@ type withNewFileArgs struct {
 	Permissions fs.FileMode
 }
 
-func (s *directorySchema) withNewFile(ctx *core.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withNewFile(ctx context.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
 	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), args.Permissions, nil)
 }
 
@@ -160,7 +161,7 @@ type withFileArgs struct {
 	Permissions fs.FileMode
 }
 
-func (s *directorySchema) withFile(ctx *core.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
 	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
@@ -173,7 +174,7 @@ type withoutDirectoryArgs struct {
 	Path string
 }
 
-func (s *directorySchema) withoutDirectory(ctx *core.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withoutDirectory(ctx context.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
 	return parent.Without(ctx, args.Path)
 }
 
@@ -181,7 +182,7 @@ type withoutFileArgs struct {
 	Path string
 }
 
-func (s *directorySchema) withoutFile(ctx *core.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withoutFile(ctx context.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
 	return parent.Without(ctx, args.Path)
 }
 
@@ -189,7 +190,7 @@ type diffArgs struct {
 	Other core.DirectoryID
 }
 
-func (s *directorySchema) diff(ctx *core.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
+func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
 	dir, err := args.Other.Decode()
 	if err != nil {
 		return nil, err
@@ -201,7 +202,7 @@ type dirExportArgs struct {
 	Path string
 }
 
-func (s *directorySchema) export(ctx *core.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
+func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
 	err := parent.Export(ctx, s.bk, s.host, s.svcs, args.Path)
 	if err != nil {
 		return false, err
@@ -218,7 +219,7 @@ type dirDockerBuildArgs struct {
 	Secrets    []core.SecretID
 }
 
-func (s *directorySchema) dockerBuild(ctx *core.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
+func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
 	platform := s.platform
 	if args.Platform != nil {
 		platform = *args.Platform

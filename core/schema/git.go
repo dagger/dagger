@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
@@ -64,7 +66,7 @@ type gitArgs struct {
 	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
 }
 
-func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
+func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
 	repo := gitRepository{
 		URL:        args.URL,
 		KeepGitDir: args.KeepGitDir,
@@ -88,14 +90,14 @@ type commitArgs struct {
 	ID string
 }
 
-func (s *gitSchema) commit(ctx *core.Context, parent gitRepository, args commitArgs) (gitRef, error) {
+func (s *gitSchema) commit(ctx context.Context, parent gitRepository, args commitArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.ID,
 	}, nil
 }
 
-func (s *gitSchema) branch(ctx *core.Context, parent gitRepository, args branchArgs) (gitRef, error) {
+func (s *gitSchema) branch(ctx context.Context, parent gitRepository, args branchArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.Name,
@@ -106,7 +108,7 @@ type tagArgs struct {
 	Name string
 }
 
-func (s *gitSchema) tag(ctx *core.Context, parent gitRepository, args tagArgs) (gitRef, error) {
+func (s *gitSchema) tag(ctx context.Context, parent gitRepository, args tagArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.Name,
@@ -118,7 +120,7 @@ type gitTreeArgs struct {
 	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
 }
 
-func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
+func (s *gitSchema) tree(ctx context.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
 	opts := []llb.GitOption{}
 
 	if parent.Repository.KeepGitDir {

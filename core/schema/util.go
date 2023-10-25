@@ -1,10 +1,10 @@
 package schema
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/language/ast"
 )
@@ -110,8 +110,8 @@ var voidScalarResolver = ScalarResolver{
 	},
 }
 
-func ToVoidResolver[P any, A any](f func(*core.Context, P, A) error) graphql.FieldResolveFn {
-	return ToResolver(func(ctx *core.Context, p P, a A) (any, error) {
+func ToVoidResolver[P any, A any](f func(context.Context, P, A) error) graphql.FieldResolveFn {
+	return ToResolver(func(ctx context.Context, p P, a A) (any, error) {
 		return nil, f(ctx, p, a)
 	})
 }

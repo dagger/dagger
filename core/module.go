@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -133,7 +134,7 @@ func NewModule(platform ocispecs.Platform, pipeline pipeline.Path) *Module {
 
 // Load the module config as parsed from the given File
 func LoadModuleConfigFromFile(
-	ctx *Context,
+	ctx context.Context,
 	bk *buildkit.Client,
 	svcs *Services,
 	configFile *File,
@@ -151,7 +152,7 @@ func LoadModuleConfigFromFile(
 
 // Load the module config from the module from the given diretory at the given path
 func LoadModuleConfig(
-	ctx *Context,
+	ctx context.Context,
 	bk *buildkit.Client,
 	svcs *Services,
 	sourceDir *Directory,
@@ -171,11 +172,11 @@ func LoadModuleConfig(
 
 // callback for retrieving the runtime container for a module; needs to be callback since only the schema/module.go implementation
 // knows how to call modules to get the container
-type getRuntimeFunc func(ctx *Context, sourceDir *Directory, sourceDirSubpath string, sdkName string) (*Container, error)
+type getRuntimeFunc func(ctx context.Context, sourceDir *Directory, sourceDirSubpath string, sdkName string) (*Container, error)
 
 // FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
-	ctx *Context,
+	ctx context.Context,
 	bk *buildkit.Client,
 	svcs *Services,
 	progSock string,
@@ -236,7 +237,7 @@ func (mod *Module) FromConfig(
 // Load the module from the given module reference. parentSrcDir and parentSrcSubpath are used to resolve local module refs
 // if needed (i.e. this is a local dep of another module)
 func (mod *Module) FromRef(
-	ctx *Context,
+	ctx context.Context,
 	bk *buildkit.Client,
 	svcs *Services,
 	progSock string,

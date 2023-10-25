@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 )
 
@@ -38,7 +40,7 @@ type cacheArgs struct {
 	Key string
 }
 
-func (s *cacheSchema) cacheVolume(ctx *core.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
+func (s *cacheSchema) cacheVolume(ctx context.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
 	// TODO(vito): inject some sort of scope/session/project/user derived value
 	// here instead of a static value
 	//
