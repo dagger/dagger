@@ -41,7 +41,7 @@ def get_module(module_name: str = "main") -> Module:
     except ModuleNotFoundError as e:
         msg = (
             f'The "{module_name}" module could not be found. '
-            f'Did you create a "{module_name}.py" file in the root of your project?'
+            f'Did you create a "src/{module_name}.py" file in the root of your project?'
         )
         raise UserError(msg) from e
 

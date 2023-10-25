@@ -811,7 +811,7 @@ version = "0.0.0"
 				Contents: "from . import notmain\n",
 			}).
 			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
-				Contents: `from dagger.ext import function
+				Contents: `from dagger.mod import function
 
 @function
 def hello() -> str:
@@ -885,7 +885,7 @@ func TestModuleLotsOfFunctions(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		mainSrc := `from dagger.ext import function
+		mainSrc := `from dagger.mod import function
 		`
 
 		for i := 0; i < funcCount; i++ {

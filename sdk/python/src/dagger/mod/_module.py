@@ -2,18 +2,20 @@
 import json
 import logging
 import sys
+from collections.abc import Callable
 
 import anyio
 import cattrs
+from graphql.pyutils import snake_to_camel
 from rich.console import Console
+from typing_extensions import overload
 
 import dagger
 from dagger.log import configure_logging
 
 from ._converter import make_converter
 from ._exceptions import FatalError, InternalError, UserError
-from ._functions import FunctionResolver
-from ._resolver import Resolver
+from ._resolver import Func, Resolver
 from ._utils import asyncify, transform_error
 
 errors = Console(stderr=True, style="bold red")
@@ -38,9 +40,6 @@ class Module:
         self._resolvers: dict[str, Resolver] = {}
         self._fn_call = dagger.current_function_call()
         self._mod = dagger.current_module()
-
-        # TODO: Need docstring, name and right overload to show correctly in IDE.
-        self.function = FunctionResolver.to_decorator(self)
 
     def add_resolver(self, resolver: Resolver):
         self._resolvers[resolver.graphql_name] = resolver
@@ -77,7 +76,9 @@ class Module:
         # themselves.
         # TODO: Support custom classes.
         mod_name = await mod.name()
-        obj_def = dagger.type_def().with_object(mod_name)
+        obj_def = dagger.type_def().with_object(
+            snake_to_camel(mod_name.replace("-", "_"))
+        )
 
         for r in self._resolvers.values():
             try:
@@ -146,3 +147,36 @@ class Module:
         logger.debug("unstructured result => %s", repr(result))
 
         return result, 0
+
+    @overload
+    def function(
+        self,
+        func: Func,
+        *,
+        name: None = None,
+        description: None = None,
+    ) -> Func:
+        ...
+
+    @overload
+    def function(
+        self,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Callable[[Func], Func]:
+        ...
+
+    def function(
+        self,
+        func: Func | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Func | Callable[[Func], Func]:
+        def wrapper(func: Func) -> Func:
+            r = Resolver.from_callable(func, name, description)
+            self.add_resolver(r)
+            return func
+
+        return wrapper(func) if func else wrapper
