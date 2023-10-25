@@ -379,7 +379,7 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 		InputArgs:  args.Input,
 	}
 
-	ctx, err = s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
+	fnCtxDigest, moduleDigest, err := s.functionContextCache.add(&FunctionContext{
 		Module:      mod,
 		CurrentCall: callParams,
 	})
@@ -446,6 +446,8 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, s.bk, s.progSockPath, mod.Platform, core.ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
+		ModuleDigest:                  moduleDigest,
+		FunctionContextDigest:         fnCtxDigest,
 		CacheExitCode:                 cacheExitCode,
 	})
 	if err != nil {
@@ -637,32 +639,25 @@ func (cache *FunctionContextCache) cacheMap() *core.CacheMap[digest.Digest, *Fun
 	return (*core.CacheMap[digest.Digest, *FunctionContext])(cache)
 }
 
-func (cache *FunctionContextCache) WithFunctionContext(ctx context.Context, fnCtx *FunctionContext) (context.Context, error) {
+// TODO:(sipsma) this return type is a bug waiting to happen
+func (cache *FunctionContextCache) add(fnCtx *FunctionContext) (digest.Digest, digest.Digest, error) {
 	fntCtxDigest, err := fnCtx.Digest()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get function context digest: %w", err)
+		return "", "", fmt.Errorf("failed to get function context digest: %w", err)
 	}
 	moduleDigest, err := fnCtx.Module.Digest()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module digest: %w", err)
+		return "", "", fmt.Errorf("failed to get module digest: %w", err)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
-	// TODO: maintaining two fields is annoying, could avoid if server has access to s.functionContextCache?
-	clientMetadata.ModuleDigest = moduleDigest
-	clientMetadata.FunctionContextDigest = fntCtxDigest
 	_, err = cache.cacheMap().GetOrInitialize(fntCtxDigest, func() (*FunctionContext, error) {
 		return fnCtx, nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to cache function context: %w", err)
+		return "", "", fmt.Errorf("failed to cache function context: %w", err)
 	}
 
-	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
+	return fntCtxDigest, moduleDigest, nil
 }
 
 var errFunctionContextNotFound = fmt.Errorf("function context not found")

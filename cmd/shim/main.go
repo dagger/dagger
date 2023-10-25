@@ -449,8 +449,6 @@ func setupBundle() int {
 				return errorExitCode
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
-			keepEnv = append(keepEnv, "_DAGGER_MODULE_DIGEST="+execMetadata.ModuleDigest.String())
-			keepEnv = append(keepEnv, "_DAGGER_FUNCTION_CONTEXT_DIGEST="+execMetadata.FunctionContextDigest.String())
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{

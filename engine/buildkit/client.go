@@ -250,11 +250,9 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			}
 			var err error
 			execOp.Meta.ProxyEnv.FtpProxy, err = ContainerExecUncachedMetadata{
-				ParentClientIDs:       clientMetadata.ClientIDs(),
-				ServerID:              clientMetadata.ServerID,
-				ProgSockPath:          c.ProgSockPath,
-				ModuleDigest:          clientMetadata.ModuleDigest,
-				FunctionContextDigest: clientMetadata.FunctionContextDigest,
+				ParentClientIDs: clientMetadata.ClientIDs(),
+				ServerID:        clientMetadata.ServerID,
+				ProgSockPath:    c.ProgSockPath,
 			}.ToPBFtpProxyVal()
 			if err != nil {
 				return err
@@ -686,11 +684,9 @@ func withOutgoingContext(ctx context.Context) context.Context {
 // the "real" ftp proxy setting in here too and have the shim handle
 // leaving only that set in the actual env var.
 type ContainerExecUncachedMetadata struct {
-	ParentClientIDs       []string      `json:"parentClientIDs,omitempty"`
-	ServerID              string        `json:"serverID,omitempty"`
-	ProgSockPath          string        `json:"progSockPath,omitempty"`
-	ModuleDigest          digest.Digest `json:"moduleDigest,omitempty"`
-	FunctionContextDigest digest.Digest `json:"functionContextDigest,omitempty"`
+	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
+	ServerID        string   `json:"serverID,omitempty"`
+	ProgSockPath    string   `json:"progSockPath,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {
