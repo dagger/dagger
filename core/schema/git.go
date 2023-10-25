@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/socket"
 )
@@ -51,7 +53,7 @@ type gitArgs struct {
 	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
 }
 
-func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (*core.GitRef, error) {
+func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRef, error) {
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost != nil {
 		svc, err := args.ExperimentalServiceHost.Decode()
@@ -85,7 +87,7 @@ type commitArgs struct {
 	ID string
 }
 
-func (s *gitSchema) commit(ctx *core.Context, parent *core.GitRef, args commitArgs) (*core.GitRef, error) {
+func (s *gitSchema) commit(ctx context.Context, parent *core.GitRef, args commitArgs) (*core.GitRef, error) {
 	return parent.WithRef(args.ID), nil
 }
 
@@ -93,7 +95,7 @@ type branchArgs struct {
 	Name string
 }
 
-func (s *gitSchema) branch(ctx *core.Context, parent *core.GitRef, args branchArgs) (*core.GitRef, error) {
+func (s *gitSchema) branch(ctx context.Context, parent *core.GitRef, args branchArgs) (*core.GitRef, error) {
 	return parent.WithRef(args.Name), nil
 }
 
@@ -101,7 +103,7 @@ type tagArgs struct {
 	Name string
 }
 
-func (s *gitSchema) tag(ctx *core.Context, parent *core.GitRef, args tagArgs) (*core.GitRef, error) {
+func (s *gitSchema) tag(ctx context.Context, parent *core.GitRef, args tagArgs) (*core.GitRef, error) {
 	return parent.WithRef(args.Name), nil
 }
 
@@ -112,7 +114,7 @@ type treeArgs struct {
 	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
 }
 
-func (s *gitSchema) tree(ctx *core.Context, parent *core.GitRef, treeArgs treeArgs) (*core.Directory, error) {
+func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs treeArgs) (*core.Directory, error) {
 	res := *parent
 	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket != "" {
 		// no need for a full clone() here, we're only modifying string fields
@@ -122,6 +124,6 @@ func (s *gitSchema) tree(ctx *core.Context, parent *core.GitRef, treeArgs treeAr
 	return res.Tree(ctx, s.bk)
 }
 
-func (s *gitSchema) fetchCommit(ctx *core.Context, parent *core.GitRef, _ any) (string, error) {
+func (s *gitSchema) fetchCommit(ctx context.Context, parent *core.GitRef, _ any) (string, error) {
 	return parent.Commit(ctx, s.bk)
 }

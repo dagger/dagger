@@ -12,13 +12,13 @@ import (
 // GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.
 func GetCustomFlagValue(name string) pflag.Value {
 	switch name {
-	case "Container":
+	case Container:
 		return &containerValue{}
-	case "Directory":
+	case Directory:
 		return &directoryValue{}
-	case "File":
+	case File:
 		return &fileValue{}
-	case "Secret":
+	case Secret:
 		return &secretValue{}
 	}
 	return nil
@@ -39,7 +39,7 @@ type containerValue struct {
 }
 
 func (v *containerValue) Type() string {
-	return "Container"
+	return Container
 }
 
 func (v *containerValue) Set(s string) error {
@@ -71,7 +71,7 @@ type directoryValue struct {
 }
 
 func (v *directoryValue) Type() string {
-	return "Directory"
+	return Directory
 }
 
 func (v *directoryValue) Set(s string) error {
@@ -103,7 +103,7 @@ type fileValue struct {
 }
 
 func (v *fileValue) Type() string {
-	return "File"
+	return File
 }
 
 func (v *fileValue) Set(s string) error {
@@ -135,7 +135,7 @@ type secretValue struct {
 }
 
 func (v *secretValue) Type() string {
-	return "Secret"
+	return Secret
 }
 
 func (v *secretValue) Set(s string) error {
@@ -164,8 +164,8 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 	name := r.FlagName()
 	usage := r.Description
 
-	if flag := flags.Lookup(name); flag != nil {
-		return nil, fmt.Errorf("already exists")
+	if flags.Lookup(name) != nil {
+		return nil, fmt.Errorf("flag already exists: %s", name)
 	}
 
 	switch r.TypeDef.Kind {
@@ -190,7 +190,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 		}
 
 		// TODO: default to JSON?
-		return nil, fmt.Errorf("unsupported object type %q", objName)
+		return nil, fmt.Errorf("unsupported object type %q for flag: %s", objName, name)
 
 	case dagger.Listkind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
@@ -209,10 +209,10 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 			return flags.BoolSlice(name, val, usage), nil
 
 		case dagger.Objectkind:
-			return nil, fmt.Errorf("unsupported list of %q objects", elementType.AsObject.Name)
+			return nil, fmt.Errorf("unsupported list of %q objects for flag: %s", elementType.AsObject.Name, name)
 
 		case dagger.Listkind:
-			return nil, fmt.Errorf("unsupported list of lists")
+			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)
 		}
 	}
 

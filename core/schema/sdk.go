@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -36,15 +37,15 @@ type SDK interface {
 	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
 	in the case where that's different than the root of the sourceDir.
 	*/
-	Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error)
+	Codegen(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error)
 
 	// Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
-	Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error)
+	Runtime(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error)
 }
 
 // load the Runtime Container for the module at the given source dir, subpath using the SDK with the given name.
 func (s *moduleSchema) runtimeForModule(
-	ctx *core.Context,
+	ctx context.Context,
 	sourceDir *core.Directory,
 	sourceDirSubpath string,
 	sdkName string,
@@ -58,7 +59,7 @@ func (s *moduleSchema) runtimeForModule(
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
 func (s *moduleSchema) sdkForModule(
-	ctx *core.Context,
+	ctx context.Context,
 	sourceDir *core.Directory,
 	sourceDirSubpath string,
 	sdkName string,
@@ -76,7 +77,7 @@ func (s *moduleSchema) sdkForModule(
 var errUnknownBuiltinSDK = fmt.Errorf("unknown builtin sdk")
 
 // return a builtin SDK implementation with the given name
-func (s *moduleSchema) builtinSDK(ctx *core.Context, sdkName string) (SDK, error) {
+func (s *moduleSchema) builtinSDK(ctx context.Context, sdkName string) (SDK, error) {
 	switch sdkName {
 	case "go":
 		return &goSDK{moduleSchema: s}, nil
@@ -94,7 +95,7 @@ type moduleSDK struct {
 	mod *core.Module
 }
 
-func (s *moduleSchema) newModuleSDK(ctx *core.Context, sourceDir *core.Directory, configPath string) (*moduleSDK, error) {
+func (s *moduleSchema) newModuleSDK(ctx context.Context, sourceDir *core.Directory, configPath string) (*moduleSDK, error) {
 	mod, err := core.NewModule(s.platform, nil).FromConfig(
 		ctx,
 		s.bk,
@@ -116,7 +117,7 @@ func (s *moduleSchema) newModuleSDK(ctx *core.Context, sourceDir *core.Directory
 }
 
 // Codegen calls the Codegen function on the SDK Module
-func (sdk *moduleSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error) {
+func (sdk *moduleSDK) Codegen(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error) {
 	moduleName := gqlObjectName(sdk.mod.Name)
 	var moduleOriginalName string
 	funcName := "Codegen"
@@ -169,7 +170,7 @@ func (sdk *moduleSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sour
 }
 
 // Runtime calls the Runtime function on the SDK Module
-func (sdk *moduleSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
+func (sdk *moduleSDK) Runtime(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
 	moduleName := gqlObjectName(sdk.mod.Name)
 	var moduleOriginalName string
 	funcName := "ModuleRuntime"
@@ -227,9 +228,8 @@ func (sdk *moduleSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sour
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
-func (s *moduleSchema) loadBuiltinSDK(ctx *core.Context, name string, engineContainerModulePath string) (*moduleSDK, error) {
-	progCtx, recorder := progrock.WithGroup(ctx.Context, fmt.Sprintf("load builtin module sdk %s", name))
-	ctx.Context = progCtx
+func (s *moduleSchema) loadBuiltinSDK(ctx context.Context, name string, engineContainerModulePath string) (*moduleSDK, error) {
+	ctx, recorder := progrock.WithGroup(ctx, fmt.Sprintf("load builtin module sdk %s", name))
 
 	cfgPath := modules.NormalizeConfigPath(engineContainerModulePath)
 	cfgPBDef, err := s.bk.EngineContainerLocalImport(
@@ -288,7 +288,7 @@ type goSDK struct {
 	*moduleSchema
 }
 
-func (sdk *goSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error) {
+func (sdk *goSDK) Codegen(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.GeneratedCode, error) {
 	ctr, err := sdk.baseWithCodegen(ctx, sourceDir, sourceDirSubpath)
 	if err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func (sdk *goSDK) Codegen(ctx *core.Context, sourceDir *core.Directory, sourceDi
 	}, nil
 }
 
-func (sdk *goSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
+func (sdk *goSDK) Runtime(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
 	ctr, err := sdk.baseWithCodegen(ctx, sourceDir, sourceDirSubpath)
 	if err != nil {
 		return nil, err
@@ -349,7 +349,7 @@ func (sdk *goSDK) Runtime(ctx *core.Context, sourceDir *core.Directory, sourceDi
 	return ctr, nil
 }
 
-func (sdk *goSDK) baseWithCodegen(ctx *core.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
+func (sdk *goSDK) baseWithCodegen(ctx context.Context, sourceDir *core.Directory, sourceDirSubpath string) (*core.Container, error) {
 	ctr, err := sdk.base(ctx)
 	if err != nil {
 		return nil, err
@@ -382,9 +382,8 @@ func (sdk *goSDK) baseWithCodegen(ctx *core.Context, sourceDir *core.Directory, 
 	return ctr, nil
 }
 
-func (sdk *goSDK) base(ctx *core.Context) (*core.Container, error) {
-	progCtx, recorder := progrock.WithGroup(ctx.Context, "load builtin module sdk go")
-	ctx.Context = progCtx
+func (sdk *goSDK) base(ctx context.Context) (*core.Container, error) {
+	ctx, recorder := progrock.WithGroup(ctx, "load builtin module sdk go")
 	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(ciconsts.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(ciconsts.GoSDKEngineContainerTarballPath)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)

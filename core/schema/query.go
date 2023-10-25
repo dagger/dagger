@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -50,7 +51,7 @@ type pipelineArgs struct {
 	Labels      []pipeline.Label
 }
 
-func (s *querySchema) pipeline(ctx *core.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
+func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
 	if parent == nil {
 		parent = &core.Query{}
 	}
@@ -66,7 +67,7 @@ type checkVersionCompatibilityArgs struct {
 	Version string
 }
 
-func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
+func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
 	recorder := progrock.FromContext(ctx)
 
 	// Skip development version
@@ -113,7 +114,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query
 	return true, nil
 }
 
-func (s *querySchema) portProtocolHack(ctx *core.Context, port core.Port, args any) (string, error) {
+func (s *querySchema) portProtocolHack(ctx context.Context, port core.Port, args any) (string, error) {
 	// HACK(vito): this is a little counter-intuitive, but we need to return a
 	// string instead of the core.NetworkProtocol value so the resolver layer can
 	// lookup the enum value by name.

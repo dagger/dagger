@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 )
 
@@ -47,19 +49,19 @@ type fileArgs struct {
 	ID core.FileID
 }
 
-func (s *fileSchema) file(ctx *core.Context, parent any, args fileArgs) (*core.File, error) {
+func (s *fileSchema) file(ctx context.Context, parent any, args fileArgs) (*core.File, error) {
 	return args.ID.Decode()
 }
 
-func (s *fileSchema) sync(ctx *core.Context, parent *core.File, _ any) (core.FileID, error) {
-	err := parent.Evaluate(ctx.Context, s.bk, s.svcs)
+func (s *fileSchema) sync(ctx context.Context, parent *core.File, _ any) (core.FileID, error) {
+	err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
 	}
 	return parent.ID()
 }
 
-func (s *fileSchema) contents(ctx *core.Context, file *core.File, args any) (string, error) {
+func (s *fileSchema) contents(ctx context.Context, file *core.File, args any) (string, error) {
 	content, err := file.Contents(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
@@ -68,7 +70,7 @@ func (s *fileSchema) contents(ctx *core.Context, file *core.File, args any) (str
 	return string(content), nil
 }
 
-func (s *fileSchema) size(ctx *core.Context, file *core.File, args any) (int64, error) {
+func (s *fileSchema) size(ctx context.Context, file *core.File, args any) (int64, error) {
 	info, err := file.Stat(ctx, s.bk, s.svcs)
 	if err != nil {
 		return 0, err
@@ -82,7 +84,7 @@ type fileExportArgs struct {
 	AllowParentDirPath bool
 }
 
-func (s *fileSchema) export(ctx *core.Context, parent *core.File, args fileExportArgs) (bool, error) {
+func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (bool, error) {
 	err := parent.Export(ctx, s.bk, s.host, s.svcs, args.Path, args.AllowParentDirPath)
 	if err != nil {
 		return false, err
@@ -95,6 +97,6 @@ type fileWithTimestampsArgs struct {
 	Timestamp int
 }
 
-func (s *fileSchema) withTimestamps(ctx *core.Context, parent *core.File, args fileWithTimestampsArgs) (*core.File, error) {
+func (s *fileSchema) withTimestamps(ctx context.Context, parent *core.File, args fileWithTimestampsArgs) (*core.File, error) {
 	return parent.WithTimestamps(ctx, args.Timestamp)
 }

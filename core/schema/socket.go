@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/socket"
 )
@@ -42,6 +44,6 @@ type socketArgs struct {
 }
 
 // nolint: unparam
-func (s *socketSchema) socket(_ *core.Context, _ any, args socketArgs) (*socket.Socket, error) {
+func (s *socketSchema) socket(_ context.Context, _ any, args socketArgs) (*socket.Socket, error) {
 	return args.ID.Decode()
 }

@@ -407,20 +407,6 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 		return nil, fmt.Errorf("failed to load module: %w", err)
 	}
 
-	// TODO: hack to unlazy mod so it's actually loaded
-	// TODO: is this still needed?
-	// TODO(vito): this came up again, specifically because I wanted the
-	// dependencies to be started and served before doing schema introspection
-	// for codegen. still seems useful, OR we could somehow have schema
-	// introspection block/synchronize on loading dependencies automatically
-	// _, err = loadedMod.ID(ctx)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to get loaded module ID: %w", err)
-	// }
-
-	// TODO(vito): immediate follow-up: turns out what I want is to Serve here
-	// but _not_ Serve for each dependency, since we don't want them all
-	// installed into the same schema - transitive deps should not be included.
 	_, err = loadedMod.Serve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get loaded module ID: %w", err)
@@ -571,11 +557,33 @@ type modTypeDef struct {
 	AsList   *modList
 }
 
+func (t *modTypeDef) ObjectName() string {
+	if t.AsObject != nil {
+		return t.AsObject.Name
+	}
+	return ""
+}
+
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
 	Name      string
 	Functions []*modFunction
 	Fields    []*modField
+}
+
+// GetFunctions returns the object's function definitions as well as the fields,
+// which are treated as functions with no arguments.
+func (o *modObject) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Functions)+len(o.Fields))
+	for _, f := range o.Fields {
+		fns = append(fns, &modFunction{
+			Name:        f.Name,
+			Description: f.Description,
+			ReturnType:  f.TypeDef,
+		})
+	}
+	fns = append(fns, o.Functions...)
+	return fns
 }
 
 // modList is a representation of dagger.ListTypeDef.

@@ -325,35 +325,57 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 	})
 }
 
-func TestModuleGoGit(t *testing.T) {
+func TestModuleGit(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	type testCase struct {
+		sdk           string
+		gitignores    []string
+		gitattributes string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			gitignores: []string{
+				"/dagger.gen.go\n",
+				"/querybuilder/\n",
+			},
+		},
+		{
+			sdk: "python",
+			gitignores: []string{
+				"/sdk\n",
+			},
+		},
+	} {
+		tc := tc
+		t.Run(fmt.Sprintf("module %s git", tc.sdk), func(t *testing.T) {
+			t.Parallel()
 
-	modGen := goGitBase(t, c).
-		With(daggerExec("mod", "init", "--name=bare", "--sdk=go"))
+			c, ctx := connect(t)
 
-	logGen(ctx, t, modGen.Directory("."))
+			modGen := goGitBase(t, c).
+				With(daggerExec("mod", "init", "--name=bare", "--sdk="+tc.sdk))
 
-	out, err := modGen.
-		With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
+			if tc.sdk == "go" {
+				logGen(ctx, t, modGen.Directory("."))
+			}
 
-	t.Run("configures .gitignore", func(t *testing.T) {
-		ignore, err := modGen.File(".gitignore").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, ignore, "/dagger.gen.go\n")
-		require.Contains(t, ignore, "/querybuilder/\n")
-	})
+			out, err := modGen.
+				With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
 
-	t.Run("configures .gitattributes", func(t *testing.T) {
-		t.Skip("it doesn't anymore, since it's .gitignored anyway")
-		attributes, err := modGen.File(".gitattributes").Contents(ctx)
-		require.NoError(t, err)
-		require.Contains(t, attributes, "/dagger.gen.go linguist-generated=true\n")
-	})
+			t.Run("configures .gitignore", func(t *testing.T) {
+				ignore, err := modGen.File(".gitignore").Contents(ctx)
+				require.NoError(t, err)
+				for _, gitignore := range tc.gitignores {
+					require.Contains(t, ignore, gitignore)
+				}
+			})
+		})
+	}
 }
 
 func TestModuleGoGitRemovesIgnored(t *testing.T) {
@@ -382,6 +404,28 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 	require.Contains(t, changedAfterSync, "D  querybuilder/querybuilder.go\n")
 	require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
 	require.Contains(t, changedAfterSync, "D  internal/querybuilder/querybuilder.go\n")
+}
+
+func TestModulePythonGitRemovesIgnored(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	committedModGen := goGitBase(t, c).
+		With(daggerExec("mod", "init", "--name=bare", "--sdk=python")).
+		WithExec([]string{"rm", ".gitignore"}).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init with generated files"})
+
+	changedAfterSync, err := committedModGen.
+		With(daggerExec("mod", "sync")).
+		WithExec([]string{"git", "diff"}). // for debugging
+		WithExec([]string{"git", "status", "--short"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	t.Logf("changed after sync:\n%s", changedAfterSync)
+	require.Contains(t, changedAfterSync, "D  sdk/pyproject.toml\n")
+	require.Contains(t, changedAfterSync, "D  sdk/src/dagger/__init__.py\n")
 }
 
 //go:embed testdata/modules/go/minimal/main.go
@@ -708,39 +752,81 @@ func TestModuleConfigAPI(t *testing.T) {
 	require.Equal(t, "..", root)
 }
 
-func TestModulePython(t *testing.T) {
-	// TODO: simple e2e test for now, can be split out into many different tests with different focuses
-	t.Parallel()
+func TestModulePythonInit(t *testing.T) {
+	t.Run("from scratch", func(t *testing.T) {
+		t.Parallel()
 
-	c, ctx := connect(t)
+		c, ctx := connect(t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		WithNewFile("./pyproject.toml", dagger.ContainerWithNewFileOpts{
-			Contents: `[project]
-name = "test"
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=python"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("respects existing pyproject.toml", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", dagger.ContainerWithNewFileOpts{
+				Contents: `[project]
+name = "has-pyproject"
 version = "0.0.0"
 `,
-		}).
-		WithNewFile("./src/main.py", dagger.ContainerWithNewFileOpts{
-			Contents: `from dagger.ext import function
+			}).
+			With(daggerExec("mod", "init", "--name=hasPyproject", "--sdk=python"))
 
+		out, err := modGen.
+			With(daggerQuery(`{hasPyproject{myFunction(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasPyproject":{"myFunction":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("preserves module name", func(t *testing.T) {
+			generated, err := modGen.File("pyproject.toml").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, generated, `name = "has-pyproject"`)
+		})
+	})
+
+	t.Run("respects existing main.py", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/src/main/__init__.py", dagger.ContainerWithNewFileOpts{
+				Contents: "from . import notmain\n",
+			}).
+			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
+				Contents: `from dagger.ext import function
 
 @function
-def hello(name: str) -> str:
-    """Say hello to someone."""
-    return f"Hello, {name}!"
+def hello() -> str:
+    return "Hello, world!"
 `,
-		}).
-		With(daggerExec("mod", "init", "--name=test", "--sdk=python"))
+			}).
+			With(daggerExec("mod", "init", "--name=hasMainPy", "--sdk=python"))
 
-	t.Run("func Hello() string", func(t *testing.T) {
-		t.Parallel()
-		out, err := modGen.With(daggerQuery(`{test{hello(name: "there")}}`)).Stdout(ctx)
+		out, err := modGen.
+			With(daggerQuery(`{hasMainPy{hello}}`)).
+			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test":{"hello":"Hello, there!"}}`, out)
+		require.JSONEq(t, `{"hasMainPy":{"hello":"Hello, world!"}}`, out)
 	})
+
 }
 
 func TestModuleLotsOfFunctions(t *testing.T) {
@@ -813,12 +899,6 @@ def potato_%d() -> str:
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("./pyproject.toml", dagger.ContainerWithNewFileOpts{
-				Contents: `[project]
-name = "potatoSack"
-version = "0.0.0"
-`,
-			}).
 			WithNewFile("./src/main.py", dagger.ContainerWithNewFileOpts{
 				Contents: mainSrc,
 			}).
