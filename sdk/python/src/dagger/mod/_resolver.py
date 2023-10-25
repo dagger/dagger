@@ -1,59 +1,51 @@
 # ruff: noqa: BLE001
 from __future__ import annotations
 
+import dataclasses
 import inspect
+import json
 import logging
-from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass, field
 from functools import cached_property
 from typing import (
-    TYPE_CHECKING,
     Annotated,
     Any,
-    Generic,
     TypeAlias,
-    TypeVar,
     get_args,
     get_origin,
     get_type_hints,
-    overload,
 )
 
 import cattrs
 from gql.utils import to_camel_case
 
+import dagger
+
 from ._arguments import Argument, Parameter
+from ._converter import to_typedef
 from ._exceptions import FatalError, UserError
 from ._types import MissingType
 from ._utils import asyncify, await_maybe, transform_error
 
-if TYPE_CHECKING:
-    import dagger
-
-    from ._module import Module
-
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
 
-ResolverFunc: TypeAlias = Callable[..., Coroutine[Any, Any, T] | T]
-DecoratedResolverFunc: TypeAlias = Callable[[ResolverFunc[T]], ResolverFunc[T]]
+Func: TypeAlias = Callable[..., Coroutine[Any, Any, Any] | Any]
 
 
-@dataclass(slots=True)
-class Resolver(ABC, Generic[T]):
+@dataclasses.dataclass
+class Resolver:
     """Base class for wrapping user-defined functions."""
 
-    wrapped_func: ResolverFunc[T]
+    wrapped_func: Func
     name: str
     description: str | None = None
-    graphql_name: str = field(init=False)
+    graphql_name: str = dataclasses.field(init=False)
 
     @classmethod
     def from_callable(
         cls,
-        func: ResolverFunc[T],
+        func: Func,
         name: str | None = None,
         description: str | None = None,
     ):
@@ -71,45 +63,6 @@ class Resolver(ABC, Generic[T]):
 
     def __post_init__(self):
         self.graphql_name = to_camel_case(self.name)
-
-    @classmethod
-    def to_decorator(cls, mod: Module):
-        """Return a decorator for adding a resolver."""
-
-        @overload
-        def function(
-            func: None = None,
-            *,
-            name: str | None = None,
-            description: str | None = None,
-        ) -> DecoratedResolverFunc[T]:
-            ...
-
-        @overload
-        def function(
-            func: ResolverFunc[T],
-            *,
-            name: None = None,
-            description: None = None,
-        ) -> ResolverFunc[T]:
-            ...
-
-        def function(
-            func: ResolverFunc[T] | None = None,
-            *,
-            name: str | None = None,
-            description: str | None = None,
-        ) -> ResolverFunc[T] | DecoratedResolverFunc[T]:
-            def wrapper(func: ResolverFunc[T]) -> ResolverFunc[T]:
-                r = cls.from_callable(func, name, description)
-                mod.add_resolver(r)
-                return func
-
-            return wrapper(func) if func else wrapper
-
-        function.__module__ = mod.__module__
-
-        return function
 
     @cached_property
     def signature(self):
@@ -180,14 +133,26 @@ class Resolver(ABC, Generic[T]):
     def _type_hints(self):
         return get_type_hints(self.wrapped_func, include_extras=True)
 
-    @abstractmethod
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
-        """Add a new object to current module.
+        """Add a new object to current module."""
+        fn = dagger.function(self.graphql_name, to_typedef(self.return_type))
 
-        Meant to be overidden by subclasses. Executed when installing the
-        module in the API.
-        """
-        return typedef
+        if self.description:
+            fn = fn.with_description(self.description)
+
+        for arg_name, param in self.parameters.items():
+            fn = fn.with_arg(
+                arg_name,
+                to_typedef(param.signature.annotation).with_optional(param.is_optional),
+                description=param.description,
+                default_value=(
+                    dagger.JSON(json.dumps(param.signature.default))
+                    if param.is_optional
+                    else None
+                ),
+            )
+
+        return typedef.with_function(fn)
 
     async def convert_arguments(
         self,
@@ -229,7 +194,7 @@ class Resolver(ABC, Generic[T]):
 
         return bound_args.arguments
 
-    async def __call__(self, /, *args, **kwargs) -> T:
+    async def __call__(self, /, *args, **kwargs):
         # TODO: Reserve __call__ for invoking resolvers within the same module
         # or use a different method for that (e.g., `.call()`)?
         return await await_maybe(self.wrapped_func(*args, **kwargs))

@@ -23,7 +23,7 @@ version = "0.0.0"
 `
 
 var srcMainTmpl = `import dagger
-from dagger.ext import function
+from dagger.mod import function
 
 
 @function
@@ -33,7 +33,7 @@ def my_function(string_arg: str) -> dagger.Container:
 
 var runtimeTmpl = `#!/usr/bin/env python
 import sys
-from dagger.ext.cli import app
+from dagger.mod.cli import app
 if __name__ == '__main__':
     sys.exit(app())
 `
