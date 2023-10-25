@@ -75,7 +75,6 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	ResolveIDable[core.Function](rs, "Function", ObjectResolver{
 		"withDescription": ToResolver(s.functionWithDescription),
 		"withArg":         ToResolver(s.functionWithArg),
-		"call":            ToResolver(s.functionCall),
 	})
 
 	ResolveIDable[core.FunctionArg](rs, "FunctionArg", ObjectResolver{})
@@ -98,7 +97,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	return rs
 }
 
-func (s *moduleSchema) typeDef(ctx *core.Context, _ *core.Query, args struct {
+func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct {
 	ID   core.TypeDefID
 	Kind core.TypeDefKind
 }) (*core.TypeDef, error) {
@@ -110,19 +109,19 @@ func (s *moduleSchema) typeDef(ctx *core.Context, _ *core.Query, args struct {
 	}, nil
 }
 
-func (s *moduleSchema) typeDefWithOptional(ctx *core.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithOptional(ctx context.Context, def *core.TypeDef, args struct {
 	Optional bool
 }) (*core.TypeDef, error) {
 	return def.WithOptional(args.Optional), nil
 }
 
-func (s *moduleSchema) typeDefWithKind(ctx *core.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, args struct {
 	Kind core.TypeDefKind
 }) (*core.TypeDef, error) {
 	return def.WithKind(args.Kind), nil
 }
 
-func (s *moduleSchema) typeDefWithListOf(ctx *core.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
 }) (*core.TypeDef, error) {
 	elemType, err := args.ElementType.Decode()
@@ -132,14 +131,14 @@ func (s *moduleSchema) typeDefWithListOf(ctx *core.Context, def *core.TypeDef, a
 	return def.WithListOf(elemType), nil
 }
 
-func (s *moduleSchema) typeDefWithObject(ctx *core.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string
 }) (*core.TypeDef, error) {
 	return def.WithObject(args.Name, args.Description), nil
 }
 
-func (s *moduleSchema) typeDefWithObjectField(ctx *core.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	TypeDef     core.TypeDefID
 	Description string
@@ -151,7 +150,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx *core.Context, def *core.TypeD
 	return def.WithObjectField(args.Name, fieldType, args.Description)
 }
 
-func (s *moduleSchema) typeDefWithObjectFunction(ctx *core.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
 	fn, err := args.Function.Decode()
@@ -161,11 +160,11 @@ func (s *moduleSchema) typeDefWithObjectFunction(ctx *core.Context, def *core.Ty
 	return def.WithObjectFunction(fn)
 }
 
-func (s *moduleSchema) typeDefKind(ctx *core.Context, def *core.TypeDef, args any) (string, error) {
+func (s *moduleSchema) typeDefKind(ctx context.Context, def *core.TypeDef, args any) (string, error) {
 	return def.Kind.String(), nil
 }
 
-func (s *moduleSchema) generatedCode(ctx *core.Context, _ *core.Query, args struct {
+func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
 	dir, err := args.Code.Decode()
@@ -175,13 +174,13 @@ func (s *moduleSchema) generatedCode(ctx *core.Context, _ *core.Query, args stru
 	return core.NewGeneratedCode(dir), nil
 }
 
-func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx *core.Context, code *core.GeneratedCode, args struct {
+func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
 }) (*core.GeneratedCode, error) {
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
-func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx *core.Context, code *core.GeneratedCode, args struct {
+func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
 }) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
@@ -191,7 +190,7 @@ type moduleArgs struct {
 	ID core.ModuleID
 }
 
-func (s *moduleSchema) module(ctx *core.Context, query *core.Query, args moduleArgs) (*core.Module, error) {
+func (s *moduleSchema) module(ctx context.Context, query *core.Query, args moduleArgs) (*core.Module, error) {
 	if args.ID == "" {
 		return core.NewModule(s.platform, query.PipelinePath()), nil
 	}
@@ -203,7 +202,7 @@ type moduleConfigArgs struct {
 	Subpath         string
 }
 
-func (s *moduleSchema) moduleConfig(ctx *core.Context, query *core.Query, args moduleConfigArgs) (*modules.Config, error) {
+func (s *moduleSchema) moduleConfig(ctx context.Context, query *core.Query, args moduleConfigArgs) (*modules.Config, error) {
 	srcDir, err := args.SourceDirectory.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source directory: %w", err)
@@ -213,7 +212,7 @@ func (s *moduleSchema) moduleConfig(ctx *core.Context, query *core.Query, args m
 	return cfg, err
 }
 
-func (s *moduleSchema) currentModule(ctx *core.Context, _ *core.Query, _ any) (*core.Module, error) {
+func (s *moduleSchema) currentModule(ctx context.Context, _ *core.Query, _ any) (*core.Module, error) {
 	// The caller should have been given a digest of the Module its executing in, which is passed along
 	// as request context metadata.
 	fnCtx, err := s.functionContextCache.FunctionContextFrom(ctx)
@@ -223,7 +222,7 @@ func (s *moduleSchema) currentModule(ctx *core.Context, _ *core.Query, _ any) (*
 	return fnCtx.Module, nil
 }
 
-func (s *moduleSchema) function(ctx *core.Context, _ *core.Query, args struct {
+func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
@@ -234,7 +233,7 @@ func (s *moduleSchema) function(ctx *core.Context, _ *core.Query, args struct {
 	return core.NewFunction(args.Name, returnType), nil
 }
 
-func (s *moduleSchema) currentFunctionCall(ctx *core.Context, _ *core.Query, _ any) (*core.FunctionCall, error) {
+func (s *moduleSchema) currentFunctionCall(ctx context.Context, _ *core.Query, _ any) (*core.FunctionCall, error) {
 	fnCtx, err := s.functionContextCache.FunctionContextFrom(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function context from context: %w", err)
@@ -246,7 +245,7 @@ type asModuleArgs struct {
 	SourceSubpath string
 }
 
-func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
+func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
 	defer func() {
 		if err := recover(); err != nil {
 			debug.PrintStack()
@@ -264,7 +263,7 @@ func (s *moduleSchema) directoryAsModule(ctx *core.Context, sourceDir *core.Dire
 	return s.loadModuleTypes(ctx, mod)
 }
 
-func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, _ any) (*core.GeneratedCode, error) {
+func (s *moduleSchema) moduleGeneratedCode(ctx context.Context, mod *core.Module, _ any) (*core.GeneratedCode, error) {
 	sdk, err := s.sdkForModule(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath, mod.SDK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module %s: %w", mod.Name, err)
@@ -273,7 +272,7 @@ func (s *moduleSchema) moduleGeneratedCode(ctx *core.Context, mod *core.Module, 
 	return sdk.Codegen(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath)
 }
 
-func (s *moduleSchema) moduleServe(ctx *core.Context, module *core.Module, args any) (rerr error) {
+func (s *moduleSchema) moduleServe(ctx context.Context, module *core.Module, args any) (rerr error) {
 	defer func() {
 		if err := recover(); err != nil {
 			rerr = fmt.Errorf("panic in moduleServe: %s\n%s", err, debug.Stack())
@@ -284,15 +283,19 @@ func (s *moduleSchema) moduleServe(ctx *core.Context, module *core.Module, args 
 	if err != nil {
 		return err
 	}
+	schemaView, err := s.getModuleSchemaView(clientMetadata.ModuleDigest)
+	if err != nil {
+		return err
+	}
 
-	err = s.serveModuleToDigest(ctx, module, clientMetadata.ModuleDigest)
+	err = s.serveModuleToView(ctx, module, schemaView)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *moduleSchema) moduleWithObject(ctx *core.Context, module *core.Module, args struct {
+func (s *moduleSchema) moduleWithObject(ctx context.Context, module *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
 	def, err := args.Object.Decode()
@@ -302,7 +305,7 @@ func (s *moduleSchema) moduleWithObject(ctx *core.Context, module *core.Module, 
 	return module.WithObject(def)
 }
 
-func (s *moduleSchema) functionCallReturnValue(ctx *core.Context, fnCall *core.FunctionCall, args struct{ Value any }) error {
+func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct{ Value any }) error {
 	// TODO: error out if caller is not coming from a module
 
 	valueBytes, err := json.Marshal(args.Value)
@@ -316,20 +319,20 @@ func (s *moduleSchema) functionCallReturnValue(ctx *core.Context, fnCall *core.F
 	return s.bk.IOReaderExport(ctx, bytes.NewReader(valueBytes), filepath.Join(core.ModMetaDirPath, core.ModMetaOutputPath), 0600)
 }
 
-func (s *moduleSchema) functionCallParent(ctx *core.Context, fnCall *core.FunctionCall, _ any) (any, error) {
+func (s *moduleSchema) functionCallParent(ctx context.Context, fnCall *core.FunctionCall, _ any) (any, error) {
 	if fnCall.Parent == nil {
 		return struct{}{}, nil
 	}
 	return fnCall.Parent, nil
 }
 
-func (s *moduleSchema) functionWithDescription(ctx *core.Context, fn *core.Function, args struct {
+func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Function, args struct {
 	Description string
 }) (*core.Function, error) {
 	return fn.WithDescription(args.Description), nil
 }
 
-func (s *moduleSchema) functionWithArg(ctx *core.Context, fn *core.Function, args struct {
+func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
 	Name         string
 	TypeDef      core.TypeDefID
 	Description  string
@@ -343,18 +346,15 @@ func (s *moduleSchema) functionWithArg(ctx *core.Context, fn *core.Function, arg
 }
 
 type functionCallArgs struct {
-	Input []*core.CallInput
-
-	// Below are not in public API, used internally by Function.call api
-	ParentName string
-	Parent     any
-	Module     *core.Module
-	Cache      bool
+	Input              []*core.CallInput
+	ParentOriginalName string
+	Parent             any
+	Module             *core.Module
+	Cache              bool
 }
 
-func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args functionCallArgs) (any, error) {
+func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args functionCallArgs) (any, error) {
 	// TODO: if return type non-null, assert on that here
-	// TODO: handle setting default values, they won't be set when going through "dynamic call" codepath
 
 	// TODO: re-add support for different exit codes
 	cacheExitCode := uint32(0)
@@ -364,35 +364,22 @@ func (s *moduleSchema) functionCall(ctx *core.Context, fn *core.Function, args f
 	mod := args.Module
 
 	if mod == nil {
-		// will not be set for API calls
-
-		if fn.ModuleID == "" {
-			return nil, fmt.Errorf("function %s has no module", fn.Name)
-		}
-
-		var err error
-		mod, err = fn.ModuleID.Decode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode module: %w", err)
-		}
-
-		if fn.ParentName != "" {
-			args.ParentName = fn.ParentName
-		}
+		return nil, fmt.Errorf("function %s has no module", fn.Name)
 	}
 
-	if err := s.installDeps(ctx, mod); err != nil {
+	_, err := s.installDeps(ctx, mod)
+	if err != nil {
 		return nil, fmt.Errorf("failed to install deps: %w", err)
 	}
 
 	callParams := &core.FunctionCall{
-		Name:       fn.Name,
-		ParentName: args.ParentName,
+		Name:       fn.OriginalName,
+		ParentName: args.ParentOriginalName,
 		Parent:     args.Parent,
 		InputArgs:  args.Input,
 	}
 
-	ctx, err := s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
+	ctx, err = s.functionContextCache.WithFunctionContext(ctx, &FunctionContext{
 		Module:      mod,
 		CurrentCall: callParams,
 	})
@@ -650,7 +637,7 @@ func (cache *FunctionContextCache) cacheMap() *core.CacheMap[digest.Digest, *Fun
 	return (*core.CacheMap[digest.Digest, *FunctionContext])(cache)
 }
 
-func (cache *FunctionContextCache) WithFunctionContext(ctx *core.Context, fnCtx *FunctionContext) (*core.Context, error) {
+func (cache *FunctionContextCache) WithFunctionContext(ctx context.Context, fnCtx *FunctionContext) (context.Context, error) {
 	fntCtxDigest, err := fnCtx.Digest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function context digest: %w", err)
@@ -675,9 +662,7 @@ func (cache *FunctionContextCache) WithFunctionContext(ctx *core.Context, fnCtx 
 		return nil, fmt.Errorf("failed to cache function context: %w", err)
 	}
 
-	ctxCp := *ctx
-	ctxCp.Context = engine.ContextWithClientMetadata(ctx.Context, clientMetadata)
-	return &ctxCp, nil
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
 
 var errFunctionContextNotFound = fmt.Errorf("function context not found")
@@ -693,10 +678,9 @@ func (cache *FunctionContextCache) FunctionContextFrom(ctx context.Context) (*Fu
 	})
 }
 
-// Each Module gets its own Schema where the core API plus its direct deps are served. These "schema views"
-// are keyed by the digest of the module viewing them.
-// serveModuleToDigest stitches in the schema for the given mod to the schema keyed by dependerModDigest.
-func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, dependerModDigest digest.Digest) error {
+// Each Module gets its own isolated "schema view" where the core API plus its direct deps are served.
+// serveModuleToDigest stitches in the schema for the given mod to the given schema view.
+func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, schemaView *moduleSchemaView) error {
 	mod, err := s.loadModuleTypes(ctx, mod)
 	if err != nil {
 		return fmt.Errorf("failed to load dep module functions: %w", err)
@@ -706,19 +690,15 @@ func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, 
 	if err != nil {
 		return fmt.Errorf("failed to get module digest: %w", err)
 	}
-	cacheKey := digest.FromString(modDigest.String() + "." + dependerModDigest.String())
+	cacheKey := digest.FromString(modDigest.String() + "." + schemaView.viewerDigest.String())
 
 	// TODO: it makes no sense to use this cache since we don't need a core.Module, but also doesn't hurt, but make a separate one anyways for clarity
 	_, err = s.moduleCache.GetOrInitialize(cacheKey, func() (*core.Module, error) {
-		dependerView, err := s.getModuleSchemaView(dependerModDigest)
-		if err != nil {
-			return nil, err
-		}
-		executableSchema, err := s.moduleToSchemaFor(ctx, mod, dependerView)
+		executableSchema, err := s.moduleToSchemaFor(ctx, mod, schemaView)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert module to executable schema: %w", err)
 		}
-		if err := dependerView.addSchemas(executableSchema); err != nil {
+		if err := schemaView.addSchemas(executableSchema); err != nil {
 			return nil, fmt.Errorf("failed to install module schema: %w", err)
 		}
 		return mod, nil
@@ -728,7 +708,7 @@ func (s *moduleSchema) serveModuleToDigest(ctx *core.Context, mod *core.Module, 
 
 // loadModuleTypes invokes the Module to ask for the Objects+Functions it defines and returns the updated
 // Module object w/ those TypeDefs included.
-func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*core.Module, error) {
+func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*core.Module, error) {
 	// We use the digest without functions as cache key because loadModuleTypes should behave idempotently,
 	// returning the same Module object whether or not its Functions were already loaded.
 	// The digest without functions is stable before+after function loading.
@@ -738,30 +718,23 @@ func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*co
 	}
 
 	return s.moduleCache.GetOrInitialize(dgst, func() (*core.Module, error) {
-		if err := s.installDeps(ctx, mod); err != nil {
-			return nil, fmt.Errorf("failed to install module recursive dependencies: %w", err)
+		schemaView, err := s.installDeps(ctx, mod)
+		if err != nil {
+			return nil, fmt.Errorf("failed to install module dependencies: %w", err)
 		}
 
-		modID, err := mod.ID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module ID: %w", err)
-		}
 		// canned function for asking the SDK to return the module + functions it provides
-		getModDefFn := &core.Function{
-			Name: "", // no name indicates that the SDK should return the module
-			ReturnType: &core.TypeDef{
-				Kind: core.TypeDefKindObject,
-				AsObject: &core.ObjectTypeDef{
-					Name: "Module",
-				},
+		getModDefFn := core.NewFunction(
+			"", // no name indicates that the SDK should return the module
+			&core.TypeDef{
+				Kind:     core.TypeDefKindObject,
+				AsObject: core.NewObjectTypeDef("Module", ""),
 			},
-			ModuleID: modID,
-		}
+		)
 		result, err := s.functionCall(ctx, getModDefFn, functionCallArgs{
 			Module: mod,
-			// empty to signify we're querying to get the constructed module
-			// ParentName: gqlObjectName(mod.Name),
-			Cache: true,
+			Cache:  true,
+			// ParentName is empty to signify we're querying to get the constructed module
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to call module %q to get functions: %w", mod.Name, err)
@@ -775,29 +748,43 @@ func (s *moduleSchema) loadModuleTypes(ctx *core.Context, mod *core.Module) (*co
 			return nil, fmt.Errorf("failed to decode module: %w", err)
 		}
 
+		// namespace the module objects + function extensions
+		for _, obj := range mod.Objects {
+			s.namespaceTypeDef(obj, mod, schemaView)
+		}
+
 		return mod, nil
 	})
 }
 
 // installDeps stitches in the schemas for all the deps of the given module to the module's
 // schema view.
-func (s *moduleSchema) installDeps(ctx *core.Context, module *core.Module) error {
+func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*moduleSchemaView, error) {
 	moduleDigest, err := module.Digest()
 	if err != nil {
-		return err
+		return nil, err
+	}
+	schemaView, err := s.getModuleSchemaView(moduleDigest)
+	if err != nil {
+		return nil, err
 	}
 
 	var eg errgroup.Group
 	for _, dep := range module.Dependencies {
 		dep := dep
 		eg.Go(func() error {
-			if err := s.serveModuleToDigest(ctx, dep, moduleDigest); err != nil {
-				return fmt.Errorf("failed to install module dependency %q: %w", dep.Name, err)
+			if err := s.serveModuleToView(ctx, dep, schemaView); err != nil {
+				return fmt.Errorf("failed to install dependency %q: %w", dep.Name, err)
 			}
 			return nil
 		})
 	}
-	return eg.Wait()
+	err = eg.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return schemaView, nil
 }
 
 /* TODO: for module->schema conversion
@@ -823,9 +810,16 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
 		}
 
-		// check whether this is a pre-existing object (from core or another
-		// module) being extended
+		// check whether this is a pre-existing object (from core or another module)
 		_, preExistingObject := dest.resolvers()[objName]
+		if preExistingObject {
+			// modules can reference types from core/other modules as types, but they
+			// can't attach any new fields or functions to them
+			if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
+				return nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
+			}
+			continue
+		}
 
 		astDef := &ast.Definition{
 			Name:        objName,
@@ -880,19 +874,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		}
 
 		if len(astDef.Fields) > 0 {
-			if preExistingObject {
-				// if there's any new functions added to an existing object from core or another module, include
-				// those in the schema as extensions
-				schemaDoc.Extensions = append(schemaDoc.Extensions, astDef)
-			} else {
-				schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
-			}
-		}
-
-		if preExistingObject {
-			// extending already-existing type, don't need to add a stub for
-			// constructing it
-			continue
+			schemaDoc.Definitions = append(schemaDoc.Definitions, astDef)
 		}
 
 		constructorName := gqlFieldName(def.AsObject.Name)
@@ -1025,7 +1007,7 @@ func (s *moduleSchema) functionResolver(
 	}
 	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name)
 
-	return ToResolver(func(ctx *core.Context, parent any, args map[string]any) (_ any, rerr error) {
+	return ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
 		defer func() {
 			if r := recover(); r != nil {
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
@@ -1047,10 +1029,10 @@ func (s *moduleSchema) functionResolver(
 			})
 		}
 		result, err := s.functionCall(ctx, fn, functionCallArgs{
-			Module:     module,
-			Input:      callInput,
-			ParentName: parentObj.Name,
-			Parent:     parent,
+			Module:             module,
+			Input:              callInput,
+			ParentOriginalName: fn.ParentOriginalName,
+			Parent:             parent,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
@@ -1160,11 +1142,50 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 	}
 }
 
+// TODO: Should we handle trying to namespace the object in the doc strings? Or would that require too much magic to accomplish consistently?
+func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module, schemaView *moduleSchemaView) {
+	switch typeDef.Kind {
+	case core.TypeDefKindList:
+		s.namespaceTypeDef(typeDef.AsList.ElementTypeDef, mod, schemaView)
+	case core.TypeDefKindObject:
+		obj := typeDef.AsObject
+		baseObjName := gqlObjectName(obj.Name)
+
+		// check whether this is a pre-existing object from core or another module
+		_, preExistingObject := schemaView.resolvers()[baseObjName]
+
+		// only namespace objects defined in this module
+		if !preExistingObject {
+			obj.Name = namespaceObject(obj.Name, mod.Name)
+		}
+
+		for _, field := range obj.Fields {
+			s.namespaceTypeDef(field.TypeDef, mod, schemaView)
+		}
+
+		for _, fn := range obj.Functions {
+			s.namespaceTypeDef(fn.ReturnType, mod, schemaView)
+
+			for _, arg := range fn.Args {
+				s.namespaceTypeDef(arg.TypeDef, mod, schemaView)
+			}
+		}
+	}
+}
+
 // TODO: all these should be called during creation of Function+TypeDefs, not scattered all over the place
 
 func gqlObjectName(name string) string {
 	// gql object name is capitalized camel case
 	return strcase.ToCamel(name)
+}
+
+func namespaceObject(objName, namespace string) string {
+	// don't namespace the main module object itself (already is named after the module)
+	if gqlObjectName(objName) == gqlObjectName(namespace) {
+		return objName
+	}
+	return gqlObjectName(namespace + "_" + objName)
 }
 
 func gqlFieldName(name string) string {

@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 )
 
@@ -41,7 +43,7 @@ type secretArgs struct {
 	ID core.SecretID
 }
 
-func (s *secretSchema) secret(ctx *core.Context, parent any, args secretArgs) (*core.Secret, error) {
+func (s *secretSchema) secret(ctx context.Context, parent any, args secretArgs) (*core.Secret, error) {
 	return args.ID.Decode()
 }
 
@@ -57,7 +59,7 @@ type setSecretArgs struct {
 	Plaintext SecretPlaintext
 }
 
-func (s *secretSchema) setSecret(ctx *core.Context, parent any, args setSecretArgs) (*core.Secret, error) {
+func (s *secretSchema) setSecret(ctx context.Context, parent any, args setSecretArgs) (*core.Secret, error) {
 	secretID, err := s.secrets.AddSecret(ctx, args.Name, []byte(args.Plaintext))
 	if err != nil {
 		return nil, err
@@ -66,7 +68,7 @@ func (s *secretSchema) setSecret(ctx *core.Context, parent any, args setSecretAr
 	return secretID.Decode()
 }
 
-func (s *secretSchema) plaintext(ctx *core.Context, parent *core.Secret, args any) (string, error) {
+func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args any) (string, error) {
 	id, err := parent.ID()
 	if err != nil {
 		return "", err

@@ -2,13 +2,12 @@ package core
 
 import (
 	"context"
-	"errors"
 	"sync"
 
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 )
 
 // Secret is a content-addressed secret.
@@ -36,9 +35,6 @@ func (secret *Secret) Digest() (digest.Digest, error) {
 	return stableDigest(secret)
 }
 
-// ErrNotFound indicates a secret can not be found.
-var ErrNotFound = errors.New("secret not found")
-
 func NewSecretStore() *SecretStore {
 	return &SecretStore{
 		secrets: map[string][]byte{},
@@ -50,11 +46,6 @@ var _ secrets.SecretStore = &SecretStore{}
 type SecretStore struct {
 	mu      sync.Mutex
 	secrets map[string][]byte
-	bk      *buildkit.Client
-}
-
-func (store *SecretStore) SetBuildkitClient(bk *buildkit.Client) {
-	store.bk = bk
 }
 
 // AddSecret adds the secret identified by user defined name with its plaintext
@@ -93,7 +84,7 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 
 	plaintext, ok := store.secrets[name]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, errors.Wrapf(secrets.ErrNotFound, "secret %s", name)
 	}
 
 	return plaintext, nil

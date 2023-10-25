@@ -16,6 +16,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 /* TODO: add coverage for
@@ -379,7 +380,7 @@ func TestModuleGoGitRemovesIgnored(t *testing.T) {
 	require.Contains(t, changedAfterSync, "D  dagger.gen.go\n")
 	require.Contains(t, changedAfterSync, "D  querybuilder/marshal.go\n")
 	require.Contains(t, changedAfterSync, "D  querybuilder/querybuilder.go\n")
-    require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
+	require.Contains(t, changedAfterSync, "D  internal/querybuilder/marshal.go\n")
 	require.Contains(t, changedAfterSync, "D  internal/querybuilder/querybuilder.go\n")
 }
 
@@ -478,24 +479,26 @@ func TestModuleGoSignatures(t *testing.T) {
 //go:embed testdata/modules/go/extend/main.go
 var goExtend string
 
+// this is no longer allowed, but verify the SDK errors out
 func TestModuleGoExtendCore(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
-	modGen := c.Container().From(golangImage).
+	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: goExtend,
-		})
+		}).
+		With(daggerExec("mod", "sync")).
+		Sync(ctx)
 
-	logGen(ctx, t, modGen.Directory("."))
-
-	out, err := modGen.With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"hi!")}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"container":{"from":{"echo":"hi!\n"}}}`, out)
+	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
 }
 
 //go:embed testdata/modules/go/custom-types/main.go
@@ -738,6 +741,125 @@ def hello(name: str) -> str:
 		require.NoError(t, err)
 		require.JSONEq(t, `{"test":{"hello":"Hello, there!"}}`, out)
 	})
+}
+
+func TestModuleLotsOfFunctions(t *testing.T) {
+	t.Parallel()
+
+	const funcCount = 100
+
+	t.Run("go sdk", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		mainSrc := `
+		package main
+
+		type PotatoSack struct {}
+		`
+
+		for i := 0; i < funcCount; i++ {
+			mainSrc += fmt.Sprintf(`
+			func (m *PotatoSack) Potato%d() string {
+				return "potato #%d"
+			}
+			`, i, i)
+		}
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: mainSrc,
+			}).
+			With(daggerExec("mod", "init", "--name=potatoSack", "--sdk=go"))
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		var eg errgroup.Group
+		for i := 0; i < funcCount; i++ {
+			i := i
+			// just verify a subset work
+			if i%10 != 0 {
+				continue
+			}
+			eg.Go(func() error {
+				_, err := modGen.
+					With(daggerCall(fmt.Sprintf("potato%d", i))).
+					Sync(ctx)
+				return err
+			})
+		}
+		require.NoError(t, eg.Wait())
+	})
+
+	t.Run("python sdk", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		mainSrc := `from dagger.ext import function
+		`
+
+		for i := 0; i < funcCount; i++ {
+			mainSrc += fmt.Sprintf(`
+@function
+def potato_%d() -> str:
+    return "potato #%d"
+`, i, i)
+		}
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("./pyproject.toml", dagger.ContainerWithNewFileOpts{
+				Contents: `[project]
+name = "potatoSack"
+version = "0.0.0"
+`,
+			}).
+			WithNewFile("./src/main.py", dagger.ContainerWithNewFileOpts{
+				Contents: mainSrc,
+			}).
+			With(daggerExec("mod", "init", "--name=potatoSack", "--sdk=python"))
+
+		var eg errgroup.Group
+		for i := 0; i < funcCount; i++ {
+			i := i
+			// just verify a subset work
+			if i%10 != 0 {
+				continue
+			}
+			eg.Go(func() error {
+				_, err := modGen.
+					With(daggerCall(fmt.Sprintf("potato%d", i))).
+					Sync(ctx)
+				return err
+			})
+		}
+		require.NoError(t, eg.Wait())
+	})
+}
+
+func TestModuleNamespacing(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/namespacing")
+	require.NoError(t, err)
+
+	ctr := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithMountedDirectory("/work", c.Host().Directory(moduleSrcPath)).
+		WithWorkdir("/work")
+
+	out, err := ctr.
+		With(daggerQuery(`{test{fn(s:"yo")}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
 }
 
 func TestEnvCmd(t *testing.T) {
@@ -1138,6 +1260,15 @@ func daggerQuery(query string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec([]string{"dagger", "--debug", "query"}, dagger.ContainerWithExecOpts{
 			Stdin:                         query,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+// TODO: support args
+func daggerCall(fnName string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"dagger", "--debug", "call", fnName}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

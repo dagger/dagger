@@ -44,17 +44,6 @@ type Function {
     "A default value to use for this argument if not explicitly set by the caller, if any"
     defaultValue: JSON
   ): Function!
-
-  """
-  Execute this function using dynamic input+output types.
-
-  Typically, it's preferable to invoke a function using a type
-  safe graphql query rather than using this call field. However,
-  call is useful for some advanced use cases where dynamically
-  loading arbitrary modules and invoking functions in them is
-  required.
-  """
-  call(input: [FunctionCallInput!]): JSON!
 }
 
 "A reference to a FunctionArg."
@@ -88,14 +77,6 @@ type FunctionArg {
 
   "A default value to use for this argument when not explicitly set by the caller, if any"
   defaultValue: JSON
-}
-
-input FunctionCallInput {
-  "The name of the argument to the function"
-  name: String!
-
-  "The value of the argument represented as a string of the JSON serialization."
-  value: JSON!
 }
 
 "A reference to a TypeDef."
@@ -152,7 +133,7 @@ type TypeDef {
   "Adds a static field for an Object TypeDef, failing if the type is not an object."
   withField(
     "The name of the field in the object"
-    name: String!,
+    name: String!
     "The type of the field"
     typeDef: TypeDefID!
     "A doc string for the field, if any"

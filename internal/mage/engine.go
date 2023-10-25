@@ -204,6 +204,8 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
 		PlatformVariants: util.DevEngineContainer(c, arches, ""),
+		// use gzip to avoid incompatibility w/ older docker versions
+		ForcedCompression: dagger.Gzip,
 	})
 	if err != nil {
 		return err
