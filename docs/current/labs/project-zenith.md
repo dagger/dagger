@@ -71,7 +71,7 @@ mkdir potato/
 cd potato/
 
 # initialize Dagger module
-# NOTE: currently only the Go SDK implements `dagger mod init`, but Python modules also work and are gaining features rapidly. Node.js modules are not yet available, but under development.
+# NOTE: Node.js modules are not yet available, but under development.
 dagger mod init --name=potato --sdk=go
 ```
 
@@ -299,7 +299,7 @@ EOF
 You can also use modules from the local disk, without needing to push them to GitHub!
 
 ```sh
-dagger call test -m "./path/to/module" 
+dagger call test -m "./path/to/module"
 ```
 
 or

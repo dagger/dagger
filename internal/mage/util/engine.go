@@ -246,7 +246,16 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 // helper functions for building the dev engine container
 
 func pythonSDK(c *dagger.Client) *dagger.Directory {
-	return Repository(c).Directory("sdk/python")
+	return c.Host().Directory("sdk/python", dagger.HostDirectoryOpts{
+		Include: []string{
+			"pyproject.toml",
+			"src/**/*.py",
+			"src/**/*.typed",
+			"runtime/",
+			"LICENSE",
+			"README.md",
+		},
+	})
 }
 
 func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {

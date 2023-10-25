@@ -257,7 +257,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Di
 
 	mod, err := mod.FromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath, s.runtimeForModule)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create module from config `%s::%s`: %w", sourceDir.Dir, args.SourceSubpath, err)
+		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
 
 	return s.loadModuleTypes(ctx, mod)
@@ -485,7 +485,7 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 		Filename: core.ModMetaOutputPath,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read function `%s.%s` output file (result -> %v): %w", mod.Name, fn.Name, result, err)
+		return nil, fmt.Errorf("failed to read function output file: %w", err)
 	}
 
 	var rawOutput any
