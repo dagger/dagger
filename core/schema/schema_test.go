@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -212,7 +213,7 @@ func TestWithMountedCacheSeen(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = cs.withMountedCache(
-		&core.Context{},
+		context.Background(),
 		&core.Container{},
 		containerWithMountedCacheArgs{Path: "/foo", Cache: cid},
 	)
