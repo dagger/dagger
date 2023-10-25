@@ -12,14 +12,42 @@ func (m *Minimal) Hello() string {
 }
 
 func (m *Minimal) Echo(msg string) string {
-	return m.EchoOpts(msg, EchoOpts{
-		// TODO(vito): gotcha! Because we're calling the method directly, defaults
-		// are not applied. Maybe the default:"..." struct tag should be removed in
-		// favor of handling it at runtime? Maybe it should be kept anyway as a
-		// convenience, and this won't be a common footgun?
-		Suffix: "...",
-		Times:  3,
-	})
+	return m.EchoOpts(msg, Opt("..."), Opt(3))
+}
+
+func (m *Minimal) EchoPointer(msg *string) *string {
+	v := m.Echo(*msg)
+	return &v
+}
+
+func (m *Minimal) EchoPointerPointer(msg **string) **string {
+	v := m.Echo(**msg)
+	v2 := &v
+	return &v2
+}
+
+func (m *Minimal) EchoOptional(msg Optional[string]) string {
+	v, ok := msg.Get()
+	if !ok {
+		v = "default"
+	}
+	return m.Echo(v)
+}
+
+func (m *Minimal) EchoOptionalPointer(msg **Optional[**string]) string {
+	v, ok := (*msg).Get()
+	if !ok {
+		v = ptr(ptr("default"))
+	}
+	return m.Echo(**v)
+}
+
+func (m *Minimal) Echoes(msgs []string) []string {
+	return []string{m.Echo(strings.Join(msgs, " "))}
+}
+
+func (m *Minimal) EchoesVariadic(msgs ...string) string {
+	return m.Echo(strings.Join(msgs, " "))
 }
 
 func (m *Minimal) HelloContext(ctx context.Context) string {
@@ -40,19 +68,60 @@ func (m *Minimal) HelloVoidError() error {
 	return nil
 }
 
-type EchoOpts struct {
-	Suffix string `doc:"String to append to the echoed message." default:"..."`
-	Times  int    `doc:"Number of times to repeat the message." default:"3"`
+// EchoOpts does some opts things
+func (m *Minimal) EchoOpts(
+	msg string, // the message to echo
+
+	// String to append to the echoed message
+	suffix Optional[string],
+	// Number of times to repeat the message
+	times Optional[int],
+) string {
+	msg += suffix.GetOr("")
+	return strings.Repeat(msg, times.GetOr(1))
 }
 
-func (m *Minimal) EchoOpts(msg string, opts EchoOpts) string {
-	return m.EchoOptsInline(msg, opts)
-}
+// EchoOptsInline does some opts things
+func (m *Minimal) EchoOptsInline(opts struct {
+	Msg string // the message to echo
 
-func (m *Minimal) EchoOptsInline(msg string, opts struct {
-	Suffix string `doc:"String to append to the echoed message." default:"..."`
-	Times  int    `doc:"Number of times to repeat the message." default:"3"`
+	// String to append to the echoed message
+	Suffix Optional[string]
+	// Number of times to repeat the message
+	Times Optional[int]
 }) string {
-	msg += opts.Suffix
-	return strings.Repeat(msg, opts.Times)
+	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
+}
+
+func (m *Minimal) EchoOptsInlinePointer(opts *struct {
+	Msg string
+
+	// String to append to the echoed message
+	Suffix Optional[string]
+	// Number of times to repeat the message
+	Times Optional[int]
+}) string {
+	return m.EchoOptsInline(*opts)
+}
+
+func (m *Minimal) EchoOptsInlineCtx(ctx context.Context, opts struct {
+	Msg string
+
+	// String to append to the echoed message
+	Suffix Optional[string]
+	// Number of times to repeat the message
+	Times Optional[int]
+}) string {
+	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
+}
+
+func (m *Minimal) EchoOptsInlineTags(ctx context.Context, opts struct {
+	Msg string
+
+	// String to append to the echoed message
+	Suffix Optional[string] `tag:"hello"`
+	// Number of times to repeat the message
+	Times Optional[int] `tag:"hello again"`
+}) string {
+	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
 }
