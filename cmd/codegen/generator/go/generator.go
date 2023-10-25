@@ -344,8 +344,20 @@ import (
 
 type %s struct {}
 
-func (m *%s) MyFunction(ctx context.Context, stringArg string) (*Container, error) {
-	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg}).Sync(ctx)
+// example usage: "dagger call container-echo --string-arg yo"
+func (m *%s) ContainerEcho(stringArg string) *Container {
+	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }
-`, moduleStructName, moduleStructName)
+
+// example usage: "dagger call grep-dir --directory-arg . --pattern GrepDir"
+func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
+	return dag.Container().
+		From("alpine:latest").
+		WithMountedDirectory("/mnt", directoryArg).
+		WithWorkdir("/mnt").
+		WithExec([]string{"grep", "-R", pattern, "."}).
+		Stdout(ctx)
+}
+
+`, moduleStructName, moduleStructName, moduleStructName)
 }
