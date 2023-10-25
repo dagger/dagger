@@ -162,7 +162,7 @@ func (m *Potato) HelloWorld(
   // whether the potatoes are mashed (this is an optional parameter!)
   mashed Optional[bool],
 ) string {
-  if mashed.GetOr("false") {
+  if mashed.GetOr(false) {
     return fmt.Sprintf("Hello world, I have mashed %d potatoes", count)
   }
   return fmt.Sprintf("Hello world, I have %d potatoes", count)

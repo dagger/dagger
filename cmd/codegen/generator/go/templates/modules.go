@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	daggerGenFilename = "dagger.gen.go"
+	daggerGenFilename = "dagger.gen.go" // TODO: don't hardcode
 	contextTypename   = "context.Context"
 )
 
@@ -131,10 +131,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 					// no functions on this top-level object, so don't add it to the module
 					continue
 				}
-
-				tokenFile := ps.fset.File(named.Obj().Pos())
-				isDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename
-				if isDaggerGenerated {
+				if ps.isDaggerGenerated(named.Obj()) {
 					// skip objects from outside this module
 					continue
 				}
@@ -263,6 +260,7 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 	return fmt.Sprintf("%#v", invokeFunc)
 }
 
+// TODO: use jennifer for generating this magical typedef
 func renderNameOrStruct(t types.Type) string {
 	if ptr, ok := t.(*types.Pointer); ok {
 		return "*" + renderNameOrStruct(ptr.Elem())
@@ -363,34 +361,30 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 				continue
 			}
 
+			var varName string
+			var varType types.Type
 			var target *Statement
 			if spec.parent == nil {
-				argName := strcase.ToLowerCamel(spec.name)
-				if _, ok := vars[argName]; !ok {
-					tp, access := findOptsAccessPattern(spec.paramType, Id(argName))
-					statements = append(statements, Var().Id(argName).Id(renderNameOrStruct(tp)))
-					if spec.variadic {
-						fnCallArgs = append(fnCallArgs, access.Op("..."))
-					} else {
-						fnCallArgs = append(fnCallArgs, access)
-					}
-					vars[argName] = struct{}{}
-				}
-
-				target = Id(argName)
+				varName = strcase.ToLowerCamel(spec.name)
+				varType = spec.paramType
+				target = Id(varName)
 			} else {
-				if _, ok := vars[spec.parent.name]; !ok {
-					tp, access := findOptsAccessPattern(spec.parent.paramType, Id(spec.parent.name))
-					statements = append(statements, Var().Id(spec.parent.name).Id(renderNameOrStruct(tp)))
-					if spec.variadic {
-						fnCallArgs = append(fnCallArgs, access.Op("..."))
-					} else {
-						fnCallArgs = append(fnCallArgs, access)
-					}
-					vars[spec.parent.name] = struct{}{}
-				}
-
+				// create only one declaration for option structs
+				varName = spec.parent.name
+				varType = spec.parent.paramType
 				target = Id(spec.parent.name).Dot(spec.name)
+			}
+
+			if _, ok := vars[varName]; !ok {
+				vars[varName] = struct{}{}
+
+				tp, access := findOptsAccessPattern(varType, Id(varName))
+				statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
+				if spec.variadic {
+					fnCallArgs = append(fnCallArgs, access.Op("..."))
+				} else {
+					fnCallArgs = append(fnCallArgs, access)
+				}
 			}
 
 			statements = append(statements,
@@ -554,8 +548,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	// We don't support extending objects from outside this module, so we will
 	// be skipping it. But first we want to verify the user isn't adding methods
 	// to it (in which case we error out).
-	tokenFile := ps.fset.File(named.Obj().Pos())
-	objectIsDaggerGenerated := filepath.Base(tokenFile.Name()) == daggerGenFilename
+	objectIsDaggerGenerated := ps.isDaggerGenerated(named.Obj())
 
 	methods := []*types.Func{}
 	methodSet := types.NewMethodSet(types.NewPointer(named))
@@ -564,9 +557,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	for i := 0; i < methodSet.Len(); i++ {
 		methodObj := methodSet.At(i).Obj()
 
-		methodTokenFile := ps.fset.File(methodObj.Pos())
-		methodIsDaggerGenerated := filepath.Base(methodTokenFile.Name()) == daggerGenFilename // TODO: don't hardcode
-		if methodIsDaggerGenerated {
+		if ps.isDaggerGenerated(methodObj) {
 			// We don't care about pre-existing methods on core types or objects from dependency modules.
 			continue
 		}
@@ -785,6 +776,8 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 		return nil, err
 	}
 
+	// is the first data param an inline struct? if so, process each field of
+	// the struct as a top-level param
 	if i+1 == params.Len() {
 		param := params.At(i)
 		paramType, ok := asInlineStruct(param.Type())
@@ -817,6 +810,8 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 		}
 	}
 
+	// if other parameter passing schemes fail, just treat each remaining arg
+	// as a top-level param
 	for ; i < params.Len(); i++ {
 		spec, err := ps.parseParamSpecVar(params.At(i))
 		if err != nil {
@@ -826,8 +821,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 			spec.variadic = true
 		}
 
-		pos := fnDecl.Type.Params.List[i].Pos()
-		if cmt, err := ps.commentForPos(pos - 1); err == nil {
+		if cmt, err := ps.commentForFuncField(fnDecl, i); err == nil {
 			spec.description = cmt.Text()
 			spec.description = strings.TrimSpace(spec.description)
 		}
@@ -854,7 +848,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var) (paramSpec, error) {
 
 	optional := false
 	if named, ok := baseType.(*types.Named); ok {
-		if named.Obj().Name() == "Optional" {
+		if named.Obj().Name() == "Optional" && ps.isDaggerGenerated(named.Obj()) {
 			typeArgs := named.TypeArgs()
 			if typeArgs.Len() != 1 {
 				return paramSpec{}, fmt.Errorf("optional type must have exactly one type argument")
@@ -884,17 +878,19 @@ type paramSpec struct {
 	name        string
 	description string
 
+	optional bool
+	variadic bool
+
+	defaultValue string // NOTE: defaultVal is not currently populated
+
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, Optional, etc
 	paramType types.Type
 	// baseType is the simplified base type derived from the function signature
 	baseType types.Type
 
-	optional bool
-	variadic bool
-
-	defaultValue string
-
+	// parent is set if this paramSpec is nested inside a parent inline struct,
+	// and is used to create a declaration of the entire inline struct
 	parent *paramSpec
 }
 
@@ -955,30 +951,69 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 	return nil, fmt.Errorf("no decl for %s", fnType.Name())
 }
 
-// commentForPos returns the *ast* comment group for the given position. This
+// commentForFuncField returns the *ast* comment group for the given position. This
 // is needed because function args (despite being fields) don't have comments
 // associated with them, so this is a neat little hack to get them out.
-func (ps *parseState) commentForPos(pos token.Pos) (*ast.CommentGroup, error) {
+func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.CommentGroup, error) {
+	pos := fnDecl.Type.Params.List[i].Pos()
 	tokenFile := ps.fset.File(pos)
 	if tokenFile == nil {
-		return nil, fmt.Errorf("no file for position %d", pos)
+		return nil, fmt.Errorf("no file for function %s", fnDecl.Name.Name)
 	}
+	line := tokenFile.Line(pos)
+
+	allowDocComment := true
+	allowLineComment := true
+	if i == 0 && tokenFile.Line(fnDecl.Pos()) == line {
+		// the argument is on the same line as the function declaration, so
+		// there is no doc comment to find
+		allowDocComment = false
+	} else if i > 0 && tokenFile.Line(fnDecl.Type.Params.List[i-1].Pos()) == line {
+		// the argument is on the same line as the previous argument, so again
+		// there is no doc comment to find
+		allowDocComment = false
+	}
+	if i+1 < len(fnDecl.Type.Params.List) && tokenFile.Line(fnDecl.Type.Params.List[i+1].Pos()) == line {
+		// the argument is on the same line as the next argument, so there is
+		// no line comment to find
+		allowLineComment = false
+	}
+
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue
 		}
 
-		// take the last position in the last line, and try and find a comment
-		// that contains it
-		line := tokenFile.Line(pos)
-		pos := tokenFile.LineStart(line) - 1
-		for _, comment := range f.Comments {
-			if pos >= comment.Pos() && pos <= comment.End() {
-				return comment, nil
+		if allowDocComment {
+			// take the last position in the last line, and try and find a
+			// comment that contains it
+			npos := tokenFile.LineStart(tokenFile.Line(pos)) - 1
+			for _, comment := range f.Comments {
+				if comment.Pos() <= npos && npos <= comment.End() {
+					// TODO(jedevc): we need to make sure that this comment has
+					// no content before it
+					return comment, nil
+				}
+			}
+		}
+
+		if allowLineComment {
+			// if no doc-style comment found, fallback to the current line to
+			// find a comment at the end of the line
+			npos := tokenFile.LineStart(tokenFile.Line(pos)+1) - 1
+			for _, comment := range f.Comments {
+				if comment.Pos() <= npos && npos <= comment.End() {
+					return comment, nil
+				}
 			}
 		}
 	}
-	return nil, fmt.Errorf("no decl for position %d", pos)
+	return nil, fmt.Errorf("no comment for function %s", fnDecl.Name.Name)
+}
+
+func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
+	tokenFile := ps.fset.File(obj.Pos())
+	return filepath.Base(tokenFile.Name()) == daggerGenFilename
 }
 
 // findOptsAccessPattern takes a type and a base statement (the name of a

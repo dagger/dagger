@@ -485,6 +485,16 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
 	})
 
+	t.Run("func EchoOptionalPointer(string) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalPointer(msg: "hello")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"hello...hello...hello..."}}`, out)
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptionalPointer}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"default...default...default..."}}`, out)
+	})
+
 	t.Run("func Echoes([]string) []string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
@@ -595,22 +605,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 }
 
-func TestModuleGoDocs(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: goSignatures,
-		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	inspectModule := daggerQuery(`
+var inspectModule = daggerQuery(`
 query {
   host {
     directory(path: ".") {
@@ -632,7 +627,22 @@ query {
     }
   }
 }
-	`)
+`)
+
+func TestModuleGoDocs(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: goSignatures,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
@@ -650,6 +660,7 @@ query {
 	require.Equal(t, "EchoOpts does some opts things", echoOpts.Get("description").String())
 	require.Len(t, echoOpts.Get("args").Array(), 3)
 	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
 	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
 	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
 	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
@@ -661,10 +672,72 @@ query {
 	require.Equal(t, "EchoOptsInline does some opts things", echoOpts.Get("description").String())
 	require.Len(t, echoOpts.Get("args").Array(), 3)
 	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
 	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
 	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
 	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
 	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+}
+
+func TestModuleGoDocsEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+// some docs
+func (m *Minimal) Hello(foo string, bar string,
+// hello
+baz string, qux string, x string, // lol
+) string {
+	return foo + bar
+}
+
+func (m *Minimal) HelloAgain(
+	foo string, // docs for foo
+	bar string,
+) string {
+	return foo + bar
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	require.Equal(t, "Minimal", obj.Get("name").String())
+
+	hello := obj.Get(`functions.#(name="hello")`)
+	require.Equal(t, "hello", hello.Get("name").String())
+	require.Len(t, hello.Get("args").Array(), 5)
+	require.Equal(t, "foo", hello.Get("args.0.name").String())
+	require.Equal(t, "", hello.Get("args.0.description").String())
+	require.Equal(t, "bar", hello.Get("args.1.name").String())
+	require.Equal(t, "", hello.Get("args.1.description").String())
+	require.Equal(t, "baz", hello.Get("args.2.name").String())
+	require.Equal(t, "hello", hello.Get("args.2.description").String())
+	require.Equal(t, "qux", hello.Get("args.3.name").String())
+	require.Equal(t, "", hello.Get("args.3.description").String())
+	require.Equal(t, "x", hello.Get("args.4.name").String())
+	require.Equal(t, "lol", hello.Get("args.4.description").String())
+
+	// hello = obj.Get(`functions.#(name="helloAgain")`)
+	// require.Equal(t, "helloAgain", hello.Get("name").String())
+	// require.Len(t, hello.Get("args").Array(), 2)
+	// require.Equal(t, "foo", hello.Get("args.0.name").String())
+	// require.Equal(t, "docs for foo", hello.Get("args.0.description").String())
+	// require.Equal(t, "bar", hello.Get("args.1.name").String())
+	// require.Equal(t, "", hello.Get("args.1.description").String())
 }
 
 func TestModuleGoSignaturesMixMatch(t *testing.T) {

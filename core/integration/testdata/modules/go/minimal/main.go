@@ -34,6 +34,14 @@ func (m *Minimal) EchoOptional(msg Optional[string]) string {
 	return m.Echo(v)
 }
 
+func (m *Minimal) EchoOptionalPointer(msg **Optional[**string]) string {
+	v, ok := (*msg).Get()
+	if !ok {
+		v = ptr(ptr("default"))
+	}
+	return m.Echo(**v)
+}
+
 func (m *Minimal) Echoes(msgs []string) []string {
 	return []string{m.Echo(strings.Join(msgs, " "))}
 }
@@ -62,7 +70,7 @@ func (m *Minimal) HelloVoidError() error {
 
 // EchoOpts does some opts things
 func (m *Minimal) EchoOpts(
-	msg string,
+	msg string, // the message to echo
 
 	// String to append to the echoed message
 	suffix Optional[string],
@@ -75,7 +83,7 @@ func (m *Minimal) EchoOpts(
 
 // EchoOptsInline does some opts things
 func (m *Minimal) EchoOptsInline(opts struct {
-	Msg string
+	Msg string // the message to echo
 
 	// String to append to the echoed message
 	Suffix Optional[string]
