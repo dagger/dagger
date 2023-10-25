@@ -4,9 +4,10 @@ import (
 	"context"
 	"io/fs"
 
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type directorySchema struct {
@@ -38,6 +39,7 @@ func (s *directorySchema) Resolvers() Resolvers {
 		"sync":             ToResolver(s.sync),
 		"pipeline":         ToResolver(s.pipeline),
 		"entries":          ToResolver(s.entries),
+		"glob":             ToResolver(s.glob),
 		"file":             ToResolver(s.file),
 		"withFile":         ToResolver(s.withFile),
 		"withNewFile":      ToResolver(s.withNewFile),
@@ -135,6 +137,14 @@ type entriesArgs struct {
 
 func (s *directorySchema) entries(ctx context.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
 	return parent.Entries(ctx, s.bk, s.svcs, args.Path)
+}
+
+type globArgs struct {
+	Pattern string
+}
+
+func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
+	return parent.Glob(ctx, s.bk, s.svcs, ".", args.Pattern)
 }
 
 type dirFileArgs struct {

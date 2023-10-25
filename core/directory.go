@@ -14,6 +14,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/patternmatcher"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -251,6 +252,83 @@ func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, svcs *Se
 	paths := []string{}
 	for _, entry := range entries {
 		paths = append(paths, entry.GetPath())
+	}
+
+	return paths, nil
+}
+
+// Glob returns a list of files that matches the given pattern.
+//
+// Note(TomChv): Instead of handling the recursive manually, we could update cacheutil.ReadDir
+// so it will only mount and unmount the filesystem one time.
+// However, this requires to maintain buildkit code and is not mandatory for now until
+// we hit performances issues.
+func (dir *Directory) Glob(ctx context.Context, bk *buildkit.Client, svcs *Services, src string, pattern string) ([]string, error) {
+	src = path.Join(dir.Dir, src)
+
+	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: dir.LLB,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("%s: no such file or directory", src)
+	}
+
+	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
+		Path:           src,
+		IncludePattern: pattern,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	paths := []string{}
+	for _, entry := range entries {
+		entryPath := entry.GetPath()
+
+		if src != "." {
+			// We remove `/` because src is `/` by default, but it obfuscates
+			// the output.
+			entryPath = strings.TrimPrefix(filepath.Join(src, entryPath), "/")
+		}
+
+		// We use the same pattern matching function as Buildkit to handle
+		// recursive strategy.
+		match, err := patternmatcher.MatchesOrParentMatches(entryPath, []string{pattern})
+		if err != nil {
+			return nil, err
+		}
+
+		if match {
+			paths = append(paths, entryPath)
+		}
+
+		// Handle recursive option
+		if entry.IsDir() {
+			subEntries, err := dir.Glob(ctx, bk, svcs, entryPath, pattern)
+			if err != nil {
+				return nil, err
+			}
+
+			paths = append(paths, subEntries...)
+		}
 	}
 
 	return paths, nil

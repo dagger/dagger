@@ -1829,6 +1829,35 @@ class Directory(Type):
         return File(_ctx)
 
     @typecheck
+    async def glob(self, pattern: str) -> list[str]:
+        """Returns a list of files and directories that matche the given pattern.
+
+        Parameters
+        ----------
+        pattern:
+            Pattern to match (e.g., "*.md").
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("pattern", pattern),
+        ]
+        _ctx = self._select("glob", _args)
+        return await _ctx.execute(list[str])
+
+    @typecheck
     async def id(self) -> DirectoryID:
         """The content-addressed identifier of the directory.
 

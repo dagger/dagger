@@ -138,6 +138,16 @@ defmodule Dagger.Directory do
   )
 
   (
+    @doc "Returns a list of files and directories that matche the given pattern.\n\n## Required Arguments\n\n* `pattern` - Pattern to match (e.g., \"*.md\")."
+    @spec glob(t(), Dagger.String.t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
+    def glob(%__MODULE__{} = directory, pattern) do
+      selection = select(directory.selection, "glob")
+      selection = arg(selection, "pattern", pattern)
+      execute(selection, directory.client)
+    end
+  )
+
+  (
     @doc "The content-addressed identifier of the directory."
     @spec id(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
     def id(%__MODULE__{} = directory) do
