@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -50,7 +51,7 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx *core.Context, _ any, args setSecretFileArgs) (*core.Secret, error) {
+func (s *hostSchema) setSecretFile(ctx context.Context, _ any, args setSecretFileArgs) (*core.Secret, error) {
 	secretFileContent, err := s.bk.ReadCallerHostFile(ctx, args.Path)
 	if err != nil {
 		return nil, fmt.Errorf("read secret file: %w", err)
@@ -70,7 +71,7 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *hostSchema) directory(ctx *core.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
+func (s *hostSchema) directory(ctx context.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
 	return s.host.Directory(ctx, s.bk, args.Path, parent.PipelinePath(), "host.directory", s.platform, args.CopyFilter)
 }
 
@@ -78,7 +79,7 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx *core.Context, parent any, args hostSocketArgs) (*socket.Socket, error) {
+func (s *hostSchema) socket(ctx context.Context, parent any, args hostSocketArgs) (*socket.Socket, error) {
 	return s.host.Socket(ctx, args.Path)
 }
 
@@ -86,7 +87,7 @@ type hostFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
+func (s *hostSchema) file(ctx context.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
 	return s.host.File(ctx, s.bk, s.svcs, args.Path, parent.PipelinePath(), s.platform)
 }
 
@@ -96,7 +97,7 @@ type hostTunnelArgs struct {
 	Native  bool
 }
 
-func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
+func (s *hostSchema) tunnel(ctx context.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
 	svc, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
@@ -144,7 +145,7 @@ type hostServiceArgs struct {
 	Ports []core.PortForward
 }
 
-func (s *hostSchema) service(ctx *core.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
 	if len(args.Ports) == 0 {
 		return nil, errors.New("no ports specified")
 	}
