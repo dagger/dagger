@@ -143,7 +143,7 @@ type globArgs struct {
 	Pattern string
 }
 
-func (s *directorySchema) glob(ctx *core.Context, parent *core.Directory, args globArgs) ([]string, error) {
+func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
 	return parent.Glob(ctx, s.bk, s.svcs, ".", args.Pattern)
 }
 
