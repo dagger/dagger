@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -66,9 +67,9 @@ type ScalarResolver struct {
 
 func (ScalarResolver) _resolver() {}
 
-// ToResolver transforms any function f with a *Context, a parent P and some args A that returns a Response R and an error
+// ToResolver transforms any function f with a context.Context, a parent P and some args A that returns a Response R and an error
 // into a graphql resolver graphql.FieldResolveFn.
-func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) graphql.FieldResolveFn {
+func ToResolver[P any, A any, R any](f func(context.Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
 		recorder := progrock.FromContext(p.Context)
 
@@ -102,13 +103,9 @@ func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) gra
 			return nil, err
 		}
 
-		ctx := core.Context{
-			Context:       p.Context,
-			ResolveParams: p,
-			Vertex:        vtx,
-		}
+		ctx := p.Context
 
-		res, err := f(&ctx, parent, args)
+		res, err := f(ctx, parent, args)
 		if err != nil {
 			vtx.Done(err)
 			return nil, err
@@ -130,7 +127,7 @@ func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) gra
 }
 
 func PassthroughResolver(p graphql.ResolveParams) (any, error) {
-	return ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
+	return ToResolver(func(ctx context.Context, parent any, args any) (any, error) {
 		if parent == nil {
 			parent = struct{}{}
 		}
@@ -139,7 +136,7 @@ func PassthroughResolver(p graphql.ResolveParams) (any, error) {
 }
 
 func ErrResolver(err error) graphql.FieldResolveFn {
-	return ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
+	return ToResolver(func(ctx context.Context, parent any, args any) (any, error) {
 		return nil, err
 	})
 }
@@ -149,7 +146,7 @@ func ResolveIDable[T any](rs Resolvers, name string, obj ObjectResolver) {
 	rs[name] = ToIDableObjectResolver(resourceid.ID[T].Decode, obj)
 
 	// Add field for querying the object's ID.
-	obj["id"] = ToResolver(func(ctx *core.Context, obj *T, args any) (_ resourceid.ID[T], rerr error) {
+	obj["id"] = ToResolver(func(ctx context.Context, obj *T, args any) (_ resourceid.ID[T], rerr error) {
 		return resourceid.Encode(obj)
 	})
 
@@ -163,7 +160,7 @@ func ResolveIDable[T any](rs Resolvers, name string, obj ObjectResolver) {
 		rs["Query"] = query
 	}
 	loaderName := fmt.Sprintf("load%sFromID", name)
-	query[loaderName] = ToResolver(func(ctx *core.Context, _ any, args struct{ ID resourceid.ID[T] }) (*T, error) {
+	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID resourceid.ID[T] }) (*T, error) {
 		return resourceid.ID[T].Decode(args.ID)
 	})
 }

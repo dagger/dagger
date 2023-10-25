@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -118,7 +119,7 @@ type containerArgs struct {
 	Platform *specs.Platform
 }
 
-func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
+func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
 	if args.ID != "" {
 		return args.ID.Decode()
 	}
@@ -133,7 +134,7 @@ func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args 
 	return ctr, err
 }
 
-func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any) (core.ContainerID, error) {
+func (s *containerSchema) sync(ctx context.Context, parent *core.Container, _ any) (core.ContainerID, error) {
 	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
 		return "", err
@@ -145,7 +146,7 @@ type containerFromArgs struct {
 	Address string
 }
 
-func (s *containerSchema) from(ctx *core.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
+func (s *containerSchema) from(ctx context.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
 	return parent.From(ctx, s.bk, args.Address)
 }
 
@@ -157,7 +158,7 @@ type containerBuildArgs struct {
 	Secrets    []core.SecretID
 }
 
-func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
+func (s *containerSchema) build(ctx context.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
 	dir, err := args.Context.Decode()
 	if err != nil {
 		return nil, err
@@ -179,7 +180,7 @@ type containerWithRootFSArgs struct {
 	Directory core.DirectoryID
 }
 
-func (s *containerSchema) withRootfs(ctx *core.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
+func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
 	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
@@ -193,11 +194,11 @@ type containerPipelineArgs struct {
 	Labels      []pipeline.Label
 }
 
-func (s *containerSchema) pipeline(ctx *core.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
+func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
 	return parent.WithPipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
-func (s *containerSchema) rootfs(ctx *core.Context, parent *core.Container, args any) (*core.Directory, error) {
+func (s *containerSchema) rootfs(ctx context.Context, parent *core.Container, args any) (*core.Directory, error) {
 	return parent.RootFS(ctx)
 }
 
@@ -205,15 +206,15 @@ type containerExecArgs struct {
 	core.ContainerExecOpts
 }
 
-func (s *containerSchema) withExec(ctx *core.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
 	return parent.WithExec(ctx, s.bk, s.progSockPath, s.MergedSchemas.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, _ any) (string, error) {
+func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ any) (string, error) {
 	return parent.MetaFileContents(ctx, s.bk, s.svcs, s.progSockPath, "stdout")
 }
 
-func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, _ any) (string, error) {
+func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ any) (string, error) {
 	return parent.MetaFileContents(ctx, s.bk, s.svcs, s.progSockPath, "stderr")
 }
 
@@ -221,14 +222,14 @@ type containerWithEntrypointArgs struct {
 	Args []string
 }
 
-func (s *containerSchema) withEntrypoint(ctx *core.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
+func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.Entrypoint = args.Args
 		return cfg
 	})
 }
 
-func (s *containerSchema) entrypoint(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) ([]string, error) {
+func (s *containerSchema) entrypoint(ctx context.Context, parent *core.Container, args containerWithVariableArgs) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -241,7 +242,7 @@ type containerWithDefaultArgs struct {
 	Args *[]string
 }
 
-func (s *containerSchema) withDefaultArgs(ctx *core.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
+func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		if args.Args == nil {
 			cfg.Cmd = []string{}
@@ -253,7 +254,7 @@ func (s *containerSchema) withDefaultArgs(ctx *core.Context, parent *core.Contai
 	})
 }
 
-func (s *containerSchema) defaultArgs(ctx *core.Context, parent *core.Container, args any) ([]string, error) {
+func (s *containerSchema) defaultArgs(ctx context.Context, parent *core.Container, args any) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -266,14 +267,14 @@ type containerWithUserArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withUser(ctx *core.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
+func (s *containerSchema) withUser(ctx context.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.User = args.Name
 		return cfg
 	})
 }
 
-func (s *containerSchema) user(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+func (s *containerSchema) user(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return "", err
@@ -286,14 +287,14 @@ type containerWithWorkdirArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withWorkdir(ctx *core.Context, parent *core.Container, args containerWithWorkdirArgs) (*core.Container, error) {
+func (s *containerSchema) withWorkdir(ctx context.Context, parent *core.Container, args containerWithWorkdirArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, args.Path)
 		return cfg
 	})
 }
 
-func (s *containerSchema) workdir(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+func (s *containerSchema) workdir(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return "", err
@@ -308,7 +309,7 @@ type containerWithVariableArgs struct {
 	Expand bool
 }
 
-func (s *containerSchema) withEnvVariable(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		value := args.Value
 
@@ -329,7 +330,7 @@ type containerWithoutVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutEnvVariable(ctx *core.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		newEnv := []string{}
 
@@ -350,7 +351,7 @@ type EnvVariable struct {
 	Value string `json:"value"`
 }
 
-func (s *containerSchema) envVariables(ctx *core.Context, parent *core.Container, args any) ([]EnvVariable, error) {
+func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args any) ([]EnvVariable, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -369,7 +370,7 @@ type containerVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) envVariable(ctx *core.Context, parent *core.Container, args containerVariableArgs) (*string, error) {
+func (s *containerSchema) envVariable(ctx context.Context, parent *core.Container, args containerVariableArgs) (*string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -387,7 +388,7 @@ type Label struct {
 	Value string `json:"value"`
 }
 
-func (s *containerSchema) labels(ctx *core.Context, parent *core.Container, args any) ([]Label, error) {
+func (s *containerSchema) labels(ctx context.Context, parent *core.Container, args any) ([]Label, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -410,7 +411,7 @@ type containerLabelArgs struct {
 	Name string
 }
 
-func (s *containerSchema) label(ctx *core.Context, parent *core.Container, args containerLabelArgs) (*string, error) {
+func (s *containerSchema) label(ctx context.Context, parent *core.Container, args containerLabelArgs) (*string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -429,7 +430,7 @@ type containerWithMountedDirectoryArgs struct {
 	Owner  string
 }
 
-func (s *containerSchema) withMountedDirectory(ctx *core.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
 	dir, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
@@ -444,7 +445,7 @@ type containerPublishArgs struct {
 	MediaTypes        core.ImageMediaTypes
 }
 
-func (s *containerSchema) publish(ctx *core.Context, parent *core.Container, args containerPublishArgs) (string, error) {
+func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (string, error) {
 	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
@@ -454,7 +455,7 @@ type containerWithMountedFileArgs struct {
 	Owner  string
 }
 
-func (s *containerSchema) withMountedFile(ctx *core.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
 	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
@@ -470,7 +471,7 @@ type containerWithMountedCacheArgs struct {
 	Owner       string
 }
 
-func (s *containerSchema) withMountedCache(ctx *core.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
 	var dir *core.Directory
 	if args.Source != "" {
 		var err error
@@ -492,7 +493,7 @@ type containerWithMountedTempArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withMountedTemp(ctx *core.Context, parent *core.Container, args containerWithMountedTempArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedTemp(ctx context.Context, parent *core.Container, args containerWithMountedTempArgs) (*core.Container, error) {
 	return parent.WithMountedTemp(ctx, args.Path)
 }
 
@@ -500,11 +501,11 @@ type containerWithoutMountArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withoutMount(ctx *core.Context, parent *core.Container, args containerWithoutMountArgs) (*core.Container, error) {
+func (s *containerSchema) withoutMount(ctx context.Context, parent *core.Container, args containerWithoutMountArgs) (*core.Container, error) {
 	return parent.WithoutMount(ctx, args.Path)
 }
 
-func (s *containerSchema) mounts(ctx *core.Context, parent *core.Container, _ any) ([]string, error) {
+func (s *containerSchema) mounts(ctx context.Context, parent *core.Container, _ any) ([]string, error) {
 	return parent.MountTargets(ctx)
 }
 
@@ -513,7 +514,7 @@ type containerWithLabelArgs struct {
 	Value string
 }
 
-func (s *containerSchema) withLabel(ctx *core.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
+func (s *containerSchema) withLabel(ctx context.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		if cfg.Labels == nil {
 			cfg.Labels = make(map[string]string)
@@ -527,7 +528,7 @@ type containerWithoutLabelArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutLabel(ctx *core.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
+func (s *containerSchema) withoutLabel(ctx context.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		delete(cfg.Labels, args.Name)
 		return cfg
@@ -538,7 +539,7 @@ type containerDirectoryArgs struct {
 	Path string
 }
 
-func (s *containerSchema) directory(ctx *core.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
+func (s *containerSchema) directory(ctx context.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
 	return parent.Directory(ctx, s.bk, s.svcs, args.Path)
 }
 
@@ -546,7 +547,7 @@ type containerFileArgs struct {
 	Path string
 }
 
-func (s *containerSchema) file(ctx *core.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
+func (s *containerSchema) file(ctx context.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
 	return parent.File(ctx, s.bk, s.svcs, args.Path)
 }
 
@@ -567,7 +568,7 @@ type containerWithSecretVariableArgs struct {
 	Secret core.SecretID
 }
 
-func (s *containerSchema) withSecretVariable(ctx *core.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
 	secret, err := args.Secret.Decode()
 	if err != nil {
 		return nil, err
@@ -582,7 +583,7 @@ type containerWithMountedSecretArgs struct {
 	Mode   *int
 }
 
-func (s *containerSchema) withMountedSecret(ctx *core.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
 	secret, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
@@ -595,7 +596,7 @@ type containerWithDirectoryArgs struct {
 	Owner string
 }
 
-func (s *containerSchema) withDirectory(ctx *core.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
 	dir, err := args.Directory.Decode()
 	if err != nil {
 		return nil, err
@@ -608,7 +609,7 @@ type containerWithFileArgs struct {
 	Owner string
 }
 
-func (s *containerSchema) withFile(ctx *core.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
+func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
 	file, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
@@ -621,7 +622,7 @@ type containerWithNewFileArgs struct {
 	Owner string
 }
 
-func (s *containerSchema) withNewFile(ctx *core.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
+func (s *containerSchema) withNewFile(ctx context.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
 	return parent.WithNewFile(ctx, s.bk, args.Path, []byte(args.Contents), args.Permissions, args.Owner)
 }
 
@@ -631,7 +632,7 @@ type containerWithUnixSocketArgs struct {
 	Owner  string
 }
 
-func (s *containerSchema) withUnixSocket(ctx *core.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
+func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
 	socket, err := args.Source.Decode()
 	if err != nil {
 		return nil, err
@@ -643,11 +644,11 @@ type containerWithoutUnixSocketArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withoutUnixSocket(ctx *core.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
+func (s *containerSchema) withoutUnixSocket(ctx context.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
 	return parent.WithoutUnixSocket(ctx, args.Path)
 }
 
-func (s *containerSchema) platform(ctx *core.Context, parent *core.Container, args any) (specs.Platform, error) {
+func (s *containerSchema) platform(ctx context.Context, parent *core.Container, args any) (specs.Platform, error) {
 	return parent.Platform, nil
 }
 
@@ -658,7 +659,7 @@ type containerExportArgs struct {
 	MediaTypes        core.ImageMediaTypes
 }
 
-func (s *containerSchema) export(ctx *core.Context, parent *core.Container, args containerExportArgs) (bool, error) {
+func (s *containerSchema) export(ctx context.Context, parent *core.Container, args containerExportArgs) (bool, error) {
 	if err := parent.Export(ctx, s.bk, s.svcs, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
 		return false, err
 	}
@@ -672,7 +673,7 @@ type containerAsTarballArgs struct {
 	MediaTypes        core.ImageMediaTypes
 }
 
-func (s *containerSchema) asTarball(ctx *core.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
+func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
 	return parent.AsTarball(ctx, s.bk, s.MergedSchemas.platform, s.svcs, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
@@ -681,7 +682,7 @@ type containerImportArgs struct {
 	Tag    string
 }
 
-func (s *containerSchema) import_(ctx *core.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
+func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
 	return parent.Import(
 		ctx,
 		args.Source,
@@ -701,7 +702,7 @@ type containerWithRegistryAuthArgs struct {
 	Secret   core.SecretID `json:"secret"`
 }
 
-func (s *containerSchema) withRegistryAuth(ctx *core.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withRegistryAuth(ctx context.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
 	secretBytes, err := s.secrets.GetSecret(ctx, args.Secret.String())
 	if err != nil {
 		return nil, err
@@ -718,7 +719,7 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(_ *core.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withoutRegistryAuth(_ context.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
 	if err := s.auth.RemoveCredential(args.Address); err != nil {
 		return nil, err
 	}
@@ -726,7 +727,7 @@ func (s *containerSchema) withoutRegistryAuth(_ *core.Context, parents *core.Con
 	return parents, nil
 }
 
-func (s *containerSchema) imageRef(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
 	return parent.ImageRefOrErr(ctx, s.bk)
 }
 
@@ -735,7 +736,7 @@ type containerWithServiceBindingArgs struct {
 	Alias   string
 }
 
-func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
+func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
 	svc, err := args.Service.Decode()
 	if err != nil {
 		return nil, err
@@ -750,7 +751,7 @@ type containerWithExposedPortArgs struct {
 	Description *string
 }
 
-func (s *containerSchema) withExposedPort(ctx *core.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+func (s *containerSchema) withExposedPort(ctx context.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
 	return parent.WithExposedPort(core.Port{
 		Protocol:    args.Protocol,
 		Port:        args.Port,
@@ -763,7 +764,7 @@ type containerWithoutExposedPortArgs struct {
 	Port     int
 }
 
-func (s *containerSchema) withoutExposedPort(ctx *core.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
+func (s *containerSchema) withoutExposedPort(ctx context.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
 	return parent.WithoutExposedPort(args.Port, args.Protocol)
 }
 
@@ -775,7 +776,7 @@ type ExposedPort struct {
 	Description *string `json:"description,omitempty"`
 }
 
-func (s *containerSchema) exposedPorts(ctx *core.Context, parent *core.Container, args any) ([]ExposedPort, error) {
+func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Container, args any) ([]ExposedPort, error) {
 	// get descriptions from `Container.Ports` (not in the OCI spec)
 	ports := make(map[string]ExposedPort, len(parent.Ports))
 	for _, p := range parent.Ports {
@@ -811,19 +812,19 @@ func (s *containerSchema) exposedPorts(ctx *core.Context, parent *core.Container
 	return exposedPorts, nil
 }
 
-func (s *containerSchema) withFocus(ctx *core.Context, parent *core.Container, args any) (*core.Container, error) {
+func (s *containerSchema) withFocus(ctx context.Context, parent *core.Container, args any) (*core.Container, error) {
 	child := parent.Clone()
 	child.Focused = true
 	return child, nil
 }
 
-func (s *containerSchema) withoutFocus(ctx *core.Context, parent *core.Container, args any) (*core.Container, error) {
+func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Container, args any) (*core.Container, error) {
 	child := parent.Clone()
 	child.Focused = false
 	return child, nil
 }
 
-func (s *containerSchema) shellEndpoint(ctx *core.Context, parent *core.Container, args any) (string, error) {
+func (s *containerSchema) shellEndpoint(ctx context.Context, parent *core.Container, args any) (string, error) {
 	endpoint, handler, err := parent.ShellEndpoint(s.bk, s.progSockPath, s.services)
 	if err != nil {
 		return "", err

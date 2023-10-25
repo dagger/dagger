@@ -1,10 +1,10 @@
 package schema
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/graphql/language/ast"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -74,6 +74,6 @@ func (s *platformSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *platformSchema) defaultPlatform(ctx *core.Context, parent, args any) (specs.Platform, error) {
+func (s *platformSchema) defaultPlatform(ctx context.Context, parent, args any) (specs.Platform, error) {
 	return s.platform, nil
 }

@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -41,7 +43,7 @@ type httpArgs struct {
 	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
 }
 
-func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) (*core.File, error) {
+func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs) (*core.File, error) {
 	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags
 	// and http checksums using an id based on this name, so setting it to the URL maximizes our chances
 	// of following more optimized cache codepaths.

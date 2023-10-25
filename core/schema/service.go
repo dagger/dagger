@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"runtime/debug"
 
 	"github.com/dagger/dagger/core"
@@ -44,15 +45,15 @@ func (s *serviceSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *serviceSchema) containerAsService(ctx *core.Context, parent *core.Container, args any) (*core.Service, error) {
+func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args any) (*core.Service, error) {
 	return parent.Service(ctx, s.bk, s.progSockPath)
 }
 
-func (s *serviceSchema) hostname(ctx *core.Context, parent *core.Service, args any) (string, error) {
+func (s *serviceSchema) hostname(ctx context.Context, parent *core.Service, args any) (string, error) {
 	return parent.Hostname(ctx, s.svcs)
 }
 
-func (s *serviceSchema) ports(ctx *core.Context, parent *core.Service, args any) ([]core.Port, error) {
+func (s *serviceSchema) ports(ctx context.Context, parent *core.Service, args any) ([]core.Port, error) {
 	return parent.Ports(ctx, s.svcs)
 }
 
@@ -61,11 +62,11 @@ type serviceEndpointArgs struct {
 	Scheme string
 }
 
-func (s *serviceSchema) endpoint(ctx *core.Context, parent *core.Service, args serviceEndpointArgs) (string, error) {
+func (s *serviceSchema) endpoint(ctx context.Context, parent *core.Service, args serviceEndpointArgs) (string, error) {
 	return parent.Endpoint(ctx, s.svcs, args.Port, args.Scheme)
 }
 
-func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
+func (s *serviceSchema) start(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
 	defer func() {
 		if err := recover(); err != nil {
 			debug.PrintStack()
@@ -81,7 +82,7 @@ func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any)
 	return running.Service.ID()
 }
 
-func (s *serviceSchema) stop(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
+func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
 	err := s.svcs.Stop(ctx, s.bk, parent)
 	if err != nil {
 		return "", err
