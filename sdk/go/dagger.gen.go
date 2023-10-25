@@ -1640,6 +1640,17 @@ func (r *Directory) File(path string) *File {
 	}
 }
 
+// Returns a list of files and directories that matche the given pattern.
+func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
+	q := r.q.Select("glob")
+	q = q.Arg("pattern", pattern)
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // The content-addressed identifier of the directory.
 func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	if r.id != nil {

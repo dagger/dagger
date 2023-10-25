@@ -1568,6 +1568,8 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 type DirectoryEntriesOpts struct {
 	// Location of the directory to look at (e.g., "/src").
 	Path string
+	// Pattern to include in the entries (e.g., "*.md").
+	Include string
 }
 
 // Returns a list of files and directories at the given path.
@@ -1577,6 +1579,10 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 		// `path` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Path) {
 			q = q.Arg("path", opts[i].Path)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
 		}
 	}
 

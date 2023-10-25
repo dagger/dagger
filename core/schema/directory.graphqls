@@ -43,6 +43,17 @@ type Directory {
     path: String
   ): [String!]!
 
+
+  """
+  Returns a list of files and directories that matche the given pattern.
+  """
+  glob(
+    """
+    Pattern to match (e.g., "*.md").
+    """
+    pattern: String!
+  ): [String!]!
+
   """
   Retrieves a file at the given path.
   """
