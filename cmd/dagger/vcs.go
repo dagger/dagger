@@ -39,15 +39,15 @@ func automateVCS(ctx context.Context, moduleDir string, codegen *dagger.Generate
 		return fmt.Errorf("failed to get vcs ignored paths: %w", err)
 	}
 	if err := gitIgnorePaths(ctx, repo, moduleDir, ignorePaths...); err != nil {
-		return fmt.Errorf("failed to update .gitignore: %w", err)
+		return fmt.Errorf("failed to update %s: %w", gitIgnoreFile, err)
 	}
 
 	generatedPaths, err := codegen.VcsGeneratedPaths(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get vcs ignored paths: %w", err)
+		return fmt.Errorf("failed to get vcs generated paths: %w", err)
 	}
 	if err := gitMarkGeneratedAttributes(ctx, moduleDir, generatedPaths...); err != nil {
-		return fmt.Errorf("failed to update .gitignore: %w", err)
+		return fmt.Errorf("failed to update %s: %w", gitAttributesFile, err)
 	}
 
 	return nil
