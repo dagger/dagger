@@ -223,12 +223,25 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("dev")
 
+	var gpuSupportEnabled bool
+	if v := os.Getenv(util.GPUSupportEnvName); v != "" {
+		gpuSupportEnabled = true
+	}
+
 	arches := []string{runtime.GOARCH}
 
 	tarPath := "./bin/engine.tar"
 
+	// Conditionally load GPU enabled image for dev environment if the flag is set:
+	var platformVariants []*dagger.Container
+	if gpuSupportEnabled {
+		platformVariants = util.DevEngineContainerWithGPUSupport(c, arches, "")
+	} else {
+		platformVariants = util.DevEngineContainer(c, arches, "")
+	}
+
 	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainer(c, arches, ""),
+		PlatformVariants: platformVariants,
 		// use gzip to avoid incompatibility w/ older docker versions
 		ForcedCompression: dagger.Gzip,
 	})
@@ -273,7 +286,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 
 	// Make all GPUs visible to the engine container if the GPU support flag is set:
-	if gpuSupportEnabled := os.Getenv(util.GPUSupportEnvName); gpuSupportEnabled != "" {
+	if gpuSupportEnabled {
 		runArgs = append(runArgs, []string{"--gpus", "all"}...)
 	}
 	runArgs = append(runArgs, []string{
