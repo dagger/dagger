@@ -1,10 +1,14 @@
 package modules
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"dagger.io/dagger"
 )
 
 // Filename is the name of the module config file.
@@ -58,6 +62,29 @@ func (cfg *Config) RootAndSubpath(moduleSourceDir string) (string, string, error
 	}
 
 	return modRootDir, subPath, nil
+}
+
+// Use adds the given module references to the module's dependencies.
+func (cfg *Config) Use(ctx context.Context, dag *dagger.Client, ref *Ref, refs ...string) error {
+	var deps []string
+	deps = append(deps, cfg.Dependencies...)
+	deps = append(deps, refs...)
+	depSet := make(map[string]*Ref)
+	for _, dep := range deps {
+		depMod, err := ResolveModuleDependency(ctx, dag, ref, dep)
+		if err != nil {
+			return fmt.Errorf("failed to get module: %w", err)
+		}
+		depSet[depMod.Symbolic()] = depMod
+	}
+
+	cfg.Dependencies = nil
+	for _, dep := range depSet {
+		cfg.Dependencies = append(cfg.Dependencies, dep.String())
+	}
+	sort.Strings(cfg.Dependencies)
+
+	return nil
 }
 
 // NormalizeConfigPath appends /dagger.json to the given path if it is not
