@@ -100,6 +100,13 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 				// the type must be created in the target package
 				continue
 			}
+			if !obj.Exported() {
+				// the type must be exported
+				if !topLevel {
+					panic(fmt.Sprintf("cannot code-generate unexported type %s", obj.Name()))
+				}
+				continue
+			}
 
 			strct, isStruct := named.Underlying().(*types.Struct)
 			if !isStruct {

@@ -745,6 +745,84 @@ func (m *Minimal) HelloAgain(
 	// require.Equal(t, "", hello.Get("args.1.description").String())
 }
 
+func TestModuleGoSignaturesUnexported(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+type Foo struct {}
+
+type bar struct {}
+
+func (m *Minimal) Hello(name string) string {
+	return name
+}
+
+func (f *Foo) Hello(name string) string {
+	return name
+}
+
+func (b *bar) Hello(name string) string {
+	return name
+}
+`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	objs := gjson.Get(out, "host.directory.asModule.objects")
+
+	require.Equal(t, 2, len(objs.Array()))
+
+	minimal := objs.Get(`0.asObject`)
+	require.Equal(t, "Minimal", minimal.Get("name").String())
+	foo := objs.Get(`1.asObject`)
+	require.Equal(t, "MinimalFoo", foo.Get("name").String())
+
+	modGen = c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+type Foo struct {
+	Bar bar
+}
+
+type bar struct {}
+
+func (m *Minimal) Hello(name string) string {
+	return name
+}
+
+func (f *Foo) Hello(name string) string {
+	return name
+}
+
+func (b *bar) Hello(name string) string {
+	return name
+}
+`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	_, err = modGen.With(inspectModule).Stderr(ctx)
+	require.Error(t, err)
+}
+
 func TestModuleGoSignaturesMixMatch(t *testing.T) {
 	t.Parallel()
 
