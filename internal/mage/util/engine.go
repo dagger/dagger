@@ -339,16 +339,17 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 }
 
 func buildctlBin(c *dagger.Client, arch string) *dagger.File {
-	/* TODO: the commented code is what we *should* be doing, but need this PR to be merged:
+	/* TODO: the commented code is what we *should* be doing, but need these PRs to be merged:
 	https://github.com/moby/buildkit/pull/4318
+	https://github.com/moby/buildkit/pull/4341
 
 	The reason being that when we build buildctl using our go.mod, we end up
 	with conflicting otel deps w/ buildkit's upstream go.mod, which can cause
 	buildctl to crash.
 
-	So for now, we are falling back to just using buildctl from upstream's
-	image. This is okay temporarily because we don't need any customizations
-	to it.
+	So for now, we are falling back to building buildctl from upstream (with
+	small go.mod variations to ensure that we don't include vulnerable
+	dependencies).
 
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
@@ -362,9 +363,23 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/buildctl")
 	*/
 
-	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
-		From("moby/buildkit:master@sha256:5d05b3dc8dbab4422d3017014e47322b0a6168a5a2f88928baf9c607e3ac9fe1").
-		File("/usr/bin/buildctl")
+	buildkit := c.Git("github.com/moby/buildkit").Commit("5707f24f91b6b791c1bbf4a78149bb733cfa738f").Tree()
+	return goBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithMountedDirectory("/app", buildkit). // HACK: replace the src dir with buildkit's
+		WithExec([]string{
+			"go", "mod", "edit", "-require", "google.golang.org/grpc@v1.56.3",
+		}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		WithExec([]string{"go", "mod", "vendor"}).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/buildctl",
+			"-ldflags", "-s -w",
+			"github.com/moby/buildkit/cmd/buildctl",
+		}).
+		File("./bin/buildctl")
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
