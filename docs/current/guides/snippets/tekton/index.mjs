@@ -11,8 +11,8 @@ connect(
       .withDirectory(
         "/src",
         client
-        .host()
-        .directory(".", { exclude: ["node_modules/", "ci/", "build/"] })
+          .host()
+          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] })
       )
 
     // set the working directory in the container
