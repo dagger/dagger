@@ -21,13 +21,11 @@ func main() {
 
 	// Private repository with a README.md file at the root.
 	readme, err := client.
-		Git("git@private-repository.git").
+		Git("git@private-repository.git", dagger.GitOpts{
+			SSHAuthSocket: client.Host().UnixSocket(sshAgentPath),
+		}).
 		Branch("main").
-		Tree(
-			dagger.GitRefTreeOpts{
-				SSHAuthSocket: client.Host().UnixSocket(sshAgentPath),
-			},
-		).
+		Tree().
 		File("README.md").
 		Contents(ctx)
 

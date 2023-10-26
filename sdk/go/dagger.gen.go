@@ -2601,6 +2601,21 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 type GitRef struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	commit *string
+}
+
+// The resolved commit id at this ref.
+func (r *GitRef) Commit(ctx context.Context) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.q.Select("commit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // GitRefTreeOpts contains options for GitRef.Tree
@@ -3480,6 +3495,10 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
+	// Set SSH known hosts
+	SSHKnownHosts string
+	// Set SSH auth socket
+	SSHAuthSocket *Socket
 	// A service which must be started before the repo is fetched.
 	ExperimentalServiceHost *Service
 }
@@ -3491,6 +3510,14 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+		}
+		// `sshKnownHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
+			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
+		}
+		// `sshAuthSocket` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
+			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
 		}
 		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {

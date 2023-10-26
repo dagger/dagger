@@ -5,13 +5,19 @@ extend type Query {
   git(
     """
     Url of the git repository.
-    Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
     Suffix ".git" is optional.
     """
     url: String!
 
     "Set to true to keep .git directory."
     keepGitDir: Boolean
+
+    "Set SSH known hosts"
+    sshKnownHosts: String
+
+    "Set SSH auth socket"
+    sshAuthSocket: SocketID
 
     "A service which must be started before the repo is fetched."
     experimentalServiceHost: ServiceID
@@ -54,5 +60,11 @@ type GitRepository {
 "A git ref (tag, branch or commit)."
 type GitRef {
   "The filesystem tree at this ref."
-  tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
+  tree(
+    sshKnownHosts: String @deprecated(reason: "This option should be passed to `git` instead.")
+    sshAuthSocket: SocketID @deprecated(reason: "This option should be passed to `git` instead.")
+  ): Directory!
+
+  "The resolved commit id at this ref."
+  commit: String!
 }
