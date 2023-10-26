@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"dagger.io/dagger"
@@ -22,7 +21,8 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
-	sdk string
+	sdk       string
+	licenseID string
 
 	moduleName string
 	moduleRoot string
@@ -45,7 +45,9 @@ func init() {
 	moduleInitCmd.MarkPersistentFlagRequired("sdk")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.MarkPersistentFlagRequired("name")
+	moduleInitCmd.PersistentFlags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 	moduleInitCmd.PersistentFlags().StringVarP(&moduleRoot, "root", "", "", "Root directory that should be loaded for the full module context. Defaults to the parent directory containing dagger.json.")
+
 	// also include codegen flags since codegen will run on module init
 
 	moduleCmd.AddCommand(moduleInitCmd)
@@ -63,7 +65,7 @@ var moduleCmd = &cobra.Command{
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			mod, _, err := getModuleFlagConfig(ctx, engineClient.Dagger())
+			mod, _, err := getModuleRef(ctx, engineClient.Dagger())
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
@@ -104,22 +106,22 @@ var moduleInitCmd = &cobra.Command{
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-
-			mod, _, err := getModuleFlagConfig(ctx, dag)
+			ref, _, err := getModuleRef(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
-
-			if mod.Git != nil {
-				return fmt.Errorf("module init is not supported for git modules")
+			moduleDir, err := ref.LocalSourcePath()
+			if err != nil {
+				return fmt.Errorf("module init is only supported for local modules")
 			}
-
-			if exists, err := mod.modExists(ctx, nil); err == nil && exists {
-				return fmt.Errorf("module init config path already exists: %s", mod.Path)
+			if _, err := ref.Config(ctx, nil); err == nil {
+				return fmt.Errorf("module init config path already exists: %s", ref.Path)
 			}
-
+			if err := findOrCreateLicense(ctx, moduleDir); err != nil {
+				return err
+			}
 			cfg := modules.NewConfig(moduleName, sdk, moduleRoot)
-			return updateModuleConfig(ctx, engineClient, mod, cfg, cmd)
+			return updateModuleConfig(ctx, dag, moduleDir, ref, cfg, cmd)
 		})
 	},
 }
@@ -131,37 +133,23 @@ var moduleUseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			modFlagCfg, _, err := getModuleFlagConfig(ctx, engineClient.Dagger())
+			dag := engineClient.Dagger()
+			ref, _, err := getModuleRef(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
-			if modFlagCfg.Git != nil {
-				return fmt.Errorf("module use is not supported for git modules")
+			moduleDir, err := ref.LocalSourcePath()
+			if err != nil {
+				return fmt.Errorf("module use is only supported for local modules")
 			}
-			modCfg, err := modFlagCfg.Config(ctx, engineClient.Dagger())
+			modCfg, err := ref.Config(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
-
-			var deps []string
-			deps = append(deps, modCfg.Dependencies...)
-			deps = append(deps, extraArgs...)
-			depSet := make(map[string]*modules.Ref)
-			for _, dep := range deps {
-				depMod, err := modules.ResolveModuleDependency(ctx, engineClient.Dagger(), modFlagCfg.Ref, dep)
-				if err != nil {
-					return fmt.Errorf("failed to get module: %w", err)
-				}
-				depSet[depMod.Symbolic()] = depMod
+			if err := modCfg.Use(ctx, dag, ref, extraArgs...); err != nil {
+				return fmt.Errorf("failed to add module dependency: %w", err)
 			}
-
-			modCfg.Dependencies = nil
-			for _, dep := range depSet {
-				modCfg.Dependencies = append(modCfg.Dependencies, dep.String())
-			}
-			sort.Strings(modCfg.Dependencies)
-
-			return updateModuleConfig(ctx, engineClient, modFlagCfg, modCfg, cmd)
+			return updateModuleConfig(ctx, dag, moduleDir, ref, modCfg, cmd)
 		})
 	},
 }
@@ -173,41 +161,33 @@ var moduleSyncCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			modFlagCfg, _, err := getModuleFlagConfig(ctx, engineClient.Dagger())
+			dag := engineClient.Dagger()
+			ref, _, err := getModuleRef(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("failed to get module: %w", err)
 			}
-			if modFlagCfg.Git != nil {
-				return fmt.Errorf("module sync is not supported for git modules")
+			moduleDir, err := ref.LocalSourcePath()
+			if err != nil {
+				return fmt.Errorf("module sync is only supported for local modules")
 			}
-			modCfg, err := modFlagCfg.Config(ctx, engineClient.Dagger())
+			modCfg, err := ref.Config(ctx, dag)
 			if err != nil {
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
-			return updateModuleConfig(ctx, engineClient, modFlagCfg, modCfg, cmd)
+			return updateModuleConfig(ctx, dag, moduleDir, ref, modCfg, cmd)
 		})
 	},
 }
 
 func updateModuleConfig(
 	ctx context.Context,
-	engineClient *client.Client,
-	modFlag *moduleFlagConfig,
+	dag *dagger.Client,
+	moduleDir string,
+	modFlag *modules.Ref,
 	modCfg *modules.Config,
 	cmd *cobra.Command,
 ) (rerr error) {
 	rec := progrock.FromContext(ctx)
-
-	if !modFlag.Local {
-		// nothing to do
-		return nil
-	}
-
-	moduleDir, err := modFlag.LocalSourcePath()
-	if err != nil {
-		// TODO: impossible given Local check, would be nice to make unrepresentable
-		return err
-	}
 
 	configPath := filepath.Join(moduleDir, modules.Filename)
 
@@ -264,8 +244,6 @@ func updateModuleConfig(
 		return fmt.Errorf("failed to write module config: %w", err)
 	}
 
-	dag := engineClient.Dagger()
-
 	mod, err := modFlag.AsModule(ctx, dag)
 	if err != nil {
 		return fmt.Errorf("failed to load module: %w", err)
@@ -291,7 +269,7 @@ func updateModuleConfig(
 	return nil
 }
 
-func getModuleFlagConfig(ctx context.Context, dag *dagger.Client) (*moduleFlagConfig, bool, error) {
+func getModuleRef(ctx context.Context, dag *dagger.Client) (*modules.Ref, bool, error) {
 	wasSet := false
 
 	moduleURL := moduleURL
@@ -309,57 +287,8 @@ func getModuleFlagConfig(ctx context.Context, dag *dagger.Client) (*moduleFlagCo
 	} else {
 		wasSet = true
 	}
-	cfg, err := getModuleFlagConfigFromURL(ctx, dag, moduleURL)
+	cfg, err := modules.ResolveMovingRef(ctx, dag, moduleURL)
 	return cfg, wasSet, err
-}
-
-func getModuleFlagConfigFromURL(ctx context.Context, dag *dagger.Client, moduleURL string) (*moduleFlagConfig, error) {
-	modRef, err := modules.ResolveMovingRef(ctx, dag, moduleURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse module URL: %w", err)
-	}
-	return &moduleFlagConfig{modRef}, nil
-}
-
-// moduleFlagConfig holds the module settings provided by the user via flags (or defaults if not set)
-type moduleFlagConfig struct {
-	*modules.Ref
-}
-
-func (p moduleFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
-	mod, err := p.AsModule(ctx, c)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load module: %w", err)
-	}
-
-	// NB(vito): do NOT Serve the dependency; that installs it to the 'global'
-	// schema view! we only want dependencies served directly to the dependent
-	// module.
-
-	return mod, nil
-}
-
-func (p moduleFlagConfig) modExists(ctx context.Context, c *dagger.Client) (bool, error) {
-	switch {
-	case p.Local:
-		configPath := modules.NormalizeConfigPath(p.Path)
-		_, err := os.Stat(configPath)
-		if err == nil {
-			return true, nil
-		}
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to stat module config: %w", err)
-	case p.Git != nil:
-		configPath := modules.NormalizeConfigPath(p.SubPath)
-		_, err := c.Git(p.Git.CloneURL).Commit(p.Version).Tree().File(configPath).Sync(ctx)
-		// TODO: this could technically fail for other reasons, but is okay enough for now, it will
-		// still fail later if something else went wrong
-		return err == nil, nil
-	default:
-		return false, fmt.Errorf("invalid module")
-	}
 }
 
 func loadModCmdWrapper(
@@ -387,22 +316,22 @@ func loadModCmdWrapper(
 }
 
 func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
-	mod, modRequired, err := getModuleFlagConfig(ctx, c)
+	mod, modRequired, err := getModuleRef(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
 
-	modExists, err := mod.modExists(ctx, c)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if module exists: %w", err)
-	}
-	if !modExists && !modRequired {
-		// only allow failing to load the mod when it was explicitly requested
-		// by the user
-		return nil, nil
+	// check that the module exists first
+	if _, err := mod.Config(ctx, c); err != nil {
+		if !modRequired {
+			// only allow failing to load the mod when it was explicitly requested
+			// by the user
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to load module config: %w", err)
 	}
 
-	loadedMod, err := mod.load(ctx, c)
+	loadedMod, err := mod.AsModule(ctx, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load module: %w", err)
 	}
