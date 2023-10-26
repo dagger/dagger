@@ -53,7 +53,7 @@ require (
 	golang.org/x/sync v0.4.0
 	golang.org/x/sys v0.13.0
 	golang.org/x/term v0.13.0
-	google.golang.org/grpc v1.58.2
+	google.golang.org/grpc v1.58.3
 	oss.terrastruct.com/d2 v0.4.0
 )
 
