@@ -139,7 +139,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keep_git_dir` - Set to true to keep .git directory.\n* `experimental_service_host` - A service which must be started before the repo is fetched."
+    @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keep_git_dir` - Set to true to keep .git directory.\n* `ssh_known_hosts` - Set SSH known hosts\n* `ssh_auth_socket` - Set SSH auth socket\n* `experimental_service_host` - A service which must be started before the repo is fetched."
     @spec git(t(), Dagger.String.t(), keyword()) :: Dagger.GitRepository.t()
     def git(%__MODULE__{} = query, url, optional_args \\ []) do
       selection = select(query.selection, "git")
@@ -150,6 +150,21 @@ defmodule Dagger.Client do
           selection
         else
           arg(selection, "keepGitDir", optional_args[:keep_git_dir])
+        end
+
+      selection =
+        if is_nil(optional_args[:ssh_known_hosts]) do
+          selection
+        else
+          arg(selection, "sshKnownHosts", optional_args[:ssh_known_hosts])
+        end
+
+      selection =
+        if is_nil(optional_args[:ssh_auth_socket]) do
+          selection
+        else
+          {:ok, id} = Dagger.Socket.id(optional_args[:ssh_auth_socket])
+          arg(selection, "sshAuthSocket", id)
         end
 
       selection =

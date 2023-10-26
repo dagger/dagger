@@ -1,0 +1,6 @@
+kind: Added
+body: Implement new commit resolver for GitRef
+time: 2023-10-18T12:17:01.030225999+01:00
+custom:
+  Author: jedevc
+  PR: "5910"

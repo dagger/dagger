@@ -13,9 +13,12 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/llbsolver/provenance"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/user"
+	"github.com/pkg/errors"
 )
 
 type HasPBDefinitions interface {
@@ -266,4 +269,23 @@ type nopCloser struct {
 
 func (nopCloser) Close() error {
 	return nil
+}
+
+func resolveProvenance(ctx context.Context, bk *buildkit.Client, st llb.State) (*provenance.Capture, error) {
+	def, err := st.Marshal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Evaluate:   true,
+		Definition: def.ToPB(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	p := res.Ref.Provenance()
+	if p == nil {
+		return nil, errors.Errorf("no provenance was resolved")
+	}
+	return p, nil
 }

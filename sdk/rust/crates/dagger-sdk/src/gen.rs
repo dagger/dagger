@@ -2840,6 +2840,11 @@ pub struct GitRefTreeOpts<'a> {
     pub ssh_known_hosts: Option<&'a str>,
 }
 impl GitRef {
+    /// The resolved commit id at this ref.
+    pub async fn commit(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("commit");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The filesystem tree at this ref.
     ///
     /// # Arguments
@@ -3387,13 +3392,19 @@ pub struct QueryDirectoryOpts {
     pub id: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryGitOpts {
+pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
     /// Set to true to keep .git directory.
     #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
+    /// Set SSH auth socket
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_auth_socket: Option<SocketId>,
+    /// Set SSH known hosts
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_known_hosts: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts {
@@ -3593,7 +3604,7 @@ impl Query {
     /// # Arguments
     ///
     /// * `url` - Url of the git repository.
-    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
     /// Suffix ".git" is optional.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git(&self, url: impl Into<String>) -> GitRepository {
@@ -3610,14 +3621,20 @@ impl Query {
     /// # Arguments
     ///
     /// * `url` - Url of the git repository.
-    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
     /// Suffix ".git" is optional.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn git_opts(&self, url: impl Into<String>, opts: QueryGitOpts) -> GitRepository {
+    pub fn git_opts<'a>(&self, url: impl Into<String>, opts: QueryGitOpts<'a>) -> GitRepository {
         let mut query = self.selection.select("git");
         query = query.arg("url", url.into());
         if let Some(keep_git_dir) = opts.keep_git_dir {
             query = query.arg("keepGitDir", keep_git_dir);
+        }
+        if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
+            query = query.arg("sshKnownHosts", ssh_known_hosts);
+        }
+        if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
+            query = query.arg("sshAuthSocket", ssh_auth_socket);
         }
         if let Some(experimental_service_host) = opts.experimental_service_host {
             query = query.arg("experimentalServiceHost", experimental_service_host);
