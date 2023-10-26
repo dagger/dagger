@@ -1,6 +1,0 @@
-kind: Breaking
-body: Migrate Go SDK to use new zenith opts convention
-time: 2023-10-24T15:24:15.600113203+01:00
-custom:
-  Author: jedevc
-  PR: "5907"
