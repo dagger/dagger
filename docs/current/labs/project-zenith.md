@@ -82,13 +82,13 @@ the generated module code.
 If you like, you can run the generated `main.go` like so:
 
 ```sh
-dagger call my-function --string-arg 'Hello daggernauts!'
+dagger call container-echo --string-arg 'Hello daggernauts!'
 ```
 
 or
 
 ```sh
-echo '{potato{myFunction(stringArg:"Hello daggernauts!"){id}}}' | dagger query
+echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
 ```
 
 :::note
