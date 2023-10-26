@@ -6,6 +6,7 @@ import io.dagger.client.Dagger;
 import io.dagger.client.Service;
 import java.util.List;
 
+@Description("Run a sample CI test pipeline with MariaDB, Drupal and PHPUnit")
 public class TestWithDatabase {
   public static void main(String... args) throws Exception {
     try (Client client = Dagger.connect()) {
