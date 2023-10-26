@@ -22,7 +22,7 @@ const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
 
-	golangVersion = "1.21.2"
+	golangVersion = "1.21.3"
 	alpineVersion = "3.18"
 	runcVersion   = "v1.1.9"
 	cniVersion    = "v1.3.0"
