@@ -706,6 +706,15 @@ baz string, qux string, x string, // lol
 	return foo + bar
 }
 
+func (m *Minimal) HelloMore(
+	// foo here
+	foo,
+	// bar here
+	bar string,
+) string {
+	return foo + bar
+}
+
 func (m *Minimal) HelloAgain(
 	foo string, // docs for foo
 	bar string,
@@ -735,6 +744,14 @@ func (m *Minimal) HelloAgain(
 	require.Equal(t, "", hello.Get("args.3.description").String())
 	require.Equal(t, "x", hello.Get("args.4.name").String())
 	require.Equal(t, "lol", hello.Get("args.4.description").String())
+
+	hello = obj.Get(`functions.#(name="helloMore")`)
+	require.Equal(t, "helloMore", hello.Get("name").String())
+	require.Len(t, hello.Get("args").Array(), 2)
+	require.Equal(t, "foo", hello.Get("args.0.name").String())
+	require.Equal(t, "foo here", hello.Get("args.0.description").String())
+	require.Equal(t, "bar", hello.Get("args.1.name").String())
+	require.Equal(t, "bar here", hello.Get("args.1.description").String())
 
 	// hello = obj.Get(`functions.#(name="helloAgain")`)
 	// require.Equal(t, "helloAgain", hello.Get("name").String())
