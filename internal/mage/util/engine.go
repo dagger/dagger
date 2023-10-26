@@ -244,6 +244,9 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 }
 
 func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+	if arch != "amd64" {
+		panic("unsupported architecture")
+	}
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
 		panic(err)
@@ -252,8 +255,6 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("arch", arch)
 
 	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("ubuntu:"+ubuntuVersion).
