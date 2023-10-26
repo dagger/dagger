@@ -27,9 +27,7 @@ import (
 
 type moduleSchema struct {
 	*MergedSchemas
-	currentSchemaView    *moduleSchemaView
-	functionContextCache *FunctionContextCache
-	moduleCache          *core.CacheMap[digest.Digest, *core.Module]
+	moduleCache *core.CacheMap[digest.Digest, *core.Module]
 }
 
 var _ ExecutableSchema = &moduleSchema{}
@@ -213,13 +211,9 @@ func (s *moduleSchema) moduleConfig(ctx context.Context, query *core.Query, args
 }
 
 func (s *moduleSchema) currentModule(ctx context.Context, _ *core.Query, _ any) (*core.Module, error) {
-	// The caller should have been given a digest of the Module its executing in, which is passed along
+	// The caller should have been given a digest of the ModuleContext its executing in, which is passed along
 	// as request context metadata.
-	fnCtx, err := s.functionContextCache.FunctionContextFrom(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get function context: %w", err)
-	}
-	return fnCtx.Module, nil
+	return s.MergedSchemas.currentModule(ctx)
 }
 
 func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
@@ -234,11 +228,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, _ *core.Query, _ any) (*core.FunctionCall, error) {
-	fnCtx, err := s.functionContextCache.FunctionContextFrom(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get function context from context: %w", err)
-	}
-	return fnCtx.CurrentCall, nil
+	return s.MergedSchemas.currentFunctionCall(ctx)
 }
 
 type asModuleArgs struct {
@@ -279,11 +269,7 @@ func (s *moduleSchema) moduleServe(ctx context.Context, module *core.Module, arg
 		}
 	}()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
-	schemaView, err := s.getModuleSchemaView(clientMetadata.ModuleDigest)
+	schemaView, err := s.currentSchemaView(ctx)
 	if err != nil {
 		return err
 	}
@@ -367,11 +353,6 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 		return nil, fmt.Errorf("function %s has no module", fn.Name)
 	}
 
-	_, err := s.installDeps(ctx, mod)
-	if err != nil {
-		return nil, fmt.Errorf("failed to install deps: %w", err)
-	}
-
 	callParams := &core.FunctionCall{
 		Name:       fn.OriginalName,
 		ParentName: args.ParentOriginalName,
@@ -379,12 +360,9 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 		InputArgs:  args.Input,
 	}
 
-	fnCtxDigest, moduleDigest, err := s.functionContextCache.add(&FunctionContext{
-		Module:      mod,
-		CurrentCall: callParams,
-	})
+	schemaView, moduleContextDigest, err := s.handleModuleFunctionCall(mod, callParams)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set module in context: %w", err)
+		return nil, fmt.Errorf("failed to handle module function call: %w", err)
 	}
 
 	ctr := mod.Runtime
@@ -446,8 +424,7 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, s.bk, s.progSockPath, mod.Platform, core.ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
-		ModuleDigest:                  moduleDigest,
-		FunctionContextDigest:         fnCtxDigest,
+		ModuleContextDigest:           moduleContextDigest,
 		CacheExitCode:                 cacheExitCode,
 	})
 	if err != nil {
@@ -495,7 +472,7 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
 	}
 
-	if err := s.linkDependencyBlobs(ctx, result, rawOutput, fn.ReturnType); err != nil {
+	if err := s.linkDependencyBlobs(ctx, result, rawOutput, fn.ReturnType, schemaView); err != nil {
 		return nil, fmt.Errorf("failed to link dependency blobs: %w", err)
 	}
 	return rawOutput, nil
@@ -512,7 +489,7 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 // If we didn't do this, then it would be possible for Buildkit to prune the content pointed to by the blob://
 // source without pruning the function call cache entry. That would result callers being able to evaluate the
 // result of a function call but hitting an error about missing content.
-func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value any, typeDef *core.TypeDef) error {
+func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value any, typeDef *core.TypeDef, schemaView *schemaView) error {
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger,
 		core.TypeDefKindBoolean, core.TypeDefKindVoid:
@@ -523,13 +500,13 @@ func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *bui
 			return fmt.Errorf("expected list value, got %T", value)
 		}
 		for _, elem := range listValue {
-			if err := s.linkDependencyBlobs(ctx, cacheResult, elem, typeDef.AsList.ElementTypeDef); err != nil {
+			if err := s.linkDependencyBlobs(ctx, cacheResult, elem, typeDef.AsList.ElementTypeDef, schemaView); err != nil {
 				return fmt.Errorf("failed to link dependency blobs: %w", err)
 			}
 		}
 		return nil
 	case core.TypeDefKindObject:
-		_, isIDable := s.idableObjectResolver(typeDef.AsObject.Name)
+		_, isIDable := s.idableObjectResolver(typeDef.AsObject.Name, schemaView)
 		if !isIDable {
 			// This object is not IDable but we still need to check its Fields for any objects that may contain
 			// IDable objects
@@ -542,7 +519,7 @@ func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *bui
 				if !ok {
 					continue
 				}
-				if err := s.linkDependencyBlobs(ctx, cacheResult, fieldValue, field.TypeDef); err != nil {
+				if err := s.linkDependencyBlobs(ctx, cacheResult, fieldValue, field.TypeDef, schemaView); err != nil {
 					return fmt.Errorf("failed to link dependency blobs: %w", err)
 				}
 			}
@@ -596,9 +573,9 @@ func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *bui
 
 // Check to see if the given object name is one of our core API's IDable types, returning the
 // IDableObjectResolver if so.
-func (s *moduleSchema) idableObjectResolver(objName string) (IDableObjectResolver, bool) {
+func (s *moduleSchema) idableObjectResolver(objName string, dest *schemaView) (IDableObjectResolver, bool) {
 	objName = gqlObjectName(objName)
-	resolver, ok := s.currentSchemaView.resolvers()[objName]
+	resolver, ok := dest.resolvers()[objName]
 	if !ok {
 		return nil, false
 	}
@@ -606,76 +583,9 @@ func (s *moduleSchema) idableObjectResolver(objName string) (IDableObjectResolve
 	return idableResolver, ok
 }
 
-// FunctionContext holds the metadata of a function call. Used to support the currentModule and
-// currentFunctionCall APIs.
-type FunctionContext struct {
-	Module      *core.Module
-	CurrentCall *core.FunctionCall
-}
-
-func (fnCtx *FunctionContext) Digest() (digest.Digest, error) {
-	modDigest, err := fnCtx.Module.Digest()
-	if err != nil {
-		return "", fmt.Errorf("failed to get module digest: %w", err)
-	}
-	callDigest, err := fnCtx.CurrentCall.Digest()
-	if err != nil {
-		return "", fmt.Errorf("failed to get function call digest: %w", err)
-	}
-
-	return digest.FromString(modDigest.String() + callDigest.String()), nil
-}
-
-// FunctionContextCache stores the mapping of FunctionContext's digest -> FunctionContext.
-// This enables us to pass just the digest along the client metadata rather than massive
-// serialized objects.
-type FunctionContextCache core.CacheMap[digest.Digest, *FunctionContext]
-
-func NewFunctionContextCache() *FunctionContextCache {
-	return (*FunctionContextCache)(core.NewCacheMap[digest.Digest, *FunctionContext]())
-}
-
-func (cache *FunctionContextCache) cacheMap() *core.CacheMap[digest.Digest, *FunctionContext] {
-	return (*core.CacheMap[digest.Digest, *FunctionContext])(cache)
-}
-
-// TODO:(sipsma) this return type is a bug waiting to happen
-func (cache *FunctionContextCache) add(fnCtx *FunctionContext) (digest.Digest, digest.Digest, error) {
-	fntCtxDigest, err := fnCtx.Digest()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get function context digest: %w", err)
-	}
-	moduleDigest, err := fnCtx.Module.Digest()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get module digest: %w", err)
-	}
-
-	_, err = cache.cacheMap().GetOrInitialize(fntCtxDigest, func() (*FunctionContext, error) {
-		return fnCtx, nil
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("failed to cache function context: %w", err)
-	}
-
-	return fntCtxDigest, moduleDigest, nil
-}
-
-var errFunctionContextNotFound = fmt.Errorf("function context not found")
-
-func (cache *FunctionContextCache) FunctionContextFrom(ctx context.Context) (*FunctionContext, error) {
-	// TODO: make sure this errors if not from module caller
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	return cache.cacheMap().GetOrInitialize(clientMetadata.FunctionContextDigest, func() (*FunctionContext, error) {
-		return nil, errFunctionContextNotFound
-	})
-}
-
 // Each Module gets its own isolated "schema view" where the core API plus its direct deps are served.
 // serveModuleToDigest stitches in the schema for the given mod to the given schema view.
-func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, schemaView *moduleSchemaView) error {
+func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, schemaView *schemaView) error {
 	mod, err := s.loadModuleTypes(ctx, mod)
 	if err != nil {
 		return fmt.Errorf("failed to load dep module functions: %w", err)
@@ -685,7 +595,7 @@ func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, 
 	if err != nil {
 		return fmt.Errorf("failed to get module digest: %w", err)
 	}
-	cacheKey := digest.FromString(modDigest.String() + "." + schemaView.viewerDigest.String())
+	cacheKey := digest.FromString(modDigest.String() + "." + schemaView.viewDigest.String())
 
 	// TODO: it makes no sense to use this cache since we don't need a core.Module, but also doesn't hurt, but make a separate one anyways for clarity
 	_, err = s.moduleCache.GetOrInitialize(cacheKey, func() (*core.Module, error) {
@@ -754,12 +664,8 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 
 // installDeps stitches in the schemas for all the deps of the given module to the module's
 // schema view.
-func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*moduleSchemaView, error) {
-	moduleDigest, err := module.Digest()
-	if err != nil {
-		return nil, err
-	}
-	schemaView, err := s.getModuleSchemaView(moduleDigest)
+func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*schemaView, error) {
+	schemaView, err := s.getModuleSchemaView(module)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +697,7 @@ func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*m
 
 // moduleToSchema converts a Module to an ExecutableSchema that can be stitched in to an existing schema.
 // It presumes that the Module's Functions have already been loaded.
-func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Module, dest *moduleSchemaView) (ExecutableSchema, error) {
+func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Module, dest *schemaView) (ExecutableSchema, error) {
 	schemaDoc := &ast.SchemaDocument{}
 	newResolvers := Resolvers{}
 
@@ -858,7 +764,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		}
 
 		for _, fn := range objTypeDef.Functions {
-			resolver, err := s.functionResolver(astDef, module, fn)
+			resolver, err := s.functionResolver(astDef, module, fn, dest)
 			if err != nil {
 				return nil, err
 			}
@@ -970,6 +876,7 @@ func (s *moduleSchema) functionResolver(
 	parentObj *ast.Definition,
 	module *core.Module,
 	fn *core.Function,
+	dest *schemaView,
 ) (graphql.FieldResolveFn, error) {
 	fnName := gqlFieldName(fn.Name)
 	objFnName := fmt.Sprintf("%s.%s", parentObj.Name, fnName)
@@ -1010,9 +917,9 @@ func (s *moduleSchema) functionResolver(
 	// ToIDableObjectResolver.
 	var returnIDableObjectResolver IDableObjectResolver
 	if fn.ReturnType.Kind == core.TypeDefKindObject {
-		returnIDableObjectResolver, _ = s.idableObjectResolver(fn.ReturnType.AsObject.Name)
+		returnIDableObjectResolver, _ = s.idableObjectResolver(fn.ReturnType.AsObject.Name, dest)
 	}
-	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name)
+	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name, dest)
 
 	return ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
 		defer func() {
@@ -1150,7 +1057,7 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 }
 
 // TODO: Should we handle trying to namespace the object in the doc strings? Or would that require too much magic to accomplish consistently?
-func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module, schemaView *moduleSchemaView) {
+func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module, schemaView *schemaView) {
 	switch typeDef.Kind {
 	case core.TypeDefKindList:
 		s.namespaceTypeDef(typeDef.AsList.ElementTypeDef, mod, schemaView)

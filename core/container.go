@@ -1043,11 +1043,8 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
 
-		if opts.ModuleDigest != "" {
-			runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_DIGEST", opts.ModuleDigest.String()))
-		}
-		if opts.FunctionContextDigest != "" {
-			runOpts = append(runOpts, llb.AddEnv("_DAGGER_FUNCTION_CONTEXT_DIGEST", opts.FunctionContextDigest.String()))
+		if opts.ModuleContextDigest != "" {
+			runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_CONTEXT_DIGEST", opts.ModuleContextDigest.String()))
 		}
 	}
 
@@ -1860,9 +1857,7 @@ type ContainerExecOpts struct {
 	CacheExitCode uint32
 
 	// (Internal-only) TODO:(sipsma) DOC THIS
-	ModuleDigest digest.Digest
-	// (Internal-only) TODO:(sipsma) DOC THIS
-	FunctionContextDigest digest.Digest
+	ModuleContextDigest digest.Digest
 }
 
 type BuildArg struct {

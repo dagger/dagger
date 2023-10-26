@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -53,12 +54,12 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
-		buildCache:           core.NewCacheMap[uint64, *core.Container](),
-		importCache:          core.NewCacheMap[uint64, *specs.Descriptor](),
-		functionContextCache: NewFunctionContextCache(),
-		moduleCache:          core.NewCacheMap[digest.Digest, *core.Module](),
+		buildCache:         core.NewCacheMap[uint64, *core.Container](),
+		importCache:        core.NewCacheMap[uint64, *specs.Descriptor](),
+		moduleContextCache: core.NewCacheMap[digest.Digest, *moduleContext](),
+		moduleCache:        core.NewCacheMap[digest.Digest, *core.Module](),
 
-		moduleSchemaViews: map[digest.Digest]*moduleSchemaView{},
+		schemaViews: map[digest.Digest]*schemaView{},
 	}
 	return merged, nil
 }
@@ -74,21 +75,27 @@ type MergedSchemas struct {
 	host         *core.Host
 	services     *core.Services
 
-	buildCache           *core.CacheMap[uint64, *core.Container]
-	importCache          *core.CacheMap[uint64, *specs.Descriptor]
-	functionContextCache *FunctionContextCache
-	moduleCache          *core.CacheMap[digest.Digest, *core.Module]
+	buildCache         *core.CacheMap[uint64, *core.Container]
+	importCache        *core.CacheMap[uint64, *specs.Descriptor]
+	moduleContextCache *core.CacheMap[digest.Digest, *moduleContext]
+	moduleCache        *core.CacheMap[digest.Digest, *core.Module]
 
 	mu sync.RWMutex
 	// Map of module digest -> schema presented to module.
 	// For the original client not in an module, digest is just "".
-	moduleSchemaViews map[digest.Digest]*moduleSchemaView
+	schemaViews map[digest.Digest]*schemaView
+}
+
+type moduleContext struct {
+	module     *core.Module
+	fnCall     *core.FunctionCall
+	schemaView *schemaView
 }
 
 // requires s.mu write lock held
-func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*moduleSchemaView, error) {
-	ms := &moduleSchemaView{
-		viewerDigest:    moduleDigest,
+func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaView, error) {
+	ms := &schemaView{
+		viewDigest:      viewDigest,
 		separateSchemas: map[string]ExecutableSchema{},
 		endpoints:       map[string]http.Handler{},
 		services:        s.services,
@@ -113,10 +120,8 @@ func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*mod
 		&serviceSchema{s, s.services},
 		&hostSchema{s, s.host, s.services},
 		&moduleSchema{
-			MergedSchemas:        s,
-			currentSchemaView:    ms,
-			functionContextCache: s.functionContextCache,
-			moduleCache:          s.moduleCache,
+			MergedSchemas: s,
+			moduleCache:   s.moduleCache,
 		},
 		&httpSchema{s, s.services},
 		&platformSchema{s},
@@ -126,17 +131,17 @@ func (s *MergedSchemas) initializeModuleSchema(moduleDigest digest.Digest) (*mod
 		return nil, err
 	}
 
-	s.moduleSchemaViews[moduleDigest] = ms
+	s.schemaViews[viewDigest] = ms
 	return ms, nil
 }
 
-func (s *MergedSchemas) getModuleSchemaView(moduleDigest digest.Digest) (*moduleSchemaView, error) {
+func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ms, ok := s.moduleSchemaViews[moduleDigest]
+	ms, ok := s.schemaViews[viewDigest]
 	if !ok {
 		var err error
-		ms, err = s.initializeModuleSchema(moduleDigest)
+		ms, err = s.initializeSchemaView(viewDigest)
 		if err != nil {
 			return nil, err
 		}
@@ -144,30 +149,115 @@ func (s *MergedSchemas) getModuleSchemaView(moduleDigest digest.Digest) (*module
 	return ms, nil
 }
 
-func (s *MergedSchemas) Schema(moduleDigest digest.Digest) (*graphql.Schema, error) {
-	ms, err := s.getModuleSchemaView(moduleDigest)
+func (s *MergedSchemas) getModuleSchemaView(mod *core.Module) (*schemaView, error) {
+	modDgst, err := mod.DigestWithoutObjects()
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute schema view digest: %w", err)
+	}
+	return s.getSchemaView(modDgst)
+}
+
+func (s *MergedSchemas) handleModuleFunctionCall(mod *core.Module, fnCall *core.FunctionCall) (*schemaView, digest.Digest, error) {
+	schemaView, err := s.getModuleSchemaView(mod)
+	if err != nil {
+		return nil, "", err
+	}
+
+	fnCallDgst, err := fnCall.Digest()
+	if err != nil {
+		return nil, "", err
+	}
+
+	dgst := digest.FromString(schemaView.viewDigest.String() + "." + fnCallDgst.String())
+	_, err = s.moduleContextCache.GetOrInitialize(dgst, func() (*moduleContext, error) {
+		return &moduleContext{
+			module:     mod,
+			fnCall:     fnCall,
+			schemaView: schemaView,
+		}, nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return schemaView, dgst, nil
+}
+
+func (s *MergedSchemas) currentSchemaView(ctx context.Context) (*schemaView, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return ms.schema(), nil
+
+	if clientMetadata.ModuleContextDigest == "" {
+		return s.getSchemaView("")
+	}
+
+	moduleContext, err := s.moduleContextCache.GetOrInitialize(clientMetadata.ModuleContextDigest, func() (*moduleContext, error) {
+		return nil, fmt.Errorf("module context not found in cache")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return moduleContext.schemaView, nil
 }
 
-func (s *MergedSchemas) MuxEndpoint(path string, handler http.Handler, moduleDigest digest.Digest) error {
-	ms, err := s.getModuleSchemaView(moduleDigest)
+func (s *MergedSchemas) currentModule(ctx context.Context) (*core.Module, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if clientMetadata.ModuleContextDigest == "" {
+		return nil, fmt.Errorf("not in a module")
+	}
+	moduleContext, err := s.moduleContextCache.GetOrInitialize(clientMetadata.ModuleContextDigest, func() (*moduleContext, error) {
+		return nil, fmt.Errorf("module context not found in cache")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return moduleContext.module, nil
+}
+
+func (s *MergedSchemas) currentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if clientMetadata.ModuleContextDigest == "" {
+		return nil, fmt.Errorf("not in a module")
+	}
+	moduleContext, err := s.moduleContextCache.GetOrInitialize(clientMetadata.ModuleContextDigest, func() (*moduleContext, error) {
+		return nil, fmt.Errorf("module context not found in cache")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return moduleContext.fnCall, nil
+}
+
+func (s *MergedSchemas) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	schemaView, err := s.currentSchemaView(r.Context())
+	if err != nil {
+		bklog.G(r.Context()).WithError(err).Error("failed to get schema view")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	schemaView.ServeHTTP(w, r)
+}
+
+func (s *MergedSchemas) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
+	schemaView, err := s.currentSchemaView(ctx)
 	if err != nil {
 		return err
 	}
-	ms.muxEndpoint(path, handler)
+	schemaView.muxEndpoint(path, handler)
 	return nil
 }
 
-func (s *MergedSchemas) HTTPHandler(moduleDigest digest.Digest) (http.Handler, error) {
-	return s.getModuleSchemaView(moduleDigest)
-}
-
-type moduleSchemaView struct {
-	// the digest of the module this view serves to
-	viewerDigest digest.Digest
+type schemaView struct {
+	viewDigest digest.Digest
 
 	mu              sync.RWMutex
 	separateSchemas map[string]ExecutableSchema
@@ -178,7 +268,7 @@ type moduleSchemaView struct {
 	services        *core.Services
 }
 
-func (s *moduleSchemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
 			bklog.G(context.TODO()).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
@@ -242,23 +332,50 @@ func (s *moduleSchemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeHTTP(w, r)
 }
 
-func (s *moduleSchemaView) muxEndpoint(path string, handler http.Handler) {
+func (s *schemaView) muxEndpoint(path string, handler http.Handler) {
 	s.endpointMu.Lock()
 	defer s.endpointMu.Unlock()
 	s.endpoints[path] = handler
 }
 
-func (s *moduleSchemaView) schema() *graphql.Schema {
+func (s *schemaView) schema() *graphql.Schema {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.compiledSchema
+}
+
+func (s *schemaView) schemaIntrospectionJSON(ctx context.Context) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.compiledSchema == nil {
+		return "", errors.New("schema not initialized")
+	}
+
+	result := graphql.Do(graphql.Params{
+		Schema:        *s.compiledSchema,
+		RequestString: introspection.Query,
+		OperationName: "IntrospectionQuery",
+		Context:       ctx,
+	})
+	if result.HasErrors() {
+		var err error
+		for _, e := range result.Errors {
+			err = errors.Join(err, e)
+		}
+		return "", fmt.Errorf("introspection query failed: %w", err)
+	}
+	jsonBytes, err := json.Marshal(result.Data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal introspection result: %w", err)
+	}
+	return string(jsonBytes), nil
 }
 
 func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
 	return s.services.StopClientServices(ctx, client)
 }
 
-func (s *moduleSchemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
+func (s *schemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -314,7 +431,7 @@ func (s *moduleSchemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	return nil
 }
 
-func (s *moduleSchemaView) resolvers() Resolvers {
+func (s *schemaView) resolvers() Resolvers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.mergedSchema.Resolvers()
