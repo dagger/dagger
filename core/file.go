@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io/fs"
 
 	"io"
 	"path"
@@ -63,6 +64,24 @@ func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipe
 		Platform: platform,
 		Services: services,
 	}
+}
+
+func NewFileWithContents(
+	ctx context.Context,
+	bk *buildkit.Client,
+	svcs *Services,
+	name string,
+	content []byte,
+	permissions fs.FileMode,
+	ownership *Ownership,
+	pipeline pipeline.Path,
+	platform specs.Platform,
+) (*File, error) {
+	dir, err := NewScratchDirectory(pipeline, platform).WithNewFile(ctx, name, content, permissions, ownership)
+	if err != nil {
+		return nil, err
+	}
+	return dir.File(ctx, bk, svcs, name)
 }
 
 func NewFileSt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {

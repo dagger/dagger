@@ -65,6 +65,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	}
 
 	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
+		"objects":       ToResolver(s.moduleObjects),
 		"withObject":    ToResolver(s.moduleWithObject),
 		"generatedCode": ToResolver(s.moduleGeneratedCode),
 		"serve":         ToVoidResolver(s.moduleServe),
@@ -250,35 +251,48 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Di
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
 
-	return s.loadModuleTypes(ctx, mod)
+	return mod, nil
 }
 
 func (s *moduleSchema) moduleGeneratedCode(ctx context.Context, mod *core.Module, _ any) (*core.GeneratedCode, error) {
-	sdk, err := s.sdkForModule(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath, mod.SDK)
+	sdk, err := s.sdkForModule(ctx, mod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module %s: %w", mod.Name, err)
 	}
 
-	return sdk.Codegen(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath)
+	return sdk.Codegen(ctx, mod)
 }
 
-func (s *moduleSchema) moduleServe(ctx context.Context, module *core.Module, args any) (rerr error) {
+func (s *moduleSchema) moduleServe(ctx context.Context, mod *core.Module, args any) (rerr error) {
 	defer func() {
 		if err := recover(); err != nil {
 			rerr = fmt.Errorf("panic in moduleServe: %s\n%s", err, debug.Stack())
 		}
 	}()
 
+	mod, err := s.loadModuleTypes(ctx, mod)
+	if err != nil {
+		return fmt.Errorf("failed to load module types: %w", err)
+	}
+
 	schemaView, err := s.currentSchemaView(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = s.serveModuleToView(ctx, module, schemaView)
+	err = s.serveModuleToView(ctx, mod, schemaView)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *moduleSchema) moduleObjects(ctx context.Context, mod *core.Module, _ any) ([]*core.TypeDef, error) {
+	mod, err := s.loadModuleTypes(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module types: %w", err)
+	}
+	return mod.Objects, nil
 }
 
 func (s *moduleSchema) moduleWithObject(ctx context.Context, module *core.Module, args struct {
@@ -360,7 +374,7 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 		InputArgs:  args.Input,
 	}
 
-	schemaView, moduleContextDigest, err := s.handleModuleFunctionCall(mod, callParams)
+	schemaView, moduleContextDigest, err := s.registerModuleFunctionCall(mod, callParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to handle module function call: %w", err)
 	}
@@ -591,11 +605,7 @@ func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, 
 		return fmt.Errorf("failed to load dep module functions: %w", err)
 	}
 
-	modDigest, err := mod.Digest()
-	if err != nil {
-		return fmt.Errorf("failed to get module digest: %w", err)
-	}
-	cacheKey := digest.FromString(modDigest.String() + "." + schemaView.viewDigest.String())
+	cacheKey := digest.FromString(mod.Name + "." + schemaView.viewDigest.String())
 
 	// TODO: it makes no sense to use this cache since we don't need a core.Module, but also doesn't hurt, but make a separate one anyways for clarity
 	_, err = s.moduleCache.GetOrInitialize(cacheKey, func() (*core.Module, error) {
@@ -614,10 +624,9 @@ func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, 
 // loadModuleTypes invokes the Module to ask for the Objects+Functions it defines and returns the updated
 // Module object w/ those TypeDefs included.
 func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*core.Module, error) {
-	// We use the digest without functions as cache key because loadModuleTypes should behave idempotently,
-	// returning the same Module object whether or not its Functions were already loaded.
-	// The digest without functions is stable before+after function loading.
-	dgst, err := mod.DigestWithoutObjects()
+	// We use the base digest as cache key because loadModuleTypes should behave idempotently,
+	// returning the same Module object whether or not its Objects+Runtime were already loaded.
+	dgst, err := mod.BaseDigest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module digest: %w", err)
 	}
@@ -670,8 +679,16 @@ func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*s
 		return nil, err
 	}
 
+	return schemaView, s.installDepsToSchemaView(ctx, module.Dependencies, schemaView)
+}
+
+func (s *moduleSchema) installDepsToSchemaView(
+	ctx context.Context,
+	deps []*core.Module,
+	schemaView *schemaView,
+) error {
 	var eg errgroup.Group
-	for _, dep := range module.Dependencies {
+	for _, dep := range deps {
 		dep := dep
 		eg.Go(func() error {
 			if err := s.serveModuleToView(ctx, dep, schemaView); err != nil {
@@ -680,12 +697,7 @@ func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*s
 			return nil
 		})
 	}
-	err = eg.Wait()
-	if err != nil {
-		return nil, err
-	}
-
-	return schemaView, nil
+	return eg.Wait()
 }
 
 /* TODO: for module->schema conversion

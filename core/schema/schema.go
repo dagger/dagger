@@ -77,7 +77,7 @@ type MergedSchemas struct {
 
 	buildCache         *core.CacheMap[uint64, *core.Container]
 	importCache        *core.CacheMap[uint64, *specs.Descriptor]
-	moduleContextCache *core.CacheMap[digest.Digest, *moduleContext]
+	moduleContextCache *core.CacheMap[digest.Digest, *moduleContext] // TODO: this could probably just be a map
 	moduleCache        *core.CacheMap[digest.Digest, *core.Module]
 
 	mu sync.RWMutex
@@ -150,14 +150,14 @@ func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, er
 }
 
 func (s *MergedSchemas) getModuleSchemaView(mod *core.Module) (*schemaView, error) {
-	modDgst, err := mod.DigestWithoutObjects()
+	modDgst, err := mod.BaseDigest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute schema view digest: %w", err)
 	}
 	return s.getSchemaView(modDgst)
 }
 
-func (s *MergedSchemas) handleModuleFunctionCall(mod *core.Module, fnCall *core.FunctionCall) (*schemaView, digest.Digest, error) {
+func (s *MergedSchemas) registerModuleFunctionCall(mod *core.Module, fnCall *core.FunctionCall) (*schemaView, digest.Digest, error) {
 	schemaView, err := s.getModuleSchemaView(mod)
 	if err != nil {
 		return nil, "", err
