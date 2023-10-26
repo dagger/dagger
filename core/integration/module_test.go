@@ -326,6 +326,75 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 	})
 }
 
+func TestModuleInitLICENSE(t *testing.T) {
+	t.Run("bootstraps Apache-2.0 LICENSE file if none found", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=licensed-to-ill", "--sdk=go"))
+
+		content, err := modGen.File("LICENSE").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "Apache License, Version 2.0")
+	})
+
+	t.Run("creates LICENSE file in the directory specified by -m", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "-m", "./mymod", "--name=licensed-to-ill", "--sdk=go"))
+
+		content, err := modGen.File("mymod/LICENSE").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "Apache License, Version 2.0")
+	})
+
+	t.Run("does not bootstrap LICENSE file if it exists in the parent dir", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/LICENSE", dagger.ContainerWithNewFileOpts{
+				Contents: "doesnt matter",
+			}).
+			WithWorkdir("/work/sub").
+			With(daggerExec("mod", "init", "--name=licensed-to-ill", "--sdk=go"))
+
+		_, err := modGen.File("LICENSE").Contents(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("bootstraps a LICENSE file when requested, even if it exists in the parent dir", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/LICENSE", dagger.ContainerWithNewFileOpts{
+				Contents: "doesnt matter",
+			}).
+			WithWorkdir("/work/sub").
+			With(daggerExec("mod", "init", "--name=licensed-to-ill", "--sdk=go", "--license=MIT"))
+
+		content, err := modGen.File("LICENSE").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "MIT License")
+	})
+}
+
 func TestModuleGit(t *testing.T) {
 	t.Parallel()
 
