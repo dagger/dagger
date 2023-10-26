@@ -89,7 +89,7 @@ Run the samples with this command:
 
 ```bash
 # Build the packages 
-./mvnw package
+./mvnw install
 # Run the samples 
 ./mvnw exec:java -pl dagger-java-samples
 ```
