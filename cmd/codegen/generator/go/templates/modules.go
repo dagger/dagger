@@ -955,7 +955,7 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 // is needed because function args (despite being fields) don't have comments
 // associated with them, so this is a neat little hack to get them out.
 func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.CommentGroup, error) {
-	pos := fnDecl.Type.Params.List[i].Pos()
+	pos := getASTFieldIdent(fnDecl.Type.Params, i).Pos()
 	tokenFile := ps.fset.File(pos)
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for function %s", fnDecl.Name.Name)
@@ -968,12 +968,12 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.Com
 		// the argument is on the same line as the function declaration, so
 		// there is no doc comment to find
 		allowDocComment = false
-	} else if i > 0 && tokenFile.Line(fnDecl.Type.Params.List[i-1].Pos()) == line {
+	} else if i > 0 && tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i-1).Pos()) == line {
 		// the argument is on the same line as the previous argument, so again
 		// there is no doc comment to find
 		allowDocComment = false
 	}
-	if i+1 < len(fnDecl.Type.Params.List) && tokenFile.Line(fnDecl.Type.Params.List[i+1].Pos()) == line {
+	if i+1 < len(fnDecl.Type.Params.List) && tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i+1).Pos()) == line {
 		// the argument is on the same line as the next argument, so there is
 		// no line comment to find
 		allowLineComment = false
@@ -1059,4 +1059,17 @@ func asInlineStructAst(t ast.Node) (*ast.StructType, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func getASTFieldIdent(fields *ast.FieldList, idx int) *ast.Ident {
+	count := 0
+	for count < len(fields.List) {
+		names := (fields.List[count].Names)
+		if idx < len(names) {
+			return names[idx]
+		}
+		idx -= len(names)
+		count++
+	}
+	return nil
 }
