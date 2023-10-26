@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2011%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2026%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -127,18 +127,18 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.8.8.md` by either running `changie batch
+- [ ] Create e.g. `.changes/v0.9.1.md` by either running `changie batch
   patch` (or `changie batch minor` if this is a new minor).
 
 > **Note**
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-  `.changes/v0.8.8.md`
+  `.changes/v0.9.1.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] Submit a PR - e.g. `add-v0.8.8-release-notes` with the new release notes
-  so that they can be used in the new release. The merge commit is what gets
-  tagged in the next step.
+- [ ] `20 mins` Submit a PR - e.g. `add-v0.9.1-release-notes` with the new release notes
+  so that they can be used in the new release. Get the PR reviewed & merged.
+  The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
   `main` branch that you are about to release.
 - [ ] `20mins` When you have confirmed that all checks are green, run the following:
@@ -168,22 +168,22 @@ git fetch origin
 git checkout bump-engine
 
 cd sdk/go
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5969"
 changie batch patch
 changie merge
 
 cd ../python
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5969"
 changie batch patch
 changie merge
 
 cd ../nodejs
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5969"
 changie batch patch
 changie merge
 
 cd ../elixir
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5795"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5969"
 changie batch patch
 changie merge
 
@@ -239,13 +239,15 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.8.8 sh
-# mv ~/.local/bin/dagger{,-0.8.8}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.1 sh
+# mv ~/.local/bin/dagger{,-0.9.1}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 cd ../..
 dagger run ./hack/make engine:test
 ```
 
+- [ ] Check with `@gerhard` that our dagger-runners have been updated to the
+  just-released Dagger Engine image
 - [ ] After you confirm that our internal tooling works with the new Go SDK
   release, [🐙
   github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
@@ -421,20 +423,15 @@ production deployment via Netlify as follows:
 ## 🛝 Playground ⏱ `2mins`
 
 The [Dagger Playground](https://play.dagger.cloud) is set to automatically
-update once there's a new release of the Dagger Engine. In order to verify
-which Dagger version the Playground is using, check the `x-dagger-engine` HTTP
-header with the deployed Dagger Engine version is returned for each playground
-query:
+update once there's a new release of the Dagger Engine.
 
-![image](https://user-images.githubusercontent.com/1578458/226123191-fae0dff4-018d-4e62-bac3-73e54e87938a.png)
-
-Follow these steps to retrieve and verify the Playground Dagger version:
+Follow these steps to verify the Playground Dagger version:
 
 1. Login with your GitHub account at https://play.dagger.cloud
 2. Open your browser's Developer Tools, and then the **Network** tab
 3. Click the **Execute query** button
 4. Click in the `/playgrounds` POST request row in the **Network** tab
-5. Verify that the `x-dagger-engine` response header commit value matches the `ENGINE_GIT_SHA` value from the beginning of this guide
+5. Verify that the `X-Dagger-Engine` response header value matches the just-released Engine version
 
 
 ## Last step
