@@ -1,8 +1,8 @@
 module gpu
 
-go 1.20
+go 1.21
 
-require dagger.io/dagger v0.8.8
+require dagger.io/dagger v0.9.1
 
 require (
 	github.com/99designs/gqlgen v0.17.31 // indirect
@@ -15,4 +15,4 @@ require (
 	golang.org/x/sys v0.13.0 // indirect
 )
 
-replace dagger.io/dagger => /home/paperspace/go/src/github.com/dagger/dagger/sdk/go
+replace dagger.io/dagger => ../../../../sdk/go/
