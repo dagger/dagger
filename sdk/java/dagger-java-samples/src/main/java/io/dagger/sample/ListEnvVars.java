@@ -5,6 +5,7 @@ import io.dagger.client.Dagger;
 import io.dagger.client.EnvVariable;
 import java.util.List;
 
+@Description("List container environment variables")
 public class ListEnvVars {
   public static void main(String... args) throws Exception {
     try (Client client = Dagger.connect()) {
