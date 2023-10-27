@@ -1,9 +1,7 @@
 import contextlib
-import json
 import logging
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import graphql
@@ -71,17 +69,9 @@ class ClientSession(ResourceManager):
             auth=(conn.session_token, ""),
         )
 
-        # test if /schema.json exists, if so, use that as the introspection schema
-        schema_path = Path("/schema.json")
-        introspection = None
-        if schema_path.exists():
-            with schema_path.open() as f:
-                introspection = json.load(f)
-
         client = GraphQLClient(
             transport=transport,
-            introspection=introspection,
-            fetch_schema_from_transport=introspection is None,
+            fetch_schema_from_transport=True,
             # We're using the timeout from the httpx transport.
             execute_timeout=None,
         )
