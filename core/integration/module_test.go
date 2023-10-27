@@ -1145,6 +1145,117 @@ def use_hello() -> str:
 	})
 }
 
+func TestModuleCodegenonDepChange(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("go uses go", func(t *testing.T) {
+		t.Parallel()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: useInner,
+			}).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: useOuter,
+			}).
+			With(daggerExec("mod", "use", "./dep"))
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+
+		// make back-incompatible change to dep
+		newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
+		modGen = modGen.
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: newInner,
+			}).
+			WithExec([]string{"sh", "-c", "dagger mod sync"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			})
+
+		codegenContents, err := modGen.File("/work/dagger.gen.go").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, codegenContents, "Hellov2")
+
+		newOuter := strings.ReplaceAll(useOuter, `Hello(ctx)`, `Hellov2(ctx)`)
+		modGen = modGen.
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: newOuter,
+			})
+
+		out, err = modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+	})
+
+	t.Run("python uses go", func(t *testing.T) {
+		t.Parallel()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: useInner,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=use", "--sdk=python")).
+			With(daggerExec("mod", "use", "./dep")).
+			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+				Contents: `from dagger.mod import function
+import dagger
+
+@function
+def use_hello() -> str:
+    return dagger.dep().hello()
+`,
+			})
+
+		out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+
+		// make back-incompatible change to dep
+		newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
+		modGen = modGen.
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: newInner,
+			}).
+			WithExec([]string{"sh", "-c", "dagger mod sync"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			})
+
+		codegenContents, err := modGen.File("/work/sdk/src/dagger/client/gen.py").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, codegenContents, "hellov2")
+
+		modGen = modGen.
+			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+				Contents: `from dagger.mod import function
+import dagger
+
+@function
+def use_hello() -> str:
+    return dagger.dep().hellov2()
+`,
+			})
+
+		out, err = modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+	})
+}
+
 func TestModuleGoUseLocalMulti(t *testing.T) {
 	t.Parallel()
 
