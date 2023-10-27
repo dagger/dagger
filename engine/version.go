@@ -12,6 +12,8 @@ var (
 	EngineImageRepo = "registry.dagger.io/engine"
 
 	Package = "github.com/dagger/dagger"
+
+	GPUSupportEnvName = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
 var DevelopmentVersion = fmt.Sprintf("devel (%s)", vcsRevision())
@@ -30,6 +32,10 @@ func init() {
 }
 
 func ImageRef() string {
+	// If the experimental GPU support flag is used, ignore the semver validation:
+	if gpuSupportEnabled := os.Getenv(GPUSupportEnvName); gpuSupportEnabled != "" {
+		return fmt.Sprintf("%s:%s-gpu", EngineImageRepo, Version)
+	}
 	// If "devel" is set, then this is a local build. Normally _EXPERIMENTAL_DAGGER_RUNNER_HOST
 	// should be set to point to a runner built from local code, but we default to using "main"
 	// in case it's not.

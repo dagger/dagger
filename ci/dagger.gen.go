@@ -1020,6 +1020,25 @@ func (r *Container) WithFocus() *Container {
 	}
 }
 
+// Sets GPU access parameters for the given container
+func (r *Container) WithGPU(devices []string) *Container {
+	q := r.q.Select("withGPU")
+	q = q.Arg("devices", devices)
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Sets GPU access parameters for the given container
+func (r *Container) WithAllGPUs() *Container {
+	q := r.q.Select("withAllGPUs")
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
 	q := r.q.Select("withLabel")

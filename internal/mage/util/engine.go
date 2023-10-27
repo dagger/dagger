@@ -24,6 +24,7 @@ const (
 
 	golangVersion = "1.21.3"
 	alpineVersion = "3.18"
+	ubuntuVersion = "22.04"
 	runcVersion   = "v1.1.9"
 	cniVersion    = "v1.3.0"
 	qemuBinImage  = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
@@ -35,6 +36,7 @@ const (
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	GPUSupportEnvName  = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh
@@ -193,6 +195,12 @@ func DevEngineContainer(c *dagger.Client, arches []string, version string, opts 
 	return devEngineContainers(c, arches, version, opts...)
 }
 
+// DevEngineContainerWithGPUSUpport returns a container that runs a dev engine
+func DevEngineContainerWithGPUSupport(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	containers := devEngineContainersWithGPUSupport(c, arches, version, opts...)
+	return containers
+}
+
 func devEngineContainer(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
@@ -202,7 +210,8 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 	if err != nil {
 		panic(err)
 	}
-	return c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+
+	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("alpine:"+alpineVersion).
 		WithExec([]string{
 			"apk", "add", "--no-cache",
@@ -221,7 +230,52 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
-		WithDirectory("/", cniPlugins(c, arch)).
+		WithDirectory("/", cniPlugins(c, arch, false)).
+		WithDirectory(EngineDefaultStateDir, c.Directory()).
+		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
+			Contents:    engineConfig,
+			Permissions: 0o600,
+		}).
+		WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
+			Contents:    engineEntrypoint,
+			Permissions: 0o755,
+		})
+	return container.WithEntrypoint([]string{"dagger-entrypoint.sh"})
+}
+
+func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+	if arch != "amd64" {
+		panic("unsupported architecture")
+	}
+	engineConfig, err := getConfig(opts...)
+	if err != nil {
+		panic(err)
+	}
+	engineEntrypoint, err := getEntrypoint(opts...)
+	if err != nil {
+		panic(err)
+	}
+
+	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From("ubuntu:"+ubuntuVersion).
+		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{
+			"apt-get", "install", "-y",
+			"iptables", "git", "dnsmasq-base", "network-manager",
+			"gpg", "curl",
+		}).
+		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
+			Permissions: 0o700,
+		}).
+		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
+		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
+		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
+		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
+		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
+		WithDirectory("/", cniPlugins(c, arch, true)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
@@ -231,7 +285,23 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 			Contents:    engineEntrypoint,
 			Permissions: 0o755,
 		}).
-		WithEntrypoint([]string{"dagger-entrypoint.sh"})
+		With(nvidiaSetup)
+
+	return container.WithEntrypoint([]string{"dagger-entrypoint.sh"})
+}
+
+// install nvidia-container-toolkit in the container
+func nvidiaSetup(ctr *dagger.Container) *dagger.Container {
+	return ctr.
+		With(shellExec(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`)).
+		With(shellExec(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`)).
+		With(shellExec(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+}
+
+func shellExec(cmd string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithExec([]string{"sh", "-c", cmd})
+	}
 }
 
 func devEngineContainers(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
@@ -240,6 +310,13 @@ func devEngineContainers(c *dagger.Client, arches []string, version string, opts
 		platformVariants = append(platformVariants, devEngineContainer(c, arch, version, opts...))
 	}
 
+	return platformVariants
+}
+
+func devEngineContainersWithGPUSupport(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	platformVariants := make([]*dagger.Container, 0, len(arches))
+	// Restrict GPU images to amd64:
+	platformVariants = append(platformVariants, devEngineContainerWithGPUSupport(c, "amd64", version, opts...))
 	return platformVariants
 }
 
@@ -296,13 +373,22 @@ func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/codegen")
 }
 
-func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
+func cniPlugins(c *dagger.Client, arch string, gpuSupportEnabled bool) *dagger.Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
-	ctr := c.Container().
-		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
-		WithExec([]string{"apk", "add", "build-base", "go", "git"}).
-		WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
+	// If GPU support is enabled use a Debian image:
+	ctr := c.Container()
+	if gpuSupportEnabled {
+		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
+		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", golangVersion)).
+			WithExec([]string{"apt-get", "update"}).
+			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
+	} else {
+		ctr = ctr.From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+			WithExec([]string{"apk", "add", "build-base", "go", "git"})
+	}
+
+	ctr = ctr.WithMountedCache("/root/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
 		WithMountedDirectory("/src", c.Git("github.com/containernetworking/plugins").Tag(cniVersion).Tree()).
 		WithWorkdir("/src").
