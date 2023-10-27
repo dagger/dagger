@@ -8,7 +8,7 @@ data:
     [[runners]]
       environment = ["HOME=/tmp","FF_GITLAB_REGISTRY_HELPER_IMAGE=1"]
       name = "OpenShift Prod Runner Dagger"
-      url = <your_gitlab_url>
+      url = YOUR-GITLAB-URL
       executor = "kubernetes"
       [runners.kubernetes]
         namespace = "dagger"
@@ -32,4 +32,3 @@ data:
           name = "dagger"
           mount_path = "/var/run/dagger"
           host_path = "/var/run/dagger"
-

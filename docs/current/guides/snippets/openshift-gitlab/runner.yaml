@@ -5,7 +5,7 @@ metadata:
   namespace: dagger
 spec:
   config: dagger-custom-config-toml
-  gitlabUrl: <your_gitlab_url>
+  gitlabUrl: YOUR-GITLAB-URL
   tags: dagger
-  token: <gitlab-runner-token-ref>
+  token: YOUR-GITLAB-RUNNER-TOKEN-REFERENCE
   runUntagged: false
