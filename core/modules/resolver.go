@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 )
 
 // Ref contains all of the information we're able to learn about a provided
@@ -257,7 +258,7 @@ func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) 
 		}
 	}
 
-	gitCommit, err := resolveGitRef(ctx, dag, ref.Git.CloneURL, modVersion)
+	gitCommit, err := dag.Git(ref.Git.CloneURL, dagger.GitOpts{KeepGitDir: true}).Commit(modVersion).Commit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve git ref: %w", err)
 	}
@@ -298,6 +299,7 @@ func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *Re
 func defaultBranch(ctx context.Context, dag *dagger.Client, repo string) (string, error) {
 	output, err := dag.Container().
 		From("alpine/git").
+		WithEnvVariable("CACHEBUSTER", identity.NewID()). // force this to always run so we don't get stale data
 		WithExec([]string{"git", "ls-remote", "--symref", repo, "HEAD"}, dagger.ContainerWithExecOpts{
 			SkipEntrypoint: true,
 		}).
@@ -320,22 +322,4 @@ func defaultBranch(ctx context.Context, dag *dagger.Client, repo string) (string
 	}
 
 	return "", fmt.Errorf("could not deduce default branch from output:\n%s", output)
-}
-
-func resolveGitRef(ctx context.Context, dag *dagger.Client, repo, ref string) (string, error) {
-	repoDir := dag.Git(repo, dagger.GitOpts{KeepGitDir: true}).Commit(ref).Tree()
-
-	output, err := dag.Container().
-		From("alpine/git").
-		WithMountedDirectory("/repo", repoDir).
-		WithWorkdir("/repo").
-		WithExec([]string{"git", "rev-parse", "HEAD"}, dagger.ContainerWithExecOpts{
-			SkipEntrypoint: true,
-		}).
-		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return strings.TrimSpace(output), nil
 }
