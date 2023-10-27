@@ -44,7 +44,7 @@ spec:
     script: |
       #!/usr/bin/env sh
       apk add nodejs npm curl
-      cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
+      curl https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
       npm i @dagger.io/dagger@latest
       dagger run node ./ci/index.mjs
     volumeMounts:
