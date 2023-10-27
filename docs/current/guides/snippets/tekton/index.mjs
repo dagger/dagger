@@ -10,11 +10,10 @@ connect(
       .from("node:16-slim")
       .withDirectory(
         "/src",
-        client
-          .host()
-          .directory(".", {
-            exclude: ["node_modules/", "ci/", "build/", ".git/"],
-          })
+        client.host()
+        .directory(".", {
+          exclude: ["node_modules/", "ci/", "build/", ".git/"],
+        })
       )
 
     // set the working directory in the container
