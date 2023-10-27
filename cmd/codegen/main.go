@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	outputDir     string
-	moduleRef     string
-	lang          string
-	propagateLogs bool
+	outputDir             string
+	moduleRef             string
+	lang                  string
+	propagateLogs         bool
+	introspectionJSONPath string
 )
 
 var rootCmd = &cobra.Command{
@@ -30,6 +31,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&moduleRef, "module", "", "module to load and codegen dependency code")
 	rootCmd.Flags().BoolVar(&propagateLogs, "propagate-logs", false, "propagate logs directly to progrock.sock")
+	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 }
 
 const nestedSock = "/.progrock.sock"
@@ -81,6 +83,14 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 		cfg.ModuleRef = ref
 		cfg.ModuleConfig = modCfg
+	}
+
+	if introspectionJSONPath != "" {
+		introspectionJSON, err := os.ReadFile(introspectionJSONPath)
+		if err != nil {
+			return fmt.Errorf("read introspection json: %w", err)
+		}
+		cfg.IntrospectionJSON = string(introspectionJSON)
 	}
 
 	return Generate(ctx, cfg, dag)

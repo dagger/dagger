@@ -38,8 +38,8 @@ if __name__ == '__main__':
     sys.exit(app())
 `
 
-func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string) *Container {
-	return m.CodegenBase(modSource, subPath).
+func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string, introspectionJson string) *Container {
+	return m.CodegenBase(modSource, subPath, introspectionJson).
 		WithExec([]string{"python", "-m", "pip", "install", "."}).
 		WithWorkdir(ModSourceDirPath).
 		WithNewFile(RuntimeExecutablePath, ContainerWithNewFileOpts{
@@ -50,8 +50,8 @@ func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string) *Contain
 		WithDefaultArgs()
 }
 
-func (m *PythonSdk) Codegen(modSource *Directory, subPath string) *GeneratedCode {
-	ctr := m.CodegenBase(modSource, subPath)
+func (m *PythonSdk) Codegen(modSource *Directory, subPath string, introspectionJson string) *GeneratedCode {
+	ctr := m.CodegenBase(modSource, subPath, introspectionJson)
 	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
 		Exclude: []string{
 			"**/__pycache__",
@@ -67,7 +67,7 @@ func (m *PythonSdk) Codegen(modSource *Directory, subPath string) *GeneratedCode
 		})
 }
 
-func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string) *Container {
+func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string, introspectionJson string) *Container {
 	return m.Base("").
 		WithMountedDirectory(ModSourceDirPath, modSource).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
@@ -77,6 +77,9 @@ func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string) *Container
 		}).
 		WithNewFile("/templates/src/main.py", ContainerWithNewFileOpts{
 			Contents: srcMainTmpl,
+		}).
+		WithNewFile("/schema.json", ContainerWithNewFileOpts{
+			Contents: introspectionJson,
 		}).
 		WithExec([]string{"python", "-m", "dagger", "generate", path.Join(sdkSrc, genPath)}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,

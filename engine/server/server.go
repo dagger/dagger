@@ -198,10 +198,6 @@ func (srv *DaggerServer) ServeClientConn(
 }
 
 func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata, conn net.Conn, lg *logrus.Entry) (http.Handler, <-chan struct{}, error) {
-	handler, err := srv.schema.HTTPHandler(clientMetadata.ModuleDigest)
-	if err != nil {
-		return nil, nil, err
-	}
 	doneCh := make(chan struct{})
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer close(doneCh)
@@ -212,7 +208,7 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
-		handler.ServeHTTP(w, req)
+		srv.schema.ServeHTTP(w, req)
 	}), doneCh, nil
 }
 
