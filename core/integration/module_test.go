@@ -47,7 +47,26 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("kebab-cases Go module name, camel-cases Dagger module name", func(t *testing.T) {
+	t.Run("reserved go.mod name", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=go", "--sdk=go"))
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		out, err := modGen.
+			With(daggerQuery(`{go{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"go":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("uses expected Go module name, camel-cases Dagger module name", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -67,7 +86,7 @@ func TestModuleGoInit(t *testing.T) {
 
 		generated, err := modGen.File("go.mod").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, generated, "module my-module")
+		require.Contains(t, generated, "module main")
 	})
 
 	t.Run("creates go.mod beneath an existing go.mod if root points beneath it", func(t *testing.T) {
@@ -98,7 +117,7 @@ func TestModuleGoInit(t *testing.T) {
 		t.Run("names Go module after Dagger module", func(t *testing.T) {
 			generated, err := modGen.File("go.mod").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "module beneath-go-mod")
+			require.Contains(t, generated, "module main")
 		})
 	})
 

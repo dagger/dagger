@@ -164,7 +164,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 
 			// bootstrap go.mod using dependencies from the embedded Go SDK
 
-			newModName := strcase.ToKebab(g.Config.ModuleConfig.Name)
+			newModName := "main" // use a safe default, no going to be a reserved word. User is free to modify
 
 			newMod.AddModuleStmt(newModName)
 			newMod.SetRequire(sdkMod.Require)
