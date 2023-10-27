@@ -1183,6 +1183,45 @@ export class Container extends BaseClient {
   }
 
   /**
+   * EXPERIMENTAL API! Subject to change/removal at any time.
+   *
+   * experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
+   * This currently works for Nvidia devices only.
+   */
+  experimentalWithAllGPUs(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "experimentalWithAllGPUs",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * EXPERIMENTAL API! Subject to change/removal at any time.
+   *
+   * experimentalWithGPU configures the provided list of devices to be accesible to this container.
+   * This currently works for Nvidia devices only.
+   */
+  experimentalWithGPU(devices: string[]): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "experimentalWithGPU",
+          args: { devices },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
    *
    * Return true on success.

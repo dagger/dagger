@@ -407,6 +407,33 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	return convert(response), nil
 }
 
+// EXPERIMENTAL API! Subject to change/removal at any time.
+//
+// experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
+// This currently works for Nvidia devices only.
+func (r *Container) ExperimentalWithAllGPUs() *Container {
+	q := r.q.Select("experimentalWithAllGPUs")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EXPERIMENTAL API! Subject to change/removal at any time.
+//
+// experimentalWithGPU configures the provided list of devices to be accesible to this container.
+// This currently works for Nvidia devices only.
+func (r *Container) ExperimentalWithGPU(devices []string) *Container {
+	q := r.q.Select("experimentalWithGPU")
+	q = q.Arg("devices", devices)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
 	// Identifiers for other platform specific containers.

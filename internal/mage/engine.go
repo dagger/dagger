@@ -22,6 +22,8 @@ import (
 
 var publishedEngineArches = []string{"amd64", "arm64"}
 
+var publishedGPUEngineArches = []string{"amd64"}
+
 func parseRef(tag string) error {
 	if tag == "main" {
 		return nil
@@ -89,6 +91,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		password    = c.SetSecret("DAGGER_ENGINE_IMAGE_PASSWORD", util.GetHostEnv("DAGGER_ENGINE_IMAGE_PASSWORD"))
 		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
 		ref         = fmt.Sprintf("%s:%s", engineImage, version)
+		gpuRef      = fmt.Sprintf("%s:%s-gpu", engineImage, version)
 	)
 
 	digest, err := c.Container().
@@ -114,6 +117,16 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
 	fmt.Println("PUBLISHED IMAGE REF:", digest)
 
+	// gpu is experimental, not fatal if publish fails
+	gpuDigest, err := c.Container().Publish(ctx, gpuRef, dagger.ContainerPublishOpts{
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedGPUEngineArches, version),
+	})
+	if err == nil {
+		fmt.Println("PUBLISHED GPU IMAGE REF:", gpuDigest)
+	} else {
+		fmt.Println("GPU IMAGE PUBLISH FAILED: ", err.Error())
+	}
+
 	return nil
 }
 
@@ -127,9 +140,21 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	defer c.Close()
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
+
 	_, err = c.Container().Export(ctx, "./engine.tar", dagger.ContainerExportOpts{
 		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, ""),
 	})
+	if err != nil {
+		return err
+	}
+
+	_, err = c.Container().Export(ctx, "./engine-gpu.tar", dagger.ContainerExportOpts{
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedGPUEngineArches, ""),
+	})
+	if err != nil {
+		return err
+	}
+
 	return err
 }
 
@@ -198,12 +223,25 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("dev")
 
+	var gpuSupportEnabled bool
+	if v := os.Getenv(util.GPUSupportEnvName); v != "" {
+		gpuSupportEnabled = true
+	}
+
 	arches := []string{runtime.GOARCH}
 
 	tarPath := "./bin/engine.tar"
 
+	// Conditionally load GPU enabled image for dev environment if the flag is set:
+	var platformVariants []*dagger.Container
+	if gpuSupportEnabled {
+		platformVariants = util.DevEngineContainerWithGPUSupport(c, arches, "")
+	} else {
+		platformVariants = util.DevEngineContainer(c, arches, "")
+	}
+
 	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainer(c, arches, ""),
+		PlatformVariants: platformVariants,
 		// use gzip to avoid incompatibility w/ older docker versions
 		ForcedCompression: dagger.Gzip,
 	})
@@ -245,14 +283,22 @@ func (t Engine) Dev(ctx context.Context) error {
 	runArgs := []string{
 		"run",
 		"-d",
-		// "--rm",
+	}
+
+	// Make all GPUs visible to the engine container if the GPU support flag is set:
+	if gpuSupportEnabled {
+		runArgs = append(runArgs, []string{"--gpus", "all"}...)
+	}
+	runArgs = append(runArgs, []string{
 		"-e", util.CacheConfigEnvName,
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
+		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + util.EngineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
-	}
+	}...)
+
 	runArgs = append(runArgs, imageName, "--debug")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {

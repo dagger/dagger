@@ -156,6 +156,25 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "EXPERIMENTAL API! Subject to change/removal at any time.\n\nexperimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.\nThis currently works for Nvidia devices only."
+    @spec experimental_with_all_gp_us(t()) :: Dagger.Container.t()
+    def experimental_with_all_gp_us(%__MODULE__{} = container) do
+      selection = select(container.selection, "experimentalWithAllGPUs")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "EXPERIMENTAL API! Subject to change/removal at any time.\n\nexperimentalWithGPU configures the provided list of devices to be accesible to this container.\nThis currently works for Nvidia devices only.\n\n## Required Arguments\n\n* `devices` -"
+    @spec experimental_with_gpu(t(), [Dagger.String.t()]) :: Dagger.Container.t()
+    def experimental_with_gpu(%__MODULE__{} = container, devices) do
+      selection = select(container.selection, "experimentalWithGPU")
+      selection = arg(selection, "devices", devices)
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the exported image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip.\n* `media_types` - Use the specified media types for the exported image's layers. Defaults to OCI, which\nis largely compatible with most recent container runtimes, but Docker may be needed\nfor older runtimes without OCI support."
     @spec export(t(), Dagger.String.t(), keyword()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
