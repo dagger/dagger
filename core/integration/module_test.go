@@ -1718,6 +1718,120 @@ func TestModuleGoSyncDeps(t *testing.T) {
 	require.JSONEq(t, `{"use":{"useHello":"goodbye"}}`, out)
 }
 
+//go:embed testdata/modules/go/id/arg/main.go
+var badIDArgGoSrc string
+
+//go:embed testdata/modules/python/id/arg/src/main.py
+var badIDArgPySrc string
+
+//go:embed testdata/modules/go/id/field/main.go
+var badIDFieldGoSrc string
+
+//go:embed testdata/modules/go/id/fn/main.go
+var badIDFnGoSrc string
+
+//go:embed testdata/modules/python/id/fn/src/main.py
+var badIDFnPySrc string
+
+func TestModuleReservedWords(t *testing.T) {
+	// verify disallowed names are rejected
+
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("id", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("arg", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("go", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: badIDArgGoSrc,
+					}).
+					With(daggerQuery(`{test{fn(id:"no")}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+			})
+
+			t.Run("python", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
+					WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+						Contents: badIDArgPySrc,
+					}).
+					With(daggerQuery(`{test{fn(id:"no")}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+			})
+		})
+
+		t.Run("field", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("go", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: badIDFieldGoSrc,
+					}).
+					With(daggerQuery(`{test{fn{id}}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define field with reserved name \"ID\"")
+			})
+		})
+
+		t.Run("fn", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("go", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: badIDFnGoSrc,
+					}).
+					With(daggerQuery(`{test{id}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
+			})
+
+			t.Run("python", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
+					WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+						Contents: badIDFnPySrc,
+					}).
+					With(daggerQuery(`{test{fn(id:"no")}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
+			})
+		})
+	})
+}
+
 func TestEnvCmd(t *testing.T) {
 	t.Skip("pending conversion to modules")
 
