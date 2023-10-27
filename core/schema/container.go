@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
-	"github.com/dagger/dagger/engine"
 
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -830,11 +829,8 @@ func (s *containerSchema) shellEndpoint(ctx context.Context, parent *core.Contai
 		return "", err
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
+	if err := s.MuxEndpoint(ctx, path.Join("/", endpoint), handler); err != nil {
 		return "", err
 	}
-
-	s.MuxEndpoint(path.Join("/", endpoint), handler, clientMetadata.ModuleDigest)
 	return "ws://dagger/" + endpoint, nil
 }

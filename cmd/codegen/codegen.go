@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 	"github.com/vito/progrock"
 )
 
-func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (rerr error) {
+func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
 	rec := progrock.FromContext(ctx)
 
 	var vtxName string
@@ -26,13 +27,22 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (re
 	}
 
 	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
-	defer func() { vtx.Done(rerr) }()
+	defer func() { vtx.Done(err) }()
 
 	logsW := vtx.Stdout()
 
-	introspectionSchema, err := generator.Introspect(ctx, dag)
-	if err != nil {
-		return err
+	var introspectionSchema *introspection.Schema
+	if cfg.IntrospectionJSON != "" {
+		var resp introspection.Response
+		if err := json.Unmarshal([]byte(cfg.IntrospectionJSON), &resp); err != nil {
+			return fmt.Errorf("unmarshal introspection json: %w", err)
+		}
+		introspectionSchema = resp.Schema
+	} else {
+		introspectionSchema, err = generator.Introspect(ctx, dag)
+		if err != nil {
+			return err
+		}
 	}
 
 	for ctx.Err() == nil {

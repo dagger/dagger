@@ -39,7 +39,6 @@ func (fn *Function) ID() (FunctionID, error) {
 }
 
 func (fn *Function) Digest() (digest.Digest, error) {
-	// TODO: does this need to unpack ModuleID and stable digest that?
 	return stableDigest(fn)
 }
 

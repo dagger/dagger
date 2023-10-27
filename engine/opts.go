@@ -61,11 +61,10 @@ type ClientMetadata struct {
 	// parent of the parent, and so on.
 	ParentClientIDs []string `json:"parent_client_ids"`
 
-	// TODO: doc if stays in
-	ModuleDigest digest.Digest `json:"module_digest"`
-
-	// TODO: doc if stays in
-	FunctionContextDigest digest.Digest `json:"function_context_digest"`
+	// If this client is for a module function, this digest will be set in the
+	// grpc context metadata for any api requests back to the engine. It's used by the API
+	// server to determine which schema to serve and other module context metadata.
+	ModuleContextDigest digest.Digest `json:"module_context_digest"`
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry

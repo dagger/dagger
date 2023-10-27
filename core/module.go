@@ -72,11 +72,12 @@ func (mod *Module) Digest() (digest.Digest, error) {
 	return stableDigest(mod)
 }
 
-// DigestWithoutFunctions gives a digest after unsetting Functions, which is useful
-// as a digest of the "base" Module that's stable before+after loading Functions.
-func (mod *Module) DigestWithoutObjects() (digest.Digest, error) {
+// Base gives a digest after unsetting Objects+Runtime, which is useful
+// as a digest of the "base" Module that's stable before+after loading TypeDefs
+func (mod *Module) BaseDigest() (digest.Digest, error) {
 	mod = mod.Clone()
 	mod.Objects = nil
+	mod.Runtime = nil
 	return stableDigest(mod)
 }
 
@@ -172,7 +173,7 @@ func LoadModuleConfig(
 
 // callback for retrieving the runtime container for a module; needs to be callback since only the schema/module.go implementation
 // knows how to call modules to get the container
-type getRuntimeFunc func(ctx context.Context, sourceDir *Directory, sourceDirSubpath string, sdkName string) (*Container, error)
+type getRuntimeFunc func(ctx context.Context, mod *Module) (*Container, error)
 
 // FromConfig creates a module from a dagger.json config file.
 func (mod *Module) FromConfig(
@@ -226,7 +227,7 @@ func (mod *Module) FromConfig(
 	mod.Name = cfg.Name
 	mod.DependencyConfig = cfg.Dependencies
 	mod.SDK = cfg.SDK
-	mod.Runtime, err = getRuntime(ctx, mod.SourceDirectory, mod.SourceDirectorySubpath, mod.SDK)
+	mod.Runtime, err = getRuntime(ctx, mod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime: %w", err)
 	}
