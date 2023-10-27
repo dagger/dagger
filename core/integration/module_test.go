@@ -1413,6 +1413,36 @@ func TestModuleNamespacing(t *testing.T) {
 	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
 }
 
+func TestModuleDaggerCall(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("list args", func(t *testing.T) {
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+import "strings"
+
+type Minimal struct {}
+
+func (m *Minimal) Hello(msgs []string) string {
+	return strings.Join(msgs, "+")
+}
+`,
+			})
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		out, err := modGen.With(daggerCall("hello", "--msgs", "yo", "--msgs", "my", "--msgs", "friend")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), "yo+my+friend")
+	})
+}
+
 func TestEnvCmd(t *testing.T) {
 	t.Skip("pending conversion to modules")
 
@@ -1816,10 +1846,9 @@ func daggerQuery(query string) dagger.WithContainerFunc {
 	}
 }
 
-// TODO: support args
-func daggerCall(fnName string) dagger.WithContainerFunc {
+func daggerCall(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "--debug", "call", fnName}, dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "--debug", "call"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

@@ -588,13 +588,15 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagg
 
 		val = flag.Value
 
-		dv, ok := val.(DaggerValue)
-		if ok {
-			obj := dv.Get(dag)
+		switch v := val.(type) {
+		case DaggerValue:
+			obj := v.Get(dag)
 			if obj == nil {
 				return fmt.Errorf("no value for argument: %s", arg.Name)
 			}
 			val = obj
+		case pflag.SliceValue:
+			val = v.GetSlice()
 		}
 
 		fc.Arg(arg.Name, val)
