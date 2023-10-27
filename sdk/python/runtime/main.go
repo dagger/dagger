@@ -81,7 +81,11 @@ func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string, introspect
 		WithNewFile("/schema.json", ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
-		WithExec([]string{"python", "-m", "dagger", "generate", path.Join(sdkSrc, genPath)}, ContainerWithExecOpts{
+		WithExec([]string{
+			"python", "-m", "dagger", "codegen",
+			"--output", path.Join(sdkSrc, genPath),
+			"--introspection", "/schema.json",
+		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /templates/pyproject.toml ."}).
