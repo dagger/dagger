@@ -30,20 +30,29 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+// Optional is a helper type to represent optional values. Any method arguments
+// that use this wrapper type will be set as optional in the generated API.
+//
+// To construct an Optional from within a module, use the Opt helper function.
 type Optional[T comparable] struct {
 	value T
 	isSet bool
 }
 
+// Opt is a helper function to construct an Optional with the given value set.
 func Opt[T comparable](v T) Optional[T] {
 	return Optional[T]{value: v, isSet: true}
 }
 
+// Get returns the internal value of the optional and a boolean indicating if
+// the value was set explicitly by the caller.
 func (o Optional[T]) Get() (T, bool) {
 	var zero T
 	return o.value, o.isSet || o.value != zero
 }
 
+// GetOr returns the internal value of the optional or the given default value
+// if the value was not explicitly set by the caller.
 func (o Optional[T]) GetOr(defaultValue T) T {
 	value, ok := o.Get()
 	if !ok {
