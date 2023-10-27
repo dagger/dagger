@@ -6,7 +6,9 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -46,6 +48,17 @@ on the object+function name, with each case doing json deserialization of the in
 Go function.
 */
 func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
+	// HACK: the code in this func can be pretty flaky and tricky to debug -
+	// it's much easier to debug when we actually have stack traces, so we grab
+	// those on a panic
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "internal error during module code generation: %v\n", r)
+			debug.PrintStack()
+			panic(r)
+		}
+	}()
+
 	if funcs.modulePkg == nil {
 		// during bootstrapping, we might not have code yet, since it takes
 		// multiple passes.
