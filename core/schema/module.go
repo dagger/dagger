@@ -356,9 +356,6 @@ type functionCallArgs struct {
 func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args functionCallArgs) (any, error) {
 	// TODO: if return type non-null, assert on that here
 
-	// TODO: re-add support for different exit codes
-	cacheExitCode := uint32(0)
-
 	// will already be set for internal calls, which close over a fn that doesn't
 	// have ModuleID set yet
 	mod := args.Module
@@ -437,9 +434,9 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, s.bk, s.progSockPath, mod.Platform, core.ContainerExecOpts{
-		ExperimentalPrivilegedNesting: true,
 		ModuleContextDigest:           moduleContextDigest,
-		CacheExitCode:                 cacheExitCode,
+		ExperimentalPrivilegedNesting: true,
+		NestedInSameSession:           true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)

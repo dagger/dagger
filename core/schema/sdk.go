@@ -343,6 +343,7 @@ func (sdk *goSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Containe
 		},
 		SkipEntrypoint:                true,
 		ExperimentalPrivilegedNesting: true,
+		NestedInSameSession:           true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container runtime: %w", err)
@@ -413,6 +414,7 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module) (*core.
 			"--introspection-json-path", goSDKIntrospectionJSONPath,
 		},
 		ExperimentalPrivilegedNesting: true,
+		NestedInSameSession:           true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container codegen: %w", err)

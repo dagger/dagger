@@ -1443,6 +1443,47 @@ func (m *Minimal) Hello(msgs []string) string {
 	})
 }
 
+func TestModuleGoSyncDeps(t *testing.T) {
+	// verify that changes to deps result in a sync to the depender module
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep").
+		With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
+		WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: useInner,
+		}).
+		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: useOuter,
+		}).
+		With(daggerExec("mod", "use", "./dep"))
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	modGen = modGen.With(daggerQuery(`{use{useHello}}`))
+	out, err := modGen.Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+
+	newInner := strings.ReplaceAll(useInner, `"hello"`, `"goodbye"`)
+	modGen = modGen.
+		WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: newInner,
+		}).
+		With(daggerExec("mod", "sync"))
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err = modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"use":{"useHello":"goodbye"}}`, out)
+}
+
 func TestEnvCmd(t *testing.T) {
 	t.Skip("pending conversion to modules")
 

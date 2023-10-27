@@ -1042,14 +1042,14 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
-
-		if opts.ModuleContextDigest != "" {
-			runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_CONTEXT_DIGEST", opts.ModuleContextDigest.String()))
-		}
 	}
 
-	if opts.CacheExitCode != 0 {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_CACHE_EXIT_CODE", strconv.FormatUint(uint64(opts.CacheExitCode), 10)))
+	if opts.ModuleContextDigest != "" {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_CONTEXT_DIGEST", opts.ModuleContextDigest.String()))
+	}
+
+	if opts.NestedInSameSession {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION", ""))
 	}
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
@@ -1089,8 +1089,14 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			_ = ok
 		}
 
+		// don't pass these through to the container when manually set, they are internal only
 		if name == "_DAGGER_ENABLE_NESTING" && !opts.ExperimentalPrivilegedNesting {
-			// don't pass this through to the container when manually set, this is internal only
+			continue
+		}
+		if name == "_DAGGER_MODULE_CONTEXT_DIGEST" && opts.ModuleContextDigest == "" {
+			continue
+		}
+		if name == "_DAGGER_ENABLE_NESTING_IN_SAME_SESSION" && !opts.NestedInSameSession {
 			continue
 		}
 
@@ -1851,13 +1857,11 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool
 
-	// (Internal-only for now) An exit code that will be caught by the shim, written to
-	// the exec meta mount, but then result in the shim still exiting with 0 so that
-	// the exec is cached.
-	CacheExitCode uint32
-
 	// (Internal-only) TODO:(sipsma) DOC THIS
 	ModuleContextDigest digest.Digest
+
+	// (Internal-only) TODO:(sipsma) DOC THIS
+	NestedInSameSession bool
 }
 
 type BuildArg struct {

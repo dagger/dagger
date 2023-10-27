@@ -170,20 +170,6 @@ func pollForPort(network, addr string) (string, error) {
 }
 
 func shim() (returnExitCode int) {
-	cacheExitCodeStr, found := internalEnv("_DAGGER_CACHE_EXIT_CODE")
-	if found {
-		cacheExitCodeUint64, err := strconv.ParseUint(cacheExitCodeStr, 10, 32)
-		if err != nil {
-			panic(fmt.Errorf("cannot parse cache exit code: %w", err))
-		}
-		cacheExitCode := uint32(cacheExitCodeUint64)
-		defer func() {
-			if returnExitCode == int(cacheExitCode) {
-				returnExitCode = 0
-			}
-		}()
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if len(os.Args) < 2 {
@@ -644,17 +630,22 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
 
-	serverID, ok := internalEnv("_DAGGER_SERVER_ID")
-	if !ok {
-		return fmt.Errorf("missing _DAGGER_SERVER_ID")
-	}
-	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
 	clientParams := client.Params{
-		ServerID:        serverID,
-		SecretToken:     sessionToken.String(),
-		RunnerHost:      "unix:///.runner.sock",
-		ParentClientIDs: strings.Fields(parentClientIDsVal),
+		SecretToken: sessionToken.String(),
+		RunnerHost:  "unix:///.runner.sock",
 	}
+
+	if _, ok := internalEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION"); ok {
+		serverID, ok := internalEnv("_DAGGER_SERVER_ID")
+		if !ok {
+			return fmt.Errorf("missing _DAGGER_SERVER_ID")
+		}
+		clientParams.ServerID = serverID
+
+		parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
+		clientParams.ParentClientIDs = strings.Fields(parentClientIDsVal)
+	}
+
 	moduleContextDigest, ok := internalEnv("_DAGGER_MODULE_CONTEXT_DIGEST")
 	if ok {
 		clientParams.ModuleContextDigest = digest.Digest(moduleContextDigest)
