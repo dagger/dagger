@@ -60,18 +60,18 @@ func (c *CommonFunctions) InnerType(t *introspection.TypeRef) *introspection.Typ
 	}
 }
 
-func (c *CommonFunctions) ObjectName(t *introspection.TypeRef) string {
+func (c *CommonFunctions) ObjectName(t *introspection.TypeRef) (string, error) {
 	switch t.Kind {
 	case introspection.TypeKindNonNull:
 		return c.ObjectName(t.OfType)
 	case introspection.TypeKindObject:
-		return t.Name
+		return t.Name, nil
 	default:
-		panic(fmt.Sprintf("unexpected type kind %s", t.Kind))
+		return "", fmt.Errorf("unexpected type kind %s", t.Kind)
 	}
 }
 
-func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) bool {
+func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error) {
 	schema := GetSchema()
 	switch t.Kind {
 	case introspection.TypeKindNonNull:
@@ -79,24 +79,24 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) bool {
 	case introspection.TypeKindObject:
 		schemaType := schema.Types.Get(t.Name)
 		if schemaType == nil {
-			panic(fmt.Sprintf("schema type %s is nil", t.Name))
+			return false, fmt.Errorf("schema type %s is nil", t.Name)
 		}
 
 		for _, f := range schemaType.Fields {
 			if f.Name == "id" {
-				return true
+				return true, nil
 			}
 		}
-		return false
+		return false, nil
 	default:
-		return false
+		return false, nil
 	}
 }
 
 // FormatReturnType formats a GraphQL type into the SDK language output,
 // unless it's an ID that will be converted which needs to be formatted
 // as an input (for chaining).
-func (c *CommonFunctions) FormatReturnType(f introspection.Field) string {
+func (c *CommonFunctions) FormatReturnType(f introspection.Field) (string, error) {
 	return c.formatType(f.TypeRef, c.ConvertID(f))
 }
 
@@ -112,7 +112,7 @@ func (c *CommonFunctions) IsListOfObject(t *introspection.TypeRef) bool {
 	return t.OfType.OfType.IsObject()
 }
 
-func (c *CommonFunctions) GetArrayField(f *introspection.Field) []*introspection.Field {
+func (c *CommonFunctions) GetArrayField(f *introspection.Field) ([]*introspection.Field, error) {
 	schema := GetSchema()
 
 	fieldType := f.TypeRef
@@ -120,7 +120,7 @@ func (c *CommonFunctions) GetArrayField(f *introspection.Field) []*introspection
 		fieldType = fieldType.OfType
 	}
 	if !fieldType.IsList() {
-		panic("field is not a list")
+		return nil, fmt.Errorf("field %s is not a list", f.Name)
 	}
 	fieldType = fieldType.OfType
 	if !fieldType.IsOptional() {
@@ -128,7 +128,7 @@ func (c *CommonFunctions) GetArrayField(f *introspection.Field) []*introspection
 	}
 	schemaType := schema.Types.Get(fieldType.Name)
 	if schemaType == nil {
-		panic(fmt.Sprintf("schema type %s is nil", fieldType.Name))
+		return nil, fmt.Errorf("schema type %s is nil", fieldType.Name)
 	}
 
 	var fields []*introspection.Field
@@ -146,10 +146,10 @@ func (c *CommonFunctions) GetArrayField(f *introspection.Field) []*introspection
 		}
 	}
 	if idField != nil {
-		return []*introspection.Field{idField}
+		return []*introspection.Field{idField}, nil
 	}
 
-	return fields
+	return fields, nil
 }
 
 // ConvertID returns true if the field returns an ID that should be
@@ -174,19 +174,19 @@ func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
 // FormatInputType formats a GraphQL type into the SDK language input
 //
 // Example: `String` -> `string`
-func (c *CommonFunctions) FormatInputType(r *introspection.TypeRef) string {
+func (c *CommonFunctions) FormatInputType(r *introspection.TypeRef) (string, error) {
 	return c.formatType(r, true)
 }
 
 // FormatOutputType formats a GraphQL type into the SDK language output
 //
 // Example: `String` -> `string`
-func (c *CommonFunctions) FormatOutputType(r *introspection.TypeRef) string {
+func (c *CommonFunctions) FormatOutputType(r *introspection.TypeRef) (string, error) {
 	return c.formatType(r, false)
 }
 
 // formatType loops through the type reference to transform it into its SDK language.
-func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (representation string) {
+func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (representation string, err error) {
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
 		case introspection.TypeKindList:
@@ -199,24 +199,24 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (repr
 		case introspection.TypeKindScalar:
 			switch introspection.Scalar(ref.Name) {
 			case introspection.ScalarString:
-				return c.formatTypeFuncs.FormatKindScalarString(representation)
+				return c.formatTypeFuncs.FormatKindScalarString(representation), nil
 			case introspection.ScalarInt:
-				return c.formatTypeFuncs.FormatKindScalarInt(representation)
+				return c.formatTypeFuncs.FormatKindScalarInt(representation), nil
 			case introspection.ScalarFloat:
-				return c.formatTypeFuncs.FormatKindScalarFloat(representation)
+				return c.formatTypeFuncs.FormatKindScalarFloat(representation), nil
 			case introspection.ScalarBoolean:
-				return c.formatTypeFuncs.FormatKindScalarBoolean(representation)
+				return c.formatTypeFuncs.FormatKindScalarBoolean(representation), nil
 			default:
-				return c.formatTypeFuncs.FormatKindScalarDefault(representation, ref.Name, input)
+				return c.formatTypeFuncs.FormatKindScalarDefault(representation, ref.Name, input), nil
 			}
 		case introspection.TypeKindObject:
-			return c.formatTypeFuncs.FormatKindObject(representation, ref.Name, input)
+			return c.formatTypeFuncs.FormatKindObject(representation, ref.Name, input), nil
 		case introspection.TypeKindInputObject:
-			return c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name, input)
+			return c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name, input), nil
 		case introspection.TypeKindEnum:
-			return c.formatTypeFuncs.FormatKindEnum(representation, ref.Name)
+			return c.formatTypeFuncs.FormatKindEnum(representation, ref.Name), nil
 		}
 	}
 
-	panic(r)
+	return "", fmt.Errorf("unexpected type kind %s", r.Kind)
 }

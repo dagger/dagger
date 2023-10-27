@@ -45,11 +45,11 @@ from the Engine, calls the relevant function and returns the result. The generat
 on the object+function name, with each case doing json deserialization of the input arguments and calling the actual
 Go function.
 */
-func (funcs goTemplateFuncs) moduleMainSrc() string {
+func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	if funcs.modulePkg == nil {
 		// during bootstrapping, we might not have code yet, since it takes
 		// multiple passes.
-		return `func main() { panic("no code yet") }`
+		return `func main() { panic("no code yet") }`, nil
 	}
 
 	ps := &parseState{
@@ -103,7 +103,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			if !obj.Exported() {
 				// the type must be exported
 				if !topLevel {
-					panic(fmt.Sprintf("cannot code-generate unexported type %s", obj.Name()))
+					return "", fmt.Errorf("cannot code-generate unexported type %s", obj.Name())
 				}
 				continue
 			}
@@ -123,7 +123,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			// collects all the methods
 			objType, extraTypes, err := ps.goStructToAPIType(strct, named)
 			if err != nil {
-				panic(err)
+				return "", err
 			}
 			if objType == nil {
 				// not including in module schema, skip it
@@ -131,8 +131,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 			}
 
 			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
-				// errors indicate an internal problem rather than something w/ user code, so panic instead
-				panic(err)
+				// errors indicate an internal problem rather than something w/ user code, so error instead
+				return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
 			}
 
 			if len(objFunctionCases[obj.Name()]) == 0 {
@@ -160,7 +160,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() string {
 	}
 
 	// TODO: sort cases and functions based on their definition order
-	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases, createMod)}, "\n")
+	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases, createMod)}, "\n"), nil
 }
 
 func dotLine(a *Statement, id string) *Statement {

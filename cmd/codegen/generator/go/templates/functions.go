@@ -111,16 +111,15 @@ func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
 }
 
 // isPointer returns true if value is a pointer.
-func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) bool {
+func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error) {
 	// Ignore id since it's converted to special ID type later.
 	if t.Name == "id" {
-		return false
+		return false, nil
 	}
 
 	// Convert to a string representation to avoid code repetition.
-	representation := funcs.FormatInputType(t.TypeRef)
-
-	return strings.Index(representation, "*") == 0
+	representation, err := funcs.FormatInputType(t.TypeRef)
+	return strings.Index(representation, "*") == 0, err
 }
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
@@ -178,7 +177,7 @@ func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field) strin
 
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
-func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
+func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) (string, error) {
 	// don't create methods on query for the env itself,
 	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
 	// TODO(vito): still needed? we codegen against the module's schema view,
@@ -207,9 +206,17 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
 		// scalar (DirectoryID) rather than an object (*Directory).
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, funcs.FormatOutputType(arg.TypeRef)))
+			outType, err := funcs.FormatOutputType(arg.TypeRef)
+			if err != nil {
+				return "", err
+			}
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 		} else {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, funcs.FormatInputType(arg.TypeRef)))
+			inType, err := funcs.FormatInputType(arg.TypeRef)
+			if err != nil {
+				return "", err
+			}
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
 		}
 	}
 
@@ -222,7 +229,10 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 	}
 	signature += "(" + strings.Join(args, ", ") + ")"
 
-	retType := funcs.FormatReturnType(f)
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
 		retType = fmt.Sprintf("(%s, error)", retType)
 	} else {
@@ -230,5 +240,5 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) string {
 	}
 	signature += " " + retType
 
-	return signature
+	return signature, nil
 }
