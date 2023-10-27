@@ -381,12 +381,19 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module) (*core.
 	if err != nil {
 		return nil, err
 	}
+	// delete dagger.gen.go if it exists, which is going to be overwritten anyways. If it doesn't exist, we ignore not found
+	// in the implementation of `Without` so it will be a no-op
+	sourceDir := mod.SourceDirectory
+	sourceDir, err = sourceDir.Without(ctx, filepath.Join(mod.SourceDirectorySubpath, "dagger.gen.go"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
+	}
 
 	ctr, err = ctr.WithMountedFile(ctx, sdk.bk, goSDKIntrospectionJSONPath, introspectionJSONFile, "", true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, sdk.bk, goSDKUserModSourceDirPath, mod.SourceDirectory, "", false)
+	ctr, err = ctr.WithMountedDirectory(ctx, sdk.bk, goSDKUserModSourceDirPath, sourceDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount module source into go module sdk container codegen: %w", err)
 	}
