@@ -341,7 +341,6 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 	/* TODO: the commented code is what we *should* be doing, but need these PRs to be merged:
 	https://github.com/moby/buildkit/pull/4318
-	https://github.com/moby/buildkit/pull/4341
 
 	The reason being that when we build buildctl using our go.mod, we end up
 	with conflicting otel deps w/ buildkit's upstream go.mod, which can cause
@@ -363,16 +362,11 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/buildctl")
 	*/
 
-	buildkit := c.Git("github.com/moby/buildkit").Commit("5707f24f91b6b791c1bbf4a78149bb733cfa738f").Tree()
+	buildkit := c.Git("github.com/moby/buildkit").Commit("3d50b97793391d81d7bc191d7c5dd5361d5dadca").Tree()
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
 		WithMountedDirectory("/app", buildkit). // HACK: replace the src dir with buildkit's
-		WithExec([]string{
-			"go", "mod", "edit", "-require", "google.golang.org/grpc@v1.56.3",
-		}).
-		WithExec([]string{"go", "mod", "tidy"}).
-		WithExec([]string{"go", "mod", "vendor"}).
 		WithExec([]string{
 			"go", "build",
 			"-o", "./bin/buildctl",
