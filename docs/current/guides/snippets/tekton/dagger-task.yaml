@@ -17,7 +17,7 @@ spec:
       emptyDir: {}
   sidecars:
     - name: dagger-engine
-      image: registry.dagger.io/engine:v0.8.7
+      image: registry.dagger.io/engine:v0.9.1
       args:
         - "--oci-max-parallelism"
         - "num-cpu"
@@ -43,9 +43,8 @@ spec:
     workingDir: $(workspaces.source.path)
     script: |
       #!/usr/bin/env sh
-      apk add nodejs npm
+      apk add nodejs npm curl
       cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
-      npm i
       npm i @dagger.io/dagger@latest
       dagger run node ./ci/index.mjs
     volumeMounts:
