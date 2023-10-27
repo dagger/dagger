@@ -630,9 +630,12 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
 
+	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
+
 	clientParams := client.Params{
-		SecretToken: sessionToken.String(),
-		RunnerHost:  "unix:///.runner.sock",
+		SecretToken:     sessionToken.String(),
+		RunnerHost:      "unix:///.runner.sock",
+		ParentClientIDs: strings.Fields(parentClientIDsVal),
 	}
 
 	if _, ok := internalEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION"); ok {
@@ -641,9 +644,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 			return fmt.Errorf("missing _DAGGER_SERVER_ID")
 		}
 		clientParams.ServerID = serverID
-
-		parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
-		clientParams.ParentClientIDs = strings.Fields(parentClientIDsVal)
 	}
 
 	moduleContextDigest, ok := internalEnv("_DAGGER_MODULE_CONTEXT_DIGEST")
