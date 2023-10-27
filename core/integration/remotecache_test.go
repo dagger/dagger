@@ -12,6 +12,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const cliBinPath = "/.dagger-cli"
+
 func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName string, index uint8) (devEngineSvc *dagger.Service, endpoint string, err error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
@@ -52,8 +54,6 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	// This loads the dagger-cli binary from the host into the container, that was set up by
 	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
-
-	cliBinPath := "/.dagger-cli"
 
 	outputA, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineA).
@@ -134,8 +134,6 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 
 	daggerCli := daggerCliFile(t, c)
 
-	cliBinPath := "/.dagger-cli"
-
 	outputA, err := c.Container().From(alpineImage).
 		WithDirectory("/foo", c.Directory().WithDirectory("bar", c.Directory().WithNewFile("baz", "blah")).WithTimestamps(0)).
 		WithServiceBinding("dev-engine", devEngineA).
@@ -210,7 +208,6 @@ func TestRemoteCacheS3(t *testing.T) {
 		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", 0)
 		require.NoError(t, err)
 
-		cliBinPath := "/.dagger-cli"
 		// This loads the dagger-cli binary from the host into the container, that was set up by
 		// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
@@ -289,8 +286,6 @@ func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
 	// This loads the dagger-cli binary from the host into the container, that was set up by
 	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
-
-	cliBinPath := "/.dagger-cli"
 
 	outputA, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineA).
@@ -387,8 +382,6 @@ func TestRemoteCacheRegistrySeparateImportExport(t *testing.T) {
 	// This loads the dagger-cli binary from the host into the container, that was set up by
 	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
-
-	cliBinPath := "/.dagger-cli"
 
 	cacheEnvA := "type=registry,ref=registry:5000/test-cache-a:latest,mode=max"
 	cacheEnvB := "type=registry,ref=registry:5000/test-cache-b:latest,mode=max"

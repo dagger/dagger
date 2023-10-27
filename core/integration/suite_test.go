@@ -356,9 +356,7 @@ func (ctr DaggerCLIContainer) CallEnvExtend(extensions ...string) *DaggerCLICont
 	if ctr.HelpArg {
 		args = append(args, "--help")
 	}
-	for _, ext := range extensions {
-		args = append(args, ext)
-	}
+	args = append(args, extensions...)
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }

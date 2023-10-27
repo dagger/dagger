@@ -89,7 +89,7 @@ func TestCacheVolumeWithSubmount(t *testing.T) {
 
 		contents, err := ctr.File("/cache/subfile").Contents(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "bar", strings.TrimSpace(string(contents)))
+		require.Equal(t, "bar", strings.TrimSpace(contents))
 	})
 
 	t.Run("dir mount", func(t *testing.T) {
@@ -110,12 +110,12 @@ func TestCacheVolumeWithSubmount(t *testing.T) {
 
 			contents, err := ctr.File(subpath).Contents(ctx)
 			require.NoError(t, err)
-			require.Equal(t, expectedContents, strings.TrimSpace(string(contents)))
+			require.Equal(t, expectedContents, strings.TrimSpace(contents))
 
 			dir := ctr.Directory("/cache/subdir")
 			contents, err = dir.File(fileName).Contents(ctx)
 			require.NoError(t, err)
-			require.Equal(t, expectedContents, strings.TrimSpace(string(contents)))
+			require.Equal(t, expectedContents, strings.TrimSpace(contents))
 		}
 	})
 }

@@ -418,9 +418,8 @@ func TestModuleGit(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		sdk           string
-		gitignores    []string
-		gitattributes string
+		sdk        string
+		gitignores []string
 	}
 	for _, tc := range []testCase{
 		{
@@ -1531,7 +1530,6 @@ def hello() -> str:
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasMainPy":{"hello":"Hello, world!"}}`, out)
 	})
-
 }
 
 func TestModuleLotsOfFunctions(t *testing.T) {
