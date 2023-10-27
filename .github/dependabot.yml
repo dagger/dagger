@@ -85,3 +85,16 @@ updates:
       interval: "monthly"
     ignore:
       - dependency-name: "*"
+
+  - package-ecosystem: "maven"
+    directory: "/sdk/java"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "kind/dependencies"
+      - "sdk/java"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+      # ignore maven dependencies (API, plugins, etc)
+      - dependency-name: "org.apache.maven*"
