@@ -88,26 +88,27 @@ The `dagger-java-samples` module contains code samples.
 Run the samples with this command:
 
 ```bash
-# Build the packages 
-./mvnw install
-# Run the samples 
-./mvnw exec:java -pl dagger-java-samples
+# Build the packages and run the samples 
+./mvnw package -Prun-samples
 ```
 
 Then select the sample to run:
 
 ```
 === Dagger.io Java SDK samples ===
-  1 - io.dagger.sample.RunContainer
-  2 - io.dagger.sample.GetDaggerWebsite
-  3 - io.dagger.sample.ListEnvVars
-  4 - io.dagger.sample.MountHostDirectoryInContainer
-  5 - io.dagger.sample.ListHostDirectoryContents
-  6 - io.dagger.sample.ReadFileInGitRepository
-  7 - io.dagger.sample.GetGitVersion
-  8 - io.dagger.sample.CreateAndUseSecret
-  9 - io.dagger.sample.GetGitVersion
-  q - exit
+   1  io.dagger.sample.RunContainer                   Run a binary in a container
+   2  io.dagger.sample.GetDaggerWebsite               Fetch the Dagger website content and print the first 300 characters
+   3  io.dagger.sample.ListEnvVars                    List container environment variables
+   4  io.dagger.sample.MountHostDirectoryInContainer  Mount a host directory in container
+   5  io.dagger.sample.ListHostDirectoryContents      List the files and directories from the host working dir in a container
+   6  io.dagger.sample.ReadFileInGitRepository        Clone the Dagger git repository and print the first line of README.md
+   7  io.dagger.sample.PublishImage                   Publish a container image to a remote registry
+   8  io.dagger.sample.BuildFromDockerfile            Clone the Dagger git repository and build from a Dockerfile
+   9  io.dagger.sample.CreateAndUseSecret             Create a secret with a Github token and call a Github API using this secret
+  10  io.dagger.sample.TestWithDatabase               Run a sample CI test pipeline with MariaDB, Drupal and PHPUnit
+  11  io.dagger.sample.HostToContainerNetworking      Expose a service from a container to the host
+  12  io.dagger.sample.ContainerToHostNetworking      Expose MySQL service running on the host to client containers
+   q  exit
 
 Select sample:
 ```

@@ -5,6 +5,7 @@ import io.dagger.client.Container;
 import io.dagger.client.Dagger;
 import java.util.List;
 
+@Description("Run a binary in a container")
 public class RunContainer {
   public static void main(String... args) throws Exception {
     try (Client client = Dagger.connect()) {
