@@ -67,7 +67,9 @@ type Params struct {
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
 
-	// TODO:(sipsma) DOC
+	// If this client is for a module function, this digest will be set in the
+	// grpc context metadata for any api requests back to the engine. It's used by the API
+	// server to determine which schema to serve and other module context metadata.
 	ModuleContextDigest digest.Digest
 }
 

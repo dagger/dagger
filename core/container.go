@@ -1857,10 +1857,13 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool
 
-	// (Internal-only) TODO:(sipsma) DOC THIS
+	// (Internal-only) If this exec is for a module function, this digest will be set in the
+	// grpc context metadata for any api requests back to the engine. It's used by the API
+	// server to determine which schema to serve and other module context metadata.
 	ModuleContextDigest digest.Digest
 
-	// (Internal-only) TODO:(sipsma) DOC THIS
+	// (Internal-only) Used for module function execs to trigger the nested api client to
+	// be connected back to the same session.
 	NestedInSameSession bool
 }
 

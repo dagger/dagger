@@ -54,12 +54,12 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
-		buildCache:         core.NewCacheMap[uint64, *core.Container](),
-		importCache:        core.NewCacheMap[uint64, *specs.Descriptor](),
-		moduleContextCache: core.NewCacheMap[digest.Digest, *moduleContext](),
-		moduleCache:        core.NewCacheMap[digest.Digest, *core.Module](),
+		buildCache:  core.NewCacheMap[uint64, *core.Container](),
+		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
+		moduleCache: core.NewCacheMap[digest.Digest, *core.Module](),
 
-		schemaViews: map[digest.Digest]*schemaView{},
+		schemaViews:    map[digest.Digest]*schemaView{},
+		moduleContexts: map[digest.Digest]*moduleContext{},
 	}
 	return merged, nil
 }
@@ -75,15 +75,18 @@ type MergedSchemas struct {
 	host         *core.Host
 	services     *core.Services
 
-	buildCache         *core.CacheMap[uint64, *core.Container]
-	importCache        *core.CacheMap[uint64, *specs.Descriptor]
-	moduleContextCache *core.CacheMap[digest.Digest, *moduleContext] // TODO: this could probably just be a map
-	moduleCache        *core.CacheMap[digest.Digest, *core.Module]
+	buildCache  *core.CacheMap[uint64, *core.Container]
+	importCache *core.CacheMap[uint64, *specs.Descriptor]
+	moduleCache *core.CacheMap[digest.Digest, *core.Module]
 
 	mu sync.RWMutex
 	// Map of module digest -> schema presented to module.
 	// For the original client not in an module, digest is just "".
 	schemaViews map[digest.Digest]*schemaView
+	// map of module contexts, used to store metadata about the module making api requests
+	// to this server. Needs to be separate from schemaViews because there can be multiple
+	// module contexts for a single schema view.
+	moduleContexts map[digest.Digest]*moduleContext
 }
 
 type moduleContext struct {
@@ -169,15 +172,12 @@ func (s *MergedSchemas) registerModuleFunctionCall(mod *core.Module, fnCall *cor
 	}
 
 	dgst := digest.FromString(schemaView.viewDigest.String() + "." + fnCallDgst.String())
-	_, err = s.moduleContextCache.GetOrInitialize(dgst, func() (*moduleContext, error) {
-		return &moduleContext{
-			module:     mod,
-			fnCall:     fnCall,
-			schemaView: schemaView,
-		}, nil
-	})
-	if err != nil {
-		return nil, "", err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.moduleContexts[dgst] = &moduleContext{
+		module:     mod,
+		fnCall:     fnCall,
+		schemaView: schemaView,
 	}
 
 	return schemaView, dgst, nil
@@ -193,11 +193,11 @@ func (s *MergedSchemas) currentSchemaView(ctx context.Context) (*schemaView, err
 		return s.getSchemaView("")
 	}
 
-	moduleContext, err := s.moduleContextCache.GetOrInitialize(clientMetadata.ModuleContextDigest, func() (*moduleContext, error) {
-		return nil, fmt.Errorf("module context not found in cache")
-	})
-	if err != nil {
-		return nil, err
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	moduleContext, ok := s.moduleContexts[clientMetadata.ModuleContextDigest]
+	if !ok {
+		return nil, fmt.Errorf("module context not found")
 	}
 	return moduleContext.schemaView, nil
 }
@@ -210,11 +210,11 @@ func (s *MergedSchemas) currentModule(ctx context.Context) (*core.Module, error)
 	if clientMetadata.ModuleContextDigest == "" {
 		return nil, fmt.Errorf("not in a module")
 	}
-	moduleContext, err := s.moduleContextCache.GetOrInitialize(clientMetadata.ModuleContextDigest, func() (*moduleContext, error) {
-		return nil, fmt.Errorf("module context not found in cache")
-	})
-	if err != nil {
-		return nil, err
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	moduleContext, ok := s.moduleContexts[clientMetadata.ModuleContextDigest]
+	if !ok {
+		return nil, fmt.Errorf("module context not found")
 	}
 	return moduleContext.module, nil
 }
@@ -227,11 +227,11 @@ func (s *MergedSchemas) currentFunctionCall(ctx context.Context) (*core.Function
 	if clientMetadata.ModuleContextDigest == "" {
 		return nil, fmt.Errorf("not in a module")
 	}
-	moduleContext, err := s.moduleContextCache.GetOrInitialize(clientMetadata.ModuleContextDigest, func() (*moduleContext, error) {
-		return nil, fmt.Errorf("module context not found in cache")
-	})
-	if err != nil {
-		return nil, err
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	moduleContext, ok := s.moduleContexts[clientMetadata.ModuleContextDigest]
+	if !ok {
+		return nil, fmt.Errorf("module context not found")
 	}
 	return moduleContext.fnCall, nil
 }
