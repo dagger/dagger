@@ -10,8 +10,7 @@ connect(
       .from("node:16-slim")
       .withDirectory(
         "/src",
-        client.host()
-        .directory(".", {
+        client.host().directory(".", {
           exclude: ["node_modules/", "ci/", "build/", ".git/"],
         })
       )
