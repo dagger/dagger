@@ -1,0 +1,39 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: dagger-pipeline
+spec:
+  description: |
+    This pipeline clones a Git repository, then runs the Dagger pipeline.
+  params:
+  - name: repo-url
+    type: string
+    description: The Git repository clone URL
+  - name: dagger-cloud-token
+    type: string
+    description: The Dagger Cloud token
+  workspaces:
+  - name: shared-data
+    description: |
+      This workspace contains the cloned repository files, so they can be read by the
+      next task.
+  tasks:
+  - name: fetch-source
+    taskRef:
+      name: git-clone
+    workspaces:
+    - name: output
+      workspace: shared-data
+    params:
+    - name: url
+      value: $(params.repo-url)
+  - name: dagger
+    runAfter: ["fetch-source"]
+    taskRef:
+      name: dagger
+    workspaces:
+    - name: source
+      workspace: shared-data
+    params:
+      - name: dagger-cloud-token
+        value: $(params.dagger-cloud-token)
