@@ -698,6 +698,92 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 }
 
+func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Minimal struct {}
+
+func (m *Minimal) Read(ctx context.Context, dir Directory) (string, error) {
+	return dir.File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadPointer(ctx context.Context, dir *Directory) (string, error) {
+	return dir.File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadSlice(ctx context.Context, dir []Directory) (string, error) {
+	return dir[0].File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadVariadic(ctx context.Context, dir ...Directory) (string, error) {
+	return dir[0].File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (string, error) {
+	d, ok := dir.Get()
+	if ok {
+		return d.File("foo").Contents(ctx)
+	}
+	return "", nil
+}
+			`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	dirId := gjson.Get(out, "directory.withNewFile.id").String()
+
+	t.Run("func Read(ctx, Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
+	})
+
+	t.Run("func ReadPointer(ctx, *Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readPointer":"bar"}}`, out)
+	})
+
+	t.Run("func ReadSlice(ctx, []Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
+	})
+
+	t.Run("func ReadVariadic(ctx, ...Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
+	})
+
+	t.Run("func ReadOptional(ctx, Optional[Directory]) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
+		out, err = modGen.With(daggerQuery(`{minimal{readOptional}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readOptional":""}}`, out)
+	})
+}
+
 var inspectModule = daggerQuery(`
 query {
   host {
