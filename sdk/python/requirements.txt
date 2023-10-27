@@ -32,7 +32,7 @@ graphql-core==3.2.3
     #   gql
 h11==0.14.0
     # via httpcore
-httpcore==0.18.0
+httpcore==1.0.0
     # via httpx
 httpx==0.25.0
     # via
