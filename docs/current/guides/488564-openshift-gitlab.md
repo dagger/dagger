@@ -47,7 +47,7 @@ Follow the steps below:
   helm upgrade --create-namespace --install --namespace dagger dagger oci://registry.dagger.io/dagger-helm -f values.yaml
   ```
 
-1. Grant the necessary permissions for the `default` service account in the `dagger` namespace.
+1. Grant the necessary permissions for the `default` service account in the `dagger` namespace:
 
   :::info
   Without this step, pod creation will fail due to insufficient permissions to execute privileged containers with fixed user IDs and host path volume mounts.
