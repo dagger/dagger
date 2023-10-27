@@ -12,14 +12,20 @@ connect(
         "/src",
         client
           .host()
-          .directory(".", { exclude: ["node_modules/", "ci/", "build/", ".git/"] })
+          .directory(".", {
+            exclude: ["node_modules/", "ci/", "build/", ".git/"],
+          })
       )
 
     // set the working directory in the container
     // install application dependencies
-    const runner = source.withWorkdir("/src").
-      withMountedCache("/src/node_modules", client.cacheVolume("node_module_cache")).
-      withExec(["npm", "install"])
+    const runner = source
+      .withWorkdir("/src")
+      .withMountedCache(
+        "/src/node_modules",
+        client.cacheVolume("node_module_cache")
+      )
+      .withExec(["npm", "install"])
 
     // run application tests
     const test = runner.withExec(["npm", "test", "--", "--watchAll=false"])
