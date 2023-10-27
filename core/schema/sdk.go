@@ -134,6 +134,15 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 		return nil, fmt.Errorf("failed to find required Codegen function in SDK module %s", sdkModuleName)
 	}
 
+	schemaView, err := sdk.installDeps(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to install deps during %s module sdk codegen: %w", sdkModuleName, err)
+	}
+	introspectionJSON, err := schemaView.schemaIntrospectionJSON(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdkModuleName, err)
+	}
+
 	srcDirID, err := mod.SourceDirectory.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
@@ -141,13 +150,20 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 
 	result, err := sdk.moduleSchema.functionCall(ctx, codegenFn, functionCallArgs{
 		Module: sdk.mod,
-		Input: []*core.CallInput{{
-			Name:  "modSource",
-			Value: srcDirID,
-		}, {
-			Name:  "subPath",
-			Value: mod.SourceDirectorySubpath,
-		}},
+		Input: []*core.CallInput{
+			{
+				Name:  "modSource",
+				Value: srcDirID,
+			},
+			{
+				Name:  "subPath",
+				Value: mod.SourceDirectorySubpath,
+			},
+			{
+				Name:  "introspectionJson",
+				Value: introspectionJSON,
+			},
+		},
 		ParentOriginalName: sdkModuleOriginalName,
 		// TODO: params? somehow? maybe from module config? would be a good way to
 		// e.g. configure the language version.
@@ -187,6 +203,15 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 		return nil, fmt.Errorf("failed to find required ModuleRuntime function in SDK module %s", sdkModuleName)
 	}
 
+	schemaView, err := sdk.installDeps(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to install deps during %s module sdk codegen: %w", sdkModuleName, err)
+	}
+	introspectionJSON, err := schemaView.schemaIntrospectionJSON(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdkModuleName, err)
+	}
+
 	srcDirID, err := mod.SourceDirectory.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
@@ -194,13 +219,20 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 
 	result, err := sdk.moduleSchema.functionCall(ctx, getRuntimeFn, functionCallArgs{
 		Module: sdk.mod,
-		Input: []*core.CallInput{{
-			Name:  "modSource",
-			Value: srcDirID,
-		}, {
-			Name:  "subPath",
-			Value: mod.SourceDirectorySubpath,
-		}},
+		Input: []*core.CallInput{
+			{
+				Name:  "modSource",
+				Value: srcDirID,
+			},
+			{
+				Name:  "subPath",
+				Value: mod.SourceDirectorySubpath,
+			},
+			{
+				Name:  "introspectionJson",
+				Value: introspectionJSON,
+			},
+		},
 		ParentOriginalName: sdkModuleOriginalName,
 		// TODO: params? somehow? maybe from module config? would be a good way to
 		// e.g. configure the language version.

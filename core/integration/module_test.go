@@ -1076,36 +1076,73 @@ var useInner string
 //go:embed testdata/modules/go/use/main.go
 var useOuter string
 
-func TestModuleGoUseLocal(t *testing.T) {
+func TestModuleUseLocal(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/dep").
-		With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
-		WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
-			Contents: useInner,
-		}).
-		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-			Contents: useOuter,
-		}).
-		With(daggerExec("mod", "use", "./dep")).
-		WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
+	t.Run("go uses go", func(t *testing.T) {
+		t.Parallel()
 
-	logGen(ctx, t, modGen.Directory("."))
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: useInner,
+			}).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: useOuter,
+			}).
+			With(daggerExec("mod", "use", "./dep")).
+			WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
-	out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+		logGen(ctx, t, modGen.Directory("."))
 
-	// cannot use transitive dependency directly
-	_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
-	require.Error(t, err)
-	require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
+		out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+
+		// cannot use transitive dependency directly
+		_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
+	})
+
+	t.Run("python uses go", func(t *testing.T) {
+		t.Parallel()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: useInner,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=use", "--sdk=python")).
+			With(daggerExec("mod", "use", "./dep")).
+			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+				Contents: `from dagger.mod import function
+import dagger
+
+@function
+def use_hello() -> str:
+    return dagger.dep().hello()
+`,
+			})
+
+		out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
+
+		// cannot use transitive dependency directly
+		_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
+	})
 }
 
 func TestModuleGoUseLocalMulti(t *testing.T) {
