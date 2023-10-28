@@ -12,12 +12,13 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/sdk"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/google/shlex"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/internal/mage/sdk"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 var publishedEngineArches = []string{"amd64", "arm64"}
@@ -270,6 +271,37 @@ func (t Engine) Dev(ctx context.Context) error {
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.EngineContainerName)
 	return nil
+}
+
+func (t Engine) TestShim(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	cgoEnabledEnv := "0"
+	args := []string{
+		"go",
+		"test",
+		"-v",
+		"./cmd/shim/...",
+	}
+
+	cmd, cleanup, err := t.testCmd(ctx, c)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	out, err := cmd.
+		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
+		WithExec(args).
+		Stdout(ctx)
+
+	fmt.Println(out)
+
+	return err
 }
 
 func (t Engine) test(ctx context.Context, race bool) error {

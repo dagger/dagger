@@ -3,14 +3,19 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	_ "embed"
+	"errors"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"io"
+	"strings"
 	"testing"
 	"testing/fstest"
 
-	"github.com/dagger/dagger/core"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/core"
 )
 
 var (
@@ -149,6 +154,133 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 		require.Contains(t, secrets, "my secret file")
 		require.Contains(t, secrets, "a subdir secret file")
 	})
+}
+
+func TestScrubSecretLogLatency(t *testing.T) {
+	t.Parallel()
+
+	for _, n := range []int{1, 10, 100, 500, 1500} {
+		t.Run(fmt.Sprintf("Test log latency with %d secrets", n), func(t *testing.T) {
+			envMap := map[string]string{}
+
+			for line := 0; line < n; line++ {
+				envMap[fmt.Sprintf("secret%d", line)] = fmt.Sprintf("secret%d value", line)
+			}
+
+			var (
+				env, envNames,
+				inputs, outputs []string
+			)
+
+			// Initializes envMap with parameters
+			for k, v := range envMap {
+				env = append(env, fmt.Sprintf("%s=%s", k, v))
+				envNames = append(envNames, k)
+				inputs = append(inputs, fmt.Sprintf("The %s is %s", k, v))
+				outputs = append(outputs, fmt.Sprintf("The %s is ***", k))
+			}
+
+			secretToScrubInfo := core.SecretToScrubInfo{
+				Envs:  envNames,
+				Files: []string{},
+			}
+
+			// Create the buffer to read/write in
+			var buf bytes.Buffer
+
+			// Init channel to synchronize read/write go routine
+			// The process will run in concurrency and block the read when a write happens
+			// and vice-versa.
+			read := make(chan bool)
+			write := make(chan bool)
+
+			// Close channels at the end.
+			defer func() {
+				close(read)
+				close(write)
+			}()
+
+			output := strings.Join(outputs, "\n")
+
+			// Create error group to synchronize go routine
+			eg, _ := errgroup.WithContext(context.Background())
+
+			// kick off a goroutine with an io.Reader which mocks a with_exec'ed process' stdout;
+			// We will write each line of secret, one by one.
+			eg.Go(func() error {
+				// Create an incremental index to send lines one by one.
+				idx := 0
+
+				for range write {
+					// Write the secret into the buffer.
+					_, err := buf.WriteString(inputs[idx])
+					require.NoError(t, err)
+
+					idx += 1
+
+					// Stop the go routine when we wrote all lines
+					// We send a one last read request to read the last line.
+					if idx == len(inputs) {
+						read <- true
+						return nil
+					}
+
+					// Ask to read the secret.
+					read <- true
+				}
+
+				return nil
+			})
+
+			// Store result for final check.
+			var result []string
+
+			// concurrently, expect the io.Reader returned by NewSecretScrubReader
+			// to read an expected subset of those bytes, then unblock the channel,
+			// then read another expected subset of bytes, then unblock again.
+			eg.Go(func() error {
+				idx := 0
+
+				for range read {
+					// Read the buffer after write.
+					r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
+					require.NoError(t, err)
+
+					// Read out, we ignore error if we hit EOF.
+					out, err := io.ReadAll(r)
+					if err != nil {
+						if !errors.Is(err, io.EOF) {
+							require.NoError(t, err)
+						}
+					}
+
+					// Make sure the output are matching as expected.
+					require.Equal(t, outputs[idx], string(out))
+
+					// Append the output to the final result for a global check.
+					result = append(result, string(out))
+
+					// We stop the go routine when we complete the outputs array.
+					idx += 1
+					if idx == len(outputs) {
+						return nil
+					}
+
+					// Unblock write channel by sending a request.
+					write <- true
+				}
+
+				return nil
+			})
+
+			// Kick off the process with a write request.
+			write <- true
+
+			err := eg.Wait()
+			require.NoError(t, err)
+			require.Equal(t, output, strings.Join(result, "\n"))
+		})
+	}
 }
 
 func TestScrubSecretWrite(t *testing.T) {
