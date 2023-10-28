@@ -95,6 +95,9 @@ The most important section of this configuration are:
 - The `tags` entry, which tells GitLab to use the GitLab Runner which is connected to the Dagger Engine; and
 - The `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable, which specifies the socket for the Dagger CLI to use.
 
+To connect your GitLab runners with Dagger Cloud, [add a new CI/CD variable in GitLab](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) with the name `DAGGER_CLOUD_TOKEN` and set as value the token from the organization in the Dagger Cloud.
+
+
 ## Step 4: Run a GitLab CI job
 
 At this point, the deployment is configured and ready for use. Test it by triggering the GitLab pipeline, by committing a new change to the source code repository. Your CI pipelines will be now connected to your Dagger Engines.
