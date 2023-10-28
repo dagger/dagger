@@ -11,7 +11,10 @@ date: "2023-10-27"
 
 ## Introduction
 
-This guide outlines how to set up a Continuous Integration (CI) environment with the Dagger Engine on OpenShift in combination with GitLab Runners.
+This guide outlines how to set up a Continuous Integration (CI) environment with the Dagger Engine on OpenShift in combination with GitLab Runners. The setup contains of following parts:
+
+* Dagger engine as DaemonSet which executes the pipeline
+* A GitLab Runner which manage the exution of GitLab CI jobs. For each job it spawns a new runner worker pod.
 
 ## Assumptions
 
@@ -57,7 +60,7 @@ Follow the steps below:
   oc adm policy add-scc-to-user privileged -z default -n dagger
   ```
 
-## Step 2: Configure GitLab Runners
+## Step 2: Configure GitLab Runner
 
 The next step is to configure a GitLab Runner. Follow these steps:
 
@@ -68,8 +71,10 @@ The next step is to configure a GitLab Runner. Follow these steps:
 
   ```yaml title=runner.yaml file=./snippets/openshift-gitlab/runner.yaml
   ```
+For the `gitlabUrl`, use the URL for your GitLab instance. For example, if your project is hosted on gitlab.example.com/yourname/yourproject, your GitLab instance URL is https://gitlab.example.com.
+For the `spec.token` follow the instructions on [How create a runner](https://docs.gitlab.com/ee/ci/runners/runners_scope.html#create-a-shared-runner-with-a-runner-authentication-token) to obtain a token.
 
-  This configuration uses a similar configuration as that seen in Step 1 for the taints and tolerations and the pod affinity. This ensures that the GitLab builder pod only runs on nodes with Dagger Engines.
+  This configuration uses a similar configuration as that seen in Step 1 for the taints and tolerations and the pod affinity. This ensures that the GitLab runner worker pods only runs on nodes with Dagger engines.
 
 1. Apply the configuration and deploy the GitLab Runner:
 
@@ -92,7 +97,7 @@ The most important section of this configuration are:
 
 ## Step 4: Run a GitLab CI job
 
-TODO: Explain how to initiate a job, where to find the job log, etc
+At this point, the deployment is configured and ready for use. Test it by triggering the GitLab pipeline, by committing a new change to the source code repository. Your CI pipelines will be now connected to your Dagger Engines.
 
 ## Conclusion
 
