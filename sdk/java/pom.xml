@@ -237,7 +237,7 @@
 
         <assertj-core.version>3.24.2</assertj-core.version>
         <commons-compress.version>1.21</commons-compress.version>
-        <commons-lang.version>3.12.0</commons-lang.version>
+        <commons-lang.version>3.13.0</commons-lang.version>
         <exec-maven-plugin.version>3.1.0</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
         <fmt-maven-plugin.version>2.21.1</fmt-maven-plugin.version>
