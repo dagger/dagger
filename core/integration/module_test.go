@@ -698,6 +698,233 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 }
 
+func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Minimal struct {}
+
+func (m *Minimal) Read(ctx context.Context, dir Directory) (string, error) {
+	return dir.File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadPointer(ctx context.Context, dir *Directory) (string, error) {
+	return dir.File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadSlice(ctx context.Context, dir []Directory) (string, error) {
+	return dir[0].File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadVariadic(ctx context.Context, dir ...Directory) (string, error) {
+	return dir[0].File("foo").Contents(ctx)
+}
+
+func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (string, error) {
+	d, ok := dir.Get()
+	if ok {
+		return d.File("foo").Contents(ctx)
+	}
+	return "", nil
+}
+			`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	dirId := gjson.Get(out, "directory.withNewFile.id").String()
+
+	t.Run("func Read(ctx, Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
+	})
+
+	t.Run("func ReadPointer(ctx, *Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readPointer":"bar"}}`, out)
+	})
+
+	t.Run("func ReadSlice(ctx, []Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
+	})
+
+	t.Run("func ReadVariadic(ctx, ...Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
+	})
+
+	t.Run("func ReadOptional(ctx, Optional[Directory]) (string, error)", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirId))).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
+		out, err = modGen.With(daggerQuery(`{minimal{readOptional}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"readOptional":""}}`, out)
+	})
+}
+
+func TestModuleGoSignaturesUnexported(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+type Foo struct {}
+
+type bar struct {}
+
+func (m *Minimal) Hello(name string) string {
+	return name
+}
+
+func (f *Foo) Hello(name string) string {
+	return name
+}
+
+func (b *bar) Hello(name string) string {
+	return name
+}
+`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	objs := gjson.Get(out, "host.directory.asModule.objects")
+
+	require.Equal(t, 2, len(objs.Array()))
+
+	minimal := objs.Get(`0.asObject`)
+	require.Equal(t, "Minimal", minimal.Get("name").String())
+	foo := objs.Get(`1.asObject`)
+	require.Equal(t, "MinimalFoo", foo.Get("name").String())
+
+	modGen = c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+type Foo struct {
+	Bar bar
+}
+
+type bar struct {}
+
+func (m *Minimal) Hello(name string) string {
+	return name
+}
+
+func (f *Foo) Hello(name string) string {
+	return name
+}
+
+func (b *bar) Hello(name string) string {
+	return name
+}
+`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	_, err = modGen.With(inspectModule).Stderr(ctx)
+	require.Error(t, err)
+}
+
+func TestModuleGoSignaturesMixMatch(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
+	return name
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	require.Error(t, err)
+}
+
+func TestModuleGoSignaturesIDable(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+type Custom struct {
+	Data string
+}
+
+func (m *Minimal) Hello() string {
+	return "hello"
+}
+
+func (m *Minimal) UseCustom(custom *Custom) string {
+	return custom.Data
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	// Currently, IDable modules are *not* supported, and should fail with an
+	// error that fails to find the ID type.
+	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Undefined type MinimalCustomID")
+}
+
 var inspectModule = daggerQuery(`
 query {
   host {
@@ -848,147 +1075,6 @@ func (m *Minimal) HelloAgain(
 	// require.Equal(t, "docs for foo", hello.Get("args.0.description").String())
 	// require.Equal(t, "bar", hello.Get("args.1.name").String())
 	// require.Equal(t, "", hello.Get("args.1.description").String())
-}
-
-func TestModuleGoSignaturesUnexported(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-type Foo struct {}
-
-type bar struct {}
-
-func (m *Minimal) Hello(name string) string {
-	return name
-}
-
-func (f *Foo) Hello(name string) string {
-	return name
-}
-
-func (b *bar) Hello(name string) string {
-	return name
-}
-`,
-		})
-	logGen(ctx, t, modGen.Directory("."))
-
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.objects")
-
-	require.Equal(t, 2, len(objs.Array()))
-
-	minimal := objs.Get(`0.asObject`)
-	require.Equal(t, "Minimal", minimal.Get("name").String())
-	foo := objs.Get(`1.asObject`)
-	require.Equal(t, "MinimalFoo", foo.Get("name").String())
-
-	modGen = c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-type Foo struct {
-	Bar bar
-}
-
-type bar struct {}
-
-func (m *Minimal) Hello(name string) string {
-	return name
-}
-
-func (f *Foo) Hello(name string) string {
-	return name
-}
-
-func (b *bar) Hello(name string) string {
-	return name
-}
-`,
-		})
-	logGen(ctx, t, modGen.Directory("."))
-
-	_, err = modGen.With(inspectModule).Stderr(ctx)
-	require.Error(t, err)
-}
-
-func TestModuleGoSignaturesMixMatch(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
-	return name
-}
-`,
-		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
-	require.Error(t, err)
-}
-
-func TestModuleGoSignaturesIDable(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-type Custom struct {
-	Data string
-}
-
-func (m *Minimal) Hello() string {
-	return "hello"
-}
-
-func (m *Minimal) UseCustom(custom *Custom) string {
-	return custom.Data
-}
-`,
-		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	// Currently, IDable modules are *not* supported, and should fail with an
-	// error that fails to find the ID type.
-	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Undefined type MinimalCustomID")
 }
 
 //go:embed testdata/modules/go/extend/main.go
