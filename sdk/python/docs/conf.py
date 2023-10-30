@@ -13,10 +13,10 @@ copyright = "2022, Dagger"  # noqa: A001
 author = "Dagger"
 
 extensions = [
+    "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
     "sphinx.ext.autodoc.typehints",
     "sphinx.ext.viewcode",
-    "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "dagger_ext",
 ]

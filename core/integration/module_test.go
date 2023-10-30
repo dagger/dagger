@@ -450,18 +450,13 @@ func TestModuleGit(t *testing.T) {
 
 			if tc.sdk == "go" {
 				logGen(ctx, t, modGen.Directory("."))
-				out, err := modGen.
-					With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
-					Stdout(ctx)
-				require.NoError(t, err)
-				require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
-			} else {
-				out, err := modGen.
-					With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
-					Stdout(ctx)
-				require.NoError(t, err)
-				require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
 			}
+
+			out, err := modGen.
+				With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 			t.Run("configures .gitignore", func(t *testing.T) {
 				ignore, err := modGen.File(".gitignore").Contents(ctx)
@@ -1105,26 +1100,52 @@ func TestModuleGoExtendCore(t *testing.T) {
 }
 
 //go:embed testdata/modules/go/custom-types/main.go
-var customTypes string
+var goCustomTypes string
 
-func TestModuleGoCustomTypes(t *testing.T) {
+//go:embed testdata/modules/python/custom-types/main.py
+var pythonCustomTypes string
+
+func TestModuleCustomTypes(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	type testCase struct {
+		sdk           string
+		sourcePath    string
+		sourceContent string
+	}
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: customTypes,
+	for _, tc := range []testCase{
+		{
+			sdk:           "go",
+			sourcePath:    "main.go",
+			sourceContent: goCustomTypes,
+		},
+		{
+			sdk:           "python",
+			sourcePath:    "src/main.py",
+			sourceContent: pythonCustomTypes,
+		},
+	} {
+		t.Run(fmt.Sprintf("custom %s types", tc.sdk), func(t *testing.T) {
+			c, ctx := connect(t)
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk)).
+				WithNewFile(tc.sourcePath, dagger.ContainerWithNewFileOpts{
+					Contents: tc.sourceContent,
+				})
+
+			if tc.sdk == "go" {
+				logGen(ctx, t, modGen.Directory("."))
+			}
+
+			out, err := modGen.With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	out, err := modGen.With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
+	}
 }
 
 func TestModuleGoReturnTypeDetection(t *testing.T) {
@@ -1471,10 +1492,10 @@ func TestModulePythonInit(t *testing.T) {
 			With(daggerExec("mod", "init", "--name=bare", "--sdk=python"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{myFunction(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"myFunction":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
 	t.Run("respects existing pyproject.toml", func(t *testing.T) {
@@ -1494,10 +1515,10 @@ version = "0.0.0"
 			With(daggerExec("mod", "init", "--name=hasPyproject", "--sdk=python"))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasPyproject{myFunction(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{hasPyproject{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"hasPyproject":{"myFunction":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"hasPyproject":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("preserves module name", func(t *testing.T) {
 			generated, err := modGen.File("pyproject.toml").Contents(ctx)
