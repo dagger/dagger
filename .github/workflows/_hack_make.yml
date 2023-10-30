@@ -62,7 +62,8 @@ jobs:
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
           fi
-          ./hack/make ${{ inputs.mage-targets }}
+          env
+          DAGGER_CLOUD_TOKEN="${{ secrets.DAGGER_CLOUD_TOKEN }}" ./hack/make ${{ inputs.mage-targets }}
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           DAGGER_CLOUD_TOKEN: "${{ secrets.DAGGER_CLOUD_TOKEN }}"
