@@ -16,7 +16,6 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -38,9 +37,6 @@ type Module struct {
 
 	// The doc string of the module, if any
 	Description string `json:"description"`
-
-	// Dependencies of the module
-	Dependencies []*Module `json:"dependencies"`
 
 	// Dependencies as configured by the module
 	DependencyConfig []string `json:"dependencyConfig"`
@@ -97,13 +93,6 @@ func (mod *Module) PBDefinitions() ([]*pb.Definition, error) {
 		}
 		defs = append(defs, ctrDefs...)
 	}
-	for _, dep := range mod.Dependencies {
-		depDefs, err := dep.PBDefinitions()
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, depDefs...)
-	}
 	return defs, nil
 }
 
@@ -115,10 +104,7 @@ func (mod Module) Clone() *Module {
 	if mod.Runtime != nil {
 		cp.Runtime = mod.Runtime.Clone()
 	}
-	cp.Dependencies = make([]*Module, len(mod.Dependencies))
-	for i, dep := range mod.Dependencies {
-		cp.Dependencies[i] = dep.Clone()
-	}
+	cp.DependencyConfig = cloneSlice(mod.DependencyConfig)
 	cp.Objects = make([]*TypeDef, len(mod.Objects))
 	for i, def := range mod.Objects {
 		cp.Objects[i] = def.Clone()
@@ -190,24 +176,6 @@ func (mod *Module) FromConfig(
 		return nil, err
 	}
 
-	// Recursively load the configs of all the dependencies
-	var eg errgroup.Group
-	mod.Dependencies = make([]*Module, len(cfg.Dependencies))
-	for i, depURL := range cfg.Dependencies {
-		i, depURL := i, depURL
-		eg.Go(func() error {
-			depMod, err := NewModule(mod.Platform, mod.Pipeline).FromRef(ctx, bk, svcs, progSock, sourceDir, configPath, depURL, getRuntime)
-			if err != nil {
-				return fmt.Errorf("failed to get dependency mod from ref %q: %w", depURL, err)
-			}
-			mod.Dependencies[i] = depMod
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
 	// Reposition the root of the sourceDir in case it's pointing to a subdir of current sourceDir
 	if cfg.Root != "" {
 		rootPath := filepath.Join("/", filepath.Dir(configPath), cfg.Root)
@@ -251,6 +219,7 @@ func (mod *Module) FromRef(
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse dependency url %q: %w", moduleRefStr, err)
 	}
+	parentSrcSubpath = modules.NormalizeConfigPath(parentSrcSubpath)
 
 	// TODO: In theory should first load *just* the config file, figure out the include/exclude, and then load everything else
 	// based on that. That's not straightforward because we can't get the config file until we've loaded the dep...
