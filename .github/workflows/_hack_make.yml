@@ -63,10 +63,12 @@ jobs:
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
           fi
           env
-          DAGGER_CLOUD_TOKEN="${{ secrets.DAGGER_CLOUD_TOKEN }}" ./hack/make ${{ inputs.mage-targets }}
+          DAGGER_CLOUD_TOKEN="${{ secrets.DAGGER_CLOUD_TOKEN }}" ADD_TO_PROJECT_PAT="${{ secrets.ADD_TO_PROJECT_PAT }}" HEX_API_KEY="${{ secrets.HEX_API_KEY }}" ./hack/make ${{ inputs.mage-targets }}
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           DAGGER_CLOUD_TOKEN: "${{ secrets.DAGGER_CLOUD_TOKEN }}"
+          ADD_TO_PROJECT_PAT: "${{ secrets.ADD_TO_PROJECT_PAT }}"
+          HEX_API_KEY: "${{ secrets.HEX_API_KEY }}"
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
