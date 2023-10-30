@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -1623,6 +1626,102 @@ def potato_%d() -> str:
 		}
 		require.NoError(t, eg.Wait())
 	})
+}
+
+func TestModuleLotsOfDeps(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work")
+
+	modCount := 0
+
+	getModMainSrc := func(name string, depNames []string) string {
+		t.Helper()
+		mainSrc := fmt.Sprintf(`package main
+import "context"
+
+type %s struct {}
+
+func (m *%s) Fn(ctx context.Context) (string, error) {
+	s := "%s"
+	var depS string
+	_ = depS
+	var err error
+	_ = err
+`, strcase.ToCamel(name), strcase.ToCamel(name), name)
+		for _, depName := range depNames {
+			mainSrc += fmt.Sprintf(`
+depS, err = dag.%s().Fn(ctx)
+if err != nil {
+	return "", err
+}
+s += depS
+`, strcase.ToCamel(depName))
+		}
+		mainSrc += "return s, nil\n}\n"
+		fmted, err := format.Source([]byte(mainSrc))
+		require.NoError(t, err)
+		return string(fmted)
+	}
+
+	// need to construct dagger.json directly in order to avoid excessive
+	// `dagger mod use` calls while constructing the huge DAG of deps
+	getModDaggerConfig := func(name string, depNames []string) string {
+		t.Helper()
+
+		var depVals []string
+		for _, depName := range depNames {
+			depVals = append(depVals, "../"+depName)
+		}
+		cfg := modules.Config{
+			Name:         name,
+			Root:         "..",
+			SDK:          "go",
+			Dependencies: depVals,
+		}
+		bs, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		return string(bs)
+	}
+
+	addModulesWithDeps := func(newMods int, depNames []string) []string {
+		t.Helper()
+
+		var newModNames []string
+		for i := 0; i < newMods; i++ {
+			name := fmt.Sprintf("mod%d", modCount)
+			modCount++
+			newModNames = append(newModNames, name)
+			modGen = modGen.
+				WithWorkdir("/work/"+name).
+				WithNewFile("./main.go", dagger.ContainerWithNewFileOpts{
+					Contents: getModMainSrc(name, depNames),
+				}).
+				WithNewFile("./dagger.json", dagger.ContainerWithNewFileOpts{
+					Contents: getModDaggerConfig(name, depNames),
+				})
+		}
+		return newModNames
+	}
+
+	// Create a base module, then add 6 layers of deps, where each layer has one more module
+	// than the last of modules as the previous layer and each module within the layer has a
+	// dep on each module from the previous layer. Finally add a single module at the top that
+	// depends on all modules from the last layer and call that.
+	// Basically, this creates a quadratically growing DAG of modules and verifies we
+	// handle it efficiently enough to be callable.
+	curDeps := addModulesWithDeps(1, nil)
+	for i := 0; i < 6; i++ {
+		curDeps = addModulesWithDeps(len(curDeps)+1, curDeps)
+	}
+	addModulesWithDeps(1, curDeps)
+
+	_, err := modGen.With(daggerCall("fn")).Stdout(ctx)
+	require.NoError(t, err)
 }
 
 func TestModuleNamespacing(t *testing.T) {
