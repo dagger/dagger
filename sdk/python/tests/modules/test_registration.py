@@ -106,7 +106,7 @@ def test_main_object_name(mod_name, class_name):
 
 
 @pytest.mark.anyio()
-async def test_function_name_override():
+async def test_function_and_arg_name_override():
     mod = Module()
 
     @mod.function(name="import")

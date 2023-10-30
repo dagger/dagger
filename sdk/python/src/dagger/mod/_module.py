@@ -8,7 +8,6 @@ import types
 import typing
 from collections import Counter, defaultdict
 from collections.abc import Callable, MutableMapping
-from dataclasses import dataclass
 from typing import Any, TypeAlias, TypeVar
 
 import anyio
@@ -320,9 +319,6 @@ class Module:
         name:
             An alternative name for the API. Useful to avoid conflicts with
             reserved words.
-        doc:
-            An alternative description for the API. Useful to use the
-            docstring for other purposes.
         """
         field_def = FieldDefinition(name)
 
@@ -445,7 +441,7 @@ class Module:
                 msg = f"Expected a class, got {type(cls)}"
                 raise UserError(msg)
 
-            wrapped = dataclass(kw_only=True)(cls)
+            wrapped = dataclasses.dataclass(kw_only=True)(cls)
             return self._process_type(wrapped)
 
         return wrapper(cls) if cls else wrapper
