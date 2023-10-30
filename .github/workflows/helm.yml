@@ -19,5 +19,6 @@ permissions:
 jobs:
   test:
     uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
     with:
       mage-targets: helm:test

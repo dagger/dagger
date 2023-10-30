@@ -20,5 +20,6 @@ permissions:
 jobs:
   lint:
     uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
     with:
       mage-targets: docs:lint
