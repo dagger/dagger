@@ -254,6 +254,146 @@ module.exports = {
       label: "Home",
     },
   ],
+  zenith: [
+    {
+      type: "doc",
+      id: "zenith/index",
+      label: "Introduction",
+    },
+    {
+      type: "doc",
+      id: "zenith/quickstart/index",
+      label: "Quickstart",
+    },
+    {
+      type: "category",
+      label: "Using Dagger",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "Installation",
+          id: "current/cli/install",
+        },
+        {
+          type: "doc",
+          id: "zenith/user/concepts",
+          label: "Concepts",
+        },
+        {
+          type: "doc",
+          id: "zenith/user/best-practices",
+          label: "Best Practices",
+        },
+        {
+          type: "doc",
+          id: "zenith/user/troubleshooting",
+          label: "Troubleshooting",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "Programming Dagger",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          id: "zenith/developer/index",
+        },
+        {
+          type: "category",
+          label: "Quickstarts",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            {
+              type: "doc",
+              label: "Go",
+              id: "zenith/developer/quickstarts/go",
+            },
+            {
+              type: "doc",
+              label: "Python",
+              id: "zenith/developer/quickstarts/python",
+            },
+          ],
+        },
+        {
+          type: "doc",
+          id: "zenith/developer/guides/index",
+        },
+        {
+          type: "doc",
+          id: "zenith/developer/daggerverse",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "References",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "CLI Reference",
+          id: "current/cli/reference",
+        },
+        {
+          type: "link",
+          label: "API Reference 🔗",
+          href: "https://docs.dagger.io/api/reference",
+        },
+        {
+          type: "link",
+          label: "Go SDK Reference 🔗",
+          href: "https://pkg.go.dev/dagger.io/dagger",
+        },
+        {
+          type: "link",
+          label: "Node.js SDK Reference 🔗",
+          href: "https://docs.dagger.io/current/sdk/nodejs/reference/modules",
+        },
+        {
+          type: "link",
+          label: "Python SDK Reference 🔗",
+          href: "https://dagger-io.readthedocs.org/",
+        },
+        {
+          type: "link",
+          label: "Elixir SDK (Experimental) Reference 🔗",
+          href: "https://hexdocs.pm/dagger/Dagger.html",
+        },
+        {
+          type: "category",
+          label: "Dagger Cloud Reference",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "current/cloud/reference/user-interface",
+            "current/cloud/reference/roles-permissions",
+            "current/cloud/reference/org-administration",
+          ]
+        },
+      ],
+    },
+    {
+      type: "doc",
+      id: "current/faq",
+    },
+    {
+      type: "doc",
+      id: "current/contributing",
+    },
+    {
+      type: "link",
+      label: "Changelog 🔗",
+      href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
+    },
+  ],
   0.2: [
     {
       type: "category",
