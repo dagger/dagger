@@ -54,9 +54,10 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
-		buildCache:  core.NewCacheMap[uint64, *core.Container](),
-		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
-		moduleCache: core.NewCacheMap[digest.Digest, *core.Module](),
+		buildCache:        core.NewCacheMap[uint64, *core.Container](),
+		importCache:       core.NewCacheMap[uint64, *specs.Descriptor](),
+		moduleCache:       core.NewCacheMap[digest.Digest, *core.Module](),
+		dependenciesCache: core.NewCacheMap[digest.Digest, []*core.Module](),
 
 		schemaViews:    map[digest.Digest]*schemaView{},
 		moduleContexts: map[digest.Digest]*moduleContext{},
@@ -75,9 +76,10 @@ type MergedSchemas struct {
 	host         *core.Host
 	services     *core.Services
 
-	buildCache  *core.CacheMap[uint64, *core.Container]
-	importCache *core.CacheMap[uint64, *specs.Descriptor]
-	moduleCache *core.CacheMap[digest.Digest, *core.Module]
+	buildCache        *core.CacheMap[uint64, *core.Container]
+	importCache       *core.CacheMap[uint64, *specs.Descriptor]
+	moduleCache       *core.CacheMap[digest.Digest, *core.Module]
+	dependenciesCache *core.CacheMap[digest.Digest, []*core.Module]
 
 	mu sync.RWMutex
 	// Map of module digest -> schema presented to module.
@@ -123,8 +125,9 @@ func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaV
 		&serviceSchema{s, s.services},
 		&hostSchema{s, s.host, s.services},
 		&moduleSchema{
-			MergedSchemas: s,
-			moduleCache:   s.moduleCache,
+			MergedSchemas:     s,
+			moduleCache:       s.moduleCache,
+			dependenciesCache: s.dependenciesCache,
 		},
 		&httpSchema{s, s.services},
 		&platformSchema{s},
