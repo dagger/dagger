@@ -418,9 +418,8 @@ func TestModuleGit(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		sdk           string
-		gitignores    []string
-		gitattributes string
+		sdk        string
+		gitignores []string
 	}
 	for _, tc := range []testCase{
 		{
@@ -743,39 +742,39 @@ func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (st
 
 	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	dirId := gjson.Get(out, "directory.withNewFile.id").String()
+	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("func Read(ctx, Directory) (string, error)", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirId))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
 	})
 
 	t.Run("func ReadPointer(ctx, *Directory) (string, error)", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirId))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readPointer":"bar"}}`, out)
 	})
 
 	t.Run("func ReadSlice(ctx, []Directory) (string, error)", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirId))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
 	})
 
 	t.Run("func ReadVariadic(ctx, ...Directory) (string, error)", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirId))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
 	})
 
 	t.Run("func ReadOptional(ctx, Optional[Directory]) (string, error)", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirId))).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
 		out, err = modGen.With(daggerQuery(`{minimal{readOptional}}`)).Stdout(ctx)
@@ -1531,7 +1530,6 @@ def hello() -> str:
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasMainPy":{"hello":"Hello, world!"}}`, out)
 	})
-
 }
 
 func TestModuleLotsOfFunctions(t *testing.T) {
@@ -1716,6 +1714,120 @@ func TestModuleGoSyncDeps(t *testing.T) {
 	out, err = modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"use":{"useHello":"goodbye"}}`, out)
+}
+
+//go:embed testdata/modules/go/id/arg/main.go
+var badIDArgGoSrc string
+
+//go:embed testdata/modules/python/id/arg/src/main.py
+var badIDArgPySrc string
+
+//go:embed testdata/modules/go/id/field/main.go
+var badIDFieldGoSrc string
+
+//go:embed testdata/modules/go/id/fn/main.go
+var badIDFnGoSrc string
+
+//go:embed testdata/modules/python/id/fn/src/main.py
+var badIDFnPySrc string
+
+func TestModuleReservedWords(t *testing.T) {
+	// verify disallowed names are rejected
+
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("id", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("arg", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("go", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: badIDArgGoSrc,
+					}).
+					With(daggerQuery(`{test{fn(id:"no")}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+			})
+
+			t.Run("python", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
+					WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+						Contents: badIDArgPySrc,
+					}).
+					With(daggerQuery(`{test{fn(id:"no")}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+			})
+		})
+
+		t.Run("field", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("go", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: badIDFieldGoSrc,
+					}).
+					With(daggerQuery(`{test{fn{id}}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define field with reserved name \"ID\"")
+			})
+		})
+
+		t.Run("fn", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("go", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: badIDFnGoSrc,
+					}).
+					With(daggerQuery(`{test{id}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
+			})
+
+			t.Run("python", func(t *testing.T) {
+				t.Parallel()
+
+				_, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
+					WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
+						Contents: badIDFnPySrc,
+					}).
+					With(daggerQuery(`{test{fn(id:"no")}}`)).
+					Sync(ctx)
+				require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
+			})
+		})
+	})
 }
 
 func TestEnvCmd(t *testing.T) {
