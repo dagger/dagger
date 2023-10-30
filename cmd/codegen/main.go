@@ -47,8 +47,8 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	var dialErr error
 	if propagateLogs {
 		progW, dialErr = progrock.DialRPC(ctx, "unix://"+nestedSock)
-		if err != nil {
-			return fmt.Errorf("error connecting to progrock: %w", err)
+		if dialErr != nil {
+			return fmt.Errorf("error connecting to progrock: %w; falling back to console output", dialErr)
 		}
 	} else {
 		progW = console.NewWriter(os.Stderr, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
@@ -56,11 +56,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 	rec := progrock.NewRecorder(progW)
 	defer rec.Complete()
-
-	if dialErr != nil {
-		rec.Warn("could not dial progrock.sock; falling back to console output",
-			progrock.ErrorLabel(dialErr))
-	}
+	defer rec.Close()
 
 	ctx = progrock.ToContext(ctx, rec)
 
