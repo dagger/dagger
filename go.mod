@@ -24,7 +24,7 @@ require (
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.4.0
 	github.com/iancoleman/strcase v0.3.0
 	// https://github.com/moby/buildkit/commit/86e25b3ad8c20fc420669949f24bb86c74082b2f
 	github.com/moby/buildkit v0.13.0-beta1.0.20231011161957-86e25b3ad8c2
@@ -73,6 +73,7 @@ require (
 	github.com/koron-go/prefixw v1.0.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.19
+	github.com/mitchellh/go-spdx v0.1.0
 	github.com/moby/sys/mount v0.3.3
 	github.com/muesli/termenv v0.15.2
 	github.com/nxadm/tail v1.4.8
@@ -180,7 +181,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mazznoer/csscolorparser v0.1.3 // indirect
-	github.com/mitchellh/go-spdx v0.1.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
