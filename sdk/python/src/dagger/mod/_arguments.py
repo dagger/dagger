@@ -1,33 +1,34 @@
+import dataclasses
 import inspect
-from dataclasses import dataclass, field
 
-from gql.utils import to_camel_case
+from ._types import APIName
 
 
-@dataclass(slots=True, kw_only=True)
+@dataclasses.dataclass(slots=True, kw_only=True)
 class Parameter:
-    """Parameter from function signature, in resolver class."""
+    """Parameter from function signature in :py:class:`FunctionResolver`."""
 
-    name: str
+    name: APIName
     signature: inspect.Parameter
-    description: str | None
-    is_optional: bool = field(init=False)
-    python_name: str = field(init=False)
-    graphql_name: str = field(init=False)
+    resolved_type: type
+    doc: str | None
 
-    def __post_init__(self):
-        self.is_optional = self.signature.default is not inspect.Signature.empty
-        self.python_name = self.signature.name
-        self.graphql_name = to_camel_case(self.name)
+    @property
+    def is_optional(self) -> bool:
+        return self.signature.default is not inspect.Signature.empty
 
 
-@dataclass(slots=True, kw_only=True, frozen=True)
-class Argument:
-    """User defined argument.
+@dataclasses.dataclass(slots=True, frozen=True)
+class Arg:
+    """An alternative name when exposing a function argument to the API.
 
-    This is used to override a parameter's name in the API, and to give
-    it a description.
+    Useful to avoid conflicts with reserved words.
+
+    Example usage:
+
+    >>> @function
+    ... def pull(from_: Annotated[str, Arg("from")]):
+    ...     ...
     """
 
-    name: str | None = None
-    description: str | None = None
+    name: APIName

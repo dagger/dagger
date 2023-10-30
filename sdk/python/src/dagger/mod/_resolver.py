@@ -1,73 +1,129 @@
-# ruff: noqa: BLE001
-from __future__ import annotations
-
 import dataclasses
 import inspect
 import json
 import logging
-from collections.abc import Callable, Coroutine
+from abc import ABC, abstractmethod, abstractproperty
+from collections.abc import Callable
 from functools import cached_property
 from typing import (
-    Annotated,
     Any,
-    TypeAlias,
-    get_args,
-    get_origin,
+    Generic,
+    TypeVar,
     get_type_hints,
 )
 
 import cattrs
-from gql.utils import to_camel_case
+from typing_extensions import override
 
 import dagger
 
-from ._arguments import Argument, Parameter
+from ._arguments import Parameter
 from ._converter import to_typedef
 from ._exceptions import FatalError, UserError
-from ._types import MissingType
-from ._utils import asyncify, await_maybe, transform_error
+from ._types import APIName, MissingType, PythonName
+from ._utils import asyncify, await_maybe, get_arg_name, get_doc, transform_error
 
 logger = logging.getLogger(__name__)
 
 
-Func: TypeAlias = Callable[..., Coroutine[Any, Any, Any] | Any]
+Func = TypeVar("Func", bound=Callable[..., Any])
 
 
-@dataclasses.dataclass
-class Resolver:
+@dataclasses.dataclass(kw_only=True, slots=True)
+class Resolver(ABC):
+    original_name: PythonName
+    name: APIName = dataclasses.field(repr=False)
+    doc: str | None = dataclasses.field(repr=False)
+    origin: type | None
+
+    @abstractproperty
+    def return_type(self) -> type:
+        ...
+
+    @abstractmethod
+    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
+        return typedef
+
+    @abstractmethod
+    async def get_result(
+        self,
+        converter: cattrs.Converter,
+        root: object | None,
+        inputs: dict[APIName, Any],
+    ) -> Any:
+        ...
+
+
+@dataclasses.dataclass(kw_only=True, slots=True)
+class FieldResolver(Resolver):
+    type_annotation: type
+    is_optional: bool
+
+    @override
+    def register(self, object_typedef: dagger.TypeDef) -> dagger.TypeDef:
+        return object_typedef.with_field(
+            self.name,
+            to_typedef(self.type_annotation).with_optional(self.is_optional),
+            description=self.doc or None,
+        )
+
+    @override
+    async def get_result(
+        self,
+        _: cattrs.Converter,
+        root: object | None,
+        inputs: dict[APIName, Any],
+    ) -> Any:
+        if inputs:
+            msg = f"Unexpected input args for field resolver: {self}"
+            raise FatalError(msg)
+
+        if root is None:
+            msg = f"Unexpected None root for field resolver: {self}"
+
+        return getattr(root, self.original_name)
+
+    @property
+    @override
+    def return_type(self):
+        """Return the field's type."""
+        return self.type_annotation
+
+    def __str__(self):
+        assert self.origin is not None
+        return f"{self.origin.__name__}.{self.original_name}"
+
+
+@dataclasses.dataclass(kw_only=True, repr=False)
+class FunctionResolver(Resolver, Generic[Func]):
     """Base class for wrapping user-defined functions."""
 
     wrapped_func: Func
-    name: str
-    description: str | None = None
-    graphql_name: str = dataclasses.field(init=False)
 
-    @classmethod
-    def from_callable(
-        cls,
-        func: Func,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        """Create a resolver instance from a user-defined function."""
-        # TODO: Validate that the function is a callable.
+    def __repr__(self):
+        return repr(self.wrapped_func)
 
-        name = name or func.__name__
-        description = description or inspect.getdoc(func)
+    @override
+    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
+        """Add a new object to current module."""
+        fn = dagger.function(self.name, to_typedef(self.return_type))
 
-        try:
-            return cls(func, name, description)
-        except TypeError as e:
-            msg = f"Failed to create resolver for function `{func.__name__}`: {e}"
-            raise FatalError(msg) from e
+        if self.doc:
+            fn = fn.with_description(self.doc)
 
-    def __post_init__(self):
-        self.graphql_name = to_camel_case(self.name)
+        for param in self.parameters.values():
+            fn = fn.with_arg(
+                param.name,
+                to_typedef(param.resolved_type).with_optional(param.is_optional),
+                description=param.doc,
+                default_value=(
+                    dagger.JSON(json.dumps(param.signature.default))
+                    if param.is_optional
+                    else None
+                ),
+            )
 
-    @cached_property
-    def signature(self):
-        """Return the signature of the wrapped function."""
-        return inspect.signature(self.wrapped_func, follow_wrapped=True)
+        return typedef.with_function(fn)
 
     @property
     def return_type(self):
@@ -78,104 +134,95 @@ class Resolver:
             return MissingType
 
     @cached_property
-    def parameters(self):
-        """Return the parameter annotations of the wrapped function."""
-        mapping: dict[str, Parameter] = {}
+    def _type_hints(self):
+        return get_type_hints(self.wrapped_func)
 
-        for key, value in self.signature.parameters.items():
-            name = key
-            param = value
-            description: str | None = None
+    @cached_property
+    def signature(self):
+        """Return the signature of the wrapped function."""
+        return inspect.signature(self.wrapped_func, follow_wrapped=True)
+
+    @cached_property
+    def parameters(self):
+        """Return the parameter annotations of the wrapped function.
+
+        Keys are the Python parameter names.
+        """
+        mapping: dict[PythonName, Parameter] = {}
+
+        for param in self.signature.parameters.values():
+            if self.origin and param.name == "self":
+                continue
 
             if param.kind is inspect.Parameter.POSITIONAL_ONLY:
                 msg = "Positional-only parameters are not supported"
                 raise TypeError(msg)
 
-            if param.default is not param.empty:
-                logger.warning("Default values are not supported yet")
-
             try:
                 # Use type_hints instead of param.annotation to get
-                # resolved forward references.
-                annotation = self._type_hints[name]
+                # resolved forward references and stripped Annotated.
+                annotation = self._type_hints[param.name]
             except KeyError:
-                logger.warning("Missing type annotation for parameter '%s'", name)
+                logger.warning(
+                    "Missing type annotation for parameter '%s'",
+                    param.name,
+                )
                 annotation = Any
 
-            if get_origin(annotation) is Annotated:
-                args = get_args(annotation)
-
-                # Convenience to replace Annotated[T, "description"] argument
-                # type hints with Annotated[T, argument(description="description")].
-                match args:
-                    case (arg_type, arg_meta) if isinstance(arg_meta, str):
-                        description = arg_meta
-                        meta = Argument(description=description)
-                        annotation = Annotated[arg_type, meta]
-
-                # Extract properties from Argument
-                match args:
-                    case (arg_type, arg_meta) if isinstance(arg_meta, Argument):
-                        name = arg_meta.name or name
-                        description = arg_meta.description
-
             parameter = Parameter(
-                name=name,
-                signature=param.replace(annotation=annotation),
-                description=description,
+                name=get_arg_name(param.annotation) or param.name,
+                signature=param,
+                resolved_type=annotation,
+                doc=get_doc(param.annotation),
             )
 
-            mapping[parameter.graphql_name] = parameter
+            mapping[param.name] = parameter
 
         return mapping
 
-    @cached_property
-    def _type_hints(self):
-        return get_type_hints(self.wrapped_func, include_extras=True)
-
-    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
-        """Add a new object to current module."""
-        fn = dagger.function(self.graphql_name, to_typedef(self.return_type))
-
-        if self.description:
-            fn = fn.with_description(self.description)
-
-        for arg_name, param in self.parameters.items():
-            fn = fn.with_arg(
-                arg_name,
-                to_typedef(param.signature.annotation).with_optional(param.is_optional),
-                description=param.description,
-                default_value=(
-                    dagger.JSON(json.dumps(param.signature.default))
-                    if param.is_optional
-                    else None
-                ),
-            )
-
-        return typedef.with_function(fn)
-
-    async def convert_arguments(
+    @override
+    async def get_result(
         self,
         converter: cattrs.Converter,
-        raw_args: dict[str, Any],
+        root: object | None,
+        inputs: dict[APIName, Any],
+    ) -> Any:
+        args = (root,) if root is not None else ()
+
+        logger.debug("input args => %s", repr(inputs))
+        kwargs = await self._convert_inputs(converter, inputs)
+        logger.debug("structured args => %s", repr(kwargs))
+
+        try:
+            bound = self.signature.bind(*args, **kwargs)
+        except TypeError as e:
+            msg = f"Unable to bind arguments: {e}"
+            raise UserError(msg) from e
+
+        return await await_maybe(self.wrapped_func(*bound.args, **bound.kwargs))
+
+    async def _convert_inputs(
+        self,
+        converter: cattrs.Converter,
+        inputs: dict[APIName, Any],
     ):
         """Convert arguments to the expected parameter types."""
-        kwargs: dict[str, Any] = {}
+        kwargs: dict[PythonName, Any] = {}
 
         # Convert arguments to the expected type.
-        for gql_name, param in self.parameters.items():
-            if gql_name not in raw_args:
+        for python_name, param in self.parameters.items():
+            if param.name not in inputs:
                 if not param.is_optional:
-                    msg = f"Missing required argument `{gql_name}`."
+                    msg = f"Missing required argument: {python_name}"
                     raise UserError(msg)
                 continue
 
-            value = raw_args[gql_name]
+            value = inputs[param.name]
             type_ = param.signature.annotation
 
             try:
-                kwargs[param.name] = await asyncify(converter.structure, value, type_)
-            except Exception as e:
+                kwargs[python_name] = await asyncify(converter.structure, value, type_)
+            except Exception as e:  # noqa: BLE001
                 msg = transform_error(
                     e,
                     f"Invalid argument `{param.name}`",
@@ -184,17 +231,4 @@ class Resolver:
                 )
                 raise UserError(msg) from e
 
-        # Validate against function signature.
-        # Not really necessary, just to make sure.
-        try:
-            bound_args = self.signature.bind(**kwargs)
-        except TypeError as e:
-            msg = f"Unable to bind arguments: {e}"
-            raise UserError(msg) from e
-
-        return bound_args.arguments
-
-    async def __call__(self, /, *args, **kwargs):
-        # TODO: Reserve __call__ for invoking resolvers within the same module
-        # or use a different method for that (e.g., `.call()`)?
-        return await await_maybe(self.wrapped_func(*args, **kwargs))
+        return kwargs
