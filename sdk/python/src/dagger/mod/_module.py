@@ -250,6 +250,10 @@ class Module:
         except Exception as e:
             raise FunctionError(e) from e
 
+        if inspect.iscoroutine(result):
+            msg = "Result is a coroutine. Did you forget to add async/await?"
+            raise UserError(msg)
+
         logger.debug("result => %s", repr(result))
 
         try:
@@ -292,7 +296,11 @@ class Module:
             )
             raise FatalError(msg)
 
-        return self._converter.structure(parent, resolver.origin)
+        return await asyncify(
+            self._converter.structure,
+            parent,
+            resolver.origin,
+        )
 
     def field(
         self,
@@ -468,6 +476,9 @@ class Module:
                 resolver.origin = cls
 
         cls.__dagger_type__ = ObjectDefinition(  # type: ignore generalTypeIssues
+            # Classes should already be in PascalCase, just normalizing here
+            # to avoid a mismatch with the module name in PascalCase
+            # (for the main object).
             name=to_pascal_case(cls.__name__),
             doc=get_doc(cls),
         )
