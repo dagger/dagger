@@ -63,19 +63,26 @@ func (fn *Function) WithDescription(desc string) *Function {
 func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue any) *Function {
 	fn = fn.Clone()
 	fn.Args = append(fn.Args, &FunctionArg{
-		Name:         name,
+		Name:         strcase.ToLowerCamel(name),
 		Description:  desc,
 		TypeDef:      typeDef,
 		DefaultValue: defaultValue,
+		OriginalName: name,
 	})
 	return fn
 }
 
 type FunctionArg struct {
+	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
 	TypeDef      *TypeDef `json:"typeDef"`
 	DefaultValue any      `json:"defaultValue"`
+
+	// Below are not in public API
+
+	// The original name of the argument as provided by the SDK that defined it.
+	OriginalName string `json:"originalName,omitempty"`
 }
 
 func (arg FunctionArg) Clone() *FunctionArg {

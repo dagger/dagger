@@ -84,7 +84,7 @@ pytest-subprocess==1.5.0
     # via -r -
 rich==13.6.0
     # via -r -
-ruff==0.1.2
+ruff==0.1.3
     # via -r -
 sniffio==1.3.0
     # via

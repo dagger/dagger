@@ -996,10 +996,19 @@ func (s *moduleSchema) functionResolver(
 			parent = id
 		}
 
+		argNames := make(map[string]string, len(fn.Args))
+		for _, arg := range fn.Args {
+			argNames[arg.Name] = arg.OriginalName
+		}
+
 		var callInput []*core.CallInput
 		for k, v := range args {
+			n, ok := argNames[k]
+			if !ok {
+				continue
+			}
 			callInput = append(callInput, &core.CallInput{
-				Name:  k,
+				Name:  n,
 				Value: v,
 			})
 		}
