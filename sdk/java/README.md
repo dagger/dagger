@@ -150,7 +150,7 @@ or by setting the maven property `dagger.bin`
 In order to upgrade the SDK to a new engine version follow these steps:
 
 1. Download the new dagger CLI (or install it via the package manager of your choice)
-2. Bump dagger engine dependency by updating the `daggerengie.version` property
+2. Bump dagger engine dependency by updating the `daggerengine.version` property
    in `sdk/java/pom.xml` file
 3. Generate the API schema for the new engine and copy it
    the `dagger-codegen-maven-plugin/src/main/resources/schemas` directory
