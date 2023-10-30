@@ -65,6 +65,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	}
 
 	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
+		"dependencies":  ToResolver(s.moduleDependencies),
 		"objects":       ToResolver(s.moduleObjects),
 		"withObject":    ToResolver(s.moduleWithObject),
 		"generatedCode": ToResolver(s.moduleGeneratedCode),
@@ -386,7 +387,11 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 
 	// Mount in read-only dep module filesystems to ensure that if they change, this module's cache is
 	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
-	for _, dep := range mod.Dependencies {
+	deps, err := s.dependenciesOf(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+	for _, dep := range deps {
 		dirMntPath := filepath.Join(core.ModMetaDirPath, core.ModMetaDepsDirPath, dep.Name, "dir")
 		sourceDir, err := dep.SourceDirectory.Directory(ctx, s.bk, s.services, dep.SourceDirectorySubpath)
 		if err != nil {
@@ -672,6 +677,38 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 	})
 }
 
+func (s *moduleSchema) moduleDependencies(ctx context.Context, mod *core.Module, _ any) ([]*core.Module, error) {
+	return s.dependenciesOf(ctx, mod)
+}
+
+func (s *moduleSchema) dependenciesOf(ctx context.Context, mod *core.Module) ([]*core.Module, error) {
+	// TODO: cache this whole thing
+	var eg errgroup.Group
+	deps := make([]*core.Module, len(mod.DependencyConfig))
+	for i, depURL := range mod.DependencyConfig {
+		i, depURL := i, depURL
+		eg.Go(func() error {
+			// TODO: load cached dep module
+			depMod, err := core.NewModule(mod.Platform, mod.Pipeline).FromRef(
+				ctx, s.bk, s.services, s.progSockPath,
+				mod.SourceDirectory,
+				mod.SourceDirectorySubpath,
+				depURL,
+				s.runtimeForModule,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to get dependency mod from ref %q: %w", depURL, err)
+			}
+			deps[i] = depMod
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return deps, nil
+}
+
 // installDeps stitches in the schemas for all the deps of the given module to the module's
 // schema view.
 func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*schemaView, error) {
@@ -680,7 +717,12 @@ func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*s
 		return nil, err
 	}
 
-	return schemaView, s.installDepsToSchemaView(ctx, module.Dependencies, schemaView)
+	deps, err := s.dependenciesOf(ctx, module)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	return schemaView, s.installDepsToSchemaView(ctx, deps, schemaView)
 }
 
 func (s *moduleSchema) installDepsToSchemaView(
