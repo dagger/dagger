@@ -60,7 +60,7 @@ func init() {
 	// also include codegen flags since codegen will run on module init
 
 	moduleCmd.AddCommand(moduleInitCmd)
-	moduleCmd.AddCommand(moduleUseCmd)
+	moduleCmd.AddCommand(moduleInstallCmd)
 	moduleCmd.AddCommand(moduleSyncCmd)
 	moduleCmd.AddCommand(modulePublishCmd)
 }
@@ -136,10 +136,11 @@ var moduleInitCmd = &cobra.Command{
 	},
 }
 
-var moduleUseCmd = &cobra.Command{
-	Use:    "use",
-	Short:  "Add a new dependency to a dagger module",
-	Hidden: false,
+var moduleInstallCmd = &cobra.Command{
+	Use:     "install",
+	Aliases: []string{"use"},
+	Short:   "Add a new dependency to a dagger module",
+	Hidden:  false,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
