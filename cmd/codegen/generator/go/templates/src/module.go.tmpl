@@ -3,11 +3,14 @@ type Client struct {
 	q *querybuilder.Selection
 }
 
-var dag *Client
+var dag = initDag()
 
-func init() {
+// initializing the var dag directly rather than using
+// an init func so that users can successfully use dag
+// in any global var initialization of their own code
+func initDag() *Client {
   gqlClient, q := getClientParams()
-	dag = &Client{
+	return &Client{
 		c: gqlClient,
 		q: q,
 	}
