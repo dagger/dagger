@@ -4,13 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -26,6 +31,8 @@ var (
 
 	moduleName string
 	moduleRoot string
+
+	force bool
 )
 
 const (
@@ -48,11 +55,14 @@ func init() {
 	moduleInitCmd.PersistentFlags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 	moduleInitCmd.PersistentFlags().StringVarP(&moduleRoot, "root", "", "", "Root directory that should be loaded for the full module context. Defaults to the parent directory containing dagger.json.")
 
+	modulePublishCmd.PersistentFlags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean.")
+
 	// also include codegen flags since codegen will run on module init
 
 	moduleCmd.AddCommand(moduleInitCmd)
 	moduleCmd.AddCommand(moduleUseCmd)
 	moduleCmd.AddCommand(moduleSyncCmd)
+	moduleCmd.AddCommand(modulePublishCmd)
 }
 
 var moduleCmd = &cobra.Command{
@@ -177,6 +187,121 @@ var moduleSyncCmd = &cobra.Command{
 			return updateModuleConfig(ctx, dag, moduleDir, ref, modCfg, cmd)
 		})
 	},
+}
+
+const daDaggerverse = "https://daggerverse.dev"
+
+var modulePublishCmd = &cobra.Command{
+	Use:    "publish",
+	Short:  fmt.Sprintf("Publish your module to The Daggerverse (%s)", daDaggerverse),
+	Hidden: false,
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			rec := progrock.FromContext(ctx)
+
+			vtx := rec.Vertex("publish", strings.Join(os.Args, " "), progrock.Focused())
+			defer func() { vtx.Done(err) }()
+			cmd.SetOut(vtx.Stdout())
+			cmd.SetErr(vtx.Stderr())
+
+			dag := engineClient.Dagger()
+			ref, _, err := getModuleRef(ctx, dag)
+			if err != nil {
+				return fmt.Errorf("failed to get module: %w", err)
+			}
+			moduleDir, err := ref.LocalSourcePath()
+			if err != nil {
+				return fmt.Errorf("module publish is only supported for local modules")
+			}
+			repo, err := git.PlainOpenWithOptions(moduleDir, &git.PlainOpenOptions{
+				DetectDotGit: true,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to open git repo: %w", err)
+			}
+			wt, err := repo.Worktree()
+			if err != nil {
+				return fmt.Errorf("failed to get git worktree: %w", err)
+			}
+			st, err := wt.Status()
+			if err != nil {
+				return fmt.Errorf("failed to get git status: %w", err)
+			}
+			head, err := repo.Head()
+			if err != nil {
+				return fmt.Errorf("failed to get git HEAD: %w", err)
+			}
+			commit := head.Hash()
+
+			rec.Debug("git commit", progrock.Labelf("commit", commit.String()))
+
+			orig, err := repo.Remote("origin")
+			if err != nil {
+				return fmt.Errorf("failed to get git remote: %w", err)
+			}
+			refPath, err := originToPath(orig.Config().URLs[0])
+			if err != nil {
+				return fmt.Errorf("failed to get module path: %w", err)
+			}
+
+			// calculate path relative to repo root
+			gitRoot := wt.Filesystem.Root()
+			absModDir, err := filepath.Abs(moduleDir)
+			if err != nil {
+				return fmt.Errorf("failed to get absolute module dir: %w", err)
+			}
+			pathFromRoot, err := filepath.Rel(gitRoot, absModDir)
+			if err != nil {
+				return fmt.Errorf("failed to get path from git root: %w", err)
+			}
+
+			// NB: you might think to ignore changes to files outside of the module,
+			// but we should probably play it safe. in a monorepo for example this
+			// could mean publishing a broken module because it depends on
+			// uncommitted code in a dependent module.
+			//
+			// TODO: the proper fix here might be to check for dependent code, too.
+			// Specifically I should be able to publish a dependency before
+			// committing + pushing its dependers. but in the end it doesn't really
+			// matter; just commit everything and _then_ publish.
+			if !st.IsClean() && !force {
+				cmd.Println(st)
+				return fmt.Errorf("git repository is not clean; run with --force to ignore")
+			}
+
+			refStr := fmt.Sprintf("%s@%s", path.Join(refPath, pathFromRoot), commit)
+
+			cmd.Println("publishing", refStr, "to", daDaggerverse)
+
+			modURL, err := url.JoinPath(daDaggerverse, "mod", refStr)
+			if err != nil {
+				return fmt.Errorf("failed to get module URL: %w", err)
+			}
+
+			res, err := http.Get(modURL) // nolint: gosec
+			if err != nil {
+				return fmt.Errorf("failed to get module: %w", err)
+			}
+
+			// TODO(vito): inspect response, would be nice to surface errors here
+			cmd.Printf("published to %s", modURL)
+
+			return res.Body.Close()
+		})
+	},
+}
+
+var originRegexp = regexp.MustCompile(`^(git@|https://)(github.com)[:/]([^/]+)/([^/]+)`)
+
+func originToPath(origin string) (string, error) {
+	matches := originRegexp.FindStringSubmatch(origin)
+	if len(matches) != 5 {
+		return "", fmt.Errorf("failed to parse git remote origin URL: %s does not match %q", origin, originRegexp)
+	}
+
+	host, login, repoName := matches[2], matches[3], matches[4]
+	return strings.TrimSuffix(path.Join(host, login, repoName), ".git"), nil
 }
 
 func updateModuleConfig(
