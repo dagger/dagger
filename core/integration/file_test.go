@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,8 +114,6 @@ func TestFileSize(t *testing.T) {
 
 func TestFileExport(t *testing.T) {
 	t.Parallel()
-
-	ctx := context.Background()
 
 	wd := t.TempDir()
 	targetDir := t.TempDir()

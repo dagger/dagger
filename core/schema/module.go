@@ -659,8 +659,12 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 			return nil, fmt.Errorf("failed to decode module: %w", err)
 		}
 
-		// namespace the module objects + function extensions
 		for _, obj := range mod.Objects {
+			if err := s.validateTypeDef(obj, schemaView); err != nil {
+				return nil, fmt.Errorf("failed to validate type def: %w", err)
+			}
+
+			// namespace the module objects + function extensions
 			s.namespaceTypeDef(obj, mod, schemaView)
 		}
 
@@ -1063,6 +1067,51 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 	default:
 		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
 	}
+}
+
+func (s *moduleSchema) validateTypeDef(typeDef *core.TypeDef, schemaView *schemaView) error {
+	switch typeDef.Kind {
+	case core.TypeDefKindList:
+		return s.validateTypeDef(typeDef.AsList.ElementTypeDef, schemaView)
+	case core.TypeDefKindObject:
+		obj := typeDef.AsObject
+		baseObjName := gqlObjectName(obj.Name)
+
+		// check whether this is a pre-existing object from core or another module
+		_, preExistingObject := schemaView.resolvers()[baseObjName]
+		if preExistingObject {
+			// already validated, skip
+			return nil
+		}
+
+		for _, field := range obj.Fields {
+			if gqlFieldName(field.Name) == "id" {
+				return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+			}
+			if err := s.validateTypeDef(field.TypeDef, schemaView); err != nil {
+				return err
+			}
+		}
+
+		for _, fn := range obj.Functions {
+			if gqlFieldName(fn.Name) == "id" {
+				return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+			}
+			if err := s.validateTypeDef(fn.ReturnType, schemaView); err != nil {
+				return err
+			}
+
+			for _, arg := range fn.Args {
+				if gqlArgName(arg.Name) == "id" {
+					return fmt.Errorf("cannot define argument with reserved name %q on function %q", arg.Name, fn.Name)
+				}
+				if err := s.validateTypeDef(arg.TypeDef, schemaView); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // TODO: Should we handle trying to namespace the object in the doc strings? Or would that require too much magic to accomplish consistently?

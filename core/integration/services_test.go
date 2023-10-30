@@ -588,7 +588,6 @@ func TestContainerExecServicesChained(t *testing.T) {
 			WithExposedPort(8000).
 			WithExec([]string{"python", "-m", "http.server"}).
 			AsService()
-
 	}
 
 	fileContent, err := c.Container().
