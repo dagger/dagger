@@ -1184,7 +1184,7 @@ func TestModuleUseLocal(t *testing.T) {
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: useOuter,
 			}).
-			With(daggerExec("mod", "use", "./dep")).
+			With(daggerExec("mod", "install", "./dep")).
 			WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
 		logGen(ctx, t, modGen.Directory("."))
@@ -1211,7 +1211,7 @@ func TestModuleUseLocal(t *testing.T) {
 			}).
 			WithWorkdir("/work").
 			With(daggerExec("mod", "init", "--name=use", "--sdk=python")).
-			With(daggerExec("mod", "use", "./dep")).
+			With(daggerExec("mod", "install", "./dep")).
 			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
 				Contents: `from dagger.mod import function
 import dagger
@@ -1253,7 +1253,7 @@ func TestModuleCodegenonDepChange(t *testing.T) {
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: useOuter,
 			}).
-			With(daggerExec("mod", "use", "./dep"))
+			With(daggerExec("mod", "install", "./dep"))
 
 		logGen(ctx, t, modGen.Directory("."))
 
@@ -1298,7 +1298,7 @@ func TestModuleCodegenonDepChange(t *testing.T) {
 			}).
 			WithWorkdir("/work").
 			With(daggerExec("mod", "init", "--name=use", "--sdk=python")).
-			With(daggerExec("mod", "use", "./dep")).
+			With(daggerExec("mod", "install", "./dep")).
 			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
 				Contents: `from dagger.mod import function
 import dagger
@@ -1373,8 +1373,8 @@ func (m *Bar) Name() string { return "bar" }
 		With(daggerExec("mod", "init", "--name=bar", "--sdk=go")).
 		WithWorkdir("/work").
 		With(daggerExec("mod", "init", "--name=use", "--sdk=go")).
-		With(daggerExec("mod", "use", "./foo")).
-		With(daggerExec("mod", "use", "./bar")).
+		With(daggerExec("mod", "install", "./foo")).
+		With(daggerExec("mod", "install", "./bar")).
 		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
@@ -1792,7 +1792,7 @@ func TestModuleGoSyncDeps(t *testing.T) {
 		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: useOuter,
 		}).
-		With(daggerExec("mod", "use", "./dep"))
+		With(daggerExec("mod", "install", "./dep"))
 
 	logGen(ctx, t, modGen.Directory("."))
 
