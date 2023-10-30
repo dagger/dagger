@@ -27,26 +27,17 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:test
-      size: dagger-runner-16c-64g
-
-  # Run Engine tests with race condition detection
-  # https://go.dev/blog/race-detector
-  #
-  # Run in parallel to the regular tests so that the entire pipeline finishes quicker
-  testrace:
-    uses: ./.github/workflows/_hack_make.yml
-    secrets: inherit
-    with:
       mage-targets: engine:testrace
       size: dagger-runner-16c-64g
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
+  # Only run a subset of important test cases since we just need to verify basic
+  # functionality rather than repeat every test already run in the other targets.
   testdev:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:test
+      mage-targets: engine:testimportant
       size: dagger-runner-16c-64g
       dev-engine: true
 
