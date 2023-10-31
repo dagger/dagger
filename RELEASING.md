@@ -252,7 +252,7 @@ dagger run ./hack/make engine:test
       double-check that is was picked up by
       [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
       this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
-      The new version can take up to `15mins` to appear, it's OK to move on.
+      The new version can take up to `30mins` to appear, it's OK to move on.
 
 > **Note**
 >
