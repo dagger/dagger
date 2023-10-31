@@ -1,6 +1,6 @@
 package io.dagger.codegen.introspection;
 
-public class InputValue {
+public class InputObject {
 
   private String name;
   private String description;

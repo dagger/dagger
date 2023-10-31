@@ -1,6 +1,10 @@
 package io.dagger.codegen.introspection;
 
-import com.squareup.javapoet.*;
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeSpec;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -21,17 +25,22 @@ class InputVisitor extends AbstractVisitor {
             .addModifiers(Modifier.PUBLIC)
             .addSuperinterface(ClassName.bestGuess("InputValue"));
 
-    for (InputValue inputValue : type.getInputFields()) {
+    for (InputObject inputObject : type.getInputFields()) {
 
       classBuilder.addField(
           FieldSpec.builder(
-                  inputValue.getType().formatInput(), inputValue.getName(), Modifier.PRIVATE)
+                  inputObject.getType().formatInput(), inputObject.getName(), Modifier.PRIVATE)
               .build());
 
       classBuilder.addMethod(
-          Helpers.getter(inputValue.getName(), inputValue.getType().formatInput()));
+          Helpers.getter(inputObject.getName(), inputObject.getType().formatInput()));
       classBuilder.addMethod(
-          Helpers.setter(inputValue.getName(), inputValue.getType().formatOutput()));
+          Helpers.setter(inputObject.getName(), inputObject.getType().formatOutput()));
+      classBuilder.addMethod(
+          Helpers.withSetter(
+              inputObject,
+              inputObject.getType().formatInput(),
+              ClassName.bestGuess(Helpers.formatName(type))));
     }
 
     MethodSpec.Builder toMapMethod =
@@ -42,8 +51,10 @@ class InputVisitor extends AbstractVisitor {
             .addStatement(
                 "$1T map = new $1T()",
                 ParameterizedTypeName.get(HashMap.class, String.class, Object.class));
-    for (InputValue inputValue : type.getInputFields()) {
-      toMapMethod.addStatement("map.put(\"$1L\", this.$1L)", inputValue.getName());
+    for (InputObject inputObject : type.getInputFields()) {
+      toMapMethod.beginControlFlow("if (this.$1L != null)", inputObject.getName());
+      toMapMethod.addStatement("map.put(\"$1L\", this.$1L)", inputObject.getName());
+      toMapMethod.endControlFlow();
     }
     toMapMethod.addStatement("return map");
     classBuilder.addMethod(toMapMethod.build());
