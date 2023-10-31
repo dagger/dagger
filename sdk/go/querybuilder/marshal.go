@@ -66,7 +66,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		var buf bytes.Buffer
 		gqlgen.MarshalString(v.String()).MarshalGQL(&buf)
 		return buf.String(), nil //nolint:gosimple,staticcheck
-	case reflect.Pointer:
+	case reflect.Pointer, reflect.Interface:
 		if v.IsNil() {
 			return "null", nil
 		}

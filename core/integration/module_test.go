@@ -1806,14 +1806,32 @@ func TestModuleDaggerCall(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
+				Contents: "bar",
+			}).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 type Minimal struct {}
 
 func (m *Minimal) Hello(msgs []string) string {
 	return strings.Join(msgs, "+")
+}
+
+func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
+	var contents []string
+	for _, f := range files {
+		content, err := f.Contents(ctx)
+		if err != nil {
+			return "", err
+		}
+		contents = append(contents, content)
+	}
+	return strings.Join(contents, "+"), nil
 }
 `,
 			})
@@ -1823,6 +1841,10 @@ func (m *Minimal) Hello(msgs []string) string {
 		out, err := modGen.With(daggerCall("hello", "--msgs", "yo", "--msgs", "my", "--msgs", "friend")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, strings.TrimSpace(out), "yo+my+friend")
+
+		out, err = modGen.With(daggerCall("reads", "--files=foo.txt", "--files=foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), "bar+bar")
 	})
 }
 

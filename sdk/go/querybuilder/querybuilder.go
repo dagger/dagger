@@ -168,15 +168,16 @@ func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
 }
 
 type argument struct {
-	value      any
-	marshalled string
-	once       sync.Once
+	value any
+
+	marshalled    string
+	marshalledErr error
+	once          sync.Once
 }
 
 func (a *argument) marshal(ctx context.Context) error {
-	var err error
 	a.once.Do(func() {
-		a.marshalled, err = MarshalGQL(ctx, a.value)
+		a.marshalled, a.marshalledErr = MarshalGQL(ctx, a.value)
 	})
-	return err
+	return a.marshalledErr
 }

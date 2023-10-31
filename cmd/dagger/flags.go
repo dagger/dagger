@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"reflect"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/spf13/pflag"
@@ -24,16 +29,91 @@ func GetCustomFlagValue(name string) pflag.Value {
 	return nil
 }
 
-// DaggerValue is a pflag.Value that requires a dagger.Client for producing the final value.
+// GetCustomFlagValueSlice returns a pflag.Value instance for a dagger.ObjectTypeDef name.
+func GetCustomFlagValueSlice(name string) pflag.Value {
+	switch name {
+	case Container:
+		return &sliceValue[*containerValue]{}
+	case Directory:
+		return &sliceValue[*directoryValue]{}
+	case File:
+		return &sliceValue[*fileValue]{}
+	case Secret:
+		return &sliceValue[*secretValue]{}
+	}
+	return nil
+}
+
+// DaggerValue is a pflag.Value that requires a dagger.Client for producing the
+// final value.
 type DaggerValue interface {
+	pflag.Value
+
 	// Get returns the final value for the query builder.
 	Get(*dagger.Client) any
 }
 
-/*
- * Container
- */
+// sliceValue is a pflag.Value that builds a slice of DaggerValue instances.
+//
+// NOTE: the code defining this type is heavily inspired by stringSliceValue.Set
+// for equivalent behaviour as the other builtin slice types
+type sliceValue[T DaggerValue] struct {
+	value []T
+}
 
+func (v *sliceValue[T]) Type() string {
+	var t T
+	return t.Type()
+}
+
+func (v *sliceValue[T]) String() string {
+	ss := []string{}
+	for _, v := range v.value {
+		ss = append(ss, v.String())
+	}
+	out, _ := writeAsCSV(ss)
+	return "[" + out + "]"
+}
+
+func (v *sliceValue[T]) Get(c *dagger.Client) any {
+	out := make([]any, len(v.value))
+	for i, v := range v.value {
+		out[i] = v.Get(c)
+	}
+	return out
+}
+
+func (v *sliceValue[T]) Set(s string) error {
+	// remove all quote characters
+	rmQuote := strings.NewReplacer(`"`, "", `'`, "", "`", "")
+
+	// read flag arguments with CSV parser
+	ss, err := readAsCSV(rmQuote.Replace(s))
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	// parse values into slice
+	out := make([]T, 0, len(ss))
+	for _, s := range ss {
+		var v T
+		if typ := reflect.TypeOf(v); typ.Kind() == reflect.Ptr {
+			// hack to get a pointer to a new instance of the underlying type
+			v = reflect.New(typ.Elem()).Interface().(T)
+		}
+
+		if err := v.Set(strings.TrimSpace(s)); err != nil {
+			return err
+		}
+		out = append(out, v)
+	}
+
+	v.value = append(v.value, out...)
+	return nil
+}
+
+// containerValue is a pflag.Value that builds a dagger.Container from a
+// base image name.
 type containerValue struct {
 	address string
 }
@@ -54,18 +134,14 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(c *dagger.Client) *dagger.Container {
-	// Default value: flag not set
-	if v.String() == "" {
+func (v *containerValue) Get(c *dagger.Client) any {
+	if v.address == "" {
 		return nil
 	}
 	return c.Container().From(v.String())
 }
 
-/*
- * Directory
- */
-
+// directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
 type directoryValue struct {
 	path string
 }
@@ -92,10 +168,6 @@ func (v *directoryValue) Get(c *dagger.Client) any {
 	}
 	return c.Host().Directory(v.String())
 }
-
-/*
- * File
- */
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
 type fileValue struct {
@@ -125,10 +197,8 @@ func (v *fileValue) Get(c *dagger.Client) any {
 	return c.Host().File(v.String())
 }
 
-/*
- * Secret
- */
-
+// secretValue is a pflag.Value that builds a dagger.Secret from a name and a
+// plaintext value.
 type secretValue struct {
 	name      string
 	plaintext string
@@ -155,11 +225,8 @@ func (v *secretValue) Get(c *dagger.Client) any {
 	return c.SetSecret(v.name, v.plaintext)
 }
 
-/*
- * Built-ins.
- */
-
-// AddFlag adds a flag appropriate for the argument type. Should return a pointer to the value.
+// AddFlag adds a flag appropriate for the argument type. Should return a
+// pointer to the value.
 func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any, error) {
 	name := r.FlagName()
 	usage := r.Description
@@ -209,7 +276,15 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 			return flags.BoolSlice(name, val, usage), nil
 
 		case dagger.Objectkind:
-			return nil, fmt.Errorf("unsupported list of %q objects for flag: %s", elementType.AsObject.Name, name)
+			objName := elementType.AsObject.Name
+
+			if val := GetCustomFlagValueSlice(objName); val != nil {
+				flags.Var(val, name, usage)
+				return val, nil
+			}
+
+			// TODO: default to JSON?
+			return nil, fmt.Errorf("unsupported list of objects %q for flag: %s", objName, name)
 
 		case dagger.Listkind:
 			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)
@@ -217,4 +292,24 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 	}
 
 	return nil, fmt.Errorf("unsupported type for argument: %s", r.Name)
+}
+
+func readAsCSV(val string) ([]string, error) {
+	if val == "" {
+		return []string{}, nil
+	}
+	stringReader := strings.NewReader(val)
+	csvReader := csv.NewReader(stringReader)
+	return csvReader.Read()
+}
+
+func writeAsCSV(vals []string) (string, error) {
+	b := &bytes.Buffer{}
+	w := csv.NewWriter(b)
+	err := w.Write(vals)
+	if err != nil {
+		return "", err
+	}
+	w.Flush()
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
