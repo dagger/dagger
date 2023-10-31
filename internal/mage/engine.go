@@ -179,18 +179,22 @@ func privateRegistry(c *dagger.Client) *dagger.Service {
 
 // Test runs Engine tests
 func (t Engine) Test(ctx context.Context) error {
-	return t.test(ctx, false, "")
+	return t.test(ctx, false, "", nil)
 }
 
 // TestRace runs Engine tests with go race detector enabled
 func (t Engine) TestRace(ctx context.Context) error {
-	return t.test(ctx, true, "")
+	return t.test(ctx, true, "", nil)
 }
 
 // TestImportant runs Engine Container+Module tests, which give good basic coverage
 // of functionality w/out having to run everything
 func (t Engine) TestImportant(ctx context.Context) error {
-	return t.test(ctx, true, `^(TestModule|TestContainer)`)
+	return t.test(ctx, true, `^(TestModule|TestContainer)`, nil)
+}
+
+func (t Engine) TestDaggerverse(ctx context.Context) error {
+	return t.test(ctx, false, "TestDaggerverse", []string{"daggerverse_tests"})
 }
 
 // TestRace runs Engine tests with go race detector enabled
@@ -324,7 +328,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	return nil
 }
 
-func (t Engine) test(ctx context.Context, race bool, testRegex string) error {
+func (t Engine) test(ctx context.Context, race bool, testRegex string, tags []string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -351,6 +355,10 @@ func (t Engine) test(ctx context.Context, race bool, testRegex string) error {
 
 	if testRegex != "" {
 		args = append(args, "-run", testRegex)
+	}
+
+	if len(tags) > 0 {
+		args = append(args, "-tags", strings.Join(tags, ","))
 	}
 
 	args = append(args, "./...")
