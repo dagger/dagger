@@ -275,22 +275,7 @@ module.exports = {
           type: "doc",
           label: "Installation",
           id: "current/cli/install",
-        },
-        {
-          type: "doc",
-          id: "zenith/user/concepts",
-          label: "Concepts",
-        },
-        {
-          type: "doc",
-          id: "zenith/user/best-practices",
-          label: "Best Practices",
-        },
-        {
-          type: "doc",
-          id: "zenith/user/troubleshooting",
-          label: "Troubleshooting",
-        },
+        }
       ],
     },
     {
@@ -301,39 +286,32 @@ module.exports = {
       items: [
         {
           type: "doc",
-          id: "zenith/developer/index",
-        },
-        {
-          type: "category",
-          label: "Quickstarts",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            {
-              type: "doc",
-              label: "Go",
-              id: "zenith/developer/quickstarts/go",
-            },
-            {
-              type: "doc",
-              label: "Python",
-              id: "zenith/developer/quickstarts/python",
-            },
-          ],
+          label: "Quickstart (Go)",
+          id: "zenith/developer/quickstarts/go",
         },
         {
           type: "doc",
-          id: "zenith/developer/guides/index",
+          label: "Quickstart (Python)",
+          id: "zenith/developer/quickstarts/python",
         },
         {
           type: "doc",
-          id: "zenith/developer/daggerverse",
+          id: "zenith/developer/guides",
+          label: "Guides",
+        },
+        {
+          type: "doc",
+          id: "zenith/developer/known-issues",
+        },
+        {
+          type: "doc",
+          id: "zenith/developer/troubleshooting",
         },
       ],
     },
     {
       type: "category",
-      label: "References",
+      label: "Reference",
       collapsible: true,
       collapsed: true,
       items: [
