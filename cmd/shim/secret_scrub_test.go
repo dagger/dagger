@@ -3,15 +3,13 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	_ "embed"
-	"errors"
 	"fmt"
-	"golang.org/x/sync/errgroup"
 	"io"
-	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -156,133 +154,6 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 	})
 }
 
-func TestScrubSecretLogLatency(t *testing.T) {
-	t.Parallel()
-
-	for _, n := range []int{1, 10, 100, 500, 1500} {
-		t.Run(fmt.Sprintf("Test log latency with %d secrets", n), func(t *testing.T) {
-			envMap := map[string]string{}
-
-			for line := 0; line < n; line++ {
-				envMap[fmt.Sprintf("secret%d", line)] = fmt.Sprintf("secret%d value", line)
-			}
-
-			var (
-				env, envNames,
-				inputs, outputs []string
-			)
-
-			// Initializes envMap with parameters
-			for k, v := range envMap {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-				envNames = append(envNames, k)
-				inputs = append(inputs, fmt.Sprintf("The %s is %s", k, v))
-				outputs = append(outputs, fmt.Sprintf("The %s is ***", k))
-			}
-
-			secretToScrubInfo := core.SecretToScrubInfo{
-				Envs:  envNames,
-				Files: []string{},
-			}
-
-			// Create the buffer to read/write in
-			var buf bytes.Buffer
-
-			// Init channel to synchronize read/write go routine
-			// The process will run in concurrency and block the read when a write happens
-			// and vice-versa.
-			read := make(chan bool)
-			write := make(chan bool)
-
-			// Close channels at the end.
-			defer func() {
-				close(read)
-				close(write)
-			}()
-
-			output := strings.Join(outputs, "\n")
-
-			// Create error group to synchronize go routine
-			eg, _ := errgroup.WithContext(context.Background())
-
-			// kick off a goroutine with an io.Reader which mocks a with_exec'ed process' stdout;
-			// We will write each line of secret, one by one.
-			eg.Go(func() error {
-				// Create an incremental index to send lines one by one.
-				idx := 0
-
-				for range write {
-					// Write the secret into the buffer.
-					_, err := buf.WriteString(inputs[idx])
-					require.NoError(t, err)
-
-					idx += 1
-
-					// Stop the go routine when we wrote all lines
-					// We send a one last read request to read the last line.
-					if idx == len(inputs) {
-						read <- true
-						return nil
-					}
-
-					// Ask to read the secret.
-					read <- true
-				}
-
-				return nil
-			})
-
-			// Store result for final check.
-			var result []string
-
-			// concurrently, expect the io.Reader returned by NewSecretScrubReader
-			// to read an expected subset of those bytes, then unblock the channel,
-			// then read another expected subset of bytes, then unblock again.
-			eg.Go(func() error {
-				idx := 0
-
-				for range read {
-					// Read the buffer after write.
-					r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
-					require.NoError(t, err)
-
-					// Read out, we ignore error if we hit EOF.
-					out, err := io.ReadAll(r)
-					if err != nil {
-						if !errors.Is(err, io.EOF) {
-							require.NoError(t, err)
-						}
-					}
-
-					// Make sure the output are matching as expected.
-					require.Equal(t, outputs[idx], string(out))
-
-					// Append the output to the final result for a global check.
-					result = append(result, string(out))
-
-					// We stop the go routine when we complete the outputs array.
-					idx += 1
-					if idx == len(outputs) {
-						return nil
-					}
-
-					// Unblock write channel by sending a request.
-					write <- true
-				}
-
-				return nil
-			})
-
-			// Kick off the process with a write request.
-			write <- true
-
-			err := eg.Wait()
-			require.NoError(t, err)
-			require.Equal(t, output, strings.Join(result, "\n"))
-		})
-	}
-}
-
 func TestScrubSecretWrite(t *testing.T) {
 	t.Parallel()
 	envMap := map[string]string{
@@ -372,4 +243,69 @@ func TestScrubSecretWrite(t *testing.T) {
 		require.Equal(t, len(outputLines), i)
 	})
 
+}
+
+func TestScrubSecretLogLatency(t *testing.T) {
+	t.Parallel()
+	envMap := map[string]string{
+		"foo": "TOP_SECRET",
+	}
+	env := []string{}
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	envNames := []string{
+		"foo",
+	}
+
+	secretToScrubInfo := core.SecretToScrubInfo{
+		Envs:  envNames,
+		Files: []string{},
+	}
+
+	t.Run("plain", func(t *testing.T) {
+		in, out := io.Pipe()
+		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		require.NoError(t, err)
+
+		var done atomic.Uint32
+		go func() {
+			_, err := out.Write([]byte("hello world\n"))
+			require.NoError(t, err)
+			done.Add(1)
+		}()
+		go func() {
+			buf := make([]byte, 1024)
+			n, err := r.Read(buf)
+			require.NoError(t, err)
+			require.Equal(t, "hello world\n", string(buf[:n]))
+			done.Add(1)
+		}()
+		require.Eventually(t, func() bool {
+			return done.Load() == 2
+		}, 2*time.Second, 10*time.Millisecond, "output not received")
+	})
+
+	t.Run("secret", func(t *testing.T) {
+		in, out := io.Pipe()
+		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		require.NoError(t, err)
+
+		var done atomic.Uint32
+		go func() {
+			_, err := out.Write([]byte("hello TOP_SECRET\n"))
+			require.NoError(t, err)
+			done.Add(1)
+		}()
+		go func() {
+			buf := make([]byte, 1024)
+			n, err := r.Read(buf)
+			require.NoError(t, err)
+			require.Equal(t, "hello ***\n", string(buf[:n]))
+			done.Add(1)
+		}()
+		require.Eventually(t, func() bool {
+			return done.Load() == 2
+		}, 2*time.Second, 10*time.Millisecond, "output not received")
+	})
 }
