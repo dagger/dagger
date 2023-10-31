@@ -142,11 +142,15 @@ patch` (or `changie batch minor` if this is a new minor).
 git checkout main
 git pull
 
+# If not named "origin" in your local checkout, replace "origin" with whatever the
+# github.com/dagger/dagger repo is named for you locally
+export DAGGER_REPO_REMOTE=origin
+
 export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
 export ENGINE_VERSION="$(changie latest)"
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
-git push origin "${ENGINE_VERSION:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
 
 export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 ```
@@ -164,7 +168,7 @@ export BUMP_ENGINE_PR=
 ```
 
 ```console
-git fetch origin
+git fetch "${DAGGER_REPO_REMOTE:?must be set}"
 git checkout bump-engine
 
 cd sdk/go
@@ -206,13 +210,13 @@ cd ../..
 
 ```console
 git checkout main
-git pull
+git "${DAGGER_REPO_REMOTE:?must be set}" pull
 git branch -D bump-engine
 
 export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
 cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push origin "sdk/go/${GO_SDK_VERSION:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" "sdk/go/${GO_SDK_VERSION:?must be set}"
 ```
 
 This will trigger the [`publish-sdk-go`
@@ -279,7 +283,7 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 git checkout main
 cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push origin sdk/python/${PYTHON_SDK_VERSION}
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/python/${PYTHON_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Python SDK`
@@ -306,7 +310,7 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
 ```console
 cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push origin sdk/nodejs/${NODEJS_SDK_VERSION}
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/nodejs/${NODEJS_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Node.js SDK`
@@ -332,7 +336,7 @@ gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
 ```console
 cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push origin sdk/elixir/${ELIXIR_SDK_VERSION}
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/elixir/${ELIXIR_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Elixir SDK`
