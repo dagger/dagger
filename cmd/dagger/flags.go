@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
@@ -18,7 +20,7 @@ import (
 )
 
 // GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.
-func GetCustomFlagValue(name string) pflag.Value {
+func GetCustomFlagValue(name string) DaggerValue {
 	switch name {
 	case Container:
 		return &containerValue{}
@@ -28,12 +30,14 @@ func GetCustomFlagValue(name string) pflag.Value {
 		return &fileValue{}
 	case Secret:
 		return &secretValue{}
+	case Service:
+		return &serviceValue{}
 	}
 	return nil
 }
 
 // GetCustomFlagValueSlice returns a pflag.Value instance for a dagger.ObjectTypeDef name.
-func GetCustomFlagValueSlice(name string) pflag.Value {
+func GetCustomFlagValueSlice(name string) DaggerValue {
 	switch name {
 	case Container:
 		return &sliceValue[*containerValue]{}
@@ -43,6 +47,8 @@ func GetCustomFlagValueSlice(name string) pflag.Value {
 		return &sliceValue[*fileValue]{}
 	case Secret:
 		return &sliceValue[*secretValue]{}
+	case Service:
+		return &sliceValue[*serviceValue]{}
 	}
 	return nil
 }
@@ -272,6 +278,72 @@ func (v *secretValue) String() string {
 
 func (v *secretValue) Get(c *dagger.Client) any {
 	return c.SetSecret(v.name, v.plaintext)
+}
+
+// serviceValue is a pflag.Value that builds a dagger.Service from a host:port
+// combination.
+type serviceValue struct {
+	address string // for string representation
+	host    string
+	ports   []dagger.PortForward
+}
+
+func (v *serviceValue) Type() string {
+	return Service
+}
+
+func (v *serviceValue) String() string {
+	return v.address
+}
+
+func (v *serviceValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("service address cannot be empty")
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return err
+	}
+	switch u.Scheme {
+	case "tcp":
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			return err
+		}
+		nPort, err := strconv.Atoi(port)
+		if err != nil {
+			return err
+		}
+		v.host = host
+		v.ports = append(v.ports, dagger.PortForward{
+			Backend:  nPort,
+			Frontend: nPort,
+			Protocol: dagger.Tcp,
+		})
+	case "udp":
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			return err
+		}
+		nPort, err := strconv.Atoi(port)
+		if err != nil {
+			return err
+		}
+		v.host = host
+		v.ports = append(v.ports, dagger.PortForward{
+			Backend:  nPort,
+			Frontend: nPort,
+			Protocol: dagger.Udp,
+		})
+	default:
+		return fmt.Errorf("unsupported service address. Must be a valid tcp:// or udp:// URL")
+	}
+	v.address = s
+	return nil
+}
+
+func (v *serviceValue) Get(c *dagger.Client) any {
+	return c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host})
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
