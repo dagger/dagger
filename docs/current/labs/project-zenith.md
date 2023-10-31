@@ -267,7 +267,7 @@ You can consume modules from lots of different sources. The easiest way to
 For example:
 
 ```sh
-dagger call test -m "github.com/user/repo@main"
+dagger call -m "github.com/user/repo@main" test
 ```
 
 or
@@ -283,7 +283,7 @@ EOF
 or, if your module is in a subdirectory of the Git repository:
 
 ```sh
-dagger call test -m "github.com/user/repo/subdirectory@main"
+dagger call -m "github.com/user/repo/subdirectory@main" test
 ```
 
 or
@@ -299,7 +299,7 @@ EOF
 You can also use modules from the local disk, without needing to push them to GitHub!
 
 ```sh
-dagger call test -m "./path/to/module"
+dagger call -m "./path/to/module" test
 ```
 
 or
