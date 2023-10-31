@@ -248,11 +248,6 @@ module.exports = {
     }
   ],
   labs: [
-    {
-      type: "doc",
-      id: "current/index",
-      label: "Home",
-    },
   ],
   zenith: [
     {
@@ -371,6 +366,25 @@ module.exports = {
       label: "Changelog 🔗",
       href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
+  ],
+  zenith_quickstart: [
+    {
+      type: "doc",
+      id: "zenith/index",
+      label: "Home",
+    },
+    {
+      type: "category",
+      label: "Quickstart",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "zenith/quickstart/index",
+        "zenith/quickstart/basics",
+        "zenith/quickstart/cli",
+        "zenith/quickstart/conclusion",
+      ]
+    }
   ],
   0.2: [
     {
