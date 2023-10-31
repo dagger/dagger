@@ -122,16 +122,16 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.9.1.md` by either running `changie batch
+- [ ] Create e.g. `.changes/v0.9.2.md` by either running `changie batch
 patch` (or `changie batch minor` if this is a new minor).
 
 > **Note**
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.9.1.md`
+      `.changes/v0.9.2.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `20 mins` Submit a PR - e.g. `add-v0.9.1-release-notes` with the new release notes
+- [ ] `20 mins` Submit a PR - e.g. `add-v0.9.2-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -237,8 +237,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.1 sh
-# mv ~/.local/bin/dagger{,-0.9.1}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.2 sh
+# mv ~/.local/bin/dagger{,-0.9.2}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 cd ../..
 dagger run ./hack/make engine:test
