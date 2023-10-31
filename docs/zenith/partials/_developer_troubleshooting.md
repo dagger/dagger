@@ -1,0 +1,20 @@
+### Rerun commands with `--focus=false`
+
+Sometimes, the Dagger client logs are automatically collapsed and don't contain
+all the information from a failure.
+
+To make sure that logs aren't automatically collapsed, you can run any `dagger`
+subcommand with the `--focus=false` flag to disable this behavior.
+
+### Access the Dagger Engine logs
+
+The Dagger Engine runs in a dedicated Docker container and emits log messages as it works. Here's how to access these logs:
+
+```shell
+DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
+docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
+```
+
+:::tip
+Need help? Stuck on a hard-to-understand error message? Tell us about it in the [`#zenith-help` channel in the Dagger Discord](https://discord.gg/dagger-io)!
+:::
