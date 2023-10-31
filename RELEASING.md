@@ -423,6 +423,10 @@ Follow these steps to verify the Playground Dagger version:
 4. Click in the `/playgrounds` POST request row in the **Network** tab
 5. Verify that the `X-Dagger-Engine` response header value matches the just-released Engine version
 
+## 🌌 Daggerverse
+
+This is documented internally, ping @jpadams, @vito or anyone who knows about Daggerverse deployment.
+
 ## Last step
 
 - [ ] When all the above done, remember to add the `RELEASING.md` changes to
