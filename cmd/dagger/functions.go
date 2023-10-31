@@ -507,7 +507,11 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				}
 			}
 
-			fc.addSubCommands(cmd, dag, fn.ReturnType.AsObject)
+			obj := fn.ReturnType.AsObject
+			if obj == nil && fn.ReturnType.AsList != nil {
+				obj = fn.ReturnType.AsList.ElementTypeDef.AsObject
+			}
+			fc.addSubCommands(cmd, dag, obj)
 
 			// Show help for first command that has the --help flag.
 			if help {
@@ -521,7 +525,12 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			if fn.ReturnType.AsObject != nil && len(fn.ReturnType.AsObject.GetFunctions()) > 0 {
+			obj := fn.ReturnType.AsObject
+			if obj == nil && fn.ReturnType.AsList != nil {
+				obj = fn.ReturnType.AsList.ElementTypeDef.AsObject
+			}
+
+			if obj != nil && len(obj.GetFunctions()) > 0 {
 				fc.showUsage = true
 				return fmt.Errorf("%q requires a sub-command", cmd.Name())
 			}

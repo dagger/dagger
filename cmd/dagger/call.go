@@ -27,13 +27,28 @@ var callCmd = &FuncCommand{
 		return nil
 	},
 	AfterResponse: func(_ *FuncCommand, cmd *cobra.Command, _ *modTypeDef, response any) error {
-		if list, ok := (response).([]any); ok {
-			for _, v := range list {
-				cmd.Printf("%+v\n", v)
-			}
-			return nil
-		}
-		cmd.Printf("%+v\n", response)
-		return nil
+		return printResponse(cmd, response)
 	},
+}
+
+func printResponse(cmd *cobra.Command, r any) error {
+	switch t := r.(type) {
+	case []any:
+		for _, v := range t {
+			if err := printResponse(cmd, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	case map[string]any:
+		for _, v := range t {
+			if err := printResponse(cmd, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		cmd.Printf("%+v\n", t)
+	}
+	return nil
 }
