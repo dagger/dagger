@@ -1179,6 +1179,37 @@ func (m *Foo) MyFunction() X {
 	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo"}}}`, out)
 }
 
+func TestModuleGoGlobalVarDAG(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Foo struct {}
+
+var someDefault = dag.Container().From("alpine:latest")
+
+func (m *Foo) Fn(ctx context.Context) (string, error) {
+	return someDefault.WithExec([]string{"echo", "foo"}).Stdout(ctx)
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{fn}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"fn":"foo\n"}}`, out)
+}
+
 //go:embed testdata/modules/go/use/dep/main.go
 var useInner string
 
