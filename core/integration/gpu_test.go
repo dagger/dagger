@@ -128,7 +128,7 @@ func TestGPUAccess(t *testing.T) {
 				}
 
 				if len(gpus) <= 1 {
-					t.Fatal("this test requires at least 2 GPUs to run")
+					t.Skip("skipping - this test requires at least 2 GPUs to run")
 				}
 
 				// Pick first GPU and initialize a Dagger container for it:
