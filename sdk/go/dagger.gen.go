@@ -44,6 +44,11 @@ func Opt[T any](v T) Optional[T] {
 	return Optional[T]{value: v, isSet: true}
 }
 
+// OptEmpty is a helper function to construct an empty Optional.
+func OptEmpty[T any]() Optional[T] {
+	return Optional[T]{}
+}
+
 // Get returns the internal value of the optional and a boolean indicating if
 // the value was set explicitly by the caller.
 func (o Optional[T]) Get() (T, bool) {
