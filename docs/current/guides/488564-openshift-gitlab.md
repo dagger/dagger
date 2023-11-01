@@ -15,6 +15,9 @@ This guide outlines how to set up a Continuous Integration (CI) environment with
 
 * A Dagger Engine DaemonSet which executes the pipelines;
 * A GitLab Runner which manages the execution of GitLab CI jobs. For each job, a new Runner worker pod is spawned.
+* Tainted nodes for dedicated workload
+
+![Base architecture](/img/current/guides/openshift-gitlab/pattern.png)
 
 ## Assumptions
 
@@ -86,6 +89,7 @@ The next step is to configure a GitLab Runner. Follow these steps:
 ## Step 3: Create a GitLab CI/CD pipeline
 
 1. For Dagger Cloud users only, [add a new CI/CD variable in GitLab](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) with the name `DAGGER_CLOUD_TOKEN` and set its value to the Dagger Cloud token.
+The variable will be automatically inject into the GitLab job.
 
 1. Create a new GitLab CI/CD pipeline configuration file in your repository at `.gitlab-ci.yml` with the following content:
 
@@ -99,7 +103,7 @@ The next step is to configure a GitLab Runner. Follow these steps:
 
 ## Step 4: Run a GitLab CI job
 
-At this point, the deployment is configured and ready for use. Test it by committing a new change to the source code repository, which should trigger the GitLab CI pipeline. Your CI pipelines should now be connected to your Dagger Engines.
+At this point, the deployment is configured and ready for use. Test it by committing a new change to the source code repository, which should trigger the GitLab CI pipeline. Your CI pipelines should now be connected to your Dagger Engines. You can review the job logs either in the GitLab UI under Build->Jobs or within Dagger Cloud.
 
 ## Conclusion
 
