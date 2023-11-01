@@ -34,31 +34,34 @@ func ptr[T any](v T) *T {
 // that use this wrapper type will be set as optional in the generated API.
 //
 // To construct an Optional from within a module, use the Opt helper function.
-type Optional[T comparable] struct {
+type Optional[T any] struct {
 	value T
 	isSet bool
 }
 
 // Opt is a helper function to construct an Optional with the given value set.
-func Opt[T comparable](v T) Optional[T] {
+func Opt[T any](v T) Optional[T] {
 	return Optional[T]{value: v, isSet: true}
+}
+
+// OptEmpty is a helper function to construct an empty Optional.
+func OptEmpty[T any]() Optional[T] {
+	return Optional[T]{}
 }
 
 // Get returns the internal value of the optional and a boolean indicating if
 // the value was set explicitly by the caller.
 func (o Optional[T]) Get() (T, bool) {
-	var zero T
-	return o.value, o.isSet || o.value != zero
+	return o.value, o.isSet
 }
 
 // GetOr returns the internal value of the optional or the given default value
 // if the value was not explicitly set by the caller.
 func (o Optional[T]) GetOr(defaultValue T) T {
-	value, ok := o.Get()
-	if !ok {
-		return defaultValue
+	if o.isSet {
+		return o.value
 	}
-	return value
+	return defaultValue
 }
 
 func (o *Optional[T]) MarshalJSON() ([]byte, error) {

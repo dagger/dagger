@@ -585,6 +585,16 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"default...default...default..."}}`, out)
 	})
 
+	t.Run("func EchoOptionalSlice([]string) string", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"hello+there...hello+there...hello+there..."}}`, out)
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptionalSlice}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"foobar...foobar...foobar..."}}`, out)
+	})
+
 	t.Run("func Echoes([]string) []string", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
