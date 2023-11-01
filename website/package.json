@@ -25,7 +25,7 @@
     "docusaurus-plugin-image-zoom": "^0.1.1",
     "docusaurus-plugin-includes": "^1.1.4",
     "docusaurus-plugin-sass": "^0.2.3",
-    "docusaurus-plugin-typedoc": "^0.19.2",
+    "docusaurus-plugin-typedoc": "^0.21.0",
     "docusaurus2-dotenv": "^1.4.0",
     "file-loader": "^6.2.0",
     "nprogress": "^0.2.0",
