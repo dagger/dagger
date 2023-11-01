@@ -465,7 +465,7 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 func runcBin(c *dagger.Client, arch string) *dagger.File {
 	// We build runc from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
-	return c.Container().
+	buildCtr := c.Container().
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
 		WithEnvVariable("GOARCH", arch).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
@@ -478,7 +478,18 @@ func runcBin(c *dagger.Client, arch string) *dagger.File {
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build")).
 		WithMountedDirectory("/src", c.Git("github.com/opencontainers/runc").Tag(runcVersion).Tree()).
-		WithWorkdir("/src").
+		WithWorkdir("/src")
+
+	// TODO: runc v1.1.x uses an old version of golang.org/x/net, which has a CVE:
+	// https://github.com/advisories/GHSA-4374-p667-p6c8
+	// We upgrade it here to avoid that showing up in our image scans. This can be removed
+	// once runc has released a new minor version and we upgrade to it (the go.mod in runc
+	// main branch already has the updated version).
+	buildCtr = buildCtr.WithExec([]string{"go", "get", "golang.org/x/net"}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		WithExec([]string{"go", "mod", "vendor"})
+
+	return buildCtr.
 		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + runcVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
 		File("runc")
 }
