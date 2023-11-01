@@ -2,7 +2,7 @@
 slug: /zenith/developer/191108/publish-modules
 displayed_sidebar: "zenith"
 category: "guides"
-authors: ["Vikram Vaswani"]
+authors: ["Alex Suraci"]
 tags: ["modules"]
 date: "2023-03-31"
 ---

@@ -2,7 +2,7 @@
 slug: /zenith/developer/191108/advanced-module-development
 displayed_sidebar: "zenith"
 category: "guides"
-authors: ["Vikram Vaswani"]
+authors: ["Alex Suraci", "Erik Sipsma"]
 tags: ["modules"]
 date: "2023-03-31"
 ---
