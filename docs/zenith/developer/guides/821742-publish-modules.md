@@ -1,6 +1,10 @@
 ---
 slug: /zenith/developer/191108/publish-modules
 displayed_sidebar: "zenith"
+category: "guides"
+authors: ["Vikram Vaswani"]
+tags: ["modules"]
+date: "2023-03-31"
 ---
 
 # Publish Modules to the Daggerverse
