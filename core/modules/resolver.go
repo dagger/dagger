@@ -42,6 +42,9 @@ func (ref *Ref) String() string {
 		}
 		return p
 	}
+
+	// don't include subpath, this is a git ref and Path already has any subpath included
+	// when set by ResolveMovingRef (which is confusing, needs a refactor)
 	if ref.Version == "" {
 		return ref.Path
 	}
@@ -282,18 +285,23 @@ func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *Re
 		return nil, fmt.Errorf("failed to resolve module: %w", err)
 	}
 
-	if mod.Local {
-		// make local modules relative to the parent module
-		cp := *parent
-		if cp.SubPath != "" {
-			cp.SubPath = filepath.Join(cp.SubPath, mod.Path)
-		} else {
-			cp.SubPath = mod.Path
-		}
-		return &cp, nil
+	if !mod.Local {
+		return mod, nil
 	}
 
-	return mod, nil
+	// make local modules relative to the parent module
+	cp := *parent
+
+	if cp.Local {
+		cp.SubPath = filepath.Join(cp.SubPath, mod.Path)
+	} else {
+		// the parent is a git module, in which case both Path and SubPath include the full
+		// path to the module, so we need to set both (this is confusing and needs a larger refactor)
+		cp.SubPath = filepath.Join(cp.SubPath, mod.Path)
+		cp.Path = filepath.Join(cp.Path, mod.Path)
+	}
+
+	return &cp, nil
 }
 
 func defaultBranch(ctx context.Context, dag *dagger.Client, repo string) (string, error) {
