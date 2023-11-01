@@ -22,8 +22,12 @@ var upCmd = &FuncCommand{
 		cmd.PersistentFlags().BoolVarP(&portForwardsNative, "native", "n", false, "Forward all ports natively, i.e. match frontend port to backend.")
 	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
-		if name != Service {
-			return fmt.Errorf("up can only be called on a service")
+		switch name {
+		case Service:
+		case Container:
+			c.Select("asService")
+		default:
+			return fmt.Errorf("up can only be called on a service or container")
 		}
 		c.Select("id")
 		return nil
