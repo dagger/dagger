@@ -42,6 +42,11 @@ func (m *Minimal) EchoOptionalPointer(msg **Optional[**string]) string {
 	return m.Echo(**v)
 }
 
+func (m *Minimal) EchoOptionalSlice(msg Optional[[]string]) string {
+	v := msg.GetOr([]string{"foobar"})
+	return m.Echo(strings.Join(v, "+"))
+}
+
 func (m *Minimal) Echoes(msgs []string) []string {
 	return []string{m.Echo(strings.Join(msgs, " "))}
 }
