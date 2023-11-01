@@ -759,7 +759,8 @@ img[alt="github-contribute"] {
 }
 
 // select only the guide index page
-[class~="docs-doc-id-current\/guides"] {
+[class~="docs-doc-id-current\/guides"],
+[class~="docs-doc-id-zenith\/developer\/guides"] {
   .container {
     max-width: initial;
     width: 100%;
@@ -773,7 +774,8 @@ img[alt="github-contribute"] {
 }
 
 // select all guides but the guide index page
-[class*="docs-doc-id-current\/guides\/"] {
+[class*="docs-doc-id-current\/guides\/"],
+[class*="docs-doc-id-zenith\/developer\/guides\/"] {
   .container {
     max-width: initial;
     width: 100%;
