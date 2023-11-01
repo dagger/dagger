@@ -39,7 +39,7 @@
     "sass": "^1.69.3",
     "spectaql": "^2.3.0",
     "typedoc": "^0.24.7",
-    "typedoc-plugin-markdown": "^3.16.0",
+    "typedoc-plugin-markdown": "^3.17.0",
     "typescript": "^5.0.4",
     "url-loader": "^4.1.1"
   },
