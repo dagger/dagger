@@ -24,6 +24,11 @@ var (
 var rootCmd = &cobra.Command{
 	Use:  "codegen",
 	RunE: ClientGen,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// if we got this far, CLI parsing worked just fine; no
+		// need to show usage for runtime errors
+		cmd.SilenceUsage = true
+	},
 }
 
 func init() {
@@ -94,7 +99,6 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
