@@ -43,9 +43,9 @@ func (ref *Ref) String() string {
 		return p
 	}
 	if ref.Version == "" {
-		return ref.Path
+		return filepath.Join(ref.Path, ref.SubPath)
 	}
-	return fmt.Sprintf("%s@%s", ref.Path, ref.Version)
+	return fmt.Sprintf("%s@%s", filepath.Join(ref.Path, ref.SubPath), ref.Version)
 }
 
 func (ref *Ref) Symbolic() string {
