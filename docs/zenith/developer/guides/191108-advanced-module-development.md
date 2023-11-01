@@ -16,8 +16,9 @@ Once you've understood the basics of writing your own Dagger modules, you're goi
 
 This guide assumes that:
 
+- You have a good understanding of the Dagger Go or Python SDKs. If not, refer to the [Go](https://pkg.go.dev/dagger.io/dagger) or [Python](https://dagger-io.readthedocs.org/) SDK reference.
 - You have the Dagger CLI installed. If not, [install Dagger](../../../current/cli/465058-install.md).
-- You have a Dagger module. If not, create a module using the [Go](../../developer/quickstarts/525021-go.md) or [Python](../../developer/quickstarts/419481-python.md) quickstarts
+- You have a Dagger module. If not, create a module using the [Go](../../developer/quickstarts/525021-go.md) or [Python](../../developer/quickstarts/419481-python.md) quickstarts.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Use modules in other modules
