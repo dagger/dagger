@@ -1,6 +1,10 @@
 ---
 slug: /zenith/developer/191108/advanced-module-development
 displayed_sidebar: "zenith"
+category: "guides"
+authors: ["Vikram Vaswani"]
+tags: ["modules"]
+date: "2023-03-31"
 ---
 
 import Tabs from "@theme/Tabs";
