@@ -130,7 +130,10 @@ async function createConfig() {
       ],
       "docusaurus-plugin-image-zoom",
       path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
-      path.resolve(__dirname, "plugins/docusaurus-plugin-guides"),
+      [path.resolve(__dirname, "plugins/docusaurus-plugin-guides"), {
+        currentGuidesPath: "../docs/current/guides",
+        zenithGuidesPath: "../docs/zenith/developer/guides"
+      }],
       path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
       "docusaurus-plugin-includes",
       [
