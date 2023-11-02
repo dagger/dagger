@@ -1856,6 +1856,36 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 		require.NoError(t, err)
 		require.Equal(t, strings.TrimSpace(out), "bar+bar")
 	})
+
+	t.Run("return list objects", func(t *testing.T) {
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+type Minimal struct {}
+
+type Foo struct {
+	Bar int ` + "`" + `json:"bar"` + "`" + `
+}
+
+func (m *Minimal) Fn() []*Foo {
+	var foos []*Foo
+	for i := 0; i < 3; i++ {
+		foos = append(foos, &Foo{Bar: i})
+	}
+	return foos
+}
+`,
+			})
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), "0\n1\n2")
+	})
 }
 
 func TestModuleGoSyncDeps(t *testing.T) {
