@@ -337,7 +337,7 @@ module.exports = {
         },
         {
           type: "doc",
-          id: "zenith/developer/module-publishing",
+          id: "zenith/developer/publishing-modules",
         },
         {
           type: "doc",
