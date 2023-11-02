@@ -16,10 +16,10 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
+	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
-	giturls "github.com/whilp/git-urls"
 )
 
 var (
@@ -294,7 +294,7 @@ var modulePublishCmd = &cobra.Command{
 }
 
 func originToPath(origin string) (string, error) {
-	url, err := giturls.Parse(origin)
+	url, err := gitutil.ParseURL(origin)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse git remote origin URL: %w", err)
 	}

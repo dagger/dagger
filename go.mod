@@ -86,7 +86,6 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/vito/midterm v0.1.4
 	github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007
-	github.com/whilp/git-urls v1.0.0
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/oauth2 v0.13.0
 	golang.org/x/tools v0.14.0
