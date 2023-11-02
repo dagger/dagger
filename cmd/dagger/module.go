@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"dagger.io/dagger"
@@ -20,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
+	giturls "github.com/whilp/git-urls"
 )
 
 var (
@@ -293,16 +293,12 @@ var modulePublishCmd = &cobra.Command{
 	},
 }
 
-var originRegexp = regexp.MustCompile(`^(git@|https://)(github.com)[:/]([^/]+)/([^/]+)`)
-
 func originToPath(origin string) (string, error) {
-	matches := originRegexp.FindStringSubmatch(origin)
-	if len(matches) != 5 {
-		return "", fmt.Errorf("failed to parse git remote origin URL: %s does not match %q", origin, originRegexp)
+	url, err := giturls.Parse(origin)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse git remote origin URL: %w", err)
 	}
-
-	host, login, repoName := matches[2], matches[3], matches[4]
-	return strings.TrimSuffix(path.Join(host, login, repoName), ".git"), nil
+	return strings.TrimSuffix(path.Join(url.Host, url.Path), ".git"), nil
 }
 
 func updateModuleConfig(
