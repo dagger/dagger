@@ -1,5 +1,7 @@
 ---
 slug: /cli/979595/reference
+pagination_next: null
+pagination_prev: null
 ---
 
 # Reference

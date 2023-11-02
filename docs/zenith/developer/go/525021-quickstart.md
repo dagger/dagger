@@ -62,7 +62,7 @@ Let's try changing the `main.go` file.
 
 1. The module is named `potato`, so that means all methods on the `Potato` type are published as functions. Let's replace the auto-generated template with something simpler:
 
-  ```go file=./snippets/step2/main.go
+  ```go file=./snippets/quickstart/step2/main.go
   ```
 
   Module functions are flexible in what parameters they can take. You can include
@@ -104,7 +104,7 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to accept multiple parameters (some of which are optional):
 
-  ```go file=./snippets/step3a/main.go
+  ```go file=./snippets/quickstart/step3a/main.go
   ```
 
   The optional parameters are specified using the special `Optional` type and assigned default values. These optional parameters can then be set using `dagger call` or `dagger query` (exactly as if they'd been specified as top-level options):
@@ -121,7 +121,7 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to return a custom `PotatoMessage` type:
 
-  ```go file=./snippets/step3b/main.go
+  ```go file=./snippets/quickstart/step3b/main.go
   ```
 
   Test it using `dagger call` or `dagger query`:
@@ -156,7 +156,7 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Replace the generated `main.go` file with the following code:
 
-  ```go file=./snippets/trivy/main.go
+  ```go file=./snippets/quickstart/trivy/main.go
   ```
 
   Here, the `ScanImage()` function accepts four parameters (apart from the context):

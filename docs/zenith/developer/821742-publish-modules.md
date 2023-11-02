@@ -1,10 +1,8 @@
 ---
 slug: /zenith/developer/191108/publish-modules
 displayed_sidebar: "zenith"
-category: "guides"
 authors: ["Alex Suraci"]
-tags: ["modules"]
-date: "2023-03-31"
+date: "2023-11-03"
 ---
 
 # Publish Modules to the Daggerverse
@@ -17,7 +15,7 @@ This guide explains how to publish your modules to the [Daggerverse](https://dag
 
 This guide assumes that:
 
-- You have a Dagger module. If not, create a module using the [Go](../../developer/quickstarts/525021-go.md) or [Python](../../developer/quickstarts/419481-python.md) quickstarts.
+- You have a Dagger module. If not, create a module using the [Go](./go/525021-quickstart.md) or [Python](./python/419481-quickstart.md) quickstarts.
 - You have a GitHub account. If not, [register for a GitHub account](https://github.com/signup).
 
 ## Process

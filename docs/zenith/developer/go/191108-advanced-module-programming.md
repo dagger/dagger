@@ -1,10 +1,8 @@
 ---
 slug: /zenith/developer/go/191108/advanced-module-programming
 displayed_sidebar: "zenith"
-category: "guides"
 authors: ["Alex Suraci", "Erik Sipsma"]
-tags: ["modules"]
-date: "2023-03-31"
+date: "2023-11-03"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -22,7 +20,7 @@ This guide assumes that:
 
 - You have a good understanding of the Dagger Go or Python SDKs. If not, refer to the [Go](https://pkg.go.dev/dagger.io/dagger) or [Python](https://dagger-io.readthedocs.org/) SDK reference.
 - You have the Dagger CLI installed. If not, [install Dagger](../../../current/cli/465058-install.md).
-- You have a Dagger module. If not, create a module using the [Go](../../developer/quickstarts/525021-go.md) or [Python](../../developer/quickstarts/419481-python.md) quickstarts.
+- You have a Dagger module. If not, create a module using the [Go](../../developer/go/525021-quickstart.md) or [Python](../../developer/python/419481-quickstart.md) quickstarts.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Use modules in other modules
