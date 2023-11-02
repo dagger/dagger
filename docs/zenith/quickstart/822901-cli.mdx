@@ -14,3 +14,120 @@ import BrowserOnly from "@docusaurus/BrowserOnly";
 ## Install the Dagger CLI
 
 {@include: ../../current/partials/_install-cli.md}
+
+## CLI Commands
+
+We will be using [an example module](https://daggerverse.dev/mod/github.com/sipsma/daggerverse/example) from the Daggerverse for the rest of this quickstart.
+
+Simplest is to just export the following environment variable to automatically use the module in all subsequent CLI commands:
+`export DAGGER_MODULE=github.com/sipsma/daggerverse/example`
+
+You can alternatively clone the repo to your local disk and execute all the dagger CLI commands from the cloned directory:
+```
+git clone https://github.com/sipsma/daggerverse.git
+cd daggerverse/example
+```
+Cloning the directory locally may be preferable if you'd like to explore and/or modify the module code as you follow this guide.
+
+### dagger functions
+
+The `functions` command displays what APIs the module exposes.
+
+`dagger functions`
+
+### dagger call
+
+The `call` command is the simplest way to interact with a module. It simply executes a function and shows you the output.
+
+It's especially useful for running tasks that only output simple types such as strings or that perform some work as a side effect, such as a deployment.
+
+`dagger call` and all other commands can accept arguments, which can be required or optional.
+
+We'll start with an example of running tests with `dagger call`. Let's start by seeing what this `test` function does and what flags it accepts:
+
+`dagger call test --help`
+
+Now let's just call `test` with no arguments, which is allowed since all the flags are optional.
+
+`dagger call test`
+
+Now let's try providing an arg to run the tests with a different version of node
+
+`dagger call test --node-version 18`
+
+This module also has a `build` function, which just builds the app and returns the directory containing the app's web assets ready to be served by an http server. Even though it returns a directory, we can still call it, which verifies the app builds successfully and shows us the directory contents as output.
+
+`dagger call build`
+
+The module also has a `publish-container` function that pushes a container containing the app to a registry.
+* TODO: note about ttlsh
+
+`dagger call publish-container`
+
+#### More Examples
+
+* TODO collect one-liner `dagger call` statements that use different modules from daggerverse and show off more cool use cases
+
+### dagger download
+
+The `download` command allows you to retrieve file, directory and container outputs from functions and write them to your local filesystem.
+
+Let's try it out w/ the `build` function we used above.
+
+`dagger download --export-path ./out build`
+
+`download` also works with functions that return Containers, in which case the container is exported as a tar to your file system.
+
+`dagger download --export-path ./container.tar app-container`
+
+#### More Examples
+
+* TODO collect one-liner `dagger download` statements that use different modules from daggerverse and show off more cool use cases
+
+### dagger shell
+
+The `shell` command can be used to open interactive sessions with any container returned by a function.
+
+This is very useful for debugging and experimenting since it allows you to interact with containers directly.
+* TODO warning that while many TUI programs such as `htop` or `vim` work, some more advanced programs may have slightly "off" output due to current incompatibilities with our terminal emulator.
+
+`dagger shell debug`
+
+By default, `shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
+
+However, you can also override what command is executed when the shell is opened via the `--entrypoint` flag.
+
+We can use that to instead drop into a `node` shell in the debug container rather than `sh`:
+
+`dagger shell --entrypoint node debug`
+
+#### More Examples
+
+* TODO collect one-liner `dagger shell` statements that use different modules from daggerverse and show off more cool use cases
+* `dagger -m github.com/sipsma/daggerverse/yamlinvaders shell play`
+
+### dagger up
+
+The `up` command allows Service and Container types returned by a function to be executed and have any exposed ports forwarded to your host machine.
+
+This has many potential use cases such as manually testing web servers or databases directly from your own browser/machine.
+
+Let's use this to build the web app, serve it and then access it right from our own browser.
+* NOTE that it's required the service/container has `ExposedPort`s set
+
+`dagger up --native service`
+
+You should now be able to access the web server from your browser at `localhost:8080`.
+
+The `--native` flag results in the exposed ports on the container being re-used when setting up network listeners on your host. That's why you were able to visit the site at port `8080` specifically.
+
+It's also possible to choose a different port on your host via the `--port` flag:
+
+`dagger up --port 9090:8080 service`
+
+This results in the container's port `8080` being mapped to `9090` on your host; you can now view the site in your browser at `localhost:9090` instead.
+
+#### More Examples
+
+* TODO collect one-liner `dagger up` statements that use different modules from daggerverse and show off more cool use cases
+
