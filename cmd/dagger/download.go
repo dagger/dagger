@@ -14,7 +14,7 @@ var downloadCmd = &FuncCommand{
 	Short:   "Download an asset from module function",
 	Long:    "Download an asset returned by a module function and save it to the host.\n\nWorks with a Directory, File or Container.",
 	Init: func(cmd *cobra.Command) {
-		cmd.PersistentFlags().StringVar(&exportPath, "export-path", ".", "Path to export to")
+		cmd.PersistentFlags().StringVarP(&exportPath, "output", "o", ".", "Path to export to")
 	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		switch name {
@@ -30,9 +30,9 @@ var downloadCmd = &FuncCommand{
 	BeforeRequest: func(_ *FuncCommand, cmd *cobra.Command, returnType *modTypeDef) error {
 		switch returnType.ObjectName() {
 		case Directory, File, Container:
-			flag := cmd.Flags().Lookup("export-path")
+			flag := cmd.Flags().Lookup("output")
 			if returnType.ObjectName() == Container && flag != nil && !flag.Changed {
-				return fmt.Errorf("flag --export-path is required for containers")
+				return fmt.Errorf("flag --output is required for containers")
 			}
 			return nil
 		}
