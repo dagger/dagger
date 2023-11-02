@@ -1,5 +1,5 @@
 ---
-slug: /zenith/developer/go/191108/advanced-module-programming
+slug: /zenith/developer/go/191108/advanced-programming
 displayed_sidebar: "zenith"
 authors: ["Alex Suraci", "Erik Sipsma"]
 date: "2023-11-03"
@@ -8,7 +8,7 @@ date: "2023-11-03"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# Advanced Module Programming
+# Advanced Programming
 
 ## Introduction
 
@@ -79,7 +79,7 @@ So long as your object can be JSON-serialized by your SDK, its state will be pre
 
 Here is an example module using the Go SDK:
 
-```go file=./snippets/advanced-module-programming/chaining/main.go
+```go file=./snippets/advanced-programming/chaining/main.go
 ```
 
 </TabItem>

@@ -2,9 +2,10 @@
 slug: /zenith/developer/go/525021/quickstart
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
+title: "Quickstart"
 ---
 
-# Write Your First Dagger Module in Go
+# Quickstart
 
 {@include: ../../partials/_experimental.md}
 

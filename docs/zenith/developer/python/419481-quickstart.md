@@ -3,7 +3,7 @@ slug: /zenith/developer/python/419481/quickstart
 displayed_sidebar: "zenith"
 ---
 
-# Write Your First Dagger Module in Python
+# Quickstart
 
 {@include: ../../partials/_experimental.md}
 

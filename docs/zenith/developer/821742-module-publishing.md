@@ -1,11 +1,11 @@
 ---
-slug: /zenith/developer/191108/publish-modules
+slug: /zenith/developer/191108/module-publishing
 displayed_sidebar: "zenith"
 authors: ["Alex Suraci"]
 date: "2023-11-03"
 ---
 
-# Publish Modules to the Daggerverse
+# Module Publishing
 
 ## Introduction
 
