@@ -1,5 +1,5 @@
 ---
-slug: /zenith/developer/quickstarts/419481/python
+slug: /zenith/developer/python/419481/quickstart
 displayed_sidebar: "zenith"
 ---
 

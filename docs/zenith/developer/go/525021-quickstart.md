@@ -1,5 +1,5 @@
 ---
-slug: /zenith/developer/quickstarts/525021/go
+slug: /zenith/developer/go/525021/quickstart
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
 ---
