@@ -51,4 +51,49 @@ Dagger may be a good fit if you are...
 
 ## How does it work?
 
-TODO
+```mermaid
+graph LR;
+
+program["Dagger CLI"]
+
+engine["Dagger Engine"]
+oci["OCI container runtime"]
+
+subgraph ModA["Module A"]
+    FnA1["Function A1"]
+    FnA2["Function A2"]
+end
+
+subgraph ModB["Module B"]
+    FnB1["Function B1"]
+    FnB2["Function B2"]
+end
+
+subgraph A["your build pipeline"]
+  A1[" "] -.-> A2[" "] -.-> A3[" "]
+end
+
+subgraph B["your test pipeline"]
+  B1[" "] -.-> B2[" "] -.-> B3[" "] -.-> B4[" "]
+end
+
+subgraph C["your deploy pipeline"]
+  C1[" "] -.-> C2[" "] -.-> C3[" "] -.-> C4[" "]
+end
+
+program -..-> engine -..-> oci
+oci -..-> A1 & B1 & C1
+
+oci -..-> ModB
+engine  <-..->|API Calls| ModB
+
+oci -..-> ModA
+engine  <-..->|API Calls| ModA
+```
+
+1. You execute a Dagger CLI command like `call`, `shell`, `up`, etc. against a module
+1. The CLI opens a new session to a Dagger Engine: either by connecting to an existing engine, or by provisioning one on-the-fly.
+1. The CLI uses the built-in core API to load the module into its session, making the module's API available for calls. Each module uses an SDK, which is responsible for turning the module's source code into an executable format that interfaces with the Dagger engine.
+1. The CLI calls the requested APIs based on the user inputs to the command. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future.
+1. The engine executes the module in a container. The module itself is connected back to the same session and can Dagger API calls. The module has access to the built-in core API and the APIs of any modules it has declared a dependency on.
+1. When the engine receives an API request, it computes a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result, and starts processing operations concurrently. The final result is returned back to the caller once resolved, making it available for further processing, including as input to more API calls.
