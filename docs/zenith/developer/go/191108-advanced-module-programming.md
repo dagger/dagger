@@ -1,5 +1,5 @@
 ---
-slug: /zenith/developer/191108/advanced-module-programming
+slug: /zenith/developer/go/191108/advanced-module-programming
 displayed_sidebar: "zenith"
 category: "guides"
 authors: ["Alex Suraci", "Erik Sipsma"]

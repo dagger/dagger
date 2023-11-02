@@ -256,11 +256,6 @@ module.exports = {
       label: "Introduction",
     },
     {
-      type: "doc",
-      id: "zenith/quickstart/index",
-      label: "Quickstart",
-    },
-    {
       type: "category",
       label: "Using Dagger",
       collapsible: true,
@@ -270,7 +265,23 @@ module.exports = {
           type: "doc",
           label: "Installation",
           id: "zenith/user/install",
-        }
+        },
+        {
+          type: "category",
+          label: "Quickstart",
+          items: [
+            "zenith/user/quickstart/index",
+            "zenith/user/quickstart/setup",
+            "zenith/user/quickstart/functions",
+            "zenith/user/quickstart/call",
+            "zenith/user/quickstart/download",
+            "zenith/user/quickstart/shell",
+            "zenith/user/quickstart/up",
+            "zenith/user/quickstart/call-remote",
+            "zenith/user/quickstart/conclusion",
+          ]
+        },
+
       ],
     },
     {
@@ -281,26 +292,44 @@ module.exports = {
       items: [
         {
           type: "doc",
-          label: "Quickstart (Go)",
-          id: "zenith/developer/quickstarts/go",
+          label: "Introduction",
+          id: "zenith/developer",
         },
         {
-          type: "doc",
-          label: "Quickstart (Python)",
-          id: "zenith/developer/quickstarts/python",
+          type: "category",
+          label: "Go",
+          items: [
+            "zenith/developer/quickstarts/go",
+            {
+              type: "link",
+              label: "Go SDK Reference 🔗",
+              href: "https://pkg.go.dev/dagger.io/dagger",
+            },
+
+          ]
         },
         {
-          type: "doc",
-          id: "zenith/developer/guides",
-          label: "Guides",
+          type: "category",
+          label: "Python",
+          items: [
+            "zenith/developer/quickstarts/python",
+            {
+              type: "link",
+              label: "Python SDK Reference 🔗",
+              href: "https://dagger-io.readthedocs.org/",
+            },
+          ]
         },
         {
-          type: "doc",
-          id: "zenith/developer/known-issues",
-        },
-        {
-          type: "doc",
+          type: "category",
+          label: "Troubleshooting",
           id: "zenith/developer/troubleshooting",
+          items: [
+            {
+              type: "doc",
+              id: "zenith/developer/known-issues",
+            },
+          ]
         },
       ],
     },
@@ -320,37 +349,7 @@ module.exports = {
           label: "API Reference 🔗",
           href: "https://docs.dagger.io/api/reference",
         },
-        {
-          type: "link",
-          label: "Go SDK Reference 🔗",
-          href: "https://pkg.go.dev/dagger.io/dagger",
-        },
-        {
-          type: "link",
-          label: "Node.js SDK Reference 🔗",
-          href: "https://docs.dagger.io/current/sdk/nodejs/reference/modules",
-        },
-        {
-          type: "link",
-          label: "Python SDK Reference 🔗",
-          href: "https://dagger-io.readthedocs.org/",
-        },
-        {
-          type: "link",
-          label: "Elixir SDK (Experimental) Reference 🔗",
-          href: "https://hexdocs.pm/dagger/Dagger.html",
-        },
-        {
-          type: "category",
-          label: "Dagger Cloud Reference",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "current/cloud/reference/user-interface",
-            "current/cloud/reference/roles-permissions",
-            "current/cloud/reference/org-administration",
-          ]
-        },
+
       ],
     },
     {
@@ -366,30 +365,6 @@ module.exports = {
       label: "Changelog 🔗",
       href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
-  ],
-  zenith_quickstart: [
-    {
-      type: "doc",
-      id: "zenith/index",
-      label: "Home",
-    },
-    {
-      type: "category",
-      label: "Quickstart",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        "zenith/quickstart/index",
-        "zenith/quickstart/cli",
-        "zenith/quickstart/functions",
-        "zenith/quickstart/call",
-        "zenith/quickstart/download",
-        "zenith/quickstart/shell",
-        "zenith/quickstart/up",
-        "zenith/quickstart/call-remote",
-        "zenith/quickstart/conclusion",
-      ]
-    }
   ],
   0.2: [
     {
