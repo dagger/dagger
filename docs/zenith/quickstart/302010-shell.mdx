@@ -1,0 +1,44 @@
+---
+slug: /zenith/quickstart/302010/shell
+displayed_sidebar: "zenith_quickstart"
+hide_table_of_contents: true
+title: "Start an interactive shell in a container from a function"
+---
+
+# Quickstart
+
+## Start an interactive shell in a container from a function
+
+The `dagger shell` command can be used to open an interactive shell session with any container returned by a function.
+
+This is very useful for debugging and experimenting since it allows you to interact with containers directly.
+
+TODO `dagger shell debug`
+
+By default, `dagger shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
+
+### Override the entrypoint
+
+However, you can also override the command that is executed when the shell session starts via the `--entrypoint` flag. You can use this to (for example) drop into a `node` shell in the debug container rather than `sh`. Use the following command to understand how this works:
+
+```shell
+dagger shell --entrypoint node debug
+```
+
+This command drops you into an interactive Node.js shell, allowing you to directly execute Node.js code in the running container:
+
+```shell
+Welcome to Node.js v16.20.2.
+Type ".help" for more information.
+> console.log("hello from node in a container")
+hello from node in a container
+undefined
+>
+```
+
+:::caution
+While most terminal programs such as `htop` or `vim` work with `dagger shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
+:::
+
+* TODO collect one-liner `dagger shell` statements that use different modules from daggerverse and show off more cool use cases
+* `dagger -m github.com/sipsma/daggerverse/yamlinvaders shell play`
