@@ -1,5 +1,5 @@
 ---
-slug: /zenith/developer/191108/advanced-module-development
+slug: /zenith/developer/191108/advanced-module-programming
 displayed_sidebar: "zenith"
 category: "guides"
 authors: ["Alex Suraci", "Erik Sipsma"]
@@ -10,7 +10,7 @@ date: "2023-03-31"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# Advanced Module Development
+# Advanced Module Programming
 
 ## Introduction
 

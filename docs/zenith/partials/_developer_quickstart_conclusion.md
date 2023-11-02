@@ -4,5 +4,5 @@ Continue your journey into Dagger programming with the following resources:
 
 - The [Daggerverse](https://daggerverse.dev), an online catalog of Dagger modules for you to use and learn from
 - Guide on [publishing modules to the Daggerverse](../guides/821742-publish-modules.md)
-- Guide on [advanced module development](../guides/191108-advanced-module-development.md)
+- Guide on [advanced module development](../guides/191108-advanced-module-programming.md)
 - Reference documentation for the [Go](https://pkg.go.dev/dagger.io/dagger) and [Python](https://dagger-io.readthedocs.org/) SDKs

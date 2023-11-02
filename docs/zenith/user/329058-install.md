@@ -1,16 +1,13 @@
 ---
-slug: /zenith/quickstart/822901/cli
-displayed_sidebar: "zenith_quickstart"
-hide_table_of_contents: true
-title: "Install the Dagger CLI"
+slug: /zenith/user/install
 ---
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 
-# Quickstart
+# Installation
 
-## Install the Dagger CLI
+{@include: ../partials/_experimental.md}
 
 {@include: ../../current/partials/_install-cli.md}

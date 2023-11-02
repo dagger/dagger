@@ -269,7 +269,7 @@ module.exports = {
         {
           type: "doc",
           label: "Installation",
-          id: "current/cli/install",
+          id: "zenith/user/install",
         }
       ],
     },
@@ -380,8 +380,13 @@ module.exports = {
       collapsed: false,
       items: [
         "zenith/quickstart/index",
-        "zenith/quickstart/basics",
         "zenith/quickstart/cli",
+        "zenith/quickstart/functions",
+        "zenith/quickstart/call",
+        "zenith/quickstart/download",
+        "zenith/quickstart/shell",
+        "zenith/quickstart/up",
+        "zenith/quickstart/call-remote",
         "zenith/quickstart/conclusion",
       ]
     }
