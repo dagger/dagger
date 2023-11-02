@@ -1,8 +1,10 @@
-  ```
+  ```shell
   dagger call  scan-image --image-ref alpine:latest
   ```
+
   Here's an example of the output:
-  ```
+
+  ```shell
   ✔ dagger call scan-image [5.28s]
   ┃
   ┃ alpine:latest (alpine 3.18.4)

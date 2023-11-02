@@ -95,14 +95,13 @@ TODO
 Use `dagger call --help` to get help on the commands and flags available.
 :::
 
-
 ## Example: Write a vulnerability scanning module
 
 The example module in the previous sections was just that - an example. Next, let's put everything you've learnt to the test, by building a module with a real-world application: scanning a container image for vulnerabilities with [Trivy](https://trivy.dev/).
 
 1. Initialize a new module:
 
-  ```
+  ```shell
   mkdir trivy/
   cd trivy/
   dagger mod init --name=trivy --sdk=python

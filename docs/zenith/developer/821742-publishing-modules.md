@@ -1,11 +1,11 @@
 ---
-slug: /zenith/developer/191108/module-publishing
+slug: /zenith/developer/191108/publishing-modules
 displayed_sidebar: "zenith"
 authors: ["Alex Suraci"]
 date: "2023-11-03"
 ---
 
-# Module Publishing
+# Publishing Modules
 
 ## Introduction
 
@@ -48,8 +48,8 @@ To publish a module to the Daggerverse, follow the steps below:
 
 ## Limitations
 
-* Currently, only URLs beginning with `github.com` are supported.
-* The Daggerverse only fetches publicly available information from GitHub. Modules are not hosted on the Daggerverse.
+- Currently, only URLs beginning with `github.com` are supported.
+- The Daggerverse only fetches publicly available information from GitHub. Modules are not hosted on the Daggerverse.
 
 :::tip
  If you need a module removed from the Daggerverse for some reason, let the Dagger team know in [Discord](https://discord.gg/dagger-io).

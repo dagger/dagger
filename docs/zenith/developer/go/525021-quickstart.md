@@ -142,14 +142,13 @@ Your module functions can accept and return multiple different types, not just b
 Use `dagger call --help` to get help on the commands and flags available.
 :::
 
-
 ## Example: Write a vulnerability scanning module
 
 The example module in the previous sections was just that - an example. Next, let's put everything you've learnt to the test, by building a module for a real-world use case: scanning a container image for vulnerabilities with [Trivy](https://trivy.dev/).
 
 1. Initialize a new module:
 
-  ```
+  ```shell
   mkdir trivy/
   cd trivy/
   dagger mod init --name=trivy --sdk=go
