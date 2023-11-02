@@ -5,7 +5,7 @@ displayed_sidebar: "zenith"
 
 # Dagger Documentation
 
-{@include: ./partials/_experimental.md}
+{@include: ./partials/\_experimental.md}
 
 ## What is Dagger?
 
@@ -29,25 +29,25 @@ Dagger Cloud complements the Dagger Engine with a production-grade control plane
 
 Dagger may be a good fit if you are...
 
-* Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
-* A platform engineer writing custom tooling, with the goal of unifying application delivery across organizational silos.
-* A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice.
+- Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
+- A platform engineer writing custom tooling, with the goal of unifying application delivery across organizational silos.
+- A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice.
 
 ### Benefits to development teams
 
-* Reduce complexity: Even complex builds can be expressed as a few simple functions.
-* No more "push and pray": Everything CI can do, your local dev environment can do too.
-* Native language benefits: Use the same programming language to develop your application and its delivery tooling.
-* Easy onboarding of new developers: If you can build, test and deploy - they can too.
-* Caching by default: Dagger caches everything. Expect 2x to 10x speedups.
-* Cross-team collaboration: Reuse another team's workflows without learning their stack.
+- Reduce complexity: Even complex builds can be expressed as a few simple functions.
+- No more "push and pray": Everything CI can do, your local dev environment can do too.
+- Native language benefits: Use the same programming language to develop your application and its delivery tooling.
+- Easy onboarding of new developers: If you can build, test and deploy - they can too.
+- Caching by default: Dagger caches everything. Expect 2x to 10x speedups.
+- Cross-team collaboration: Reuse another team's workflows without learning their stack.
 
 ### Benefits to platform teams
 
-* Reduce CI lock-in: Dagger functions run on all major CI platforms - no proprietary DSL needed.
-* Eliminate bottlenecks: Let application teams write their own functions. Enable standardization by providing them a library of reusable components.
-* Save time and money with faster CI runs: CI pipelines that are "Daggerized" typically run 2x to 10x faster, thanks to caching and concurrency. This means developers waste less time waiting for CI, and you spend less money on CI compute.
-* Benefit from a viable platform strategy: Development teams need flexibility, and you need control. Dagger gives you a way to reconcile the two, in an incremental way that leverages the stack you already have.
+- Reduce CI lock-in: Dagger functions run on all major CI platforms - no proprietary DSL needed.
+- Eliminate bottlenecks: Let application teams write their own functions. Enable standardization by providing them a library of reusable components.
+- Save time and money with faster CI runs: CI pipelines that are "Daggerized" typically run 2x to 10x faster, thanks to caching and concurrency. This means developers waste less time waiting for CI, and you spend less money on CI compute.
+- Benefit from a viable platform strategy: Development teams need flexibility, and you need control. Dagger gives you a way to reconcile the two, in an incremental way that leverages the stack you already have.
 
 ## How does it work?
 
@@ -57,38 +57,36 @@ graph LR;
 program["Dagger CLI"]
 
 engine["Dagger Engine"]
-oci["OCI container runtime"]
 
 subgraph ModA["Module A"]
-    FnA1["Function A1"]
-    FnA2["Function A2"]
+    FnA1["Function"]
+    FnA2["Function"]
 end
 
 subgraph ModB["Module B"]
-    FnB1["Function B1"]
-    FnB2["Function B2"]
+    FnB1["Function"]
+    FnB2["Function"]
 end
 
-subgraph A["your build pipeline"]
+subgraph A["build pipeline"]
   A1[" "] -.-> A2[" "] -.-> A3[" "]
 end
 
-subgraph B["your test pipeline"]
-  B1[" "] -.-> B2[" "] -.-> B3[" "] -.-> B4[" "]
+subgraph B["test pipeline"]
+  B1[" "] -.-> B2[" "] -.-> B3[" "]
 end
 
-subgraph C["your deploy pipeline"]
-  C1[" "] -.-> C2[" "] -.-> C3[" "] -.-> C4[" "]
+subgraph C["deploy pipeline"]
+  C1[" "] -.-> C2[" "] -.-> C3[" "]
 end
 
-program -..-> engine -..-> oci
-oci -..-> A1 & B1 & C1
 
-oci -..-> ModB
-engine  <-..->|API Calls| ModB
+engine  <-..-> ModB
 
-oci -..-> ModA
-engine  <-..->|API Calls| ModA
+engine  <-..-> ModA
+
+program -..-> engine
+engine -..-> A1 & B1 & C1
 ```
 
 1. You execute a Dagger CLI command like `call`, `shell`, `up`, etc. against a module
