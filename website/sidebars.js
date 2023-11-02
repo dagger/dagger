@@ -293,13 +293,13 @@ module.exports = {
         {
           type: "doc",
           label: "Introduction",
-          id: "zenith/developer",
+          id: "zenith/developer/index",
         },
         {
           type: "category",
           label: "Go",
           items: [
-            "zenith/developer/quickstarts/go",
+            "zenith/developer/go/quickstart",
             {
               type: "link",
               label: "Go SDK Reference 🔗",
@@ -312,7 +312,7 @@ module.exports = {
           type: "category",
           label: "Python",
           items: [
-            "zenith/developer/quickstarts/python",
+            "zenith/developer/python/quickstart",
             {
               type: "link",
               label: "Python SDK Reference 🔗",
@@ -321,15 +321,9 @@ module.exports = {
           ]
         },
         {
-          type: "category",
+          type: "doc",
           label: "Troubleshooting",
           id: "zenith/developer/troubleshooting",
-          items: [
-            {
-              type: "doc",
-              id: "zenith/developer/known-issues",
-            },
-          ]
         },
       ],
     },
