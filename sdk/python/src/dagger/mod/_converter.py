@@ -7,7 +7,13 @@ import typing_extensions
 from cattrs.preconf.json import make_converter as make_json_converter
 
 from ._types import MissingType, ObjectDefinition
-from ._utils import get_doc, is_optional, non_optional, syncify
+from ._utils import (
+    get_doc,
+    is_optional,
+    non_optional,
+    strip_annotations,
+    syncify,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +35,7 @@ def make_converter():
 
     def dagger_type_structure(id_, cls):
         """Get dagger object type from id."""
+        cls = strip_annotations(cls)
         return dagger.default_client()._get_object_instance(id_, cls)  # noqa: SLF001
 
     def dagger_type_unstructure(obj):
