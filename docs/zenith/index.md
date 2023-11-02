@@ -89,9 +89,10 @@ program -..-> engine
 engine -..-> A1 & B1 & C1
 ```
 
-1. You execute a Dagger CLI command like `call`, `shell`, `up`, etc. against a module
+1. You execute a Dagger CLI command like `call`, `shell`, `up`, etc. against a module.
 1. The CLI opens a new session to a Dagger Engine: either by connecting to an existing engine, or by provisioning one on-the-fly.
-1. The CLI uses the built-in core API to load the module into its session, making the module's API available for calls. Each module uses an SDK, which is responsible for turning the module's source code into an executable format that interfaces with the Dagger engine.
+1. The CLI uses the built-in core API to load the module into its session, making the module's API available for calls. Each module uses an SDK, which is responsible for turning the module's source code into an executable format that interfaces with the Dagger Engine.
 1. The CLI calls the requested APIs based on the user inputs to the command. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future.
-1. The engine executes the module in a container. The module itself is connected back to the same session and can Dagger API calls. The module has access to the built-in core API and the APIs of any modules it has declared a dependency on.
-1. When the engine receives an API request, it computes a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result, and starts processing operations concurrently. The final result is returned back to the caller once resolved, making it available for further processing, including as input to more API calls.
+1. The Dagger Engine executes the module in a container. The module itself is connected back to the same session and can use Dagger API calls. The module has access to the built-in core API and the APIs of any modules on which it has a declared dependency.
+1. When the Dagger Engine receives an API request, it computes a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result, and starts processing operations concurrently.
+1. The final result is returned back to the caller once resolved, making it available for further processing, including as input to other API calls.
