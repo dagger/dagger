@@ -1,9 +1,10 @@
 import json
+from typing import Annotated
 
 import pytest
 
 import dagger
-from dagger.mod import Module
+from dagger.mod import Doc, Module
 
 
 @pytest.mark.anyio()
@@ -12,11 +13,12 @@ async def test_unstructure_structure():
 
     @mod.object_type
     class Bar:
-        ctr: dagger.Container = mod.field()
+        msg: Annotated[str, Doc("Echo message")] = mod.field(default="foobar")
+        ctr: Annotated[dagger.Container, Doc("A container")] = mod.field()
 
         @mod.function
         async def bar(self) -> str:
-            return await self.ctr.with_exec(["echo", "-n", "hello"]).stdout()
+            return await self.ctr.with_exec(["echo", "-n", self.msg]).stdout()
 
     @mod.function
     def foo() -> Bar:
@@ -31,4 +33,4 @@ async def test_unstructure_structure():
         resolver = mod.get_resolver(mod.get_resolvers("foo"), "Bar", "bar")
         result = await mod.get_result(resolver, parent, {})
 
-        assert result == "hello"
+        assert result == "foobar"

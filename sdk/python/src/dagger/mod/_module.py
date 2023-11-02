@@ -4,6 +4,7 @@ import dataclasses
 import inspect
 import json
 import logging
+import textwrap
 import types
 import typing
 from collections import Counter, defaultdict
@@ -190,7 +191,10 @@ class Module:
             msg = f"Failed to serialize result: {e}"
             raise InternalError(msg) from e
 
-        logger.debug("output => %s", repr(output))
+        logger.debug(
+            "output => %s",
+            textwrap.shorten(repr(output), 144),
+        )
         await self._fn_call.return_value(dagger.JSON(output))
 
     async def _register(self, resolvers: Resolvers) -> dagger.ModuleID:
@@ -254,7 +258,10 @@ class Module:
             msg = "Result is a coroutine. Did you forget to add async/await?"
             raise UserError(msg)
 
-        logger.debug("result => %s", repr(result))
+        logger.debug(
+            "result => %s",
+            textwrap.shorten(repr(result), 144),
+        )
 
         try:
             unstructured = await asyncify(
@@ -270,7 +277,10 @@ class Module:
             )
             raise UserError(msg) from e
 
-        logger.debug("unstructured result => %s", repr(unstructured))
+        logger.debug(
+            "unstructured result => %s",
+            textwrap.shorten(repr(unstructured), 144),
+        )
 
         return unstructured
 

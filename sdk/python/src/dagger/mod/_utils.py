@@ -67,7 +67,7 @@ def to_camel_case(s: str) -> str:
 
 def get_doc(obj: Any) -> str | None:
     """Get the last Doc() in an annotated type or the docstring of an object."""
-    if typing.get_origin(obj) in (typing.Annotated, typing_extensions.Annotated):
+    if is_annotated(obj):
         return next(
             (
                 arg.documentation
@@ -81,7 +81,7 @@ def get_doc(obj: Any) -> str | None:
 
 def get_arg_name(annotation: type) -> str | None:
     """Get an alternative name in last Arg() of an annotated type."""
-    if typing.get_origin(annotation) in (typing.Annotated, typing_extensions.Annotated):
+    if is_annotated(annotation):
         return next(
             (
                 arg.name
@@ -117,3 +117,19 @@ def non_optional(tp: type) -> type:
         return tp
     args = [x for x in get_args(tp) if x != None.__class__]
     return args[0] if len(args) == 1 else functools.reduce(operator.or_, args)
+
+
+_T = TypeVar("_T", bound=type)
+
+
+def is_annotated(annotation: type) -> typing.TypeGuard[typing.Annotated]:
+    """Check if the given type is an annotated type."""
+    return typing.get_origin(annotation) in (
+        typing.Annotated,
+        typing_extensions.Annotated,
+    )
+
+
+def strip_annotations(t: _T) -> _T:
+    """Strip the annotations from a given type."""
+    return strip_annotations(typing.get_args(t)[0]) if is_annotated(t) else t
