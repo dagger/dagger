@@ -598,6 +598,9 @@ func (m *moduleDef) LoadObject(typeDef *modTypeDef) {
 			typeDef.AsObject = obj
 		}
 	}
+	if typeDef.AsList != nil {
+		m.LoadObject(typeDef.AsList.ElementTypeDef)
+	}
 }
 
 // modTypeDef is a representation of dagger.TypeDef.
