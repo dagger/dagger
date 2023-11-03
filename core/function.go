@@ -152,9 +152,10 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 	}
 	typeDef = typeDef.Clone()
 	typeDef.AsObject.Fields = append(typeDef.AsObject.Fields, &FieldTypeDef{
-		Name:        name,
-		Description: desc,
-		TypeDef:     fieldType,
+		Name:         strcase.ToLowerCamel(name),
+		OriginalName: name,
+		Description:  desc,
+		TypeDef:      fieldType,
 	})
 	return typeDef, nil
 }
@@ -229,6 +230,12 @@ type FieldTypeDef struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	TypeDef     *TypeDef `json:"typeDef"`
+
+	// Below are not in public API
+
+	// The original name of the object as provided by the SDK that defined it, used
+	// when invoking the SDK so it doesn't need to think as hard about case conversions
+	OriginalName string `json:"originalName,omitempty"`
 }
 
 func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
