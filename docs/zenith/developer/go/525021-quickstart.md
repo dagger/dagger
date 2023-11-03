@@ -108,7 +108,11 @@ Your module functions can accept and return multiple different types, not just b
   ```go file=./snippets/quickstart/step3a/main.go
   ```
 
-  The optional parameters are specified using the special `Optional` type and assigned default values. These optional parameters can then be set using `dagger call` or `dagger query` (exactly as if they'd been specified as top-level options):
+  The optional parameters are specified using the special `Optional` helper type, which represents optional values. Any method arguments that use this type will be set as optional in the generated API. These optional parameters can be set using `dagger call` or `dagger query` (exactly as if they'd been specified as top-level options).
+
+  In this example, the optional parameters assigned default values, and `GetOr()` returns either the internal value of the optional or the given default value if the value was not explicitly set by the caller.
+
+  Here's an example of calling the function with optional parameters:
 
   ```sh
   dagger call hello-world --count 10 --mashed true
@@ -159,14 +163,16 @@ The example module in the previous sections was just that - an example. Next, le
   ```go file=./snippets/quickstart/trivy/main.go
   ```
 
-  Here, the `ScanImage()` function accepts four parameters (apart from the context):
+  In this example, the `ScanImage()` function accepts four parameters (apart from the context):
     - A reference to the container image to be scanned (required);
     - A severity filter (optional);
     - The exit code to use if scanning finds vulnerabilities (optional);
     - The reporting format (optional).
 
+  `dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+
   The function code performs the following operations:
-    - It uses the client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+    - It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
     - It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `WithExec()` method returns a revised `Container` with the results of command execution.
     - It retrieves the output stream of the command with the `Container.Stdout()` method and prints the result to the console.
 
