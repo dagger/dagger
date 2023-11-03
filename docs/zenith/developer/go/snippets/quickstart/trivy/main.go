@@ -14,8 +14,8 @@ func (t *Trivy) ScanImage(
 	imageRef string,
 	severity Optional[string],
 	exitCode Optional[int],
-	format Optional[string]) (string, error) {
-
+	format Optional[string],
+) (string, error) {
 	sv := severity.GetOr("UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL")
 	ec := exitCode.GetOr(0)
 	ft := format.GetOr("table")
