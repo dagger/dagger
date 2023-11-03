@@ -16,5 +16,5 @@ docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
 ```
 
 :::tip
-Need help? Stuck on a hard-to-understand error message? Tell us about it in the [`#zenith-help` channel in the Dagger Discord](https://discord.gg/dagger-io)!
+Need help? Stuck on a hard-to-understand error message? Tell us about it in the [`#project-zenith` channel in the Dagger Discord](https://discord.com/channels/707636530424053791/1120503349599543376)!
 :::
