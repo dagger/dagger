@@ -2251,7 +2251,7 @@ func TestModuleReservedWords(t *testing.T) {
 					}).
 					With(daggerQuery(`{test{fn{id}}}`)).
 					Sync(ctx)
-				require.ErrorContains(t, err, "cannot define field with reserved name \"ID\"")
+				require.ErrorContains(t, err, "cannot define field with reserved name \"id\"")
 			})
 		})
 
