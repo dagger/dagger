@@ -12,25 +12,35 @@ The `dagger shell` command can be used to open an interactive shell session with
 
 This is very useful for debugging and experimenting since it allows you to interact with containers directly.
 
-Use the `dagger shell` command to see how it works:
+Try it with the command below:
 
 ```shell
 dagger shell debug
 ```
 
-This command drops you into an interactive shell, allowing you to directly execute commands in the running container.
+This command drops you into an interactive shell, allowing you to directly execute commands in the container returned by the `debug` function, as in the example below:
+
+```shell
+# ls
+Dockerfile  README.md  node_modules  package-lock.json  package.json  public  src  tsconfig.json
+# uname -a
+Linux vtmeopf0atpc2.3jgto8svt9r6s.dagger.local 6.2.0-34-generic #34-Ubuntu SMP PREEMPT_DYNAMIC Mon Sep  4 13:06:55 UTC 2023 x86_64 GNU/Linux
+# pwd
+/src
+#
+```
 
 ### Override the entrypoint
 
 By default, `dagger shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
 
-However, you can also override the command that is executed when the shell session starts via the `--entrypoint` flag. You can use this to (for example) drop into a `node` shell in the debug container rather than `sh`. Use the following command to understand how this works:
+However, you can also override the command that is executed when the shell session starts via the `--entrypoint` flag. You can use this to (for example) drop into a `node` shell in the container returned by `debug`, rather than `sh`. Use the following command to understand how this works:
 
 ```shell
 dagger shell --entrypoint node debug
 ```
 
-This command drops you into an interactive Node.js shell, allowing you to directly execute Node.js code in the running container:
+This command drops you into an interactive Node.js shell, allowing you to directly execute Node.js code in the running container, as in the example below:
 
 ```shell
 Welcome to Node.js v16.20.2.
