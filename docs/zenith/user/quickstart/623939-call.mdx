@@ -82,10 +82,33 @@ Add an argument to run the tests with a different version of Node.js:
 dagger call test --node-version 18
 ```
 
+### Use modules from remote sources
 
-### More Examples from the Daggerverse
-* `dagger call -m github.com/jpadams/daggerverse/trivy scan-image --image-ref alpine/git:latest`
-   * https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy@d444ed56169d3737c018ed16e2d6bab92886f951
-* `dagger call -m github.com/shykes/daggerverse/ttlsh publish --ctr alpine:latest`
-   * TODO: this one needs v0.9.3 (being released Nov 3rd)
-* TODO ask team for more (or write more)
+Modules don't need to be installed locally. Dagger lets you consume modules from remote sources as well. For example, you can `dagger call` a function from a module using its GitHub URL:
+
+```shell
+dagger call test -m "github.com/sipsma/daggerverse@main"
+```
+
+Or, if the target module is in a subdirectory of the repository:
+
+```shell
+dagger call test -m "github.com/sipsma/daggerverse/example@main"
+```
+
+You can also use modules from the local filesystem, without needing to push them to GitHub. For example:
+
+```shell
+dagger call test -m "./path/to/module"
+```
+
+:::tip
+The [Daggerverse](https://daggerverse.dev) is an online catalog of Dagger modules that enables users to easily discover and use modules created by the Dagger community.
+
+Here are a few examples of using this command with modules from the [Daggerverse](https://daggerverse.dev/):
+
+- `dagger call -m github.com/jpadams/daggerverse/trivy scan-image --image-ref alpine/git:latest`
+  - Module information: https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy@d444ed56169d3737c018ed16e2d6bab92886f951
+- `dagger call -m github.com/shykes/daggerverse/ttlsh publish --ctr alpine:latest`
+  - Module information: https://daggerverse.dev/mod/github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
+:::
