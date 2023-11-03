@@ -7,6 +7,8 @@ date: "2023-11-03"
 
 # Publishing Modules
 
+{@include: ../partials/_experimental.md}
+
 ## Introduction
 
 This guide explains how to publish your modules to the [Daggerverse](https://daggerverse.dev), so that other users can easily discover and use them.
