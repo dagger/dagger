@@ -430,8 +430,8 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/cyphar/filepath-securejoin v0.2.2/go.mod h1:FpkQEhXnPnOthhzymB7CGsFk2G9VLXONKD9G7QGMM+4=
 github.com/cyphar/filepath-securejoin v0.2.4 h1:Ugdm7cg7i6ZK6x3xDF1oEu1nfkyfH53EtKeQYTC3kyg=
 github.com/cyphar/filepath-securejoin v0.2.4/go.mod h1:aPGpWjXOXUn2NCNjFvBE6aRxGGx79pTxQpKOJNYHHl4=
-github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21 h1:6H/36Lk+mcSXxlbjjIMUYd4DR+aqCzeaRigK5dUe/a0=
-github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21/go.mod h1:jxe8vuRdvEbdLR5nrc6F7gLPmPeJhGe2DbIgEok+pCA=
+github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171 h1:Kdgcv4zGccy/TMeSHdJq0NBk+PJCg3uIcFRtKDqHmaM=
+github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171/go.mod h1:jxe8vuRdvEbdLR5nrc6F7gLPmPeJhGe2DbIgEok+pCA=
 github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e h1:5fyK89J8og+XMW5JetgXzaxRhoI9UrS0BhrNskj4cuA=
 github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e/go.mod h1:SXt7tSY8l+OVghRddofY+eDdv8EK82N0JlrrfrkqFEw=
 github.com/dave/jennifer v1.7.0 h1:uRbSBH9UTS64yXbh4FrMHfgfY762RD+C7bUPKODpSJE=
