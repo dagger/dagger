@@ -10,6 +10,8 @@ import TabItem from "@theme/TabItem";
 
 # Advanced Programming
 
+{@include: ../../partials/_experimental.md}
+
 ## Introduction
 
 Once you've understood the basics of writing your own Dagger modules, you're going to inevitably want to learn more and do more. That's where this guide comes in. It shows you some of the more advanced techniques, tips and tricks you will need to supercharge your Dagger module development.
