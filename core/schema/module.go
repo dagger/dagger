@@ -791,6 +791,8 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 
 		newObjResolver := ObjectResolver{}
 		for _, field := range objTypeDef.Fields {
+			field := field
+
 			fieldASTType, err := s.typeDefToSchema(field.TypeDef, false)
 			if err != nil {
 				return nil, err
