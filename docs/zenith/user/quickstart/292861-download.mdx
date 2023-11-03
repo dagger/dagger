@@ -32,4 +32,9 @@ The `dagger download` command also works with functions that return `Container` 
 dagger download --export-path ./container.tar app-container
 ```
 
-* TODO collect one-liner `dagger download` statements that use different modules from daggerverse and show off more cool use cases
+### More Examples from the Daggerverse
+* `dagger -m github.com/kpenfound/dagger-modules/golang download build-remote --remote github.com/dagger/dagger --ref main --module "./cmd/dagger" --platform darwin`
+   * https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/golang@683e3a5859438a85fdc39462d6f6439fea30e804
+* `wget -q https://download.samplelib.com/mp4/sample-5s.mp4  && wget -q https://download.samplelib.com/mp4/sample-10s.mp4 && dagger download -m github.com/marcosnils/daggerverse/videostitch@main stitch --src-dir .`
+   * https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch@b86b76dcfc25fac08b96ead67479fb055f718df7
+* TODO ask team for more (or write more)
