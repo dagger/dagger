@@ -59,6 +59,129 @@ To load completions for every new session on macOS:
 dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
 ```
 
+## dagger functions
+
+List all functions in a module.
+
+### Options
+
+| Option               | Description                           |
+| ---------------------| --------------------------------------|
+| `--focus`            | Only show output for focused commands |
+| `-m`, `--mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
+
+### Usage
+
+```shell
+dagger functions
+```
+
+### Examples
+
+List functions in local module:
+
+```shell
+dagger functions -m /path/to/some/dir
+```
+
+List functions in remote module:
+
+```shell
+dagger functions -m git://github.com/sipsma/daggerverse?ref=main?subpath=example
+```
+
+## dagger help
+
+### Usage
+
+```shell
+dagger help [command]
+```
+
+Retrieve detailed help text for any command in the application.
+
+### Example
+
+Obtain help for the `dagger query` command:
+
+```shell
+dagger help query
+```
+
+## dagger login
+
+Log in to Dagger Cloud.
+
+### Usage
+
+```shell
+dagger login
+```
+
+### Example
+
+Log in to Dagger Cloud:
+
+```shell
+dagger login
+```
+
+## dagger logout
+
+Log out of Dagger Cloud.
+
+### Usage
+
+```shell
+dagger logout
+```
+
+### Example
+
+Log out of Dagger Cloud:
+
+```shell
+dagger logout
+```
+
+## dagger query
+
+Send API queries to the Dagger Engine. When no file provider, read query string from standard input.
+
+### Usage
+
+```shell
+dagger query [--doc file] [--var string] [--var-json string] [query]
+```
+
+### Options
+
+| Option       | Description                 |
+| ------------ | --------------------------- |
+| `--doc`      | Read query from file        |
+| `--var`      | Read query from string      |
+| `--var-json` | Read query from JSON string |
+
+### Example
+
+Execute an API query:
+
+```shell
+dagger query <<EOF
+{
+  container {
+    from(address:"hello-world") {
+      exec(args:["/hello"]) {
+        stdout {
+          contents
+        }
+      }
+    }
+  }
+}
+EOF
+```
+
 ## dagger run
 
 Executes the specified command in a Dagger session and displays live progress. `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be injected automatically.
@@ -120,62 +243,6 @@ Disable Dagger terminal output, but continue emitting program standard output:
 
 ```shell
 dagger --silent run go run ci.go 2>&1 | tee foo.out
-```
-
-## dagger help
-
-### Usage
-
-```shell
-dagger help [command]
-```
-
-Retrieve detailed help text for any command in the application.
-
-### Example
-
-Obtain help for the `dagger query` command:
-
-```shell
-dagger help query
-```
-
-## dagger query
-
-Send API queries to the Dagger Engine. When no file provider, read query string from standard input.
-
-### Usage
-
-```shell
-dagger query [--doc file] [--var string] [--var-json string] [query]
-```
-
-### Options
-
-| Option       | Description                 |
-| ------------ | --------------------------- |
-| `--doc`      | Read query from file        |
-| `--var`      | Read query from string      |
-| `--var-json` | Read query from JSON string |
-
-### Example
-
-Execute an API query:
-
-```shell
-dagger query <<EOF
-{
-  container {
-    from(address:"hello-world") {
-      exec(args:["/hello"]) {
-        stdout {
-          contents
-        }
-      }
-    }
-  }
-}
-EOF
 ```
 
 ## dagger version
