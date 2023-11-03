@@ -96,14 +96,14 @@ gql  <-..-> ModB
 cli <-..-> gql
 ```
 
-1. You execute a Dagger CLI command like `call`, `download`, `shell`, `up`, etc. against a module. The CLI either by connects to an existing engine or by provisions one on-the-fly. Once connected, it opens a new session with the engine.
+1. You execute a Dagger CLI command like `dagger call`, `dagger download`, `dagger shell`, `dagger up`, etc. against a Dagger Module. The CLI either by connects to an existing engine or by provisions one on-the-fly. Once connected, it opens a new session with the Dagger Engine.
 
-   - Each session is associated with its own GraphQL server instance running inside the engine. This GraphQL server initially only has the "core" API available, which provides basic functionality like running containers, interacting with files and directories, etc.
+   - Each session is associated with its own GraphQL server instance running inside the Dagger Engine. This GraphQL server initially only has the "core" API available, which provides basic functionality like running containers, interacting with files and directories, etc.
    - The core API is highly optimized: each request is turned into a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result. It uses caching and other optimizations to compute these results as efficiently as possible.
 
 1. The core API also provides functionality for loading Dagger Modules. When a Module is loaded into the session, the GraphQL API is dynamically extended with new APIs served by that Module. So, after loading a Module, the CLI client can now call all of the original core APIs, _plus_ the new APIs provided by that Module.
 
-   - Modules are just source code that's configured to be loaded with a Dagger SDK. When the Module is loaded, the source code is pulled into the Engine (if not already cached) and interfaced with the session via the SDK so that its APIs are parsed and prepared for execution. Once loaded, if an API provided by the Module is called, the Module will be executed inside a container in the Engine to obtain the result.
+   - Modules are just source code that is configured to be loaded with a Dagger SDK. When the Module is loaded, the source code is pulled into the Dagger Engine (if not already cached) and interfaced with the session via the SDK so that its APIs are parsed and prepared for execution. Once loaded, if an API provided by the Module is called, the Module will be executed inside a container in the Dagger Engine to obtain the result.
    - Modules are themselves also Dagger clients connected back to the same session they were loaded into. They can call core APIs in addition to other Modules that they have declared a dependency on.
 
-1. The Dagger CLI command you executed loads the specified Module and calls the requested API served by that Module and then uses the returned result however appropriate depending on the CLI subcommand being used (print a textual representation, download an asset, open an interactive shell, proxy network ports, etc.).
+1. The Dagger CLI command you executed loads the specified Module and calls the requested API served by that Module. It then uses the returned result in the most appropriate way depending on the CLI command being used (print a textual representation, download an asset, open an interactive shell, proxy network ports, etc.).
