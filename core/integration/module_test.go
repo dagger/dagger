@@ -1218,6 +1218,39 @@ func (m *Foo) MyFunction() X {
 	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo"}}}`, out)
 }
 
+func TestModuleGoReturnStruct(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct {}
+
+type X struct {
+	Message string ` + "`json:\"message\"`" + `
+	To string ` + "`json:\"recipient\"`" + `
+	From string
+}
+
+func (m *Foo) MyFunction() X {
+	return X{Message: "foo", To: "user", From: "admin"}
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{myFunction{message, recipient, from}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin"}}}`, out)
+}
+
 func TestModuleGoGlobalVarDAG(t *testing.T) {
 	t.Parallel()
 
