@@ -61,6 +61,10 @@ dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
 
 ## dagger functions
 
+:::note
+This command is currently under development and is therefore hidden in the CLI.
+:::
+
 List all functions in a module.
 
 ### Options
@@ -87,7 +91,7 @@ dagger functions -m /path/to/some/dir
 List functions in remote module:
 
 ```shell
-dagger functions -m git://github.com/sipsma/daggerverse?ref=main?subpath=example
+dagger functions -m github.com/sipsma/daggerverse/example
 ```
 
 ## dagger help
