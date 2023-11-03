@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -665,8 +666,21 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 			description = doc.Text()
 		}
 
+		name := field.Name()
+
+		// override the name with the json tag if it was set - otherwise, we
+		// end up asking for a name that we won't unmarshal correctly
+		tag := reflect.StructTag(t.Tag(i))
+		if dt := tag.Get("json"); dt != "" {
+			dt, _, _ = strings.Cut(dt, ",")
+			if dt == "-" {
+				continue
+			}
+			name = dt
+		}
+
 		withFieldArgs := []Code{
-			Lit(field.Name()),
+			Lit(name),
 			fieldTypeDef,
 		}
 
