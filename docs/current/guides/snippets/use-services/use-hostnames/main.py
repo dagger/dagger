@@ -13,7 +13,7 @@ async def main():
             client.container()
             .from_("python")
             .with_exec(["python", "-m", "http.server"])
-            .asService()
+            .as_service()
             .hostname()
         )
 

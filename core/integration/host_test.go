@@ -182,7 +182,7 @@ func TestHostSetSecretFile(t *testing.T) {
 	hashStr := hex.EncodeToString(hash[:])
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte(data), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), data, 0600))
 
 	c, ctx := connect(t, dagger.WithWorkdir(dir))
 
@@ -198,7 +198,7 @@ func TestHostSetSecretFile(t *testing.T) {
 		require.NoError(t, err)
 
 		// Extract the MD5 hash from the command output
-		hashStrCmd := strings.Split(string(output), " ")[0]
+		hashStrCmd := strings.Split(output, " ")[0]
 
 		require.Equal(t, hashStr, hashStrCmd)
 	})

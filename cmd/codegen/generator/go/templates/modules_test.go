@@ -51,8 +51,7 @@ go 1.20
 	}
 
 	// TODO: assert on contents
-	require.NotPanics(t, func() {
-		generatedMain := funcs.moduleMainSrc()
-		t.Log(generatedMain)
-	})
+	generatedMain, err := funcs.moduleMainSrc()
+	require.NoError(t, err)
+	t.Log(generatedMain)
 }

@@ -105,7 +105,6 @@ func TestGPUAccess(t *testing.T) {
 	// Iterate through the image matrix:
 	for _, cudaImage := range cudaImageMatrix {
 		t.Run(cudaImage, func(t *testing.T) {
-
 			// Query the same on the Dagger container and compare output:
 			ctr := c.Container().From(cudaImage)
 			contents, err := ctr.

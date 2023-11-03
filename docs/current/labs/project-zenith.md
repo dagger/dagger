@@ -225,11 +225,11 @@ echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger qu
 
 ### Call other modules
 
-Modules can call each other! To add a dependency to your module, you can use
-`dagger mod use`:
+Modules can call each other! To add a dependency to your module, you can run
+`dagger mod install`:
 
 ```sh
-dagger mod use github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
+dagger mod install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
 ```
 
 This module will be added to your `dagger.json`:
@@ -240,11 +240,11 @@ This module will be added to your `dagger.json`:
   ]
 ```
 
-You can also use local modules as dependencies. However, they must be stored in
+You can also install local modules as dependencies. However, they must be stored in
 a sub-directory of your module. For example:
 
 ```sh
-dagger mod use ./path/to/module
+dagger mod install ./path/to/module
 ```
 
 The module will be added to your codegeneration, so you can access it from your
@@ -256,18 +256,18 @@ func (m *Potato) HelloWorld(ctx context.Context) (string, error) {
 }
 ```
 
-You can find other modules to use on <https://daggerverse.dev>.
+You can find other modules to install on <https://daggerverse.dev>.
 
 #### Module locations
 
 You can consume modules from lots of different sources. The easiest way to
-`dagger use`, `dagger call`, or `dagger query` a module is to reference it by its GitHub URL
+`dagger install`, `dagger call`, or `dagger query` a module is to reference it by its GitHub URL
 (similar to Go package strings).
 
 For example:
 
 ```sh
-dagger call test -m "github.com/user/repo@main"
+dagger call -m "github.com/user/repo@main" test
 ```
 
 or
@@ -283,7 +283,7 @@ EOF
 or, if your module is in a subdirectory of the Git repository:
 
 ```sh
-dagger call test -m "github.com/user/repo/subdirectory@main"
+dagger call -m "github.com/user/repo/subdirectory@main" test
 ```
 
 or
@@ -299,7 +299,7 @@ EOF
 You can also use modules from the local disk, without needing to push them to GitHub!
 
 ```sh
-dagger call test -m "./path/to/module"
+dagger call -m "./path/to/module" test
 ```
 
 or

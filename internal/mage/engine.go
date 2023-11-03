@@ -179,12 +179,18 @@ func privateRegistry(c *dagger.Client) *dagger.Service {
 
 // Test runs Engine tests
 func (t Engine) Test(ctx context.Context) error {
-	return t.test(ctx, false)
+	return t.test(ctx, false, "")
 }
 
 // TestRace runs Engine tests with go race detector enabled
 func (t Engine) TestRace(ctx context.Context) error {
-	return t.test(ctx, true)
+	return t.test(ctx, true, "")
+}
+
+// TestImportant runs Engine Container+Module tests, which give good basic coverage
+// of functionality w/out having to run everything
+func (t Engine) TestImportant(ctx context.Context) error {
+	return t.test(ctx, true, `^(TestModule|TestContainer)`)
 }
 
 // TestRace runs Engine tests with go race detector enabled
@@ -318,7 +324,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	return nil
 }
 
-func (t Engine) test(ctx context.Context, race bool) error {
+func (t Engine) test(ctx context.Context, race bool, testRegex string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -341,6 +347,10 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	if race {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
+	}
+
+	if testRegex != "" {
+		args = append(args, "-run", testRegex)
 	}
 
 	args = append(args, "./...")

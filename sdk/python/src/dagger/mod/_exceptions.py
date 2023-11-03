@@ -32,6 +32,10 @@ class UserError(FatalError):
     """An error that could be recovered in user code."""
 
 
+class NameConflictError(UserError):
+    """An error caused by a name conflict."""
+
+
 class FunctionError(UserError):
     """An error while executing a user function."""
 

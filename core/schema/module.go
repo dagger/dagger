@@ -27,7 +27,8 @@ import (
 
 type moduleSchema struct {
 	*MergedSchemas
-	moduleCache *core.CacheMap[digest.Digest, *core.Module]
+	moduleCache       *core.CacheMap[digest.Digest, *core.Module]
+	dependenciesCache *core.CacheMap[digest.Digest, []*core.Module]
 }
 
 var _ ExecutableSchema = &moduleSchema{}
@@ -65,6 +66,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	}
 
 	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
+		"dependencies":  ToResolver(s.moduleDependencies),
 		"objects":       ToResolver(s.moduleObjects),
 		"withObject":    ToResolver(s.moduleWithObject),
 		"generatedCode": ToResolver(s.moduleGeneratedCode),
@@ -386,7 +388,11 @@ func (s *moduleSchema) functionCall(ctx context.Context, fn *core.Function, args
 
 	// Mount in read-only dep module filesystems to ensure that if they change, this module's cache is
 	// also invalidated. Read-only forces buildkit to always use content-based cache keys.
-	for _, dep := range mod.Dependencies {
+	deps, err := s.dependenciesOf(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+	for _, dep := range deps {
 		dirMntPath := filepath.Join(core.ModMetaDirPath, core.ModMetaDepsDirPath, dep.Name, "dir")
 		sourceDir, err := dep.SourceDirectory.Directory(ctx, s.bk, s.services, dep.SourceDirectorySubpath)
 		if err != nil {
@@ -659,12 +665,53 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 			return nil, fmt.Errorf("failed to decode module: %w", err)
 		}
 
-		// namespace the module objects + function extensions
 		for _, obj := range mod.Objects {
+			if err := s.validateTypeDef(obj, schemaView); err != nil {
+				return nil, fmt.Errorf("failed to validate type def: %w", err)
+			}
+
+			// namespace the module objects + function extensions
 			s.namespaceTypeDef(obj, mod, schemaView)
 		}
 
 		return mod, nil
+	})
+}
+
+func (s *moduleSchema) moduleDependencies(ctx context.Context, mod *core.Module, _ any) ([]*core.Module, error) {
+	return s.dependenciesOf(ctx, mod)
+}
+
+func (s *moduleSchema) dependenciesOf(ctx context.Context, mod *core.Module) ([]*core.Module, error) {
+	dgst, err := mod.BaseDigest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module digest: %w", err)
+	}
+
+	return s.dependenciesCache.GetOrInitialize(dgst, func() ([]*core.Module, error) {
+		var eg errgroup.Group
+		deps := make([]*core.Module, len(mod.DependencyConfig))
+		for i, depURL := range mod.DependencyConfig {
+			i, depURL := i, depURL
+			eg.Go(func() error {
+				depMod, err := core.NewModule(mod.Platform, mod.Pipeline).FromRef(
+					ctx, s.bk, s.services, s.progSockPath,
+					mod.SourceDirectory,
+					mod.SourceDirectorySubpath,
+					depURL,
+					s.runtimeForModule,
+				)
+				if err != nil {
+					return fmt.Errorf("failed to get dependency mod from ref %q: %w", depURL, err)
+				}
+				deps[i] = depMod
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		return deps, nil
 	})
 }
 
@@ -676,7 +723,12 @@ func (s *moduleSchema) installDeps(ctx context.Context, module *core.Module) (*s
 		return nil, err
 	}
 
-	return schemaView, s.installDepsToSchemaView(ctx, module.Dependencies, schemaView)
+	deps, err := s.dependenciesOf(ctx, module)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	return schemaView, s.installDepsToSchemaView(ctx, deps, schemaView)
 }
 
 func (s *moduleSchema) installDepsToSchemaView(
@@ -944,10 +996,19 @@ func (s *moduleSchema) functionResolver(
 			parent = id
 		}
 
+		argNames := make(map[string]string, len(fn.Args))
+		for _, arg := range fn.Args {
+			argNames[arg.Name] = arg.OriginalName
+		}
+
 		var callInput []*core.CallInput
 		for k, v := range args {
+			n, ok := argNames[k]
+			if !ok {
+				continue
+			}
 			callInput = append(callInput, &core.CallInput{
-				Name:  k,
+				Name:  n,
 				Value: v,
 			})
 		}
@@ -1063,6 +1124,51 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 	default:
 		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
 	}
+}
+
+func (s *moduleSchema) validateTypeDef(typeDef *core.TypeDef, schemaView *schemaView) error {
+	switch typeDef.Kind {
+	case core.TypeDefKindList:
+		return s.validateTypeDef(typeDef.AsList.ElementTypeDef, schemaView)
+	case core.TypeDefKindObject:
+		obj := typeDef.AsObject
+		baseObjName := gqlObjectName(obj.Name)
+
+		// check whether this is a pre-existing object from core or another module
+		_, preExistingObject := schemaView.resolvers()[baseObjName]
+		if preExistingObject {
+			// already validated, skip
+			return nil
+		}
+
+		for _, field := range obj.Fields {
+			if gqlFieldName(field.Name) == "id" {
+				return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+			}
+			if err := s.validateTypeDef(field.TypeDef, schemaView); err != nil {
+				return err
+			}
+		}
+
+		for _, fn := range obj.Functions {
+			if gqlFieldName(fn.Name) == "id" {
+				return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+			}
+			if err := s.validateTypeDef(fn.ReturnType, schemaView); err != nil {
+				return err
+			}
+
+			for _, arg := range fn.Args {
+				if gqlArgName(arg.Name) == "id" {
+					return fmt.Errorf("cannot define argument with reserved name %q on function %q", arg.Name, fn.Name)
+				}
+				if err := s.validateTypeDef(arg.TypeDef, schemaView); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // TODO: Should we handle trying to namespace the object in the doc strings? Or would that require too much magic to accomplish consistently?

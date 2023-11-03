@@ -14,6 +14,7 @@ A client package for running `Dagger <https://dagger.io/>`_ pipelines.
    connection
    client
    exceptions
+   module
 
 
 Project links

@@ -7,7 +7,7 @@ replace dagger.io/dagger => ./sdk/go
 replace github.com/dagger/dagger/internal/mage => ./internal/mage
 
 require (
-	dagger.io/dagger v0.9.1
+	dagger.io/dagger v0.9.2
 	github.com/99designs/gqlgen v0.17.34 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
@@ -24,7 +24,7 @@ require (
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.4.0
 	github.com/iancoleman/strcase v0.3.0
 	// https://github.com/moby/buildkit/commit/86e25b3ad8c20fc420669949f24bb86c74082b2f
 	github.com/moby/buildkit v0.13.0-beta1.0.20231011161957-86e25b3ad8c2
@@ -53,7 +53,7 @@ require (
 	golang.org/x/sync v0.4.0
 	golang.org/x/sys v0.13.0
 	golang.org/x/term v0.13.0
-	google.golang.org/grpc v1.58.3
+	google.golang.org/grpc v1.59.0
 	oss.terrastruct.com/d2 v0.4.0
 )
 
@@ -73,6 +73,7 @@ require (
 	github.com/koron-go/prefixw v1.0.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.19
+	github.com/mitchellh/go-spdx v0.1.0
 	github.com/moby/sys/mount v0.3.3
 	github.com/muesli/termenv v0.15.2
 	github.com/nxadm/tail v1.4.8
@@ -180,7 +181,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mazznoer/csscolorparser v0.1.3 // indirect
-	github.com/mitchellh/go-spdx v0.1.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
@@ -215,8 +215,8 @@ require (
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gonum.org/v1/plot v0.12.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20230711160842-782d3b101e98 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230711160842-782d3b101e98 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20230822172742-b8732ec3820d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	oss.terrastruct.com/util-go v0.0.0-20230320053557-dcb5aac7d972 // indirect
@@ -268,10 +268,10 @@ require (
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.6
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.16.0
+	golang.org/x/net v0.17.0
 	golang.org/x/text v0.13.0
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/genproto v0.0.0-20230711160842-782d3b101e98 // indirect
+	google.golang.org/genproto v0.0.0-20230822172742-b8732ec3820d // indirect
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
