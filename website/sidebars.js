@@ -282,7 +282,6 @@ module.exports = {
             "zenith/user/quickstart/download",
             "zenith/user/quickstart/shell",
             "zenith/user/quickstart/up",
-            "zenith/user/quickstart/call-remote",
             "zenith/user/quickstart/conclusion",
           ]
         },
@@ -320,21 +319,21 @@ module.exports = {
 
           ]
         },
-        {
-          type: "category",
-          label: "Python",
-          items: [
-            {
-              type: "doc",
-              id: "zenith/developer/python/quickstart",
-            },
-            {
-              type: "link",
-              label: "Python SDK Reference 🔗",
-              href: "https://dagger-io.readthedocs.org/",
-            },
-          ]
-        },
+//        {
+//          type: "category",
+//          label: "Python",
+//          items: [
+//            {
+//              type: "doc",
+//              id: "zenith/developer/python/quickstart",
+//            },
+//            {
+//              type: "link",
+//              label: "Python SDK Reference 🔗",
+//              href: "https://dagger-io.readthedocs.org/",
+//            },
+//          ]
+//        },
         {
           type: "doc",
           id: "zenith/developer/publishing-modules",

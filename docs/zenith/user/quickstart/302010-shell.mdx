@@ -12,11 +12,17 @@ The `dagger shell` command can be used to open an interactive shell session with
 
 This is very useful for debugging and experimenting since it allows you to interact with containers directly.
 
-TODO `dagger shell debug`
+Use the `dagger shell` command to see how it works:
 
-By default, `dagger shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
+```shell
+dagger shell debug
+```
+
+This command drops you into an interactive shell, allowing you to directly execute commands in the running container.
 
 ### Override the entrypoint
+
+By default, `dagger shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
 
 However, you can also override the command that is executed when the shell session starts via the `--entrypoint` flag. You can use this to (for example) drop into a `node` shell in the debug container rather than `sh`. Use the following command to understand how this works:
 
@@ -39,12 +45,14 @@ undefined
 While most terminal programs such as `htop` or `vim` work with `dagger shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities at this time.
 :::
 
-### More Examples from the Daggerverse
-* `dagger -m github.com/shykes/daggerverse/wolfi shell base with-package --name curl with-package --name cowsay container`
-   * https://daggerverse.dev/mod/github.com/shykes/daggerverse/wolfi@faf1103e0b125477d840d2b96a937518ebc0d5bd
-* `dagger -m github.com/shykes/daggerverse/tmate shell wrap --container alpine:latest`
-   * TODO: this one needs v0.9.3 and this PR to merged to work https://github.com/shykes/daggerverse/pull/6
-   * https://daggerverse.dev/mod/github.com/shykes/daggerverse/tmate@28497a39f1ac358b496d43334c305b074a51b5d2
-* `dagger -m github.com/sipsma/daggerverse/yamlinvaders shell play`
-   * https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders@bbdd8736c41ab7d867a62e3db32895c143e78248
-* TODO ask team for more (or write more)
+:::tip
+Here are a few examples of using this command with modules from the [Daggerverse](https://daggerverse.dev/):
+
+- `dagger -m github.com/shykes/daggerverse/wolfi shell base with-package --name curl with-package --name cowsay container`
+   - Module information: https://daggerverse.dev/mod/github.com/shykes/daggerverse/wolfi@faf1103e0b125477d840d2b96a937518ebc0d5bd
+- `dagger -m github.com/shykes/daggerverse/tmate shell wrap --container alpine:latest`
+   - TODO: this one needs v0.9.3 and this PR to merged to work https://github.com/shykes/daggerverse/pull/6
+   - Module information: https://daggerverse.dev/mod/github.com/shykes/daggerverse/tmate@28497a39f1ac358b496d43334c305b074a51b5d2
+- `dagger -m github.com/sipsma/daggerverse/yamlinvaders shell play`
+   - Module information: https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders@bbdd8736c41ab7d867a62e3db32895c143e78248
+:::

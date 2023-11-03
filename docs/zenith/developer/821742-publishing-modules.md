@@ -17,7 +17,7 @@ This guide explains how to publish your modules to the [Daggerverse](https://dag
 
 This guide assumes that:
 
-- You have a Dagger module. If not, create a module using the [Go](./go/525021-quickstart.md) or [Python](./python/419481-quickstart.md) quickstarts.
+- You have a Dagger module. If not, create a module using the [Go](./go/525021-quickstart.md) quickstart.
 - You have a GitHub account. If not, [register for a GitHub account](https://github.com/signup).
 
 ## Process
@@ -56,7 +56,3 @@ To publish a module to the Daggerverse, follow the steps below:
 :::tip
  If you need a module removed from the Daggerverse for some reason, let the Dagger team know in [Discord](https://discord.gg/dagger-io).
 :::
-
-## Conclusion
-
-TODO

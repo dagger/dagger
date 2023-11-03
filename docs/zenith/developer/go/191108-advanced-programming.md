@@ -5,9 +5,6 @@ authors: ["Alex Suraci", "Erik Sipsma"]
 date: "2023-11-03"
 ---
 
-import Tabs from "@theme/Tabs";
-import TabItem from "@theme/TabItem";
-
 # Advanced Programming
 
 {@include: ../../partials/_experimental.md}
@@ -20,9 +17,9 @@ Once you've understood the basics of writing your own Dagger modules, you're goi
 
 This guide assumes that:
 
-- You have a good understanding of the Dagger Go or Python SDKs. If not, refer to the [Go](https://pkg.go.dev/dagger.io/dagger) or [Python](https://dagger-io.readthedocs.org/) SDK reference.
+- You have a good understanding of the Dagger Go SDK. If not, refer to the [Go SDK reference](https://pkg.go.dev/dagger.io/dagger).
 - You have the Dagger CLI installed. If not, [install Dagger](../../../current/cli/465058-install.md).
-- You have a Dagger module. If not, create a module using the [Go](../../developer/go/525021-quickstart.md) or [Python](../../developer/python/419481-quickstart.md) quickstarts.
+- You have a Dagger module. If not, create a module using the [Go](../../developer/go/525021-quickstart.md) quickstart.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Use modules in other modules
@@ -36,9 +33,9 @@ dagger mod use github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281a
 This module will be added to your `dagger.json`:
 
 ```json
-  "dependencies": [
-    "github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990"
-  ]
+"dependencies": [
+  "github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990"
+]
 ```
 
 You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
@@ -49,22 +46,11 @@ dagger mod use ./path/to/module
 
 The dependent module will be added to your code-generation routines, so you can access it from your own module's code, as shown below:
 
-<Tabs groupId="language">
-<TabItem value="Go">
-
 ```go
 func (m *Potato) HelloWorld(ctx context.Context) (string, error) {
   return dag.HelloWorld().Message(ctx)
 }
 ```
-
-</TabItem>
-<TabItem value="Python">
-
-TODO
-
-</TabItem>
-</Tabs>
 
 :::tip
 Find modules on the [Daggerverse](https://daggerverse.dev).
@@ -76,21 +62,10 @@ Module functions can return custom objects, which in turn can define new functio
 
 So long as your object can be JSON-serialized by your SDK, its state will be preserved and passed to the next function in the chain.
 
-<Tabs groupId="language">
-<TabItem value="Go">
-
 Here is an example module using the Go SDK:
 
 ```go file=./snippets/advanced-programming/chaining/main.go
 ```
-
-</TabItem>
-<TabItem value="Python">
-
-Here is an example module using the Python SDK:
-
-</TabItem>
-</Tabs>
 
 And here is an example query for this module:
 
@@ -129,4 +104,4 @@ The result will be:
 
 ## Conclusion
 
-TODO
+This guide showed you a few patters and techniques you can use to improve your Dagger module programming skills.
