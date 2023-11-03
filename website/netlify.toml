@@ -194,6 +194,12 @@ from = "/757394/use-service-containers"
 to = "/757394/use-services"
 status = 302
 
+[[redirects]]
+# redirect temporary zenith labs page to temporary zenith docs
+from = "/labs/project-zenith"
+to = "/zenith"
+status = 302
+
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
 [[redirects]]

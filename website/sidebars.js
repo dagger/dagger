@@ -248,11 +248,6 @@ module.exports = {
     }
   ],
   labs: [
-    {
-      type: "doc",
-      id: "current/index",
-      label: "Home",
-    },
   ],
   zenith: [
     {
