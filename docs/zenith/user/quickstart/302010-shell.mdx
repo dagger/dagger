@@ -36,8 +36,15 @@ undefined
 ```
 
 :::caution
-While most terminal programs such as `htop` or `vim` work with `dagger shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
+While most terminal programs such as `htop` or `vim` work with `dagger shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities at this time.
 :::
 
-* TODO collect one-liner `dagger shell` statements that use different modules from daggerverse and show off more cool use cases
+### More Examples from the Daggerverse
+* `dagger -m github.com/shykes/daggerverse/wolfi shell base with-package --name curl with-package --name cowsay container`
+   * https://daggerverse.dev/mod/github.com/shykes/daggerverse/wolfi@faf1103e0b125477d840d2b96a937518ebc0d5bd
+* `dagger -m github.com/shykes/daggerverse/tmate shell wrap --container alpine:latest`
+   * TODO: this one needs v0.9.3 and this PR to merged to work https://github.com/shykes/daggerverse/pull/6
+   * https://daggerverse.dev/mod/github.com/shykes/daggerverse/tmate@28497a39f1ac358b496d43334c305b074a51b5d2
 * `dagger -m github.com/sipsma/daggerverse/yamlinvaders shell play`
+   * https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders@bbdd8736c41ab7d867a62e3db32895c143e78248
+* TODO ask team for more (or write more)
