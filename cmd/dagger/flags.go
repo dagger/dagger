@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
 	"reflect"
 	"strings"
 
@@ -143,7 +144,7 @@ func (v *containerValue) Get(c *dagger.Client) any {
 
 // directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
 type directoryValue struct {
-	path string
+	address string
 }
 
 func (v *directoryValue) Type() string {
@@ -152,21 +153,61 @@ func (v *directoryValue) Type() string {
 
 func (v *directoryValue) Set(s string) error {
 	if s == "" {
-		return fmt.Errorf("directory path cannot be empty")
+		return fmt.Errorf("directory address cannot be empty")
 	}
-	v.path = s
+	v.address = s
 	return nil
 }
 
 func (v *directoryValue) String() string {
-	return v.path
+	return v.address
 }
 
-func (v *directoryValue) Get(c *dagger.Client) any {
+func parseGit(dag *dagger.Client, u url.URL) *dagger.Directory {
+	ref := u.Fragment
+	if ref == "" {
+		// FIXME: default branch can be remotely looked up, but that would
+		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
+		ref = "main"
+	}
+	u.Fragment = ""
+	return dag.Git(u.String()).Branch(ref).Tree()
+}
+
+func (v *directoryValue) Get(dag *dagger.Client) any {
 	if v.String() == "" {
 		return nil
 	}
-	return c.Host().Directory(v.String())
+	// Try parsing as a URL
+	u, err := url.Parse(v.String())
+	if err == nil {
+		switch u.Scheme {
+		case "git+ssh":
+			u.Scheme = "ssh"
+			return parseGit(dag, *u)
+		case "git+https":
+			u.Scheme = "https"
+			return parseGit(dag, *u)
+		case "ssh://":
+			return parseGit(dag, *u)
+		case "https":
+			// Some special cases to make a smart decision about https
+			if strings.HasSuffix(u.Path, ".git") {
+				return parseGit(dag, *u)
+			}
+			if strings.HasPrefix(u.Host, "github.com") {
+				return parseGit(dag, *u)
+			}
+			if strings.HasPrefix(u.Host, "gitlab.com") {
+				return parseGit(dag, *u)
+			}
+			// FIXME: handle tarball-over-http
+			return parseGit(dag, *u)
+		case "file":
+			return dag.Host().Directory(u.Path)
+		}
+	}
+	return dag.Host().Directory(v.String())
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
