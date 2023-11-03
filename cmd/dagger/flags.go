@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 
@@ -200,7 +201,11 @@ func (v *directoryValue) Get(dag *dagger.Client) any {
 	// Try parsing as a Git URL
 	parsedGit, err := parseGit(v.String())
 	if err == nil {
-		gitDir := dag.Git(parsedGit.url.String()).Branch(parsedGit.ref).Tree()
+		gitOpts := dagger.GitOpts{}
+		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
+		}
+		gitDir := dag.Git(parsedGit.url.String(), gitOpts).Branch(parsedGit.ref).Tree()
 		if parsedGit.subdir != "" {
 			gitDir = gitDir.Directory(parsedGit.subdir)
 		}
