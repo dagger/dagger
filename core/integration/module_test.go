@@ -1811,6 +1811,43 @@ func TestModuleDaggerCall(t *testing.T) {
 
 	c, ctx := connect(t)
 
+	t.Run("service args", func(t *testing.T) {
+		t.Parallel()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
+	return dag.Container().From("alpine:3.18").WithExec([]string{"apk", "add", "curl"}).
+		WithServiceBinding("daserver", svc).
+		WithExec([]string{"curl", "http://daserver:8000"}).
+		Stdout(ctx)
+}
+`,
+			})
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		httpServer, _ := httpService(ctx, t, c, "im up")
+		endpoint, err := httpServer.Endpoint(ctx)
+		require.NoError(t, err)
+
+		out, err := modGen.
+			WithServiceBinding("testserver", httpServer).
+			With(daggerCall("fn", "--svc", "tcp://"+endpoint)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), "im up")
+	})
+
 	t.Run("list args", func(t *testing.T) {
 		t.Parallel()
 
