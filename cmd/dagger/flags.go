@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
+	"os"
 	"reflect"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 )
 
@@ -143,7 +146,7 @@ func (v *containerValue) Get(c *dagger.Client) any {
 
 // directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
 type directoryValue struct {
-	path string
+	address string
 }
 
 func (v *directoryValue) Type() string {
@@ -152,21 +155,67 @@ func (v *directoryValue) Type() string {
 
 func (v *directoryValue) Set(s string) error {
 	if s == "" {
-		return fmt.Errorf("directory path cannot be empty")
+		return fmt.Errorf("directory address cannot be empty")
 	}
-	v.path = s
+	v.address = s
 	return nil
 }
 
 func (v *directoryValue) String() string {
-	return v.path
+	return v.address
 }
 
-func (v *directoryValue) Get(c *dagger.Client) any {
+type parsedGitURL struct {
+	url    *url.URL
+	ref    string
+	subdir string
+}
+
+func parseGit(urlStr string) (*parsedGitURL, error) {
+	// FIXME: handle tarball-over-http (where http(s):// is scheme but not a git repo)
+	u, err := gitutil.ParseURL(urlStr)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, subdir := gitutil.SplitGitFragment(u.Fragment)
+	if ref == "" {
+		// FIXME: default branch can be remotely looked up, but that would
+		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
+		ref = "main"
+	}
+	u.Fragment = ""
+
+	return &parsedGitURL{
+		url:    u,
+		ref:    ref,
+		subdir: subdir,
+	}, nil
+}
+
+func (v *directoryValue) Get(dag *dagger.Client) any {
 	if v.String() == "" {
 		return nil
 	}
-	return c.Host().Directory(v.String())
+
+	// Try parsing as a Git URL
+	parsedGit, err := parseGit(v.String())
+	if err == nil {
+		gitOpts := dagger.GitOpts{}
+		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
+		}
+		gitDir := dag.Git(parsedGit.url.String(), gitOpts).Branch(parsedGit.ref).Tree()
+		if parsedGit.subdir != "" {
+			gitDir = gitDir.Directory(parsedGit.subdir)
+		}
+		return gitDir
+	}
+
+	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
+	vStr := v.String()
+	vStr = strings.TrimPrefix(vStr, "file://")
+	return dag.Host().Directory(vStr)
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
