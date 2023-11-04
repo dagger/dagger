@@ -3,14 +3,14 @@ module github.com/dagger/dagger/internal/mage
 go 1.20
 
 require (
-	dagger.io/dagger v0.9.2
+	dagger.io/dagger v0.9.3
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.15.0
 	github.com/moby/buildkit v0.12.2
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/mod v0.13.0
-	golang.org/x/sync v0.3.0
+	golang.org/x/sync v0.4.0
 )
 
 require (
