@@ -14,7 +14,7 @@ import (
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v1.19.2-pro"
+	goReleaserVersion = "v1.21.2-pro"
 )
 
 type Cli mg.Namespace
