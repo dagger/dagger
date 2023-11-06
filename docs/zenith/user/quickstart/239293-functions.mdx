@@ -1,0 +1,30 @@
+---
+slug: /zenith/user/quickstart/239293/functions
+hide_table_of_contents: true
+title: "List available functions in a module"
+---
+
+# Quickstart
+
+## List available functions in a module
+
+You're now ready to dive into Dagger and start exploring the Dagger CLI!
+
+This first example is fairly simple. Use the `dagger functions` command to display the functions exposed by a module.
+
+```shell
+dagger functions
+```
+
+Here's an example of the output:
+
+```shell
+✔ dagger functions [0.00s]
+┃ object name   function name      description      return type
+┃ *Example      appContainer                        Container!
+┃ *Example      service                             Service!
+┃ *Example      debug                               Container!
+┃ *Example      build                               Directory!
+┃ *Example      test                                String!
+┃ *Example      publishContainer                    String!
+```

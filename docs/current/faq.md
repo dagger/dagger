@@ -1,5 +1,7 @@
 ---
 slug: /faq
+pagination_next: null
+pagination_prev: null
 ---
 
 import Tabs from "@theme/Tabs";

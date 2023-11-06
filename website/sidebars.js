@@ -248,10 +248,128 @@ module.exports = {
     }
   ],
   labs: [
+  ],
+  zenith: [
     {
       type: "doc",
-      id: "current/index",
-      label: "Home",
+      id: "zenith/index",
+      label: "Introduction",
+    },
+    {
+      type: "category",
+      label: "Using Dagger",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "Installation",
+          id: "zenith/user/install",
+        },
+        {
+          type: "category",
+          label: "Quickstart",
+          items: [
+            "zenith/user/quickstart/index",
+            "zenith/user/quickstart/setup",
+            "zenith/user/quickstart/functions",
+            "zenith/user/quickstart/call",
+            "zenith/user/quickstart/download",
+            "zenith/user/quickstart/shell",
+            "zenith/user/quickstart/up",
+            "zenith/user/quickstart/conclusion",
+          ]
+        },
+
+      ],
+    },
+    {
+      type: "category",
+      label: "Programming Dagger",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "Introduction",
+          id: "zenith/developer/index",
+        },
+        {
+          type: "category",
+          label: "Go",
+          items: [
+            {
+              type: "doc",
+              id: "zenith/developer/go/quickstart",
+            },
+            {
+              type: "doc",
+              id: "zenith/developer/go/advanced-programming",
+            },
+            {
+              type: "link",
+              label: "Go SDK Reference 🔗",
+              href: "https://pkg.go.dev/dagger.io/dagger",
+            },
+
+          ]
+        },
+//        {
+//          type: "category",
+//          label: "Python",
+//          items: [
+//            {
+//              type: "doc",
+//              id: "zenith/developer/python/quickstart",
+//            },
+//            {
+//              type: "link",
+//              label: "Python SDK Reference 🔗",
+//              href: "https://dagger-io.readthedocs.org/",
+//            },
+//          ]
+//        },
+        {
+          type: "doc",
+          id: "zenith/developer/publishing-modules",
+        },
+        {
+          type: "doc",
+          id: "zenith/developer/troubleshooting",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "Reference",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        {
+          type: "doc",
+          label: "CLI Reference",
+          id: "current/cli/reference",
+        },
+        {
+          type: "link",
+          label: "API Reference 🔗",
+          href: "https://docs.dagger.io/api/reference",
+        },
+
+      ],
+    },
+    {
+      type: "doc",
+      id: "current/faq",
+    },
+    {
+      type: "doc",
+      id: "current/contributing",
+    },
+    {
+      type: "link",
+      label: "Changelog 🔗",
+      href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
   ],
   0.2: [
