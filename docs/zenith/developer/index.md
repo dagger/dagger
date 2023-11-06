@@ -17,5 +17,5 @@ Start your journey into Dagger programming with the following resources:
 
 - The [Go](./go/525021-quickstart.md) and [Python](./python/419481-quickstart.md) quickstarts
 - The [Daggerverse](https://daggerverse.dev), an online catalog of Dagger modules for you to use and learn from
-- Guide on [publishing modules to the Daggerverse](../821742-publishing-modules.md)
+- Guide on [publishing modules to the Daggerverse](./821742-publishing-modules.md)
 - Reference documentation for the [Go](https://pkg.go.dev/dagger.io/dagger) and [Python](https://dagger-io.readthedocs.org/) SDKs
