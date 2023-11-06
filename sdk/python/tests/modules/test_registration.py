@@ -118,14 +118,43 @@ async def test_function_and_arg_name_override():
     assert result == "bar"
 
 
+async def get_result(
+    mod: Module,
+    parent_name: str,
+    parent_json: str,
+    resolver_name: str,
+    inputs: dict,
+):
+    resolver = mod.get_resolver(mod.get_resolvers("foo"), parent_name, resolver_name)
+    return await mod.get_result(resolver, dagger.JSON(parent_json), inputs)
+
+
 @pytest.mark.anyio()
-async def test_field_name_override():
-    mod = Module()
+class TestNameOverrides:
+    @pytest.fixture(scope="class")
+    def mod(self):
+        _mod = Module()
 
-    @mod.object_type
-    class Foo:
-        with_: str = mod.field(default="bar", name="with")
+        @_mod.object_type
+        class Bar:
+            with_: str = _mod.field(name="with")
 
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "with")
-    result = await mod.get_result(resolver, dagger.JSON("{}"), {})
-    assert result == "bar"
+        @_mod.function
+        def bar() -> Bar:
+            return Bar(with_="bar")
+
+        @_mod.function(name="import")
+        def import_(from_: Annotated[str, Arg("from")]) -> str:
+            return from_
+
+        return _mod
+
+    async def test_function_and_arg_name(self, mod: Module):
+        assert await get_result(mod, "Foo", "{}", "import", {"from": "egg"}) == "egg"
+
+    async def test_field_unstructure(self, mod: Module):
+        assert await get_result(mod, "Foo", "{}", "bar", {}) == {"with": "bar"}
+
+    async def test_field_structure(self, mod: Module):
+        assert await get_result(mod, "Bar", '{"with": "baz"}', "with", {}) == "baz"
+

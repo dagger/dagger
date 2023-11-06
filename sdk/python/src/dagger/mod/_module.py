@@ -13,6 +13,7 @@ from typing import Any, TypeAlias, TypeVar
 
 import anyio
 import cattrs
+import cattrs.gen
 from rich.console import Console
 from typing_extensions import dataclass_transform, overload
 
@@ -467,6 +468,9 @@ class Module:
     def _process_type(self, cls: T) -> T:
         types = typing.get_type_hints(cls)
 
+        overrides = {}
+
+        # Find all fields exposed with `mod.field()`.
         for field in dataclasses.fields(cls):
             field_def: FieldDefinition | None
             if field_def := field.metadata.get(FIELD_DEF_KEY, None):
@@ -478,13 +482,41 @@ class Module:
                     is_optional=field_def.optional,
                     origin=cls,
                 )
+
+                if r.name != field.name:
+                    overrides[field.name] = cattrs.gen.override(rename=r.name)
+
                 self.add_resolver(r)
 
+        # Register hooks for renaming field names in `mod.field()`.
+        if overrides:
+            self._converter.register_unstructure_hook(
+                cls,
+                cattrs.gen.make_dict_unstructure_fn(
+                    cls,
+                    self._converter,
+                    **overrides,
+                )
+            )
+            self._converter.register_structure_hook(
+                cls,
+                cattrs.gen.make_dict_structure_fn(
+                    cls,
+                    self._converter,
+                    **overrides,
+                )
+            )
+
+        # Update origin in methods decorated with `mod.function()`.
         for _, member in inspect.getmembers(cls):
             resolver: FunctionResolver | None
             if resolver := getattr(member, "__dagger_resolver__", None):
                 resolver.origin = cls
 
+        # Save metadata in the class for later access.
+        # These can be recalculated at any time but it helps to check if
+        # this class was properly decorated and also acts as a placeholder
+        # for later additions to the decorator arguments.
         cls.__dagger_type__ = ObjectDefinition(  # type: ignore generalTypeIssues
             # Classes should already be in PascalCase, just normalizing here
             # to avoid a mismatch with the module name in PascalCase
