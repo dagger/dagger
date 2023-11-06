@@ -314,21 +314,25 @@ module.exports = {
 
           ]
         },
-//        {
-//          type: "category",
-//          label: "Python",
-//          items: [
-//            {
-//              type: "doc",
-//              id: "zenith/developer/python/quickstart",
-//            },
-//            {
-//              type: "link",
-//              label: "Python SDK Reference 🔗",
-//              href: "https://dagger-io.readthedocs.org/",
-//            },
-//          ]
-//        },
+        {
+          type: "category",
+          label: "Python",
+          items: [
+            {
+              type: "doc",
+              id: "zenith/developer/python/quickstart",
+            },
+            {
+              type: "doc",
+              id: "zenith/developer/python/advanced-programming",
+            },
+            {
+              type: "link",
+              label: "Python SDK Reference 🔗",
+              href: "https://dagger-io.readthedocs.org/",
+            },
+          ]
+        },
         {
           type: "doc",
           id: "zenith/developer/publishing-modules",

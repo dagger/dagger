@@ -1,8 +1,7 @@
 ---
-slug: /zenith/developer/go/191108/advanced-programming
+slug: /zenith/developer/python/539756/advanced-programming
 displayed_sidebar: "zenith"
-authors: ["Alex Suraci", "Erik Sipsma"]
-date: "2023-11-03"
+date: "2023-11-06"
 ---
 
 # Advanced Programming
@@ -17,9 +16,8 @@ Once you've understood the basics of writing your own Dagger modules, you're goi
 
 This guide assumes that:
 
-- You have a good understanding of the Dagger Go SDK. If not, refer to the [Go SDK reference](https://pkg.go.dev/dagger.io/dagger).
+- You have a good understanding of the Dagger Python SDK. If not, refer to the [Python](https://dagger-io.readthedocs.org/) SDK reference.
 - You have the Dagger CLI installed. If not, [install Dagger](../../../current/cli/465058-install.md).
-- You have a Dagger module. If not, create a module using the [Go](../../developer/go/525021-quickstart.md) quickstart.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Use modules in other modules
@@ -46,9 +44,10 @@ dagger mod install ./path/to/module
 
 The dependent module will be added to your code-generation routines, so you can access it from your own module's code, as shown below:
 
-```go
-func (m *Potato) HelloWorld(ctx context.Context) (string, error) {
-  return dag.HelloWorld().Message(ctx)
+```python
+@function
+async def hello_world() -> str:
+    return await dagger.hello_world().message()
 }
 ```
 
@@ -62,9 +61,9 @@ Module functions can return custom objects, which in turn can define new functio
 
 So long as your object can be JSON-serialized by your SDK, its state will be preserved and passed to the next function in the chain.
 
-Here is an example module using the Go SDK:
+Here is an example module using the Python SDK:
 
-```go file=./snippets/advanced-programming/chaining/main.go
+```python file=./snippets/advanced-programming/chaining/main.py
 ```
 
 And here is an example query for this module:
@@ -99,8 +98,7 @@ The result will be:
 
 ## Miscellanea
 
-- The context and error return are optional in the module's function signature; remove them if you don't need them.
-- A module's private fields will not be persisted.
+- The module's main functions can be declared as either top-level functions or as methods of a class (decorated with [dagger.mod.object_type](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.object_type)) having the same name as the module (in PascalCase), but not both.
 
 ## Conclusion
 
