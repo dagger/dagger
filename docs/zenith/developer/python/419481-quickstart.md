@@ -60,11 +60,10 @@ When using `dagger query` and GraphQL, all names are converted into a language-a
 ## Step 2: Prepare the development environment
 
 :::note
-This step can be skipped if there's no need for IDE support. It's not
-necessary for execution as experienced in the previous step.
+If you don't need IDE support, you can skip this step.
 :::
 
-When you open `src/main.py` in your IDE it may complain that it doesn't recognize the `dagger` module so let's install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) from the generated `./sdk` directory:
+When opening the generated `src/main.py` in an IDE, it may throw an error or a warning on account of not recognizing the `dagger` module. To resolve this, install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) from the generated `./sdk` directory, as shown below:
 
 ```sh
 python -m venv .venv
@@ -73,19 +72,9 @@ pip install -e ./sdk
 ```
 
 :::tip
-As always, you can use any virtual environment manager, including for example
-[Poetry](https://python-poetry.org). Just make sure you add `./sdk` as a
-**development dependency**.
+As always, you can use any virtual environment manager, including [Poetry](https://python-poetry.org) and others. Just make sure you add `./sdk` as a development dependency. If you place the virtual environment inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json`.
 
-If you place the virtual environment inside the module, don't forget to add
-it to `.gitignore` and to `"exclude"` in `dagger.json`.
-:::
-
-:::tip
-It's important to install the SDK in **editable mode** (`-e` in `pip install`)
-so you don't have to reinstall it after a `dagger mod sync`. However it's
-recommended to reinstall after upgrading dagger to cover possible dependency
-changes.
+It's also important to install the SDK in **editable mode** (the `-e` in the `pip install` command) so you don't have to reinstall it after a `dagger mod sync`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
 :::
 
 ## Step 3: Add a function
@@ -150,10 +139,9 @@ Your module functions can accept and return multiple different types, not just b
   ```
 
   [dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
-  is only needed to allow accessing the field directly via the API. Otherwise
-  it'll still be used during serialization/deserialization when passing the
+  is only needed to allow accessing the field directly via the API. Otherwise,
+  it will still be used during serialization/deserialization when passing the
   object instance to other functions.
-
 
 :::tip
 Use `dagger call --help` to get help on the commands and flags available.
