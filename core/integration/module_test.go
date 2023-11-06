@@ -703,6 +703,18 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi!hi!"}}`, out)
 	})
+
+	t.Run("func EchoOptsInlineDefault(struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineDefault(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlineDefault":"hi+hi+"}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptsInlineDefault(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsInlineDefault":"hi!hi!"}}`, out)
+	})
 }
 
 func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {
@@ -946,6 +958,7 @@ query {
               args {
                 name
                 description
+				defaultValue
               }
             }
           }
@@ -1004,6 +1017,17 @@ func TestModuleGoDocs(t *testing.T) {
 	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
 	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
 	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+
+	// test the inline struct form
+	echoOpts = obj.Get(`functions.#(name="echoOptsDefault")`)
+	require.Equal(t, "echoOptsDefault", echoOpts.Get("name").String())
+	require.Len(t, echoOpts.Get("args").Array(), 3)
+	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "", echoOpts.Get("args.0.defaultValue").String())
+	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+	require.Equal(t, "\"+\"", echoOpts.Get("args.1.defaultValue").String())
+	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "2", echoOpts.Get("args.2.defaultValue").String())
 }
 
 func TestModuleGoDocsEdgeCases(t *testing.T) {

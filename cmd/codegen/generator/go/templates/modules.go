@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -841,11 +842,19 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 					return nil, err
 				}
 				spec.parent = parent
+
 				spec.description = paramFields[f].Doc.Text()
 				if spec.description == "" {
 					spec.description = paramFields[f].Comment.Text()
 				}
 				spec.description = strings.TrimSpace(spec.description)
+
+				if paramFields[f].Tag != nil {
+					if tag := paramType.Tag(f); tag != "" {
+						spec.defaultValue = reflect.StructTag(tag).Get("default")
+					}
+				}
+
 				specs = append(specs, spec)
 			}
 			return specs, nil
@@ -924,7 +933,7 @@ type paramSpec struct {
 	optional bool
 	variadic bool
 
-	defaultValue string // NOTE: defaultVal is not currently populated
+	defaultValue string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, Optional, etc
@@ -1127,6 +1136,7 @@ func unpackASTFields(fields *ast.FieldList) []*ast.Field {
 			if i != 0 {
 				field.Doc = nil
 				field.Comment = nil
+				field.Tag = nil
 			}
 			unpacked = append(unpacked, &field)
 		}

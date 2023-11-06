@@ -130,3 +130,12 @@ func (m *Minimal) EchoOptsInlineTags(ctx context.Context, opts struct {
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
 }
+
+func (m *Minimal) EchoOptsInlineDefault(ctx context.Context, opts struct {
+	Msg string
+
+	Suffix Optional[string] `default:"+"`
+	Times  Optional[int]    `default:"2"`
+}) string {
+	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
+}
