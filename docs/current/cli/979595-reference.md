@@ -27,9 +27,34 @@ The options below can be used with all CLI commands.
 | `-s`, `--silent`      | Disable terminal UI and progress output                          |
 | `-h`, `--help`        | Show help text                                                   |
 | `--workdir`           | Define the host working directory (default `.`)                  |
-| --------------------- | ---------------------------------------------------------------- |
 
 ## Commands
+
+## dagger call
+
+:::note
+This command is currently under development and is therefore hidden in the CLI.
+:::
+
+Call a module function and print the result. When called:
+
+- on a container, the standard output is returned;
+- on a directory, the list of entries is returned;
+- on a file, the file contents are returned.
+
+### Usage
+
+```shell
+dagger call [function]
+```
+
+### Examples
+
+Call a function returning a container. The standard output of the container is returned.
+
+```shell
+dagger run build
+```
 
 ## dagger completion
 
@@ -57,6 +82,41 @@ To load completions for every new session on macOS:
 
 ```shell
 dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
+```
+
+## dagger functions
+
+:::note
+This command is currently under development and is therefore hidden in the CLI.
+:::
+
+List all functions in a module.
+
+### Options
+
+| Option               | Description                           |
+| ---------------------| --------------------------------------|
+| `--focus`            | Only show output for focused commands |
+| `-m`, `--mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
+
+### Usage
+
+```shell
+dagger functions
+```
+
+### Examples
+
+List functions in local module:
+
+```shell
+dagger functions -m /path/to/some/dir
+```
+
+List functions in remote module:
+
+```shell
+dagger functions -m github.com/dagger/hello-dagger
 ```
 
 ## dagger help
@@ -111,6 +171,59 @@ Log out of Dagger Cloud:
 
 ```shell
 dagger logout
+```
+
+## dagger module
+
+Manage Dagger modules. By default, print the configuration of the current module in JSON format.
+
+### Usage
+
+```shell
+dagger module [--mod string] [--focus]
+dagger module [sub-command] [--mod string] [--focus]
+```
+
+### Sub-commands
+
+| Sub-command  | Description                                                           |
+| ------------ | --------------------------------------------------------------------- |
+| `init`       | Initialize a new Dagger module in a local directory                   |
+| `install`    | Add a new dependency to a Dagger module                              |
+| `sync`       | Synchronize a Dagger module with the latest version of its extensions |
+| `publish`    | Publish a Dagger module to the Daggerverse                            |
+
+### Options
+
+| Option               | Description                           |
+| ---------------------| --------------------------------------|
+| `--focus`            | Only show output for focused commands |
+| `-m`, `--mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
+
+### Examples
+
+Print the configuration of a local Dagger module:
+
+```shell
+dagger module -m /path/to/some/dir
+```
+
+Print the configuration of a remote Dagger module:
+
+```shell
+dagger module -m github.com/dagger/hello-dagger
+```
+
+Initialize a new Dagger module in the current directory:
+
+```shell
+dagger module init
+```
+
+Synchronize a Dagger module after a change in its interfaces:
+
+```shell
+dagger module sync
 ```
 
 ## dagger query
@@ -169,7 +282,7 @@ In the live progress output:
 ### Usage
 
 ```shell
-dagger run [--debug] [command]
+dagger run [--debug] [--cleanup-timeout 10] [--focus] [command]
 ```
 
 ### Options
@@ -177,6 +290,8 @@ dagger run [--debug] [command]
 | Option       | Description                  |
 | ------------ | -----------------------------|
 | `--debug`    | Display underlying API calls |
+| `--cleanup-timeout duration` |  Set max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s) |
+| `--focus`    | Only show output for focused commands |
 
 ### Examples
 
@@ -212,6 +327,54 @@ Disable Dagger terminal output, but continue emitting program standard output:
 
 ```shell
 dagger --silent run go run ci.go 2>&1 | tee foo.out
+```
+
+## dagger shell
+
+:::note
+This command is currently under development and is therefore hidden in the CLI.
+:::
+
+Open a shell in a container returned by a function. If no entrypoint is specified and the container doesn't have a default command, `sh` will be used.
+
+### Usage
+
+```shell
+dagger shell [function]
+```
+
+### Example
+
+Open a shell session in the container returned by the `debug` function:
+
+```shell
+dagger shell debug
+```
+
+## dagger up
+
+:::note
+This command is currently under development and is therefore hidden in the CLI.
+:::
+
+Start a service or a container returned by a function and expose its ports to the host.
+
+:::note
+In order for this to work, the service/container returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports.
+:::
+
+### Usage
+
+```shell
+dagger up [function]
+```
+
+### Example
+
+Start the service returned by the `debug` function:
+
+```shell
+dagger up debug
 ```
 
 ## dagger version
