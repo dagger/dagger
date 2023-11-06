@@ -59,41 +59,6 @@ To load completions for every new session on macOS:
 dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
 ```
 
-## dagger functions
-
-:::note
-This command is currently under development and is therefore hidden in the CLI.
-:::
-
-List all functions in a module.
-
-### Options
-
-| Option               | Description                           |
-| ---------------------| --------------------------------------|
-| `--focus`            | Only show output for focused commands |
-| `-m`, `--mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
-
-### Usage
-
-```shell
-dagger functions
-```
-
-### Examples
-
-List functions in local module:
-
-```shell
-dagger functions -m /path/to/some/dir
-```
-
-List functions in remote module:
-
-```shell
-dagger functions -m github.com/sipsma/daggerverse/example
-```
-
 ## dagger help
 
 ### Usage
