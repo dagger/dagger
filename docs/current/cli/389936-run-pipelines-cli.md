@@ -76,7 +76,7 @@ The first query:
 
 The second query:
 
-- initializes a new `alpine:latest` container (returned as a `Container` object);
+- initializes a new `golang:latest` container (returned as a `Container` object);
 - mounts the `Directory` from the first query within the container filesystem at the `/src` mount point (returned as a revised `Container`);
 - sets the working directory within the container to the mounted filesystem (returned as a revised `Container`);
 - requests execution of the `go build` command (returned as a revised `Container` containing the execution plan);
