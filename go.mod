@@ -7,7 +7,7 @@ replace dagger.io/dagger => ./sdk/go
 replace github.com/dagger/dagger/internal/mage => ./internal/mage
 
 require (
-	dagger.io/dagger v0.9.2
+	dagger.io/dagger v0.9.3
 	github.com/99designs/gqlgen v0.17.34 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
@@ -20,7 +20,7 @@ require (
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/dagger/graphql v0.0.0-20230919174923-21d038582a21
+	github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2
