@@ -270,14 +270,14 @@ Executes the specified command in a Dagger session and displays live progress. `
 
 In the live progress output:
 
-* Parallel pipelines are represented by vertical columns (┃ for active, │ for inactive).
-* Operations within a pipeline are represented by block characters (█).
-* Sub-tasks of an operation are listed beneath it (┣).
-* Actively running operations blink until they finish (█▓▒░█▓▒░).
-* Each pipeline forks from its parent pipeline and show its name in bold after a caret (▼).
-* Dependencies across pipelines are shown as a column that forks beneath the output operation and connects to each input, with the name of the output in grey (`pull docker.io/library/node:16`).
-* Actively running operations are always shown at the bottom of the screen.
-* Failed operations are also always shown at the bottom of the screen.
+- Parallel pipelines are represented by vertical columns (┃ for active, │ for inactive).
+- Operations within a pipeline are represented by block characters (█).
+- Sub-tasks of an operation are listed beneath it (┣).
+- Actively running operations blink until they finish (█▓▒░█▓▒░).
+- Each pipeline forks from its parent pipeline and show its name in bold after a caret (▼).
+- Dependencies across pipelines are shown as a column that forks beneath the output operation and connects to each input, with the name of the output in grey (`pull docker.io/library/node:16`).
+- Actively running operations are always shown at the bottom of the screen.
+- Failed operations are also always shown at the bottom of the screen.
 
 ### Usage
 
