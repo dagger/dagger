@@ -173,15 +173,15 @@ Log out of Dagger Cloud:
 dagger logout
 ```
 
-## dagger module
+## dagger mod
 
 Manage Dagger modules. By default, print the configuration of the current module in JSON format.
 
 ### Usage
 
 ```shell
-dagger module [--mod string] [--focus]
-dagger module [sub-command] [--mod string] [--focus]
+dagger mod [--mod string] [--focus]
+dagger mod [sub-command] [--mod string] [--focus]
 ```
 
 ### Sub-commands
@@ -205,25 +205,25 @@ dagger module [sub-command] [--mod string] [--focus]
 Print the configuration of a local Dagger module:
 
 ```shell
-dagger module -m /path/to/some/dir
+dagger mod -m /path/to/some/dir
 ```
 
 Print the configuration of a remote Dagger module:
 
 ```shell
-dagger module -m github.com/dagger/hello-dagger
+dagger mod -m github.com/dagger/hello-dagger
 ```
 
 Initialize a new Dagger module in the current directory:
 
 ```shell
-dagger module init
+dagger mod init
 ```
 
 Synchronize a Dagger module after a change in its interfaces:
 
 ```shell
-dagger module sync
+dagger mod sync
 ```
 
 ## dagger query
@@ -282,7 +282,7 @@ In the live progress output:
 ### Usage
 
 ```shell
-dagger run [--debug] [--cleanup-timeout 10] [--focus] [command]
+dagger run [--debug] [--cleanup-timeout integer] [--focus] [command]
 ```
 
 ### Options
@@ -340,8 +340,14 @@ Open a shell in a container returned by a function. If no entrypoint is specifie
 ### Usage
 
 ```shell
-dagger shell [function]
+dagger shell [--entrypoint string] [function]
 ```
+
+### Options
+
+| Option                 | Description                  |
+| ---------------------- | -----------------------------|
+| `--entrypoint command` | Entrypoint to use            |
 
 ### Example
 
@@ -349,6 +355,12 @@ Open a shell session in the container returned by the `debug` function:
 
 ```shell
 dagger shell debug
+```
+
+Open a shell session in the container returned by the `debug` function using a different entrypoint:
+
+```shell
+dagger shell --entrypoint /bin/zsh debug
 ```
 
 ## dagger up
@@ -366,15 +378,28 @@ In order for this to work, the service/container returned by the function must h
 ### Usage
 
 ```shell
-dagger up [function]
+dagger up [--port string] [--native] [function]
 ```
+
+### Options
+
+| Option        | Description                                                        |
+| ------------- | -------------------------------------------------------------------|
+| `--port rule` | Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format          |
+| `--native`    | Forward all ports natively, matching frontend port to backend port |            |
 
 ### Example
 
-Start the service returned by the `debug` function:
+Start the service returned by the `service` function:
 
 ```shell
-dagger up debug
+dagger up --native service
+```
+
+Start the service returned by the `service` function, mapping container port 8080 to host port 9090:
+
+```shell
+dagger up --port 9090:8080 service
 ```
 
 ## dagger version
