@@ -1037,6 +1037,13 @@ func (m *Minimal) HelloMore(
 	return foo + bar
 }
 
+func (m *Minimal) HelloMoreInline(opts struct{
+	// foo here
+	foo, bar string
+}) string {
+	return opts.foo + opts.bar
+}
+
 func (m *Minimal) HelloAgain( // docs for helloagain
 	foo string,
 	bar string, // docs for bar
@@ -1080,6 +1087,14 @@ func (m *Minimal) HelloFinal(
 	require.Equal(t, "foo here", hello.Get("args.0.description").String())
 	require.Equal(t, "bar", hello.Get("args.1.name").String())
 	require.Equal(t, "bar here", hello.Get("args.1.description").String())
+
+	hello = obj.Get(`functions.#(name="helloMoreInline")`)
+	require.Equal(t, "helloMoreInline", hello.Get("name").String())
+	require.Len(t, hello.Get("args").Array(), 2)
+	require.Equal(t, "foo", hello.Get("args.0.name").String())
+	require.Equal(t, "foo here", hello.Get("args.0.description").String())
+	require.Equal(t, "bar", hello.Get("args.1.name").String())
+	require.Equal(t, "", hello.Get("args.1.description").String())
 
 	hello = obj.Get(`functions.#(name="helloAgain")`)
 	require.Equal(t, "helloAgain", hello.Get("name").String())
