@@ -1,5 +1,5 @@
   ```shell
-  dagger call  scan-image --image-ref alpine:latest
+  dagger call scan-image --image-ref alpine:latest
   ```
 
   Here's an example of the output:
