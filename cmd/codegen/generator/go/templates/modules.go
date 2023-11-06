@@ -1005,19 +1005,35 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.Com
 
 	allowDocComment := true
 	allowLineComment := true
-	if i == 0 && tokenFile.Line(fnDecl.Pos()) == line {
-		// the argument is on the same line as the function declaration, so
-		// there is no doc comment to find
-		allowDocComment = false
-	} else if i > 0 && tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i-1).Pos()) == line {
-		// the argument is on the same line as the previous argument, so again
-		// there is no doc comment to find
-		allowDocComment = false
+	if i == 0 {
+		fieldStartLine := tokenFile.Line(fnDecl.Type.Params.Pos())
+		if fieldStartLine == line || fieldStartLine == line-1 {
+			// the argument is on the same (or next) line as the function
+			// declaration, so there is no doc comment to find
+			allowDocComment = false
+		}
+	} else {
+		prevArgLine := tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i-1).Pos())
+		if prevArgLine == line || prevArgLine == line-1 {
+			// the argument is on the same (or next) line as the previous
+			// argument, so again there is no doc comment to find
+			allowDocComment = false
+		}
 	}
-	if i+1 < len(fnDecl.Type.Params.List) && tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i+1).Pos()) == line {
-		// the argument is on the same line as the next argument, so there is
-		// no line comment to find
-		allowLineComment = false
+	if i+1 < len(fnDecl.Type.Params.List) {
+		nextArgLine := tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i+1).Pos())
+		if nextArgLine == line {
+			// the argument is on the same line as the next argument, so there is
+			// no line comment to find
+			allowLineComment = false
+		}
+	} else {
+		fieldEndLine := tokenFile.Line(fnDecl.Type.Params.End())
+		if fieldEndLine == line {
+			// the argument is on the same line as the end of the field list, so there
+			// is no line comment to find
+			allowLineComment = false
+		}
 	}
 
 	for _, f := range ps.pkg.Syntax {
@@ -1031,8 +1047,6 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.Com
 			npos := tokenFile.LineStart(tokenFile.Line(pos)) - 1
 			for _, comment := range f.Comments {
 				if comment.Pos() <= npos && npos <= comment.End() {
-					// TODO(jedevc): we need to make sure that this comment has
-					// no content before it
 					return comment, nil
 				}
 			}

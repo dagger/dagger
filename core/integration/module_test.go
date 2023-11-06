@@ -1037,11 +1037,17 @@ func (m *Minimal) HelloMore(
 	return foo + bar
 }
 
-func (m *Minimal) HelloAgain(
-	foo string, // docs for foo
-	bar string,
+func (m *Minimal) HelloAgain( // docs for helloagain
+	foo string,
+	bar string, // docs for bar
+	baz string,
 ) string {
 	return foo + bar
+}
+
+func (m *Minimal) HelloFinal(
+	foo string) string { // woops
+	return foo
 }
 `,
 		})
@@ -1075,13 +1081,21 @@ func (m *Minimal) HelloAgain(
 	require.Equal(t, "bar", hello.Get("args.1.name").String())
 	require.Equal(t, "bar here", hello.Get("args.1.description").String())
 
-	// hello = obj.Get(`functions.#(name="helloAgain")`)
-	// require.Equal(t, "helloAgain", hello.Get("name").String())
-	// require.Len(t, hello.Get("args").Array(), 2)
-	// require.Equal(t, "foo", hello.Get("args.0.name").String())
-	// require.Equal(t, "docs for foo", hello.Get("args.0.description").String())
-	// require.Equal(t, "bar", hello.Get("args.1.name").String())
-	// require.Equal(t, "", hello.Get("args.1.description").String())
+	hello = obj.Get(`functions.#(name="helloAgain")`)
+	require.Equal(t, "helloAgain", hello.Get("name").String())
+	require.Len(t, hello.Get("args").Array(), 3)
+	require.Equal(t, "foo", hello.Get("args.0.name").String())
+	require.Equal(t, "", hello.Get("args.0.description").String())
+	require.Equal(t, "bar", hello.Get("args.1.name").String())
+	require.Equal(t, "docs for bar", hello.Get("args.1.description").String())
+	require.Equal(t, "baz", hello.Get("args.2.name").String())
+	require.Equal(t, "", hello.Get("args.2.description").String())
+
+	hello = obj.Get(`functions.#(name="helloFinal")`)
+	require.Equal(t, "helloFinal", hello.Get("name").String())
+	require.Len(t, hello.Get("args").Array(), 1)
+	require.Equal(t, "foo", hello.Get("args.0.name").String())
+	require.Equal(t, "", hello.Get("args.0.description").String())
 }
 
 //go:embed testdata/modules/go/extend/main.go
