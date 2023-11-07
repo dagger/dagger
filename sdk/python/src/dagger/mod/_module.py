@@ -496,7 +496,7 @@ class Module:
                     cls,
                     self._converter,
                     **overrides,
-                )
+                ),
             )
             self._converter.register_structure_hook(
                 cls,
@@ -504,7 +504,7 @@ class Module:
                     cls,
                     self._converter,
                     **overrides,
-                )
+                ),
             )
 
         # Update origin in methods decorated with `mod.function()`.

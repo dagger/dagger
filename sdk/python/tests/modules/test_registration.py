@@ -157,4 +157,3 @@ class TestNameOverrides:
 
     async def test_field_structure(self, mod: Module):
         assert await get_result(mod, "Bar", '{"with": "baz"}', "with", {}) == "baz"
-
