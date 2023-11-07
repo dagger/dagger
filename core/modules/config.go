@@ -3,7 +3,6 @@ package modules
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -45,20 +44,14 @@ func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
 	return cfg
 }
 
-func (cfg *Config) RootAndSubpath(moduleSourceDir string) (string, string, error) {
-	modSrcDir, err := filepath.Abs(moduleSourceDir)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get module root: %w", err)
-	}
-
-	modRootDir := filepath.Join(modSrcDir, cfg.Root)
-
-	subPath, err := filepath.Rel(modRootDir, modSrcDir)
+func (cfg *Config) RootAndSubpath(modSourceDir string) (string, string, error) {
+	modRootDir := filepath.Join(modSourceDir, cfg.Root)
+	subPath, err := filepath.Rel(modRootDir, modSourceDir)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get module subpath: %w", err)
 	}
-	if strings.HasPrefix(subPath, "..") {
-		return "", "", fmt.Errorf("module subpath %q is not under module root %q", moduleSourceDir, modRootDir)
+	if strings.HasPrefix(subPath+"/", "../") {
+		return "", "", fmt.Errorf("module subpath %q is not under module root %q", modSourceDir, modRootDir)
 	}
 
 	return modRootDir, subPath, nil
@@ -92,9 +85,9 @@ func (cfg *Config) Use(ctx context.Context, dag *dagger.Client, ref *Ref, refs .
 func NormalizeConfigPath(configPath string) string {
 	// figure out if we were passed a path to a dagger.json file
 	// or a parent dir that may contain such a file
-	baseName := path.Base(configPath)
+	baseName := filepath.Base(configPath)
 	if baseName == Filename {
 		return configPath
 	}
-	return path.Join(configPath, Filename)
+	return filepath.Join(configPath, Filename)
 }
