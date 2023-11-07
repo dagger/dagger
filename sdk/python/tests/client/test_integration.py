@@ -47,7 +47,7 @@ async def test_container_build():
     assert words[0] == "dagger"
 
 
-async def test_container_build_args():
+async def test_input_arg():
     dockerfile = """\
     FROM alpine:3.16.2
     ARG SPAM=spam
@@ -63,6 +63,12 @@ async def test_container_build_args():
         .stdout()
     )
     assert "SPAM=egg" in out
+
+
+async def test_optionals_in_input_fields():
+    svc = dagger.host().service([dagger.PortForward(8000)])
+    field = svc._ctx.selections.pop()
+    assert field.args == {"ports": [{"backend": 8000}]}
 
 
 @pytest.mark.parametrize("val", ["spam", ""])
@@ -225,8 +231,8 @@ async def test_env_variable_set(mocker):
     ctx.execute = mocker.AsyncMock(return_value="BAR")
 
     env_var = dagger.EnvVariable(ctx)
-    env_var._name = "FOO"  # noqa: SLF001
-    env_var._value = "foo"  # noqa: SLF001
+    env_var._name = "FOO"
+    env_var._value = "foo"
 
     ctx.select.assert_not_called()
     assert await env_var.name() == "FOO"

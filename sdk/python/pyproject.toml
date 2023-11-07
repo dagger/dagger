@@ -222,6 +222,8 @@ extend-immutable-calls = ["typer.Option"]
     "PT012",
     # No public interfaces.
     "D1",
+    # Allow accessing private fields in tests.
+    "SLF001",
 ]
 # Allow some patterns to redefine imports in __init__.
 "__init__.py" = ["I001", "F401", "F403", "PLC0414"]

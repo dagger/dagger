@@ -29,7 +29,7 @@ from dagger._codegen.generator import Scalar as ScalarHandler
 def ctx():
     return Context(
         id_map={
-            "CacheID": "CacheVolume",
+            "CacheVolumeID": "CacheVolume",
             "FileID": "File",
             "SecretID": "Secret",
         },
@@ -59,7 +59,7 @@ def test_format_name(graphql, expected):
 opts = InputObject(
     "Options",
     fields={
-        "key": InputField(NonNull(Scalar("CacheID"))),
+        "key": InputField(NonNull(Scalar("CacheVolumeID"))),
         "name": InputField(String),
     },
 )
@@ -89,7 +89,7 @@ cache_volume = Object(
     "CacheVolume",
     fields={
         "id": Field(
-            NonNull(Scalar("CacheID")),
+            NonNull(Scalar("CacheVolumeID")),
             {},
         ),
     },
