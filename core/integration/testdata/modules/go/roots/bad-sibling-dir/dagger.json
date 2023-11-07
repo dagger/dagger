@@ -1,0 +1,5 @@
+{
+  "name": "bad-sibling-dir",
+  "sdk": "go",
+  "root": "../root"
+}

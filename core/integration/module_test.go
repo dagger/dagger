@@ -1806,6 +1806,41 @@ func TestModuleNamespacing(t *testing.T) {
 	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
 }
 
+func TestModuleRoots(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/roots")
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(moduleSrcPath)
+	require.NoError(t, err)
+
+	ctr := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithMountedDirectory("/work", c.Host().Directory(moduleSrcPath))
+
+	for _, entry := range entries {
+		entry := entry
+		t.Run(entry.Name(), func(t *testing.T) {
+			t.Parallel()
+
+			ctr := ctr.WithWorkdir("/work/" + entry.Name())
+
+			out, err := ctr.
+				With(daggerQuery(fmt.Sprintf(`{%s{hello}}`, strcase.ToLowerCamel(entry.Name())))).
+				Stdout(ctx)
+			if strings.HasPrefix(entry.Name(), "good-") {
+				require.NoError(t, err)
+				require.JSONEq(t, fmt.Sprintf(`{"%s":{"hello": "hello"}}`, strcase.ToLowerCamel(entry.Name())), out)
+			} else if strings.HasPrefix(entry.Name(), "bad-") {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestModuleDaggerCall(t *testing.T) {
 	t.Parallel()
 

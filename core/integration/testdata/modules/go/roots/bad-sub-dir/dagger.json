@@ -1,0 +1,5 @@
+{
+  "name": "bad-sub-dir",
+  "sdk": "go",
+  "root": "subdir"
+}
