@@ -78,7 +78,6 @@ Since the application is a Node.js application, it's convenient to use the `node
   ```
 
   This function does the following:
-
     - It calls the `node` module's `WithVersion()` method via the `dag` client. This method returns a `node` container image with the given Node.js version. This container image is represented as a `Container` object.
     - It calls the module's `Container.WithNpm()` method, which returns a revised `Container` after adding the `npm` package manager and a cache volume for `npm`.
     - It calls the module's `Container.WithSource()` method, which returns a revised `Container` including the application source code and a cache volume for Node.js modules.
@@ -96,9 +95,9 @@ Add a new `Test()` function that runs tests for the example application, by exec
 
 ```go
 func (m *Mymod) Test(ctx context.Context, nodeVersion Optional[string]) (string, error) {
-	return m.buildBase(nodeVersion).
-		Run([]string{"test", "--", "--watchAll=false"}).
-		Stderr(ctx)
+  return m.buildBase(nodeVersion).
+    Run([]string{"test", "--", "--watchAll=false"}).
+    Stderr(ctx)
 }
 ```
 
@@ -140,7 +139,7 @@ Add a new `Build()` function that creates a production build of the example appl
 
 ```go
 func (m *Mymod) Build(nodeVersion Optional[string]) *Directory {
-	return m.buildBase(nodeVersion).Build().Container().Directory("./build")
+  return m.buildBase(nodeVersion).Build().Container().Directory("./build")
 }
 ```
 
@@ -174,7 +173,7 @@ Here's an example of the output you will see:
 ┃ static
 ```
 
-## Step 5: Add a function to publish the application image
+## Step 5: Add functions to publish the application image
 
 At this point, your Dagger module has functions to test and build the application. However, Dagger SDKs also have built-in support to publish container images to remote registries.
 
@@ -199,6 +198,7 @@ One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The
   }
   ```
 
+  This code listing contains two functions:
     - The `Package()` function calls the `dag` client's `Container().From()` method to initialize a new container from a base image - here, the `nginx:1.23-alpine` image. The `From()` method returns a new `Container` object with the result. It uses the `Container.WithDirectory()` method to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
     - The `Publish()` function accepts a `Container` as input. It calls the `ttlsh` module's `Publish()` method to publish the container image to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
 
@@ -249,9 +249,9 @@ In order for this to work, the service/container returned by the function must h
 
 ```go
 func (m *Mymod) PackageService(nodeVersion Optional[string]) *Service {
-	return m.Package().
-		WithExposedPort(8080).
-		AsService()
+  return m.Package().
+    WithExposedPort(8080).
+    AsService()
 }
 ```
 
