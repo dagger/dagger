@@ -183,6 +183,7 @@ The example module in the previous sections was just that - an example. Next, le
 ## Conclusion
 
 {@include: ../../partials/_developer_quickstart_conclusion.md}
+- Guide on [programming a Dagger module to build, test and publish an application image](./457202-program-build-test-publish-module.md)
 
 ## Appendix A: Troubleshooting
 
