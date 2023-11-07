@@ -25,8 +25,7 @@ async function createConfig() {
       navbar: {
         logo: {
           alt: "Dagger Logo",
-          src: "img/dagger-logo.png",
-          srcDark: "img/dagger-logo-white.png",
+          src: "img/dagger-logo-white.png",
           height: "50px",
         },
         items: [
@@ -53,7 +52,6 @@ async function createConfig() {
           className: "header-searchbar",
         },
         ],
-        hideOnScroll: true,
       },
       algolia: {
         apiKey: "bffda1490c07dcce81a26a144115cc02",

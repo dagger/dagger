@@ -63,11 +63,6 @@ export default function GuidesIndex() {
 
   return (
     <div className={styles.guideIndex}>
-      {/* <div className={styles.selectedTags}>
-        {selectedTags.map((x, i) => (
-          <Tag key={i} label={x} onCloseClick={() => popTag(x)} removable></Tag>
-        ))}
-      </div> */}
       <GuideFilter
         allTags={allTags}
         selectedTags={selectedTags}
@@ -154,7 +149,7 @@ function GuideFilter({allTags, selectedTags, onCloseClick, pushTag}) {
         </div>)}
         <input
           onClick={() => setFiltering(true)}
-          className={styles.filterInput}
+          className={`${styles.filterInput} ${selectedTags.length > 0 ? styles.filterInputHasTags : ''}`}
           placeholder="Filter guides by tag"
           type="search"
           value={query}

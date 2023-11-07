@@ -4,6 +4,33 @@ $tablet-width: 996px;
 $desktop-width: 997px;
 $desktop-xl-width: 1160px;
 
+:root {
+  --ifm-color-primary-light: #21798D;
+  --ifm-color-primary: #21798D;
+  --ifm-heading-color: #0D0C1B;
+  --ifm-menu-color-active: #21798D;
+  --ifm-menu-color-background-active: #E1F5FB;
+  --ifm-menu-color-background-hover: #E1F5FB;
+  --ifm-navbar-background-color: #0D0C1B;
+  --ifm-menu-color: #4B4B5A;
+  --ifm-toc-link-color: #4B4B5A;
+  --ifm-hover-overlay: #E1F5FB;
+}
+
+html[data-theme="dark"] {
+  --ifm-background-color: #131226;
+  --ifm-color-primary-light: #57C7E3;
+  --ifm-color-primary: #57C7E3;
+  --ifm-heading-color: white;
+  --ifm-menu-color-active: #57C7E3;
+  --ifm-menu-color-background-active: #2B2F46;
+  --ifm-menu-color-background-hover: #2b2f46;
+  --ifm-menu-color: white;
+  --ifm-toc-link-color: white;
+  --ifm-hover-overlay: #2b2f46;
+}
+
+
 @mixin mobile {
   @media (max-width: #{$mobile-width}) {
     @content;
@@ -33,8 +60,7 @@ $desktop-xl-width: 1160px;
   height: 35px;
   margin: 0;
   padding: 0;
-  // background: url("/img/github-icon.svg") no-repeat;
-  background-color: black;
+  background-color: white;
   mask-image: url('/img/github-icon.svg');
   mask-size: 100%;
 
@@ -54,7 +80,7 @@ $desktop-xl-width: 1160px;
   height: 30px;
   margin: 0;
   padding: 0;
-  background-color: black;
+  background-color: white;
   mask-image: url("/img/discord-icon.svg");
   mask-size: 35px;
 
@@ -70,8 +96,15 @@ $desktop-xl-width: 1160px;
   }
 }
 
-html[data-theme="dark"] {
-  .header-discord-link, .header-github-link  {
-    background-color: white;
-  }
+.navbar-blog-link {
+  color: white
+}
+
+.navbar__items--right {
+  gap: 1rem;
+}
+
+pre {
+  background: #0D0C1B;
+  border: 1px solid rgba(75,75,90, 0.3);
 }
