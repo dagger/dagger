@@ -217,7 +217,7 @@ Here's an example of the output you will see:
 
 ## Step 6: Test and debug the module
 
-Apart from the usual Go debugging techniques, Dagger provides two commands that come in very handy when debugging modules:
+Apart from the usual debugging techniques, Dagger provides two commands that come in very handy when debugging modules.
 
 ### dagger shell
 
