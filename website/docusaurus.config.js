@@ -25,7 +25,7 @@ async function createConfig() {
       navbar: {
         logo: {
           alt: "Dagger Logo",
-          src: "img/dagger-logo-white.png",
+          src: "img/dagger-logo-white.svg",
           height: "50px",
         },
         items: [
