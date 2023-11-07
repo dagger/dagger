@@ -263,6 +263,11 @@ dagger up --native package-service
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
 
+For reference, here is the final module code:
+
+```go file=./snippets/test-build-publish/step6/main.go
+```
+
 ## Conclusion
 
 This guide walked you through the process of creating a Dagger module from scratch to test, build and publish a Node.js application image. It explained how to create a module, add functions to it, and work with containers and services as function inputs and outputs. It also demonstrated how to use modules from the Daggerverse to speed up your module development, by reusing functionality developed by the Dagger community.
