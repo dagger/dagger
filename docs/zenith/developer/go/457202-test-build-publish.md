@@ -22,9 +22,8 @@ This guide walks you through the process of creating a Dagger module from scratc
 
 This guide assumes that:
 
-- You have a good understanding of the JavaScript programming language.
+- You have a good understanding of the Go programming language and an IDE with Go language support.
 - You know the basics of programming Dagger modules. If not, refer to the [quickstart](./525021-quickstart.md).
-- You have a Go development environment. If not, install [Go](https://go.dev/doc/install).
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../../../current/cli/979595-reference.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Node.js Web application. If not, follow the steps in Appendix A to [create an example Node.js application](#appendix-a-create-an-example-application).
@@ -45,7 +44,7 @@ This will generate a `dagger.json` module file, an initial `main.go` source file
 
 The first step is to add a function to build a base image containing the application source code and runtime. This base image will serve as an input to other functions.
 
-Since the application is a Node.js application, it's convenient to use the `node` module from the [Daggerverse](https://daggerverse.dev), which provides a set of ready-made functions to manage a Node.js project.
+Since the application is a Node.js application, it's convenient to use the [`node` module](https://daggerverse.dev/mod/github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f) from the [Daggerverse](https://daggerverse.dev), which provides a set of ready-made functions to manage a Node.js project.
 
 1. Add the `node` module as a dependency:
 
@@ -57,10 +56,6 @@ Since the application is a Node.js application, it's convenient to use the `node
 
   ```go
   package main
-
-  import (
-    "context"
-  )
 
   type Mymod struct {}
 
@@ -78,10 +73,10 @@ Since the application is a Node.js application, it's convenient to use the `node
   ```
 
   This function does the following:
-    - It calls the `node` module's `WithVersion()` method via the `dag` client. This method returns a `node` container image with the given Node.js version. This container image is represented as a `Container` object.
-    - It calls the module's `Container.WithNpm()` method, which returns a revised `Container` after adding the `npm` package manager and a cache volume for `npm`.
-    - It calls the module's `Container.WithSource()` method, which returns a revised `Container` including the application source code and a cache volume for Node.js modules.
-    - It calls the module's `Container.Install()` method, which runs `npm install` in the container and returns a revised `Container` including the application's dependencies.
+    - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+    - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+    - It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
+    - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
 
   :::note
   `dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
@@ -89,11 +84,19 @@ Since the application is a Node.js application, it's convenient to use the `node
 
 ## Step 3: Add a function to test the application
 
-The return value of the `buildBase()` function is a `Container` with the application source code, Node.js runtime and cahe volumes. This is everything needed to test, build and publish the application.
+The return value of the `buildBase()` function is a `Node` object with the application source code, Node.js runtime and cahe volumes. This is everything needed to test, build and publish the application.
 
 Add a new `Test()` function that runs tests for the example application, by executing the `npm test` command:
 
 ```go
+// ...
+
+import (
+  "context"
+)
+
+// ...
+
 func (m *Mymod) Test(ctx context.Context, nodeVersion Optional[string]) (string, error) {
   return m.buildBase(nodeVersion).
     Run([]string{"test", "--", "--watchAll=false"}).
@@ -103,9 +106,13 @@ func (m *Mymod) Test(ctx context.Context, nodeVersion Optional[string]) (string,
 
 This function does the following:
 
-- It calls the `buildBase()` function to obtain a `Container` with the application source code, Node.js runtime and cache volumes.
-- It calls the module's `Container.Run()` method, which returns a revised `Container` after setting the commands to run in the container image - in this case, the command `npm test -- --watchAll-false`.
-- It uses the `Container.Stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
+- It calls the `buildBase()` function to obtain a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.Run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm test -- --watchAll-false`.
+- It uses the `Container.Stderr()` function to return the error stream of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+
+:::note
+Since the `Test()` function uses the `Context` type, the module imports the `context` package.
+:::
 
 Test the function by running it as below:
 
@@ -128,7 +135,7 @@ Here's an example of the output you will see:
 ```
 
 :::tip
-This listing uses the `node` module's `Container.Run().Stderr()` method to explicitly specify the test command and print its error stream. As an alternative, the `node` module also exposes a `Test()` method, which executes the `npm run test` command and prints its output stream.
+This listing uses the `node` module's `Node.Run().Stderr()` function to explicitly specify the test command and print its error stream. As an alternative, the `node` module also exposes a `Node.Test()` function, which executes the `npm run test` command and prints its output stream.
 :::
 
 ## Step 4: Add a function to build the application
@@ -145,9 +152,9 @@ func (m *Mymod) Build(nodeVersion Optional[string]) *Directory {
 
 This function does the following:
 
-- It calls the `buildBase()` function to obtain a `Container` with the application source code, Node.js runtime and cache volumes.
-- It calls the module's `Container.Build()` method, which returns a revised `Container` after setting the `npm run build` command to run in the container image.
-- It obtains a reference to the `build/` directory in the container with the `Container.Directory()` method. This method returns a `Directory` object.
+- It calls the `buildBase()` function to obtain a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image.
+- It obtains a reference to the `build/` directory in the container with the `Container.Directory()` function. This function returns a `Directory` object.
 
 :::note
 The `npm run build` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
@@ -177,7 +184,7 @@ Here's an example of the output you will see:
 
 At this point, your Dagger module has functions to test and build the application. However, Dagger SDKs also have built-in support to publish container images to remote registries.
 
-One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The [Daggerverse](https://daggerverse.dev) already includes a `ttlsh` module to publish to this registry.
+One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The [Daggerverse](https://daggerverse.dev) already includes a [`ttlsh` module](https://daggerverse.dev/mod/github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473) to publish to this registry.
 
 1. Add the `ttlsh` module as a dependency in your module:
 
@@ -185,12 +192,13 @@ One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The
   dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
   ```
 
-1. Update the module and add new `Package()` and `Publish()` functions to copy the built application into an NGINX web server container and deliver the result to the registry:
+1. Update the module and add new `Package()` and `Publish()` functions to copy the built application into an NGINX web server container image and deliver the result to the registry:
 
   ```go
   func (m *Mymod) Package(nodeVersion Optional[string]) *Container {
     return dag.Container().From("nginx:1.23-alpine").
-      WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion))
+      WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion)).
+      WithExposedPort(80)
   }
 
   func (m *Mymod) Publish(ctx context.Context, nodeVersion Optional[string]) (string, error) {
@@ -199,8 +207,10 @@ One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The
   ```
 
   This code listing contains two functions:
-    - The `Package()` function calls the `dag` client's `Container().From()` method to initialize a new container from a base image - here, the `nginx:1.23-alpine` image. The `From()` method returns a new `Container` object with the result. It uses the `Container.WithDirectory()` method to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
-    - The `Publish()` function accepts a `Container` as input. It calls the `ttlsh` module's `Publish()` method to publish the container image to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+    - The `Package()` function calls the `dag` client's `Container().From()` function to initialize a new container from a base image - here, the `nginx:1.23-alpine` image.The `From()` function returns a new `Container` object with the result.
+      - It uses the `Container.WithDirectory()` function to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+      - It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.23-alpine` image) and return a revised `Container`.
+    - The `Publish()` function accepts a `Container` as input. It calls the `ttlsh` module's `Publish()` function to publish the container image to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
 
 Test the code by running the command below:
 
@@ -245,20 +255,19 @@ asset-manifest.json  index.html           logo512.png          robots.txt
 
 The `dagger up` command allows `Service` and `Container` types returned by a function to be executed and have any exposed ports forwarded to the host machine. This has many potential use cases, such as manually testing web servers or databases directly from the host browser or host system.
 
-In order for this to work, the service/container returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports. So, add a new `PackageService()` function as shown below:
+In order for this to work, the service/container returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports. This is already implemented in the `Package()` function shown in the previous section. So, all that's needed is a new `PackageService()` function, as shown below:
 
 ```go
 func (m *Mymod) PackageService(nodeVersion Optional[string]) *Service {
   return m.Package().
-    WithExposedPort(8080).
     AsService()
 }
 ```
 
-Then, use the `dagger up` command to build the application and serve it with NGINX:
+Then, use the `dagger up` command to build the application and serve it with NGINX, mapping container port 80 to host port 8080:
 
 ```shell
-dagger up --native package-service
+dagger up --port 8080:80 package-service
 ```
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
@@ -296,8 +305,10 @@ This tutorial assumes that you have a Node.js Web application. If not, follow th
   npx create-react-app .
   ```
 
-1. Make a minor modification to the application's index page:
+1. Make a few minor changes to the application's default index page and related tests:
 
   ```shell
-  sed -i -e 's/Express/Dagger/g' routes/index.js
+  sed -i -e 's/Learn React/Learn Dagger/g' src/App.js
+  sed -i -e 's/reactjs.org/dagger.io/g' src/App.js
+  sed -i -e 's/learn react/learn dagger/g' src/App.test.js
   ```

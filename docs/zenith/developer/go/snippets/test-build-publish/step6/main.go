@@ -30,12 +30,12 @@ func (m *Mymod) Build(nodeVersion Optional[string]) *Directory {
 
 func (m *Mymod) Package(nodeVersion Optional[string]) *Container {
 	return dag.Container().From("nginx:1.23-alpine").
-		WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion))
+		WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion)).
+		WithExposedPort(80)
 }
 
 func (m *Mymod) PackageService(nodeVersion Optional[string]) *Service {
 	return m.Package(nodeVersion).
-		WithExposedPort(8080).
 		AsService()
 }
 
