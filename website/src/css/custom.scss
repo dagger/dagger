@@ -74,11 +74,10 @@ html[data-theme="dark"] {
     overflow: hidden;
   }
 
-  @include tablet {
-    background-color: var(--ifm-color-primary);
-  }
-
   @include mobile {
+    html[data-theme="light"] {
+      background-color: black;
+    }
     margin: auto;
   }
 }
@@ -99,18 +98,39 @@ html[data-theme="dark"] {
     width: 30px;
   }
 
-  @include tablet {
-    background-color: var(--ifm-color-primary);
-  }
-
   @include mobile {
     margin: auto;
   }
 }
 
+html[data-theme="light"] {
+  .header-discord-link {
+    @include mobile {
+      background-color: black;
+    }
+  }
+
+  .header-github-link {
+    @include mobile {
+      background-color: black;
+    }
+  }
+
+  @include mobile {
+    .navbar-blog-link {
+      color: black;
+    }
+  }
+
+  .navbar-sidebar__item {
+    @include mobile {
+      background-color: white;
+    }
+  }
+}
+
 .navbar-blog-link {
   color: white;
-
   @include mobile {
     justify-content: center;
   }

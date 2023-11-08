@@ -13,7 +13,7 @@
     display: flex;
     flex-wrap: wrap;
     width: 100%;
-    gap: 1.5rem;
+    gap: .75rem;
     padding-left: 0px;
   }
 
@@ -21,9 +21,7 @@
     list-style: none;
     text-decoration: none;
     margin-top: 0px !important;
-    min-width: 350px;
-    max-width: 600px;
-    flex: 1 1 400px;
+    flex: 1 1 49%;
   }
 }
 
