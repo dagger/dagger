@@ -28,8 +28,7 @@ def test_object_type_resolvers():
         ...
 
     resolvers = [
-        (r.name, r.origin.__name__ if r.origin else None)
-        for r in mod._resolvers  # noqa: SLF001
+        (r.name, r.origin.__name__ if r.origin else None) for r in mod._resolvers
     ]
 
     assert resolvers == [

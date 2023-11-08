@@ -2,7 +2,7 @@ import functools
 import logging
 import typing
 from collections import deque
-from dataclasses import MISSING, asdict, dataclass, field, replace
+from dataclasses import MISSING, dataclass, field, replace
 from typing import (
     Any,
     TypeVar,
@@ -34,8 +34,6 @@ from dagger.client.base import Scalar, Type
 
 from ._guards import (
     IDType,
-    InputHint,
-    InputSeqHint,
     is_id_type,
     is_id_type_sequence,
     is_id_type_subclass,
@@ -51,13 +49,6 @@ class Arg(typing.NamedTuple):
     name: str  # GraphQL name
     value: Any
     default: Any = MISSING
-
-    def as_input(self):
-        if InputHint.is_bearable(self.value):
-            return asdict(self.value)
-        if InputSeqHint.is_bearable(self.value):
-            return [asdict(v) for v in self.value]
-        return self.value
 
 
 @dataclass(slots=True)
@@ -92,9 +83,9 @@ class Context:
     def select(
         self, type_name: str, field_name: str, args: typing.Sequence[Arg]
     ) -> "Context":
-        args_ = {
-            arg.name: arg.as_input() for arg in args if arg.value is not arg.default
-        }
+        args_ = self.converter.unstructure(
+            {arg.name: arg.value for arg in args if arg.value is not arg.default}
+        )
         field_ = Field(type_name, field_name, args_)
         selections = self.selections.copy()
         selections.append(field_)
@@ -228,7 +219,10 @@ class Context:
 
 
 def make_converter(ctx: Context):
-    conv = make_json_converter(detailed_validation=False)
+    conv = make_json_converter(
+        omit_if_default=True,
+        detailed_validation=False,
+    )
 
     # For types that were returned from a list we need to set
     # their private attributes with a custom structuring function.

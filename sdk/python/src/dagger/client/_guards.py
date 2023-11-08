@@ -3,20 +3,14 @@ import functools
 import inspect
 import typing
 from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import is_dataclass
 from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar, overload
 
 from beartype import beartype
 from beartype.door import TypeHint
 from beartype.roar import BeartypeCallHintViolation
-from beartype.vale import Is, IsInstance, IsSubclass
+from beartype.vale import IsInstance, IsSubclass
 
-from .base import Input, Scalar, Type
-
-InputType = Annotated[Input, Is[lambda o: is_dataclass(o)]]
-InputHint = TypeHint(InputType)
-InputTypeSeq = Annotated[Sequence[InputType], ~IsInstance[str]]
-InputSeqHint = TypeHint(InputTypeSeq)
+from .base import Scalar, Type
 
 
 @typing.runtime_checkable
