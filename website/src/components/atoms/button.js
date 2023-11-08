@@ -1,3 +1,5 @@
+// THIS FILE WILL BE DEPRECATED SOON
+
 import React from "react";
 import styles from "../../css/atoms/button.module.scss";
 import Link from "@docusaurus/Link";
