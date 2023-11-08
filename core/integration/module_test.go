@@ -1251,6 +1251,41 @@ func (m *Foo) MyFunction() X {
 	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin"}}}`, out)
 }
 
+func TestModuleGoReturnNestedStruct(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=playground", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Playground struct{}
+
+type Foo struct {
+	MsgContainer Bar
+}
+
+type Bar struct {
+	Msg string
+}
+
+func (m *Playground) MyFunction() Foo {
+	return Foo{MsgContainer: Bar{Msg: "hello world"}}
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{playground{myFunction{msgContainer{msg}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"playground":{"myFunction":{"msgContainer":{"msg": "hello world"}}}}`, out)
+}
+
 func TestModuleGoGlobalVarDAG(t *testing.T) {
 	t.Parallel()
 

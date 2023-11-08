@@ -803,21 +803,26 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 				Type:        fieldASTType,
 			})
 
+			var fieldIDableObjectResolver IDableObjectResolver
+			if field.TypeDef.Kind == core.TypeDefKindObject {
+				// if this is an IDable type, convert the ID into the real
+				// object, otherwise its schema will be called against the
+				// string
+				fieldIDableObjectResolver, _ = s.idableObjectResolver(field.TypeDef.AsObject.Name, dest)
+			}
+
 			newObjResolver[field.Name] = func(p graphql.ResolveParams) (any, error) {
 				p.Info.FieldName = field.OriginalName
 				res, err := graphql.DefaultResolveFn(p)
 				if err != nil {
 					return nil, err
 				}
-				if field.TypeDef.Kind == core.TypeDefKindObject {
-					// if this is an IDable type, convert the ID into the real
-					// object, otherwise its schema will be called against the
-					// string
+				if fieldIDableObjectResolver != nil {
 					id, ok := res.(string)
 					if !ok {
 						return nil, fmt.Errorf("expected string %sID, got %T", field.TypeDef.AsObject.Name, res)
 					}
-					return core.ResourceFromID(id)
+					return fieldIDableObjectResolver.FromID(id)
 				}
 
 				return res, nil
