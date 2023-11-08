@@ -45,7 +45,7 @@ class TestConnectionManagement:
             # We want to test connect and disconnect.
             conn = engine.get_shared_client_connection()
 
-            conn_params = conn._params  # noqa: SLF001
+            conn_params = conn._params
             engine_params = engine.connect_params
 
             assert conn_params is not None, "Connection params should be set."
