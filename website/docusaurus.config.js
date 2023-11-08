@@ -25,25 +25,15 @@ async function createConfig() {
       navbar: {
         logo: {
           alt: "Dagger Logo",
-          src: "img/dagger-logo.png",
+          src: "img/dagger-logo-white.svg",
+          height: "50px",
         },
         items: [
-          {
-            type: "search",
-            position: "right",
-            className: "header-searchbar",
-          },
           {
             position: "right",
             to: "https://dagger.io/blog",
             label: "Blog",
             className: "navbar-blog-link",
-          },
-          {
-            position: "right",
-            type: "html",
-            value: "<span></span>",
-            className: "navbar-items-separator",
           },
           {
             position: "right",
@@ -53,19 +43,15 @@ async function createConfig() {
           },
           {
             position: "right",
-            type: "html",
-            value:
-              "<a href='https://discord.gg/ufnyBtc8uY'><div></div><span>Ask for help</span></a>",
+            href: "https://discord.gg/ufnyBtc8uY",
             className: "header-discord-link",
           },
           {
-            position: "right",
-            type: "html",
-            value: "<span></span>",
-            className: "navbar-items-separator",
-          },
+          type: "search",
+          position: "right",
+          className: "header-searchbar",
+        },
         ],
-        hideOnScroll: true,
       },
       algolia: {
         apiKey: "bffda1490c07dcce81a26a144115cc02",
