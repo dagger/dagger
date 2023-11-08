@@ -8,15 +8,15 @@ $desktop-xl-width: 1160px;
   --ifm-color-primary-light: #21798D;
   --ifm-color-primary: #21798D;
   --ifm-heading-color: #0D0C1B;
+  --ifm-hover-overlay: #E1F5FB;
   --ifm-menu-color-active: #21798D;
   --ifm-menu-color-background-active: #E1F5FB;
   --ifm-menu-color-background-hover: #E1F5FB;
-  --ifm-navbar-background-color: #0D0C1B;
   --ifm-menu-color: #4B4B5A;
-  --ifm-toc-link-color: #4B4B5A;
-  --ifm-hover-overlay: #E1F5FB;
-  --ifm-navbar-padding-vertical: .75rem;
+  --ifm-navbar-background-color: #0D0C1B;
   --ifm-navbar-height: 4.5rem;
+  --ifm-navbar-padding-vertical: .75rem;
+  --ifm-toc-link-color: #4B4B5A;
 }
 
 html[data-theme="dark"] {
@@ -24,12 +24,12 @@ html[data-theme="dark"] {
   --ifm-color-primary-light: #57C7E3;
   --ifm-color-primary: #57C7E3;
   --ifm-heading-color: white;
+  --ifm-hover-overlay: #2b2f46;
   --ifm-menu-color-active: #57C7E3;
   --ifm-menu-color-background-active: #2B2F46;
   --ifm-menu-color-background-hover: #2b2f46;
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
-  --ifm-hover-overlay: #2b2f46;
 }
 
 
@@ -65,6 +65,7 @@ html[data-theme="dark"] {
   background-color: white;
   mask-image: url('/img/github-icon.svg');
   mask-size: 100%;
+  width: 30px;
 
   @include desktop {
     width: 35px;
@@ -76,34 +77,52 @@ html[data-theme="dark"] {
   @include tablet {
     background-color: var(--ifm-color-primary);
   }
+
+  @include mobile {
+    margin: auto;
+  }
 }
 
 .header-discord-link{
+  background-color: white;
   height: 30px;
   margin: 0;
-  padding: 0;
-  background-color: white;
   mask-image: url("/img/discord-icon.svg");
   mask-size: 35px;
+  padding: 0;
+  width: 30px;
 
   @include desktop {
-    width: 30px;
+    overflow: hidden;
     text-indent: 40px;
     white-space: nowrap;
-    overflow: hidden;
+    width: 30px;
   }
 
   @include tablet {
     background-color: var(--ifm-color-primary);
   }
+
+  @include mobile {
+    margin: auto;
+  }
 }
 
 .navbar-blog-link {
-  color: white
+  color: white;
+
+  @include mobile {
+    justify-content: center;
+  }
 }
 
 .navbar__items--right {
   gap: 1rem;
+}
+
+.navbar__toggle {
+  color: white;
+  margin-right: 1rem;
 }
 
 pre {
