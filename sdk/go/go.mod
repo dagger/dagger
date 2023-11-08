@@ -1,6 +1,6 @@
 module dagger.io/dagger
 
-go 1.20
+go 1.21
 
 // retract engine releases from SDK releases
 retract [v0.0.0, v0.2.36]
