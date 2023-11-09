@@ -304,6 +304,10 @@ module.exports = {
             },
             {
               type: "doc",
+              id: "zenith/developer/go/test-build-publish",
+            },
+            {
+              type: "doc",
               id: "zenith/developer/go/advanced-programming",
             },
             {
