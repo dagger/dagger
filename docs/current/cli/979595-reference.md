@@ -228,7 +228,7 @@ dagger mod init [--license string] [--name string] [--root string] [--sdk string
 
 | Option               | Description                                                     |
 | ---------------------| ----------------------------------------------------------------|
-| `--license string`   | License identifier to generate |
+| `--license string`   | License identifier to generate                                  |
 | `--name string`      | Name of the new module                                          |
 | `--root string`      | Root directory that should be loaded for the full module context. Defaults to the parent directory containing `dagger.json` |
 | `--sdk string`       | DK name or image ref to use for the module                      |
