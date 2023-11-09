@@ -181,17 +181,8 @@ Manage Dagger modules. By default, print the configuration of the current module
 
 ```shell
 dagger mod [--mod string] [--focus]
-dagger mod [sub-command] [--mod string] [--focus]
+dagger mod [sub-command] [--mod string] [--focus] [sub-command options]
 ```
-
-### Sub-commands
-
-| Sub-command  | Description                                                           |
-| ------------ | --------------------------------------------------------------------- |
-| `init`       | Initialize a new Dagger module in a local directory                   |
-| `install`    | Add a new dependency to a Dagger module                              |
-| `sync`       | Synchronize a Dagger module with the latest version of its extensions |
-| `publish`    | Publish a Dagger module to the Daggerverse                            |
 
 ### Options
 
@@ -214,17 +205,26 @@ Print the configuration of a remote Dagger module:
 dagger mod -m github.com/dagger/hello-dagger
 ```
 
-### dagger mod init
+### Sub-commands
+
+| Sub-command  | Description                                                           |
+| ------------ | --------------------------------------------------------------------- |
+| `init`       | Initialize a new Dagger module in a local directory                   |
+| `install`    | Add a new dependency to a Dagger module                              |
+| `sync`       | Synchronize a Dagger module with the latest version of its extensions |
+| `publish`    | Publish a Dagger module to the Daggerverse                            |
+
+#### dagger mod init
 
 Initialize a new Dagger module in the current directory.
 
-#### Usage
+##### Usage
 
 ```shell
 dagger mod init [--license string] [--name string] [--root string] [--sdk string]
 ```
 
-#### Options
+##### Options
 
 | Option               | Description                                                     |
 | ---------------------| ----------------------------------------------------------------|
@@ -233,7 +233,7 @@ dagger mod init [--license string] [--name string] [--root string] [--sdk string
 | `--root string`      | Root directory that should be loaded for the full module context. Defaults to the parent directory containing `dagger.json` |
 | `--sdk string`       | DK name or image ref to use for the module                      |
 
-#### Example
+##### Example
 
 Initialize a new module named `hello` with the Python SDK:
 
@@ -241,37 +241,35 @@ Initialize a new module named `hello` with the Python SDK:
 dagger mod init --name hello --sdk=python
 ```
 
-### dagger mod install
+#### dagger mod install
 
 Add a new dependency to a Dagger module.
 
-#### Usage
+##### Usage
 
 ```shell
 dagger mod install
 ```
 
+##### Example
 
-#### Example
-
-Initialize a new module named `hello` with the Python SDK:
+Install the `ttlsh` module from the Daggerverse:
 
 ```shell
-dagger mod init --name hello --sdk=python
+dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
 ```
 
-
-### dagger mod sync
+#### dagger mod sync
 
 Synchronize a Dagger module after a change in its interfaces.
 
-#### Usage
+##### Usage
 
 ```shell
 dagger mod sync
 ```
 
-#### Example
+##### Example
 
 Synchronize a Dagger module after a change in its interfaces.
 
@@ -279,10 +277,22 @@ Synchronize a Dagger module after a change in its interfaces.
 dagger mod sync
 ```
 
-Synchronize a Dagger module after a change in its interfaces:
+#### dagger mod publish
+
+Publish a Dagger module to the Daggerverse.
+
+##### Usage
 
 ```shell
-dagger mod sync
+dagger mod publish [--force]
+```
+
+##### Example
+
+Publish the current Dagger module to the Daggerverse.
+
+```shell
+dagger mod publish
 ```
 
 ## dagger query
