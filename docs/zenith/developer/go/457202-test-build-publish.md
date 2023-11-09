@@ -23,7 +23,7 @@ This guide walks you through the process of creating a Dagger module from scratc
 This guide assumes that:
 
 - You have a good understanding of the Go programming language and an IDE with Go language support.
-- You know the basics of programming Dagger modules. If not, refer to the [quickstart](./525021-quickstart.md).
+- You know the basics of running and programming Dagger modules. If not, refer to the [user quickstart](../../user/quickstart/index.mdx) and the [programming quickstart](./525021-quickstart.md).
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../../../current/cli/979595-reference.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Node.js Web application. If not, follow the steps in Appendix A to [create an example Node.js application](#appendix-a-create-an-example-application).
