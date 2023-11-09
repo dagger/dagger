@@ -214,10 +214,69 @@ Print the configuration of a remote Dagger module:
 dagger mod -m github.com/dagger/hello-dagger
 ```
 
-Initialize a new Dagger module in the current directory:
+### dagger mod init
+
+Initialize a new Dagger module in the current directory.
+
+#### Usage
 
 ```shell
-dagger mod init
+dagger mod init [--license string] [--name string] [--root string] [--sdk string]
+```
+
+#### Options
+
+| Option               | Description                                                     |
+| ---------------------| ----------------------------------------------------------------|
+| `--license string`   | License identifier to generate - see https://spdx.org/licenses/ |
+| `--name string`      | Name of the new module                                          |
+| `--root string`      | Root directory that should be loaded for the full module context. Defaults to the parent directory containing `dagger.json` |
+| `--sdk string`       | DK name or image ref to use for the module                      |
+
+#### Example
+
+Initialize a new module named `hello` with the Python SDK:
+
+```shell
+dagger mod init --name hello --sdk=python
+```
+
+### dagger mod install
+
+Add a new dependency to a Dagger module.
+
+#### Usage
+
+```shell
+dagger mod install
+```
+
+
+#### Example
+
+Initialize a new module named `hello` with the Python SDK:
+
+```shell
+dagger mod init --name hello --sdk=python
+```
+
+
+### dagger mod sync
+
+Synchronize a Dagger module after a change in its interfaces.
+
+#### Usage
+
+```shell
+dagger mod sync
+```
+
+#### Example
+
+Synchronize a Dagger module after a change in its interfaces.
+
+```shell
+dagger mod sync
 ```
 
 Synchronize a Dagger module after a change in its interfaces:
@@ -386,7 +445,7 @@ dagger up [--port string] [--native] [function]
 | Option        | Description                                                        |
 | ------------- | -------------------------------------------------------------------|
 | `--port rule` | Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format          |
-| `--native`    | Forward all ports natively, matching frontend port to backend port |            |
+| `--native`    | Forward all ports natively, matching frontend port to backend port |
 
 ### Example
 
