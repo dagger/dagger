@@ -73,23 +73,20 @@ defmodule Dagger.Core.Client do
         {:error, %Dagger.QueryError{errors: errors}}
 
       {:ok, %{"data" => data}} ->
-        {:ok, select_data(data, Selection.path(selection) |> Enum.reverse())}
+        {:ok, select(data, Selection.path(selection))}
 
       otherwise ->
         otherwise
     end
   end
 
-  defp select_data(data, [sub_selection | path]) do
-    case sub_selection |> String.split() do
-      [selection] ->
-        get_in(data, Enum.reverse([selection | path]))
+  defp select(data, []), do: data
 
-      selections ->
-        case get_in(data, Enum.reverse(path)) do
-          data when is_list(data) -> Enum.map(data, &Map.take(&1, selections))
-          data when is_map(data) -> Map.take(data, selections)
-        end
-    end
+  defp select(data, _selectors) when is_list(data) do
+    data
+  end
+
+  defp select(data, [selector | selectors]) do
+    select(Map.get(data, selector), selectors)
   end
 end

@@ -18,10 +18,21 @@ defmodule Dagger.Core.QueryBuilder.Selection do
     }
   end
 
-  def arg(%__MODULE__{args: args} = selection, name, value) when is_binary(name) do
+  # TODO: Remove me.
+  def arg(selection, name, value) do
+    put_arg(selection, name, value)
+  end
+
+  def put_arg(%__MODULE__{args: args} = selection, name, value) when is_binary(name) do
     args = args || %{}
 
     %{selection | args: Map.put(args, name, value)}
+  end
+
+  def maybe_put_arg(%__MODULE__{} = selection, _name, nil), do: selection
+
+  def maybe_put_arg(%__MODULE__{} = selection, name, value) do
+    put_arg(selection, name, value)
   end
 
   def build(%__MODULE__{} = selection) do
