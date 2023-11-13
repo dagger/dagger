@@ -26,7 +26,7 @@ engine:
   image:
     repository: registry.dagger.io/engine
     # See https://github.com/dagger/dagger/blob/main/CHANGELOG.md for a list of available versions
-    # tag: v0.8.7
+    # tag: v0.9.3
   # tolerations:
   #   - effect: NoSchedule
   #     key: dagger-runner

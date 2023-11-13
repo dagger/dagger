@@ -4,4 +4,4 @@ description: Dagger Helm chart
 
 type: application
 version: 0.0.3
-appVersion: v0.8.7
+appVersion: v0.9.3
