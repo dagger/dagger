@@ -895,43 +895,6 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 	require.Error(t, err)
 }
 
-func TestModuleGoSignaturesIDable(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-type Custom struct {
-	Data string
-}
-
-func (m *Minimal) Hello() string {
-	return "hello"
-}
-
-func (m *Minimal) UseCustom(custom *Custom) string {
-	return custom.Data
-}
-`,
-		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	// Currently, IDable modules are *not* supported, and should fail with an
-	// error that fails to find the ID type.
-	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Undefined type MinimalCustomID")
-}
-
 var inspectModule = daggerQuery(`
 query {
   host {
@@ -1400,6 +1363,208 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 	out, err := modGen.With(daggerQuery(`{foo{fn}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"foo":{"fn":"foo\n"}}`, out)
+}
+
+func TestModuleGoIDableType(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct {
+	Data string
+}
+
+func (m *Foo) Set(data string) *Foo {
+	m.Data = data
+	return m
+}
+
+func (m *Foo) Get() string {
+	return m.Data
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	// sanity check
+	out, err := modGen.With(daggerQuery(`{foo{set(data: "abc"){get}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"set":{"get": "abc"}}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{foo{set(data: "abc"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	id := gjson.Get(out, "foo.set.id").String()
+	require.Contains(t, id, "moddata:")
+
+	out, err = modGen.With(daggerQuery(`{loadFooFromID(id: "%s"){get}}`, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"loadFooFromID":{"get": "abc"}}`, out)
+}
+
+func TestModuleReturnDependencyType(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	fooModGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/foo").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go", "--root=..")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct{}
+
+type Message struct {
+	Content string
+}
+
+func (m *Foo) SayHello(name string) Message {
+	return Message{Content: "hello " + name}
+}
+`,
+		})
+	barModGen := fooModGen.
+		WithWorkdir("/work/bar").
+		With(daggerExec("mod", "init", "--name=bar", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../foo")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Bar struct{}
+
+func (m *Bar) SayHello(name string) *FooMessage {
+	return dag.Foo().SayHello(name)
+}
+`,
+		})
+
+	logGen(ctx, t, fooModGen.Directory("."))
+	logGen(ctx, t, barModGen.Directory("."))
+
+	out, err := barModGen.With(daggerQuery(`{bar{sayHello(name:"world"){content}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"bar":{"sayHello":{"content": "hello world"}}}`, out)
+}
+
+func TestModuleArgDependencyType(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	fooModGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/foo").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go", "--root=..")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct{}
+
+type Message struct {
+	Content string
+}
+
+func (m *Foo) SayHello(name string) Message {
+	return Message{Content: "hello " + name}
+}
+`,
+		})
+	barModGen := fooModGen.
+		WithWorkdir("/work/bar").
+		With(daggerExec("mod", "init", "--name=bar", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../foo")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Bar struct{}
+
+func (m *Bar) Process(ctx context.Context, msg *FooMessage) (string, error) {
+	return msg.Content(ctx)
+}
+`,
+		})
+
+	logGen(ctx, t, fooModGen.Directory("."))
+	logGen(ctx, t, barModGen.Directory("."))
+
+	out, err := fooModGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	id := gjson.Get(out, "foo.sayHello.id").String()
+	require.Contains(t, id, "moddata:")
+
+	out, err = barModGen.With(daggerQuery(`{bar{process(msg:"%s")}}`, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"bar":{"process":"hello world"}}`, out)
+}
+
+func TestModuleArgOwnType(t *testing.T) {
+	// This looks similar to TestModuleArgDependencyType, but is different in
+	// that the input type comes from the same module as the function
+	// The server needs to specifically decode the input type from an ID into
+	// the raw JSON, since the module doesn't understand it's own types as IDs
+
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "strings"
+
+type Foo struct{}
+
+type Message struct {
+	Content string
+}
+
+func (m *Foo) SayHello(name string) Message {
+	return Message{Content: "hello " + name}
+}
+
+func (m *Foo) Upper(msg Message) Message {
+	msg.Content = strings.ToUpper(msg.Content)
+	return msg
+}
+
+func (m *Foo) Uppers(msg []Message) []Message {
+	for i := range msg {
+		msg[i].Content = strings.ToUpper(msg[i].Content)
+	}
+	return msg
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	id := gjson.Get(out, "foo.sayHello.id").String()
+	require.Contains(t, id, "moddata:")
+
+	out, err = modGen.With(daggerQuery(`{foo{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"upper":{"content": "HELLO WORLD"}}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{foo{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
 }
 
 //go:embed testdata/modules/go/use/dep/main.go
@@ -2835,7 +3000,8 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func daggerQuery(query string) dagger.WithContainerFunc {
+func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
+	query = fmt.Sprintf(query, args...)
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec([]string{"dagger", "--debug", "query"}, dagger.ContainerWithExecOpts{
 			Stdin:                         query,
