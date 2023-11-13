@@ -1,5 +1,4 @@
 from textwrap import dedent
-import textwrap
 
 import pytest
 from graphql import GraphQLArgument as Argument
@@ -16,9 +15,9 @@ from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
 
 from dagger._codegen.generator import (
-    doc,
     Context,
     _InputField,
+    doc,
     format_input_type,
     format_name,
     format_output_type,
@@ -274,7 +273,6 @@ def test_enum_render(type_, expected, ctx: Context):
     assert handler.render(type_) == expected
 
 
-
 @pytest.mark.parametrize(
     ("original", "expected"),
     [
@@ -304,9 +302,9 @@ def test_enum_render(type_, expected, ctx: Context):
 
                 Example: "foobar"
                 """''',
-            )
+            ),
         ),
     ],
 )
-def test_doc(original: str, expected:str):
+def test_doc(original: str, expected: str):
     assert doc(original) == expected
