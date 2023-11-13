@@ -1,4 +1,4 @@
-defmodule Dagger.Session do
+defmodule Dagger.Core.Session do
   @moduledoc false
 
   @sdk_version Mix.Project.config() |> Keyword.fetch!(:version)

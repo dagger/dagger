@@ -126,7 +126,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       defmodule unquote(mod_name) do
         @moduledoc unquote(desc)
 
-        use Dagger.QueryBuilder
+        use Dagger.Core.QueryBuilder
 
         @type t() :: %__MODULE__{}
 

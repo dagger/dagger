@@ -1,7 +1,7 @@
-defmodule Dagger.EngineConn do
+defmodule Dagger.Core.EngineConn do
   @moduledoc false
 
-  alias Dagger.Internal.Engine.Downloader
+  alias Dagger.Core.Engine.Downloader
 
   defstruct [:port, :token, :session_pid]
 
@@ -67,7 +67,7 @@ defmodule Dagger.EngineConn do
 
   defp start_cli_session(bin_path, opts) do
     connect_timeout = opts[:connect_timeout]
-    session_pid = spawn_link(Dagger.Session, :start, [bin_path, self(), opts])
+    session_pid = spawn_link(Dagger.Core.Session, :start, [bin_path, self(), opts])
 
     receive do
       {^session_pid, %{"port" => port, "session_token" => token}} ->
@@ -92,7 +92,7 @@ defmodule Dagger.EngineConn do
   end
 
   def disconnect(%__MODULE__{session_pid: pid}) do
-    Dagger.Session.stop(pid)
+    Dagger.Core.Session.stop(pid)
   end
 
   def engine_version(), do: @dagger_cli_version

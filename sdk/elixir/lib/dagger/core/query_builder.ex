@@ -1,4 +1,4 @@
-defmodule Dagger.QueryBuilder.Selection do
+defmodule Dagger.Core.QueryBuilder.Selection do
   @moduledoc false
 
   defstruct [:name, :args, :prev, alias: ""]
@@ -89,24 +89,24 @@ defmodule Dagger.QueryBuilder.Selection do
   def path(%__MODULE__{prev: selection, name: name}, acc), do: path(selection, [name | acc])
 end
 
-defmodule Dagger.QueryError do
+defmodule Dagger.Core.QueryError do
   @moduledoc false
 
   defstruct [:errors]
 end
 
-defmodule Dagger.QueryBuilder do
+defmodule Dagger.Core.QueryBuilder do
   @moduledoc false
 
-  alias Dagger.QueryBuilder.Selection
-  alias Dagger.Internal.Client
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder.Selection
 
   def execute(selection, client) do
     q = Selection.build(selection)
 
     case Client.query(client, q) do
       {:ok, %{status: 200, body: %{"data" => nil, "errors" => errors}}} ->
-        {:error, %Dagger.QueryError{errors: errors}}
+        {:error, %Dagger.Core.QueryError{errors: errors}}
 
       {:ok, %{status: 200, body: %{"data" => data}}} ->
         {:ok, select_data(data, Selection.path(selection) |> Enum.reverse())}
@@ -131,8 +131,8 @@ defmodule Dagger.QueryBuilder do
 
   defmacro __using__(_opts) do
     quote do
-      import Dagger.QueryBuilder.Selection
-      import Dagger.QueryBuilder, only: [execute: 2]
+      import Dagger.Core.QueryBuilder.Selection
+      import Dagger.Core.QueryBuilder, only: [execute: 2]
     end
   end
 end

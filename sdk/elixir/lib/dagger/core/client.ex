@@ -1,9 +1,9 @@
-defmodule Dagger.Internal.Client do
+defmodule Dagger.Core.Client do
   @moduledoc false
 
   # Dagger GraphQL client.
 
-  alias Dagger.EngineConn
+  alias Dagger.Core.EngineConn
 
   defstruct [:req, :conn, :opts]
 

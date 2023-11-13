@@ -1,7 +1,7 @@
-defmodule Dagger.QueryBuilder.SelectionTest do
+defmodule Dagger.Core.QueryBuilder.SelectionTest do
   use ExUnit.Case, async: true
 
-  alias Dagger.QueryBuilder.Selection
+  alias Dagger.Core.QueryBuilder.Selection
 
   test "query" do
     root =
