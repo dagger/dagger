@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 import pytest
 from typing_extensions import Doc
@@ -13,6 +13,7 @@ from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
         (str, False),
         (str | int, False),
         (str | None, True),
+        (Optional[str], True),
     ],
 )
 def test_is_optional(typ, expected):
@@ -24,6 +25,7 @@ def test_is_optional(typ, expected):
     [
         (str, str),
         (str | None, str),
+        (Optional[str], str),
         (str | int | None, str | int),
         (str | int, str | int),
     ],
