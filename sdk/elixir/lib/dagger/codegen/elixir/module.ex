@@ -9,7 +9,8 @@ defmodule Dagger.Codegen.Elixir.Module do
     "ProjectCommandID" => "ProjectCommand",
     "ProjectID" => "Project",
     "SecretID" => "Secret",
-    "SocketID" => "Socket"
+    "SocketID" => "Socket",
+    "ServiceID" => "Service"
   }
 
   defmacro id_modules(), do: quote(do: Map.keys(@id_modules_map))
