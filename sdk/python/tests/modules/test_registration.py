@@ -1,4 +1,5 @@
 import pytest
+from typing_extensions import Self
 
 import dagger
 from dagger.mod import Annotated, Arg, Module
@@ -104,19 +105,6 @@ def test_main_object_name(mod_name, class_name):
     assert next(iter(resolvers.keys())).name == class_name
 
 
-@pytest.mark.anyio()
-async def test_function_and_arg_name_override():
-    mod = Module()
-
-    @mod.function(name="import")
-    def import_(from_: Annotated[str, Arg("from")]) -> str:
-        return from_
-
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "import")
-    result = await mod.get_result(resolver, dagger.JSON("{}"), {"from": "bar"})
-    assert result == "bar"
-
-
 async def get_result(
     mod: Module,
     parent_name: str,
@@ -156,3 +144,16 @@ class TestNameOverrides:
 
     async def test_field_structure(self, mod: Module):
         assert await get_result(mod, "Bar", '{"with": "baz"}', "with", {}) == "baz"
+
+
+def test_method_returns_self():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function
+        def bar(self) -> Self:
+            ...
+
+    resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "bar")
+    assert resolver.return_type == Foo
