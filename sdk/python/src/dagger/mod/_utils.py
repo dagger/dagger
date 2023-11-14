@@ -97,6 +97,11 @@ def get_arg_name(annotation: type) -> str | None:
     return None
 
 
+def is_union(tp: type) -> bool:
+    """Returns True if the unsubscripted part of a type is a Union."""
+    return get_origin(tp) in (types.UnionType, typing.Union)
+
+
 def is_optional(tp: type) -> bool:
     """Returns True if the annotation is SomeType | None.
 
@@ -104,7 +109,7 @@ def is_optional(tp: type) -> bool:
     resolved with get_type_hints.
     """
     # Optionals are represented as unions
-    if get_origin(tp) is not types.UnionType:
+    if not is_union(tp):
         return False
 
     # For a Union to be optional it needs to have at least one None type.

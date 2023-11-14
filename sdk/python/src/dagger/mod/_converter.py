@@ -10,6 +10,7 @@ from ._types import MissingType, ObjectDefinition
 from ._utils import (
     get_doc,
     is_optional,
+    is_union,
     non_optional,
     strip_annotations,
     syncify,
@@ -87,12 +88,12 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
     if annotation in builtins:
         return td.with_kind(builtins[annotation])
 
-    if origin := typing.get_origin(annotation):
-        # Can't represent unions in the API.
-        if origin is typing.Union:
-            msg = f"Unsupported union type: {annotation}"
-            raise TypeError(msg)
+    # Can't represent unions in the API.
+    if is_union(annotation):
+        msg = f"Unsupported union type: {annotation}"
+        raise TypeError(msg)
 
+    if origin := typing.get_origin(annotation):
         if issubclass(origin, Sequence):
             of_type, *rest = typing.get_args(annotation)
             if rest:
