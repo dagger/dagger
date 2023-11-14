@@ -1568,6 +1568,23 @@ func TestModulePythonInit(t *testing.T) {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
+	t.Run("with different root", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/child").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=python", "--root=.."))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
 	t.Run("respects existing pyproject.toml", func(t *testing.T) {
 		t.Parallel()
 
