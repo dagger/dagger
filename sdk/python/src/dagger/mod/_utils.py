@@ -76,7 +76,11 @@ def get_doc(obj: Any) -> str | None:
             ),
             None,
         )
-    return None if inspect.getmodule(obj) == builtins else inspect.getdoc(obj)
+    if inspect.getmodule(obj) != builtins and (
+        inspect.isclass(obj) or inspect.isfunction(obj)
+    ):
+        return inspect.getdoc(obj)
+    return None
 
 
 def get_arg_name(annotation: type) -> str | None:

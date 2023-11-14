@@ -40,13 +40,18 @@ def func_with_docstring():
     """Foo."""
 
 
+async def async_func_with_docstring():
+    """Foo."""
+
+
 @pytest.mark.parametrize(
     "annotation",
     [
         ClassWithDocstring,
-        ClassWithDocstring(),
         func_with_docstring,
+        async_func_with_docstring,
         Annotated[str, Doc("Foo.")],
+        Annotated[str | None, Doc("Foo.")],
         Annotated[str, Doc("Foo."), "Not supported"],
         Annotated[str, Doc("Bar."), Doc("Foo.")],
     ],
@@ -63,13 +68,18 @@ def func_without_docstring():
     ...
 
 
+async def async_func_without_docstring():
+    ...
+
+
 @pytest.mark.parametrize(
     "annotation",
     [
         ClassWithoutDocstring,
-        ClassWithoutDocstring(),
         func_without_docstring,
+        async_func_without_docstring,
         str,
+        str | None,
         Annotated[str, "Not supported"],
         Annotated[str, Arg("foo")],
     ],
