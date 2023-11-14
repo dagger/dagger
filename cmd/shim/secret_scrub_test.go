@@ -9,10 +9,8 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -272,22 +270,21 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("hello world\n"))
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 1024)
 			n, err := r.Read(buf)
 			require.NoError(t, err)
 			require.Equal(t, "hello world\n", string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("secret", func(t *testing.T) {
@@ -295,22 +292,21 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("hello TOP_SECRET\n"))
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 1024)
 			n, err := r.Read(buf)
 			require.NoError(t, err)
 			require.Equal(t, "hello ***\n", string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("secret double", func(t *testing.T) {
@@ -318,22 +314,21 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("hello TOP_TOP_SECRETTOP_SECRETTOP_\n"))
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 1024)
 			n, err := r.Read(buf)
 			require.NoError(t, err)
 			require.Equal(t, "hello TOP_******TOP_\n", string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("secret one byte", func(t *testing.T) {
@@ -341,22 +336,21 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("yyx\n"))
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 1024)
 			n, err := r.Read(buf)
 			require.NoError(t, err)
 			require.Equal(t, "yy***\n", string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("secret half", func(t *testing.T) {
@@ -364,13 +358,14 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("hello TOP_"))
 			require.NoError(t, err)
 			_, err = out.Write([]byte("SECRET!\n"))
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 1024)
@@ -380,11 +375,9 @@ func TestScrubSecretLogLatency(t *testing.T) {
 			n, err = r.Read(buf)
 			require.NoError(t, err)
 			require.Equal(t, "***!\n", string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("eof", func(t *testing.T) {
@@ -392,13 +385,14 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("hello TOP_"))
 			require.NoError(t, err)
 			err = out.Close()
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 1024)
@@ -408,11 +402,9 @@ func TestScrubSecretLogLatency(t *testing.T) {
 			n, err = r.Read(buf)
 			require.ErrorIs(t, err, io.EOF)
 			require.Equal(t, "TOP_", string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("massive", func(t *testing.T) {
@@ -420,7 +412,8 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte("hello\n" + strings.Repeat("a", 7000)))
 			require.NoError(t, err)
@@ -432,7 +425,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 			_, err = out.Write([]byte(strings.Repeat("a", 2999) + "\n"))
 			require.NoError(t, err)
 
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 4096)
@@ -456,11 +449,9 @@ func TestScrubSecretLogLatency(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, strings.Repeat("a", 1807)+"\n", string(buf[:n]))
 
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 
 	t.Run("massive_eof", func(t *testing.T) {
@@ -468,13 +459,14 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
 
-		var done atomic.Uint32
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_, err := out.Write([]byte(strings.Repeat("a", 9999)))
 			require.NoError(t, err)
 			err = out.Close()
 			require.NoError(t, err)
-			done.Add(1)
+			wg.Done()
 		}()
 		go func() {
 			buf := make([]byte, 4096)
@@ -487,11 +479,9 @@ func TestScrubSecretLogLatency(t *testing.T) {
 			n, err = r.Read(buf)
 			require.ErrorIs(t, err, io.EOF)
 			require.Equal(t, strings.Repeat("a", 1807), string(buf[:n]))
-			done.Add(1)
+			wg.Done()
 		}()
-		require.Eventually(t, func() bool {
-			return done.Load() == 2
-		}, 2*time.Second, 10*time.Millisecond, "output not received")
+		wg.Wait()
 	})
 }
 
