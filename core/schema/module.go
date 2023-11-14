@@ -791,36 +791,29 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 
 		newObjResolver := ObjectResolver{}
 		for _, field := range objTypeDef.Fields {
+			field := field
+
 			fieldASTType, err := s.typeDefToSchema(field.TypeDef, false)
 			if err != nil {
 				return nil, err
 			}
-			fieldName := gqlFieldName(field.Name)
 			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
-				Name:        fieldName,
+				Name:        field.Name,
 				Description: formatGqlDescription(field.Description),
 				Type:        fieldASTType,
 			})
 
-			// if this is an IDable type, add a resolver that converts the ID into
-			// the real object, otherwise its schema will be called against the
-			// string
-			if field.TypeDef.Kind == core.TypeDefKindObject {
-				newObjResolver[fieldName] = func(p graphql.ResolveParams) (any, error) {
-					res, err := graphql.DefaultResolveFn(p)
-					if err != nil {
-						return nil, err
-					}
-					id, ok := res.(string)
-					if !ok {
-						return nil, fmt.Errorf("expected string %sID, got %T", field.TypeDef.AsObject.Name, res)
-					}
-					return core.ResourceFromID(id)
+			fromID := s.createIDResolver(field.TypeDef, dest)
+			newObjResolver[field.Name] = func(p graphql.ResolveParams) (any, error) {
+				p.Info.FieldName = field.OriginalName
+				res, err := graphql.DefaultResolveFn(p)
+				if err != nil {
+					return nil, err
 				}
-			} else {
-				// no resolver to add; fields rely on the graphql "trivial resolver"
-				// where the value is just read from the parent object
-				_ = 1
+				if fromID != nil {
+					return fromID(res)
+				}
+				return res, nil
 			}
 		}
 
@@ -965,6 +958,11 @@ func (s *moduleSchema) functionResolver(
 		})
 	}
 
+	argNames := make(map[string]string, len(fn.Args))
+	for _, arg := range fn.Args {
+		argNames[arg.Name] = arg.OriginalName
+	}
+
 	fieldDef := &ast.FieldDefinition{
 		Name:        fnName,
 		Description: formatGqlDescription(fn.Description),
@@ -976,10 +974,7 @@ func (s *moduleSchema) functionResolver(
 	// Our core "id-able" types are serialized as their ID over the wire, but need to be decoded into
 	// their object here. We can identify those types since their object resolvers are wrapped in
 	// ToIDableObjectResolver.
-	var returnIDableObjectResolver IDableObjectResolver
-	if fn.ReturnType.Kind == core.TypeDefKindObject {
-		returnIDableObjectResolver, _ = s.idableObjectResolver(fn.ReturnType.AsObject.Name, dest)
-	}
+	fromID := s.createIDResolver(fn.ReturnType, dest)
 	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name, dest)
 
 	return ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
@@ -994,11 +989,6 @@ func (s *moduleSchema) functionResolver(
 				return nil, fmt.Errorf("failed to get parent ID: %w", err)
 			}
 			parent = id
-		}
-
-		argNames := make(map[string]string, len(fn.Args))
-		for _, arg := range fn.Args {
-			argNames[arg.Name] = arg.OriginalName
 		}
 
 		var callInput []*core.CallInput
@@ -1021,15 +1011,10 @@ func (s *moduleSchema) functionResolver(
 		if err != nil {
 			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
 		}
-		if returnIDableObjectResolver == nil {
-			return result, nil
+		if fromID != nil {
+			return fromID(result)
 		}
-
-		id, ok := result.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected string ID result for %s, got %T", objFnName, result)
-		}
-		return returnIDableObjectResolver.FromID(id)
+		return result, nil
 	}), nil
 }
 
@@ -1200,6 +1185,51 @@ func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module,
 			}
 		}
 	}
+}
+
+// createIDResolver returns a function that can be used to convert an ID to
+// the object it represents.
+//
+// However, unlike just calling the resolver directly, this function will also
+// attempt convering lists of ids into lists of objects (which is a trickier
+// case, because lists are composite data types, lists of lists are possible,
+// etc.)
+func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, dest *schemaView) func(any) (any, error) {
+	switch typeDef.Kind {
+	case core.TypeDefKindObject:
+		resolver, _ := s.idableObjectResolver(typeDef.AsObject.Name, dest)
+		if resolver != nil {
+			return func(a any) (any, error) {
+				s, ok := a.(string)
+				if !ok {
+					return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
+				}
+				return resolver.FromID(s)
+			}
+		}
+	case core.TypeDefKindList:
+		fromID := s.createIDResolver(typeDef.AsList.ElementTypeDef, dest)
+		if fromID != nil {
+			return func(a any) (any, error) {
+				li, ok := a.([]any)
+				if !ok {
+					return nil, fmt.Errorf("expected slice, got %T", a)
+				}
+
+				res := make([]any, len(li))
+				for i, elem := range li {
+					fromIDVal, err := fromID(elem)
+					if err != nil {
+						return nil, err
+					}
+					res[i] = fromIDVal
+				}
+				return res, nil
+			}
+		}
+	}
+
+	return nil
 }
 
 // TODO: all these should be called during creation of Function+TypeDefs, not scattered all over the place
