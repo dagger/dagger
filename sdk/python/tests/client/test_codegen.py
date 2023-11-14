@@ -291,6 +291,10 @@ def test_enum_render(type_, expected, ctx: Context):
             ),
         ),
         (
+            '"Foo": bar.',
+            r'""""Foo": bar."""',
+        ),
+        (
             'Example: "foobar"',
             r'"""Example: "foobar" """',
         ),
