@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -61,7 +60,7 @@ func (ref *Ref) Symbolic() string {
 	default:
 		panic("invalid module ref")
 	}
-	return path.Join(root, ref.SubPath)
+	return filepath.Join(root, ref.SubPath)
 }
 
 func (ref *Ref) LocalSourcePath() (string, error) {
@@ -72,7 +71,7 @@ func (ref *Ref) LocalSourcePath() (string, error) {
 		// hasn't been proved out. Anyway, at this layer we need to preserve the
 		// subpath because this gets printed to `dagger.json`, and without this the
 		// module will depend on itself, leading to an infinite loop.
-		return path.Join(ref.Path, ref.SubPath), nil
+		return filepath.Join(ref.Path, ref.SubPath), nil
 	}
 	return "", fmt.Errorf("cannot get local source path for non-local module")
 }
@@ -80,7 +79,7 @@ func (ref *Ref) LocalSourcePath() (string, error) {
 func (ref *Ref) Config(ctx context.Context, c *dagger.Client) (*Config, error) {
 	switch {
 	case ref.Local:
-		configBytes, err := os.ReadFile(path.Join(ref.Path, Filename))
+		configBytes, err := os.ReadFile(filepath.Join(ref.Path, Filename))
 		if err != nil {
 			return nil, fmt.Errorf("failed to read local config file: %w", err)
 		}
@@ -97,7 +96,7 @@ func (ref *Ref) Config(ctx context.Context, c *dagger.Client) (*Config, error) {
 		repoDir := c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree()
 		var configPath string
 		if ref.SubPath != "" {
-			configPath = path.Join(ref.SubPath, Filename)
+			configPath = filepath.Join(ref.SubPath, Filename)
 		} else {
 			configPath = Filename
 		}
@@ -129,6 +128,10 @@ func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module,
 			// should be impossible given the ref.Local guard
 			panic(err)
 		}
+		localSrc, err = filepath.Abs(localSrc)
+		if err != nil {
+			panic(err)
+		}
 
 		modRootDir, subdirRelPath, err := cfg.RootAndSubpath(localSrc)
 		if err != nil {
@@ -143,13 +146,9 @@ func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module,
 		}), nil
 
 	case ref.Git != nil:
-		rootPath := path.Clean(path.Join(ref.SubPath, cfg.Root))
-		if strings.HasPrefix(rootPath, "..") {
-			return nil, fmt.Errorf("module config path %q is not under module root %q", ref.SubPath, rootPath)
-		}
-		relSubPath, err := filepath.Rel(rootPath, ref.SubPath)
+		rootPath, relSubPath, err := cfg.RootAndSubpath(ref.SubPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get relative subpath: %w", err)
+			return nil, fmt.Errorf("failed to get module root: %w", err)
 		}
 
 		return c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree().

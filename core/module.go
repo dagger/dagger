@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -177,15 +176,32 @@ func (mod *Module) FromConfig(
 	}
 
 	// Reposition the root of the sourceDir in case it's pointing to a subdir of current sourceDir
-	if cfg.Root != "" {
-		rootPath := filepath.Join("/", filepath.Dir(configPath), cfg.Root)
-		if rootPath != "/" {
-			var err error
+	if filepath.Clean(cfg.Root) != "." {
+		rootPath := filepath.Join(filepath.Dir(configPath), cfg.Root)
+		if rootPath != filepath.Dir(configPath) {
+			configPathAbs, err := filepath.Abs(configPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get config absolute path: %w", err)
+			}
+			rootPathAbs, err := filepath.Abs(rootPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get root absolute path: %w", err)
+			}
+
+			configPath, err = filepath.Rel(rootPathAbs, configPathAbs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get config relative to root: %w", err)
+			}
+			if strings.HasPrefix(configPath, "../") {
+				// this likely shouldn't happen, a client shouldn't submit a
+				// module config that escapes the module root
+				return nil, fmt.Errorf("module subpath is not under module root")
+			}
+
 			sourceDir, err = sourceDir.Directory(ctx, bk, svcs, rootPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get root directory: %w", err)
 			}
-			configPath = filepath.Join("/", strings.TrimPrefix(configPath, rootPath))
 		}
 	}
 
@@ -233,7 +249,11 @@ func (mod *Module) FromRef(
 			return nil, fmt.Errorf("invalid local module ref is local relative to nil parent %q", moduleRefStr)
 		}
 		sourceDir = parentSrcDir
-		configPath = modules.NormalizeConfigPath(path.Join("/", path.Dir(parentSrcSubpath), modRef.Path))
+		configPath = modules.NormalizeConfigPath(filepath.Join(filepath.Dir(parentSrcSubpath), modRef.Path))
+
+		if strings.HasPrefix(configPath+"/", "../") {
+			return nil, fmt.Errorf("local module path %q is not under root", modRef.Path)
+		}
 	case modRef.Git != nil:
 		var err error
 		sourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
