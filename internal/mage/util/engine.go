@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/consts"
@@ -214,6 +215,14 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 
 	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("alpine:"+alpineVersion).
+		// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
+		// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
+		// gives us.
+		// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
+		// modules that fix this problem and always result in the latest apk packages for the given alpine
+		// version being used (with optimal caching).
+		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Unix()/86400)).
+		WithExec([]string{"apk", "upgrade"}).
 		WithExec([]string{
 			"apk", "add", "--no-cache",
 			// for Buildkit
@@ -221,6 +230,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 			// for CNI
 			"iptables", "ip6tables", "dnsmasq",
 		}).
+		WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER").
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
 		}).
