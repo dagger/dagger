@@ -1,0 +1,5 @@
+{
+  "name": "good-base",
+  "sdk": "go",
+  "root": "."
+}

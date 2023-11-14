@@ -144,6 +144,10 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		info.PackageImport = currentMod.Module.Mod.Path
 	} else {
 		if g.Config.ModuleConfig != nil {
+			outDir, err := filepath.Abs(outDir)
+			if err != nil {
+				return nil, false, fmt.Errorf("get absolute path: %w", err)
+			}
 			rootDir, subdirRelPath, err := g.Config.ModuleConfig.RootAndSubpath(outDir)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to get module root: %w", err)
