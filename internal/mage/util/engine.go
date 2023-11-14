@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/consts"
@@ -18,9 +19,10 @@ import (
 )
 
 const (
-	daggerBinName = "dagger" // CLI, not engine!
-	engineBinName = "dagger-engine"
-	shimBinName   = "dagger-shim"
+	daggerBinName    = "dagger" // CLI, not engine!
+	engineBinName    = "dagger-engine"
+	shimBinName      = "dagger-shim"
+	dialstdioBinName = "dial-stdio"
 
 	golangVersion = "1.21.3"
 	alpineVersion = "3.18"
@@ -213,6 +215,14 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 
 	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From("alpine:"+alpineVersion).
+		// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
+		// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
+		// gives us.
+		// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
+		// modules that fix this problem and always result in the latest apk packages for the given alpine
+		// version being used (with optimal caching).
+		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24 * time.Hour).Unix())).
+		WithExec([]string{"apk", "upgrade"}).
 		WithExec([]string{
 			"apk", "add", "--no-cache",
 			// for Buildkit
@@ -220,10 +230,10 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 			// for CNI
 			"iptables", "ip6tables", "dnsmasq",
 		}).
+		WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER").
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
 		}).
-		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
@@ -231,6 +241,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, false)).
+		WithDirectory("/", dialstdioFiles(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
@@ -268,7 +279,6 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
 		}).
-		WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 		WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch, version)).
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
@@ -276,6 +286,7 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, true)).
+		WithDirectory("/", dialstdioFiles(c, arch)).
 		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
@@ -424,42 +435,27 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/dnsname")
 }
 
-func buildctlBin(c *dagger.Client, arch string) *dagger.File {
-	/* TODO: the commented code is what we *should* be doing, but need these PRs to be merged:
-	https://github.com/moby/buildkit/pull/4318
-
-	The reason being that when we build buildctl using our go.mod, we end up
-	with conflicting otel deps w/ buildkit's upstream go.mod, which can cause
-	buildctl to crash.
-
-	So for now, we are falling back to building buildctl from upstream (with
-	small go.mod variations to ensure that we don't include vulnerable
-	dependencies).
+func dialstdioFiles(c *dagger.Client, arch string) *dagger.Directory {
+	outDir := "/out"
+	installPath := "/usr/local/bin"
+	buildArgs := []string{
+		"go", "build",
+		"-o", filepath.Join(outDir, installPath, dialstdioBinName),
+		"-ldflags",
+	}
+	ldflags := []string{"-s", "-w"}
+	buildArgs = append(buildArgs, strings.Join(ldflags, " "))
+	buildArgs = append(buildArgs, "/app/cmd/dialstdio")
 
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
-		WithExec([]string{
-			"go", "build",
-			"-o", "./bin/buildctl",
-			"-ldflags", "-s -w",
-			"github.com/moby/buildkit/cmd/buildctl",
-		}).
-		File("./bin/buildctl")
-	*/
-
-	buildkit := c.Git("github.com/moby/buildkit").Commit("3d50b97793391d81d7bc191d7c5dd5361d5dadca").Tree()
-	return goBase(c).
-		WithEnvVariable("GOOS", "linux").
-		WithEnvVariable("GOARCH", arch).
-		WithMountedDirectory("/app", buildkit). // HACK: replace the src dir with buildkit's
-		WithExec([]string{
-			"go", "build",
-			"-o", "./bin/buildctl",
-			"-ldflags", "-s -w",
-			"github.com/moby/buildkit/cmd/buildctl",
-		}).
-		File("./bin/buildctl")
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithMountedDirectory(outDir, c.Directory()).
+		WithExec(buildArgs).
+		// include a symlink from buildctl to dialstdio to be compatible w/ connhelper implementations from buildkit
+		WithExec([]string{"ln", "-s", dialstdioBinName, filepath.Join(outDir, installPath, "buildctl")}).
+		Directory(outDir)
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
