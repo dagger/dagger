@@ -1234,21 +1234,22 @@ type Foo struct {}
 
 type X struct {
 	Message string ` + "`json:\"message\"`" + `
+	When string ` + "`json:\"Timestamp\"`" + `
 	To string ` + "`json:\"recipient\"`" + `
 	From string
 }
 
 func (m *Foo) MyFunction() X {
-	return X{Message: "foo", To: "user", From: "admin"}
+	return X{Message: "foo", When: "now", To: "user", From: "admin"}
 }
 `,
 		})
 
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err := modGen.With(daggerQuery(`{foo{myFunction{message, recipient, from}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQuery(`{foo{myFunction{message, recipient, from, timestamp}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin"}}}`, out)
+	require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin", "timestamp":"now"}}}`, out)
 }
 
 func TestModuleGoReturnNestedStruct(t *testing.T) {
@@ -1323,6 +1324,51 @@ func (m *Playground) MyStruct() *Foo {
 	out, err = modGen.With(daggerQuery(`{playground{myStruct{con{stdout}}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"playground":{"myStruct":{"con":{"stdout":"hello world\n"}}}}`, out)
+}
+
+func TestModuleGoReturnComplexThing(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=playground", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Playground struct{}
+
+type ScanResult struct {
+	Containers	[]*Container ` + "`json:\"targets\"`" + `
+	Report		ScanReport
+}
+
+type ScanReport struct {
+	Contents string ` + "`json:\"contents\"`" + `
+	Authors  []string ` + "`json:\"Authors\"`" + `
+}
+
+func (m *Playground) Scan() ScanResult {
+	return ScanResult{
+		Containers: []*Container{
+			dag.Container().From("alpine:latest").WithExec([]string{"echo", "hello world"}),
+		},
+		Report: ScanReport{
+			Contents: "hello world",
+			Authors: []string{"foo", "bar"},
+		},
+	}
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{playground{scan{targets{stdout},report{contents,authors}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"playground":{"scan":{"targets":[{"stdout":"hello world\n"}],"report":{"contents":"hello world","authors":["foo","bar"]}}}}`, out)
 }
 
 func TestModuleGoGlobalVarDAG(t *testing.T) {
