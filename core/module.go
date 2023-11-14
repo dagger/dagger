@@ -179,7 +179,16 @@ func (mod *Module) FromConfig(
 	if filepath.Clean(cfg.Root) != "." {
 		rootPath := filepath.Join(filepath.Dir(configPath), cfg.Root)
 		if rootPath != filepath.Dir(configPath) {
-			configPath, err = filepath.Rel(rootPath, configPath)
+			configPathAbs, err := filepath.Abs(configPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get config absolute path: %w", err)
+			}
+			rootPathAbs, err := filepath.Abs(rootPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get root absolute path: %w", err)
+			}
+
+			configPath, err = filepath.Rel(rootPathAbs, configPathAbs)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get config relative to root: %w", err)
 			}

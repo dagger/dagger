@@ -1836,6 +1836,7 @@ func TestModuleRoots(t *testing.T) {
 				require.JSONEq(t, fmt.Sprintf(`{"%s":{"hello": "hello"}}`, strcase.ToLowerCamel(entry.Name())), out)
 			} else if strings.HasPrefix(entry.Name(), "bad-") {
 				require.Error(t, err)
+				require.Regexp(t, "is not under( module)? root", err.Error())
 			}
 		})
 	}
