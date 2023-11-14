@@ -221,7 +221,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
 		// modules that fix this problem and always result in the latest apk packages for the given alpine
 		// version being used (with optimal caching).
-		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Unix()/86400)).
+		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24 * time.Hour).Unix())).
 		WithExec([]string{"apk", "upgrade"}).
 		WithExec([]string{
 			"apk", "add", "--no-cache",
