@@ -1,25 +1,22 @@
 import sys
-
 import anyio
-
 import dagger
-
 
 async def test():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         database = (
             client.container()
-            .from_("postgres:15.2")
+            .from_("postgres:16")
             .with_env_variable("POSTGRES_PASSWORD", "test")
             .with_exec(["postgres"])
             .with_exposed_port(5432)
+            .as_service()
         )
-
         src = client.host().directory(".")
 
         pytest = (
             client.container()
-            .from_("python:3.10-slim-buster")
+            .from_("python:3.12-slim-bookworm")
             .with_service_binding("db", database) # bind database with the name db
             .with_env_variable("DB_HOST", "db") # db refers to the service binding
             .with_env_variable("DB_PASSWORD", "test") # password set in db container
@@ -32,12 +29,10 @@ async def test():
             .with_exec(["pip", "install", "pytest", "psycopg2"])
             .with_exec(["pytest"]) # execute pytest
         )
-
         # execute
         results = await pytest.stdout()
 
     print(results)
-
 
 if __name__ == "__main__":
     anyio.run(test)

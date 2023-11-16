@@ -19,16 +19,17 @@ func main() {
 	defer client.Close()
 
 	// Database service used for application tests
-	database := client.Container().From("postgres:15.2").
+	database := client.Container().From("postgres:16").
 		WithEnvVariable("POSTGRES_PASSWORD", "test").
 		WithExec([]string{"postgres"}).
-		WithExposedPort(5432)
+		WithExposedPort(5432).
+		AsService()
 
 	// Project to test
 	src := client.Host().Directory(".")
 
 	// Run application tests
-	out, err := client.Container().From("golang:1.20").
+	out, err := client.Container().From("golang:1.21").
 		WithServiceBinding("db", database).     // bind database with the name db
 		WithEnvVariable("DB_HOST", "db").       // db refers to the service binding
 		WithEnvVariable("DB_PASSWORD", "test"). // password set in db container
