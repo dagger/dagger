@@ -1,0 +1,24 @@
+{
+  "name": "python-sdk-dev",
+  "root": "..",
+  "sdk": "python",
+  "include": [
+    "**/*.py",
+    "**/*.typed",
+    "**/pyproject.toml",
+    "**/*ruff.toml",
+    "LICENSE",
+    "README.md",
+    "hatch.toml",
+    "requirements/*.txt",
+    "docs/**/*.rst",
+    "dev/dagger.json"
+  ],
+  "exclude": [
+    "docs/_build",
+    "**/.envrc",
+    "**/.direnv",
+    "**/.venv",
+    "*/sdk"
+  ]
+}

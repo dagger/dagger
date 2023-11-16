@@ -64,57 +64,6 @@ only-include = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/dagger"]
 
-[tool.hatch.envs.default]
-dependencies = [
-    "black>=22.3.0",
-    "ruff>=0.0.218",
-    "aiohttp>=3.8.6",
-    "pytest>=7.2.0",
-    "pytest-mock>=3.10.0",
-    "pytest-subprocess>=1.4.2",
-    "pytest-lazy-fixture>=0.6.3",
-    "pytest-httpx>=0.21.3",
-]
-
-[tool.hatch.envs.default.scripts]
-fmt = [
-    "ruff --fix-only -e {args:. ../../docs/current}",
-    "black {args:. ../../docs/current}",
-]
-lint = [
-    "ruff check --diff {args:. ../../docs/current}",
-    "black --check --diff {args:. ../../docs/current}",
-]
-test = "pytest -W default"
-testunit = "pytest -m 'not slow'"
-
-# Lock dependencies for CI, otherwise we could get failing checks on
-# unrelated PRs but not needed locally because it can help catch issues
-# early from dependency updates.
-lock = "hatch dep show requirements --all | pip-compile --annotate --resolver=backtracking -U -o requirements.txt -"
-
-[tool.hatch.envs.default.env-vars]
-CUSTOM_COMPILE_COMMAND = "hatch run lock"
-
-[tool.hatch.envs.typing]
-extra-dependencies = ["mypy>=0.942"]
-scripts = {check = "mypy {args:src/dagger tests}"}
-
-[tool.hatch.envs.docs]
-template = "docs"
-dependencies = [
-    "sphinx>=5.3.0",
-    "sphinx-rtd-theme~=1.3.0",
-]
-
-[tool.hatch.envs.docs.scripts]
-build = "sphinx-build -v docs docs/_build"
-server = "python -m http.server -d docs/_build"
-preview = [
-    "build",
-    "server",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
 addopts = [
@@ -142,7 +91,7 @@ include = '\.pyi?$'
 target-version = ["py310", "py311"]
 
 [tool.ruff]
-src = ["src", "tests"]
+src = ["src", "tests", "dev/src"]
 ignore-init-module-imports = true
 target-version = "py310"
 select = ["ALL"]
