@@ -38,12 +38,12 @@ func (s *moduleSchema) Name() string {
 	return "module"
 }
 
-func (s *moduleSchema) Schema() string {
-	return strings.Join([]string{Module, Function, InternalSDK}, "\n")
+func (s *moduleSchema) SourceModuleName() string {
+	return coreModuleName
 }
 
-func (s *moduleSchema) Dependencies() []ExecutableSchema {
-	return nil
+func (s *moduleSchema) Schema() string {
+	return strings.Join([]string{Module, Function, InternalSDK}, "\n")
 }
 
 func (s *moduleSchema) Resolvers() Resolvers {
@@ -605,11 +605,11 @@ func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, 
 
 	// TODO: it makes no sense to use this cache since we don't need a core.Module, but also doesn't hurt, but make a separate one anyways for clarity
 	_, err = s.moduleCache.GetOrInitialize(cacheKey, func() (*core.Module, error) {
-		typeSchema, querySchema, err := s.moduleToSchemaFor(ctx, mod)
+		typeSchema, err := s.moduleToSchema(ctx, mod)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert module to executable schema: %w", err)
 		}
-		if err := schemaView.addSchemas(typeSchema, querySchema); err != nil {
+		if err := schemaView.addSchemas(typeSchema); err != nil {
 			return nil, fmt.Errorf("failed to install module schema: %w", err)
 		}
 		return mod, nil
@@ -745,22 +745,14 @@ func (s *moduleSchema) installDepsToSchemaView(
 // moduleToSchema converts a Module to an ExecutableSchema that can be stitched
 // in to an existing schema. It presumes that the Module's Functions have
 // already been loaded.
-//
-// It returns two separate ExecutableSchemas - one containing just the core
-// types, and another containing any top-level extensions. This is so that we
-// can stitch in our transitive dependency types, but not include the top-level
-// access to them.
-func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Module) (ExecutableSchema, ExecutableSchema, error) {
+func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) (ExecutableSchema, error) {
 	schemaView, err := s.getModuleSchemaView(module)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	typeSchemaDoc := &ast.SchemaDocument{}
-	querySchemaDoc := &ast.SchemaDocument{}
-
 	typeSchemaResolvers := Resolvers{}
-	querySchemaResolver := ObjectResolver{}
 
 	for _, def := range module.Objects {
 		def := def
@@ -770,7 +762,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		// get the schema + resolvers for the object as a whole
 		objType, err := s.typeDefToSchema(def, false)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert module to schema: %w", err)
+			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
 		}
 
 		// check whether this is a pre-existing object (from core or another module)
@@ -779,7 +771,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 			// modules can reference types from core/other modules as types, but they
 			// can't attach any new fields or functions to them
 			if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
-				return nil, nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
+				return nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
 			}
 			continue
 		}
@@ -822,8 +814,20 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 
 			fieldASTType, err := s.typeDefToSchema(field.TypeDef, false)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
+
+			// Check if this is a type from another (non-core) module, which is currently
+			// not allowed
+			sourceModuleName, ok := schemaView.sourceModuleName(fieldASTType)
+			if ok && sourceModuleName != coreModuleName {
+				return nil, fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+					objTypeDef.OriginalName,
+					field.OriginalName,
+					sourceModuleName,
+				)
+			}
+
 			astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
 				Name:        field.Name,
 				Description: formatGqlDescription(field.Description),
@@ -845,9 +849,9 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 		}
 
 		for _, fn := range objTypeDef.Functions {
-			resolver, err := s.functionResolver(astDef, module, fn, schemaView)
+			resolver, err := s.functionResolver(astDef, objTypeDef.OriginalName, module, fn, schemaView)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			newObjResolver[gqlFieldName(fn.Name)] = resolver
 		}
@@ -878,7 +882,7 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 
 		if constructorName := gqlFieldName(def.AsObject.Name); constructorName == gqlFieldName(module.Name) {
 			// stitch in the module object right under Query
-			querySchemaDoc.Extensions = append(querySchemaDoc.Extensions, &ast.Definition{
+			typeSchemaDoc.Extensions = append(typeSchemaDoc.Extensions, &ast.Definition{
 				Name: "Query",
 				Kind: ast.Object,
 				Fields: ast.FieldList{
@@ -890,47 +894,26 @@ func (s *moduleSchema) moduleToSchemaFor(ctx context.Context, module *core.Modul
 					},
 				},
 			})
-			querySchemaResolver[constructorName] = PassthroughResolver
+			query, ok := typeSchemaResolvers["Query"]
+			if !ok {
+				query = ObjectResolver{}
+				typeSchemaResolvers["Query"] = query
+			}
+			query.(ObjectResolver)[constructorName] = PassthroughResolver
 		}
 	}
 
 	buf := &bytes.Buffer{}
 	formatter.NewFormatter(buf).FormatSchemaDocument(typeSchemaDoc)
 	typeSchemaStr := buf.String()
-	buf = &bytes.Buffer{}
-	formatter.NewFormatter(buf).FormatSchemaDocument(querySchemaDoc)
-	querySchemaStr := buf.String()
-
-	deps, err := s.dependenciesOf(ctx, module)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get module dependencies: %w", err)
-	}
-	depTypeSchemas := make([]ExecutableSchema, 0, len(deps))
-	for _, dep := range deps {
-		dep, err := s.loadModuleTypes(ctx, dep)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to load dep module functions: %w", err)
-		}
-		typeSchema, _, err := s.moduleToSchemaFor(ctx, dep)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert module to executable schema: %w", err)
-		}
-		depTypeSchemas = append(depTypeSchemas, typeSchema)
-	}
 
 	typeSchema := StaticSchema(StaticSchemaParams{
-		Name:         module.Name + ".types",
-		Schema:       typeSchemaStr,
-		Resolvers:    typeSchemaResolvers,
-		Dependencies: depTypeSchemas,
+		Name:             module.Name + ".types",
+		SourceModuleName: module.Name,
+		Schema:           typeSchemaStr,
+		Resolvers:        typeSchemaResolvers,
 	})
-	querySchema := StaticSchema(StaticSchemaParams{
-		Name:         module.Name + ".query",
-		Schema:       querySchemaStr,
-		Resolvers:    Resolvers{"Query": querySchemaResolver},
-		Dependencies: []ExecutableSchema{typeSchema},
-	})
-	return typeSchema, querySchema, nil
+	return typeSchema, nil
 }
 
 /*
@@ -997,6 +980,7 @@ func (s *moduleSchema) typeDefToSchema(typeDef *core.TypeDef, isInput bool) (*as
 
 func (s *moduleSchema) functionResolver(
 	parentObj *ast.Definition,
+	parentObjOriginalName string,
 	module *core.Module,
 	fn *core.Function,
 	schemaView *schemaView,
@@ -1009,12 +993,36 @@ func (s *moduleSchema) functionResolver(
 		return nil, err
 	}
 
+	// Check if this is a type from another (non-core) module, which is currently
+	// not allowed
+	sourceModuleName, ok := schemaView.sourceModuleName(returnASTType)
+	if ok && sourceModuleName != coreModuleName {
+		return nil, fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+			parentObjOriginalName,
+			fn.OriginalName,
+			sourceModuleName,
+		)
+	}
+
 	var argASTTypes ast.ArgumentDefinitionList
 	for _, fnArg := range fn.Args {
 		argASTType, err := s.typeDefToSchema(fnArg.TypeDef, true)
 		if err != nil {
 			return nil, err
 		}
+
+		// Check if this is a type from another (non-core) module, which is currently
+		// not allowed
+		sourceModuleName, ok := schemaView.sourceModuleName(argASTType)
+		if ok && sourceModuleName != coreModuleName {
+			return nil, fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+				parentObjOriginalName,
+				fn.OriginalName,
+				fnArg.OriginalName,
+				sourceModuleName,
+			)
+		}
+
 		defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
 		if err != nil {
 			return nil, err

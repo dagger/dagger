@@ -19,6 +19,10 @@ func (s *socketSchema) Name() string {
 	return "socket"
 }
 
+func (s *socketSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *socketSchema) Schema() string {
 	return Socket
 }
@@ -33,10 +37,6 @@ func (s *socketSchema) Resolvers() Resolvers {
 	ResolveIDable[socket.Socket](rs, "Socket", ObjectResolver{})
 
 	return rs
-}
-
-func (s *socketSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type socketArgs struct {

@@ -16,6 +16,10 @@ func (s *secretSchema) Name() string {
 	return "secret"
 }
 
+func (s *secretSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *secretSchema) Schema() string {
 	return Secret
 }
@@ -33,10 +37,6 @@ func (s *secretSchema) Resolvers() Resolvers {
 	})
 
 	return rs
-}
-
-func (s *secretSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type secretArgs struct {

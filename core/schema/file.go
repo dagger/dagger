@@ -19,6 +19,10 @@ func (s *fileSchema) Name() string {
 	return "file"
 }
 
+func (s *fileSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *fileSchema) Schema() string {
 	return File
 }
@@ -39,10 +43,6 @@ func (s *fileSchema) Resolvers() Resolvers {
 	})
 
 	return rs
-}
-
-func (s *fileSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type fileArgs struct {
