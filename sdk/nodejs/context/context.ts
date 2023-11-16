@@ -54,6 +54,9 @@ export class Context {
         forceKillAfterTimeout: 300000, // 5 mins
       })
     }
+
+    // Reset client, so it can restart a new connection if necessary
+    this._client = undefined
   }
 }
 
