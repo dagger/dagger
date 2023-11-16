@@ -13,7 +13,7 @@ The `dagger download` command allows you to retrieve file, directory and contain
 To see it in action, use `dagger download` with the `build` function used previously, to export the built application to an `out` directory on the host:
 
 ```shell
-dagger download --export-path ./out build
+dagger download --output ./out build
 ```
 
 Here's an example of the output:
@@ -29,7 +29,7 @@ favicon.ico          logo192.png  manifest.json  static
 The `dagger download` command also works with functions that return `Container` types, in which case the `Container` is exported as a TAR file to the host file system. Here's an example:
 
 ```shell
-dagger download --export-path ./container.tar app-container
+dagger download --output ./container.tar app-container
 ```
 
 :::tip
