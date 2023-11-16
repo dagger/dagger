@@ -1,6 +1,8 @@
 import { Writable } from "node:stream"
 
 import { Client } from "./api/client.gen.js"
+import { Context, defaultContext } from "./context/context.js"
+import { createGQLClient } from "./graphql/client.js"
 import { Bin, CLI_VERSION } from "./provisioning/index.js"
 
 /**
@@ -28,9 +30,11 @@ export interface ConnectOpts {
 
 export type CallbackFct = (client: Client) => Promise<void>
 
-export interface ConnectParams {
-  port: number
-  session_token: string
+/**
+ * Close global client connection
+ */
+export function close() {
+  defaultContext.close()
 }
 
 /**
@@ -62,16 +66,24 @@ export async function connect(
     }
 
     client = new Client({
-      host: `127.0.0.1:${daggerSessionPort}`,
-      sessionToken: sessionToken,
+      ctx: new Context({
+        client: createGQLClient(Number(daggerSessionPort), sessionToken),
+      }),
     })
   } else {
     // Otherwise, prefer _EXPERIMENTAL_DAGGER_CLI_BIN, with fallback behavior of
     // downloading the CLI and using that as the bin.
     const cliBin = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
     const engineConn = new Bin(cliBin, CLI_VERSION)
-    client = await engineConn.Connect(config)
+    const gqlClient = await engineConn.Connect(config)
     close = () => engineConn.Close()
+
+    client = new Client({
+      ctx: new Context({
+        client: gqlClient,
+        subProcess: engineConn.subProcess,
+      }),
+    })
   }
 
   // Warning shall be throw if versions are not compatible

@@ -7,10 +7,26 @@ import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
 
+import * as dagger from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
-import { connect } from "../connect.js"
+import { connect, close } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
+
+describe("NodeJS default client", function () {
+  it("Should use the default client", async function () {
+    this.timeout(60000)
+
+    await dagger
+      .container()
+      .from("alpine")
+      .withExec(["apk", "add", "curl"])
+      .withExec(["curl", "https://dagger.io/"])
+      .sync()
+
+    close()
+  })
+})
 
 describe("NodeJS sdk Connect", function () {
   it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
@@ -22,9 +38,15 @@ describe("NodeJS sdk Connect", function () {
     await connect(
       async (client) => {
         const authorization = JSON.stringify(
-          client?.["client"]["requestConfig"].headers
+          client["_ctx"]["_client"]?.requestConfig.headers
         )
-        assert.equal(client["client"]["url"], "http://127.0.0.1:1234/query")
+
+        assert.equal(
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          client["_ctx"]["_client"]["url"],
+          "http://127.0.0.1:1234/query"
+        )
         assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)
       },
       { LogOutput: process.stderr }

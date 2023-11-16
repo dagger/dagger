@@ -313,7 +313,7 @@ describe("NodeJS SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { build (context: {"_queryTree":[],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://undefined/query",requestConfig:{headers:{Authorization:"Basic dW5kZWZpbmVkOg=="}}}},buildArgs: [{value:"foo",name:"test"}]) } }`
+      `{ container { build (context: {"_queryTree":[],"_ctx":{}},buildArgs: [{value:"foo",name:"test"}]) } }`
     )
   })
 
