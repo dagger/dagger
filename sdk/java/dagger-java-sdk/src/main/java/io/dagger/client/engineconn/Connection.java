@@ -69,7 +69,8 @@ public final class Connection {
 
   public static Connection get(String workingDir) throws IOException {
     Optional<Connection> connection = fromEnv();
-    return connection.isPresent() ? connection.get()
+    return connection.isPresent()
+        ? connection.get()
         : fromCLI(new CLIRunner(workingDir, new CLIDownloader()));
   }
 

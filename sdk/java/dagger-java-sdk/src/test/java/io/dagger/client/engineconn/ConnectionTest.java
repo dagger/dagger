@@ -66,7 +66,8 @@ public class ConnectionTest {
 
   @Test
   public void should_not_call_dynamic_provisioning_when_env_vars_are_present() throws Exception {
-    MockedStatic<Connection> connectionMockedStatic = mockStatic(Connection.class, CALLS_REAL_METHODS);
+    MockedStatic<Connection> connectionMockedStatic =
+        mockStatic(Connection.class, CALLS_REAL_METHODS);
     environmentVariables.set("DAGGER_SESSION_PORT", "52037");
     environmentVariables.set("DAGGER_SESSION_TOKEN", "189de95f-07df-415d-b42a-7851c731359d");
     Connection conn = Connection.get("/tmp");
