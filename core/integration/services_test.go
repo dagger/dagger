@@ -1597,12 +1597,12 @@ func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content st
 	return srv, httpURL
 }
 
-func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
+func gitService(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	t.Helper()
 	return gitServiceWithBranch(ctx, t, c, content, "main")
 }
 
-func gitServiceWithBranch(ctx context.Context, t *testing.T, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Service, string) {
+func gitServiceWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Service, string) {
 	t.Helper()
 
 	const gitPort = 9418

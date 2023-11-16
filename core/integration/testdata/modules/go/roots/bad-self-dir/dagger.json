@@ -1,0 +1,5 @@
+{
+  "name": "bad-self-dir",
+  "sdk": "go",
+  "root": "../bad-self-dir"
+}

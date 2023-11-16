@@ -282,6 +282,8 @@ func main() { //nolint:gocyclo
 			bklog.G(ctx).WithError(err).Error("failed to create tracer provider")
 		}
 
+		// FIXME: continuing to use the deprecated interceptor until/unless there's a replacement that works w/ grpc_middleware
+		//nolint:staticcheck // SA1019 deprecated
 		streamTracer := otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
 
 		// NOTE: using context.Background because otherwise when the outer context is cancelled the server
@@ -639,6 +641,8 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 }
 
 func unaryInterceptor(globalCtx context.Context, tp trace.TracerProvider) grpc.UnaryServerInterceptor {
+	// FIXME: continuing to use the deprecated interceptor until/unless there's a replacement that works w/ grpc_middleware
+	//nolint:staticcheck // SA1019 deprecated
 	withTrace := otelgrpc.UnaryServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {

@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func connect(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
+func connect(t testing.TB, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -37,7 +37,7 @@ func connect(t *testing.T, opts ...dagger.ClientOpt) (*dagger.Client, context.Co
 	return client, ctx
 }
 
-func newCache(t *testing.T) core.CacheVolumeID {
+func newCache(t testing.TB) core.CacheVolumeID {
 	var res struct {
 		CacheVolume struct {
 			ID core.CacheVolumeID
@@ -58,7 +58,7 @@ func newCache(t *testing.T) core.CacheVolumeID {
 	return res.CacheVolume.ID
 }
 
-func newDirWithFile(t *testing.T, path, contents string) core.DirectoryID {
+func newDirWithFile(t testing.TB, path, contents string) core.DirectoryID {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -83,7 +83,7 @@ func newDirWithFile(t *testing.T, path, contents string) core.DirectoryID {
 	return dirRes.Directory.WithNewFile.ID
 }
 
-func newFile(t *testing.T, path, contents string) core.FileID {
+func newFile(t testing.TB, path, contents string) core.FileID {
 	var secretRes struct {
 		Directory struct {
 			WithNewFile struct {
@@ -141,7 +141,7 @@ func ls(dir string) ([]string, error) {
 	return names, nil
 }
 
-func tarEntries(t *testing.T, path string) []string {
+func tarEntries(t testing.TB, path string) []string {
 	f, err := os.Open(path)
 	require.NoError(t, err)
 
@@ -162,7 +162,7 @@ func tarEntries(t *testing.T, path string) []string {
 	return entries
 }
 
-func readTarFile(t *testing.T, pathToTar, pathInTar string) []byte {
+func readTarFile(t testing.TB, pathToTar, pathInTar string) []byte {
 	f, err := os.Open(pathToTar)
 	require.NoError(t, err)
 
@@ -192,7 +192,7 @@ func computeMD5FromReader(reader io.Reader) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func daggerCliPath(t *testing.T) string {
+func daggerCliPath(t testing.TB) string {
 	t.Helper()
 	cliPath := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
 	if cliPath == "" {
@@ -207,14 +207,14 @@ func daggerCliPath(t *testing.T) string {
 	return cliPath
 }
 
-func daggerCliFile(t *testing.T, c *dagger.Client) *dagger.File {
+func daggerCliFile(t testing.TB, c *dagger.Client) *dagger.File {
 	t.Helper()
 	return c.Host().File(daggerCliPath(t))
 }
 
 const testCLIBinPath = "/bin/dagger"
 
-func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *DaggerCLIContainer {
+func CLITestContainer(ctx context.Context, t testing.TB, c *dagger.Client) *DaggerCLIContainer {
 	t.Helper()
 	ctr := c.Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
@@ -230,7 +230,7 @@ func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *Dagg
 type DaggerCLIContainer struct {
 	*dagger.Container
 	ctx context.Context
-	t   *testing.T
+	t   testing.TB
 	c   *dagger.Client
 
 	// common
@@ -385,13 +385,13 @@ func goCache(c *dagger.Client) dagger.WithContainerFunc {
 
 // tWriter is a writer that writes to testing.T
 type tWriter struct {
-	t   *testing.T
+	t   testing.TB
 	buf bytes.Buffer
 	mu  sync.Mutex
 }
 
 // newTWriter creates a new TWriter
-func newTWriter(t *testing.T) *tWriter {
+func newTWriter(t testing.TB) *tWriter {
 	tw := &tWriter{t: t}
 	t.Cleanup(tw.flush)
 	return tw

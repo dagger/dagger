@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -665,8 +666,21 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 			description = doc.Text()
 		}
 
+		name := field.Name()
+
+		// override the name with the json tag if it was set - otherwise, we
+		// end up asking for a name that we won't unmarshal correctly
+		tag := reflect.StructTag(t.Tag(i))
+		if dt := tag.Get("json"); dt != "" {
+			dt, _, _ = strings.Cut(dt, ",")
+			if dt == "-" {
+				continue
+			}
+			name = dt
+		}
+
 		withFieldArgs := []Code{
-			Lit(field.Name()),
+			Lit(name),
 			fieldTypeDef,
 		}
 
@@ -834,15 +848,16 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 				baseType:  param.Type(),
 			}
 
+			paramFields := unpackASTFields(stype.Fields)
 			for f := 0; f < paramType.NumFields(); f++ {
 				spec, err := ps.parseParamSpecVar(paramType.Field(f))
 				if err != nil {
 					return nil, err
 				}
 				spec.parent = parent
-				spec.description = stype.Fields.List[f].Doc.Text()
+				spec.description = paramFields[f].Doc.Text()
 				if spec.description == "" {
-					spec.description = stype.Fields.List[f].Comment.Text()
+					spec.description = paramFields[f].Comment.Text()
 				}
 				spec.description = strings.TrimSpace(spec.description)
 				specs = append(specs, spec)
@@ -853,6 +868,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 
 	// if other parameter passing schemes fail, just treat each remaining arg
 	// as a top-level param
+	paramFields := unpackASTFields(fnDecl.Type.Params)
 	for ; i < params.Len(); i++ {
 		spec, err := ps.parseParamSpecVar(params.At(i))
 		if err != nil {
@@ -862,7 +878,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 			spec.variadic = true
 		}
 
-		if cmt, err := ps.commentForFuncField(fnDecl, i); err == nil {
+		if cmt, err := ps.commentForFuncField(fnDecl, paramFields, i); err == nil {
 			spec.description = cmt.Text()
 			spec.description = strings.TrimSpace(spec.description)
 		}
@@ -995,8 +1011,8 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 // commentForFuncField returns the *ast* comment group for the given position. This
 // is needed because function args (despite being fields) don't have comments
 // associated with them, so this is a neat little hack to get them out.
-func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.CommentGroup, error) {
-	pos := getASTFieldIdent(fnDecl.Type.Params, i).Pos()
+func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams []*ast.Field, i int) (*ast.CommentGroup, error) {
+	pos := unpackedParams[i].Pos()
 	tokenFile := ps.fset.File(pos)
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for function %s", fnDecl.Name.Name)
@@ -1005,19 +1021,35 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.Com
 
 	allowDocComment := true
 	allowLineComment := true
-	if i == 0 && tokenFile.Line(fnDecl.Pos()) == line {
-		// the argument is on the same line as the function declaration, so
-		// there is no doc comment to find
-		allowDocComment = false
-	} else if i > 0 && tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i-1).Pos()) == line {
-		// the argument is on the same line as the previous argument, so again
-		// there is no doc comment to find
-		allowDocComment = false
+	if i == 0 {
+		fieldStartLine := tokenFile.Line(fnDecl.Type.Params.Pos())
+		if fieldStartLine == line || fieldStartLine == line-1 {
+			// the argument is on the same (or next) line as the function
+			// declaration, so there is no doc comment to find
+			allowDocComment = false
+		}
+	} else {
+		prevArgLine := tokenFile.Line(unpackedParams[i-1].Pos())
+		if prevArgLine == line || prevArgLine == line-1 {
+			// the argument is on the same (or next) line as the previous
+			// argument, so again there is no doc comment to find
+			allowDocComment = false
+		}
 	}
-	if i+1 < len(fnDecl.Type.Params.List) && tokenFile.Line(getASTFieldIdent(fnDecl.Type.Params, i+1).Pos()) == line {
-		// the argument is on the same line as the next argument, so there is
-		// no line comment to find
-		allowLineComment = false
+	if i+1 < len(fnDecl.Type.Params.List) {
+		nextArgLine := tokenFile.Line(unpackedParams[i+1].Pos())
+		if nextArgLine == line {
+			// the argument is on the same line as the next argument, so there is
+			// no line comment to find
+			allowLineComment = false
+		}
+	} else {
+		fieldEndLine := tokenFile.Line(fnDecl.Type.Params.End())
+		if fieldEndLine == line {
+			// the argument is on the same line as the end of the field list, so there
+			// is no line comment to find
+			allowLineComment = false
+		}
 	}
 
 	for _, f := range ps.pkg.Syntax {
@@ -1031,8 +1063,6 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, i int) (*ast.Com
 			npos := tokenFile.LineStart(tokenFile.Line(pos)) - 1
 			for _, comment := range f.Comments {
 				if comment.Pos() <= npos && npos <= comment.End() {
-					// TODO(jedevc): we need to make sure that this comment has
-					// no content before it
 					return comment, nil
 				}
 			}
@@ -1102,15 +1132,18 @@ func asInlineStructAst(t ast.Node) (*ast.StructType, bool) {
 	}
 }
 
-func getASTFieldIdent(fields *ast.FieldList, idx int) *ast.Ident {
-	count := 0
-	for count < len(fields.List) {
-		names := (fields.List[count].Names)
-		if idx < len(names) {
-			return names[idx]
+func unpackASTFields(fields *ast.FieldList) []*ast.Field {
+	var unpacked []*ast.Field
+	for _, field := range fields.List {
+		for i, name := range field.Names {
+			field := *field
+			field.Names = []*ast.Ident{name}
+			if i != 0 {
+				field.Doc = nil
+				field.Comment = nil
+			}
+			unpacked = append(unpacked, &field)
 		}
-		idx -= len(names)
-		count++
 	}
-	return nil
+	return unpacked
 }

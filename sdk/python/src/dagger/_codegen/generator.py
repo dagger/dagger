@@ -505,6 +505,8 @@ def doc(s: str) -> str:
     """Wrap string in docstring quotes."""
     if "\n" in s:
         s = f"{s}\n"
+    elif s.endswith('"'):
+        s += " "
     return f'"""{s}"""'
 
 

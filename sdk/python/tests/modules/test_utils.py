@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 import pytest
 from typing_extensions import Doc
@@ -13,6 +13,7 @@ from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
         (str, False),
         (str | int, False),
         (str | None, True),
+        (Optional[str], True),
     ],
 )
 def test_is_optional(typ, expected):
@@ -24,6 +25,7 @@ def test_is_optional(typ, expected):
     [
         (str, str),
         (str | None, str),
+        (Optional[str], str),
         (str | int | None, str | int),
         (str | int, str | int),
     ],
@@ -40,13 +42,18 @@ def func_with_docstring():
     """Foo."""
 
 
+async def async_func_with_docstring():
+    """Foo."""
+
+
 @pytest.mark.parametrize(
     "annotation",
     [
         ClassWithDocstring,
-        ClassWithDocstring(),
         func_with_docstring,
+        async_func_with_docstring,
         Annotated[str, Doc("Foo.")],
+        Annotated[str | None, Doc("Foo.")],
         Annotated[str, Doc("Foo."), "Not supported"],
         Annotated[str, Doc("Bar."), Doc("Foo.")],
     ],
@@ -63,13 +70,18 @@ def func_without_docstring():
     ...
 
 
+async def async_func_without_docstring():
+    ...
+
+
 @pytest.mark.parametrize(
     "annotation",
     [
         ClassWithoutDocstring,
-        ClassWithoutDocstring(),
         func_without_docstring,
+        async_func_without_docstring,
         str,
+        str | None,
         Annotated[str, "Not supported"],
         Annotated[str, Arg("foo")],
     ],

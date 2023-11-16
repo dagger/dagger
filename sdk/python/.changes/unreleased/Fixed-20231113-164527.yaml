@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix codegen docstring ending in `"`
+time: 2023-11-13T16:45:27.038813-01:00
+custom:
+  Author: helderco
+  PR: "6104"
