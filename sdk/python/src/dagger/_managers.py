@@ -1,7 +1,7 @@
 import contextlib
 import typing
 
-import anyio
+import anyio.to_thread
 from typing_extensions import Self
 
 asyncify = anyio.to_thread.run_sync
