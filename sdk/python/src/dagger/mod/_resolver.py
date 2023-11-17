@@ -2,7 +2,6 @@ import dataclasses
 import inspect
 import json
 import logging
-import typing
 from abc import ABC, abstractmethod, abstractproperty
 from collections.abc import Callable
 from functools import cached_property
@@ -14,8 +13,7 @@ from typing import (
 )
 
 import cattrs
-import typing_extensions
-from typing_extensions import override
+from typing_extensions import Self, override
 
 import dagger
 
@@ -134,7 +132,7 @@ class FunctionResolver(Resolver, Generic[Func]):
             r = self._type_hints["return"]
         except KeyError:
             return MissingType
-        if r in (typing.Self, typing_extensions.Self):
+        if r is Self:
             if self.origin is None:
                 msg = "Can't return Self without parent class"
                 raise UserError(msg)

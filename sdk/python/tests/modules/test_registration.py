@@ -6,6 +6,28 @@ from dagger.mod import Annotated, Arg, Module
 from dagger.mod._exceptions import NameConflictError, UserError
 
 
+def get_resolver(mod: Module, parent_name: str, resolver_name: str):
+    return mod.get_resolver(
+        mod.get_resolvers("foo"),
+        parent_name,
+        resolver_name,
+    )
+
+
+async def get_result(
+    mod: Module,
+    parent_name: str,
+    parent_json: str,
+    resolver_name: str,
+    inputs: dict,
+):
+    return await mod.get_result(
+        get_resolver(mod, parent_name, resolver_name),
+        dagger.JSON(parent_json),
+        inputs,
+    )
+
+
 def test_object_type_resolvers():
     mod = Module()
 
@@ -105,17 +127,6 @@ def test_main_object_name(mod_name, class_name):
     assert next(iter(resolvers.keys())).name == class_name
 
 
-async def get_result(
-    mod: Module,
-    parent_name: str,
-    parent_json: str,
-    resolver_name: str,
-    inputs: dict,
-):
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), parent_name, resolver_name)
-    return await mod.get_result(resolver, dagger.JSON(parent_json), inputs)
-
-
 @pytest.mark.anyio()
 class TestNameOverrides:
     @pytest.fixture(scope="class")
@@ -146,14 +157,17 @@ class TestNameOverrides:
         assert await get_result(mod, "Bar", '{"with": "baz"}', "with", {}) == "baz"
 
 
-def test_method_returns_self():
+@pytest.mark.anyio()
+async def test_method_returns_self():
     mod = Module()
 
     @mod.object_type
     class Foo:
+        message: str = "foo"
+
         @mod.function
         def bar(self) -> Self:
-            ...
+            self.message = "foobar"
+            return self
 
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "bar")
-    assert resolver.return_type == Foo
+    assert await get_result(mod, "Foo", "{}", "bar", {}) == {"message": "foobar"}
