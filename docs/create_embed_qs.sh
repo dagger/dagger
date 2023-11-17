@@ -22,7 +22,7 @@ query='
       ) {
         withWorkdir(path: "/usr/src/app/hello-dagger") {
           withExec(
-            args: ["sh", "-c", "mkdir ci && go mod init test && go get dagger.io/dagger@latest"]
+            args: ["sh", "-c", "mkdir ci && go get dagger.io/dagger@latest"]
           ) {
             withNewFile(
               contents: """'"$content"'"""
