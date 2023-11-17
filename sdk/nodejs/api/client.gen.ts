@@ -1155,7 +1155,8 @@ export class Container extends BaseClient {
         new EnvVariable(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.name,
           r.value
@@ -1273,7 +1274,8 @@ export class Container extends BaseClient {
         new Port(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.description,
           r.port,
@@ -1412,7 +1414,8 @@ export class Container extends BaseClient {
         new Label(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.name,
           r.value
@@ -3113,7 +3116,8 @@ export class Function_ extends BaseClient {
         new FunctionArg(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.id
         )
@@ -3408,7 +3412,8 @@ export class FunctionCall extends BaseClient {
         new FunctionCallArgValue(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.name,
           r.value
@@ -4114,7 +4119,8 @@ export class Module_ extends BaseClient {
         new Module_(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.id
         )
@@ -4221,7 +4227,8 @@ export class Module_ extends BaseClient {
         new TypeDef(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.id
         )
@@ -4542,7 +4549,8 @@ export class ObjectTypeDef extends BaseClient {
         new FieldTypeDef(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.description,
           r.name
@@ -4576,7 +4584,8 @@ export class ObjectTypeDef extends BaseClient {
         new Function_(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.id
         )
@@ -4701,10 +4710,7 @@ export class Client extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
-    parent?: {
-      queryTree?: QueryTree[]
-      ctx: Context
-    },
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
     _checkVersionCompatibility?: boolean,
     _defaultPlatform?: Platform
   ) {
@@ -4718,7 +4724,7 @@ export class Client extends BaseClient {
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
-  public cacheVolume = (key: string): CacheVolume => {
+  cacheVolume(key: string): CacheVolume {
     return new CacheVolume({
       queryTree: [
         ...this._queryTree,
@@ -4735,9 +4741,7 @@ export class Client extends BaseClient {
    * Checks if the current Dagger Engine is compatible with an SDK's required version.
    * @param version The SDK's required version.
    */
-  public checkVersionCompatibility = async (
-    version: string
-  ): Promise<boolean> => {
+  async checkVersionCompatibility(version: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
@@ -4758,7 +4762,7 @@ export class Client extends BaseClient {
    * Optional platform argument initializes new containers to execute and publish
    * as that platform. Platform defaults to that of the builder's host.
    */
-  public container = (opts?: ClientContainerOpts): Container => {
+  container(opts?: ClientContainerOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -4776,7 +4780,7 @@ export class Client extends BaseClient {
    * If the caller is not currently executing in a function, this will return
    * an error.
    */
-  public currentFunctionCall = (): FunctionCall => {
+  currentFunctionCall(): FunctionCall {
     return new FunctionCall({
       queryTree: [
         ...this._queryTree,
@@ -4791,7 +4795,7 @@ export class Client extends BaseClient {
   /**
    * The module currently being served in the session, if any.
    */
-  public currentModule = (): Module_ => {
+  currentModule(): Module_ {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -4806,7 +4810,7 @@ export class Client extends BaseClient {
   /**
    * The default platform of the builder.
    */
-  public defaultPlatform = async (): Promise<Platform> => {
+  async defaultPlatform(): Promise<Platform> {
     const response: Awaited<Platform> = await computeQuery(
       [
         ...this._queryTree,
@@ -4823,7 +4827,7 @@ export class Client extends BaseClient {
   /**
    * Creates an empty directory or loads one by ID.
    */
-  public directory = (opts?: ClientDirectoryOpts): Directory => {
+  directory(opts?: ClientDirectoryOpts): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -4840,7 +4844,7 @@ export class Client extends BaseClient {
    * Loads a file by ID.
    * @deprecated Use loadFileFromID instead.
    */
-  public file = (id: FileID): File => {
+  file(id: FileID): File {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -4856,7 +4860,7 @@ export class Client extends BaseClient {
   /**
    * Create a function.
    */
-  public function_ = (name: string, returnType: TypeDef): Function_ => {
+  function_(name: string, returnType: TypeDef): Function_ {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -4896,7 +4900,7 @@ export class Client extends BaseClient {
    * @param opts.sshAuthSocket Set SSH auth socket
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
-  public git = (url: string, opts?: ClientGitOpts): GitRepository => {
+  git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
       queryTree: [
         ...this._queryTree,
@@ -4912,7 +4916,7 @@ export class Client extends BaseClient {
   /**
    * Queries the host environment.
    */
-  public host = (): Host => {
+  host(): Host {
     return new Host({
       queryTree: [
         ...this._queryTree,
@@ -4929,7 +4933,7 @@ export class Client extends BaseClient {
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
-  public http = (url: string, opts?: ClientHttpOpts): File => {
+  http(url: string, opts?: ClientHttpOpts): File {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -4945,7 +4949,7 @@ export class Client extends BaseClient {
   /**
    * Load a CacheVolume from its ID.
    */
-  public loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
+  loadCacheVolumeFromID(id: CacheVolumeID): CacheVolume {
     return new CacheVolume({
       queryTree: [
         ...this._queryTree,
@@ -4961,7 +4965,7 @@ export class Client extends BaseClient {
   /**
    * Loads a container from an ID.
    */
-  public loadContainerFromID = (id: ContainerID): Container => {
+  loadContainerFromID(id: ContainerID): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -4977,7 +4981,7 @@ export class Client extends BaseClient {
   /**
    * Load a Directory from its ID.
    */
-  public loadDirectoryFromID = (id: DirectoryID): Directory => {
+  loadDirectoryFromID(id: DirectoryID): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -4993,7 +4997,7 @@ export class Client extends BaseClient {
   /**
    * Load a File from its ID.
    */
-  public loadFileFromID = (id: FileID): File => {
+  loadFileFromID(id: FileID): File {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -5009,7 +5013,7 @@ export class Client extends BaseClient {
   /**
    * Load a function argument by ID.
    */
-  public loadFunctionArgFromID = (id: FunctionArgID): FunctionArg => {
+  loadFunctionArgFromID(id: FunctionArgID): FunctionArg {
     return new FunctionArg({
       queryTree: [
         ...this._queryTree,
@@ -5025,7 +5029,7 @@ export class Client extends BaseClient {
   /**
    * Load a function by ID.
    */
-  public loadFunctionFromID = (id: FunctionID): Function_ => {
+  loadFunctionFromID(id: FunctionID): Function_ {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -5041,7 +5045,7 @@ export class Client extends BaseClient {
   /**
    * Load a GeneratedCode by ID.
    */
-  public loadGeneratedCodeFromID = (id: GeneratedCodeID): GeneratedCode => {
+  loadGeneratedCodeFromID(id: GeneratedCodeID): GeneratedCode {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
@@ -5057,7 +5061,7 @@ export class Client extends BaseClient {
   /**
    * Load a module by ID.
    */
-  public loadModuleFromID = (id: ModuleID): Module_ => {
+  loadModuleFromID(id: ModuleID): Module_ {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -5073,7 +5077,7 @@ export class Client extends BaseClient {
   /**
    * Load a Secret from its ID.
    */
-  public loadSecretFromID = (id: SecretID): Secret => {
+  loadSecretFromID(id: SecretID): Secret {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -5089,7 +5093,7 @@ export class Client extends BaseClient {
   /**
    * Loads a service from ID.
    */
-  public loadServiceFromID = (id: ServiceID): Service => {
+  loadServiceFromID(id: ServiceID): Service {
     return new Service({
       queryTree: [
         ...this._queryTree,
@@ -5105,7 +5109,7 @@ export class Client extends BaseClient {
   /**
    * Load a Socket from its ID.
    */
-  public loadSocketFromID = (id: SocketID): Socket => {
+  loadSocketFromID(id: SocketID): Socket {
     return new Socket({
       queryTree: [
         ...this._queryTree,
@@ -5121,7 +5125,7 @@ export class Client extends BaseClient {
   /**
    * Load a TypeDef by ID.
    */
-  public loadTypeDefFromID = (id: TypeDefID): TypeDef => {
+  loadTypeDefFromID(id: TypeDefID): TypeDef {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5137,7 +5141,7 @@ export class Client extends BaseClient {
   /**
    * Create a new module.
    */
-  public module_ = (): Module_ => {
+  module_(): Module_ {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -5152,10 +5156,10 @@ export class Client extends BaseClient {
   /**
    * Load the static configuration for a module from the given source directory and optional subpath.
    */
-  public moduleConfig = (
+  moduleConfig(
     sourceDirectory: Directory,
     opts?: ClientModuleConfigOpts
-  ): ModuleConfig => {
+  ): ModuleConfig {
     return new ModuleConfig({
       queryTree: [
         ...this._queryTree,
@@ -5174,7 +5178,7 @@ export class Client extends BaseClient {
    * @param opts.description Pipeline description.
    * @param opts.labels Pipeline labels.
    */
-  public pipeline = (name: string, opts?: ClientPipelineOpts): Client => {
+  pipeline(name: string, opts?: ClientPipelineOpts): Client {
     return new Client({
       queryTree: [
         ...this._queryTree,
@@ -5191,7 +5195,7 @@ export class Client extends BaseClient {
    * Loads a secret from its ID.
    * @deprecated Use loadSecretFromID instead
    */
-  public secret = (id: SecretID): Secret => {
+  secret(id: SecretID): Secret {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -5210,7 +5214,7 @@ export class Client extends BaseClient {
    * @param name The user defined name for this secret
    * @param plaintext The plaintext of the secret
    */
-  public setSecret = (name: string, plaintext: string): Secret => {
+  setSecret(name: string, plaintext: string): Secret {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -5227,7 +5231,7 @@ export class Client extends BaseClient {
    * Loads a socket by its ID.
    * @deprecated Use loadSocketFromID instead.
    */
-  public socket = (opts?: ClientSocketOpts): Socket => {
+  socket(opts?: ClientSocketOpts): Socket {
     return new Socket({
       queryTree: [
         ...this._queryTree,
@@ -5243,7 +5247,7 @@ export class Client extends BaseClient {
   /**
    * Create a new TypeDef.
    */
-  public typeDef = (): TypeDef => {
+  typeDef(): TypeDef {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5454,7 +5458,8 @@ export class Service extends BaseClient {
         new Port(
           {
             queryTree: this.queryTree,
-            ctx: this._ctx,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
           },
           r.description,
           r.port,

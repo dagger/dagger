@@ -89,7 +89,7 @@
         },
         {{- end }}
       ],
-      this.client
+      await this._ctx.connection()
     )
 
     {{ if $convertID -}}

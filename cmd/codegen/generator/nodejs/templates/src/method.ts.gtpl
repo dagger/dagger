@@ -61,8 +61,7 @@
 		{{- end }}
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
 	{{- end }}
   }

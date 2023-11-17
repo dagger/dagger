@@ -5,7 +5,7 @@ export class Container extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
    ) {
      super(parent)
 
@@ -19,8 +19,7 @@ export class Container extends BaseClient {
           args: { ...opts },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 

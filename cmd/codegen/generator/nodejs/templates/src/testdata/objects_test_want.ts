@@ -9,7 +9,7 @@ export class CacheVolume extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
      _id?: CacheVolumeID,
    ) {
      super(parent)
@@ -28,7 +28,7 @@ export class CacheVolume extends BaseClient {
           operation: "id",
         },
       ],
-      this.client
+      await this._ctx.connection()
     )
 
     
@@ -45,7 +45,7 @@ export class Host extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
    ) {
      super(parent)
 
@@ -63,8 +63,7 @@ export class Host extends BaseClient {
           args: { path, ...opts },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 
@@ -80,8 +79,7 @@ export class Host extends BaseClient {
           args: { name },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 
@@ -97,8 +95,7 @@ export class Host extends BaseClient {
           args: { ...opts },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 }
