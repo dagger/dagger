@@ -4,17 +4,25 @@
 #
 #    hatch run lock
 #
+aiohttp==3.8.6
+    # via -r -
+aiosignal==1.3.1
+    # via aiohttp
 anyio==4.0.0
     # via
     #   -r -
-    #   httpcore
+    #   httpx
+async-timeout==4.0.3
+    # via aiohttp
 attrs==23.1.0
-    # via cattrs
+    # via
+    #   aiohttp
+    #   cattrs
 backoff==2.2.1
     # via gql
 beartype==0.16.4
     # via -r -
-black==23.10.1
+black==23.11.0
     # via -r -
 cattrs==23.1.2
     # via -r -
@@ -22,8 +30,14 @@ certifi==2023.7.22
     # via
     #   httpcore
     #   httpx
+charset-normalizer==3.3.2
+    # via aiohttp
 click==8.1.7
     # via black
+frozenlist==1.4.0
+    # via
+    #   aiohttp
+    #   aiosignal
 gql==3.4.1
     # via -r -
 graphql-core==3.2.3
@@ -32,9 +46,9 @@ graphql-core==3.2.3
     #   gql
 h11==0.14.0
     # via httpcore
-httpcore==0.18.0
+httpcore==1.0.2
     # via httpx
-httpx==0.25.0
+httpx==0.25.1
     # via
     #   -r -
     #   pytest-httpx
@@ -50,7 +64,9 @@ markdown-it-py==3.0.0
 mdurl==0.1.2
     # via markdown-it-py
 multidict==6.0.4
-    # via yarl
+    # via
+    #   aiohttp
+    #   yarl
 mypy-extensions==1.0.0
     # via black
 packaging==23.2
@@ -59,7 +75,7 @@ packaging==23.2
     #   pytest
 pathspec==0.11.2
     # via black
-platformdirs==3.11.0
+platformdirs==4.0.0
     # via
     #   -r -
     #   black
@@ -74,7 +90,7 @@ pytest==7.4.3
     #   pytest-lazy-fixture
     #   pytest-mock
     #   pytest-subprocess
-pytest-httpx==0.26.0
+pytest-httpx==0.27.0
     # via -r -
 pytest-lazy-fixture==0.6.3
     # via -r -
@@ -82,16 +98,17 @@ pytest-mock==3.12.0
     # via -r -
 pytest-subprocess==1.5.0
     # via -r -
-rich==13.6.0
+rich==13.7.0
     # via -r -
-ruff==0.1.3
+ruff==0.1.5
     # via -r -
 sniffio==1.3.0
     # via
     #   anyio
-    #   httpcore
     #   httpx
 typing-extensions==4.8.0
     # via -r -
 yarl==1.9.2
-    # via gql
+    # via
+    #   aiohttp
+    #   gql

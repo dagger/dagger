@@ -11,10 +11,12 @@ import tempfile
 import typing
 import zipfile
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path, PurePath
-from typing import IO
+from typing import IO, ClassVar
 
 import anyio
+import anyio.to_thread
 import httpx
 import platformdirs
 
@@ -22,8 +24,6 @@ import dagger
 
 from ._version import CLI_VERSION
 from .progress import Progress
-
-DEFAULT_CLI_HOST = "dl.dagger.io"
 
 logger = logging.getLogger(__name__)
 
@@ -115,36 +115,41 @@ class StreamReader(IO[bytes]):
         return self.hasher.hexdigest()
 
 
+@dataclass
 class Downloader:
     """Download the dagger CLI binary."""
 
-    CLI_BIN_PREFIX = "dagger-"
-    CLI_BASE_URL = f"https://{DEFAULT_CLI_HOST}/dagger/releases"
+    CLI_BASE_URL: ClassVar[str] = "https://dl.dagger.io"
+    CLI_BIN_PREFIX: ClassVar[str] = "dagger-"
 
-    def __init__(
-        self,
-        version: str = CLI_VERSION,
-        progress: Progress | None = None,
-    ) -> None:
-        self.version = version
-        self.platform = get_platform()
-        self.progress = progress or Progress()
+    version: str = CLI_VERSION
+    platform: Platform = field(default_factory=get_platform, kw_only=True)
+    progress: Progress = field(default_factory=Progress, kw_only=True)
+
+    def _create_url(self, file_name: str):
+        return httpx.URL(
+            self.CLI_BASE_URL,
+            path=f"/{self.version}/dagger/releases/{file_name}",
+        )
 
     @property
-    def archive_url(self) -> str:
+    def archive_url(self):
         ext = "zip" if self.platform.os == "windows" else "tar.gz"
-        return (
-            f"{self.CLI_BASE_URL}/{self.version}/"
+        return self._create_url(
             f"dagger_v{self.version}_{self.platform.os}_{self.platform.arch}.{ext}"
         )
 
     @property
-    def checksum_url(self):
-        return f"{self.CLI_BASE_URL}/{self.version}/checksums.txt"
+    def archive_name(self):
+        return PurePath(self.archive_url.path).name
 
     @property
-    def archive_name(self):
-        return PurePath(httpx.URL(self.archive_url).path).name
+    def checksum_url(self):
+        return self._create_url(self.checksum_name)
+
+    @property
+    def checksum_name(self):
+        return "checksums.txt"
 
     @functools.cached_property
     def cache_dir(self) -> Path:
@@ -235,7 +240,7 @@ class Downloader:
             reader = StreamReader(r)
             extractor = (
                 self._extract_from_zip
-                if url.endswith(".zip")
+                if url.path.endswith(".zip")
                 else self._extract_from_tar
             )
 

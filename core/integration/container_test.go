@@ -2665,43 +2665,43 @@ func TestContainerImport(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	pf, err := c.DefaultPlatform(ctx)
-	require.NoError(t, err)
-
-	platform, err := platforms.Parse(string(pf))
-	require.NoError(t, err)
-
-	config := map[string]any{
-		"contents": map[string]any{
-			"keyring": []string{
-				"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
-			},
-			"repositories": []string{
-				"https://packages.wolfi.dev/os",
-			},
-			"packages": []string{
-				"wolfi-base",
-			},
-		},
-		"cmd": "/bin/sh -l",
-		"environment": map[string]string{
-			"FOO": "bar",
-		},
-		"archs": []string{
-			platform.Architecture,
-		},
-	}
-
-	cfgYaml, err := yaml.Marshal(config)
-	require.NoError(t, err)
-
-	apko := c.Container().
-		From("cgr.dev/chainguard/apko:latest").
-		WithNewFile("config.yml", dagger.ContainerWithNewFileOpts{
-			Contents: string(cfgYaml),
-		})
-
 	t.Run("OCI", func(t *testing.T) {
+		pf, err := c.DefaultPlatform(ctx)
+		require.NoError(t, err)
+
+		platform, err := platforms.Parse(string(pf))
+		require.NoError(t, err)
+
+		config := map[string]any{
+			"contents": map[string]any{
+				"keyring": []string{
+					"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
+				},
+				"repositories": []string{
+					"https://packages.wolfi.dev/os",
+				},
+				"packages": []string{
+					"wolfi-base",
+				},
+			},
+			"cmd": "/bin/sh -l",
+			"environment": map[string]string{
+				"FOO": "bar",
+			},
+			"archs": []string{
+				platform.Architecture,
+			},
+		}
+
+		cfgYaml, err := yaml.Marshal(config)
+		require.NoError(t, err)
+
+		apko := c.Container().
+			From("cgr.dev/chainguard/apko:latest").
+			WithNewFile("config.yml", dagger.ContainerWithNewFileOpts{
+				Contents: string(cfgYaml),
+			})
+
 		imageFile := apko.
 			WithExec([]string{
 				"build",
@@ -2717,17 +2717,11 @@ func TestContainerImport(t *testing.T) {
 	})
 
 	t.Run("Docker", func(t *testing.T) {
-		imageFile := apko.
-			WithExec([]string{
-				"build",
-				"--use-docker-mediatypes",
-				"config.yml", "latest", "output.tar",
-			}).
-			File("output.tar")
-
-		imported := c.Container().Import(imageFile)
-
-		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
+		out, err := c.Container().
+			Import(c.Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(dagger.ContainerAsTarballOpts{
+				MediaTypes: dagger.Dockermediatypes,
+			})).
+			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "bar\n", out)
 	})
@@ -3613,7 +3607,7 @@ func TestContainerMediaTypes(t *testing.T) {
 
 			ref := registryRef("testcontainerpublishmediatypes" + strings.ToLower(string(tc.mediaTypes)))
 			_, err := c.Container().
-				From("alpine:3.16.2").
+				From(alpineImage).
 				Publish(ctx, ref, dagger.ContainerPublishOpts{
 					MediaTypes: tc.mediaTypes,
 				})
@@ -3634,28 +3628,45 @@ func TestContainerMediaTypes(t *testing.T) {
 				require.EqualValues(t, tc.expectedOCIMediaType, mediaType)
 			}
 
-			tarPath := filepath.Join(t.TempDir(), "export.tar")
-			_, err = c.Container().
-				From("alpine:3.16.2").
-				Export(ctx, tarPath, dagger.ContainerExportOpts{
-					MediaTypes: tc.mediaTypes,
+			for _, useAsTarball := range []bool{true, false} {
+				useAsTarball := useAsTarball
+				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
+					t.Parallel()
+
+					tarPath := filepath.Join(t.TempDir(), "export.tar")
+					if useAsTarball {
+						_, err = c.Container().
+							From(alpineImage).
+							AsTarball(dagger.ContainerAsTarballOpts{
+								MediaTypes: tc.mediaTypes,
+							}).
+							Export(ctx, tarPath)
+						require.NoError(t, err)
+					} else {
+						_, err = c.Container().
+							From(alpineImage).
+							Export(ctx, tarPath, dagger.ContainerExportOpts{
+								MediaTypes: tc.mediaTypes,
+							})
+						require.NoError(t, err)
+					}
+
+					// check that docker compatible manifest is present
+					dockerManifestBytes := readTarFile(t, tarPath, "manifest.json")
+					require.NotNil(t, dockerManifestBytes)
+
+					indexBytes := readTarFile(t, tarPath, "index.json")
+					var index ocispecs.Index
+					require.NoError(t, json.Unmarshal(indexBytes, &index))
+
+					manifestDigest := index.Manifests[0].Digest
+					manifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+manifestDigest.Encoded())
+					var manifest ocispecs.Manifest
+					require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
+					for _, layer := range manifest.Layers {
+						require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
+					}
 				})
-			require.NoError(t, err)
-
-			// check that docker compatible manifest is present
-			dockerManifestBytes := readTarFile(t, tarPath, "manifest.json")
-			require.NotNil(t, dockerManifestBytes)
-
-			indexBytes := readTarFile(t, tarPath, "index.json")
-			var index ocispecs.Index
-			require.NoError(t, json.Unmarshal(indexBytes, &index))
-
-			manifestDigest := index.Manifests[0].Digest
-			manifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+manifestDigest.Encoded())
-			var manifest ocispecs.Manifest
-			require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
-			for _, layer := range manifest.Layers {
-				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
 			}
 		})
 	}

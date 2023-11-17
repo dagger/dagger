@@ -68,6 +68,7 @@ packages = ["src/dagger"]
 dependencies = [
     "black>=22.3.0",
     "ruff>=0.0.218",
+    "aiohttp>=3.8.6",
     "pytest>=7.2.0",
     "pytest-mock>=3.10.0",
     "pytest-subprocess>=1.4.2",
