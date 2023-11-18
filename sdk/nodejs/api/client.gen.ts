@@ -1155,8 +1155,7 @@ export class Container extends BaseClient {
         new EnvVariable(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.name,
           r.value
@@ -1274,8 +1273,7 @@ export class Container extends BaseClient {
         new Port(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.description,
           r.port,
@@ -1414,8 +1412,7 @@ export class Container extends BaseClient {
         new Label(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.name,
           r.value
@@ -3116,8 +3113,7 @@ export class Function_ extends BaseClient {
         new FunctionArg(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.id
         )
@@ -3412,8 +3408,7 @@ export class FunctionCall extends BaseClient {
         new FunctionCallArgValue(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.name,
           r.value
@@ -4119,8 +4114,7 @@ export class Module_ extends BaseClient {
         new Module_(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.id
         )
@@ -4227,8 +4221,7 @@ export class Module_ extends BaseClient {
         new TypeDef(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.id
         )
@@ -4549,8 +4542,7 @@ export class ObjectTypeDef extends BaseClient {
         new FieldTypeDef(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.description,
           r.name
@@ -4584,8 +4576,7 @@ export class ObjectTypeDef extends BaseClient {
         new Function_(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.id
         )
@@ -5458,8 +5449,7 @@ export class Service extends BaseClient {
         new Port(
           {
             queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
+            ctx: this._ctx,
           },
           r.description,
           r.port,

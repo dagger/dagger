@@ -100,8 +100,7 @@
       (r) => new {{ . | FormatReturnType | ToSingleType }}(
       {
         queryTree: this.queryTree,
-        host: this.clientHost,
-        sessionToken: this.sessionToken,
+        ctx: this._ctx
       },
         {{- range $v := . | GetArrayField }}
         r.{{ $v.Name | ToLowerCase }},
