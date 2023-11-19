@@ -452,10 +452,11 @@ type containerPublishArgs struct {
 	PlatformVariants  []core.ContainerID
 	ForcedCompression core.ImageLayerCompression
 	MediaTypes        core.ImageMediaTypes
+	Attestations      []core.Attestation
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
+	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes, args.Attestations)
 }
 
 type containerWithMountedFileArgs struct {

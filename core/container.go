@@ -1339,6 +1339,7 @@ func (container *Container) Publish(
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
+	attestations []Attestation,
 ) (string, error) {
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
@@ -1394,6 +1395,9 @@ func (container *Container) Publish(
 	if forcedCompression != "" {
 		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+	for _, att := range attestations {
+		opts[string(att.Type)] = strings.Join(att.Params, ",")
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, bk, services)
@@ -1964,3 +1968,15 @@ const (
 	OCIMediaTypes    ImageMediaTypes = "OCIMediaTypes"
 	DockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 )
+
+type AttestType string
+
+const (
+	AttestTypeSBOM       AttestType = "attest:sbom"
+	AttestTypeProvenance AttestType = "attest:provenance"
+)
+
+type Attestation struct {
+	Type   AttestType
+	Params []string
+}
