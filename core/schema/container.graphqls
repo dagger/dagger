@@ -630,6 +630,11 @@ type Container {
     registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
+
+    """
+    Lists of attestations to push to the registry.
+    """
+    attestations: [Attestation]
   ): String!
 
   """
@@ -886,4 +891,14 @@ enum ImageLayerCompression {
 enum ImageMediaTypes {
   OCIMediaTypes
   DockerMediaTypes
+}
+
+type Attestation {
+  type: AttestType!
+  params: [String]
+}
+
+enum AttestType {
+  AttestTypeSBOM
+  AttestTypeProvenance
 }
