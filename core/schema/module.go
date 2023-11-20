@@ -43,7 +43,7 @@ func (s *moduleSchema) SourceModuleName() string {
 }
 
 func (s *moduleSchema) Schema() string {
-	return strings.Join([]string{Module, Function, InternalSDK}, "\n")
+	return strings.Join([]string{Module, TypeDef, InternalSDK}, "\n")
 }
 
 func (s *moduleSchema) Resolvers() Resolvers {
