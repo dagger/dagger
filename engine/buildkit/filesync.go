@@ -335,11 +335,7 @@ func (c *Client) LocalFileExport(
 	}
 	defer diffCopyClient.CloseSend()
 
-	fileStat, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to stat file: %s", err)
-	}
-	fileSizeLeft := fileStat.Size()
+	fileSizeLeft := stat.Size()
 	chunkSize := int64(MaxFileContentsChunkSize)
 	for fileSizeLeft > 0 {
 		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
