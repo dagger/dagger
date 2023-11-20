@@ -63,7 +63,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: {{ .Name | QueryToClient | FormatName }}) => {{ .Name | QueryToClient | FormatName }}) {
+  with = (arg: (param: {{ .Name | QueryToClient | FormatName }}) => {{ .Name | QueryToClient | FormatName }}) => {
     return arg(this)
   }
 {{- end }}

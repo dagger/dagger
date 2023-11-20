@@ -10,7 +10,7 @@ export class Container extends BaseClient {
      super(parent)
 
    }
-  exec(opts?: ContainerExecOpts): Container {
+  exec = (opts?: ContainerExecOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -28,7 +28,7 @@ export class Container extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Container) => Container) {
+  with = (arg: (param: Container) => Container) => {
     return arg(this)
   }
 }

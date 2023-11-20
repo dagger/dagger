@@ -881,7 +881,7 @@ export class CacheVolume extends BaseClient {
 
     this._id = _id
   }
-  async id(): Promise<CacheVolumeID> {
+  id = async (): Promise<CacheVolumeID> => {
     if (this._id) {
       return this._id
     }
@@ -957,7 +957,7 @@ export class Container extends BaseClient {
   /**
    * A unique identifier for this container.
    */
-  async id(): Promise<ContainerID> {
+  id = async (): Promise<ContainerID> => {
     if (this._id) {
       return this._id
     }
@@ -980,7 +980,7 @@ export class Container extends BaseClient {
    *
    * Be sure to set any exposed ports before this conversion.
    */
-  asService(): Service {
+  asService = (): Service => {
     return new Service({
       queryTree: [
         ...this._queryTree,
@@ -1005,7 +1005,7 @@ export class Container extends BaseClient {
    * is largely compatible with most recent container runtimes, but Docker may be needed
    * for older runtimes without OCI support.
    */
-  asTarball(opts?: ContainerAsTarballOpts): File {
+  asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata: Metadata = {
       forcedCompression: { is_enum: true },
       mediaTypes: { is_enum: true },
@@ -1039,7 +1039,7 @@ export class Container extends BaseClient {
    * and mount path /run/secrets/[secret-name]
    * e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)"
    */
-  build(context: Directory, opts?: ContainerBuildOpts): Container {
+  build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1055,7 +1055,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves default arguments for future commands.
    */
-  async defaultArgs(): Promise<string[]> {
+  defaultArgs = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -1075,7 +1075,7 @@ export class Container extends BaseClient {
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
    */
-  directory(path: string): Directory {
+  directory = (path: string): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1091,7 +1091,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves entrypoint to be prepended to the arguments of all commands.
    */
-  async entrypoint(): Promise<string[]> {
+  entrypoint = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -1109,7 +1109,7 @@ export class Container extends BaseClient {
    * Retrieves the value of the specified environment variable.
    * @param name The name of the environment variable to retrieve (e.g., "PATH").
    */
-  async envVariable(name: string): Promise<string> {
+  envVariable = async (name: string): Promise<string> => {
     if (this._envVariable) {
       return this._envVariable
     }
@@ -1131,7 +1131,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the list of environment variables passed to commands.
    */
-  async envVariables(): Promise<EnvVariable[]> {
+  envVariables = async (): Promise<EnvVariable[]> => {
     type envVariables = {
       name: string
       value: string
@@ -1169,7 +1169,7 @@ export class Container extends BaseClient {
    * experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
    * This currently works for Nvidia devices only.
    */
-  experimentalWithAllGPUs(): Container {
+  experimentalWithAllGPUs = (): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1187,7 +1187,7 @@ export class Container extends BaseClient {
    * experimentalWithGPU configures the provided list of devices to be accesible to this container.
    * This currently works for Nvidia devices only.
    */
-  experimentalWithGPU(devices: string[]): Container {
+  experimentalWithGPU = (devices: string[]): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1218,7 +1218,10 @@ export class Container extends BaseClient {
    * is largely compatible with most recent container runtimes, but Docker may be needed
    * for older runtimes without OCI support.
    */
-  async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
+  export = async (
+    path: string,
+    opts?: ContainerExportOpts
+  ): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
@@ -1248,7 +1251,7 @@ export class Container extends BaseClient {
    * This includes ports already exposed by the image, even if not
    * explicitly added with dagger.
    */
-  async exposedPorts(): Promise<Port[]> {
+  exposedPorts = async (): Promise<Port[]> => {
     type exposedPorts = {
       description: string
       port: number
@@ -1288,7 +1291,7 @@ export class Container extends BaseClient {
    * Mounts are included.
    * @param path The path of the file to retrieve (e.g., "./README.md").
    */
-  file(path: string): File {
+  file = (path: string): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -1307,7 +1310,7 @@ export class Container extends BaseClient {
    *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
    */
-  from(address: string): Container {
+  from = (address: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1323,7 +1326,7 @@ export class Container extends BaseClient {
   /**
    * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
    */
-  async imageRef(): Promise<string> {
+  imageRef = async (): Promise<string> => {
     if (this._imageRef) {
       return this._imageRef
     }
@@ -1350,7 +1353,7 @@ export class Container extends BaseClient {
    * @param opts.tag Identifies the tag to import from the archive, if the archive bundles
    * multiple tags.
    */
-  import_(source: File, opts?: ContainerImportOpts): Container {
+  import_ = (source: File, opts?: ContainerImportOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1366,7 +1369,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the value of the specified label.
    */
-  async label(name: string): Promise<string> {
+  label = async (name: string): Promise<string> => {
     if (this._label) {
       return this._label
     }
@@ -1388,7 +1391,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the list of labels passed to container.
    */
-  async labels(): Promise<Label[]> {
+  labels = async (): Promise<Label[]> => {
     type labels = {
       name: string
       value: string
@@ -1423,7 +1426,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the list of paths where a directory is mounted.
    */
-  async mounts(): Promise<string[]> {
+  mounts = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -1443,7 +1446,7 @@ export class Container extends BaseClient {
    * @param opts.description Pipeline description.
    * @param opts.labels Pipeline labels.
    */
-  pipeline(name: string, opts?: ContainerPipelineOpts): Container {
+  pipeline = (name: string, opts?: ContainerPipelineOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1459,7 +1462,7 @@ export class Container extends BaseClient {
   /**
    * The platform this container executes and publishes as.
    */
-  async platform(): Promise<Platform> {
+  platform = async (): Promise<Platform> => {
     if (this._platform) {
       return this._platform
     }
@@ -1496,7 +1499,10 @@ export class Container extends BaseClient {
    * is largely compatible with most recent registries, but Docker may be needed for older
    * registries without OCI support.
    */
-  async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
+  publish = async (
+    address: string,
+    opts?: ContainerPublishOpts
+  ): Promise<string> => {
     if (this._publish) {
       return this._publish
     }
@@ -1523,7 +1529,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container's root filesystem. Mounts are not included.
    */
-  rootfs(): Directory {
+  rootfs = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1541,7 +1547,7 @@ export class Container extends BaseClient {
    *
    * Primarily intended for internal use with the dagger CLI.
    */
-  async shellEndpoint(): Promise<string> {
+  shellEndpoint = async (): Promise<string> => {
     if (this._shellEndpoint) {
       return this._shellEndpoint
     }
@@ -1564,7 +1570,7 @@ export class Container extends BaseClient {
    *
    * Will execute default command if none is set, or error if there's no default.
    */
-  async stderr(): Promise<string> {
+  stderr = async (): Promise<string> => {
     if (this._stderr) {
       return this._stderr
     }
@@ -1587,7 +1593,7 @@ export class Container extends BaseClient {
    *
    * Will execute default command if none is set, or error if there's no default.
    */
-  async stdout(): Promise<string> {
+  stdout = async (): Promise<string> => {
     if (this._stdout) {
       return this._stdout
     }
@@ -1610,7 +1616,7 @@ export class Container extends BaseClient {
    *
    * It doesn't run the default command if no exec has been set.
    */
-  async sync(): Promise<Container> {
+  sync = async (): Promise<Container> => {
     await computeQuery(
       [
         ...this._queryTree,
@@ -1627,7 +1633,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the user to be set for all commands.
    */
-  async user(): Promise<string> {
+  user = async (): Promise<string> => {
     if (this._user) {
       return this._user
     }
@@ -1649,7 +1655,7 @@ export class Container extends BaseClient {
    * Configures default arguments for future commands.
    * @param opts.args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */
-  withDefaultArgs(opts?: ContainerWithDefaultArgsOpts): Container {
+  withDefaultArgs = (opts?: ContainerWithDefaultArgsOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1674,11 +1680,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withDirectory(
+  withDirectory = (
     path: string,
     directory: Directory,
     opts?: ContainerWithDirectoryOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1695,7 +1701,7 @@ export class Container extends BaseClient {
    * Retrieves this container but with a different command entrypoint.
    * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
    */
-  withEntrypoint(args: string[]): Container {
+  withEntrypoint = (args: string[]): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1715,11 +1721,11 @@ export class Container extends BaseClient {
    * @param opts.expand Replace ${VAR} or $VAR in the value according to the current environment
    * variables defined in the container (e.g., "/opt/bin:$PATH").
    */
-  withEnvVariable(
+  withEnvVariable = (
     name: string,
     value: string,
     opts?: ContainerWithEnvVariableOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1750,7 +1756,7 @@ export class Container extends BaseClient {
    * does not provide any security guarantees when using this option. It should only be used
    * when absolutely necessary and only with trusted commands.
    */
-  withExec(args: string[], opts?: ContainerWithExecOpts): Container {
+  withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1773,10 +1779,10 @@ export class Container extends BaseClient {
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
    */
-  withExposedPort(
+  withExposedPort = (
     port: number,
     opts?: ContainerWithExposedPortOpts
-  ): Container {
+  ): Container => {
     const metadata: Metadata = {
       protocol: { is_enum: true },
     }
@@ -1806,11 +1812,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withFile(
+  withFile = (
     path: string,
     source: File,
     opts?: ContainerWithFileOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1827,7 +1833,7 @@ export class Container extends BaseClient {
    * Indicate that subsequent operations should be featured more prominently in
    * the UI.
    */
-  withFocus(): Container {
+  withFocus = (): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1844,7 +1850,7 @@ export class Container extends BaseClient {
    * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
    * @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
    */
-  withLabel(name: string, value: string): Container {
+  withLabel = (name: string, value: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1873,11 +1879,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withMountedCache(
+  withMountedCache = (
     path: string,
     cache: CacheVolume,
     opts?: ContainerWithMountedCacheOpts
-  ): Container {
+  ): Container => {
     const metadata: Metadata = {
       sharing: { is_enum: true },
     }
@@ -1904,11 +1910,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withMountedDirectory(
+  withMountedDirectory = (
     path: string,
     source: Directory,
     opts?: ContainerWithMountedDirectoryOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1931,11 +1937,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withMountedFile(
+  withMountedFile = (
     path: string,
     source: File,
     opts?: ContainerWithMountedFileOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1962,11 +1968,11 @@ export class Container extends BaseClient {
    *
    * Default: 0400.
    */
-  withMountedSecret(
+  withMountedSecret = (
     path: string,
     source: Secret,
     opts?: ContainerWithMountedSecretOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1983,7 +1989,7 @@ export class Container extends BaseClient {
    * Retrieves this container plus a temporary directory mounted at the given path.
    * @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
    */
-  withMountedTemp(path: string): Container {
+  withMountedTemp = (path: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2009,7 +2015,7 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withNewFile(path: string, opts?: ContainerWithNewFileOpts): Container {
+  withNewFile = (path: string, opts?: ContainerWithNewFileOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2029,11 +2035,11 @@ export class Container extends BaseClient {
    * @param username The username of the registry's account (e.g., "Dagger").
    * @param secret The API key, password or token to authenticate to this registry.
    */
-  withRegistryAuth(
+  withRegistryAuth = (
     address: string,
     username: string,
     secret: Secret
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2049,7 +2055,7 @@ export class Container extends BaseClient {
   /**
    * Initializes this container from this DirectoryID.
    */
-  withRootfs(directory: Directory): Container {
+  withRootfs = (directory: Directory): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2067,7 +2073,7 @@ export class Container extends BaseClient {
    * @param name The name of the secret variable (e.g., "API_SECRET").
    * @param secret The identifier of the secret value.
    */
-  withSecretVariable(name: string, secret: Secret): Container {
+  withSecretVariable = (name: string, secret: Secret): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2092,7 +2098,7 @@ export class Container extends BaseClient {
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withServiceBinding(alias: string, service: Service): Container {
+  withServiceBinding = (alias: string, service: Service): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2115,11 +2121,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withUnixSocket(
+  withUnixSocket = (
     path: string,
     source: Socket,
     opts?: ContainerWithUnixSocketOpts
-  ): Container {
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2136,7 +2142,7 @@ export class Container extends BaseClient {
    * Retrieves this container with a different command user.
    * @param name The user to set (e.g., "root").
    */
-  withUser(name: string): Container {
+  withUser = (name: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2153,7 +2159,7 @@ export class Container extends BaseClient {
    * Retrieves this container with a different working directory.
    * @param path The path to set as the working directory (e.g., "/app").
    */
-  withWorkdir(path: string): Container {
+  withWorkdir = (path: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2170,7 +2176,7 @@ export class Container extends BaseClient {
    * Retrieves this container minus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    */
-  withoutEnvVariable(name: string): Container {
+  withoutEnvVariable = (name: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2188,10 +2194,10 @@ export class Container extends BaseClient {
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
-  withoutExposedPort(
+  withoutExposedPort = (
     port: number,
     opts?: ContainerWithoutExposedPortOpts
-  ): Container {
+  ): Container => {
     const metadata: Metadata = {
       protocol: { is_enum: true },
     }
@@ -2214,7 +2220,7 @@ export class Container extends BaseClient {
    *
    * This is the initial state of all containers.
    */
-  withoutFocus(): Container {
+  withoutFocus = (): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2230,7 +2236,7 @@ export class Container extends BaseClient {
    * Retrieves this container minus the given environment label.
    * @param name The name of the label to remove (e.g., "org.opencontainers.artifact.created").
    */
-  withoutLabel(name: string): Container {
+  withoutLabel = (name: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2247,7 +2253,7 @@ export class Container extends BaseClient {
    * Retrieves this container after unmounting everything at the given path.
    * @param path Location of the cache directory (e.g., "/cache/node_modules").
    */
-  withoutMount(path: string): Container {
+  withoutMount = (path: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2265,7 +2271,7 @@ export class Container extends BaseClient {
    * @param address Registry's address to remove the authentication from.
    * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
    */
-  withoutRegistryAuth(address: string): Container {
+  withoutRegistryAuth = (address: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2282,7 +2288,7 @@ export class Container extends BaseClient {
    * Retrieves this container with a previously added Unix socket removed.
    * @param path Location of the socket to remove (e.g., "/tmp/socket").
    */
-  withoutUnixSocket(path: string): Container {
+  withoutUnixSocket = (path: string): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2298,7 +2304,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the working directory for all commands.
    */
-  async workdir(): Promise<string> {
+  workdir = async (): Promise<string> => {
     if (this._workdir) {
       return this._workdir
     }
@@ -2321,7 +2327,7 @@ export class Container extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Container) => Container) {
+  with = (arg: (param: Container) => Container) => {
     return arg(this)
   }
 }
@@ -2353,7 +2359,7 @@ export class Directory extends BaseClient {
   /**
    * The content-addressed identifier of the directory.
    */
-  async id(): Promise<DirectoryID> {
+  id = async (): Promise<DirectoryID> => {
     if (this._id) {
       return this._id
     }
@@ -2384,7 +2390,7 @@ export class Directory extends BaseClient {
    * If not set, the module source code is loaded from the root of the
    * directory.
    */
-  asModule(opts?: DirectoryAsModuleOpts): Module_ {
+  asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -2401,7 +2407,7 @@ export class Directory extends BaseClient {
    * Gets the difference between this directory and an another directory.
    * @param other Identifier of the directory to compare.
    */
-  diff(other: Directory): Directory {
+  diff = (other: Directory): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2418,7 +2424,7 @@ export class Directory extends BaseClient {
    * Retrieves a directory at the given path.
    * @param path Location of the directory to retrieve (e.g., "/src").
    */
-  directory(path: string): Directory {
+  directory = (path: string): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2443,7 +2449,7 @@ export class Directory extends BaseClient {
    *
    * They will be mounted at /run/secrets/[secret-name].
    */
-  dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
+  dockerBuild = (opts?: DirectoryDockerBuildOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2460,7 +2466,7 @@ export class Directory extends BaseClient {
    * Returns a list of files and directories at the given path.
    * @param opts.path Location of the directory to look at (e.g., "/src").
    */
-  async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
+  entries = async (opts?: DirectoryEntriesOpts): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -2479,7 +2485,7 @@ export class Directory extends BaseClient {
    * Writes the contents of the directory to a path on the host.
    * @param path Location of the copied directory (e.g., "logs/").
    */
-  async export(path: string): Promise<boolean> {
+  export = async (path: string): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
@@ -2502,7 +2508,7 @@ export class Directory extends BaseClient {
    * Retrieves a file at the given path.
    * @param path Location of the file to retrieve (e.g., "README.md").
    */
-  file(path: string): File {
+  file = (path: string): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -2519,7 +2525,7 @@ export class Directory extends BaseClient {
    * Returns a list of files and directories that matche the given pattern.
    * @param pattern Pattern to match (e.g., "*.md").
    */
-  async glob(pattern: string): Promise<string[]> {
+  glob = async (pattern: string): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -2540,7 +2546,7 @@ export class Directory extends BaseClient {
    * @param opts.description Pipeline description.
    * @param opts.labels Pipeline labels.
    */
-  pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
+  pipeline = (name: string, opts?: DirectoryPipelineOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2556,7 +2562,7 @@ export class Directory extends BaseClient {
   /**
    * Force evaluation in the engine.
    */
-  async sync(): Promise<Directory> {
+  sync = async (): Promise<Directory> => {
     await computeQuery(
       [
         ...this._queryTree,
@@ -2577,11 +2583,11 @@ export class Directory extends BaseClient {
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
-  withDirectory(
+  withDirectory = (
     path: string,
     directory: Directory,
     opts?: DirectoryWithDirectoryOpts
-  ): Directory {
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2602,11 +2608,11 @@ export class Directory extends BaseClient {
    *
    * Default: 0644.
    */
-  withFile(
+  withFile = (
     path: string,
     source: File,
     opts?: DirectoryWithFileOpts
-  ): Directory {
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2626,10 +2632,10 @@ export class Directory extends BaseClient {
    *
    * Default: 0755.
    */
-  withNewDirectory(
+  withNewDirectory = (
     path: string,
     opts?: DirectoryWithNewDirectoryOpts
-  ): Directory {
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2650,11 +2656,11 @@ export class Directory extends BaseClient {
    *
    * Default: 0644.
    */
-  withNewFile(
+  withNewFile = (
     path: string,
     contents: string,
     opts?: DirectoryWithNewFileOpts
-  ): Directory {
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2673,7 +2679,7 @@ export class Directory extends BaseClient {
    *
    * Formatted in seconds following Unix epoch (e.g., 1672531199).
    */
-  withTimestamps(timestamp: number): Directory {
+  withTimestamps = (timestamp: number): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2690,7 +2696,7 @@ export class Directory extends BaseClient {
    * Retrieves this directory with the directory at the given path removed.
    * @param path Location of the directory to remove (e.g., ".github/").
    */
-  withoutDirectory(path: string): Directory {
+  withoutDirectory = (path: string): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2707,7 +2713,7 @@ export class Directory extends BaseClient {
    * Retrieves this directory with the file at the given path removed.
    * @param path Location of the file to remove (e.g., "/file.txt").
    */
-  withoutFile(path: string): Directory {
+  withoutFile = (path: string): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2725,7 +2731,7 @@ export class Directory extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Directory) => Directory) {
+  with = (arg: (param: Directory) => Directory) => {
     return arg(this)
   }
 }
@@ -2754,7 +2760,7 @@ export class EnvVariable extends BaseClient {
   /**
    * The environment variable name.
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -2775,7 +2781,7 @@ export class EnvVariable extends BaseClient {
   /**
    * The environment variable value.
    */
-  async value(): Promise<string> {
+  value = async (): Promise<string> => {
     if (this._value) {
       return this._value
     }
@@ -2820,7 +2826,7 @@ export class FieldTypeDef extends BaseClient {
   /**
    * A doc string for the field, if any
    */
-  async description(): Promise<string> {
+  description = async (): Promise<string> => {
     if (this._description) {
       return this._description
     }
@@ -2841,7 +2847,7 @@ export class FieldTypeDef extends BaseClient {
   /**
    * The name of the field in the object
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -2862,7 +2868,7 @@ export class FieldTypeDef extends BaseClient {
   /**
    * The type of the field
    */
-  typeDef(): TypeDef {
+  typeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -2908,7 +2914,7 @@ export class File extends BaseClient {
   /**
    * Retrieves the content-addressed identifier of the file.
    */
-  async id(): Promise<FileID> {
+  id = async (): Promise<FileID> => {
     if (this._id) {
       return this._id
     }
@@ -2929,7 +2935,7 @@ export class File extends BaseClient {
   /**
    * Retrieves the contents of the file.
    */
-  async contents(): Promise<string> {
+  contents = async (): Promise<string> => {
     if (this._contents) {
       return this._contents
     }
@@ -2953,7 +2959,7 @@ export class File extends BaseClient {
    * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case
    * the file will be created in that directory.
    */
-  async export(path: string, opts?: FileExportOpts): Promise<boolean> {
+  export = async (path: string, opts?: FileExportOpts): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
@@ -2975,7 +2981,7 @@ export class File extends BaseClient {
   /**
    * Gets the size of the file, in bytes.
    */
-  async size(): Promise<number> {
+  size = async (): Promise<number> => {
     if (this._size) {
       return this._size
     }
@@ -2996,7 +3002,7 @@ export class File extends BaseClient {
   /**
    * Force evaluation in the engine.
    */
-  async sync(): Promise<File> {
+  sync = async (): Promise<File> => {
     await computeQuery(
       [
         ...this._queryTree,
@@ -3016,7 +3022,7 @@ export class File extends BaseClient {
    *
    * Formatted in seconds following Unix epoch (e.g., 1672531199).
    */
-  withTimestamps(timestamp: number): File {
+  withTimestamps = (timestamp: number): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -3034,7 +3040,7 @@ export class File extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: File) => File) {
+  with = (arg: (param: File) => File) => {
     return arg(this)
   }
 }
@@ -3069,7 +3075,7 @@ export class Function_ extends BaseClient {
   /**
    * The ID of the function
    */
-  async id(): Promise<FunctionID> {
+  id = async (): Promise<FunctionID> => {
     if (this._id) {
       return this._id
     }
@@ -3090,7 +3096,7 @@ export class Function_ extends BaseClient {
   /**
    * Arguments accepted by this function, if any
    */
-  async args(): Promise<FunctionArg[]> {
+  args = async (): Promise<FunctionArg[]> => {
     type args = {
       id: FunctionArgID
     }
@@ -3123,7 +3129,7 @@ export class Function_ extends BaseClient {
   /**
    * A doc string for the function, if any
    */
-  async description(): Promise<string> {
+  description = async (): Promise<string> => {
     if (this._description) {
       return this._description
     }
@@ -3144,7 +3150,7 @@ export class Function_ extends BaseClient {
   /**
    * The name of the function
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -3165,7 +3171,7 @@ export class Function_ extends BaseClient {
   /**
    * The type returned by this function
    */
-  returnType(): TypeDef {
+  returnType = (): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -3184,11 +3190,11 @@ export class Function_ extends BaseClient {
    * @param opts.description A doc string for the argument, if any
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
    */
-  withArg(
+  withArg = (
     name: string,
     typeDef: TypeDef,
     opts?: FunctionWithArgOpts
-  ): Function_ {
+  ): Function_ => {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -3204,7 +3210,7 @@ export class Function_ extends BaseClient {
   /**
    * Returns the function with the doc string
    */
-  withDescription(description: string): Function_ {
+  withDescription = (description: string): Function_ => {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -3222,7 +3228,7 @@ export class Function_ extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Function_) => Function_) {
+  with = (arg: (param: Function_) => Function_) => {
     return arg(this)
   }
 }
@@ -3260,7 +3266,7 @@ export class FunctionArg extends BaseClient {
   /**
    * The ID of the argument
    */
-  async id(): Promise<FunctionArgID> {
+  id = async (): Promise<FunctionArgID> => {
     if (this._id) {
       return this._id
     }
@@ -3281,7 +3287,7 @@ export class FunctionArg extends BaseClient {
   /**
    * A default value to use for this argument when not explicitly set by the caller, if any
    */
-  async defaultValue(): Promise<JSON> {
+  defaultValue = async (): Promise<JSON> => {
     if (this._defaultValue) {
       return this._defaultValue
     }
@@ -3302,7 +3308,7 @@ export class FunctionArg extends BaseClient {
   /**
    * A doc string for the argument, if any
    */
-  async description(): Promise<string> {
+  description = async (): Promise<string> => {
     if (this._description) {
       return this._description
     }
@@ -3323,7 +3329,7 @@ export class FunctionArg extends BaseClient {
   /**
    * The name of the argument
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -3344,7 +3350,7 @@ export class FunctionArg extends BaseClient {
   /**
    * The type of the argument
    */
-  typeDef(): TypeDef {
+  typeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -3384,7 +3390,7 @@ export class FunctionCall extends BaseClient {
   /**
    * The argument values the function is being invoked with.
    */
-  async inputArgs(): Promise<FunctionCallArgValue[]> {
+  inputArgs = async (): Promise<FunctionCallArgValue[]> => {
     type inputArgs = {
       name: string
       value: JSON
@@ -3419,7 +3425,7 @@ export class FunctionCall extends BaseClient {
   /**
    * The name of the function being called.
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -3441,7 +3447,7 @@ export class FunctionCall extends BaseClient {
    * The value of the parent object of the function being called.
    * If the function is "top-level" to the module, this is always an empty object.
    */
-  async parent(): Promise<JSON> {
+  parent = async (): Promise<JSON> => {
     if (this._parent) {
       return this._parent
     }
@@ -3463,7 +3469,7 @@ export class FunctionCall extends BaseClient {
    * The name of the parent object of the function being called.
    * If the function is "top-level" to the module, this is the name of the module.
    */
-  async parentName(): Promise<string> {
+  parentName = async (): Promise<string> => {
     if (this._parentName) {
       return this._parentName
     }
@@ -3485,7 +3491,7 @@ export class FunctionCall extends BaseClient {
    * Set the return value of the function call to the provided value.
    * The value should be a string of the JSON serialization of the return value.
    */
-  async returnValue(value: JSON): Promise<Void> {
+  returnValue = async (value: JSON): Promise<Void> => {
     if (this._returnValue) {
       return this._returnValue
     }
@@ -3526,7 +3532,7 @@ export class FunctionCallArgValue extends BaseClient {
   /**
    * The name of the argument.
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -3547,7 +3553,7 @@ export class FunctionCallArgValue extends BaseClient {
   /**
    * The value of the argument represented as a string of the JSON serialization.
    */
-  async value(): Promise<JSON> {
+  value = async (): Promise<JSON> => {
     if (this._value) {
       return this._value
     }
@@ -3580,7 +3586,7 @@ export class GeneratedCode extends BaseClient {
 
     this._id = _id
   }
-  async id(): Promise<GeneratedCodeID> {
+  id = async (): Promise<GeneratedCodeID> => {
     if (this._id) {
       return this._id
     }
@@ -3601,7 +3607,7 @@ export class GeneratedCode extends BaseClient {
   /**
    * The directory containing the generated code
    */
-  code(): Directory {
+  code = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3616,7 +3622,7 @@ export class GeneratedCode extends BaseClient {
   /**
    * List of paths to mark generated in version control (i.e. .gitattributes)
    */
-  async vcsGeneratedPaths(): Promise<string[]> {
+  vcsGeneratedPaths = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -3633,7 +3639,7 @@ export class GeneratedCode extends BaseClient {
   /**
    * List of paths to ignore in version control (i.e. .gitignore)
    */
-  async vcsIgnoredPaths(): Promise<string[]> {
+  vcsIgnoredPaths = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -3650,7 +3656,7 @@ export class GeneratedCode extends BaseClient {
   /**
    * Set the list of paths to mark generated in version control
    */
-  withVCSGeneratedPaths(paths: string[]): GeneratedCode {
+  withVCSGeneratedPaths = (paths: string[]): GeneratedCode => {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
@@ -3666,7 +3672,7 @@ export class GeneratedCode extends BaseClient {
   /**
    * Set the list of paths to ignore in version control
    */
-  withVCSIgnoredPaths(paths: string[]): GeneratedCode {
+  withVCSIgnoredPaths = (paths: string[]): GeneratedCode => {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
@@ -3684,7 +3690,7 @@ export class GeneratedCode extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: GeneratedCode) => GeneratedCode) {
+  with = (arg: (param: GeneratedCode) => GeneratedCode) => {
     return arg(this)
   }
 }
@@ -3710,7 +3716,7 @@ export class GitRef extends BaseClient {
   /**
    * The resolved commit id at this ref.
    */
-  async commit(): Promise<string> {
+  commit = async (): Promise<string> => {
     if (this._commit) {
       return this._commit
     }
@@ -3731,7 +3737,7 @@ export class GitRef extends BaseClient {
   /**
    * The filesystem tree at this ref.
    */
-  tree(opts?: GitRefTreeOpts): Directory {
+  tree = (opts?: GitRefTreeOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3760,7 +3766,7 @@ export class GitRepository extends BaseClient {
    * Returns details on one branch.
    * @param name Branch's name (e.g., "main").
    */
-  branch(name: string): GitRef {
+  branch = (name: string): GitRef => {
     return new GitRef({
       queryTree: [
         ...this._queryTree,
@@ -3777,7 +3783,7 @@ export class GitRepository extends BaseClient {
    * Returns details on one commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
-  commit(id: string): GitRef {
+  commit = (id: string): GitRef => {
     return new GitRef({
       queryTree: [
         ...this._queryTree,
@@ -3794,7 +3800,7 @@ export class GitRepository extends BaseClient {
    * Returns details on one tag.
    * @param name Tag's name (e.g., "v0.3.9").
    */
-  tag(name: string): GitRef {
+  tag = (name: string): GitRef => {
     return new GitRef({
       queryTree: [
         ...this._queryTree,
@@ -3825,7 +3831,7 @@ export class Host extends BaseClient {
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
-  directory(path: string, opts?: HostDirectoryOpts): Directory {
+  directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3842,7 +3848,7 @@ export class Host extends BaseClient {
    * Accesses a file on the host.
    * @param path Location of the file to retrieve (e.g., "README.md").
    */
-  file(path: string): File {
+  file = (path: string): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -3865,7 +3871,7 @@ export class Host extends BaseClient {
    * An empty set of ports is not valid; an error will be returned.
    * @param opts.host Upstream host to forward traffic to.
    */
-  service(ports: PortForward[], opts?: HostServiceOpts): Service {
+  service = (ports: PortForward[], opts?: HostServiceOpts): Service => {
     return new Service({
       queryTree: [
         ...this._queryTree,
@@ -3884,7 +3890,7 @@ export class Host extends BaseClient {
    * @param name The user defined name for this secret.
    * @param path Location of the file to set as a secret.
    */
-  setSecretFile(name: string, path: string): Secret {
+  setSecretFile = (name: string, path: string): Secret => {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -3915,7 +3921,7 @@ export class Host extends BaseClient {
    *
    * If ports are given and native is true, the ports are additive.
    */
-  tunnel(service: Service, opts?: HostTunnelOpts): Service {
+  tunnel = (service: Service, opts?: HostTunnelOpts): Service => {
     return new Service({
       queryTree: [
         ...this._queryTree,
@@ -3932,7 +3938,7 @@ export class Host extends BaseClient {
    * Accesses a Unix socket on the host.
    * @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
    */
-  unixSocket(path: string): Socket {
+  unixSocket = (path: string): Socket => {
     return new Socket({
       queryTree: [
         ...this._queryTree,
@@ -3970,7 +3976,7 @@ export class Label extends BaseClient {
   /**
    * The label name.
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -3991,7 +3997,7 @@ export class Label extends BaseClient {
   /**
    * The label value.
    */
-  async value(): Promise<string> {
+  value = async (): Promise<string> => {
     if (this._value) {
       return this._value
     }
@@ -4024,7 +4030,7 @@ export class ListTypeDef extends BaseClient {
   /**
    * The type of the elements in the list
    */
-  elementTypeDef(): TypeDef {
+  elementTypeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -4070,7 +4076,7 @@ export class Module_ extends BaseClient {
   /**
    * The ID of the module
    */
-  async id(): Promise<ModuleID> {
+  id = async (): Promise<ModuleID> => {
     if (this._id) {
       return this._id
     }
@@ -4091,7 +4097,7 @@ export class Module_ extends BaseClient {
   /**
    * Modules used by this module
    */
-  async dependencies(): Promise<Module_[]> {
+  dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
       id: ModuleID
     }
@@ -4124,7 +4130,7 @@ export class Module_ extends BaseClient {
   /**
    * The dependencies as configured by the module
    */
-  async dependencyConfig(): Promise<string[]> {
+  dependencyConfig = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -4141,7 +4147,7 @@ export class Module_ extends BaseClient {
   /**
    * The doc string of the module, if any
    */
-  async description(): Promise<string> {
+  description = async (): Promise<string> => {
     if (this._description) {
       return this._description
     }
@@ -4162,7 +4168,7 @@ export class Module_ extends BaseClient {
   /**
    * The code generated by the SDK's runtime
    */
-  generatedCode(): GeneratedCode {
+  generatedCode = (): GeneratedCode => {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
@@ -4177,7 +4183,7 @@ export class Module_ extends BaseClient {
   /**
    * The name of the module
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -4198,7 +4204,7 @@ export class Module_ extends BaseClient {
   /**
    * Objects served by this module
    */
-  async objects(): Promise<TypeDef[]> {
+  objects = async (): Promise<TypeDef[]> => {
     type objects = {
       id: TypeDefID
     }
@@ -4231,7 +4237,7 @@ export class Module_ extends BaseClient {
   /**
    * The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
    */
-  async sdk(): Promise<string> {
+  sdk = async (): Promise<string> => {
     if (this._sdk) {
       return this._sdk
     }
@@ -4254,7 +4260,7 @@ export class Module_ extends BaseClient {
    *     Note: this can only be called once per session.
    *     In the future, it could return a stream or service to remove the side effect.
    */
-  async serve(): Promise<Void> {
+  serve = async (): Promise<Void> => {
     if (this._serve) {
       return this._serve
     }
@@ -4275,7 +4281,7 @@ export class Module_ extends BaseClient {
   /**
    * The directory containing the module's source code
    */
-  sourceDirectory(): Directory {
+  sourceDirectory = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -4290,7 +4296,7 @@ export class Module_ extends BaseClient {
   /**
    * The module's subpath within the source directory
    */
-  async sourceDirectorySubPath(): Promise<string> {
+  sourceDirectorySubPath = async (): Promise<string> => {
     if (this._sourceDirectorySubPath) {
       return this._sourceDirectorySubPath
     }
@@ -4311,7 +4317,7 @@ export class Module_ extends BaseClient {
   /**
    * This module plus the given Object type and associated functions
    */
-  withObject(object: TypeDef): Module_ {
+  withObject = (object: TypeDef): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -4329,7 +4335,7 @@ export class Module_ extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Module_) => Module_) {
+  with = (arg: (param: Module_) => Module_) => {
     return arg(this)
   }
 }
@@ -4361,7 +4367,7 @@ export class ModuleConfig extends BaseClient {
   /**
    * Modules that this module depends on.
    */
-  async dependencies(): Promise<string[]> {
+  dependencies = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -4378,7 +4384,7 @@ export class ModuleConfig extends BaseClient {
   /**
    * Exclude these file globs when loading the module root.
    */
-  async exclude(): Promise<string[]> {
+  exclude = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -4395,7 +4401,7 @@ export class ModuleConfig extends BaseClient {
   /**
    * Include only these file globs when loading the module root.
    */
-  async include(): Promise<string[]> {
+  include = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
@@ -4412,7 +4418,7 @@ export class ModuleConfig extends BaseClient {
   /**
    * The name of the module.
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -4433,7 +4439,7 @@ export class ModuleConfig extends BaseClient {
   /**
    * The root directory of the module's project, which may be above the module source code.
    */
-  async root(): Promise<string> {
+  root = async (): Promise<string> => {
     if (this._root) {
       return this._root
     }
@@ -4454,7 +4460,7 @@ export class ModuleConfig extends BaseClient {
   /**
    * Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
    */
-  async sdk(): Promise<string> {
+  sdk = async (): Promise<string> => {
     if (this._sdk) {
       return this._sdk
     }
@@ -4497,7 +4503,7 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * The doc string for the object, if any
    */
-  async description(): Promise<string> {
+  description = async (): Promise<string> => {
     if (this._description) {
       return this._description
     }
@@ -4518,7 +4524,7 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * Static fields defined on this object, if any
    */
-  async fields(): Promise<FieldTypeDef[]> {
+  fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
       description: string
       name: string
@@ -4553,7 +4559,7 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * Functions defined on this object, if any
    */
-  async functions(): Promise<Function_[]> {
+  functions = async (): Promise<Function_[]> => {
     type functions = {
       id: FunctionID
     }
@@ -4586,7 +4592,7 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * The name of the object
    */
-  async name(): Promise<string> {
+  name = async (): Promise<string> => {
     if (this._name) {
       return this._name
     }
@@ -4632,7 +4638,7 @@ export class Port extends BaseClient {
   /**
    * The port description.
    */
-  async description(): Promise<string> {
+  description = async (): Promise<string> => {
     if (this._description) {
       return this._description
     }
@@ -4653,7 +4659,7 @@ export class Port extends BaseClient {
   /**
    * The port number.
    */
-  async port(): Promise<number> {
+  port = async (): Promise<number> => {
     if (this._port) {
       return this._port
     }
@@ -4674,7 +4680,7 @@ export class Port extends BaseClient {
   /**
    * The transport layer network protocol.
    */
-  async protocol(): Promise<NetworkProtocol> {
+  protocol = async (): Promise<NetworkProtocol> => {
     if (this._protocol) {
       return this._protocol
     }
@@ -4715,7 +4721,7 @@ export class Client extends BaseClient {
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
-  cacheVolume(key: string): CacheVolume {
+  cacheVolume = (key: string): CacheVolume => {
     return new CacheVolume({
       queryTree: [
         ...this._queryTree,
@@ -4732,7 +4738,7 @@ export class Client extends BaseClient {
    * Checks if the current Dagger Engine is compatible with an SDK's required version.
    * @param version The SDK's required version.
    */
-  async checkVersionCompatibility(version: string): Promise<boolean> {
+  checkVersionCompatibility = async (version: string): Promise<boolean> => {
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
@@ -4753,7 +4759,7 @@ export class Client extends BaseClient {
    * Optional platform argument initializes new containers to execute and publish
    * as that platform. Platform defaults to that of the builder's host.
    */
-  container(opts?: ClientContainerOpts): Container {
+  container = (opts?: ClientContainerOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -4771,7 +4777,7 @@ export class Client extends BaseClient {
    * If the caller is not currently executing in a function, this will return
    * an error.
    */
-  currentFunctionCall(): FunctionCall {
+  currentFunctionCall = (): FunctionCall => {
     return new FunctionCall({
       queryTree: [
         ...this._queryTree,
@@ -4786,7 +4792,7 @@ export class Client extends BaseClient {
   /**
    * The module currently being served in the session, if any.
    */
-  currentModule(): Module_ {
+  currentModule = (): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -4801,7 +4807,7 @@ export class Client extends BaseClient {
   /**
    * The default platform of the builder.
    */
-  async defaultPlatform(): Promise<Platform> {
+  defaultPlatform = async (): Promise<Platform> => {
     const response: Awaited<Platform> = await computeQuery(
       [
         ...this._queryTree,
@@ -4818,7 +4824,7 @@ export class Client extends BaseClient {
   /**
    * Creates an empty directory or loads one by ID.
    */
-  directory(opts?: ClientDirectoryOpts): Directory {
+  directory = (opts?: ClientDirectoryOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -4835,7 +4841,7 @@ export class Client extends BaseClient {
    * Loads a file by ID.
    * @deprecated Use loadFileFromID instead.
    */
-  file(id: FileID): File {
+  file = (id: FileID): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -4851,7 +4857,7 @@ export class Client extends BaseClient {
   /**
    * Create a function.
    */
-  function_(name: string, returnType: TypeDef): Function_ {
+  function_ = (name: string, returnType: TypeDef): Function_ => {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -4868,7 +4874,7 @@ export class Client extends BaseClient {
    * Create a code generation result, given a directory containing the generated
    * code.
    */
-  generatedCode(code: Directory): GeneratedCode {
+  generatedCode = (code: Directory): GeneratedCode => {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
@@ -4891,7 +4897,7 @@ export class Client extends BaseClient {
    * @param opts.sshAuthSocket Set SSH auth socket
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
-  git(url: string, opts?: ClientGitOpts): GitRepository {
+  git = (url: string, opts?: ClientGitOpts): GitRepository => {
     return new GitRepository({
       queryTree: [
         ...this._queryTree,
@@ -4907,7 +4913,7 @@ export class Client extends BaseClient {
   /**
    * Queries the host environment.
    */
-  host(): Host {
+  host = (): Host => {
     return new Host({
       queryTree: [
         ...this._queryTree,
@@ -4924,7 +4930,7 @@ export class Client extends BaseClient {
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
    * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
-  http(url: string, opts?: ClientHttpOpts): File {
+  http = (url: string, opts?: ClientHttpOpts): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -4940,7 +4946,7 @@ export class Client extends BaseClient {
   /**
    * Load a CacheVolume from its ID.
    */
-  loadCacheVolumeFromID(id: CacheVolumeID): CacheVolume {
+  loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     return new CacheVolume({
       queryTree: [
         ...this._queryTree,
@@ -4956,7 +4962,7 @@ export class Client extends BaseClient {
   /**
    * Loads a container from an ID.
    */
-  loadContainerFromID(id: ContainerID): Container {
+  loadContainerFromID = (id: ContainerID): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -4972,7 +4978,7 @@ export class Client extends BaseClient {
   /**
    * Load a Directory from its ID.
    */
-  loadDirectoryFromID(id: DirectoryID): Directory {
+  loadDirectoryFromID = (id: DirectoryID): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -4988,7 +4994,7 @@ export class Client extends BaseClient {
   /**
    * Load a File from its ID.
    */
-  loadFileFromID(id: FileID): File {
+  loadFileFromID = (id: FileID): File => {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -5004,7 +5010,7 @@ export class Client extends BaseClient {
   /**
    * Load a function argument by ID.
    */
-  loadFunctionArgFromID(id: FunctionArgID): FunctionArg {
+  loadFunctionArgFromID = (id: FunctionArgID): FunctionArg => {
     return new FunctionArg({
       queryTree: [
         ...this._queryTree,
@@ -5020,7 +5026,7 @@ export class Client extends BaseClient {
   /**
    * Load a function by ID.
    */
-  loadFunctionFromID(id: FunctionID): Function_ {
+  loadFunctionFromID = (id: FunctionID): Function_ => {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -5036,7 +5042,7 @@ export class Client extends BaseClient {
   /**
    * Load a GeneratedCode by ID.
    */
-  loadGeneratedCodeFromID(id: GeneratedCodeID): GeneratedCode {
+  loadGeneratedCodeFromID = (id: GeneratedCodeID): GeneratedCode => {
     return new GeneratedCode({
       queryTree: [
         ...this._queryTree,
@@ -5052,7 +5058,7 @@ export class Client extends BaseClient {
   /**
    * Load a module by ID.
    */
-  loadModuleFromID(id: ModuleID): Module_ {
+  loadModuleFromID = (id: ModuleID): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -5068,7 +5074,7 @@ export class Client extends BaseClient {
   /**
    * Load a Secret from its ID.
    */
-  loadSecretFromID(id: SecretID): Secret {
+  loadSecretFromID = (id: SecretID): Secret => {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -5084,7 +5090,7 @@ export class Client extends BaseClient {
   /**
    * Loads a service from ID.
    */
-  loadServiceFromID(id: ServiceID): Service {
+  loadServiceFromID = (id: ServiceID): Service => {
     return new Service({
       queryTree: [
         ...this._queryTree,
@@ -5100,7 +5106,7 @@ export class Client extends BaseClient {
   /**
    * Load a Socket from its ID.
    */
-  loadSocketFromID(id: SocketID): Socket {
+  loadSocketFromID = (id: SocketID): Socket => {
     return new Socket({
       queryTree: [
         ...this._queryTree,
@@ -5116,7 +5122,7 @@ export class Client extends BaseClient {
   /**
    * Load a TypeDef by ID.
    */
-  loadTypeDefFromID(id: TypeDefID): TypeDef {
+  loadTypeDefFromID = (id: TypeDefID): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5132,7 +5138,7 @@ export class Client extends BaseClient {
   /**
    * Create a new module.
    */
-  module_(): Module_ {
+  module_ = (): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -5147,10 +5153,10 @@ export class Client extends BaseClient {
   /**
    * Load the static configuration for a module from the given source directory and optional subpath.
    */
-  moduleConfig(
+  moduleConfig = (
     sourceDirectory: Directory,
     opts?: ClientModuleConfigOpts
-  ): ModuleConfig {
+  ): ModuleConfig => {
     return new ModuleConfig({
       queryTree: [
         ...this._queryTree,
@@ -5169,7 +5175,7 @@ export class Client extends BaseClient {
    * @param opts.description Pipeline description.
    * @param opts.labels Pipeline labels.
    */
-  pipeline(name: string, opts?: ClientPipelineOpts): Client {
+  pipeline = (name: string, opts?: ClientPipelineOpts): Client => {
     return new Client({
       queryTree: [
         ...this._queryTree,
@@ -5186,7 +5192,7 @@ export class Client extends BaseClient {
    * Loads a secret from its ID.
    * @deprecated Use loadSecretFromID instead
    */
-  secret(id: SecretID): Secret {
+  secret = (id: SecretID): Secret => {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -5205,7 +5211,7 @@ export class Client extends BaseClient {
    * @param name The user defined name for this secret
    * @param plaintext The plaintext of the secret
    */
-  setSecret(name: string, plaintext: string): Secret {
+  setSecret = (name: string, plaintext: string): Secret => {
     return new Secret({
       queryTree: [
         ...this._queryTree,
@@ -5222,7 +5228,7 @@ export class Client extends BaseClient {
    * Loads a socket by its ID.
    * @deprecated Use loadSocketFromID instead.
    */
-  socket(opts?: ClientSocketOpts): Socket {
+  socket = (opts?: ClientSocketOpts): Socket => {
     return new Socket({
       queryTree: [
         ...this._queryTree,
@@ -5238,7 +5244,7 @@ export class Client extends BaseClient {
   /**
    * Create a new TypeDef.
    */
-  typeDef(): TypeDef {
+  typeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5255,7 +5261,7 @@ export class Client extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Client) => Client) {
+  with = (arg: (param: Client) => Client) => {
     return arg(this)
   }
 }
@@ -5284,7 +5290,7 @@ export class Secret extends BaseClient {
   /**
    * The identifier for this secret.
    */
-  async id(): Promise<SecretID> {
+  id = async (): Promise<SecretID> => {
     if (this._id) {
       return this._id
     }
@@ -5305,7 +5311,7 @@ export class Secret extends BaseClient {
   /**
    * The value of this secret.
    */
-  async plaintext(): Promise<string> {
+  plaintext = async (): Promise<string> => {
     if (this._plaintext) {
       return this._plaintext
     }
@@ -5354,7 +5360,7 @@ export class Service extends BaseClient {
   /**
    * A unique identifier for this service.
    */
-  async id(): Promise<ServiceID> {
+  id = async (): Promise<ServiceID> => {
     if (this._id) {
       return this._id
     }
@@ -5381,7 +5387,7 @@ export class Service extends BaseClient {
    * @param opts.port The exposed port number for the endpoint
    * @param opts.scheme Return a URL with the given scheme, eg. http for http://
    */
-  async endpoint(opts?: ServiceEndpointOpts): Promise<string> {
+  endpoint = async (opts?: ServiceEndpointOpts): Promise<string> => {
     if (this._endpoint) {
       return this._endpoint
     }
@@ -5403,7 +5409,7 @@ export class Service extends BaseClient {
   /**
    * Retrieves a hostname which can be used by clients to reach this container.
    */
-  async hostname(): Promise<string> {
+  hostname = async (): Promise<string> => {
     if (this._hostname) {
       return this._hostname
     }
@@ -5424,7 +5430,7 @@ export class Service extends BaseClient {
   /**
    * Retrieves the list of ports provided by the service.
    */
-  async ports(): Promise<Port[]> {
+  ports = async (): Promise<Port[]> => {
     type ports = {
       description: string
       port: number
@@ -5463,7 +5469,7 @@ export class Service extends BaseClient {
    *
    * Services bound to a Container do not need to be manually started.
    */
-  async start(): Promise<Service> {
+  start = async (): Promise<Service> => {
     await computeQuery(
       [
         ...this._queryTree,
@@ -5480,7 +5486,7 @@ export class Service extends BaseClient {
   /**
    * Stop the service.
    */
-  async stop(): Promise<Service> {
+  stop = async (): Promise<Service> => {
     await computeQuery(
       [
         ...this._queryTree,
@@ -5513,7 +5519,7 @@ export class Socket extends BaseClient {
   /**
    * The content-addressed identifier of the socket.
    */
-  async id(): Promise<SocketID> {
+  id = async (): Promise<SocketID> => {
     if (this._id) {
       return this._id
     }
@@ -5555,7 +5561,7 @@ export class TypeDef extends BaseClient {
     this._kind = _kind
     this._optional = _optional
   }
-  async id(): Promise<TypeDefID> {
+  id = async (): Promise<TypeDefID> => {
     if (this._id) {
       return this._id
     }
@@ -5577,7 +5583,7 @@ export class TypeDef extends BaseClient {
    * If kind is LIST, the list-specific type definition.
    * If kind is not LIST, this will be null.
    */
-  asList(): ListTypeDef {
+  asList = (): ListTypeDef => {
     return new ListTypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5593,7 +5599,7 @@ export class TypeDef extends BaseClient {
    * If kind is OBJECT, the object-specific type definition.
    * If kind is not OBJECT, this will be null.
    */
-  asObject(): ObjectTypeDef {
+  asObject = (): ObjectTypeDef => {
     return new ObjectTypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5608,7 +5614,7 @@ export class TypeDef extends BaseClient {
   /**
    * The kind of type this is (e.g. primitive, list, object)
    */
-  async kind(): Promise<TypeDefKind> {
+  kind = async (): Promise<TypeDefKind> => {
     if (this._kind) {
       return this._kind
     }
@@ -5629,7 +5635,7 @@ export class TypeDef extends BaseClient {
   /**
    * Whether this type can be set to null. Defaults to false.
    */
-  async optional(): Promise<boolean> {
+  optional = async (): Promise<boolean> => {
     if (this._optional) {
       return this._optional
     }
@@ -5653,11 +5659,11 @@ export class TypeDef extends BaseClient {
    * @param typeDef The type of the field
    * @param opts.description A doc string for the field, if any
    */
-  withField(
+  withField = (
     name: string,
     typeDef: TypeDef,
     opts?: TypeDefWithFieldOpts
-  ): TypeDef {
+  ): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5673,7 +5679,7 @@ export class TypeDef extends BaseClient {
   /**
    * Adds a function for an Object TypeDef, failing if the type is not an object.
    */
-  withFunction(function_: Function_): TypeDef {
+  withFunction = (function_: Function_): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5689,7 +5695,7 @@ export class TypeDef extends BaseClient {
   /**
    * Sets the kind of the type.
    */
-  withKind(kind: TypeDefKind): TypeDef {
+  withKind = (kind: TypeDefKind): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5705,7 +5711,7 @@ export class TypeDef extends BaseClient {
   /**
    * Returns a TypeDef of kind List with the provided type for its elements.
    */
-  withListOf(elementType: TypeDef): TypeDef {
+  withListOf = (elementType: TypeDef): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5725,7 +5731,7 @@ export class TypeDef extends BaseClient {
    * only to refer to an object. This is how functions are able to return their
    * own object, or any other circular reference.
    */
-  withObject(name: string, opts?: TypeDefWithObjectOpts): TypeDef {
+  withObject = (name: string, opts?: TypeDefWithObjectOpts): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5741,7 +5747,7 @@ export class TypeDef extends BaseClient {
   /**
    * Sets whether this type can be set to null.
    */
-  withOptional(optional: boolean): TypeDef {
+  withOptional = (optional: boolean): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -5759,7 +5765,7 @@ export class TypeDef extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: TypeDef) => TypeDef) {
+  with = (arg: (param: TypeDef) => TypeDef) => {
     return arg(this)
   }
 }

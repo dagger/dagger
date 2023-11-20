@@ -12,7 +12,7 @@
 	{{- /* Write method comment. */ -}}
 	{{- template "method_comment" . }}
 	{{- /* Write async method name. */ -}}
-	{{- "" }}  async {{ .Name | FormatName }}(
+	{{- "" }}  {{ .Name | FormatName }} = async (
 
 	{{- /* Write required arguments. */ -}}
 	{{- if $required }}
@@ -27,7 +27,7 @@
 	{{- end }}
 
 	{{- /* Write return type */ -}}
-	{{- "" }}): Promise<{{ . | FormatReturnType }}> {
+	{{- "" }}): Promise<{{ . | FormatReturnType }}> => {
 
     {{- /* If it's a scalar, make possible to return its already filled value */ -}}
     {{- if and (.TypeRef.IsScalar) (ne .ParentObject.Name "Query") (not $convertID) }}
