@@ -24,6 +24,10 @@ func (s *directorySchema) Name() string {
 	return "directory"
 }
 
+func (s *directorySchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *directorySchema) Schema() string {
 	return Directory
 }
@@ -55,10 +59,6 @@ func (s *directorySchema) Resolvers() Resolvers {
 	})
 
 	return rs
-}
-
-func (s *directorySchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type directoryPipelineArgs struct {

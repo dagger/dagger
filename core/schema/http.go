@@ -22,6 +22,10 @@ func (s *httpSchema) Name() string {
 	return "http"
 }
 
+func (s *httpSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *httpSchema) Schema() string {
 	return HTTP
 }
@@ -32,10 +36,6 @@ func (s *httpSchema) Resolvers() Resolvers {
 			"http": ToResolver(s.http),
 		},
 	}
-}
-
-func (s *httpSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type httpArgs struct {

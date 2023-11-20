@@ -19,6 +19,10 @@ func (s *serviceSchema) Name() string {
 	return "service"
 }
 
+func (s *serviceSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *serviceSchema) Schema() string {
 	return Service
 }
@@ -39,10 +43,6 @@ func (s *serviceSchema) Resolvers() Resolvers {
 	})
 
 	return rs
-}
-
-func (s *serviceSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args any) (*core.Service, error) {

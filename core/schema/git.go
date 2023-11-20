@@ -19,6 +19,10 @@ func (s *gitSchema) Name() string {
 	return "git"
 }
 
+func (s *gitSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *gitSchema) Schema() string {
 	return Git
 }
@@ -38,10 +42,6 @@ func (s *gitSchema) Resolvers() Resolvers {
 			"commit": ToResolver(s.fetchCommit),
 		},
 	}
-}
-
-func (s *gitSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type gitArgs struct {

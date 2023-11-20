@@ -23,6 +23,10 @@ func (s *querySchema) Name() string {
 	return "query"
 }
 
+func (s *querySchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *querySchema) Schema() string {
 	return Query
 }
@@ -39,10 +43,6 @@ func (s *querySchema) Resolvers() Resolvers {
 			"protocol": ToResolver(s.portProtocolHack),
 		},
 	}
-}
-
-func (s *querySchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type pipelineArgs struct {

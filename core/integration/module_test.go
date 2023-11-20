@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
@@ -895,43 +896,6 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 	require.Error(t, err)
 }
 
-func TestModuleGoSignaturesIDable(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-type Custom struct {
-	Data string
-}
-
-func (m *Minimal) Hello() string {
-	return "hello"
-}
-
-func (m *Minimal) UseCustom(custom *Custom) string {
-	return custom.Data
-}
-`,
-		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	// Currently, IDable modules are *not* supported, and should fail with an
-	// error that fails to find the ID type.
-	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Undefined type MinimalCustomID")
-}
-
 var inspectModule = daggerQuery(`
 query {
   host {
@@ -1400,6 +1364,411 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 	out, err := modGen.With(daggerQuery(`{foo{fn}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"foo":{"fn":"foo\n"}}`, out)
+}
+
+func TestModuleGoIDableType(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Foo struct {
+	Data string
+}
+
+func (m *Foo) Set(data string) *Foo {
+	m.Data = data
+	return m
+}
+
+func (m *Foo) Get() string {
+	return m.Data
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	// sanity check
+	out, err := modGen.With(daggerQuery(`{foo{set(data: "abc"){get}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"set":{"get": "abc"}}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{foo{set(data: "abc"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	id := gjson.Get(out, "foo.set.id").String()
+	require.Contains(t, id, "moddata:")
+
+	out, err = modGen.With(daggerQuery(`{loadFooFromID(id: "%s"){get}}`, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"loadFooFromID":{"get": "abc"}}`, out)
+}
+
+func TestModuleArgOwnType(t *testing.T) {
+	// Verify use of a module's own object as an argument type.
+	// The server needs to specifically decode the input type from an ID into
+	// the raw JSON, since the module doesn't understand it's own types as IDs
+
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "strings"
+
+type Foo struct{}
+
+type Message struct {
+	Content string
+}
+
+func (m *Foo) SayHello(name string) Message {
+	return Message{Content: "hello " + name}
+}
+
+func (m *Foo) Upper(msg Message) Message {
+	msg.Content = strings.ToUpper(msg.Content)
+	return msg
+}
+
+func (m *Foo) Uppers(msg []Message) []Message {
+	for i := range msg {
+		msg[i].Content = strings.ToUpper(msg[i].Content)
+	}
+	return msg
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	id := gjson.Get(out, "foo.sayHello.id").String()
+	require.Contains(t, id, "moddata:")
+
+	out, err = modGen.With(daggerQuery(`{foo{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"upper":{"content": "HELLO WORLD"}}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{foo{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
+}
+
+func TestModuleConflictingSameNameDeps(t *testing.T) {
+	// A -> B -> Dint
+	// A -> C -> Dstr
+	// where Dint and Dstr are modules with the same name and same object names but conflicting types
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dstr").
+		With(daggerExec("mod", "init", "--name=d", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type D struct{}
+
+type Obj struct {
+	Foo string
+}
+
+func (m *D) Fn(foo string) Obj {
+	return Obj{Foo: foo}
+}
+`,
+		})
+
+	ctr = ctr.
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dint").
+		With(daggerExec("mod", "init", "--name=d", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type D struct{}
+
+type Obj struct {
+	Foo int
+}
+
+func (m *D) Fn(foo int) Obj {
+	return Obj{Foo: foo}
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/work/c").
+		With(daggerExec("mod", "init", "--name=c", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../dstr")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+)
+
+type C struct{}
+
+func (m *C) Fn(ctx context.Context, foo string) (string, error) {
+	return dag.D().Fn(foo).Foo(ctx)
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/work/b").
+		With(daggerExec("mod", "init", "--name=b", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../dint")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+)
+
+type B struct{}
+
+func (m *B) Fn(ctx context.Context, foo int) (int, error) {
+	return dag.D().Fn(foo).Foo(ctx)
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/work/a").
+		With(daggerExec("mod", "init", "--name=a", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../b")).
+		With(daggerExec("mod", "install", "../c")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+	"strconv"
+)
+
+type A struct{}
+
+func (m *A) Fn(ctx context.Context) (string, error) {
+	fooStr, err := dag.C().Fn(ctx, "foo")
+	if err != nil {
+		return "", err
+	}
+	fooInt, err := dag.B().Fn(ctx, 123)
+	if err != nil {
+		return "", err
+	}
+	return fooStr + strconv.Itoa(fooInt), nil
+}
+`,
+		})
+
+	out, err := ctr.With(daggerQuery(`{a{fn}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"a":{"fn": "foo123"}}`, out)
+
+	// verify that no types from (transitive) deps show up
+	types := currentSchema(ctx, t, ctr).Types
+	require.NotNil(t, types.Get("A"))
+	require.Nil(t, types.Get("B"))
+	require.Nil(t, types.Get("C"))
+	require.Nil(t, types.Get("D"))
+}
+
+func TestModuleWithOtherModuleTypes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep").
+		With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Dep struct{}
+
+type Obj struct {
+	Foo string
+}
+
+func (m *Dep) Fn() Obj {
+	return Obj{Foo: "foo"}
+}
+`,
+		}).
+		WithWorkdir("/work/test").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../dep"))
+
+	t.Run("return as other module object", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
+			_, err := ctr.
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+type Test struct{}
+
+func (m *Test) Fn() (*DepObj, error) {
+	return nil, nil
+}
+`,
+				}).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"object %q function %q cannot return external type from dependency module %q",
+				"Test", "Fn", "dep",
+			))
+		})
+
+		t.Run("list", func(t *testing.T) {
+			t.Parallel()
+			_, err := ctr.
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+type Test struct{}
+
+func (m *Test) Fn() ([]*DepObj, error) {
+	return nil, nil
+}
+`,
+				}).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"object %q function %q cannot return external type from dependency module %q",
+				"Test", "Fn", "dep",
+			))
+		})
+	})
+
+	t.Run("arg as other module object", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
+			_, err := ctr.WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+type Test struct{}
+
+func (m *Test) Fn(obj *DepObj) error {
+	return nil
+}
+`,
+			}).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"object %q function %q arg %q cannot reference external type from dependency module %q",
+				"Test", "Fn", "obj", "dep",
+			))
+		})
+
+		t.Run("list", func(t *testing.T) {
+			t.Parallel()
+			_, err := ctr.WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+type Test struct{}
+
+func (m *Test) Fn(obj []*DepObj) error {
+	return nil
+}
+`,
+			}).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"object %q function %q arg %q cannot reference external type from dependency module %q",
+				"Test", "Fn", "obj", "dep",
+			))
+		})
+	})
+
+	t.Run("field as other module object", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
+			_, err := ctr.
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+type Test struct{}
+
+type Obj struct {
+	Foo *DepObj
+}
+
+func (m *Test) Fn() (*Obj, error) {
+	return nil, nil
+}
+`,
+				}).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"object %q field %q cannot reference external type from dependency module %q",
+				"Obj", "Foo", "dep",
+			))
+		})
+
+		t.Run("list", func(t *testing.T) {
+			t.Parallel()
+			_, err := ctr.
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+type Test struct{}
+
+type Obj struct {
+	Foo []*DepObj
+}
+
+func (m *Test) Fn() (*Obj, error) {
+	return nil, nil
+}
+`,
+				}).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"object %q field %q cannot reference external type from dependency module %q",
+				"Obj", "Foo", "dep",
+			))
+		})
+	})
 }
 
 //go:embed testdata/modules/go/use/dep/main.go
@@ -2835,7 +3204,8 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func daggerQuery(query string) dagger.WithContainerFunc {
+func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
+	query = fmt.Sprintf(query, args...)
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec([]string{"dagger", "--debug", "query"}, dagger.ContainerWithExecOpts{
 			Stdin:                         query,
@@ -2850,6 +3220,24 @@ func daggerCall(args ...string) dagger.WithContainerFunc {
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
+}
+
+func daggerFunctions(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--debug", "functions"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func currentSchema(ctx context.Context, t *testing.T, ctr *dagger.Container) *introspection.Schema {
+	t.Helper()
+	out, err := ctr.With(daggerQuery(introspection.Query)).Stdout(ctx)
+	require.NoError(t, err)
+	var schemaResp introspection.Response
+	err = json.Unmarshal([]byte(out), &schemaResp)
+	require.NoError(t, err)
+	return schemaResp.Schema
 }
 
 func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
