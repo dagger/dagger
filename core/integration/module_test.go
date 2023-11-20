@@ -1796,6 +1796,36 @@ def hello() -> str:
 	})
 }
 
+func TestModulePythonReturnSelf(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=python")).
+		WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
+			Contents: `from typing import Self
+
+from dagger.mod import field, function, object_type
+
+@object_type
+class Foo:
+    message: str = field(default="")
+
+    @function
+    def bar(self) -> Self:
+        self.message = "foobar"
+        return self
+`,
+		})
+
+	out, err := modGen.With(daggerQuery(`{foo{bar{message}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"bar":{"message":"foobar"}}}`, out)
+}
+
 func TestModuleLotsOfFunctions(t *testing.T) {
 	t.Parallel()
 
