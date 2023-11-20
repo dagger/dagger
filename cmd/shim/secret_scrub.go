@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
-	"github.com/icholy/replace"
 	"golang.org/x/text/transform"
 )
 
@@ -35,15 +34,19 @@ func NewSecretScrubReader(r io.Reader, currentDirPath string, fsys fs.FS, env []
 		secretAsBytes = append(secretAsBytes, []byte(v))
 	}
 
-	replaceChain := make([]transform.Transformer, 0)
+	trie := &Trie{}
 	for _, s := range secretAsBytes {
-		replaceChain = append(
-			replaceChain,
-			replace.Bytes(s, scrubString),
-		)
+		trie.Insert([]byte(s), scrubString)
+	}
+	transformer := &censor{
+		trie:     trie,
+		trieRoot: trie,
+		// NOTE: keep these sizes the same as the default transform sizes
+		srcBuf: make([]byte, 0, 4096),
+		dstBuf: make([]byte, 0, 4096),
 	}
 
-	return replace.Chain(r, replaceChain...), nil
+	return transform.NewReader(r, transformer), nil
 }
 
 // loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.
@@ -91,4 +94,169 @@ func loadSecretsToScrubFromFiles(currentDirPathAbs string, fsys fs.FS, secretFil
 	}
 
 	return secrets, nil
+}
+
+// censor is a custom Transformer for replacing all keys in a target trie with
+// their values.
+type censor struct {
+	// trieRoot is the root of the trie
+	trieRoot *Trie
+	// trie is the current node we are at in the trie
+	trie *Trie
+
+	// srcBuf is the source buffer, which contains bytes read from the src that
+	// are partial matches against the trie
+	srcBuf []byte
+	// destBuf is the destination buffer, which contains bytes that have been
+	// sanitized by the censor and are ready to be copied out
+	dstBuf []byte
+}
+
+// Transform ingests src bytes, and outputs sanitized bytes to dst.
+//
+// Unlike some other secret scrubbing implementations, this aims to sanitize
+// bytes *as soon as possible*. The moment that we know a byte is not part of a
+// secret, we should ouput it into dst - even if this would break up a provided
+// src into multiple dsts over multiple calls to Transform.
+func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
+	for {
+		// flush the destination buffer
+		k := copy(dst[nDst:], c.dstBuf)
+		nDst += k
+		if nDst == len(dst) {
+			c.dstBuf = c.dstBuf[k:]
+			return nDst, nSrc, transform.ErrShortDst
+		}
+		c.dstBuf = c.dstBuf[:0]
+
+		if !atEOF && nSrc == len(src) {
+			// no more source bytes, we're done!
+			return nDst, nSrc, nil
+		}
+		if atEOF && nSrc == len(src) && len(c.srcBuf) == 0 {
+			// no more source bytes, or buffered source bytes, we're done!
+			// (when atEOF, we won't get called again, so we need to make sure
+			// to flush everything)
+			return nDst, nSrc, nil
+		}
+
+		// read more source bytes, until either we've read all the source
+		// bytes, or we've filled the destination buffer
+		for ; nSrc < len(src) && nDst+len(c.dstBuf) < len(dst); nSrc++ {
+			ch := src[nSrc]
+			c.trie = c.trie.Step(ch)
+
+			if c.trie == nil {
+				// no match possible, so flush the source buffer into the
+				// destination buffer, and process the current byte again.
+				//
+				// we do this because this *might* cause us to try to flush
+				// more than len(dst) - nDst bytes into the destination buffer,
+				// so we should avoid consuming the next byte in this case.
+				if len(c.srcBuf) != 0 {
+					c.trie = c.trieRoot
+					c.dstBuf = append(c.dstBuf, c.srcBuf...)
+					c.srcBuf = c.srcBuf[:0]
+					nSrc--
+					continue
+				}
+
+				// put the current byte either into the destination buffer, or
+				// the source buffer, depending on whether it's a partial match
+				c.trie = c.trieRoot.Step(ch)
+				if c.trie == nil {
+					c.trie = c.trieRoot
+					c.dstBuf = append(c.dstBuf, ch)
+				} else if replace := c.trie.Value(); replace != nil {
+					c.trie = c.trieRoot
+					c.dstBuf = append(c.dstBuf, replace...)
+				} else {
+					c.srcBuf = append(c.srcBuf, ch)
+				}
+			} else if replace := c.trie.Value(); replace != nil {
+				// aha, we made a match, so replace the source buffer with the
+				// censored string, and flush into the destination buffer
+				c.trie = c.trieRoot
+				c.dstBuf = append(c.dstBuf, replace...)
+				c.srcBuf = c.srcBuf[:0]
+			} else {
+				// we're in the middle of a match
+				c.srcBuf = append(c.srcBuf, ch)
+			}
+		}
+
+		// at this point, no more matches are possible, so flush
+		if atEOF {
+			c.dstBuf = append(c.dstBuf, c.srcBuf...)
+			c.srcBuf = c.srcBuf[:0]
+		}
+	}
+}
+
+func (c *censor) Reset() {
+	c.trie = c.trieRoot
+	c.srcBuf = c.srcBuf[:0]
+	c.dstBuf = c.dstBuf[:0]
+}
+
+// Trie is a simple implementation of a compressed trie (or radix tree). In
+// essence, it's a key-value store that allows easily selecting all entries
+// that have a given prefix.
+//
+// Why not an off-the-shelf implementation? Well, most of those don't allow
+// navigating character-by-character through the tree, like we do with Step.
+type Trie struct {
+	Children []*Trie
+	Direct   []byte
+	value    []byte
+}
+
+func (t *Trie) Insert(key []byte, value []byte) {
+	node := t
+	for i, ch := range key {
+		if node.Children == nil {
+			if node.Direct == nil {
+				node.Direct = key[i:]
+				break
+			}
+
+			// why a slice instead of a map? surely it uses more space?
+			// well, doing a lookup on a slice like this is *super* quick, but
+			// doing so on a map is *much* slower - since this is in the
+			// hotpath, it makes sense to waste the memory here (and since the
+			// trie is compressed, it doesn't seem to be that much in practice)
+			node.Children = make([]*Trie, 256)
+			node.Children[node.Direct[0]] = &Trie{
+				Direct: node.Direct[1:],
+				value:  node.value,
+			}
+			node.Direct = nil
+			node.value = nil
+		}
+		if node.Children[ch] == nil {
+			node.Children[ch] = &Trie{}
+		}
+		node = node.Children[ch]
+	}
+	node.value = value
+}
+
+func (t *Trie) Step(ch byte) *Trie {
+	if t.Children != nil {
+		return t.Children[ch]
+	}
+	if len(t.Direct) > 0 && t.Direct[0] == ch {
+		return &Trie{
+			Direct: t.Direct[1:],
+			value:  t.value,
+		}
+	}
+	return nil
+}
+
+func (t *Trie) Value() []byte {
+	if len(t.Direct) == 0 {
+		return t.value
+	}
+	return nil
 }
