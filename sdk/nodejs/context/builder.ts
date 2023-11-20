@@ -1,3 +1,4 @@
+import { ConnectOpts } from "../connectOpts.js"
 import { createGQLClient } from "../graphql/client.js"
 import { Bin, CLI_VERSION } from "../provisioning/index.js"
 import { Context } from "./context.js"
@@ -7,7 +8,9 @@ import { Context } from "./context.js"
  *
  * Initialize a default client context from environment.
  */
-export async function initDefaultContext(): Promise<Context> {
+export async function initDefaultContext(
+  cfg: ConnectOpts = {}
+): Promise<Context> {
   let ctx = new Context()
 
   // Prefer DAGGER_SESSION_PORT if set
@@ -20,6 +23,12 @@ export async function initDefaultContext(): Promise<Context> {
       )
     }
 
+    if (cfg.Workdir && cfg.Workdir !== "") {
+      throw new Error(
+        "cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)"
+      )
+    }
+
     ctx = new Context({
       client: createGQLClient(Number(daggerSessionPort), sessionToken),
     })
@@ -28,7 +37,7 @@ export async function initDefaultContext(): Promise<Context> {
     // downloading the CLI and using that as the bin.
     const cliBin = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
     const engineConn = new Bin(cliBin, CLI_VERSION)
-    const client = await engineConn.Connect({})
+    const client = await engineConn.Connect(cfg)
 
     ctx = new Context({ client, subProcess: engineConn.subProcess })
   }

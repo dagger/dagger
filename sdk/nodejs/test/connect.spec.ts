@@ -9,7 +9,7 @@ import * as tar from "tar"
 
 import * as dagger from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
-import { connect, close } from "../connect.js"
+import { connect, close, connection } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
@@ -25,6 +25,35 @@ describe("NodeJS default client", function () {
       .sync()
 
     close()
+  })
+
+  it("Should automatically close connection", async function () {
+    this.timeout(60000)
+
+    await connection(async () => {
+      await dagger
+        .container()
+        .from("alpine")
+        .withExec(["apk", "add", "curl"])
+        .withExec(["curl", "https://dagger.io/"])
+        .sync()
+    })
+  })
+
+  it("Should automatically close connection with config", async function () {
+    this.timeout(60000)
+
+    await connection(
+      async () => {
+        await dagger
+          .container()
+          .from("alpine")
+          .withExec(["apk", "add", "curl"])
+          .withExec(["curl", "https://dagger.io/"])
+          .sync()
+      },
+      { LogOutput: process.stderr }
+    )
   })
 })
 

@@ -1,6 +1,7 @@
 import { ExecaChildProcess } from "execa"
 import { GraphQLClient } from "graphql-request"
 
+import { ConnectOpts } from "../connectOpts.js"
 import { initDefaultContext } from "./builder.js"
 
 interface ContextConfig {
@@ -32,9 +33,9 @@ export class Context {
    *
    * If no client is set, it will create one.
    */
-  public async connection(): Promise<GraphQLClient> {
+  public async connection(cfg: ConnectOpts = {}): Promise<GraphQLClient> {
     if (!this._client) {
-      const defaultCtx = await initDefaultContext()
+      const defaultCtx = await initDefaultContext(cfg)
       this._client = defaultCtx._client as GraphQLClient
       this._subProcess = defaultCtx._subProcess
     }
