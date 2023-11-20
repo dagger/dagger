@@ -31,6 +31,10 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
+// NOTE: core is not *technically* a module (yet) but we treat it as one when checking
+// for where a given type was loaded from
+const coreModuleName = "core"
+
 type InitializeArgs struct {
 	BuildkitClient *buildkit.Client
 	Platform       specs.Platform
@@ -389,26 +393,18 @@ func (s *schemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	}
 
 	// add in new schemas, recursively adding dependencies
-	var newSchemas []ExecutableSchema
-	var addOne func(newSchema ExecutableSchema)
-	addOne = func(newSchema ExecutableSchema) {
+	newSchemas := make([]ExecutableSchema, 0, len(schemasToAdd))
+	for _, newSchema := range schemasToAdd {
 		// Skip adding schema if it has already been added, higher callers
 		// are expected to handle checks that schemas with the same name are
 		// actually equivalent
 		_, ok := separateSchemas[newSchema.Name()]
 		if ok {
-			return
+			continue
 		}
 
 		newSchemas = append(newSchemas, newSchema)
 		separateSchemas[newSchema.Name()] = newSchema
-		for _, dep := range newSchema.Dependencies() {
-			// TODO:(sipsma) guard against infinite recursion
-			addOne(dep)
-		}
-	}
-	for _, schemaToAdd := range schemasToAdd {
-		addOne(schemaToAdd)
 	}
 	if len(newSchemas) == 0 {
 		return nil
@@ -440,18 +436,40 @@ func (s *schemaView) resolvers() Resolvers {
 	return s.mergedSchema.Resolvers()
 }
 
+func (s *schemaView) sourceModuleName(astType *ast.Type) (string, bool) {
+	if astType == nil {
+		return "", false
+	}
+	if astType.Elem != nil {
+		return s.sourceModuleName(astType.Elem)
+	}
+
+	typeName := astType.NamedType
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, schema := range s.separateSchemas {
+		_, ok := schema.Resolvers()[typeName]
+		if !ok {
+			continue
+		}
+		return schema.SourceModuleName(), true
+	}
+	return "", false
+}
+
 type ExecutableSchema interface {
 	Name() string
+	SourceModuleName() string
 	Schema() string
 	Resolvers() Resolvers
-	Dependencies() []ExecutableSchema
 }
 
 type StaticSchemaParams struct {
-	Name         string
-	Schema       string
-	Resolvers    Resolvers
-	Dependencies []ExecutableSchema
+	Name             string
+	SourceModuleName string
+	Schema           string
+	Resolvers        Resolvers
 }
 
 func StaticSchema(p StaticSchemaParams) ExecutableSchema {
@@ -468,6 +486,10 @@ func (s *staticSchema) Name() string {
 	return s.StaticSchemaParams.Name
 }
 
+func (s *staticSchema) SourceModuleName() string {
+	return s.StaticSchemaParams.SourceModuleName
+}
+
 func (s *staticSchema) Schema() string {
 	return s.StaticSchemaParams.Schema
 }
@@ -476,17 +498,12 @@ func (s *staticSchema) Resolvers() Resolvers {
 	return s.StaticSchemaParams.Resolvers
 }
 
-func (s *staticSchema) Dependencies() []ExecutableSchema {
-	return s.StaticSchemaParams.Dependencies
-}
-
 func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...ExecutableSchema) (ExecutableSchema, error) {
 	mergedSchema := StaticSchemaParams{Resolvers: make(Resolvers)}
 	if existingSchema != nil {
 		mergedSchema.Name = existingSchema.Name()
 		mergedSchema.Schema = existingSchema.Schema()
 		mergedSchema.Resolvers = existingSchema.Resolvers()
-		mergedSchema.Dependencies = existingSchema.Dependencies()
 	}
 	for _, newSchema := range newSchemas {
 		mergedSchema.Schema += newSchema.Schema() + "\n"

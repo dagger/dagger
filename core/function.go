@@ -109,6 +109,15 @@ func (typeDef *TypeDef) Digest() (digest.Digest, error) {
 	return stableDigest(typeDef)
 }
 
+func (typeDef *TypeDef) Underlying() *TypeDef {
+	switch typeDef.Kind {
+	case TypeDefKindList:
+		return typeDef.AsList.ElementTypeDef.Underlying()
+	default:
+		return typeDef
+	}
+}
+
 func (typeDef TypeDef) Clone() *TypeDef {
 	cp := typeDef
 	if typeDef.AsList != nil {

@@ -37,6 +37,10 @@ func (s *containerSchema) Name() string {
 	return "container"
 }
 
+func (s *containerSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *containerSchema) Schema() string {
 	return Container
 }
@@ -109,10 +113,6 @@ func (s *containerSchema) Resolvers() Resolvers {
 	})
 
 	return rs
-}
-
-func (s *containerSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type containerArgs struct {

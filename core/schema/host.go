@@ -22,6 +22,10 @@ func (s *hostSchema) Name() string {
 	return "host"
 }
 
+func (s *hostSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *hostSchema) Schema() string {
 	return Host
 }
@@ -40,10 +44,6 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"service":       ToResolver(s.service),
 		},
 	}
-}
-
-func (s *hostSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 type setSecretFileArgs struct {
