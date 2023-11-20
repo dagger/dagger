@@ -44,6 +44,7 @@ func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, 
 }
 
 func TestEngineExitsZeroOnSignal(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
@@ -105,6 +106,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 }
 
 func TestEngineSetsNameFromEnv(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	engineName := "my-special-engine"
@@ -166,6 +168,7 @@ func TestDaggerRun(t *testing.T) {
 }
 
 func TestClientSendsLabelsInTelemetry(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	devEngine := devEngineContainer(c).

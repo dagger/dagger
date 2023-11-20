@@ -39,6 +39,7 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 }
 
 func TestRemoteCacheRegistry(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
@@ -120,6 +121,7 @@ Idea is to:
 The linked PR description above has more details.
 */
 func TestRemoteCacheLazyBlobs(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
@@ -181,6 +183,7 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 }
 
 func TestRemoteCacheS3(t *testing.T) {
+	t.Parallel()
 	t.Run("buildkit s3 caching", func(t *testing.T) {
 		c, ctx := connect(t)
 
@@ -268,6 +271,7 @@ func TestRemoteCacheS3(t *testing.T) {
 }
 
 func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -371,6 +375,7 @@ func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
 }
 
 func TestRemoteCacheRegistrySeparateImportExport(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 

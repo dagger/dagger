@@ -7,6 +7,7 @@ import (
 )
 
 func TestClientClose(t *testing.T) {
+	t.Parallel()
 	c, _ := connect(t)
 
 	err := c.Close()
