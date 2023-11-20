@@ -20,28 +20,31 @@ func EncodeModule(typeName string, value any) (string, error) {
 
 // DecodeModule base64-decodes and JSON unmarshals an ID, returning the module
 // typename and its data.
-func DecodeModule(rest string) (string, any, error) {
-	prefix, rest, ok := strings.Cut(rest, ":")
+func DecodeModuleID(id string, expectedTypeName string) (any, error) {
+	prefix, rest, ok := strings.Cut(id, ":")
 	if !ok {
-		return "", nil, fmt.Errorf("invalid id")
+		return nil, fmt.Errorf("invalid id")
 	}
 	if prefix != "moddata" {
-		return "", nil, fmt.Errorf("invalid id prefix %q", prefix)
+		return nil, fmt.Errorf("invalid id prefix %q", prefix)
 	}
 
 	typeName, rest, ok := strings.Cut(rest, ":")
 	if !ok {
-		return "", nil, fmt.Errorf("invalid id")
+		return nil, fmt.Errorf("invalid id")
+	}
+	if typeName != expectedTypeName {
+		return nil, fmt.Errorf("invalid type name %q, expected %q", typeName, expectedTypeName)
 	}
 
 	jsonBytes, err := base64.StdEncoding.DecodeString(rest)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to decode id: %w", err)
+		return nil, fmt.Errorf("failed to decode id: %w", err)
 	}
 
 	obj := map[string]any{}
 	if err := json.Unmarshal(jsonBytes, &obj); err != nil {
-		return "", nil, fmt.Errorf("failed to unmarshal id: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal id: %w", err)
 	}
-	return typeName, obj, nil
+	return obj, nil
 }

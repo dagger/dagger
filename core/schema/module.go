@@ -1311,15 +1311,9 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 					return nil, fmt.Errorf("expected map %s, or string %sID, got %T", typeDef.AsObject.Name, typeDef.AsObject.Name, a)
 				}
 
-				typeName, value, err := resourceid.DecodeModule(id)
+				value, err := resourceid.DecodeModuleID(id, typeDef.AsObject.Name)
 				if err != nil {
-					return a, nil
-				}
-				if typeName != typeDef.AsObject.Name {
-					// if we hit this, the module is misbehaving - it's
-					// declared it returns a different module type than it's
-					// actually returned
-					return nil, fmt.Errorf("invalid type name %q, expected %q", typeName, typeDef.AsObject.Name)
+					return nil, err
 				}
 				return value, nil
 			}
