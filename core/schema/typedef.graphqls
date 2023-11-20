@@ -143,6 +143,9 @@ type TypeDef {
   "Adds a function for an Object TypeDef, failing if the type is not an object."
   withFunction(function: FunctionID!): TypeDef!
 
+  "TODO DOC THIS THING"
+  withConstructor(function: FunctionID!): TypeDef!
+
   """
   If kind is OBJECT, the object-specific type definition.
   If kind is not OBJECT, this will be null.
@@ -165,6 +168,9 @@ type ObjectTypeDef {
 
   "Functions defined on this object, if any"
   functions: [Function!]
+
+  "TODO DOC THIS THING"
+  constructor: Function
 }
 
 """

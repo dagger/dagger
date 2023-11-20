@@ -3696,6 +3696,13 @@ class ObjectTypeDef(Type):
     """A definition of a custom object defined in a Module."""
 
     @typecheck
+    def constructor(self) -> Function:
+        """TODO DOC THIS THING"""
+        _args: list[Arg] = []
+        _ctx = self._select("constructor", _args)
+        return Function(_ctx)
+
+    @typecheck
     async def description(self) -> Optional[str]:
         """The doc string for the object, if any
 
@@ -4646,6 +4653,15 @@ class TypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
+
+    @typecheck
+    def with_constructor(self, function: Function) -> "TypeDef":
+        """TODO DOC THIS THING"""
+        _args = [
+            Arg("function", function),
+        ]
+        _ctx = self._select("withConstructor", _args)
+        return TypeDef(_ctx)
 
     @typecheck
     def with_field(

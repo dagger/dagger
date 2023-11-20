@@ -4604,6 +4604,22 @@ export class ObjectTypeDef extends BaseClient {
   }
 
   /**
+   * TODO DOC THIS THING
+   */
+  constructor_(): Function_ {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "constructor",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * The doc string for the object, if any
    */
   async description(): Promise<string> {
@@ -5789,6 +5805,23 @@ export class TypeDef extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * TODO DOC THIS THING
+   */
+  withConstructor(function_: Function_): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withConstructor",
+          args: { function_ },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**

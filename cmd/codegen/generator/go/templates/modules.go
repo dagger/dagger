@@ -67,9 +67,10 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	}
 
 	ps := &parseState{
-		pkg:     funcs.modulePkg,
-		fset:    funcs.moduleFset,
-		methods: make(map[string][]method),
+		pkg:        funcs.modulePkg,
+		fset:       funcs.moduleFset,
+		methods:    make(map[string][]method),
+		moduleName: funcs.module.Name,
 	}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
@@ -96,6 +97,16 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 	tps := []types.Type{}
 	for _, obj := range objs {
+		// TODO:
+		// TODO:
+		// TODO: ugly, also need to gracefully handle input args being types from this module (might be error case?)
+		// TODO: maybe this should be set on parseState?
+		fn, isFn := obj.(*types.Func)
+		if isFn && fn.Name() == "New" {
+			ps.constructor = fn
+			continue
+		}
+
 		tps = append(tps, obj.Type())
 	}
 
@@ -152,6 +163,11 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			if len(objFunctionCases[obj.Name()]) == 0 {
 				if topLevel {
 					// no functions on this top-level object, so don't add it to the module
+					// TODO:
+					// TODO:
+					// TODO:
+					// TODO:
+					// TODO: handle case where this object does have a constructor
 					continue
 				}
 				if ps.isDaggerGenerated(named.Obj()) {
@@ -432,7 +448,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 			if results.At(1).Type().String() != errorTypeName {
 				// sanity check
-				return fmt.Errorf("second return value must be error, have %s", results.At(0).Type().String())
+				return fmt.Errorf("second return value must be error, have %s", results.At(1).Type().String())
 			}
 
 			statements = append(statements, Return(
@@ -486,6 +502,100 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		}
 	}
 
+	// main module object constructor case
+	// TODO: dedupe this logic checking if its the main module object
+	if strcase.ToCamel(ps.moduleName) == objName && ps.constructor != nil {
+		sig, ok := ps.constructor.Type().(*types.Signature)
+		if !ok {
+			return fmt.Errorf("expected New to be a function, got %T", ps.constructor.Type())
+		}
+		paramSpecs, err := ps.parseParamSpecs(ps.constructor)
+		if err != nil {
+			return fmt.Errorf("failed to parse New function: %w", err)
+		}
+
+		statements := []Code{
+			Var().Id("err").Error(),
+			Var().Id("_").Op("=").Id("err"),
+		}
+
+		results := sig.Results()
+		switch results.Len() {
+		case 2:
+			// verify second return value is error
+			if results.At(1).Type().String() != errorTypeName {
+				return fmt.Errorf("second return value of New must be error, have %s", results.At(1).Type().String())
+			}
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			panic("TODO: handle me")
+		case 1:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO: validate it's actually the main module object
+			// TODO: fix duplication w/ above
+
+			fnCallArgs := []Code{}
+			vars := map[string]struct{}{}
+			for i, spec := range paramSpecs {
+				if i == 0 && spec.paramType.String() == contextTypename {
+					fnCallArgs = append(fnCallArgs, Id("ctx"))
+					continue
+				}
+
+				var varName string
+				var varType types.Type
+				var target *Statement
+				if spec.parent == nil {
+					varName = strcase.ToLowerCamel(spec.name)
+					varType = spec.paramType
+					target = Id(varName)
+				} else {
+					// create only one declaration for option structs
+					varName = spec.parent.name
+					varType = spec.parent.paramType
+					target = Id(spec.parent.name).Dot(spec.name)
+				}
+
+				if _, ok := vars[varName]; !ok {
+					vars[varName] = struct{}{}
+
+					tp, access := findOptsAccessPattern(varType, Id(varName))
+					statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
+					if spec.variadic {
+						fnCallArgs = append(fnCallArgs, access.Op("..."))
+					} else {
+						fnCallArgs = append(fnCallArgs, access)
+					}
+				}
+
+				statements = append(statements,
+					If(Id(inputArgsVar).Index(Lit(spec.graphqlName())).Op("!=").Nil()).Block(
+						Err().Op("=").Qual("json", "Unmarshal").Call(
+							Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.graphqlName()))),
+							Op("&").Add(target),
+						),
+						checkErrStatement,
+					))
+
+				statements = append(statements, Return(
+					// Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...),
+					Id(ps.constructor.Name()).Call(fnCallArgs...),
+					Nil(),
+				))
+
+			}
+
+		default:
+			return fmt.Errorf("unexpected number of results from New: %d", results.Len())
+		}
+		cases[objName] = append(cases[objName], Case(Lit("")).Block(statements...))
+	}
+
 	// default case (return error)
 	cases[objName] = append(cases[objName], Default().Block(
 		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown function %s"), Id(fnNameVar))),
@@ -495,9 +605,14 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 }
 
 type parseState struct {
-	pkg     *packages.Package
-	fset    *token.FileSet
-	methods map[string][]method
+	pkg        *packages.Package
+	fset       *token.FileSet
+	methods    map[string][]method
+	moduleName string
+	// TODO:
+	// TODO:
+	// TODO:
+	constructor *types.Func
 }
 
 type method struct {
@@ -694,6 +809,15 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		typeDef = dotLine(typeDef, "WithField").Call(withFieldArgs...)
 	}
 
+	// TODO: dedupe this logic checking if its the main module object
+	if strcase.ToCamel(ps.moduleName) == typeName && ps.constructor != nil {
+		fnTypeDef, err := ps.goFuncToAPIFunctionDef(ps.constructor, true)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
+		}
+		typeDef = dotLine(typeDef, "WithConstructor").Call(Add(Line(), fnTypeDef))
+	}
+
 	return typeDef, subTypes, nil
 }
 
@@ -804,6 +928,104 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 	}
 
 	return fnDef, subTypes, nil
+}
+
+// TODO: dedupe w/ goMethodToAPIFunctionDef
+// TODO: fix ugliness w/ name bein overridden to empty
+func (ps *parseState) goFuncToAPIFunctionDef(fn *types.Func, emptyName bool) (*Statement, error) {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
+		return nil, fmt.Errorf("expected method to be a func, got %T", fn.Type())
+	}
+
+	specs, err := ps.parseParamSpecs(fn)
+	if err != nil {
+		return nil, err
+	}
+
+	var fnReturnType *Statement
+
+	methodResults := sig.Results()
+	switch methodResults.Len() {
+	case 0:
+		fnReturnType = voidDef
+	case 1:
+		result := methodResults.At(0).Type()
+		if result.String() == errorTypeName {
+			fnReturnType = voidDef
+		} else {
+			fnReturnType, _, err = ps.goTypeToAPIType(result, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert result type: %w", err)
+			}
+		}
+	case 2:
+		result := methodResults.At(0).Type()
+		fnReturnType, _, err = ps.goTypeToAPIType(result, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result type: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("method %s has too many return values", fn.Name())
+	}
+
+	name := fn.Name()
+	if emptyName {
+		name = ""
+	}
+	fnDef := Qual("dag", "Function").Call(Lit(name), Add(Line(), fnReturnType))
+
+	funcDecl, err := ps.declForFunc(fn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
+	}
+	if doc := funcDecl.Doc; doc != nil {
+		fnDef = dotLine(fnDef, "WithDescription").Call(Lit(doc.Text()))
+	}
+
+	for i, spec := range specs {
+		if i == 0 && spec.paramType.String() == contextTypename {
+			// ignore ctx arg
+			continue
+		}
+
+		typeDef, _, err := ps.goTypeToAPIType(spec.baseType, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert param type: %w", err)
+		}
+
+		if spec.optional {
+			typeDef = typeDef.Dot("WithOptional").Call(Lit(true))
+		}
+
+		// arguments to WithArg
+		args := []Code{Lit(spec.graphqlName()), typeDef}
+
+		argOpts := []Code{}
+		if spec.description != "" {
+			argOpts = append(argOpts, Id("Description").Op(":").Lit(spec.description))
+		}
+		if spec.defaultValue != "" {
+			var jsonEnc string
+			if spec.baseType.String() == "string" {
+				enc, err := json.Marshal(spec.defaultValue)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal default value: %w", err)
+				}
+				jsonEnc = string(enc)
+			} else {
+				jsonEnc = spec.defaultValue
+			}
+			argOpts = append(argOpts, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(jsonEnc)))
+		}
+		if len(argOpts) > 0 {
+			args = append(args, Id("FunctionWithArgOpts").Values(argOpts...))
+		}
+
+		fnDef = dotLine(fnDef, "WithArg").Call(args...)
+	}
+
+	return fnDef, nil
 }
 
 func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
