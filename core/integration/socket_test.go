@@ -57,7 +57,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
 	ctr := c.Container().
-		From("golang:1.20.0-alpine").
+		From(golangImage).
 		WithMountedFile("/src/main.go", echo).
 		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
 		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})

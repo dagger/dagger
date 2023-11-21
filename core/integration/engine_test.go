@@ -198,7 +198,7 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	eventsVol := c.CacheVolume("dagger-dev-engine-events-" + identity.NewID())
 
 	withCode := c.Container().
-		From("golang:1.20.6-alpine").
+		From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
 		With(goCache(c)).
 		WithMountedDirectory("/src", code).
