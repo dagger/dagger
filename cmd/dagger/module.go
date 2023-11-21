@@ -480,6 +480,34 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
                     objects {
                         asObject {
                             name
+                            constructor {
+                                returnType {
+                                    kind
+                                    asObject {
+                                        name
+                                    }
+                                }
+                                args {
+                                    name
+                                    description
+                                    defaultValue
+                                    typeDef {
+                                        kind
+                                        optional
+                                        asObject {
+                                            name
+                                        }
+                                        asList {
+                                            elementTypeDef {
+                                                kind
+                                                asObject {
+                                                    name
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             functions {
                                 name
                                 description
@@ -620,9 +648,10 @@ func (t *modTypeDef) ObjectName() string {
 
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
-	Name      string
-	Functions []*modFunction
-	Fields    []*modField
+	Name        string
+	Functions   []*modFunction
+	Fields      []*modField
+	Constructor *modFunction
 }
 
 // GetFunctions returns the object's function definitions as well as the fields,

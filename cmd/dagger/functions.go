@@ -259,12 +259,16 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					return pflag.NormalizedName(cliName(name))
 				})
 
-				err := c.ParseFlags(a)
-				if err != nil {
+				// temporarily allow unknown flags so we can parse any global flags before starting
+				// the engine+TUI while not erroring out on module constructor flags (which can't be
+				// added until the engine has started)
+				c.FParseErrWhitelist.UnknownFlags = true
+				if err := c.ParseFlags(a); err != nil {
 					// This gives a chance for FuncCommand implementations to
 					// handle errors from parsing flags.
 					return c.FlagErrorFunc()(c, err)
 				}
+				c.FParseErrWhitelist.UnknownFlags = false
 
 				fc.showHelp, _ = c.Flags().GetBool("help")
 
@@ -272,7 +276,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			},
 
 			// Between PreRunE and RunE, flags are validated.
-			RunE: func(c *cobra.Command, _ []string) error {
+			RunE: func(c *cobra.Command, a []string) error {
 				return withEngineAndTUI(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 
@@ -284,7 +288,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					// sub-command.
 					c.SilenceErrors = true
 
-					return fc.execute(c)
+					return fc.execute(c, a)
 				})
 			},
 		}
@@ -296,7 +300,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
-func (fc *FuncCommand) execute(c *cobra.Command) (rerr error) {
+func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
 	rec := progrock.FromContext(ctx)
 
@@ -306,7 +310,7 @@ func (fc *FuncCommand) execute(c *cobra.Command) (rerr error) {
 	loader := rec.Vertex("cmd-func-loader", "load "+c.Name())
 	setCmdOutput(c, loader)
 
-	cmd, flags, err := fc.load(c, loader)
+	cmd, flags, err := fc.load(c, a, loader)
 	loader.Done(err)
 	if err != nil {
 		return err
@@ -358,7 +362,7 @@ func (fc *FuncCommand) execute(c *cobra.Command) (rerr error) {
 	return nil
 }
 
-func (fc *FuncCommand) load(c *cobra.Command, vtx *progrock.VertexRecorder) (cmd *cobra.Command, _ []string, rerr error) {
+func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRecorder) (cmd *cobra.Command, _ []string, rerr error) {
 	ctx := c.Context()
 	dag := fc.c.Dagger()
 
@@ -400,13 +404,47 @@ func (fc *FuncCommand) load(c *cobra.Command, vtx *progrock.VertexRecorder) (cmd
 
 	fc.mod = modDef
 
+	if obj.Constructor != nil {
+		// add constructor args as top-level flags
+		fn := obj.Constructor
+		for _, arg := range fn.Args {
+			fc.mod.LoadObject(arg.TypeDef)
+		}
+
+		for _, arg := range fn.Args {
+			_, err := arg.AddFlag(c.Flags(), dag)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !arg.TypeDef.Optional {
+				c.MarkFlagRequired(arg.FlagName())
+			}
+		}
+
+		if fc.BeforeParse != nil {
+			if err := fc.BeforeParse(fc, c, fn); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	if err := c.ParseFlags(a); err != nil {
+		// This gives a chance for FuncCommand implementations to
+		// handle errors from parsing flags.
+		return nil, nil, c.FlagErrorFunc()(c, err)
+	}
+
 	if fc.Execute != nil {
 		// if `Execute` is set, there's no need for sub-commands.
 		return nil, nil, nil
 	}
 
 	// Select constructor
-	fc.Select(obj.Name)
+	if obj.Constructor != nil {
+		fc.selectFunc(obj.Name, obj.Constructor, c, dag)
+	} else {
+		fc.Select(obj.Name)
+	}
 
 	// Add main object's functions as subcommands
 	fc.addSubCommands(c, dag, obj)
@@ -519,7 +557,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			}
 
 			// Need to make the query selection before chaining off.
-			return fc.selectFunc(fn, cmd, dag)
+			return fc.selectFunc(fn.Name, fn, cmd, dag)
 		},
 
 		// This is going to be executed in the "execution" vertex, when
@@ -579,8 +617,8 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
-	fc.Select(fn.Name)
+func (fc *FuncCommand) selectFunc(selectName string, fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
+	fc.Select(selectName)
 
 	for _, arg := range fn.Args {
 		var val any
