@@ -3886,7 +3886,7 @@ func TestContainerWithMountedSecretMode(t *testing.T) {
 
 	secret := c.SetSecret("test", "secret")
 
-	ctr := c.Container().From("alpine:3.18.2").WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
+	ctr := c.Container().From(alpineImage).WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
 		Mode:  0o666,
 		Owner: "root:root",
 	})
