@@ -15,7 +15,6 @@ func main() {
 
 	// initialize Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-
 	if err != nil {
 		panic(err)
 	}
@@ -30,9 +29,9 @@ func main() {
 	// mount the cache volume to persist dependencies
 	source := client.Container().
 		From("node:16-slim").
-		WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
-			Exclude: []string{"node_modules/", "ci/"},
-		}).
+		WithDirectory("/src", client.Host().Directory(".", dagger.HostDirectoryOpts{
+			Exclude: []string{"node_modules/", "ci/", "build/"},
+		})).
 		WithMountedCache("/src/node_modules", nodeCache)
 
 		// set the working directory in the container

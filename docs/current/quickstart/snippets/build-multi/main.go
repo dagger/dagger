@@ -15,7 +15,6 @@ func main() {
 
 	// initialize Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-
 	if err != nil {
 		panic(err)
 	}
@@ -26,9 +25,9 @@ func main() {
 	// at /src in the container
 	source := client.Container().
 		From("node:16-slim").
-		WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
-			Exclude: []string{"node_modules/", "ci/"},
-		})
+		WithDirectory("/src", client.Host().Directory(".", dagger.HostDirectoryOpts{
+			Exclude: []string{"node_modules/", "ci/", "build/"},
+		}))
 
 		// set the working directory in the container
 		// install application dependencies
@@ -51,7 +50,6 @@ func main() {
 		From("nginx:1.23-alpine").
 		WithDirectory("/usr/share/nginx/html", buildDir).
 		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
-
 	if err != nil {
 		panic(err)
 	}

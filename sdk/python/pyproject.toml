@@ -82,8 +82,8 @@ fmt = [
     "black {args:. ../../docs/current}",
 ]
 lint = [
-    "ruff check {args:. ../../docs/current}",
-    "black --check {args:. ../../docs/current}",
+    "ruff check --diff {args:. ../../docs/current}",
+    "black --check --diff {args:. ../../docs/current}",
 ]
 test = "pytest -W default"
 testunit = "pytest -m 'not slow'"
