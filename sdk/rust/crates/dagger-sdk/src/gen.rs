@@ -3350,7 +3350,7 @@ pub struct ObjectTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl ObjectTypeDef {
-    /// TODO DOC THIS THING
+    /// The function used to construct new instances of this object, if any
     pub fn constructor(&self) -> Function {
         let query = self.selection.select("constructor");
         return Function {
@@ -4242,7 +4242,7 @@ impl TypeDef {
         let query = self.selection.select("optional");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO DOC THIS THING
+    /// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
     pub fn with_constructor(&self, function: Function) -> TypeDef {
         let mut query = self.selection.select("withConstructor");
         query = query.arg_lazy(

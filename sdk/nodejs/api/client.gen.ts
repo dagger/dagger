@@ -4604,7 +4604,7 @@ export class ObjectTypeDef extends BaseClient {
   }
 
   /**
-   * TODO DOC THIS THING
+   * The function used to construct new instances of this object, if any
    */
   constructor_(): Function_ {
     return new Function_({
@@ -5808,7 +5808,7 @@ export class TypeDef extends BaseClient {
   }
 
   /**
-   * TODO DOC THIS THING
+   * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
    */
   withConstructor(function_: Function_): TypeDef {
     return new TypeDef({

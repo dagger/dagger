@@ -778,6 +778,11 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 		objName := gqlObjectName(objTypeDef.Name)
 
 		// get the schema + resolvers for the object as a whole
+		objType, err := s.typeDefToSchema(def, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert module to schema: %w", err)
+		}
+
 		// check whether this is a pre-existing object (from core or another module)
 		_, preExistingObject := schemaView.resolvers()[objName]
 		if preExistingObject {
@@ -862,10 +867,11 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 		}
 
 		for _, fn := range objTypeDef.Functions {
-			resolver, err := s.functionResolver(astDef, objTypeDef.OriginalName, module, fn, schemaView)
+			fieldDef, resolver, err := s.functionResolver(objTypeDef, module, fn, schemaView)
 			if err != nil {
 				return nil, err
 			}
+			astDef.Fields = append(astDef.Fields, fieldDef)
 			newObjResolver[gqlFieldName(fn.Name)] = resolver
 		}
 
@@ -879,11 +885,38 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 			}
 		}
 
-		constructorFieldDef, constructorResolver, err := s.constructorResolver(def, module, objTypeDef.Constructor, schemaView)
-		if err != nil {
-			return nil, err
-		}
-		if constructorFieldDef != nil {
+		// handle object constructor
+		var constructorFieldDef *ast.FieldDefinition
+		var constructorResolver graphql.FieldResolveFn
+		isMainModuleObject := objName == gqlObjectName(module.Name)
+		if isMainModuleObject {
+			constructorFieldDef = &ast.FieldDefinition{
+				Name:        gqlFieldName(objName),
+				Description: formatGqlDescription(objTypeDef.Description),
+				Type:        objType,
+			}
+
+			if objTypeDef.Constructor != nil {
+				// use explicit user-defined constructor if provided
+				fn := objTypeDef.Constructor
+				if fn.ReturnType.Kind != core.TypeDefKindObject {
+					return nil, fmt.Errorf("constructor function for object %s must return that object", objTypeDef.OriginalName)
+				}
+				if fn.ReturnType.AsObject.OriginalName != objTypeDef.OriginalName {
+					return nil, fmt.Errorf("constructor function for object %s must return that object", objTypeDef.OriginalName)
+				}
+
+				fieldDef, resolver, err := s.functionResolver(objTypeDef, module, fn, schemaView)
+				if err != nil {
+					return nil, err
+				}
+				constructorFieldDef.Arguments = fieldDef.Arguments
+				constructorResolver = resolver
+			} else {
+				// otherwise default to a simple field with no args that returns an initially empty object
+				constructorResolver = PassthroughResolver
+			}
+
 			typeSchemaDoc.Extensions = append(typeSchemaDoc.Extensions, &ast.Definition{
 				Name:   "Query",
 				Kind:   ast.Object,
@@ -924,6 +957,9 @@ comment
 Which avoids corner cases where the comment ends in a `"`.
 */
 func formatGqlDescription(desc string, args ...any) string {
+	if desc == "" {
+		return ""
+	}
 	return "\n" + strings.TrimSpace(fmt.Sprintf(desc, args...)) + "\n"
 }
 
@@ -978,26 +1014,25 @@ func (s *moduleSchema) typeDefToSchema(typeDef *core.TypeDef, isInput bool) (*as
 }
 
 func (s *moduleSchema) functionResolver(
-	parentObj *ast.Definition,
-	parentObjOriginalName string,
+	parentTypeDef *core.ObjectTypeDef,
 	module *core.Module,
 	fn *core.Function,
 	schemaView *schemaView,
-) (graphql.FieldResolveFn, error) {
+) (*ast.FieldDefinition, graphql.FieldResolveFn, error) {
 	fnName := gqlFieldName(fn.Name)
-	objFnName := fmt.Sprintf("%s.%s", parentObj.Name, fnName)
+	objFnName := fmt.Sprintf("%s.%s", parentTypeDef.Name, fnName)
 
 	returnASTType, err := s.typeDefToSchema(fn.ReturnType, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Check if this is a type from another (non-core) module, which is currently
 	// not allowed
 	sourceModuleName, ok := schemaView.sourceModuleName(returnASTType)
 	if ok && sourceModuleName != coreModuleName {
-		return nil, fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-			parentObjOriginalName,
+		return nil, nil, fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+			parentTypeDef.OriginalName,
 			fn.OriginalName,
 			sourceModuleName,
 		)
@@ -1007,15 +1042,15 @@ func (s *moduleSchema) functionResolver(
 	for _, fnArg := range fn.Args {
 		argASTType, err := s.typeDefToSchema(fnArg.TypeDef, true)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Check if this is a type from another (non-core) module, which is currently
 		// not allowed
 		sourceModuleName, ok := schemaView.sourceModuleName(argASTType)
 		if ok && sourceModuleName != coreModuleName {
-			return nil, fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-				parentObjOriginalName,
+			return nil, nil, fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+				parentTypeDef.OriginalName,
 				fn.OriginalName,
 				fnArg.OriginalName,
 				sourceModuleName,
@@ -1024,7 +1059,7 @@ func (s *moduleSchema) functionResolver(
 
 		defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		argASTTypes = append(argASTTypes, &ast.ArgumentDefinition{
 			Name:         gqlArgName(fnArg.Name),
@@ -1055,15 +1090,14 @@ func (s *moduleSchema) functionResolver(
 		Type:        returnASTType,
 		Arguments:   argASTTypes,
 	}
-	parentObj.Fields = append(parentObj.Fields, fieldDef)
 
 	// Our core "id-able" types are serialized as their ID over the wire, but need to be decoded into
 	// their object here. We can identify those types since their object resolvers are wrapped in
 	// ToIDableObjectResolver.
 	returnFromID := s.createIDResolver(fn.ReturnType, schemaView)
-	parentIDableObjectResolver, _ := s.idableObjectResolver(parentObj.Name, schemaView)
+	parentIDableObjectResolver, _ := s.idableObjectResolver(parentTypeDef.Name, schemaView)
 
-	return ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
+	resolver := ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
 		defer func() {
 			if r := recover(); r != nil {
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
@@ -1109,149 +1143,6 @@ func (s *moduleSchema) functionResolver(
 			return returnFromID(result)
 		}
 		return result, nil
-	}), nil
-}
-
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO: dedupe w/ functionResolver to extent possible
-func (s *moduleSchema) constructorResolver(
-	typeDef *core.TypeDef,
-	module *core.Module,
-	fn *core.Function,
-	schemaView *schemaView,
-) (*ast.FieldDefinition, graphql.FieldResolveFn, error) {
-	if typeDef.Kind != core.TypeDefKindObject {
-		return nil, nil, fmt.Errorf("constructor function for object must return that object")
-	}
-	obj := typeDef.AsObject
-
-	// Check whether this is the "main" object for the module, which is the one that gets a constructor
-	// stitched right under query. Currently, this corresponds to the object with the same name as the
-	// module itself.
-	isTopLevelModuleObject := gqlObjectName(obj.Name) == gqlObjectName(module.Name)
-
-	if fn == nil && !isTopLevelModuleObject {
-		// no constructor for this object
-		return nil, nil, nil
-	}
-
-	objType, err := s.typeDefToSchema(typeDef, false)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to convert module to schema: %w", err)
-	}
-	fieldDef := &ast.FieldDefinition{
-		Name:        gqlFieldName(obj.Name),
-		Description: formatGqlDescription(obj.Description),
-		Type:        objType,
-	}
-
-	if fn == nil {
-		// return a default constructor for the module itself that just passes an initially empty object
-		return fieldDef, PassthroughResolver, nil
-	}
-
-	if fn.ReturnType.Kind != core.TypeDefKindObject {
-		return nil, nil, fmt.Errorf("constructor function for object %s must return that object", obj.OriginalName)
-	}
-	if fn.ReturnType.AsObject.OriginalName != obj.OriginalName {
-		return nil, nil, fmt.Errorf("constructor function for object %s must return that object", obj.OriginalName)
-	}
-
-	for _, fnArg := range fn.Args {
-		argASTType, err := s.typeDefToSchema(fnArg.TypeDef, true)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Check if this is a type from another (non-core) module, which is currently
-		// not allowed
-		sourceModuleName, ok := schemaView.sourceModuleName(argASTType)
-		if ok && sourceModuleName != coreModuleName {
-			return nil, nil, fmt.Errorf("object %q constructor arg %q cannot reference external type from dependency module %q",
-				obj.OriginalName,
-				fnArg.OriginalName,
-				sourceModuleName,
-			)
-		}
-
-		defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
-		if err != nil {
-			return nil, nil, err
-		}
-		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
-			Name:         gqlArgName(fnArg.Name),
-			Description:  formatGqlDescription(fnArg.Description),
-			Type:         argASTType,
-			DefaultValue: defaultValue,
-		})
-	}
-
-	argNames := make(map[string]string, len(fn.Args))
-	argFromIDs := make(map[string]func(any) (any, error), len(fn.Args))
-	for _, arg := range fn.Args {
-		argNames[arg.Name] = arg.OriginalName
-
-		// decode args for types that are in this module
-		// modules only understand IDs for external types, they only see JSON
-		// representations of their own types, so we need to decode those here
-		if obj := arg.TypeDef.Underlying(); obj.Kind == core.TypeDefKindObject {
-			if _, ok := schemaView.resolvers()[obj.AsObject.Name]; !ok {
-				argFromIDs[arg.Name] = s.createIDResolver(arg.TypeDef, schemaView)
-			}
-		}
-	}
-
-	returnFromID := s.createIDResolver(fn.ReturnType, schemaView)
-	if returnFromID == nil {
-		// this should never happen, but better error than panic
-		return nil, nil, fmt.Errorf("constructor function for object %s unexpectedly not an IDable type", obj.OriginalName)
-	}
-
-	resolver := ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("panic in %s constructor: %s %s", obj.Name, r, string(debug.Stack()))
-			}
-		}()
-
-		var callInput []*core.CallInput
-		for k, v := range args {
-			name, ok := argNames[k]
-			if !ok {
-				continue
-			}
-
-			if argFromID := argFromIDs[k]; argFromID != nil {
-				var err error
-				v, err = argFromID(v)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode arg %q: %w", k, err)
-				}
-			}
-
-			callInput = append(callInput, &core.CallInput{
-				Name:  name,
-				Value: v,
-			})
-		}
-		result, err := s.functionCall(ctx, fn, functionCallArgs{
-			Module: module,
-			Input:  callInput,
-			// TODO: is there any better way? Currently constructor is invoked by providing
-			// name of object as parent and empty function name...
-			ParentOriginalName: obj.OriginalName,
-			Parent:             map[string]any{},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to call object %q constructor: %w", obj.Name, err)
-		}
-		return returnFromID(result)
 	})
 
 	return fieldDef, resolver, nil

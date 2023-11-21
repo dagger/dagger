@@ -3697,7 +3697,7 @@ class ObjectTypeDef(Type):
 
     @typecheck
     def constructor(self) -> Function:
-        """TODO DOC THIS THING"""
+        """The function used to construct new instances of this object, if any"""
         _args: list[Arg] = []
         _ctx = self._select("constructor", _args)
         return Function(_ctx)
@@ -4656,7 +4656,9 @@ class TypeDef(Type):
 
     @typecheck
     def with_constructor(self, function: Function) -> "TypeDef":
-        """TODO DOC THIS THING"""
+        """Adds a function for constructing a new instance of an Object TypeDef,
+        failing if the type is not an object.
+        """
         _args = [
             Arg("function", function),
         ]

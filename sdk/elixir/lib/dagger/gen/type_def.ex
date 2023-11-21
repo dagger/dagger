@@ -61,7 +61,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc "TODO DOC THIS THING\n\n## Required Arguments\n\n* `function` -"
+    @doc "Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.\n\n## Required Arguments\n\n* `function` -"
     @spec with_constructor(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
     def with_constructor(%__MODULE__{} = type_def, function) do
       selection = select(type_def.selection, "withConstructor")

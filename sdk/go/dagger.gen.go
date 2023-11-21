@@ -3235,7 +3235,7 @@ type ObjectTypeDef struct {
 	name        *string
 }
 
-// TODO DOC THIS THING
+// The function used to construct new instances of this object, if any
 func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.q.Select("constructor")
 
@@ -4230,7 +4230,7 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO DOC THIS THING
+// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
 func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	assertNotNil("function", function)
 	q := r.q.Select("withConstructor")
