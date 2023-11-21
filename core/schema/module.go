@@ -156,13 +156,6 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	defer func() {
-		if err := recover(); err != nil {
-			debug.PrintStack()
-			panic(fmt.Errorf("panic in typeDefWithObjectFunction: %v %s", err, string(debug.Stack())))
-		}
-	}()
-
 	fn, err := args.Function.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -177,6 +170,10 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
+	// Constructors are invoked by setting the ObjectName to the name of the object its constructing and the
+	// FunctionName to "", so ignore the name of the function.
+	fn.Name = ""
+	fn.OriginalName = ""
 	return def.WithObjectConstructor(fn)
 }
 
