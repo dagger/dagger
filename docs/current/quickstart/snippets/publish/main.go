@@ -15,7 +15,6 @@ func main() {
 
 	// initialize Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-
 	if err != nil {
 		panic(err)
 	}
@@ -23,9 +22,9 @@ func main() {
 
 	source := client.Container().
 		From("node:16").
-		WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
-			Exclude: []string{"node_modules/", "ci/"},
-		})
+		WithDirectory("/src", client.Host().Directory(".", dagger.HostDirectoryOpts{
+			Exclude: []string{"node_modules/", "ci/", "build/"},
+		}))
 
 	runner := source.WithWorkdir("/src").
 		WithExec([]string{"npm", "install"})
