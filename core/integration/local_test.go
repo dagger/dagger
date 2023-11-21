@@ -10,6 +10,7 @@ import (
 )
 
 func TestLocalImportsAcrossSessions(t *testing.T) {
+	t.Parallel()
 	tmpdir := t.TempDir()
 
 	c1, ctx1 := connect(t)

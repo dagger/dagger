@@ -16,6 +16,7 @@ import (
 var echoSocketSrc string
 
 func TestContainerWithUnixSocket(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	tmp := t.TempDir()
