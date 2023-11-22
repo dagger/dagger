@@ -79,7 +79,7 @@ func TestCacheVolumeWithSubmount(t *testing.T) {
 	t.Run("file mount", func(t *testing.T) {
 		t.Parallel()
 		subfile := c.Directory().WithNewFile("foo", "bar").File("foo")
-		ctr := c.Container().From("alpine:3.16.2").
+		ctr := c.Container().From(alpineImage).
 			WithMountedCache("/cache", c.CacheVolume(identity.NewID())).
 			WithMountedFile("/cache/subfile", subfile)
 
@@ -95,7 +95,7 @@ func TestCacheVolumeWithSubmount(t *testing.T) {
 	t.Run("dir mount", func(t *testing.T) {
 		t.Parallel()
 		subdir := c.Directory().WithNewFile("foo", "bar").WithNewFile("baz", "qux")
-		ctr := c.Container().From("alpine:3.16.2").
+		ctr := c.Container().From(alpineImage).
 			WithMountedCache("/cache", c.CacheVolume(identity.NewID())).
 			WithMountedDirectory("/cache/subdir", subdir)
 
@@ -128,7 +128,7 @@ func TestLocalImportCacheReuse(t *testing.T) {
 	require.NoError(t, err)
 
 	runExec := func(ctx context.Context, t *testing.T, c *dagger.Client) string {
-		out, err := c.Container().From("alpine:3.16.2").
+		out, err := c.Container().From(alpineImage).
 			WithDirectory("/fromhost", c.Host().Directory(hostDirPath)).
 			WithExec([]string{"stat", "/fromhost/foo"}).
 			WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
