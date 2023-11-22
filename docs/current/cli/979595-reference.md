@@ -261,17 +261,13 @@ dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6
 
 #### dagger mod sync
 
-Synchronize a Dagger module after a change in its interfaces.
+Synchronize a Dagger module after a change in its function signature(s).
+
+:::note
+This is only required for IDE auto-completion/LSP purposes.
+:::
 
 ##### Usage
-
-```shell
-dagger mod sync
-```
-
-##### Example
-
-Synchronize a Dagger module after a change in its interfaces.
 
 ```shell
 dagger mod sync
@@ -287,13 +283,11 @@ Publish a Dagger module to the Daggerverse.
 dagger mod publish [--force]
 ```
 
-##### Example
+##### Options
 
-Publish the current Dagger module to the Daggerverse.
-
-```shell
-dagger mod publish
-```
+| Option      | Description                                                     |
+| ------------| ----------------------------------------------------------------|
+| `--force`   | Force publish even if the Git repository is not clean           |
 
 ## dagger query
 
@@ -404,7 +398,7 @@ dagger --silent run go run ci.go 2>&1 | tee foo.out
 This command is currently under development and is therefore hidden in the CLI.
 :::
 
-Open a shell in a container returned by a function. If no entrypoint is specified and the container doesn't have a default command, `sh` will be used.
+Open a shell in a container returned by a function. If no entrypoint is specified and the container doesn't have a default command, `sh` will be used for the shell.
 
 ### Usage
 
@@ -416,7 +410,7 @@ dagger shell [--entrypoint strings] [function]
 
 | Option                 | Description                  |
 | ---------------------- | -----------------------------|
-| `--entrypoint command` | Entrypoint to use            |
+| `--entrypoint strings` | Entrypoint(s) to use            |
 
 ### Example
 
@@ -438,10 +432,10 @@ dagger shell --entrypoint /bin/zsh debug
 This command is currently under development and is therefore hidden in the CLI.
 :::
 
-Start a service or a container returned by a function and expose its ports to the host.
+Start a service returned by a function and expose its ports to the host.
 
 :::note
-In order for this to work, the service/container returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports.
+In order for this to work, the service returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports.
 :::
 
 ### Usage
