@@ -374,6 +374,14 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 		if rerr != nil {
 			cmd.PrintErrln("Error:", rerr.Error())
 
+			if fc.showHelp {
+				// Explicitly show the help here while still returning the error.
+				// This handles the case of `dagger call --help` run on a broken module; in that case
+				// we want to error out since we can't actually load the module and show all subcommands
+				// and flags in the help output, but we still want to show the user *something*
+				cmd.Help()
+			}
+
 			if fc.showUsage {
 				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
 			}
