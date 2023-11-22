@@ -1,11 +1,11 @@
 [package]
 name = "dagger-bootstrap"
+description = "A bootstrapper for orchestrating codegen for the rust sdk"
 version.workspace = true 
 edition.workspace = true 
 readme.workspace = true 
 license-file.workspace = true 
 authors.workspace = true 
-description.workspace = true 
 repository.workspace = true 
 publish = true
 

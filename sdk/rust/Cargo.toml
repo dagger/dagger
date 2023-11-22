@@ -12,7 +12,6 @@ edition = "2021"
 readme = "README.md"
 license-file = "LICENSE"
 authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
-description = "A dagger sdk for rust, written in rust"
 repository = "https://github.com/dagger/dagger"
 
 [workspace.dependencies]
