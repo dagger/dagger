@@ -5,12 +5,12 @@ export class Container extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
    ) {
      super(parent)
 
    }
-  exec(opts?: ContainerExecOpts): Container {
+  exec = (opts?: ContainerExecOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -19,8 +19,7 @@ export class Container extends BaseClient {
           args: { ...opts },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 
@@ -29,7 +28,7 @@ export class Container extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: Container) => Container) {
+  with = (arg: (param: Container) => Container) => {
     return arg(this)
   }
 }

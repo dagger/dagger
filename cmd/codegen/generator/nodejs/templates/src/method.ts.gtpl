@@ -12,7 +12,7 @@
 	{{- template "method_comment" . }}
 
 	{{- /* Write method name. */ -}}
-	{{- "" }}  {{ .Name | FormatName -}}(
+	{{- "" }}  {{ .Name | FormatName }} = (
 
 	{{- /* Write required arguments. */ -}}
 	{{- if $required }}
@@ -27,7 +27,7 @@
 	{{- end }}
 
 	{{- /* Write return type. */ -}}
-	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} {
+	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} => {
 
 	{{- $enums := GetEnumValues .Args }}
 	{{- if gt (len $enums) 0 }}
@@ -61,8 +61,7 @@
 		{{- end }}
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
 	{{- end }}
   }

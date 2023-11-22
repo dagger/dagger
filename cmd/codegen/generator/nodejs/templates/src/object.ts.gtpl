@@ -31,7 +31,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}
      _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},
@@ -63,7 +63,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with(arg: (param: {{ .Name | QueryToClient | FormatName }}) => {{ .Name | QueryToClient | FormatName }}) {
+  with = (arg: (param: {{ .Name | QueryToClient | FormatName }}) => {{ .Name | QueryToClient | FormatName }}) => {
     return arg(this)
   }
 {{- end }}
