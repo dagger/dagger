@@ -2,11 +2,12 @@
 defmodule Dagger.ObjectTypeDef do
   @moduledoc "A definition of a custom object defined in a Module."
   @type t() :: %__MODULE__{
+          constructor: Dagger.Function.t() | nil,
           description: Dagger.String.t() | nil,
           fields: [Dagger.FieldTypeDef.t()] | nil,
           functions: [Dagger.Function.t()] | nil,
           name: Dagger.String.t()
         }
   @derive Nestru.Decoder
-  defstruct [:description, :fields, :functions, :name]
+  defstruct [:constructor, :description, :fields, :functions, :name]
 end

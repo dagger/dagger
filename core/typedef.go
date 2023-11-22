@@ -180,12 +180,25 @@ func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
 	return typeDef, nil
 }
 
+func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
+	if typeDef.AsObject == nil {
+		return nil, fmt.Errorf("cannot add constructor function to non-object type: %s", typeDef.Kind)
+	}
+
+	typeDef = typeDef.Clone()
+	fn = fn.Clone()
+	fn.ParentOriginalName = typeDef.AsObject.OriginalName
+	typeDef.AsObject.Constructor = fn
+	return typeDef, nil
+}
+
 type ObjectTypeDef struct {
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Fields      []*FieldTypeDef `json:"fields"`
 	Functions   []*Function     `json:"functions"`
+	Constructor *Function       `json:"constructor"`
 
 	// Below are not in public API
 
@@ -212,6 +225,10 @@ func (typeDef ObjectTypeDef) Clone() *ObjectTypeDef {
 	cp.Functions = make([]*Function, len(typeDef.Functions))
 	for i, fn := range typeDef.Functions {
 		cp.Functions[i] = fn.Clone()
+	}
+
+	if cp.Constructor != nil {
+		cp.Constructor = typeDef.Constructor.Clone()
 	}
 
 	return &cp

@@ -3235,6 +3235,16 @@ type ObjectTypeDef struct {
 	name        *string
 }
 
+// The function used to construct new instances of this object, if any
+func (r *ObjectTypeDef) Constructor() *Function {
+	q := r.q.Select("constructor")
+
+	return &Function{
+		q: q,
+		c: r.c,
+	}
+}
+
 // The doc string for the object, if any
 func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -4218,6 +4228,18 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
+func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
+	assertNotNil("function", function)
+	q := r.q.Select("withConstructor")
+	q = q.Arg("function", function)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
 }
 
 // TypeDefWithFieldOpts contains options for TypeDef.WithField

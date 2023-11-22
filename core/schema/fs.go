@@ -38,8 +38,8 @@ var Socket string
 //go:embed module.graphqls
 var Module string
 
-//go:embed function.graphqls
-var Function string
+//go:embed typedef.graphqls
+var TypeDef string
 
 //go:embed internalsdk.graphqls
 var InternalSDK string

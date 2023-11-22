@@ -61,6 +61,16 @@ defmodule Dagger.TypeDef do
   )
 
   (
+    @doc "Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.\n\n## Required Arguments\n\n* `function` -"
+    @spec with_constructor(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
+    def with_constructor(%__MODULE__{} = type_def, function) do
+      selection = select(type_def.selection, "withConstructor")
+      selection = arg(selection, "function", function)
+      %Dagger.TypeDef{selection: selection, client: type_def.client}
+    end
+  )
+
+  (
     @doc "Adds a static field for an Object TypeDef, failing if the type is not an object.\n\n## Required Arguments\n\n* `name` - The name of the field in the object\n* `type_def` - The type of the field\n\n## Optional Arguments\n\n* `description` - A doc string for the field, if any"
     @spec with_field(t(), Dagger.String.t(), Dagger.TypeDef.t(), keyword()) :: Dagger.TypeDef.t()
     def with_field(%__MODULE__{} = type_def, name, type_def, optional_args \\ []) do
