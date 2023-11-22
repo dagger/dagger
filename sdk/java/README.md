@@ -157,9 +157,9 @@ In order to upgrade the SDK to a new engine version follow these steps:
 
 ```shell
 # in sdk/java directory
-mvn install -pl dagger-codegen-maven-plugin
-mvn -N dagger-codegen:generateSchema -Ddagger.bin=/path/to/dagger/bin
-NEW_VERSION=$(mvn help:evaluate -q -DforceStdout -Dexpression=daggerengine.version)
+./mvnw install -pl dagger-codegen-maven-plugin
+./mvnw -N dagger-codegen:generateSchema -Ddagger.bin=/path/to/dagger/bin
+NEW_VERSION=$(./mvnw help:evaluate -q -DforceStdout -Dexpression=daggerengine.version)
 cp ./target/generated-schema/schema.json dagger-codegen-maven-plugin/src/main/resources/schemas/schema-$NEW_VERSION.json
 ```
 
