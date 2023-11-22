@@ -11,14 +11,14 @@ dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }
 dagger-bootstrap = { path = "crates/dagger-bootstrap", version = "^0.2.10" }
 dagger-sdk = { path = "crates/dagger-sdk", version = "^0.3.1" }
 
-eyre = "0.6.8"
+eyre = "0.6.9"
 color-eyre = "0.6.2"
-serde = { version = "1.0.188", features = ["derive"] }
-serde_json = "1.0.105"
-tokio = { version = "1.32.0", features = ["full"] }
-tracing = { version = "0.1.37", features = ["log"] }
-tracing-subscriber = { version = "0.3.17", features = [
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+tokio = { version = "1.34.0", features = ["full"] }
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-subscriber = { version = "0.3.18", features = [
   "tracing-log",
   "tracing",
 ] }
-thiserror = "1.0.48"
+thiserror = "1.0.50"
