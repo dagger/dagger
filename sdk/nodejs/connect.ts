@@ -12,7 +12,7 @@ export type CallbackFct = (client: Client) => Promise<void>
  * ```ts
  * await connection(
  *   async () => {
- *     await dagger
+ *     await dag
  *       .container()
  *       .from("alpine")
  *       .withExec(["apk", "add", "curl"])
