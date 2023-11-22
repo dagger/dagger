@@ -453,6 +453,31 @@ The following code listing defines various environment variables for build purpo
 
 [Learn more](./guides/648384-multi-builds.md)
 
+### Reuse container images across pipelines
+
+The following code listing builds a container image in one pipeline and reuses it in another. This is useful if, for example, you need to create a self-contained base image in one pipeline and then use it for other operations (test, build, deploy...) in other pipelines.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/reuse-containers/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/reuse-containers/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/reuse-containers/main.py
+```
+
+</TabItem>
+</Tabs>
+
 ### Access private Git repository
 
 The following code listing demonstrates how to access a private Git repository using SSH.
