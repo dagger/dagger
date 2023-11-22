@@ -268,4 +268,24 @@ defmodule Dagger.ClientTest do
 
     assert env == "C:B"
   end
+
+  test "service binding", %{client: client} do
+    service =
+      client
+      |> Client.container()
+      |> Container.from("nginx:1.25-alpine3.18")
+      |> Container.with_exposed_port(80)
+      |> Container.as_service()
+
+    assert {:ok, out} =
+             client
+             |> Client.container()
+             |> Container.from("alpine:3.18")
+             |> Container.with_service_binding("nginx-service", service)
+             |> Container.with_exec(~w"apk add curl")
+             |> Container.with_exec(~w"curl http://nginx-service")
+             |> Container.stdout()
+
+    assert out =~ ~r/Welcome to nginx/
+  end
 end
