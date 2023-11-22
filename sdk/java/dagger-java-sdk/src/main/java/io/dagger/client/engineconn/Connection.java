@@ -68,7 +68,10 @@ public final class Connection {
   }
 
   public static Connection get(String workingDir) throws IOException {
-    return fromEnv().orElse(fromCLI(new CLIRunner(workingDir, new CLIDownloader())));
+    Optional<Connection> connection = fromEnv();
+    return connection.isPresent()
+        ? connection.get()
+        : fromCLI(new CLIRunner(workingDir, new CLIDownloader()));
   }
 
   private static Connection getConnection(int port, String token, Optional<CLIRunner> runner) {
