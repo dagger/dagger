@@ -419,43 +419,9 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 
 	if obj.Constructor != nil {
 		// add constructor args as top-level flags
-		fn := obj.Constructor
-		for _, arg := range fn.Args {
-			fc.mod.LoadObject(arg.TypeDef)
+		if err := fc.addArgsForFunction(c, a, obj.Constructor, dag); err != nil {
+			return nil, nil, err
 		}
-
-		for _, arg := range fn.Args {
-			_, err := arg.AddFlag(c.Flags(), dag)
-			if err != nil {
-				return nil, nil, err
-			}
-			if !arg.TypeDef.Optional {
-				c.MarkFlagRequired(arg.FlagName())
-			}
-		}
-
-		if fc.BeforeParse != nil {
-			if err := fc.BeforeParse(fc, c, fn); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
-	if err := c.ParseFlags(a); err != nil {
-		// This gives a chance for FuncCommand implementations to
-		// handle errors from parsing flags.
-		return nil, nil, c.FlagErrorFunc()(c, err)
-	}
-
-	if err := c.ValidateRequiredFlags(); err != nil {
-		return nil, nil, err
-	}
-	if err := c.ValidateFlagGroups(); err != nil {
-		return nil, nil, err
-	}
-
-	// Select constructor
-	if obj.Constructor != nil {
 		fc.selectFunc(obj.Name, obj.Constructor, c, dag)
 	} else {
 		fc.Select(obj.Name)
@@ -522,42 +488,8 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		Use:   cliName(fn.Name),
 		Short: fn.Description,
 		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
-			fc.mod.LoadObject(fn.ReturnType)
-
-			for _, arg := range fn.Args {
-				fc.mod.LoadObject(arg.TypeDef)
-			}
-
-			for _, arg := range fn.Args {
-				_, err := arg.AddFlag(cmd.Flags(), dag)
-				if err != nil {
-					return err
-				}
-				if !arg.TypeDef.Optional {
-					cmd.MarkFlagRequired(arg.FlagName())
-				}
-			}
-
-			if fc.BeforeParse != nil {
-				if err := fc.BeforeParse(fc, cmd, fn); err != nil {
-					return err
-				}
-			}
-
-			if err := cmd.ParseFlags(args); err != nil {
-				// This gives a chance for FuncCommand implementations to
-				// handle errors from parsing flags.
-				return cmd.FlagErrorFunc()(cmd, err)
-			}
-
-			help, _ := cmd.Flags().GetBool("help")
-			if !help {
-				if err := cmd.ValidateRequiredFlags(); err != nil {
-					return err
-				}
-				if err := cmd.ValidateFlagGroups(); err != nil {
-					return err
-				}
+			if err := fc.addArgsForFunction(cmd, args, fn, dag); err != nil {
+				return err
 			}
 
 			obj := fn.ReturnType.AsObject
@@ -567,6 +499,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			fc.addSubCommands(cmd, dag, obj)
 
 			// Show help for first command that has the --help flag.
+			help, _ := cmd.Flags().GetBool("help")
 			if help {
 				return pflag.ErrHelp
 			}
@@ -628,6 +561,48 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 	newCmd.Flags().SetInterspersed(false)
 
 	return newCmd
+}
+
+func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, fn *modFunction, dag *dagger.Client) error {
+	fc.mod.LoadObject(fn.ReturnType)
+
+	for _, arg := range fn.Args {
+		fc.mod.LoadObject(arg.TypeDef)
+	}
+
+	for _, arg := range fn.Args {
+		_, err := arg.AddFlag(cmd.Flags(), dag)
+		if err != nil {
+			return err
+		}
+		if !arg.TypeDef.Optional {
+			cmd.MarkFlagRequired(arg.FlagName())
+		}
+	}
+
+	if fc.BeforeParse != nil {
+		if err := fc.BeforeParse(fc, cmd, fn); err != nil {
+			return err
+		}
+	}
+
+	if err := cmd.ParseFlags(cmdArgs); err != nil {
+		// This gives a chance for FuncCommand implementations to
+		// handle errors from parsing flags.
+		return cmd.FlagErrorFunc()(cmd, err)
+	}
+
+	help, _ := cmd.Flags().GetBool("help")
+	if !help {
+		if err := cmd.ValidateRequiredFlags(); err != nil {
+			return err
+		}
+		if err := cmd.ValidateFlagGroups(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // selectFunc adds the function selection to the query.
