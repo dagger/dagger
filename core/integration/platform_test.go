@@ -25,6 +25,7 @@ var platformToFileArch = map[dagger.Platform]string{
 }
 
 func TestPlatformEmulatedExecAndPush(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))

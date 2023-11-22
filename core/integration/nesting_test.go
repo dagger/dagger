@@ -8,6 +8,7 @@ import (
 )
 
 func TestNestingCLI(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 

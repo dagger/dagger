@@ -1,8 +1,31 @@
 import pytest
+from typing_extensions import Self
 
 import dagger
 from dagger.mod import Annotated, Arg, Module
 from dagger.mod._exceptions import NameConflictError, UserError
+
+
+def get_resolver(mod: Module, parent_name: str, resolver_name: str):
+    return mod.get_resolver(
+        mod.get_resolvers("foo"),
+        parent_name,
+        resolver_name,
+    )
+
+
+async def get_result(
+    mod: Module,
+    parent_name: str,
+    parent_json: str,
+    resolver_name: str,
+    inputs: dict,
+):
+    return await mod.get_result(
+        get_resolver(mod, parent_name, resolver_name),
+        dagger.JSON(parent_json),
+        inputs,
+    )
 
 
 def test_object_type_resolvers():
@@ -105,30 +128,6 @@ def test_main_object_name(mod_name, class_name):
 
 
 @pytest.mark.anyio()
-async def test_function_and_arg_name_override():
-    mod = Module()
-
-    @mod.function(name="import")
-    def import_(from_: Annotated[str, Arg("from")]) -> str:
-        return from_
-
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "import")
-    result = await mod.get_result(resolver, dagger.JSON("{}"), {"from": "bar"})
-    assert result == "bar"
-
-
-async def get_result(
-    mod: Module,
-    parent_name: str,
-    parent_json: str,
-    resolver_name: str,
-    inputs: dict,
-):
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), parent_name, resolver_name)
-    return await mod.get_result(resolver, dagger.JSON(parent_json), inputs)
-
-
-@pytest.mark.anyio()
 class TestNameOverrides:
     @pytest.fixture(scope="class")
     def mod(self):
@@ -156,3 +155,19 @@ class TestNameOverrides:
 
     async def test_field_structure(self, mod: Module):
         assert await get_result(mod, "Bar", '{"with": "baz"}', "with", {}) == "baz"
+
+
+@pytest.mark.anyio()
+async def test_method_returns_self():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        message: str = "foo"
+
+        @mod.function
+        def bar(self) -> Self:
+            self.message = "foobar"
+            return self
+
+    assert await get_result(mod, "Foo", "{}", "bar", {}) == {"message": "foobar"}

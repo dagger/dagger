@@ -19,6 +19,10 @@ func (s *platformSchema) Name() string {
 	return "platform"
 }
 
+func (s *platformSchema) SourceModuleName() string {
+	return coreModuleName
+}
+
 func (s *platformSchema) Schema() string {
 	return Platform
 }
@@ -68,10 +72,6 @@ func (s *platformSchema) Resolvers() Resolvers {
 			},
 		},
 	}
-}
-
-func (s *platformSchema) Dependencies() []ExecutableSchema {
-	return nil
 }
 
 func (s *platformSchema) defaultPlatform(ctx context.Context, parent, args any) (specs.Platform, error) {

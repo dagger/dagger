@@ -13,7 +13,7 @@ from typing import (
 )
 
 import cattrs
-from typing_extensions import override
+from typing_extensions import Self, override
 
 import dagger
 
@@ -129,9 +129,15 @@ class FunctionResolver(Resolver, Generic[Func]):
     def return_type(self):
         """Return the resolved return type of the wrapped function."""
         try:
-            return self._type_hints["return"]
+            r = self._type_hints["return"]
         except KeyError:
             return MissingType
+        if r is Self:
+            if self.origin is None:
+                msg = "Can't return Self without parent class"
+                raise UserError(msg)
+            return self.origin
+        return r
 
     @cached_property
     def _type_hints(self):

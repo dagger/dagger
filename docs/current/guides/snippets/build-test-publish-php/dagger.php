@@ -85,15 +85,11 @@ class DaggerPipeline {
     $appQuery = <<<QUERY
     query {
       container (id: "$runtime") {
-        withDirectory(path: "/mnt", directory: "$sourceDir") {
-          withWorkdir(path: "/mnt") {
-            withExec(args: ["cp", "-R", ".", "/var/www"]) {
-              withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
-                withExec(args: ["chmod", "-R", "777", "/var/www/storage"]) {
-                  withExec(args: ["chmod", "+x", "/var/www/docker-entrypoint.sh"]) {
-                    id
-                  }
-                }
+        withDirectory(path: "/var/www", directory: "$sourceDir") {
+          withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
+            withExec(args: ["chmod", "-R", "777", "/var/www/storage"]) {
+              withExec(args: ["chmod", "+x", "/var/www/docker-entrypoint.sh"]) {
+                id
               }
             }
           }
@@ -204,7 +200,7 @@ class DaggerPipeline {
               withEnvVariable(name: "DB_PASSWORD", value: "t_password") {
                 withEnvVariable(name: "DB_DATABASE", value: "t_db") {
                   withWorkdir(path: "/var/www") {
-                    withExec(args: ["./vendor/bin/phpunit", "-vv"]) {
+                    withExec(args: ["./vendor/bin/phpunit"]) {
                       stdout
                     }
                   }

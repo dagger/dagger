@@ -11,7 +11,7 @@ pytestmark = [
 
 
 async def test_connection_closed_error():
-    async with dagger.Connection() as client:
+    async with dagger.Connection(dagger.Config(retry=None)) as client:
         ...
     with pytest.raises(
         dagger.TransportError, match="Connection to engine has been closed"

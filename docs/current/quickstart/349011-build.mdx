@@ -13,9 +13,9 @@ import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
 import Embed from '@site/src/components/atoms/embed.js'
 
 export const ids = {
-    Go: "guZd7rmOolE",
-    "Node.js": "5mAEEtpy6mE",
-    Python: "iOhSGUn7nFq"
+    Go: "smjo0gkeiFz",
+    "Node.js": "5i8mcHTVJ-x",
+    Python: "E8rjb5DFd2m"
 }
 
 <QuickstartDoc embeds={ids}>
@@ -33,7 +33,7 @@ The `npm run build` command is appropriate for a React application, but other ap
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<Embed id="guZd7rmOolE" />
+<Embed id="smjo0gkeiFz" />
 
 - It invokes the `Container.WithExec()` method again, this time to define the command `npm run build` in the container.
 - It obtains a reference to the `build/` directory in the container with the `Container.Directory()` method. This method returns a `Directory` object.
@@ -48,7 +48,7 @@ dagger run go run ci/main.go
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="5mAEEtpy6mE" />
+<Embed id="5i8mcHTVJ-x" />
 
 This revised pipeline does everything described in the previous step, and then performs the following additional operations:
 
@@ -65,7 +65,7 @@ dagger run node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="iOhSGUn7nFq" />
+<Embed id="E8rjb5DFd2m />
 
 This revised pipeline does everything described in the previous step, and then performs the following additional operations:
 

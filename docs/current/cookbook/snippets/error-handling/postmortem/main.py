@@ -25,14 +25,16 @@ async def test(client: dagger.Client):
     # need to handle anything here.
 
     # The result of `sync` is the container, which allows continued chaining.
-    ctr = await (
-        client.container()
-        .from_("alpine")
-        # Add script with execution permission to simulate a testing tool.
-        .with_new_file("run-tests", contents=SCRIPT, permissions=0o750)
-        # If the exit code isn't needed: "run-tests; true"
-        .with_exec(["sh", "-c", "/run-tests; echo -n $? > /exit_code"])
-        .sync()
+    ctr = (
+        await (
+            client.container()
+            .from_("alpine")
+            # Add script with execution permission to simulate a testing tool.
+            .with_new_file("run-tests", contents=SCRIPT, permissions=0o750)
+            # If the exit code isn't needed: "run-tests; true"
+            .with_exec(["sh", "-c", "/run-tests; echo -n $? > /exit_code"])
+            .sync()
+        )
     )
 
     # Save report locally for inspection.
