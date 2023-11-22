@@ -53,7 +53,7 @@ dagger call [function]
 Call a function returning a container. The standard output of the container is returned.
 
 ```shell
-dagger run build
+dagger call build
 ```
 
 ## dagger completion
@@ -181,7 +181,7 @@ Manage Dagger modules. By default, print the configuration of the current module
 
 ```shell
 dagger mod [--mod string] [--focus]
-dagger mod [sub-command] [--mod string] [--focus] [sub-command options]
+dagger mod [--mod string] [--focus] [sub-command [sub-command options]]
 ```
 
 ### Options
@@ -221,7 +221,7 @@ Initialize a new Dagger module in the current directory.
 ##### Usage
 
 ```shell
-dagger mod init [--license string] [--name string] [--root string] [--sdk string]
+dagger mod init --name string --sdk string [--root string] [--license string]
 ```
 
 ##### Options
@@ -238,7 +238,7 @@ dagger mod init [--license string] [--name string] [--root string] [--sdk string
 Initialize a new module named `hello` with the Python SDK:
 
 ```shell
-dagger mod init --name hello --sdk=python
+dagger mod init --name=hello --sdk=python
 ```
 
 #### dagger mod install
@@ -409,7 +409,7 @@ Open a shell in a container returned by a function. If no entrypoint is specifie
 ### Usage
 
 ```shell
-dagger shell [--entrypoint string] [function]
+dagger shell [--entrypoint strings] [function]
 ```
 
 ### Options
