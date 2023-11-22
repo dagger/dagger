@@ -15,7 +15,7 @@ connect(
 
     // use container in another pipeline via its ID
     await client
-      .container({id: cid})
+      .container({ id: cid })
       .pipeline("Build")
       .withExec(["curl", "https://dagger.io"])
       .sync()
