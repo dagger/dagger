@@ -404,6 +404,11 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 
 	fc.mod = modDef
 
+	if fc.Execute != nil {
+		// if `Execute` is set, there's no need for sub-commands.
+		return nil, nil, nil
+	}
+
 	if obj.Constructor != nil {
 		// add constructor args as top-level flags
 		fn := obj.Constructor
@@ -434,9 +439,11 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 		return nil, nil, c.FlagErrorFunc()(c, err)
 	}
 
-	if fc.Execute != nil {
-		// if `Execute` is set, there's no need for sub-commands.
-		return nil, nil, nil
+	if err := c.ValidateRequiredFlags(); err != nil {
+		return nil, nil, err
+	}
+	if err := c.ValidateFlagGroups(); err != nil {
+		return nil, nil, err
 	}
 
 	// Select constructor
