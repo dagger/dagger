@@ -9,7 +9,7 @@ public class Type {
   private String name;
   private String description;
   private List<Field> fields;
-  private List<InputValue> inputFields;
+  private List<InputObject> inputFields;
   private List<EnumValue> enumValues;
 
   public TypeKind getKind() {
@@ -44,15 +44,15 @@ public class Type {
     this.enumValues = enumValues;
   }
 
-  public List<InputValue> getInputFields() {
+  public List<InputObject> getInputFields() {
     return inputFields;
   }
 
-  public void setInputFields(List<InputValue> inputFields) {
+  public void setInputFields(List<InputObject> inputFields) {
     this.inputFields =
         inputFields == null
             ? null
-            : inputFields.stream().sorted(comparing(InputValue::getName)).toList();
+            : inputFields.stream().sorted(comparing(InputObject::getName)).toList();
     // this.inputFields = inputFields;
   }
 

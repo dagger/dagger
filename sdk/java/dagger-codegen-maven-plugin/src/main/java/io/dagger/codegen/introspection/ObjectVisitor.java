@@ -15,18 +15,6 @@ class ObjectVisitor extends AbstractVisitor {
     super(schema, targetDirectory, encoding);
   }
 
-  private static MethodSpec withMethod(
-      InputValue var, TypeName type, TypeName returnType, String doc) {
-    return MethodSpec.methodBuilder("with" + capitalize(var.getName()))
-        .addModifiers(Modifier.PUBLIC)
-        .addParameter(type, Helpers.formatName(var))
-        .returns(returnType)
-        .addStatement("this.$1L = $1L", Helpers.formatName(var))
-        .addStatement("return this")
-        .addJavadoc(Helpers.escapeJavadoc(doc) + "\n")
-        .build();
-  }
-
   @Override
   TypeSpec generateType(Type type) {
     TypeSpec.Builder classBuilder =
@@ -263,7 +251,7 @@ class ObjectVisitor extends AbstractVisitor {
         field.getOptionalArgs().stream()
             .map(
                 arg ->
-                    withMethod(
+                    Helpers.withSetter(
                         arg, // arg.getName(),
                         "id".equals(arg.getName())
                                 && "Query".equals(field.getParentObject().getName())

@@ -2,7 +2,6 @@ package io.dagger.sample;
 
 import io.dagger.client.Client;
 import io.dagger.client.Dagger;
-import io.dagger.client.NetworkProtocol;
 import io.dagger.client.PortForward;
 import io.dagger.client.Service;
 import java.util.List;
@@ -13,11 +12,8 @@ public class ContainerToHostNetworking {
   public static void main(String... args) throws Exception {
     try (Client client = Dagger.connect()) {
       // expose host service on port 3306
-      PortForward portForward = new PortForward();
-      portForward.setBackend(3306);
-      portForward.setFrontend(3306);
-      portForward.setProtocol(NetworkProtocol.TCP);
-      Service hostSrv = client.host().service(List.of(portForward));
+      Service hostSrv =
+          client.host().service(List.of(new PortForward().withBackend(3306).withFrontend(3306)));
 
       // create MariaDB container
       // with host service binding
@@ -31,8 +27,9 @@ public class ContainerToHostNetworking {
                   List.of(
                       "/bin/sh",
                       "-c",
-                      "/usr/bin/mysql --user=root --password=secret --host=db -e 'SELECT * FROM mysql.user'"))
+                      "/usr/bin/mysql --user=root --host=db -e 'SELECT * FROM mysql.user'"))
               .stdout();
+      System.out.println(out);
     } catch (Exception e) {
       e.printStackTrace();
     }

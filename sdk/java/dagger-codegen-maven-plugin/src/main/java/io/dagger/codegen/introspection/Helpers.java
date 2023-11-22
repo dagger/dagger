@@ -125,7 +125,7 @@ public class Helpers {
     }
   }
 
-  static String formatName(InputValue arg) {
+  static String formatName(InputObject arg) {
     if (JAVA_KEYWORDS.contains(arg.getName())) {
       return "_" + arg.getName();
     } else {
@@ -149,6 +149,24 @@ public class Helpers {
         .addParameter(ParameterSpec.builder(type, var).build())
         .addStatement("this.$1L = $1L", var)
         .build();
+  }
+
+  static MethodSpec withSetter(InputObject var, TypeName type, TypeName returnType) {
+    return withSetter(var, type, returnType, null);
+  }
+
+  static MethodSpec withSetter(InputObject var, TypeName type, TypeName returnType, String doc) {
+    MethodSpec.Builder builder =
+        MethodSpec.methodBuilder("with" + capitalize(var.getName()))
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(type, Helpers.formatName(var))
+            .returns(returnType)
+            .addStatement("this.$1L = $1L", Helpers.formatName(var))
+            .addStatement("return this");
+    if (doc != null) {
+      builder.addJavadoc(Helpers.escapeJavadoc(doc) + "\n");
+    }
+    return builder.build();
   }
 
   /** Fix using '$' char in javadoc */
