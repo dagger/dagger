@@ -5770,37 +5770,4 @@ export class TypeDef extends BaseClient {
   }
 }
 
-const _client = new Client({ ctx: defaultContext })
-
-export const cacheVolume = _client.cacheVolume
-export const checkVersionCompatibility = _client.checkVersionCompatibility
-export const container = _client.container
-export const currentFunctionCall = _client.currentFunctionCall
-export const currentModule = _client.currentModule
-export const defaultPlatform = _client.defaultPlatform
-export const directory = _client.directory
-export const file = _client.file
-export const function_ = _client.function_
-export const generatedCode = _client.generatedCode
-export const git = _client.git
-export const host = _client.host
-export const http = _client.http
-export const loadCacheVolumeFromID = _client.loadCacheVolumeFromID
-export const loadContainerFromID = _client.loadContainerFromID
-export const loadDirectoryFromID = _client.loadDirectoryFromID
-export const loadFileFromID = _client.loadFileFromID
-export const loadFunctionArgFromID = _client.loadFunctionArgFromID
-export const loadFunctionFromID = _client.loadFunctionFromID
-export const loadGeneratedCodeFromID = _client.loadGeneratedCodeFromID
-export const loadModuleFromID = _client.loadModuleFromID
-export const loadSecretFromID = _client.loadSecretFromID
-export const loadServiceFromID = _client.loadServiceFromID
-export const loadSocketFromID = _client.loadSocketFromID
-export const loadTypeDefFromID = _client.loadTypeDefFromID
-export const module_ = _client.module_
-export const moduleConfig = _client.moduleConfig
-export const pipeline = _client.pipeline
-export const secret = _client.secret
-export const setSecret = _client.setSecret
-export const socket = _client.socket
-export const typeDef = _client.typeDef
+export const dag = new Client({ ctx: defaultContext })

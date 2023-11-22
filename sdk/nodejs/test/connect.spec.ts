@@ -7,7 +7,7 @@ import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
 
-import * as dagger from "../api/client.gen.js"
+import { dag } from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
 import { connect, close, connection } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
@@ -17,7 +17,7 @@ describe("NodeJS default client", function () {
   it("Should use the default client", async function () {
     this.timeout(60000)
 
-    await dagger
+    await dag
       .container()
       .from("alpine")
       .withExec(["apk", "add", "curl"])
@@ -31,7 +31,7 @@ describe("NodeJS default client", function () {
     this.timeout(60000)
 
     await connection(async () => {
-      await dagger
+      await dag
         .container()
         .from("alpine")
         .withExec(["apk", "add", "curl"])
@@ -45,7 +45,7 @@ describe("NodeJS default client", function () {
 
     await connection(
       async () => {
-        await dagger
+        await dag
           .container()
           .from("alpine")
           .withExec(["apk", "add", "curl"])
