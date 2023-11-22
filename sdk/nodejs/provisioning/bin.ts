@@ -3,6 +3,7 @@ import * as crypto from "crypto"
 import envPaths from "env-paths"
 import { execaCommand, ExecaChildProcess } from "execa"
 import * as fs from "fs"
+import { GraphQLClient } from "graphql-request"
 import fetch from "node-fetch"
 import * as os from "os"
 import * as path from "path"
@@ -11,15 +12,14 @@ import readline from "readline"
 import * as tar from "tar"
 import { fileURLToPath } from "url"
 
-import { Client } from "../api/client.gen.js"
 import {
   EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,
   EngineSessionError,
   InitEngineSessionBinaryError,
 } from "../common/errors/index.js"
-import { ConnectParams } from "../connect.js"
-import { ConnectOpts, EngineConn } from "./engineconn.js"
+import { createGQLClient } from "../graphql/client.js"
+import { ConnectOpts, EngineConn, ConnectParams } from "./engineconn.js"
 
 const CLI_HOST = "dl.dagger.io"
 let OVERRIDE_CLI_URL: string
@@ -29,7 +29,7 @@ let OVERRIDE_CHECKSUMS_URL: string
  * Bin runs an engine session from a specified binary
  */
 export class Bin implements EngineConn {
-  private subProcess?: ExecaChildProcess
+  private _subProcess?: ExecaChildProcess
 
   private binPath?: string
   private cliVersion?: string
@@ -52,7 +52,11 @@ export class Bin implements EngineConn {
     return "http://dagger"
   }
 
-  async Connect(opts: ConnectOpts): Promise<Client> {
+  get subProcess(): ExecaChildProcess | undefined {
+    return this._subProcess
+  }
+
+  async Connect(opts: ConnectOpts): Promise<GraphQLClient> {
     if (!this.binPath) {
       if (opts.LogOutput) {
         opts.LogOutput.write("Downloading CLI... ")
@@ -165,7 +169,7 @@ export class Bin implements EngineConn {
   private async runEngineSession(
     binPath: string,
     opts: ConnectOpts
-  ): Promise<Client> {
+  ): Promise<GraphQLClient> {
     const args = [binPath, "session"]
 
     const sdkVersion = this.getSDKVersion()
@@ -187,7 +191,7 @@ export class Bin implements EngineConn {
       opts.LogOutput.write("Creating new Engine session... ")
     }
 
-    this.subProcess = execaCommand(args.join(" "), {
+    this._subProcess = execaCommand(args.join(" "), {
       stdio: "pipe",
       reject: true,
 
@@ -197,11 +201,11 @@ export class Bin implements EngineConn {
 
     // Log the output if the user wants to.
     if (opts.LogOutput) {
-      this.subProcess.stderr?.pipe(opts.LogOutput)
+      this._subProcess.stderr?.pipe(opts.LogOutput)
     }
 
     const stdoutReader = readline.createInterface({
-      input: this.subProcess?.stdout as NodeJS.ReadableStream,
+      input: this._subProcess?.stdout as NodeJS.ReadableStream,
     })
 
     const timeOutDuration = 300000
@@ -228,10 +232,7 @@ export class Bin implements EngineConn {
       opts.LogOutput.write("OK!\n")
     }
 
-    return new Client({
-      host: `127.0.0.1:${connectParams.port}`,
-      sessionToken: connectParams.session_token,
-    })
+    return createGQLClient(connectParams.port, connectParams.session_token)
   }
 
   private async readConnectParams(
