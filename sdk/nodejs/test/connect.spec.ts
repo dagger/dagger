@@ -14,7 +14,7 @@ import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("NodeJS default client", function () {
-  it("Should use the default client", async function () {
+  it("Should use the default client and close connection on call to close", async function () {
     this.timeout(60000)
 
     await dag
