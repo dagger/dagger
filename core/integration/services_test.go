@@ -470,7 +470,7 @@ func TestContainerExecUDPServices(t *testing.T) {
 	c, ctx := connect(t)
 
 	srv := c.Container().
-		From("golang:1.18.2-alpine").
+		From(golangImage).
 		WithMountedFile("/src/main.go",
 			c.Directory().WithNewFile("main.go", udpSrc).File("main.go")).
 		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
@@ -532,7 +532,7 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 	c, ctx := connect(t)
 
 	srv := c.Container().
-		From("golang:1.18.2-alpine").
+		From(golangImage).
 		WithMountedFile("/src/main.go",
 			c.Directory().WithNewFile("main.go", pipeSrc).File("main.go")).
 		WithExposedPort(8080).
@@ -618,7 +618,7 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 	srv, svcURL := httpService(ctx, t, c, content)
 
 	fileContent, err := c.Container().
-		From("golang:1.20.6-alpine").
+		From(golangImage).
 		With(goCache(c)).
 		WithServiceBinding("www", srv).
 		WithMountedDirectory("/src", code).
@@ -652,7 +652,7 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 	srv, svcURL := httpService(ctx, t, c, content)
 
 	fileContent, err := c.Container().
-		From("golang:1.20.6-alpine").
+		From(golangImage).
 		WithServiceBinding("www", srv).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
@@ -689,7 +689,7 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 	srv, svcURL := gitService(ctx, t, c, c.Directory().WithNewFile("/index.html", content))
 
 	fileContent, err := c.Container().
-		From("golang:1.20.6-alpine").
+		From(golangImage).
 		WithServiceBinding("www", srv).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").

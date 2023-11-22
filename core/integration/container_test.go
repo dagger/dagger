@@ -309,7 +309,7 @@ func TestContainerWithRootFSSubdir(t *testing.T) {
 	hello := c.Directory().WithNewFile("main.go", helloSrc).File("main.go")
 
 	ctr := c.Container().
-		From("golang:1.20.0-alpine").
+		From(golangImage).
 		WithMountedFile("/src/main.go", hello).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "/out/hello", "/src/main.go"})
@@ -3886,7 +3886,7 @@ func TestContainerWithMountedSecretMode(t *testing.T) {
 
 	secret := c.SetSecret("test", "secret")
 
-	ctr := c.Container().From("alpine:3.18.2").WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
+	ctr := c.Container().From(alpineImage).WithMountedSecret("/secret", secret, dagger.ContainerWithMountedSecretOpts{
 		Mode:  0o666,
 		Owner: "root:root",
 	})

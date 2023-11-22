@@ -189,7 +189,7 @@ func TestHostSetSecretFile(t *testing.T) {
 	t.Run("non utf8 binary data is properly set as secret", func(t *testing.T) {
 		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
 
-		output, err := c.Container().From("alpine:3.17").
+		output, err := c.Container().From(alpineImage).
 			WithEnvVariable("CACHEBUST", identity.NewID()).
 			WithMountedSecret("/mysecret", secret).
 			WithExec([]string{"md5sum", "/mysecret"}).
