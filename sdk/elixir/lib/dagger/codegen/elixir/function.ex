@@ -9,7 +9,8 @@ defmodule Dagger.Codegen.Elixir.Function do
     "ProjectCommandID" => "project_command",
     "ProjectID" => "project",
     "SecretID" => "secret",
-    "SocketID" => "socket"
+    "SocketID" => "socket",
+    "ServiceID" => "service"
   }
 
   def id_module_to_var_name(id_mod), do: Map.fetch!(@id_modules_map, id_mod)

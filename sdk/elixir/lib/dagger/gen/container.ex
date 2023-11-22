@@ -879,7 +879,12 @@ defmodule Dagger.Container do
     def with_service_binding(%__MODULE__{} = container, alias, service) do
       selection = select(container.selection, "withServiceBinding")
       selection = arg(selection, "alias", alias)
-      selection = arg(selection, "service", service)
+
+      (
+        {:ok, id} = Dagger.Service.id(service)
+        selection = arg(selection, "service", id)
+      )
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )

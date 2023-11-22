@@ -13,7 +13,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     "ProjectCommandID",
     "ProjectID",
     "SecretID",
-    "SocketID"
+    "SocketID",
+    "ServiceID"
   ]
 
   def render(full_type, types) do

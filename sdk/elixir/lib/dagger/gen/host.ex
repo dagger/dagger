@@ -74,7 +74,11 @@ defmodule Dagger.Host do
     @spec tunnel(t(), Dagger.Service.t(), keyword()) :: Dagger.Service.t()
     def tunnel(%__MODULE__{} = host, service, optional_args \\ []) do
       selection = select(host.selection, "tunnel")
-      selection = arg(selection, "service", service)
+
+      (
+        {:ok, id} = Dagger.Service.id(service)
+        selection = arg(selection, "service", id)
+      )
 
       selection =
         if is_nil(optional_args[:native]) do
