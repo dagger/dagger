@@ -19,18 +19,10 @@ import (
 )
 
 const (
-	daggerGenFilename = "dagger.gen.go" // TODO: don't hardcode
-	contextTypename   = "context.Context"
+	daggerGenFilename   = "dagger.gen.go"
+	contextTypename     = "context.Context"
+	constructorFuncName = "New"
 )
-
-/* TODO:
-* Handle types from 3rd party imports in the type signature
-   * Add packages.NeedImports and packages.NeedDependencies to packages.Load opts, ensure performance is okay (or deal with that by lazy loading)
-* Fix problem where changing a function signature requires running `dagger mod sync` twice (first one will result in package errors being seen, second one fixes)
-   * Use Overlays field in packages.Config to provide partial generation of dagger.gen.go, without the unupdated code we generate here
-* Handle automatically re-running `dagger mod sync` when invoking functions from CLI, to save users from having to always remember while developing locally
-* Support methods defined on non-pointer receivers
-*/
 
 /*
 moduleMainSrc generates the source code of the main func for Dagger Module code using the Go SDK.
@@ -67,9 +59,10 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	}
 
 	ps := &parseState{
-		pkg:     funcs.modulePkg,
-		fset:    funcs.moduleFset,
-		methods: make(map[string][]method),
+		pkg:        funcs.modulePkg,
+		fset:       funcs.moduleFset,
+		methods:    make(map[string][]method),
+		moduleName: funcs.module.Name,
 	}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
@@ -96,6 +89,13 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 	tps := []types.Type{}
 	for _, obj := range objs {
+		// check if this is the constructor func, save it for later if so
+		fn, isFn := obj.(*types.Func)
+		if isFn && fn.Name() == constructorFuncName {
+			ps.constructor = fn
+			continue
+		}
+
 		tps = append(tps, obj.Type())
 	}
 
@@ -149,7 +149,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
 			}
 
-			if len(objFunctionCases[obj.Name()]) == 0 {
+			if len(objFunctionCases[obj.Name()]) == 0 && !ps.isMainModuleObject(obj.Name()) {
 				if topLevel {
 					// no functions on this top-level object, so don't add it to the module
 					continue
@@ -278,10 +278,10 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 		// inputArgs map[string][]byte,
 		Id(inputArgsVar).Map(String()).Index().Byte(),
 	).Params(
-		// ) (any,
-		Id("any"),
-		// error)
-		Error(),
+		// ) (_ any,
+		Id("_").Id("any"),
+		// err error)
+		Id("err").Error(),
 	).Block(objSwitch)
 
 	return fmt.Sprintf("%#v", invokeFunc)
@@ -360,129 +360,50 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		return nil
 	}
 
+	hasConstructor := ps.isMainModuleObject(objName) && ps.constructor != nil
+
 	methods := ps.methods[objName]
-	if len(methods) == 0 {
+	if len(methods) == 0 && !hasConstructor {
 		return nil
 	}
 
 	for _, method := range methods {
 		fnName, sig := method.fn.Name(), method.fn.Type().(*types.Signature)
+		if err := ps.fillObjectFunctionCase(objName, fnName, fnName, sig, method.paramSpecs, cases); err != nil {
+			return err
+		}
+	}
 
-		statements := []Code{
-			Var().Id("err").Error(),
+	// main module object constructor case
+	if hasConstructor {
+		sig, ok := ps.constructor.Type().(*types.Signature)
+		if !ok {
+			return fmt.Errorf("expected %s to be a function, got %T", constructorFuncName, ps.constructor.Type())
+		}
+		paramSpecs, err := ps.parseParamSpecs(ps.constructor)
+		if err != nil {
+			return fmt.Errorf("failed to parse %s function: %w", constructorFuncName, err)
 		}
 
-		parentVarName := "parent"
-		statements = append(statements,
-			Var().Id(parentVarName).Id(objName),
-			Err().Op("=").Qual("json", "Unmarshal").Call(Id(parentJSONVar), Op("&").Id(parentVarName)),
-			checkErrStatement,
-		)
-
-		fnCallArgs := []Code{Op("&").Id(parentVarName)}
-
-		vars := map[string]struct{}{}
-		for i, spec := range method.paramSpecs {
-			if i == 0 && spec.paramType.String() == contextTypename {
-				fnCallArgs = append(fnCallArgs, Id("ctx"))
-				continue
-			}
-
-			var varName string
-			var varType types.Type
-			var target *Statement
-			if spec.parent == nil {
-				varName = strcase.ToLowerCamel(spec.name)
-				varType = spec.paramType
-				target = Id(varName)
-			} else {
-				// create only one declaration for option structs
-				varName = spec.parent.name
-				varType = spec.parent.paramType
-				target = Id(spec.parent.name).Dot(spec.name)
-			}
-
-			if _, ok := vars[varName]; !ok {
-				vars[varName] = struct{}{}
-
-				tp, access := findOptsAccessPattern(varType, Id(varName))
-				statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
-				if spec.variadic {
-					fnCallArgs = append(fnCallArgs, access.Op("..."))
-				} else {
-					fnCallArgs = append(fnCallArgs, access)
-				}
-			}
-
-			statements = append(statements,
-				If(Id(inputArgsVar).Index(Lit(spec.graphqlName())).Op("!=").Nil()).Block(
-					Err().Op("=").Qual("json", "Unmarshal").Call(
-						Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.graphqlName()))),
-						Op("&").Add(target),
-					),
-					checkErrStatement,
-				))
-		}
-
+		// Validate the constructor returns the main module object (further general validation happens in fillObjectFunctionCase)
 		results := sig.Results()
+		if results.Len() == 0 {
+			return fmt.Errorf("%s must return a value", constructorFuncName)
+		}
+		resultType := results.At(0).Type()
+		if ptrType, ok := resultType.(*types.Pointer); ok {
+			resultType = ptrType.Elem()
+		}
+		namedType, ok := resultType.(*types.Named)
+		if !ok {
+			return fmt.Errorf("%s must return the main module object %q", constructorFuncName, objName)
+		}
+		if namedType.Obj().Name() != objName {
+			return fmt.Errorf("%s must return the main module object %q", constructorFuncName, objName)
+		}
 
-		switch results.Len() {
-		case 2:
-			// assume second value is error
-
-			if results.At(1).Type().String() != errorTypeName {
-				// sanity check
-				return fmt.Errorf("second return value must be error, have %s", results.At(0).Type().String())
-			}
-
-			statements = append(statements, Return(
-				Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...),
-			))
-
-			cases[objName] = append(cases[objName], Case(Lit(fnName)).Block(statements...))
-
-			if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
-				return err
-			}
-		case 1:
-			if results.At(0).Type().String() == errorTypeName {
-				// void error return
-
-				statements = append(statements, Return(
-					Nil(),
-					Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...),
-				))
-
-				cases[objName] = append(cases[objName], Case(Lit(fnName)).Block(statements...))
-			} else {
-				// non-error return
-
-				statements = append(statements, Return(
-					Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...),
-					Nil(),
-				))
-
-				cases[objName] = append(cases[objName], Case(Lit(fnName)).Block(statements...))
-
-				if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
-					return err
-				}
-			}
-
-		case 0:
-			// void return
-			//
-			// NB(vito): it's really weird to have a fully void return (not even
-			// error), but we should still support it for completeness.
-
-			statements = append(statements,
-				Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...),
-				Return(Nil(), Nil()))
-
-			cases[objName] = append(cases[objName], Case(Lit(fnName)).Block(statements...))
-
-		default:
-			return fmt.Errorf("unexpected number of results from method %s: %d", fnName, results.Len())
+		if err := ps.fillObjectFunctionCase(objName, ps.constructor.Name(), "", sig, paramSpecs, cases); err != nil {
+			return err
 		}
 	}
 
@@ -494,10 +415,146 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 	return nil
 }
 
+func (ps *parseState) fillObjectFunctionCase(
+	objName string,
+	fnName string,
+	caseName string, // separate from fnName to handle constructor where the caseName is empty string
+	sig *types.Signature,
+	paramSpecs []paramSpec,
+	cases map[string][]Code,
+) error {
+	statements := []Code{}
+
+	parentVarName := "parent"
+	statements = append(statements,
+		Var().Id(parentVarName).Id(objName),
+		Err().Op("=").Qual("json", "Unmarshal").Call(Id(parentJSONVar), Op("&").Id(parentVarName)),
+		checkErrStatement,
+	)
+
+	var fnCallArgs []Code
+	if sig.Recv() != nil {
+		fnCallArgs = []Code{Op("&").Id(parentVarName)}
+	}
+
+	vars := map[string]struct{}{}
+	for i, spec := range paramSpecs {
+		if i == 0 && spec.paramType.String() == contextTypename {
+			fnCallArgs = append(fnCallArgs, Id("ctx"))
+			continue
+		}
+
+		var varName string
+		var varType types.Type
+		var target *Statement
+		if spec.parent == nil {
+			varName = strcase.ToLowerCamel(spec.name)
+			varType = spec.paramType
+			target = Id(varName)
+		} else {
+			// create only one declaration for option structs
+			varName = spec.parent.name
+			varType = spec.parent.paramType
+			target = Id(spec.parent.name).Dot(spec.name)
+		}
+
+		if _, ok := vars[varName]; !ok {
+			vars[varName] = struct{}{}
+
+			tp, access := findOptsAccessPattern(varType, Id(varName))
+			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
+			if spec.variadic {
+				fnCallArgs = append(fnCallArgs, access.Op("..."))
+			} else {
+				fnCallArgs = append(fnCallArgs, access)
+			}
+		}
+
+		statements = append(statements,
+			If(Id(inputArgsVar).Index(Lit(spec.graphqlName())).Op("!=").Nil()).Block(
+				Err().Op("=").Qual("json", "Unmarshal").Call(
+					Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.graphqlName()))),
+					Op("&").Add(target),
+				),
+				checkErrStatement,
+			))
+	}
+
+	results := sig.Results()
+
+	var callStatement *Statement
+	if sig.Recv() != nil {
+		callStatement = Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...)
+	} else {
+		callStatement = Id(fnName).Call(fnCallArgs...)
+	}
+
+	switch results.Len() {
+	case 2:
+		// assume second value is error
+
+		if results.At(1).Type().String() != errorTypeName {
+			// sanity check
+			return fmt.Errorf("second return value must be error, have %s", results.At(1).Type().String())
+		}
+
+		statements = append(statements, Return(callStatement))
+		cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+
+		if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
+			return err
+		}
+
+		return nil
+
+	case 1:
+		if results.At(0).Type().String() == errorTypeName {
+			// void error return
+
+			statements = append(statements, Return(Nil(), callStatement))
+			cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+		} else {
+			// non-error return
+
+			statements = append(statements, Return(callStatement, Nil()))
+			cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+
+			if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
+				return err
+			}
+		}
+
+		return nil
+
+	case 0:
+		// void return
+		//
+		// NB(vito): it's really weird to have a fully void return (not even
+		// error), but we should still support it for completeness.
+
+		statements = append(statements,
+			callStatement,
+			Return(Nil(), Nil()))
+		cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+
+		return nil
+
+	default:
+		return fmt.Errorf("unexpected number of results from function %s: %d", fnName, results.Len())
+	}
+}
+
 type parseState struct {
-	pkg     *packages.Package
-	fset    *token.FileSet
-	methods map[string][]method
+	pkg        *packages.Package
+	fset       *token.FileSet
+	methods    map[string][]method
+	moduleName string
+	// If it exists, constructor is the New func that returns the main module object
+	constructor *types.Func
+}
+
+func (ps *parseState) isMainModuleObject(name string) bool {
+	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
 }
 
 type method struct {
@@ -632,7 +689,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	var subTypes []types.Type
 
 	for _, method := range methods {
-		fnTypeDef, functionSubTypes, err := ps.goMethodToAPIFunctionDef(typeName, method, named)
+		fnTypeDef, functionSubTypes, err := ps.goFuncToAPIFunctionDef(typeName, method)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to convert method %s to function def: %w", method.Name(), err)
 		}
@@ -694,6 +751,14 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		typeDef = dotLine(typeDef, "WithField").Call(withFieldArgs...)
 	}
 
+	if ps.isMainModuleObject(typeName) && ps.constructor != nil {
+		fnTypeDef, _, err := ps.goFuncToAPIFunctionDef("", ps.constructor)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
+		}
+		typeDef = dotLine(typeDef, "WithConstructor").Call(Add(Line(), fnTypeDef))
+	}
+
 	return typeDef, subTypes, nil
 }
 
@@ -701,8 +766,8 @@ var voidDef = Qual("dag", "TypeDef").Call().
 	Dot("WithKind").Call(Id("Voidkind")).
 	Dot("WithOptional").Call(Lit(true))
 
-func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, named *types.Named) (*Statement, []types.Type, error) {
-	methodSig, ok := fn.Type().(*types.Signature)
+func (ps *parseState) goFuncToAPIFunctionDef(receiverTypeName string, fn *types.Func) (*Statement, []types.Type, error) {
+	sig, ok := fn.Type().(*types.Signature)
 	if !ok {
 		return nil, nil, fmt.Errorf("expected method to be a func, got %T", fn.Type())
 	}
@@ -713,19 +778,21 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 	if err != nil {
 		return nil, nil, err
 	}
-	ps.methods[typeName] = append(ps.methods[typeName], method{fn: fn, paramSpecs: specs})
+	if receiverTypeName != "" {
+		ps.methods[receiverTypeName] = append(ps.methods[receiverTypeName], method{fn: fn, paramSpecs: specs})
+	}
 
 	var fnReturnType *Statement
 
 	var subTypes []types.Type
 
-	methodResults := methodSig.Results()
+	results := sig.Results()
 	var returnSubType *types.Named
-	switch methodResults.Len() {
+	switch results.Len() {
 	case 0:
 		fnReturnType = voidDef
 	case 1:
-		result := methodResults.At(0).Type()
+		result := results.At(0).Type()
 		if result.String() == errorTypeName {
 			fnReturnType = voidDef
 		} else {
@@ -735,7 +802,7 @@ func (ps *parseState) goMethodToAPIFunctionDef(typeName string, fn *types.Func, 
 			}
 		}
 	case 2:
-		result := methodResults.At(0).Type()
+		result := results.At(0).Type()
 		subTypes = append(subTypes, result)
 		fnReturnType, returnSubType, err = ps.goTypeToAPIType(result, nil)
 		if err != nil {

@@ -4604,6 +4604,22 @@ export class ObjectTypeDef extends BaseClient {
   }
 
   /**
+   * The function used to construct new instances of this object, if any
+   */
+  constructor_(): Function_ {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "constructor",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * The doc string for the object, if any
    */
   async description(): Promise<string> {
@@ -5789,6 +5805,23 @@ export class TypeDef extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
+   */
+  withConstructor(function_: Function_): TypeDef {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withConstructor",
+          args: { function_ },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
