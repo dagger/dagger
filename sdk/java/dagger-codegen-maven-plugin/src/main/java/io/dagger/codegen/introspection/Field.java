@@ -12,14 +12,14 @@ public class Field {
   @JsonbProperty("type")
   private TypeRef typeRef;
 
-  private List<InputValue> args;
+  private List<InputObject> args;
 
   @JsonbProperty("isDeprecated")
   private boolean deprecated; // isDeprecated
 
   private String DeprecationReason;
 
-  @JsonbTransient private List<InputValue> optionalArgs;
+  @JsonbTransient private List<InputObject> optionalArgs;
 
   private Type parentObject;
 
@@ -47,11 +47,11 @@ public class Field {
     this.typeRef = typeRef;
   }
 
-  public List<InputValue> getArgs() {
+  public List<InputObject> getArgs() {
     return args;
   }
 
-  public void setArgs(List<InputValue> args) {
+  public void setArgs(List<InputObject> args) {
     this.args = args;
   }
 
@@ -88,14 +88,14 @@ public class Field {
   }
 
   /** Returns the list of optional argument of this field */
-  List<InputValue> getOptionalArgs() {
+  List<InputObject> getOptionalArgs() {
     if (optionalArgs == null) {
       optionalArgs = args.stream().filter(arg -> arg.getType().isOptional()).toList();
     }
     return optionalArgs;
   }
 
-  List<InputValue> getRequiredArgs() {
+  List<InputObject> getRequiredArgs() {
     return args.stream().filter(arg -> !arg.getType().isOptional()).toList();
   }
 
