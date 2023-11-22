@@ -18,27 +18,27 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 thiserror.workspace = true
 
-futures = "0.3.28"
+futures = "0.3.29"
 derive_builder = "0.12.0"
-base64 = "0.21.3"
+base64 = "0.21.5"
 dirs = "5.0.1"
-flate2 = { version = "1.0.27", features = ["rust_backend"] }
+flate2 = { version = "1.0.28", features = ["rust_backend"] }
 graphql_client = { version = "0.13.0", features = [
   "reqwest-rustls",
   "graphql_query_derive",
 ], default-features = false }
 hex = "0.4.3"
-hex-literal = "0.3.1"
+hex-literal = "0.4.1"
 platform-info = "2.0.2"
-reqwest = { version = "0.11.20", features = [
+reqwest = { version = "0.11.22", features = [
   "stream",
   "rustls-tls",
 ], default-features = false }
 
-sha2 = "0.10.7"
+sha2 = "0.10.8"
 tar = "0.4.40"
-tempfile = "3.8.0"
-async-trait = "0.1.73"
+tempfile = "3.8.1"
+async-trait = "0.1.74"
 
 
 [dev-dependencies]
