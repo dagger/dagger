@@ -17,43 +17,74 @@ describe("NodeJS default client", function () {
   it("Should use the default client and close connection on call to close", async function () {
     this.timeout(60000)
 
-    await dag
+    // Check if the connection is actually not set before calling an execution
+    // We verify the lazy evaluation that way
+    assert.equal(dag["_ctx"]["_client"], undefined)
+
+    const out = await dag
       .container()
-      .from("alpine")
-      .withExec(["apk", "add", "curl"])
-      .withExec(["curl", "https://dagger.io/"])
-      .sync()
+      .from("alpine:3.16.2")
+      .withExec(["echo", "hello", "world"])
+      .stdout()
+
+    assert.equal(out, "hello world\n")
+
+    // Check if the connection is still up
+    assert.notEqual(dag["_ctx"]["_client"], undefined)
 
     close()
+
+    // Check if the connection has been correctly reset
+    assert.equal(dag["_ctx"]["_client"], undefined)
   })
 
   it("Should automatically close connection", async function () {
     this.timeout(60000)
 
+    // Check if the connection is actually not set before calling connection
+    assert.equal(dag["_ctx"]["_client"], undefined)
+
     await connection(async () => {
-      await dag
+      const out = await dag
         .container()
-        .from("alpine")
-        .withExec(["apk", "add", "curl"])
-        .withExec(["curl", "https://dagger.io/"])
-        .sync()
+        .from("alpine:3.16.2")
+        .withExec(["echo", "hello", "world"])
+        .stdout()
+
+      assert.equal(out, "hello world\n")
+
+      // Check if the connection is still up
+      assert.notEqual(dag["_ctx"]["_client"], undefined)
     })
+
+    // Check if the connection has been correctly reset
+    assert.equal(dag["_ctx"]["_client"], undefined)
   })
 
   it("Should automatically close connection with config", async function () {
     this.timeout(60000)
 
+    // Check if the connection is actually not set before calling connection
+    assert.equal(dag["_ctx"]["_client"], undefined)
+
     await connection(
       async () => {
-        await dag
+        // Check if the connection is up
+        assert.notEqual(dag["_ctx"]["_client"], undefined)
+
+        const out = await dag
           .container()
-          .from("alpine")
-          .withExec(["apk", "add", "curl"])
-          .withExec(["curl", "https://dagger.io/"])
-          .sync()
+          .from("alpine:3.16.2")
+          .withExec(["echo", "hello", "world"])
+          .stdout()
+
+        assert.equal(out, "hello world\n")
       },
       { LogOutput: process.stderr }
     )
+
+    // Check if the connection has been correctly reset
+    assert.equal(dag["_ctx"]["_client"], undefined)
   })
 })
 
