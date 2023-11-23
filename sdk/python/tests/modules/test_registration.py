@@ -57,6 +57,7 @@ def test_object_type_resolvers():
     assert resolvers == [
         ("exposed_method", "ExposedClass"),
         ("exposed_field", "ExposedClass"),
+        ("", "ExposedClass"),
         ("exposed_function", None),
     ]
 

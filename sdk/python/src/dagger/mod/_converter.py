@@ -1,12 +1,13 @@
 import inspect
 import logging
+import types
 import typing
 from collections.abc import Sequence
 
 import typing_extensions
 from cattrs.preconf.json import make_converter as make_json_converter
 
-from ._types import MissingType, ObjectDefinition
+from ._types import ObjectDefinition
 from ._utils import (
     get_doc,
     is_optional,
@@ -26,10 +27,7 @@ def make_converter():
     import dagger
     from dagger.client._guards import is_id_type, is_id_type_subclass
 
-    conv = make_json_converter(
-        omit_if_default=True,
-        detailed_validation=True,
-    )
+    conv = make_json_converter(detailed_validation=True)
 
     # TODO: register cache volume for custom handling since it's different
     # than the other types.
@@ -76,7 +74,7 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
 
     annotation = non_optional(annotation)
 
-    if annotation is MissingType:
+    if annotation is types.NoneType:
         return td.with_kind(dagger.TypeDefKind.VoidKind)
 
     builtins = {

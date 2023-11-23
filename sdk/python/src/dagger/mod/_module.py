@@ -14,6 +14,7 @@ from typing import Any, TypeAlias, TypeVar
 import anyio
 import cattrs
 import cattrs.gen
+from graphql.pyutils import camel_to_snake
 from rich.console import Console
 from typing_extensions import dataclass_transform, overload
 
@@ -61,10 +62,8 @@ class Module:
         is not configured.
     """
 
-    # TODO: Hook debug from `--debug` flag in CLI?
-    # TODO: Default logging to logging.WARNING before release.
-    def __init__(self, *, log_level: int | str | None = logging.DEBUG):
-        self._log_level = log_level
+    def __init__(self, *, log_level: int | str | None = None):
+        self._log_level = log_level  # TODO: Hook debug from `--debug` flag in CLI?
         self._converter: cattrs.Converter = make_converter()
         self._resolvers: list[Resolver] = []
         self._fn_call = dagger.current_function_call()
@@ -162,7 +161,7 @@ class Module:
             msg = f"Unable to find resolver: {parent_name}.{name}"
             raise FatalError(msg) from e
 
-        logger.debug("resolver => %s.%s", parent_name, name)
+        logger.debug("resolver => %s.%s", parent_name, name or "__init__")
 
         return resolver
 
@@ -183,7 +182,7 @@ class Module:
         result = (
             await self._invoke(resolvers, parent_name)
             if parent_name
-            else await self._register(resolvers)
+            else await self._register(resolvers, to_pascal_case(mod_name))
         )
 
         try:
@@ -198,7 +197,7 @@ class Module:
         )
         await self._fn_call.return_value(dagger.JSON(output))
 
-    async def _register(self, resolvers: Resolvers) -> dagger.ModuleID:
+    async def _register(self, resolvers: Resolvers, mod_name: str) -> dagger.ModuleID:
         # Resolvers are collected at import time, but only actually
         # registered during "serve".
         mod = self._mod
@@ -209,8 +208,12 @@ class Module:
                 description=obj.doc,
             )
             for r in obj_resolvers.values():
-                typedef = r.register(typedef)
-                logger.debug("registered => %s.%s", obj.name, r.name)
+                if r.name == "" and obj.name != mod_name:
+                    # Skip constructors of classes that are not the main object.
+                    continue
+
+                typedef = await r.register(typedef, self._converter)
+                logger.debug("registered => %s.%s", obj.name, r.name or "__init__")
 
             mod = mod.with_object(typedef)
 
@@ -239,6 +242,16 @@ class Module:
                 msg = f"Unable to decode input argument `{arg_name}`: {e}"
                 raise InternalError(msg) from e
 
+        logger.debug(
+            "invoke => %s",
+            {
+                "parent_name": parent_name,
+                "parent_json": parent_json,
+                "name": name,
+                "input_args": inputs,
+            },
+        )
+
         resolver = self.get_resolver(resolvers, parent_name, name)
         return await self.get_result(resolver, parent_json, inputs)
 
@@ -248,24 +261,48 @@ class Module:
         parent_json: dagger.JSON,
         inputs: dict[str, Any],
     ) -> Any:
-        root = await self.get_root(resolver, parent_json)
+        # Constructor.
+        if not resolver.name:
+            assert isinstance(resolver, FunctionResolver)
+
+            # Shouldn't have anything in `parent_json`, just ignore it.
+            result = root = await self.get_root(
+                resolver.wrapped_func,
+                resolver.original_name,
+                inputs,
+            )
+
+        else:
+            parent: dict[str, Any] = {}
+            if parent_json.strip():
+                try:
+                    parent = json.loads(parent_json)
+                except ValueError as e:
+                    msg = f"Unable to decode parent value `{parent_json}`: {e}"
+                    raise FatalError(msg) from e
+
+            root = await self.get_root(
+                resolver.origin,
+                resolver.original_name,
+                parent,
+            )
+
+            try:
+                result = await resolver.get_result(self._converter, root, inputs)
+            except Exception as e:
+                raise FunctionError(e) from e
+
+            if inspect.iscoroutine(result):
+                msg = "Result is a coroutine. Did you forget to add async/await?"
+                raise UserError(msg)
+
+            logger.debug(
+                "result => %s",
+                textwrap.shorten(repr(result), 144),
+            )
 
         try:
-            result = await resolver.get_result(self._converter, root, inputs)
-        except Exception as e:
-            raise FunctionError(e) from e
-
-        if inspect.iscoroutine(result):
-            msg = "Result is a coroutine. Did you forget to add async/await?"
-            raise UserError(msg)
-
-        logger.debug(
-            "result => %s",
-            textwrap.shorten(repr(result), 144),
-        )
-
-        try:
-            unstructured = await asyncify(
+            return await asyncify(
                 self._converter.unstructure,
                 result,
                 resolver.return_type,
@@ -278,39 +315,23 @@ class Module:
             )
             raise UserError(msg) from e
 
-        logger.debug(
-            "unstructured result => %s",
-            textwrap.shorten(repr(unstructured), 144),
-        )
-
-        return unstructured
-
     async def get_root(
         self,
-        resolver: Resolver,
-        parent_json: dagger.JSON,
+        origin: Callable | None,
+        name: str,
+        parent: dict[str, Any],
     ) -> object | None:
-        if parent := parent_json.strip():
-            try:
-                parent = json.loads(parent)
-            except ValueError as e:
-                msg = f"Unable to decode parent value `{parent_json}`: {e}"
-                raise FatalError(msg) from e
-
         if not parent:
-            return resolver.origin() if resolver.origin else None
+            return origin() if origin else None
 
-        if resolver.origin is None:
-            msg = (
-                "Unexpected parent value for top-level "
-                f"function {resolver.original_name}: {parent_json}"
-            )
+        if name != "__init__" and origin is None:
+            msg = f"Unexpected parent value for top-level function {name}: {parent!r}"
             raise FatalError(msg)
 
         return await asyncify(
             self._converter.structure,
             parent,
-            resolver.origin,
+            origin,
         )
 
     def field(
@@ -404,14 +425,22 @@ class Module:
                 msg = f"Expected a callable, got {type(func)}."
                 raise UserError(msg)
 
+            original_name = "__init__" if inspect.isclass(func) else func.__name__
+
             resolver = FunctionResolver(
-                original_name=func.__name__,
-                name=name or func.__name__,
+                original_name=original_name,
+                name=name
+                if name is not None
+                else (
+                    camel_to_snake(func.__name__)
+                    if inspect.isclass(func)
+                    else original_name
+                ),
                 wrapped_func=func,
-                doc=doc or get_doc(func) or "",
+                doc=doc or get_doc(func),
                 # This will be filled later with @object_type
                 # because it's not bound to a class yet.
-                origin=None,
+                origin=func if inspect.isclass(func) and name == "" else None,
             )
 
             # This is used by `object_type` to find the resolver
@@ -524,5 +553,8 @@ class Module:
             name=to_pascal_case(cls.__name__),
             doc=get_doc(cls),
         )
+
+        # Constructor.
+        self.function(name="")(cls)
 
         return cls

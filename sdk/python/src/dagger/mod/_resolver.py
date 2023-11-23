@@ -2,6 +2,7 @@ import dataclasses
 import inspect
 import json
 import logging
+import types
 from abc import ABC, abstractmethod, abstractproperty
 from collections.abc import Callable
 from functools import cached_property
@@ -19,8 +20,8 @@ import dagger
 
 from ._arguments import Parameter
 from ._converter import to_typedef
-from ._exceptions import FatalError, UserError
-from ._types import APIName, MissingType, PythonName
+from ._exceptions import UserError
+from ._types import APIName, PythonName
 from ._utils import asyncify, await_maybe, get_arg_name, get_doc, transform_error
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,11 @@ class Resolver(ABC):
         ...
 
     @abstractmethod
-    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
+    async def register(
+        self,
+        typedef: dagger.TypeDef,
+        converter: cattrs.Converter,
+    ) -> dagger.TypeDef:
         return typedef
 
     @abstractmethod
@@ -60,8 +65,12 @@ class FieldResolver(Resolver):
     is_optional: bool
 
     @override
-    def register(self, object_typedef: dagger.TypeDef) -> dagger.TypeDef:
-        return object_typedef.with_field(
+    async def register(
+        self,
+        typedef: dagger.TypeDef,
+        _: cattrs.Converter,
+    ) -> dagger.TypeDef:
+        return typedef.with_field(
             self.name,
             to_typedef(self.type_annotation).with_optional(self.is_optional),
             description=self.doc or None,
@@ -74,13 +83,10 @@ class FieldResolver(Resolver):
         root: object | None,
         inputs: dict[APIName, Any],
     ) -> Any:
-        if inputs:
-            msg = f"Unexpected input args for field resolver: {self}"
-            raise FatalError(msg)
-
-        if root is None:
-            msg = f"Unexpected None root for field resolver: {self}"
-
+        # NB: This is only useful in unit tests because the API server
+        # resolves trivial fields automatically, without invoking the
+        # module.
+        assert not inputs
         return getattr(root, self.original_name)
 
     @property
@@ -104,7 +110,11 @@ class FunctionResolver(Resolver, Generic[Func]):
         return repr(self.wrapped_func)
 
     @override
-    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
+    async def register(
+        self,
+        typedef: dagger.TypeDef,
+        converter: cattrs.Converter,
+    ) -> dagger.TypeDef:
         """Add a new object to current module."""
         fn = dagger.function(self.name, to_typedef(self.return_type))
 
@@ -116,22 +126,50 @@ class FunctionResolver(Resolver, Generic[Func]):
                 param.name,
                 to_typedef(param.resolved_type).with_optional(param.is_optional),
                 description=param.doc,
-                default_value=(
-                    dagger.JSON(json.dumps(param.signature.default))
-                    if param.is_optional
-                    else None
-                ),
+                default_value=await self._get_default_value(param, converter),
             )
 
-        return typedef.with_function(fn)
+        return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
+
+    async def _get_default_value(
+        self,
+        param: Parameter,
+        converter: cattrs.Converter,
+    ) -> dagger.JSON | None:
+        if not param.is_optional:
+            return None
+
+        default_value = param.signature.default
+
+        if (
+            dataclasses.is_dataclass(self.wrapped_func)
+            and repr(default_value) == "<factory>"
+        ):
+            return None
+            field = next(
+                f for f in dataclasses.fields(self.wrapped_func) if f.name == param.name
+            )
+
+            if not field or field.default_factory is dataclasses.MISSING:
+                return None
+
+            default_value = await asyncify(
+                converter.unstructure,
+                field.default_factory(),
+                param.resolved_type,
+            )
+
+        return dagger.JSON(json.dumps(default_value))
 
     @property
     def return_type(self):
         """Return the resolved return type of the wrapped function."""
+        if inspect.isclass(self.wrapped_func) and self.original_name == "__init__":
+            return self.wrapped_func
         try:
-            r = self._type_hints["return"]
+            r: type = self._type_hints["return"]
         except KeyError:
-            return MissingType
+            return types.NoneType
         if r is Self:
             if self.origin is None:
                 msg = "Can't return Self without parent class"
@@ -193,7 +231,11 @@ class FunctionResolver(Resolver, Generic[Func]):
         root: object | None,
         inputs: dict[APIName, Any],
     ) -> Any:
-        args = (root,) if root is not None else ()
+        args = (
+            (root,)
+            if root is not None and not inspect.isclass(self.wrapped_func)
+            else ()
+        )
 
         logger.debug("input args => %s", repr(inputs))
         kwargs = await self._convert_inputs(converter, inputs)
