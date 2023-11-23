@@ -928,7 +928,7 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 
 // ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
 type ContainerWithEnvVariableOpts struct {
-	// Replace ${VAR} or $VAR in the value according to the current environment
+	// Replace $\\{VAR\\} or $VAR in the value according to the current environment
 	// variables defined in the container (e.g., "/opt/bin:$PATH").
 	Expand bool
 }
