@@ -41,7 +41,7 @@ spec:
       containers:
         - name: dagger-engine
           image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           args:
             - "--oci-max-parallelism"
             - "num-cpu"
