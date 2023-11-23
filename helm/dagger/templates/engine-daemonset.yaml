@@ -5,7 +5,6 @@ metadata:
   name: {{ include "dagger.fullname" . }}-engine
   namespace: {{ .Release.Namespace }}
   labels:
-    k8s-app: {{ include "dagger.fullname" . }}-engine
     {{- include "dagger.labels" . | nindent 4 }}
 spec:
   selector:
