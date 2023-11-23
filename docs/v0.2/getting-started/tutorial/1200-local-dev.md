@@ -23,7 +23,6 @@ Before we can build & test our example app with `dagger`, we need to have [Dagge
 [The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
 :::
 
-
 <Tabs defaultValue={useIsBrowser() ? window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
  window.navigator.userAgent.indexOf('Win') != -1 ? 'windows':
  'macos' : undefined}

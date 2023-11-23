@@ -49,7 +49,6 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import useIsBrowser from '@docusaurus/useIsBrowser';
 
-
 <Tabs defaultValue={ useIsBrowser() ? window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix' : null} groupId="client-env">
 
 <TabItem value="unix" label="Linux/macOS">
