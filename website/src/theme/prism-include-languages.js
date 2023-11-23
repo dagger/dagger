@@ -13,6 +13,7 @@ const prismIncludeLanguages = (PrismObject) => {
       themeConfig: { prism: { additionalLanguages = [] } = {} },
     } = siteConfig;
     window.Prism = PrismObject;
+    require(`prismjs/components/prism-markup-templating.js`); // eslint-disable-line
     additionalLanguages.forEach((lang) => {
       require(`prismjs/components/prism-${lang}`); // eslint-disable-line
     });

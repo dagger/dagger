@@ -20,7 +20,7 @@ async function createConfig() {
       sidebarCollapsed: false,
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
-        additionalLanguages: ["rust", "elixir", "yaml"],
+        additionalLanguages: ["rust", "elixir", "yaml", "php"],
         theme: prismThemes.dracula,
       },
       navbar: {
