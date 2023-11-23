@@ -93,18 +93,16 @@ func (container *Container) PBDefinitions() ([]*pb.Definition, error) {
 			defs = append(defs, mnt.Source)
 		}
 	}
-	if container.Services != nil {
-		for _, bnd := range container.Services {
-			ctr := bnd.Service.Container
-			if ctr == nil {
-				continue
-			}
-			ctrDefs, err := ctr.PBDefinitions()
-			if err != nil {
-				return nil, err
-			}
-			defs = append(defs, ctrDefs...)
+	for _, bnd := range container.Services {
+		ctr := bnd.Service.Container
+		if ctr == nil {
+			continue
 		}
+		ctrDefs, err := ctr.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, ctrDefs...)
 	}
 	return defs, nil
 }
