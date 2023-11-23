@@ -4,7 +4,7 @@ slug: /1011/package-manager/
 
 # Manage packages using the package manager
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 This tutorial illustrates how to install and upgrade packages using Dagger package manager.
 

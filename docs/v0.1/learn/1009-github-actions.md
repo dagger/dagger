@@ -4,7 +4,7 @@ slug: /1009/github-actions/
 
 # Integrate Dagger with GitHub Actions
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 This tutorial illustrates how to use GitHub Actions and Dagger to build, push and deploy Docker images to Cloud Run.
 

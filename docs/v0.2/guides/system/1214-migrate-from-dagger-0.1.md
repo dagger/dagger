@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Migrate from Dagger 0.1
 
-{@include: ../../../partials/_caution-old-version.md}
+\{@include:  ../../../partials/_caution-old-version.md\}
 
 This is the documentation for dagger 0.2, codename Europa. This release has one focus: improve the developer experience. It features a redesigned CLI and powerful new APIs. The result is a completely new way to develop CI/CD pipelines: more productive, more portable… and way more fun!
 

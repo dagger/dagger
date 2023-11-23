@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Interacting with the client
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 `dagger.#Plan` has a `client` field that allows interaction with the local machine where the `dagger` command line client is run. You can:
 
@@ -47,11 +47,10 @@ You can use a local socket in an action:
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import BrowserOnly from '@docusaurus/BrowserOnly';
+import useIsBrowser from '@docusaurus/useIsBrowser';
 
-<BrowserOnly>
-  {() =>
-<Tabs defaultValue={ window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix'} groupId="client-env">
+
+<Tabs defaultValue={ useIsBrowser() ? window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix' : null} groupId="client-env">
 
 <TabItem value="unix" label="Linux/macOS">
 
@@ -69,8 +68,6 @@ import BrowserOnly from '@docusaurus/BrowserOnly';
 
 </TabItem>
 </Tabs>
-  }
-</BrowserOnly>
 
 ## Environment variables
 

@@ -5,4 +5,4 @@ displayed_sidebar: 'current'
 
 # Contributing to Dagger
 
-{@include: ../../../../partials/_contributing.md}
+\{@include:  ../../../../partials/_contributing.md\}

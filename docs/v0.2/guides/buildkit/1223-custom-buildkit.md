@@ -4,7 +4,7 @@ slug: /1223/custom-buildkit/
 
 # Customizing your Buildkit installation
 
-{@include: ../../../partials/_caution-old-version.md}
+\{@include:  ../../../partials/_caution-old-version.md\}
 
 ## Using a custom buildkit daemon
 

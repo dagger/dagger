@@ -31,6 +31,9 @@ This guide assumes that:
 
 ## Example
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 The following code snippet demonstrates a multi-stage build.
 
 <Tabs groupId="language" className="embeds">

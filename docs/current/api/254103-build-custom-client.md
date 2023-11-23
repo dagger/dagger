@@ -95,7 +95,7 @@ The API endpoint and the HTTP authentication token for the GraphQL client are no
 
 ## Step 3: Run the API client
 
-{@include: ../partials/_run_api_client.md}
+\{@include:  ../partials/_run_api_client.md\}
 
 Run the API client using the Dagger CLI as follows:
 

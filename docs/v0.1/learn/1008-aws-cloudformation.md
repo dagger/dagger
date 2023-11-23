@@ -4,7 +4,7 @@ slug: /1008/aws-cloudformation/
 
 # Provision infrastructure with Dagger and AWS CloudFormation
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 In this guide, you will learn how to automatically [provision infrastructure](https://dzone.com/articles/infrastructure-provisioning-–) on AWS by integrating [Amazon Cloudformation](https://aws.amazon.com/cloudformation/) in your Dagger environment.
 

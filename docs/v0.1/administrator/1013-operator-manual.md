@@ -5,7 +5,7 @@ displayed_sidebar: '0.1'
 
 # Dagger Operator Manual
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 ## Custom buildkit setup
 

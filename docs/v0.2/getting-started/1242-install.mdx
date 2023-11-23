@@ -5,26 +5,22 @@ displayed_sidebar: "0.2"
 
 # Install Dagger
 
-{@include: ../../partials/_caution-old-version.md}
-
-The first step to get started is to install dagger on your local machine.
+{@include: ../../partials/_caution-old-version.md}he first step to get started is to install dagger on your local machine.
 Once installed, we recommend [following our tutorial](/1200/local-dev) (or trying a template.)
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
-import BrowserOnly from "@docusaurus/BrowserOnly";
+import useIsBrowser from '@docusaurus/useIsBrowser';
 
 import CodeBlock from "@theme/CodeBlock";
 import styles from "@site/src/css/install.module.scss";
 import TutorialCard from "@site/src/components/molecules/tutorialCard.js";
 import Button from "@site/src/components/atoms/button.js";
 
-<BrowserOnly>
-{() =>
-<Tabs defaultValue={
- window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
+
+<Tabs defaultValue={useIsBrowser() ? window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
  window.navigator.userAgent.indexOf('Win') != -1 ? 'windows':
- 'macos'}
+ 'macos' : undefined}
 groupId="os"
 values={[
 {label: 'macOS', value: 'macos'}, {label: 'Linux', value: 'linux'}, {label: 'Windows', value: 'windows'},
@@ -140,9 +136,6 @@ scoop install dagger
 </TabItem>
 
 </Tabs>
-}
-
-</BrowserOnly>
 
 ## ⚡ What's next?
 

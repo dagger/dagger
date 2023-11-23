@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # How to always execute an action?
 
-{@include: ../../../partials/_caution-old-version.md}
+\{@include:  ../../../partials/_caution-old-version.md\}
 
 Dagger implemented a way to invalidate cache for a specific action.
 

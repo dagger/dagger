@@ -8,6 +8,6 @@ import BrowserOnly from "@docusaurus/BrowserOnly";
 
 # Installation
 
-{@include: ../partials/_experimental.md}
+\{@include:  ../partials/_experimental.md\}
 
-{@include: ../../current/partials/_install-cli.md}
+\{@include:  ../../current/partials/_install-cli.md\}

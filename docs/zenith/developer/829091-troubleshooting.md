@@ -5,7 +5,7 @@ displayed_sidebar: "zenith"
 
 # Troubleshooting
 
-{@include: ../partials/_experimental.md}
+\{@include:  ../partials/_experimental.md\}
 
 This page describes known issues and how to debug problems you may encounter when programming Dagger.
 
@@ -25,4 +25,4 @@ This page describes known issues and how to debug problems you may encounter whe
 
 ## Troubleshooting
 
-{@include: ../partials/_developer_troubleshooting.md}
+\{@include:  ../partials/_developer_troubleshooting.md\}

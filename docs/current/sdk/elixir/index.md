@@ -4,7 +4,7 @@ slug: /sdk/elixir
 
 # Dagger Elixir SDK
 
-{@include: ../../partials/_experimental-sdk-elixir.md}
+\{@include:  ../../partials/_experimental-sdk-elixir.md\}
 
 ## What is the Dagger Elixir SDK?
 

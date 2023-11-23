@@ -5,11 +5,11 @@ displayed_sidebar: "0.2"
 
 import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md'
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
-import BrowserOnly from '@docusaurus/BrowserOnly';
+import useIsBrowser from '@docusaurus/useIsBrowser';
 
 # Build, run and test locally
 
-{@include: ../../../partials/_caution-old-version.md}
+\{@include:  ../../../partials/_caution-old-version.md\}
 
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.
@@ -23,12 +23,10 @@ Before we can build & test our example app with `dagger`, we need to have [Dagge
 [The Dagger engine/CLI is available for install](/install) on macOS, Linux, and Windows to run locally or in CI
 :::
 
-<BrowserOnly>
-{() =>
-<Tabs defaultValue={
- window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
+
+<Tabs defaultValue={useIsBrowser() ? window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
  window.navigator.userAgent.indexOf('Win') != -1 ? 'windows':
- 'macos'}
+ 'macos' : undefined}
 groupId="os"
 values={[
 {label: 'macOS', value: 'macos'}, {label: 'Linux', value: 'linux'}, {label: 'Windows', value: 'windows'},
@@ -237,9 +235,6 @@ It becomes even more obvious when the change is not as straightforward as knowin
 </TabItem>
 
 </Tabs>
-}
-
-</BrowserOnly>
 
 :::tip
 Now that we are comfortable with our local CI/CD loop, let us configure a remote CI environment in the second part.

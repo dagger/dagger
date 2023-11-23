@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Go on Docker Hub
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 Dagger stands as a powerful CI/CD tool that works on any environment.
 

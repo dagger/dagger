@@ -4,7 +4,7 @@ slug: /1000/what/
 
 # What is Dagger?
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 Dagger is a portable devkit for CICD. It helps you develop powerful CICD pipelines that can run anywhere.
 

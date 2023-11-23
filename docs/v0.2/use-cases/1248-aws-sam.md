@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # AWS SAM
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 This is a [Dagger](https://dagger.io/) package to help you deploy serverless functions with ease.
 It is a superset of [AWS SAM](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html), which allows you to build and deploy Lambda function(s).

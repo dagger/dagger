@@ -26,7 +26,7 @@ This tutorial assumes that:
 
 ## Step 1: Install the Dagger CLI
 
-{@include: ../partials/_install-cli.md}
+\{@include:  ../partials/_install-cli.md\}
 
 ## Step 2: Create a Dagger client in Bash
 

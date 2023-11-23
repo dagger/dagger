@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Loading an image into a docker engine
 
-{@include: ../../../partials/_caution-old-version.md}
+\{@include:  ../../../partials/_caution-old-version.md\}
 
 Dagger can build, run, push and pull docker images natively, without the need of a Docker engine.
 This feature is available in the package `universe.dagger.io/docker`.
@@ -20,11 +20,10 @@ It can be useful to debug or test a build locally before pushing.
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import BrowserOnly from '@docusaurus/BrowserOnly';
+import useIsBrowser from '@docusaurus/useIsBrowser';
 
-<BrowserOnly>
-  {() =>
-<Tabs defaultValue={ window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix'} groupId="local-daemon">
+
+<Tabs defaultValue={ useIsBrowser() ? window.navigator.userAgent.indexOf('Win') != -1 ? 'windows': 'unix' : null} groupId="local-daemon">
 
 <TabItem value="unix" label="Linux/macOS">
 
@@ -42,8 +41,6 @@ import BrowserOnly from '@docusaurus/BrowserOnly';
 
 </TabItem>
 </Tabs>
-  }
-</BrowserOnly>
 
 ## Remote daemon, via SSH
 

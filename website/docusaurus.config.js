@@ -1,3 +1,4 @@
+import {themes as prismThemes} from 'prism-react-renderer';
 const path = require("path");
 
 async function createConfig() {
@@ -20,7 +21,7 @@ async function createConfig() {
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
         additionalLanguages: ["php", "rust", "elixir"],
-        theme: require("prism-react-renderer/themes/okaidia"),
+        theme: prismThemes.okaidia,
       },
       navbar: {
         logo: {

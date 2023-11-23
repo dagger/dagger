@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Dagger Environment Variables Reference
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 Dagger supports a variety of environment variables.
 

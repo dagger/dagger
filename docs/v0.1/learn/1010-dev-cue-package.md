@@ -4,7 +4,7 @@ slug: /1010/dev-cue-package/
 
 # Develop a new CUE package for Dagger
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 This tutorial illustrates how to create new packages, manually distribute them among your applications and contribute to the Dagger stdlib packages.
 

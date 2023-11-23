@@ -7,7 +7,7 @@ date: "2023-11-03"
 
 # Publishing Modules
 
-{@include: ../partials/_experimental.md}
+\{@include:  ../partials/_experimental.md\}
 
 ## Introduction
 

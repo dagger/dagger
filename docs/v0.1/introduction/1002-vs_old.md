@@ -5,7 +5,7 @@ slug: /1002/vs/
 
 # Dagger vs. Other Software
 
-{@include: ../../partials/_caution-old-version.md}
+\{@include:  ../../partials/_caution-old-version.md\}
 
 ## Dagger vs. CI (GitHub Actions, GitLab, CircleCI, Jenkins, etc.)
 

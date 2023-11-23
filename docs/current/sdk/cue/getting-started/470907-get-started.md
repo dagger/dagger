@@ -3,9 +3,12 @@ slug: /sdk/cue/470907/get-started
 ---
 
 import CodeBlock from "@theme/CodeBlock";
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 import styles from "@site/src/css/install.module.scss";
 import TutorialCard from "@site/src/components/molecules/tutorialCard.js";
 import Button from "@site/src/components/atoms/button.js";
+import useIsBrowser from '@docusaurus/useIsBrowser';
 
 # Get Started with the Dagger CUE SDK
 
@@ -26,18 +29,15 @@ This tutorial assumes that:
 
 ## Step 1: Install the Dagger CUE SDK
 
-{@include: ../../../partials/_install-sdk-cue.md}
+\{@include:  ../../../partials/_install-sdk-cue.md\}
 
 ## Step 2: Build, run and test locally
 
 Everyone should be able to develop, test and run their application using a local pipeline. Having to commit and push in order to test a change slows down iteration. This step explains how to use the Dagger CUE SDK to configure a local pipeline to build, run and test an application.
 
-<BrowserOnly>
-{() =>
-<Tabs defaultValue={
- window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
+<Tabs defaultValue={useIsBrowser() ? window.navigator.userAgent.indexOf('Linux') != -1 ? 'linux':
  window.navigator.userAgent.indexOf('Win') != -1 ? 'windows':
- 'macos'}
+ 'macos' : undefined}
 groupId="os"
 values={[
 {label: 'macOS', value: 'macos'}, {label: 'Linux', value: 'linux'}, {label: 'Windows', value: 'windows'},
@@ -45,7 +45,7 @@ values={[
 
 <TabItem value="macos">
 
-{@include: ../../../partials/_get-started-cue-first-run.md}
+\{@include:  ../../../partials/_get-started-cue-first-run.md\}
 
 With an empty cache, installing all dependencies, then testing and generating a build for this example application completes in just under 3 minutes:
 
@@ -66,7 +66,7 @@ On macOS, run `open build/index.html` in your terminal and see the following app
 
 ![todoapp preview](/img/getting-started/todoapp.macos.png)
 
-{@include: ../../../partials/_get-started-cue-modify-code.md}
+\{@include:  ../../../partials/_get-started-cue-modify-code.md\}
 
 ```shell
 dagger-cue do build
@@ -87,7 +87,7 @@ The total `42.8` time is macOS specific, since the Linux alternative is more tha
 
 <TabItem value="linux">
 
-{@include: ../../../partials/_get-started-cue-first-run.md}
+\{@include:  ../../../partials/_get-started-cue-first-run.md\}
 
 With an empty cache, installing all dependencies, then testing and generating a build for this example application completes in just under 1 minute:
 
@@ -108,7 +108,7 @@ On Linux, run `xdg-open build/index.html` in your terminal and see the following
 
 ![todoapp preview](/img/getting-started/todoapp.linux.png)
 
-{@include: ../../../partials/_get-started-cue-modify-code.md}
+\{@include:  ../../../partials/_get-started-cue-modify-code.md\}
 
 ```shell
 dagger-cue do build
@@ -129,7 +129,7 @@ Being able to re-run the test and build loop locally in `4.8s`, at the same spee
 
 <TabItem value="windows">
 
-{@include: ../../../partials/_get-started-cue-first-run.md}
+\{@include:  ../../../partials/_get-started-cue-first-run.md\}
 
 :::tip
 By default, Git on Windows does not automatically convert POSIX symbolic links. To perform this conversion, add the extra option `core.symlinks=true` while cloning the repository. You can also enable this once and for all in your Git configuration, by running the following command from a Powershell terminal: `git config --global core.symlinks true`.
@@ -156,7 +156,7 @@ On Windows, run `start build/index.html` in your `Command Prompt` terminal and s
 
 ![todoapp preview](/img/getting-started/todoapp.macos.png)
 
-{@include: ../../../partials/_get-started-cue-modify-code.md}
+\{@include:  ../../../partials/_get-started-cue-modify-code.md\}
 
 ```shell
 dagger-cue do build
@@ -175,9 +175,6 @@ Being able to re-run the test and build loop locally in `13.6s`, without adding 
 </TabItem>
 
 </Tabs>
-}
-
-</BrowserOnly>
 
 ## Step 3: Build, run and test in a remote CI environment
 
