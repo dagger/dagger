@@ -20,8 +20,8 @@ async function createConfig() {
       sidebarCollapsed: false,
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
-        additionalLanguages: ["php", "rust", "elixir"],
-        theme: prismThemes.okaidia,
+        additionalLanguages: ["rust", "elixir", "yaml"],
+        theme: prismThemes.dracula,
       },
       navbar: {
         logo: {
