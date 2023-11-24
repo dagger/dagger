@@ -110,4 +110,4 @@ Use the following resources to learn more about the topics discussed in this gui
 
 * [Dagger on Kubernetes](./194031-kubernetes.md) guide
 * [Dagger GraphQL API](https://docs.dagger.io/api/975146/concepts)
-* Dagger [Go](https://docs.dagger.io/sdk/go), [Node.js](https://docs.dagger.io/sdk/nodejs) and [Python](https://docs.dagger.io/sdk/python) SDKs
+* Dagger [Go](https://docs.dagger.io/sdk/go), [Node.js](https://docs.dagger.io/sdk/nodejs) and [Python](https://docs.dagger.io/sdk/python) SDK references
