@@ -77,7 +77,7 @@ The next step is to configure a GitLab Runner. Follow these steps:
   ```yaml title=runner.yaml file=./snippets/openshift-gitlab/runner.yaml
   ```
 
-  This configuration uses a similar configuration as that seen in Step 1 for the taints and tolerations and the pod affinity. This ensures that the GitLab runner worker pods only runs on nodes with Dagger engines.
+  This configuration uses a similar configuration as that seen in Step 1 for the taints and tolerations and the pod affinity. This ensures that the GitLab Runner worker pods only run on nodes with Dagger Engines.
 
 3. Apply the configuration and deploy the GitLab Runner:
 
