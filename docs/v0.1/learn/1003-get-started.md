@@ -5,7 +5,7 @@ slug: /1003/get-started/
 
 # Get Started with Dagger
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 <iframe width="800" height="450" style={{width: '100%', marginBottom: '2rem'}} src="https://www.youtube.com/embed/QvyB3m9Fti0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"></iframe>
 

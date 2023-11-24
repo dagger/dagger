@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # Understanding field shadowing and how to avoid it
 
-\{@include:  ../../../partials/_caution-old-version.md\}
+{@include: ../../../partials/_caution-old-version.md}
 
 Field shadowing is a common CUE error than can lead your plan to unexpected behavior really painful to debug.
 

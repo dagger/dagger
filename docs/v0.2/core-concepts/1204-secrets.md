@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # How to use secrets
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 ## What are Secrets?
 

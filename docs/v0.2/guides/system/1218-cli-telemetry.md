@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Understanding CLI Telemetry
 
-\{@include:  ../../../partials/_caution-old-version.md\}
+{@include: ../../../partials/_caution-old-version.md}
 
 ## Overview
 

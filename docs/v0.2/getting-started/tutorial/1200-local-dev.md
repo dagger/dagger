@@ -9,7 +9,7 @@ import useIsBrowser from '@docusaurus/useIsBrowser';
 
 # Build, run and test locally
 
-\{@include:  ../../../partials/_caution-old-version.md\}
+{@include: ../../../partials/_caution-old-version.md}
 
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.

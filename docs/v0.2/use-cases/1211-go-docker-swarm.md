@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Go on Docker Swarm
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 ![particubes.com](/img/use-cases/particubes.com.png)
 

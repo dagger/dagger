@@ -4,7 +4,7 @@ slug: /1004/dev-first-env/
 
 # Create your first Dagger environment
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 ## Overview
 

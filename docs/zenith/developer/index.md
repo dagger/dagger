@@ -5,7 +5,7 @@ displayed_sidebar: "zenith"
 
 # Introduction
 
-\{@include:  ../partials/_experimental.md\}
+{@include: ../partials/_experimental.md}
 
 Dagger lets you encapsulate all your project's tasks and workflows into simple modules, written in your programming language of choice.
 

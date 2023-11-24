@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Default values and optional fields
 
-\{@include:  ../../../partials/_caution-old-version.md\}
+{@include: ../../../partials/_caution-old-version.md}
 
 When writing a Cue config, you will sometimes want to set default values in your package.
 

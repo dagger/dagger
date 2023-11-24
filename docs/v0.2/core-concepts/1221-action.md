@@ -6,7 +6,7 @@ pagination_prev: v0.2/getting-started/how-it-works
 
 # Dagger Actions
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 Actions are the basic building block of the Dagger platform.
 An action encapsulates an arbitrarily complex automation into a simple

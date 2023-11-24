@@ -5,4 +5,4 @@ displayed_sidebar: '0.2'
 
 # Make your builds fast
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}

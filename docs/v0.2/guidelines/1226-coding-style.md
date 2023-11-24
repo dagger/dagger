@@ -4,7 +4,7 @@ slug: /1226/coding-style
 
 # Package Coding Style
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 Please follow these guidelines when contributing CUE packages to keep consistency,
 improve clarity and avoid issues.

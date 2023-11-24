@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Contributing to Dagger
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 The best way to find a good contribution is to use Dagger for something. Then write down what problems you encounter.
 Could be as simple as a question you had, that the docs didn't answer. Or a bug in the tool, or a missing CUE package.

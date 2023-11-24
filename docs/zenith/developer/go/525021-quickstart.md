@@ -7,11 +7,11 @@ title: "Quickstart"
 
 # Quickstart
 
-\{@include:  ../../partials/_experimental.md\}
+{@include: ../../partials/_experimental.md}
 
 ## Introduction
 
-\{@include:  ../../partials/_developer_quickstart_introduction.md\}
+{@include: ../../partials/_developer_quickstart_introduction.md}
 
 ## Requirements
 
@@ -178,11 +178,11 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Test the function using `dagger call`:
 
-\{@include:  ../../partials/_developer_quickstart_trivy_test.md\}
+{@include: ../../partials/_developer_quickstart_trivy_test.md}
 
 ## Conclusion
 
-\{@include:  ../../partials/_developer_quickstart_conclusion.md\}
+{@include: ../../partials/_developer_quickstart_conclusion.md}
 
 - Guide on [programming a Dagger module to build, test and publish an application image](./457202-test-build-publish.md)
 
@@ -190,4 +190,4 @@ The example module in the previous sections was just that - an example. Next, le
 
 If you come across bugs, here are some simple troubleshooting suggestions.
 
-\{@include:  ../../partials/_developer_troubleshooting.md\}
+{@include: ../../partials/_developer_troubleshooting.md}

@@ -6,4 +6,4 @@ pagination_prev: null
 
 # Contributing to Dagger
 
-{@include: "../../CONTRIBUTING.md"}
+{@include: ../../CONTRIBUTING.md}

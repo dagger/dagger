@@ -5,7 +5,7 @@ displayed_sidebar: '0.2'
 
 # Running commands with the docker binary (CLI)
 
-\{@include:  ../../../partials/_caution-old-version.md\}
+{@include: ../../../partials/_caution-old-version.md}
 
 There's a `universe.dagger.io/docker/cli` package that allows you to run docker commands against a local or remote docker engine. Here's a few examples.
 

@@ -4,7 +4,7 @@ slug: /1006/google-cloud-run/
 
 # Deploy to Google Cloud Run with Dagger
 
-\{@include:  ../../partials/_caution-old-version.md\}
+{@include: ../../partials/_caution-old-version.md}
 
 This tutorial illustrates how to use Dagger to build, push and deploy Docker images to Cloud Run.
 

@@ -5,7 +5,7 @@ displayed_sidebar: "0.2"
 
 # Integrate with your CI environment
 
-\{@include:  ../../../partials/_caution-old-version.md\}
+{@include: ../../../partials/_caution-old-version.md}
 
 [Once you have Dagger running locally](/1200/local-dev), it's easy to use Dagger with any CI environment (no migration required) to run the same Dagger pipelines. Any CI environment with Docker pre-installed works with Dagger out of the box.
 
