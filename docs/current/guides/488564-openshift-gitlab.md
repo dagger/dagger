@@ -89,7 +89,6 @@ The next step is to configure a GitLab Runner. Follow these steps:
 ## Step 3: Create a GitLab CI/CD pipeline
 
 1. For Dagger Cloud users only, [add a new CI/CD variable in GitLab](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) with the name `DAGGER_CLOUD_TOKEN` and set its value to the Dagger Cloud token. This variable will be automatically injected into the GitLab job.
-The variable will be automatically inject into the GitLab job.
 
 2. Create a new GitLab CI/CD pipeline configuration file in your repository at `.gitlab-ci.yml` with the following content:
 
