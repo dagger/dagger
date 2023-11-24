@@ -109,5 +109,5 @@ At this point, the deployment is configured and ready for use. Test it by commit
 Use the following resources to learn more about the topics discussed in this guide:
 
 * [Dagger on Kubernetes](./194031-kubernetes.md) guide
-* [Dagger GraphQL API](https://docs.dagger.io/api/975146/concepts)
+* [Dagger GraphQL API reference](https://docs.dagger.io/api/975146/concepts)
 * Dagger [Go](https://docs.dagger.io/sdk/go), [Node.js](https://docs.dagger.io/sdk/nodejs) and [Python](https://docs.dagger.io/sdk/python) SDK references
