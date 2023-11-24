@@ -451,7 +451,7 @@ dagger up [--port string] [--native] [function]
 | `--port rule` | Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format          |
 | `--native`    | Forward all ports natively, matching frontend port to backend port |
 
-### Example
+### Examples
 
 Start the service returned by the `service` function:
 
