@@ -38,11 +38,11 @@ This tutorial assumes that:
 
 ## Step 1: Create a Google Cloud service account
 
-\{@include:  ../partials/_google-cloud-service-account-key-setup.md\}
+{@include: ../partials/_google-cloud-service-account-key-setup.md}
 
 ## Step 2: Configure Google Cloud APIs and a Google Cloud Run service
 
-\{@include:  ../partials/_google-cloud-api-run-setup.md\}
+{@include: ../partials/_google-cloud-api-run-setup.md}
 
 ## Step 3: Create the Dagger pipeline
 
@@ -147,7 +147,7 @@ Most `Container` object methods return a revised `Container` object representing
 
 Configure credentials for the Google Cloud SDK on the local host, as follows:
 
-\{@include:  ../partials/_google-cloud-sdk-credentials-setup.md\}
+{@include: ../partials/_google-cloud-sdk-credentials-setup.md}
 
 Once credentials are configured, test the Dagger pipeline by running the command below:
 

@@ -4,7 +4,7 @@ slug: /sdk/elixir/756758/get-started
 
 # Get Started with the Dagger Elixir SDK
 
-\{@include:  ../../partials/_experimental-sdk-elixir.md\}
+{@include: ../../partials/_experimental-sdk-elixir.md}
 
 ## Introduction
 
@@ -33,7 +33,7 @@ mix new elixir_with_dagger
 
 ## Step 2: Install the Dagger Elixir SDK
 
-\{@include:  ../../partials/_install-sdk-elixir.md\}
+{@include: ../../partials/_install-sdk-elixir.md}
 
 ## Step 3: Create the Mix task
 

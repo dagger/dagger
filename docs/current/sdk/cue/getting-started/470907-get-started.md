@@ -29,7 +29,7 @@ This tutorial assumes that:
 
 ## Step 1: Install the Dagger CUE SDK
 
-\{@include:  ../../../partials/_install-sdk-cue.md\}
+{@include: "../../../partials/_install-sdk-cue.md"}
 
 ## Step 2: Build, run and test locally
 
@@ -45,7 +45,7 @@ values={[
 
 <TabItem value="macos">
 
-\{@include:  ../../../partials/_get-started-cue-first-run.md\}
+{@include: ../../../partials/_get-started-cue-first-run.md}
 
 With an empty cache, installing all dependencies, then testing and generating a build for this example application completes in just under 3 minutes:
 
@@ -66,7 +66,7 @@ On macOS, run `open build/index.html` in your terminal and see the following app
 
 ![todoapp preview](/img/getting-started/todoapp.macos.png)
 
-\{@include:  ../../../partials/_get-started-cue-modify-code.md\}
+{@include: ../../../partials/_get-started-cue-modify-code.md}
 
 ```shell
 dagger-cue do build
@@ -87,7 +87,7 @@ The total `42.8` time is macOS specific, since the Linux alternative is more tha
 
 <TabItem value="linux">
 
-\{@include:  ../../../partials/_get-started-cue-first-run.md\}
+{@include: ../../../partials/_get-started-cue-first-run.md}
 
 With an empty cache, installing all dependencies, then testing and generating a build for this example application completes in just under 1 minute:
 
@@ -108,7 +108,7 @@ On Linux, run `xdg-open build/index.html` in your terminal and see the following
 
 ![todoapp preview](/img/getting-started/todoapp.linux.png)
 
-\{@include:  ../../../partials/_get-started-cue-modify-code.md\}
+{@include: ../../../partials/_get-started-cue-modify-code.md}
 
 ```shell
 dagger-cue do build
@@ -129,7 +129,7 @@ Being able to re-run the test and build loop locally in `4.8s`, at the same spee
 
 <TabItem value="windows">
 
-\{@include:  ../../../partials/_get-started-cue-first-run.md\}
+{@include: ../../../partials/_get-started-cue-first-run.md}
 
 :::tip
 By default, Git on Windows does not automatically convert POSIX symbolic links. To perform this conversion, add the extra option `core.symlinks=true` while cloning the repository. You can also enable this once and for all in your Git configuration, by running the following command from a Powershell terminal: `git config --global core.symlinks true`.
@@ -156,7 +156,7 @@ On Windows, run `start build/index.html` in your `Command Prompt` terminal and s
 
 ![todoapp preview](/img/getting-started/todoapp.macos.png)
 
-\{@include:  ../../../partials/_get-started-cue-modify-code.md\}
+{@include: ../../../partials/_get-started-cue-modify-code.md}
 
 ```shell
 dagger-cue do build

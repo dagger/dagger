@@ -131,6 +131,6 @@ C:\<your home folder>\dagger\dagger.exe
 </TabItem>
 
 </Tabs>
-\}
+}
 
 </BrowserOnly>

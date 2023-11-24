@@ -8,4 +8,4 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 
-\{@include:  ../partials/_install-cli.md\}
+{@include: ../partials/_install-cli.md}

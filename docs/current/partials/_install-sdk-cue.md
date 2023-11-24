@@ -116,6 +116,6 @@ C:\<your home folder>\dagger\dagger-cue.exe
 </TabItem>
 
 </Tabs>
-\}
+}
 
 </BrowserOnly>

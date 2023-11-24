@@ -33,7 +33,7 @@ The code samples in this tutorial are based on the above Go project. If using a 
 
 ## Step 1: Add the Dagger Go SDK to the project
 
-\{@include:  ../../partials/_install-sdk-go.md\}
+{@include: ../../partials/_install-sdk-go.md}
 
 ## Step 2: Create a Go module for the tool
 

@@ -461,7 +461,7 @@ export REGISTRY_USERNAME=USERNAME
 export REGISTRY_PASSWORD=PASSWORD
 ```
 
-\{@include:  ../partials/_run_api_client.md\}
+{@include: ../partials/_run_api_client.md}
 
 Run the pipeline as below:
 
