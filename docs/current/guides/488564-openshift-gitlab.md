@@ -40,20 +40,19 @@ Follow the steps below:
   ```
 
   This configuration uses the label `builder-node=true` to taint the nodes on which the Dagger Engine should be deployed.
-
 2. Execute the following command for each node that is intended to host a Dagger Engine (replace the `NODE-NAME` placeholder with each node name):
-
+  
   ```shell
   oc adm taint nodes NODE-NAME builder-node=true:NoSchedule
   ```
 
-3. Install the Dagger Engine using the Dagger Helm chart:
+1. Install the Dagger Engine using the Dagger Helm chart:
 
   ```shell
   helm upgrade --create-namespace --install --namespace dagger dagger oci://registry.dagger.io/dagger-helm -f values.yaml
   ```
 
-4. Grant the necessary permissions for the `default` service account in the `dagger` namespace:
+1. Grant the necessary permissions for the `default` service account in the `dagger` namespace:
 
   :::info
   Without this step, pod creation will fail due to insufficient permissions to execute privileged containers with fixed user IDs and host path volume mounts.
@@ -79,7 +78,7 @@ The next step is to configure a GitLab Runner. Follow these steps:
 
   This configuration uses a similar configuration as that seen in Step 1 for the taints and tolerations and the pod affinity. This ensures that the GitLab Runner worker pods only run on nodes with Dagger Engines.
 
-3. Apply the configuration and deploy the GitLab Runner:
+1. Apply the configuration and deploy the GitLab Runner:
 
   ```shell
   oc apply -f runner-config.yaml -n dagger
