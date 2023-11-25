@@ -40,18 +40,16 @@ func (file *File) PBDefinitions() ([]*pb.Definition, error) {
 	if file.LLB != nil {
 		defs = append(defs, file.LLB)
 	}
-	if file.Services != nil {
-		for _, bnd := range file.Services {
-			ctr := bnd.Service.Container
-			if ctr == nil {
-				continue
-			}
-			ctrDefs, err := ctr.PBDefinitions()
-			if err != nil {
-				return nil, err
-			}
-			defs = append(defs, ctrDefs...)
+	for _, bnd := range file.Services {
+		ctr := bnd.Service.Container
+		if ctr == nil {
+			continue
 		}
+		ctrDefs, err := ctr.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, ctrDefs...)
 	}
 	return defs, nil
 }

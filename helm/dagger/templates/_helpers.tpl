@@ -55,9 +55,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Create the name of the service account to use
 */}}
 {{- define "dagger.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "dagger.fullname" .) .Values.serviceAccount.name }}
+{{- if .Values.engine.newServiceAccount.create }}
+{{- include "dagger.fullname" . }}
 {{- else }}
-{{- default "default" .Values.serviceAccount.name }}
+{{- default "default" .Values.engine.existingServiceAccount.name }}
 {{- end }}
 {{- end }}
