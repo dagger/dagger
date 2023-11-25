@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/core/socket"
 
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -53,7 +52,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.Container](rs, "Container", ObjectResolver{
+	ResolveIDable[core.Container](s.queryCache, rs, "Container", ObjectResolver{
 		"sync":                    ToResolver(s.sync),
 		"from":                    ToResolver(s.from),
 		"build":                   ToResolver(s.build),
@@ -122,7 +121,7 @@ type containerArgs struct {
 }
 
 func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
-	if args.ID != "" {
+	if args.ID.ID != nil {
 		return args.ID.Decode()
 	}
 	platform := s.MergedSchemas.platform
@@ -132,19 +131,15 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 		}
 		platform = *args.Platform
 	}
-	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
-	if err != nil {
-		return nil, err
-	}
-	return ctr, err
+	return core.NewContainer(parent.PipelinePath(), platform)
 }
 
 func (s *containerSchema) sync(ctx context.Context, parent *core.Container, _ any) (core.ContainerID, error) {
 	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
-		return core.ContainerID{}, err
+		return nil, err
 	}
-	return resourceid.FromProto[core.Container](parent.ID), nil
+	return resourceid.FromProto[core.Container](parent.ID()), nil
 }
 
 type containerFromArgs struct {
@@ -653,7 +648,7 @@ func (s *containerSchema) withNewFile(ctx context.Context, parent *core.Containe
 
 type containerWithUnixSocketArgs struct {
 	Path   string
-	Source socket.ID
+	Source core.SocketID
 	Owner  string
 }
 
@@ -707,7 +702,15 @@ type containerAsTarballArgs struct {
 }
 
 func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
-	return parent.AsTarball(ctx, s.bk, s.MergedSchemas.platform, s.svcs, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
+	variants := make([]*core.Container, len(args.PlatformVariants))
+	for i, id := range args.PlatformVariants {
+		var err error
+		variants[i], err = id.Decode()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return parent.AsTarball(ctx, s.bk, s.MergedSchemas.platform, s.svcs, variants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerImportArgs struct {
@@ -716,9 +719,13 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
+	source, err := args.Source.Decode()
+	if err != nil {
+		return nil, err
+	}
 	return parent.Import(
 		ctx,
-		args.Source,
+		source,
 		args.Tag,
 		s.bk,
 		s.host,

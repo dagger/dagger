@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/resourceid"
 	ciconsts "github.com/dagger/dagger/internal/mage/consts"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
@@ -143,10 +144,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdkModuleName, err)
 	}
 
-	srcDirID, err := mod.SourceDirectory.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get source directory id: %w", err)
-	}
+	srcDirID := mod.SourceDirectory.ID()
 
 	result, err := sdk.moduleSchema.functionCall(ctx, codegenFn, functionCallArgs{
 		Module: sdk.mod,
@@ -179,7 +177,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 		return nil, fmt.Errorf("expected string directory ID result, got %T", result)
 	}
 
-	return core.GeneratedCodeID(genCodeID).Decode()
+	return resourceid.DecodeID[core.GeneratedCode](genCodeID)
 }
 
 // Runtime calls the Runtime function on the SDK Module
@@ -212,10 +210,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdkModuleName, err)
 	}
 
-	srcDirID, err := mod.SourceDirectory.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get source directory id: %w", err)
-	}
+	srcDirID := mod.SourceDirectory.ID()
 
 	result, err := sdk.moduleSchema.functionCall(ctx, getRuntimeFn, functionCallArgs{
 		Module: sdk.mod,
@@ -248,11 +243,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 		return nil, fmt.Errorf("expected string container ID result, got %T", result)
 	}
 
-	runtime, err := core.ContainerID(runtimeID).Decode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode container: %w", err)
-	}
-	return runtime, nil
+	return resourceid.DecodeID[core.Container](runtimeID)
 }
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
@@ -462,18 +453,14 @@ func (sdk *goSDK) base(ctx context.Context) (*core.Container, error) {
 		return nil, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)
 	}
 	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(ciconsts.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
-	tarballFileID, err := tarballFile.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get go module sdk tarball file id: %w", err)
-	}
 
-	ctr, err := core.NewContainer("", nil, sdk.platform)
+	ctr, err := core.NewContainer(nil, sdk.platform)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new container for go module sdk: %w", err)
 	}
 	ctr, err = ctr.Import(
 		ctx,
-		tarballFileID,
+		tarballFile,
 		"",
 		sdk.bk,
 		sdk.host,

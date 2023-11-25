@@ -39,8 +39,8 @@ func (s *httpSchema) Resolvers() Resolvers {
 }
 
 type httpArgs struct {
-	URL                     string          `json:"url"`
-	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
+	URL                     string         `json:"url"`
+	ExperimentalServiceHost core.ServiceID `json:"experimentalServiceHost"`
 }
 
 func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs) (*core.File, error) {

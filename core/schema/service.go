@@ -5,6 +5,7 @@ import (
 	"runtime/debug"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/resourceid"
 )
 
 type serviceSchema struct {
@@ -34,7 +35,7 @@ func (s *serviceSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.Service](rs, "Service", ObjectResolver{
+	ResolveIDable[core.Service](s.queryCache, rs, "Service", ObjectResolver{
 		"hostname": ToResolver(s.hostname),
 		"ports":    ToResolver(s.ports),
 		"endpoint": ToResolver(s.endpoint),
@@ -76,17 +77,17 @@ func (s *serviceSchema) start(ctx context.Context, parent *core.Service, args an
 
 	running, err := s.svcs.Start(ctx, parent)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return running.Service.ID()
+	return resourceid.FromProto[core.Service](running.Service.ID()), nil
 }
 
 func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
 	err := s.svcs.Stop(ctx, s.bk, parent)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return parent.ID()
+	return resourceid.FromProto[core.Service](parent.ID()), nil
 }

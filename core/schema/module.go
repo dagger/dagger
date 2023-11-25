@@ -66,7 +66,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
+	ResolveIDable[core.Module](s.queryCache, rs, "Module", ObjectResolver{
 		"dependencies":  ToResolver(s.moduleDependencies),
 		"objects":       ToResolver(s.moduleObjects),
 		"withObject":    ToResolver(s.moduleWithObject),
@@ -74,14 +74,14 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"serve":         ToVoidResolver(s.moduleServe),
 	})
 
-	ResolveIDable[core.Function](rs, "Function", ObjectResolver{
+	ResolveIDable[core.Function](s.queryCache, rs, "Function", ObjectResolver{
 		"withDescription": ToResolver(s.functionWithDescription),
 		"withArg":         ToResolver(s.functionWithArg),
 	})
 
-	ResolveIDable[core.FunctionArg](rs, "FunctionArg", ObjectResolver{})
+	ResolveIDable[core.FunctionArg](s.queryCache, rs, "FunctionArg", ObjectResolver{})
 
-	ResolveIDable[core.TypeDef](rs, "TypeDef", ObjectResolver{
+	ResolveIDable[core.TypeDef](s.queryCache, rs, "TypeDef", ObjectResolver{
 		"kind":            ToResolver(s.typeDefKind),
 		"withOptional":    ToResolver(s.typeDefWithOptional),
 		"withKind":        ToResolver(s.typeDefWithKind),
@@ -92,7 +92,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"withConstructor": ToResolver(s.typeDefWithObjectConstructor),
 	})
 
-	ResolveIDable[core.GeneratedCode](rs, "GeneratedCode", ObjectResolver{
+	ResolveIDable[core.GeneratedCode](s.queryCache, rs, "GeneratedCode", ObjectResolver{
 		"withVCSIgnoredPaths":   ToResolver(s.generatedCodeWithVCSIgnoredPaths),
 		"withVCSGeneratedPaths": ToResolver(s.generatedCodeWithVCSGeneratedPaths),
 	})
@@ -100,16 +100,8 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	return rs
 }
 
-func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct {
-	ID   core.TypeDefID
-	Kind core.TypeDefKind
-}) (*core.TypeDef, error) {
-	if args.ID != "" {
-		return args.ID.Decode()
-	}
-	return &core.TypeDef{
-		Kind: args.Kind,
-	}, nil
+func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args any) (*core.TypeDef, error) {
+	return &core.TypeDef{}, nil
 }
 
 func (s *moduleSchema) typeDefWithOptional(ctx context.Context, def *core.TypeDef, args struct {
@@ -668,11 +660,11 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 		if !ok {
 			return nil, fmt.Errorf("expected string result, got %T", result)
 		}
-		rid, err := resourceid.Decode(idStr)
+		mod, err := resourceid.DecodeID[core.Module](idStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse module id: %w", err)
 		}
-
+		mod = mod.Clone()
 		for _, obj := range mod.Objects {
 			if err := s.validateTypeDef(obj, schemaView); err != nil {
 				return nil, fmt.Errorf("failed to validate type def: %w", err)
@@ -681,7 +673,6 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 			// namespace the module objects + function extensions
 			s.namespaceTypeDef(obj, mod, schemaView)
 		}
-
 		return mod, nil
 	})
 }
@@ -877,7 +868,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 
 		if len(newObjResolver) > 0 {
 			typeSchemaResolvers[objName] = newObjResolver
-			typeSchemaResolvers[objName+"ID"] = stringResolver[string]()
+			typeSchemaResolvers[objName+"ID"] = idResolver[core.ModuleObject]()
 
 			fromID := s.createIDResolver(def, schemaView)
 			queryResolver[fmt.Sprintf("load%sFromID", objName)] = func(p graphql.ResolveParams) (any, error) {
@@ -1095,7 +1086,7 @@ func (s *moduleSchema) functionResolver(
 	// their object here. We can identify those types since their object resolvers are wrapped in
 	// ToIDableObjectResolver.
 	returnFromID := s.createIDResolver(fn.ReturnType, schemaView)
-	parentIDableObjectResolver, _ := s.idableObjectResolver(parentTypeDef.Name, schemaView)
+	// parentIDableObjectResolver, _ := s.idableObjectResolver(parentTypeDef.Name, schemaView)
 
 	resolver := ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
 		defer func() {
@@ -1103,13 +1094,15 @@ func (s *moduleSchema) functionResolver(
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
 			}
 		}()
-		if parentIDableObjectResolver != nil {
-			id, err := parentIDableObjectResolver.ToID(parent)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get parent ID: %w", err)
-			}
-			parent = id
-		}
+
+		// XXX(vito): what was this trying to do?
+		// if parentIDableObjectResolver != nil {
+		// 	id, err := parentIDableObjectResolver.ToID(parent)
+		// 	if err != nil {
+		// 		return nil, fmt.Errorf("failed to get parent ID: %w", err)
+		// 	}
+		// 	parent = id
+		// }
 
 		var callInput []*core.CallInput
 		for k, v := range args {
@@ -1330,11 +1323,15 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 		resolver, _ := s.idableObjectResolver(typeDef.AsObject.Name, schemaView)
 		if resolver != nil {
 			return func(a any) (any, error) {
-				s, ok := a.(string)
+				idStr, ok := a.(string)
 				if !ok {
 					return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
 				}
-				return resolver.FromID(s)
+				idp, err := resourceid.Decode(idStr)
+				if err != nil {
+					return nil, err
+				}
+				return loader[any](s.queryCache)(idp)
 			}
 		} else {
 			return func(a any) (any, error) {

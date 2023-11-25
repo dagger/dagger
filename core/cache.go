@@ -6,15 +6,15 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/dagger/dagger/core/idproto"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
-	ID   *idproto.ID `json:"id"`
-	Keys []string    `json:"keys"`
+	*Identified
+
+	Keys []string `json:"keys"`
 }
 
 var ErrInvalidCacheVolumeID = errors.New("invalid cache ID; create one using cacheVolume")
@@ -23,8 +23,9 @@ func NewCache(keys ...string) *CacheVolume {
 	return &CacheVolume{Keys: keys}
 }
 
-func (cache *CacheVolume) Clone() *CacheVolume {
-	cp := *cache
+func (cache CacheVolume) Clone() *CacheVolume {
+	cp := cache
+	cp.Identified = cache.Identified.Clone()
 	cp.Keys = cloneSlice(cp.Keys)
 	return &cp
 }

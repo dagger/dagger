@@ -11,7 +11,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
@@ -28,7 +27,7 @@ const (
 )
 
 type Service struct {
-	ID *idproto.ID `json:"id"`
+	*Identified
 
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
@@ -69,8 +68,9 @@ var _ pipeline.Pipelineable = (*Service)(nil)
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (svc *Service) Clone() *Service {
-	cp := *svc
+func (svc Service) Clone() *Service {
+	cp := svc
+	cp.Identified = svc.Identified.Clone()
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
 	}

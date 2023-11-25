@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/core/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 )
 
 type Function struct {
-	ID *idproto.ID `json:"id"`
+	*Identified
 
 	// Name is the standardized name of the function (lowerCamelCase), as used for the resolver in the graphql schema
 	Name        string         `json:"name"`
@@ -42,6 +41,7 @@ func (fn *Function) Digest() (digest.Digest, error) {
 
 func (fn Function) Clone() *Function {
 	cp := fn
+	cp.Identified = fn.Identified.Clone()
 	cp.Args = make([]*FunctionArg, len(fn.Args))
 	for i, arg := range fn.Args {
 		cp.Args[i] = arg.Clone()
@@ -71,6 +71,8 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 }
 
 type FunctionArg struct {
+	*Identified
+
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
@@ -85,6 +87,7 @@ type FunctionArg struct {
 
 func (arg FunctionArg) Clone() *FunctionArg {
 	cp := arg
+	cp.Identified = arg.Identified.Clone()
 	cp.TypeDef = arg.TypeDef.Clone()
 	// NB(vito): don't bother copying DefaultValue, it's already 'any' so it's
 	// hard to imagine anything actually mutating it at runtime vs. replacing it
@@ -93,7 +96,7 @@ func (arg FunctionArg) Clone() *FunctionArg {
 }
 
 type TypeDef struct {
-	ID *idproto.ID `json:"id,omitempty"`
+	*Identified
 
 	Kind     TypeDefKind    `json:"kind"`
 	Optional bool           `json:"optional"`
@@ -116,6 +119,7 @@ func (typeDef *TypeDef) Underlying() *TypeDef {
 
 func (typeDef TypeDef) Clone() *TypeDef {
 	cp := typeDef
+	cp.Identified = typeDef.Identified.Clone()
 	if typeDef.AsList != nil {
 		cp.AsList = typeDef.AsList.Clone()
 	}

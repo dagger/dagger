@@ -285,19 +285,20 @@ func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.Clien
 	return s.services.StopClientServices(ctx, client)
 }
 
-func loader[T any](cache *core.CacheMap[digest.Digest, any]) func(*idproto.ID) (*T, error) {
-	return func(id *idproto.ID) (*T, error) {
+func loader[T any](cache *core.CacheMap[digest.Digest, any]) func(*idproto.ID) (T, error) {
+	return func(id *idproto.ID) (T, error) {
+		var zero T
 		dig, err := id.Digest()
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 		val, err := cache.Get(dig)
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
-		t, ok := val.(*T)
+		t, ok := val.(T)
 		if !ok {
-			return nil, fmt.Errorf("ID refers to a %T, not a %T", val, t)
+			return zero, fmt.Errorf("ID refers to a %T, not a %T", val, t)
 		}
 		return t, nil
 	}

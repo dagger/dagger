@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type directorySchema struct {
@@ -41,7 +40,7 @@ func (s *directorySchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.Directory](rs, "Directory", ObjectResolver{
+	ResolveIDable[core.Directory](s.queryCache, rs, "Directory", ObjectResolver{
 		"sync":             ToResolver(s.sync),
 		"pipeline":         ToResolver(s.pipeline),
 		"entries":          ToResolver(s.entries),
@@ -88,9 +87,9 @@ func (s *directorySchema) directory(ctx context.Context, parent *core.Query, arg
 func (s *directorySchema) sync(ctx context.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
 	_, err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
-		return core.DirectoryID{}, err
+		return nil, err
 	}
-	return resourceid.FromProto[core.Directory](parent.ID), nil
+	return resourceid.FromProto[core.Directory](parent.ID()), nil
 }
 
 type subdirectoryArgs struct {
@@ -236,7 +235,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	if args.Platform != nil {
 		platform = *args.Platform
 	}
-	ctr, err := core.NewContainer(core.ContainerID{}, parent.Pipeline, platform)
+	ctr, err := core.NewContainer(parent.Pipeline, platform)
 	if err != nil {
 		return ctr, err
 	}

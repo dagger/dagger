@@ -28,6 +28,8 @@ import (
 
 // Directory is a content-addressed directory.
 type Directory struct {
+	*Identified
+
 	LLB      *pb.Definition `json:"llb"`
 	Dir      string         `json:"dir"`
 	Platform specs.Platform `json:"platform"`
@@ -85,8 +87,9 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipe
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (dir *Directory) Clone() *Directory {
-	cp := *dir
+func (dir Directory) Clone() *Directory {
+	cp := dir
+	cp.Identified = dir.Identified.Clone()
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneSlice(cp.Services)
 	return &cp

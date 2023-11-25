@@ -143,19 +143,19 @@ type IDable interface {
 	ID() *idproto.ID
 }
 
-func ResolveIDable[T core.Cloneable[T]](cache *core.CacheMap[digest.Digest, any], rs Resolvers, name string, obj ObjectResolver) {
-	load := loader[T](cache)
+func ResolveIDable[T core.Object[T]](cache *core.CacheMap[digest.Digest, any], rs Resolvers, name string, obj ObjectResolver) {
+	load := loader[*T](cache)
 
 	// Add resolver for the type.
 	rs[name] = ToIDableObjectResolver(load, obj)
 
 	// Add field for querying the object's ID.
-	obj["id"] = ToResolver(func(ctx context.Context, obj core.Object[T], args any) (_ resourceid.ID[T], rerr error) {
-		return resourceid.FromProto[T](obj.ID), nil
+	obj["id"] = ToResolver(func(ctx context.Context, obj T, args any) (_ *resourceid.ID[T], rerr error) {
+		return resourceid.FromProto[T](obj.ID()), nil
 	})
 
 	// Add resolver for its ID type.
-	rs[name+"ID"] = idResolver[resourceid.ID[T], T]()
+	rs[name+"ID"] = idResolver[T]()
 
 	// Add global constructor from ID.
 	query, hasQuery := rs["Query"].(ObjectResolver)
@@ -164,15 +164,7 @@ func ResolveIDable[T core.Cloneable[T]](cache *core.CacheMap[digest.Digest, any]
 		rs["Query"] = query
 	}
 	loaderName := fmt.Sprintf("load%sFromID", name)
-	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID resourceid.ID[T] }) (core.Object[T], error) {
-		val, err := load(args.ID.ID)
-		if err != nil {
-			return core.Object[T]{}, err
-		}
-
-		return core.Object[T]{
-			ID:    args.ID.ID,
-			Value: val,
-		}, nil
+	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID resourceid.ID[T] }) (*T, error) {
+		return load(args.ID.ID)
 	})
 }

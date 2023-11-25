@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/language/ast"
 )
 
 // idResolver is used to generate a scalar resolver for a stringable type.
-func idResolver[I resourceid.ID[T], T any]() ScalarResolver {
+func idResolver[T core.Object[T]]() ScalarResolver {
 	return ScalarResolver{
 		Serialize: func(value any) (any, error) {
 			switch v := value.(type) {

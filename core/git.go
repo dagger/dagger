@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
@@ -19,8 +18,8 @@ type GitRef struct {
 
 	KeepGitDir bool `json:"keepGitDir"`
 
-	SSHKnownHosts string    `json:"sshKnownHosts"`
-	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
+	SSHKnownHosts string `json:"sshKnownHosts"`
+	SSHAuthSocket string `json:"sshAuthSocket"`
 
 	Services ServiceBindings `json:"services"`
 	Pipeline pipeline.Path   `json:"pipeline"`
@@ -67,7 +66,7 @@ func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State
 		opts = append(opts, llb.KnownSSHHosts(ref.SSHKnownHosts))
 	}
 	if ref.SSHAuthSocket != "" {
-		opts = append(opts, llb.MountSSHSock(string(ref.SSHAuthSocket)))
+		opts = append(opts, llb.MountSSHSock(ref.SSHAuthSocket))
 	}
 
 	useDNS := len(ref.Services) > 0

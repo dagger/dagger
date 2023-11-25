@@ -2,8 +2,9 @@ package client
 
 import (
 	"context"
+	"net"
+	"net/url"
 
-	"github.com/dagger/dagger/core/socket"
 	"github.com/moby/buildkit/session/sshforward"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,12 +27,14 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 	if req.ID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "id is not set")
 	}
-	socket, err := socket.ID(req.ID).Decode()
+	u, err := url.Parse(req.ID)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
 	}
-	if !socket.IsHost() {
-		return nil, status.Errorf(codes.InvalidArgument, "id is not a host socket")
+	switch u.Scheme {
+	case "unix", "tcp", "udp":
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported scheme: %q", u.Scheme)
 	}
 	return &sshforward.CheckAgentResponse{}, nil
 }
@@ -51,16 +54,21 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	if id == "" {
 		return status.Errorf(codes.InvalidArgument, "id is not set")
 	}
-	socket, err := socket.ID(id).Decode()
+	u, err := url.Parse(id)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
 	}
-	if !socket.IsHost() {
-		return status.Errorf(codes.InvalidArgument, "id is not a host socket")
+	var conn net.Conn
+	switch u.Scheme {
+	case "unix":
+		conn, err = net.Dial("unix", u.Path)
+	case "tcp", "udp":
+		conn, err = net.Dial(u.Scheme, u.Host)
+	default:
+		return status.Errorf(codes.InvalidArgument, "unsupported scheme: %q", u.Scheme)
 	}
-	socketServer, err := socket.Server()
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid socket: %v", err)
+		return status.Errorf(codes.InvalidArgument, "dial socket: %v", err)
 	}
-	return socketServer.ForwardAgent(stream)
+	return sshforward.Copy(context.TODO(), conn, stream, nil)
 }

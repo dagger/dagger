@@ -31,7 +31,7 @@ func (s *cacheSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.CacheVolume](rs, "CacheVolume", ObjectResolver{})
+	ResolveIDable[core.CacheVolume](s.queryCache, rs, "CacheVolume", ObjectResolver{})
 
 	return rs
 }

@@ -1,12 +1,11 @@
 package core
 
 import (
-	"github.com/dagger/dagger/core/idproto"
 	"github.com/opencontainers/go-digest"
 )
 
 type GeneratedCode struct {
-	ID *idproto.ID `json:"id,omitempty"`
+	*Identified
 
 	Code              *Directory `json:"code"`
 	VCSIgnoredPaths   []string   `json:"vcsIgnoredPaths,omitempty"`
@@ -25,6 +24,7 @@ func (code *GeneratedCode) Digest() (digest.Digest, error) {
 
 func (code GeneratedCode) Clone() *GeneratedCode {
 	cp := code
+	cp.Identified = code.Identified.Clone()
 	if cp.Code != nil {
 		cp.Code = cp.Code.Clone()
 	}

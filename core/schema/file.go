@@ -35,7 +35,7 @@ func (s *fileSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.File](rs, "File", ObjectResolver{
+	ResolveIDable[core.File](s.queryCache, rs, "File", ObjectResolver{
 		"sync":           ToResolver(s.sync),
 		"contents":       ToResolver(s.contents),
 		"size":           ToResolver(s.size),
@@ -57,9 +57,9 @@ func (s *fileSchema) file(ctx context.Context, parent any, args fileArgs) (*core
 func (s *fileSchema) sync(ctx context.Context, parent *core.File, _ any) (core.FileID, error) {
 	err := parent.Evaluate(ctx, s.bk, s.svcs)
 	if err != nil {
-		return core.FileID{}, err
+		return nil, err
 	}
-	return resourceid.FromProto[core.File](parent.ID), nil
+	return resourceid.FromProto[core.File](parent.ID()), nil
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args any) (string, error) {

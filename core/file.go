@@ -18,7 +18,6 @@ import (
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
 
-	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/core/resourceid"
@@ -27,7 +26,7 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	id *idproto.ID
+	*Identified
 
 	LLB      *pb.Definition
 	File     string
@@ -36,10 +35,6 @@ type File struct {
 
 	// Services necessary to provision the file.
 	Services ServiceBindings
-}
-
-func (file *File) ID() *idproto.ID {
-	return file.id
 }
 
 func (file *File) PBDefinitions() ([]*pb.Definition, error) {
@@ -100,8 +95,9 @@ func NewFileSt(ctx context.Context, st llb.State, dir string, pipeline pipeline.
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (file *File) Clone() *File {
-	cp := *file
+func (file File) Clone() *File {
+	cp := file
+	cp.Identified = file.Identified.Clone()
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneSlice(cp.Services)
 	return &cp

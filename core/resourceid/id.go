@@ -19,12 +19,12 @@ type Digestible interface {
 	Digest() (digest.Digest, error)
 }
 
-func New[T any](typeName string) ID[T] {
-	return ID[T]{idproto.New(typeName)}
+func New[T any](typeName string) *ID[T] {
+	return &ID[T]{idproto.New(typeName)}
 }
 
-func FromProto[T any](proto *idproto.ID) ID[T] {
-	return ID[T]{proto}
+func FromProto[T any](proto *idproto.ID) *ID[T] {
+	return &ID[T]{proto}
 }
 
 // ID is a thin wrapper around *idproto.ID that is primed to expect a
@@ -33,14 +33,26 @@ type ID[T any] struct {
 	*idproto.ID
 }
 
-func (id ID[T]) ResourceTypeName() string {
+func (id *ID[T]) ResourceTypeName() string {
 	var t T
 	name := fmt.Sprintf("%T", t)
 	return strings.TrimPrefix(name, "*")
 }
 
-// TODO these type hints aren't doing us any favors here, since we don't
-// actually check the embedded type.
+func DecodeID[T any](id string) (*T, error) {
+	if id == "" {
+		// TODO(vito): this is a little awkward, can we avoid
+		// it? adding initially for backwards compat, since some
+		// places compare with empty string
+		return nil, nil
+	}
+	idp, err := Decode(id)
+	if err != nil {
+		return nil, err
+	}
+	return FromProto[T](idp).Decode()
+}
+
 func Decode(id string) (*idproto.ID, error) {
 	if id == "" {
 		// TODO(vito): this is a little awkward, can we avoid
@@ -59,7 +71,7 @@ func Decode(id string) (*idproto.ID, error) {
 	return &idproto, nil
 }
 
-func (id ID[T]) String() string {
+func (id *ID[T]) String() string {
 	proto, err := proto.Marshal(id.ID)
 	if err != nil {
 		panic(err)
@@ -68,6 +80,6 @@ func (id ID[T]) String() string {
 }
 
 // Decode base64-decodes and JSON unmarshals an ID into the object T
-func (id ID[T]) Decode() (*T, error) {
+func (id *ID[T]) Decode() (*T, error) {
 	return nil, errors.New("TODO replace ID.Decode with resolving the ID and asserting on the return type")
 }

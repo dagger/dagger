@@ -7,13 +7,12 @@ import (
 	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/secrets"
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	ID *idproto.ID `json:"id"`
+	*Identified
 
 	// Name specifies the arbitrary name/id of the secret.
 	Name string `json:"name,omitempty"`
@@ -25,13 +24,9 @@ func NewDynamicSecret(name string) *Secret {
 	}
 }
 
-func (secret *Secret) Clone() *Secret {
-	cp := *secret
-	return &cp
-}
-
-func (secret *Secret) Digest() (digest.Digest, error) {
-	return secret.ID.Digest()
+func (secret Secret) Clone() *Secret {
+	secret.Identified = secret.Identified.Clone()
+	return &secret
 }
 
 func NewSecretStore() *SecretStore {

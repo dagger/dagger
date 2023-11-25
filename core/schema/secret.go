@@ -32,7 +32,7 @@ func (s *secretSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.Secret](rs, "Secret", ObjectResolver{
+	ResolveIDable[core.Secret](s.queryCache, rs, "Secret", ObjectResolver{
 		"plaintext": ToResolver(s.plaintext),
 	})
 

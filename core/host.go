@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
@@ -63,6 +62,6 @@ func (host *Host) File(
 	return parentDir.File(ctx, bk, svcs, filepath.Base(path))
 }
 
-func (host *Host) Socket(ctx context.Context, sockPath string) (*socket.Socket, error) {
-	return socket.NewHostUnixSocket(sockPath), nil
+func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
+	return NewHostUnixSocket(sockPath), nil
 }

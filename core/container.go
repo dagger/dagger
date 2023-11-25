@@ -31,10 +31,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vito/progrock"
 
-	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
@@ -43,7 +41,7 @@ var ErrContainerNoExec = errors.New("no command has been executed")
 
 // Container is a content-addressed container.
 type Container struct {
-	ID *idproto.ID `json:"id"`
+	*Identified
 
 	// The container's root filesystem.
 	FS *pb.Definition `json:"fs"`
@@ -110,22 +108,18 @@ func (container *Container) PBDefinitions() ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
-	container, err := id.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	container.Pipeline = pipeline.Copy()
-	container.Platform = platform
-
-	return container, nil
+func NewContainer(pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
+	return &Container{
+		Pipeline: pipeline.Copy(),
+		Platform: platform,
+	}, nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (container *Container) Clone() *Container {
-	cp := *container
+func (container Container) Clone() *Container {
+	cp := container
+	cp.Identified = container.Identified.Clone()
 	cp.Config.ExposedPorts = cloneMap(cp.Config.ExposedPorts)
 	cp.Config.Env = cloneSlice(cp.Config.Env)
 	cp.Config.Entrypoint = cloneSlice(cp.Config.Entrypoint)
@@ -182,9 +176,9 @@ type ContainerSecret struct {
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	SocketID *idproto.ID `json:"socket"`
-	UnixPath string      `json:"unix_path,omitempty"`
-	Owner    *Ownership  `json:"owner,omitempty"`
+	SocketID string     `json:"socket"`
+	UnixPath string     `json:"unix_path,omitempty"`
+	Owner    *Ownership `json:"owner,omitempty"`
 }
 
 // FSState returns the container's root filesystem mount state. If there is
@@ -676,7 +670,7 @@ func (container *Container) MountTargets(ctx context.Context) ([]string, error) 
 	return mounts, nil
 }
 
-func (container *Container) WithUnixSocket(ctx context.Context, bk *buildkit.Client, target string, source *socket.Socket, owner string) (*Container, error) {
+func (container *Container) WithUnixSocket(ctx context.Context, bk *buildkit.Client, target string, source *Socket, owner string) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
@@ -687,7 +681,7 @@ func (container *Container) WithUnixSocket(ctx context.Context, bk *buildkit.Cli
 	}
 
 	newSocket := ContainerSocket{
-		SocketID: source.ID,
+		SocketID: source.SocketID(),
 		UnixPath: target,
 		Owner:    ownership,
 	}
@@ -1154,13 +1148,8 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 
-		dig, err := ctrSocket.SocketID.Digest()
-		if err != nil {
-			return nil, fmt.Errorf("socket %s: %w", ctrSocket.UnixPath, err)
-		}
-
 		socketOpts := []llb.SSHOption{
-			llb.SSHID(dig.String()),
+			llb.SSHID(ctrSocket.SocketID),
 			llb.SSHSocketTarget(ctrSocket.UnixPath),
 		}
 
@@ -1480,7 +1469,7 @@ func (container *Container) AsTarball(
 	bk *buildkit.Client,
 	engineHostPlatform specs.Platform,
 	svcs *Services,
-	platformVariants []ContainerID,
+	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) (*File, error) {
@@ -1489,16 +1478,8 @@ func (container *Container) AsTarball(
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
-	id, err := container.ID()
-	if err != nil {
-		return nil, err
-	}
 	services := ServiceBindings{}
-	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
-		variant, err := variantID.Decode()
-		if err != nil {
-			return nil, err
-		}
+	for _, variant := range append([]*Container{container}, platformVariants...) {
 		if variant.FS == nil {
 			continue
 		}
@@ -1551,7 +1532,7 @@ func (container *Container) AsTarball(
 
 func (container *Container) Import(
 	ctx context.Context,
-	source FileID,
+	file *File,
 	tag string,
 	bk *buildkit.Client,
 	host *Host,
@@ -1560,11 +1541,6 @@ func (container *Container) Import(
 	store content.Store,
 	lm *leaseutil.Manager,
 ) (*Container, error) {
-	file, err := source.Decode()
-	if err != nil {
-		return nil, err
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err

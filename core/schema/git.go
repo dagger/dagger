@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/socket"
 )
 
 var _ ExecutableSchema = &gitSchema{}
@@ -45,12 +44,12 @@ func (s *gitSchema) Resolvers() Resolvers {
 }
 
 type gitArgs struct {
-	URL                     string          `json:"url"`
-	KeepGitDir              bool            `json:"keepGitDir"`
-	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
+	URL                     string         `json:"url"`
+	KeepGitDir              bool           `json:"keepGitDir"`
+	ExperimentalServiceHost core.ServiceID `json:"experimentalServiceHost"`
 
-	SSHKnownHosts string    `json:"sshKnownHosts"`
-	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
+	SSHKnownHosts string        `json:"sshKnownHosts"`
+	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
 }
 
 func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRef, error) {
@@ -71,11 +70,16 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		})
 	}
 
+	socket, err := args.SSHAuthSocket.Decode()
+	if err != nil {
+		return nil, err
+	}
+
 	repo := &core.GitRef{
 		URL:           args.URL,
 		KeepGitDir:    args.KeepGitDir,
 		SSHKnownHosts: args.SSHKnownHosts,
-		SSHAuthSocket: args.SSHAuthSocket,
+		SSHAuthSocket: socket.SocketID(),
 		Services:      svcs,
 		Pipeline:      parent.PipelinePath(),
 		Platform:      s.MergedSchemas.platform,
@@ -111,7 +115,7 @@ type treeArgs struct {
 	// SSHKnownHosts is deprecated
 	SSHKnownHosts string `json:"sshKnownHosts"`
 	// SSHAuthSocket is deprecated
-	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
+	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs treeArgs) (*core.Directory, error) {
@@ -119,7 +123,11 @@ func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs tree
 	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket.ID != nil {
 		// no need for a full clone() here, we're only modifying string fields
 		res.SSHKnownHosts = treeArgs.SSHKnownHosts
-		res.SSHAuthSocket = treeArgs.SSHAuthSocket
+		socket, err := treeArgs.SSHAuthSocket.Decode()
+		if err != nil {
+			return nil, err
+		}
+		res.SSHAuthSocket = socket.SocketID()
 	}
 	return res.Tree(ctx, s.bk)
 }

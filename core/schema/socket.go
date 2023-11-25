@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/socket"
 )
 
 type socketSchema struct {
@@ -34,16 +33,16 @@ func (s *socketSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[socket.Socket](s.queryCache, rs, "Socket", ObjectResolver{})
+	ResolveIDable[core.Socket](s.queryCache, rs, "Socket", ObjectResolver{})
 
 	return rs
 }
 
 type socketArgs struct {
-	ID socket.ID
+	ID core.SocketID
 }
 
 // nolint: unparam
-func (s *socketSchema) socket(_ context.Context, _ any, args socketArgs) (*socket.Socket, error) {
+func (s *socketSchema) socket(_ context.Context, _ any, args socketArgs) (*core.Socket, error) {
 	return args.ID.Decode()
 }

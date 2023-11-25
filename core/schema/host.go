@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/socket"
 )
 
 type hostSchema struct {
@@ -79,7 +78,7 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx context.Context, parent any, args hostSocketArgs) (*socket.Socket, error) {
+func (s *hostSchema) socket(ctx context.Context, parent any, args hostSocketArgs) (*core.Socket, error) {
 	return s.host.Socket(ctx, args.Path)
 }
 
