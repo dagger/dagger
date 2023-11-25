@@ -1320,8 +1320,8 @@ func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module,
 func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schemaView) func(any) (any, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindObject:
-		resolver, _ := s.idableObjectResolver(typeDef.AsObject.Name, schemaView)
-		if resolver != nil {
+		resolver, ok := s.idableObjectResolver(typeDef.AsObject.Name, schemaView)
+		if ok {
 			return func(a any) (any, error) {
 				idStr, ok := a.(string)
 				if !ok {
@@ -1331,7 +1331,7 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 				if err != nil {
 					return nil, err
 				}
-				return loader[any](s.queryCache)(idp)
+				return resolver.FromID(idp)
 			}
 		} else {
 			return func(a any) (any, error) {
