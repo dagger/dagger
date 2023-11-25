@@ -57,6 +57,10 @@ export class Bin implements EngineConn {
   }
 
   async Connect(opts: ConnectOpts): Promise<GraphQLClient> {
+    if (!this.binPath && fs.existsSync(this.buildBinPath())) {
+      this.binPath = this.buildBinPath()
+    }
+
     if (!this.binPath) {
       if (opts.LogOutput) {
         opts.LogOutput.write("Downloading CLI... ")

@@ -154,11 +154,58 @@ describe("NodeJS sdk Connect", function () {
     let tempDir: string
     let cacheDir: string
 
-    before(() => {
+    beforeEach(() => {
       oldEnv = JSON.stringify(process.env)
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dagger-test-"))
       cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "dagger-test-cache"))
       process.env.XDG_CACHE_HOME = cacheDir
+    })
+
+    it("Should not download the binary if already exists", async function () {
+      this.timeout(30000)
+
+      let called = false
+      const server = http.createServer(
+        (req: http.IncomingMessage, res: http.ServerResponse) => {
+          called = true
+          res.end()
+        }
+      )
+
+      const basePath = `dagger/releases/${CLI_VERSION}`
+      const archiveName = `dagger_v${CLI_VERSION}_${normalizedOS()}_${normalizedArch()}.tar.gz`
+
+      fs.mkdirSync(path.join(cacheDir, "dagger"))
+      fs.writeFileSync(
+        path.join(cacheDir, "dagger", `dagger-${CLI_VERSION}`),
+        ""
+      )
+
+      await new Promise<void>((resolve) => {
+        server
+          .listen(0, "127.0.0.1", () => {
+            const addr = server.address() as AddressInfo
+            bin._overrideCLIURL(
+              `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`
+            )
+            bin._overrideCLIChecksumsURL(
+              `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`
+            )
+            resolve()
+          })
+          .unref()
+      })
+
+      await connect(
+        async (client) => {
+          await client.defaultPlatform()
+        },
+        { LogOutput: process.stderr }
+      ).catch(() => {
+        // don't throw error
+      })
+
+      assert.equal(called, false)
     })
 
     it("Should download and unpack the CLI binary automatically", async function () {
@@ -248,7 +295,7 @@ describe("NodeJS sdk Connect", function () {
       )
     })
 
-    after(() => {
+    afterEach(() => {
       process.env = JSON.parse(oldEnv)
       bin._overrideCLIURL("")
       bin._overrideCLIChecksumsURL("")
