@@ -1328,7 +1328,7 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 			if err != nil {
 				return nil, err
 			}
-			return s.load(context.TODO(), idp)
+			return s.load(ctx, idp)
 		}
 	case core.TypeDefKindList:
 		fromID := s.createIDResolver(typeDef.AsList.ElementTypeDef, schemaView)

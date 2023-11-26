@@ -273,7 +273,7 @@ func (s *MergedSchemas) currentModule(ctx context.Context) (*core.Module, error)
 		return nil, err
 	}
 	if clientMetadata.ModuleContextDigest == "" {
-		return nil, fmt.Errorf("not in a module")
+		return nil, fmt.Errorf("currentModule not in a module")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -290,7 +290,7 @@ func (s *MergedSchemas) currentFunctionCall(ctx context.Context) (*core.Function
 		return nil, err
 	}
 	if clientMetadata.ModuleContextDigest == "" {
-		return nil, fmt.Errorf("not in a module")
+		return nil, fmt.Errorf("currentFunctionCall not in a module")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -335,25 +335,6 @@ type schemaView struct {
 
 func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
 	return s.services.StopClientServices(ctx, client)
-}
-
-func loader[T any](cache *core.CacheMap[digest.Digest, any]) func(*idproto.ID) (T, error) {
-	return func(id *idproto.ID) (T, error) {
-		var zero T
-		dig, err := id.Digest()
-		if err != nil {
-			return zero, err
-		}
-		val, err := cache.Get(dig)
-		if err != nil {
-			return zero, err
-		}
-		t, ok := val.(T)
-		if !ok {
-			return zero, fmt.Errorf("ID refers to a %T, not a %T", val, t)
-		}
-		return t, nil
-	}
 }
 
 func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
