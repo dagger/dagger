@@ -41,30 +41,6 @@ func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
 	r[name] = fn
 }
 
-// TODO(vito): figure out how this changes with idproto
-type IDableObjectResolver interface {
-	FromID(context.Context, *idproto.ID, resourceid.IDCache, *graphql.Schema) (any, error)
-	Resolver
-}
-
-func ToIDableObjectResolver[T any](r ObjectResolver) IDableObjectResolver {
-	return idableObjectResolver{
-		func(ctx context.Context, idp *idproto.ID, cache resourceid.IDCache, schema *graphql.Schema) (any, error) {
-			return resourceid.FromProto[T](idp).Resolve(cache, schema)
-		},
-		r,
-	}
-}
-
-type idableObjectResolver struct {
-	fromProto func(context.Context, *idproto.ID, resourceid.IDCache, *graphql.Schema) (any, error)
-	ObjectResolver
-}
-
-func (r idableObjectResolver) FromID(ctx context.Context, id *idproto.ID, cache resourceid.IDCache, schema *graphql.Schema) (any, error) {
-	return r.fromProto(ctx, id, cache, schema)
-}
-
 type ScalarResolver struct {
 	Serialize    graphql.SerializeFn
 	ParseValue   graphql.ParseValueFn
@@ -252,7 +228,7 @@ func ResolveIDable[T core.Object[T]](cache *core.CacheMap[digest.Digest, any], m
 	})
 
 	// Add resolver for the type.
-	rs[name] = ToIDableObjectResolver[T](obj)
+	rs[name] = obj
 
 	// Add resolver for its ID type.
 	rs[name+"ID"] = idResolver[T]()

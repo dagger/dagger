@@ -70,20 +70,23 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		})
 	}
 
-	socket, err := load(ctx, args.SSHAuthSocket, s.MergedSchemas)
-	if err != nil {
-		return nil, err
-	}
-
 	repo := &core.GitRef{
 		URL:           args.URL,
 		KeepGitDir:    args.KeepGitDir,
 		SSHKnownHosts: args.SSHKnownHosts,
-		SSHAuthSocket: socket.SocketID(),
 		Services:      svcs,
 		Pipeline:      parent.PipelinePath(),
 		Platform:      s.MergedSchemas.platform,
 	}
+
+	if args.SSHAuthSocket != nil {
+		socket, err := load(ctx, args.SSHAuthSocket, s.MergedSchemas)
+		if err != nil {
+			return nil, err
+		}
+		repo.SSHAuthSocket = socket.SocketID()
+	}
+
 	return repo, nil
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
 	"github.com/dagger/graphql/gqlerrors"
+	gqast "github.com/dagger/graphql/language/ast"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -147,12 +148,58 @@ func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaV
 }
 
 func load[T any](ctx context.Context, id *resourceid.ID[T], ms *MergedSchemas) (T, error) {
+	if id == nil {
+		panic("ID is nil")
+	}
 	var zero T
-	view, err := ms.currentSchemaView(ctx)
+	val, err := ms.load(ctx, id.ID)
 	if err != nil {
 		return zero, err
 	}
-	return id.Resolve(ms.queryCache, view.compiledSchema)
+	obj, ok := val.(T)
+	if !ok {
+		return zero, fmt.Errorf("ID refers to a %T, not a %T", val, obj)
+	}
+	return obj, nil
+}
+
+func (s *MergedSchemas) load(ctx context.Context, id *idproto.ID) (any, error) {
+	dig, err := id.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.queryCache.GetOrInitialize(dig, func() (any, error) {
+		view, err := s.currentSchemaView(ctx)
+		if err != nil {
+			return nil, err
+		}
+		op := gqast.NewOperationDefinition(nil)
+		op.Operation = gqast.OperationTypeQuery
+		op.SelectionSet = &gqast.SelectionSet{
+			Selections: []gqast.Selection{
+				resourceid.GraphQLNode(id),
+			},
+		}
+
+		doc := gqast.NewDocument(nil)
+		doc.Definitions = []gqast.Node{op}
+
+		res := graphql.Execute(graphql.ExecuteParams{
+			Schema:  *view.compiledSchema,
+			Root:    &core.Query{},
+			AST:     doc,
+			Context: ctx,
+		})
+		if res.HasErrors() {
+			var err error
+			for _, e := range res.Errors {
+				err = errors.Join(err, e)
+			}
+			return nil, err
+		}
+		return res.Data, err
+	})
 }
 
 func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, error) {

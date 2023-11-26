@@ -534,7 +534,7 @@ func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *bui
 		fromID := s.createIDResolver(typeDef, schemaView)
 		if fromID != nil {
 			var err error
-			value, err = fromID(value)
+			value, err = fromID(ctx, value)
 			if err != nil {
 				return err
 			}
@@ -586,18 +586,6 @@ func (s *moduleSchema) linkDependencyBlobs(ctx context.Context, cacheResult *bui
 	default:
 		return fmt.Errorf("unhandled type def kind %q", typeDef.Kind)
 	}
-}
-
-// Check to see if the given object name is one of our core API's IDable types, returning the
-// IDableObjectResolver if so.
-func (s *moduleSchema) idableObjectResolver(objName string, dest *schemaView) (IDableObjectResolver, bool) {
-	objName = gqlObjectName(objName)
-	resolver, ok := dest.resolvers()[objName]
-	if !ok {
-		return nil, false
-	}
-	idableResolver, ok := resolver.(IDableObjectResolver)
-	return idableResolver, ok
 }
 
 // Each Module gets its own isolated "schema view" where the core API plus its direct deps are served.
@@ -664,11 +652,15 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse module id: %w", err)
 		}
-		mod, err := resourceid.FromProto[*core.Module](idProto).Resolve(s.queryCache, schemaView.compiledSchema)
+		val, err := s.load(ctx, idProto)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse module id: %w", err)
+			return nil, fmt.Errorf("failed to load module: %w", err)
 		}
-		mod = mod.Clone()
+		mod, ok := val.(*core.Module)
+		if !ok {
+			return nil, fmt.Errorf("expected module, got %T", val)
+		}
+		mod = mod.Clone() // XXX(vito): a guess, probably wrong
 		for _, obj := range mod.Objects {
 			if err := s.validateTypeDef(obj, schemaView); err != nil {
 				return nil, fmt.Errorf("failed to validate type def: %w", err)
@@ -855,7 +847,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 					return nil, err
 				}
 				if fromID != nil {
-					return fromID(res)
+					return fromID(p.Context, res)
 				}
 				return res, nil
 			}
@@ -876,7 +868,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 
 			fromID := s.createIDResolver(def, schemaView)
 			queryResolver[fmt.Sprintf("load%sFromID", objName)] = func(p graphql.ResolveParams) (any, error) {
-				return fromID(p.Args["id"])
+				return fromID(p.Context, p.Args["id"])
 			}
 		}
 
@@ -1065,7 +1057,7 @@ func (s *moduleSchema) functionResolver(
 	}
 
 	argNames := make(map[string]string, len(fn.Args))
-	argFromIDs := make(map[string]func(any) (any, error), len(fn.Args))
+	argFromIDs := make(map[string]func(context.Context, any) (any, error), len(fn.Args))
 	for _, arg := range fn.Args {
 		argNames[arg.Name] = arg.OriginalName
 
@@ -1118,7 +1110,7 @@ func (s *moduleSchema) functionResolver(
 			}
 
 			if argFromID := argFromIDs[k]; argFromID != nil {
-				v, err = argFromID(v)
+				v, err = argFromID(ctx, v)
 				if err != nil {
 					return nil, fmt.Errorf("failed to decode arg %q: %w", k, err)
 				}
@@ -1140,7 +1132,7 @@ func (s *moduleSchema) functionResolver(
 			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
 		}
 		if returnFromID != nil {
-			return returnFromID(result)
+			return returnFromID(ctx, result)
 		}
 		return result, nil
 	})
@@ -1324,40 +1316,24 @@ func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module,
 // attempt convering lists of ids into lists of objects (which is a trickier
 // case, because lists are composite data types, lists of lists are possible,
 // etc.)
-func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schemaView) func(any) (any, error) {
+func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schemaView) func(context.Context, any) (any, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindObject:
-		resolver, ok := s.idableObjectResolver(typeDef.AsObject.Name, schemaView)
-		if ok {
-			return func(a any) (any, error) {
-				idStr, ok := a.(string)
-				if !ok {
-					return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
-				}
-				idp, err := resourceid.Decode(idStr)
-				if err != nil {
-					return nil, err
-				}
-				return resolver.FromID(context.TODO(), idp, s.queryCache, schemaView.compiledSchema)
+		return func(ctx context.Context, a any) (any, error) {
+			idStr, ok := a.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
 			}
-		} else {
-			return func(a any) (any, error) {
-				idStr, ok := a.(string)
-				if !ok {
-					return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
-				}
-				idp, err := resourceid.Decode(idStr)
-				if err != nil {
-					return nil, err
-				}
-				// XXX(vito): verify object name/type
-				return resourceid.FromProto[*core.ModuleObject](idp).Resolve(s.queryCache, schemaView.compiledSchema)
+			idp, err := resourceid.Decode(idStr)
+			if err != nil {
+				return nil, err
 			}
+			return s.load(context.TODO(), idp)
 		}
 	case core.TypeDefKindList:
 		fromID := s.createIDResolver(typeDef.AsList.ElementTypeDef, schemaView)
 		if fromID != nil {
-			return func(a any) (any, error) {
+			return func(ctx context.Context, a any) (any, error) {
 				li, ok := a.([]any)
 				if !ok {
 					return nil, fmt.Errorf("expected slice, got %T", a)
@@ -1365,7 +1341,7 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 
 				res := make([]any, len(li))
 				for i, elem := range li {
-					fromIDVal, err := fromID(elem)
+					fromIDVal, err := fromID(ctx, elem)
 					if err != nil {
 						return nil, err
 					}

@@ -1,15 +1,12 @@
 package resourceid
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/core/idproto"
-	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/language/ast"
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/protobuf/proto"
@@ -73,21 +70,6 @@ func DecodeID[T any](id string) (*ID[T], error) {
 	return FromProto[T](idp), nil
 }
 
-func DecodeFromID[T any](id string, cache IDCache, schema *graphql.Schema) (T, error) {
-	var zero T
-	if id == "" {
-		// TODO(vito): this is a little awkward, can we avoid
-		// it? adding initially for backwards compat, since some
-		// places compare with empty string
-		return zero, nil
-	}
-	idp, err := Decode(id)
-	if err != nil {
-		return zero, err
-	}
-	return FromProto[T](idp).Resolve(cache, schema)
-}
-
 func Decode(id string) (*idproto.ID, error) {
 	if id == "" {
 		// TODO(vito): this is a little awkward, can we avoid
@@ -127,51 +109,7 @@ type IDCache interface {
 	GetOrInitialize(digest.Digest, func() (any, error)) (any, error)
 }
 
-// Resolve
-func (id *ID[T]) Resolve(cache IDCache, schema *graphql.Schema) (T, error) {
-	ctx := context.TODO()
-
-	var zero T
-
-	op := ast.NewOperationDefinition(nil)
-	op.Operation = ast.OperationTypeQuery
-	op.SelectionSet = &ast.SelectionSet{
-		Selections: []ast.Selection{
-			id.GraphQLNode(),
-		},
-	}
-
-	doc := ast.NewDocument(nil)
-	doc.Definitions = []ast.Node{op}
-
-	dig, err := id.Digest()
-	if err != nil {
-		return zero, err
-	}
-
-	obj, err := cache.GetOrInitialize(dig, func() (any, error) {
-		res := graphql.Execute(graphql.ExecuteParams{
-			Schema:  *schema,
-			AST:     doc,
-			Context: ctx,
-		})
-		if res.HasErrors() {
-			var err error
-			for _, e := range res.Errors {
-				err = errors.Join(err, e)
-			}
-			return zero, err
-		}
-		return res.Data, err
-	})
-	if err != nil {
-		return zero, err
-	}
-
-	return obj.(T), nil
-}
-
-func (id *ID[T]) GraphQLNode() *ast.Field {
+func GraphQLNode(id *idproto.ID) *ast.Field {
 	if len(id.Constructor) == 0 {
 		panic("TODO")
 	}
@@ -193,12 +131,9 @@ func (id *ID[T]) GraphQLNode() *ast.Field {
 		restIDP := id.Clone()
 		restIDP.Constructor = rest
 
-		restID := *id
-		restID.ID = restIDP
-
 		field.SelectionSet = &ast.SelectionSet{
 			Selections: []ast.Selection{
-				restID.GraphQLNode(),
+				GraphQLNode(restIDP),
 			},
 		}
 	}
