@@ -127,15 +127,20 @@ func ToResolver[P any, A any, R any](f func(context.Context, P, A) (R, error)) g
 
 type IDCache interface {
 	GetOrInitialize(digest.Digest, func() (any, error)) (any, error)
+	Set(digest.Digest, any)
 }
 
 func chain(parent *idproto.ID, params graphql.ResolveParams) *idproto.ID {
 	chainedID := idproto.New(params.Info.ReturnType.String())
 
 	// convert query args to ID args, by AST
-	idArgs := make([]*idproto.Argument, len(params.Info.FieldASTs[0].Arguments))
-	for i, arg := range params.Info.FieldASTs[0].Arguments {
-		idArgs[i] = idproto.Arg(arg.Name.Value, arg.Value)
+	// idArgs := make([]*idproto.Argument, len(params.Info.FieldASTs[0].Arguments))
+	// for i, arg := range params.Info.FieldASTs[0].Arguments {
+	// 	idArgs[i] = idproto.Arg(arg.Name.Value, arg.Value)
+	// }
+	idArgs := make([]*idproto.Argument, 0, len(params.Info.FieldASTs[0].Arguments))
+	for arg, val := range params.Args {
+		idArgs = append(idArgs, idproto.Arg(arg, val))
 	}
 
 	// ensure argument order does not matter
@@ -204,8 +209,16 @@ func ToCachedResolver[P core.IDable, A any, R any](cache IDCache, f func(context
 
 			if idable, ok := any(res).(core.IDable); ok {
 				if idable.ID() == nil {
-					log.Printf("!!! SETTING %T ID: %s", idable, id.String())
+					log.Printf("!!! SETTING %T ID ON ID-LESS OBJECT: %s", idable, id.String())
 					idable.SetID(id)
+				} else {
+					// TODO: kinda weird
+					// log.Printf("!!! SETTING VALUE AS %T ID: %s", idable, id.String())
+					// idDig, err := idable.ID().Digest()
+					// if err != nil {
+					// 	return nil, err
+					// }
+					// cache.Set(idDig, res)
 				}
 			}
 

@@ -43,6 +43,6 @@ type socketArgs struct {
 }
 
 // nolint: unparam
-func (s *socketSchema) socket(_ context.Context, _ *core.Query, args socketArgs) (*core.Socket, error) {
-	return args.ID.Resolve(s.queryCache)
+func (s *socketSchema) socket(ctx context.Context, _ *core.Query, args socketArgs) (*core.Socket, error) {
+	return load(ctx, args.ID, s.MergedSchemas)
 }

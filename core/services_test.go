@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/idproto"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -279,8 +279,9 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 }
 
 type fakeStartable struct {
-	id     string
-	digest digest.Digest
+	core.Identified
+
+	tag string
 
 	starts       int32 // total start attempts
 	startResults chan startResult
@@ -291,14 +292,15 @@ type startResult struct {
 	Failed  error
 }
 
-func newStartable(id string) *fakeStartable {
-	return &fakeStartable{
-		id:     id,
-		digest: digest.FromString(id),
+func newStartable(tag string) *fakeStartable {
+	st := &fakeStartable{
+		tag: tag,
 
 		// just buffer 100 to keep things simple
 		startResults: make(chan startResult, 100),
 	}
+	st.SetID(idproto.New(tag))
+	return st
 }
 
 func (f *fakeStartable) Start(context.Context, *buildkit.Client, *core.Services, bool, func(io.Writer, bkgw.ContainerProcess), func(io.Reader), func(io.Reader)) (*core.RunningService, error) {
@@ -312,12 +314,17 @@ func (f *fakeStartable) Starts() int {
 }
 
 func (f *fakeStartable) Succeed() *core.RunningService {
+	dig, err := f.ID().Digest()
+	if err != nil {
+		panic(err)
+	}
+
 	running := &core.RunningService{
 		Key: core.ServiceKey{
-			Digest:   f.digest,
+			Digest:   dig,
 			ClientID: "doesnt-matter",
 		},
-		Host: f.id + "-host",
+		Host: f.tag + "-host",
 	}
 
 	f.startResults <- startResult{

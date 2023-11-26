@@ -1,12 +1,16 @@
 package resourceid
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/core/idproto"
+	"github.com/dagger/graphql"
+	"github.com/dagger/graphql/language/ast"
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/protobuf/proto"
 )
@@ -23,6 +27,10 @@ func FromProto[T any](proto *idproto.ID) *ID[T] {
 // particular return type.
 type ID[T any] struct {
 	*idproto.ID
+}
+
+func (id *ID[T]) Literal() *idproto.Literal {
+	return idproto.LiteralValue(id.ID)
 }
 
 func (id *ID[T]) MarshalJSON() ([]byte, error) {
@@ -65,7 +73,7 @@ func DecodeID[T any](id string) (*ID[T], error) {
 	return FromProto[T](idp), nil
 }
 
-func DecodeFromID[T any](id string, cache IDCache) (T, error) {
+func DecodeFromID[T any](id string, cache IDCache, schema *graphql.Schema) (T, error) {
 	var zero T
 	if id == "" {
 		// TODO(vito): this is a little awkward, can we avoid
@@ -77,7 +85,7 @@ func DecodeFromID[T any](id string, cache IDCache) (T, error) {
 	if err != nil {
 		return zero, err
 	}
-	return FromProto[T](idp).Resolve(cache)
+	return FromProto[T](idp).Resolve(cache, schema)
 }
 
 func Decode(id string) (*idproto.ID, error) {
@@ -99,28 +107,147 @@ func Decode(id string) (*idproto.ID, error) {
 }
 
 func (id *ID[T]) String() string {
-	proto, err := proto.Marshal(id.ID)
+	enc, err := encode(id.ID)
 	if err != nil {
 		panic(err)
 	}
-	return base64.URLEncoding.EncodeToString(proto)
+	return enc
+}
+
+func encode(idp *idproto.ID) (string, error) {
+	proto, err := proto.Marshal(idp)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(proto), nil
 }
 
 type IDCache interface {
 	Get(digest.Digest) (any, error)
+	GetOrInitialize(digest.Digest, func() (any, error)) (any, error)
 }
 
 // Resolve
-func (id *ID[T]) Resolve(cache IDCache) (T, error) {
+func (id *ID[T]) Resolve(cache IDCache, schema *graphql.Schema) (T, error) {
+	ctx := context.TODO()
+
 	var zero T
+
+	doc := ast.NewDocument(nil)
+	doc.Definitions = []ast.Node{id.GraphQLNode()}
 
 	dig, err := id.Digest()
 	if err != nil {
 		return zero, err
 	}
-	obj, err := cache.Get(dig)
+
+	obj, err := cache.GetOrInitialize(dig, func() (any, error) {
+		res := graphql.Execute(graphql.ExecuteParams{
+			Schema:  *schema,
+			AST:     doc,
+			Context: ctx,
+		})
+		if res.HasErrors() {
+			var err error
+			for _, e := range res.Errors {
+				err = errors.Join(err, e)
+			}
+			return zero, err
+		}
+		return res.Data, err
+	})
 	if err != nil {
 		return zero, err
 	}
+
 	return obj.(T), nil
+}
+
+func (id *ID[T]) GraphQLNode() *ast.Field {
+	if len(id.Constructor) == 0 {
+		panic("TODO")
+	}
+
+	first, rest := id.Constructor[0], id.Constructor[1:]
+
+	field := ast.NewField(nil)
+	field.Name = ast.NewName(nil)
+	field.Name.Value = first.Field
+	field.Arguments = make([]*ast.Argument, len(first.Args))
+	for i, arg := range first.Args {
+		field.Arguments[i] = &ast.Argument{
+			Name:  ast.NewName(nil),
+			Value: GraphQLValue(arg.Value),
+		}
+	}
+
+	if len(rest) > 0 {
+		restIDP := id.Clone()
+		restIDP.Constructor = rest
+
+		restID := *id
+		restID.ID = restIDP
+
+		field.SelectionSet = &ast.SelectionSet{
+			Selections: []ast.Selection{
+				restID.GraphQLNode(),
+			},
+		}
+	}
+
+	return field
+}
+
+func GraphQLValue(lit *idproto.Literal) ast.Value {
+	switch v := lit.Value.(type) {
+	case *idproto.Literal_Id:
+		val := ast.NewStringValue(nil)
+		enc, err := encode(v.Id)
+		if err != nil {
+			panic(err)
+		}
+		val.Value = enc
+		return val
+	case *idproto.Literal_String_:
+		val := ast.NewStringValue(nil)
+		val.Value = v.String_
+		return val
+	case *idproto.Literal_Bool:
+		val := ast.NewBooleanValue(nil)
+		val.Value = v.Bool
+		return val
+	case *idproto.Literal_Int:
+		val := ast.NewIntValue(nil)
+		val.Value = fmt.Sprintf("%d", v.Int)
+		return val
+	case *idproto.Literal_Float:
+		val := ast.NewFloatValue(nil)
+		val.Value = fmt.Sprintf("%f", v.Float)
+		return val
+	case *idproto.Literal_Null:
+		panic("TODO: null as value is not allowed; maybe remove this?")
+	case *idproto.Literal_Enum:
+		val := ast.NewEnumValue(nil)
+		val.Value = v.Enum
+		return val
+	case *idproto.Literal_List:
+		val := ast.NewListValue(nil)
+		val.Values = make([]ast.Value, len(v.List.Values))
+		for i, lit := range v.List.Values {
+			val.Values[i] = GraphQLValue(lit)
+		}
+		return val
+	case *idproto.Literal_Object:
+		val := ast.NewObjectValue(nil)
+		val.Fields = make([]*ast.ObjectField, len(v.Object.Values))
+		for i, field := range v.Object.Values {
+			val.Fields[i] = &ast.ObjectField{
+				Name:  ast.NewName(nil),
+				Value: GraphQLValue(field.Value),
+			}
+		}
+		return val
+	default:
+		panic(fmt.Sprintf("unknown literal type %T", v))
+	}
 }

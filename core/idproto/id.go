@@ -2,9 +2,11 @@ package idproto
 
 import (
 	"fmt"
+	"sort"
 
-	"github.com/dagger/graphql/language/ast"
+	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -19,6 +21,11 @@ func Arg(name string, value any) *Argument {
 		Name:  name,
 		Value: LiteralValue(value),
 	}
+}
+
+// TODO rename to Marshaler-like?
+type Literate interface {
+	Literal() *Literal
 }
 
 func LiteralValue(value any) *Literal {
@@ -39,23 +46,47 @@ func LiteralValue(value any) *Literal {
 		return &Literal{Value: &Literal_String_{String_: v}}
 	case bool:
 		return &Literal{Value: &Literal_Bool{Bool: v}}
-	case ast.Value:
-		return LiteralValue(v.GetValue())
-	case []ast.Value:
+	// case ast.Value:
+	// 	return LiteralValue(v.GetValue())
+	case []any:
 		list := make([]*Literal, len(v))
 		for i, val := range v {
 			list[i] = LiteralValue(val)
 		}
 		return &Literal{Value: &Literal_List{List: &List{Values: list}}}
-	case []*ast.ObjectField:
-		list := make([]*Argument, len(v))
-		for i, val := range v {
-			list[i] = &Argument{
-				Name:  val.Name.Value,
-				Value: LiteralValue(val.Value),
+	case map[string]any:
+		args := make([]*Argument, len(v))
+		i := 0
+		for name, val := range v {
+			args[i] = &Argument{
+				Name:  name,
+				Value: LiteralValue(val),
 			}
+			i++
 		}
-		return &Literal{Value: &Literal_Object{Object: &Object{Values: list}}}
+		sort.SliceStable(args, func(i, j int) bool {
+			return args[i].Name < args[j].Name
+		})
+		return &Literal{Value: &Literal_Object{Object: &Object{Values: args}}}
+	// case []ast.Value:
+	// 	list := make([]*Literal, len(v))
+	// 	for i, val := range v {
+	// 		list[i] = LiteralValue(val)
+	// 	}
+	// 	return &Literal{Value: &Literal_List{List: &List{Values: list}}}
+	// case []*ast.ObjectField:
+	// 	list := make([]*Argument, len(v))
+	// 	for i, val := range v {
+	// 		list[i] = &Argument{
+	// 			Name:  val.Name.Value,
+	// 			Value: LiteralValue(val.Value),
+	// 		}
+	// 	}
+	// 	return &Literal{Value: &Literal_Object{Object: &Object{Values: list}}}
+	case Literate:
+		return v.Literal()
+	case specs.Platform: // XXX(vito): maybe just have our own type alias that implements Literate
+		return LiteralValue(platforms.Format(v))
 	default:
 		panic(fmt.Sprintf("unsupported literal type %T", v))
 	}

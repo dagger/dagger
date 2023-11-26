@@ -77,7 +77,7 @@ type directoryArgs struct {
 
 func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
 	if args.ID != nil {
-		return args.ID.Resolve(s.queryCache)
+		return load(ctx, args.ID, s.MergedSchemas)
 	}
 	platform := s.platform
 	return core.NewScratchDirectory(parent.PipelinePath(), platform), nil
@@ -116,7 +116,7 @@ type withDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
-	dir, err := args.Directory.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Directory, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ type withFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
-	file, err := args.Source.Resolve(s.queryCache)
+	file, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ type diffArgs struct {
 }
 
 func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
-	dir, err := args.Other.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Other, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	}
 	secrets := make([]*core.Secret, len(args.Secrets))
 	for i, id := range args.Secrets {
-		secrets[i], err = id.Resolve(s.queryCache)
+		secrets[i], err = load(ctx, id, s.MergedSchemas)
 		if err != nil {
 			return nil, err
 		}

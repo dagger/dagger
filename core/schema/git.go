@@ -55,7 +55,7 @@ type gitArgs struct {
 func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRef, error) {
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.Resolve(s.queryCache)
+		svc, err := load(ctx, args.ExperimentalServiceHost, s.MergedSchemas)
 		if err != nil {
 			return nil, nil
 		}
@@ -70,7 +70,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		})
 	}
 
-	socket, err := args.SSHAuthSocket.Resolve(s.queryCache)
+	socket, err := load(ctx, args.SSHAuthSocket, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -120,10 +120,10 @@ type treeArgs struct {
 
 func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs treeArgs) (*core.Directory, error) {
 	res := *parent
-	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket.ID != nil {
+	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket != nil {
 		// no need for a full clone() here, we're only modifying string fields
 		res.SSHKnownHosts = treeArgs.SSHKnownHosts
-		socket, err := treeArgs.SSHAuthSocket.Resolve(s.queryCache)
+		socket, err := load(ctx, treeArgs.SSHAuthSocket, s.MergedSchemas)
 		if err != nil {
 			return nil, err
 		}

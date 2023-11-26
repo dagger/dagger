@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/idproto"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
@@ -143,6 +144,15 @@ func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaV
 
 	s.schemaViews[viewDigest] = ms
 	return ms, nil
+}
+
+func load[T any](ctx context.Context, id *resourceid.ID[T], ms *MergedSchemas) (T, error) {
+	var zero T
+	view, err := ms.currentSchemaView(ctx)
+	if err != nil {
+		return zero, err
+	}
+	return id.Resolve(ms.queryCache, view.compiledSchema)
 }
 
 func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, error) {

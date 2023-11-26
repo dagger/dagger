@@ -49,12 +49,10 @@ func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	secret := NewDynamicSecret(name)
-
 	// add the plaintext to the map
-	store.secrets[secret.Name] = plaintext
+	store.secrets[name] = plaintext
 
-	return NewCanonicalSecret(secret.Name), nil
+	return NewCanonicalSecret(name), nil
 }
 
 // NewCanonicalSecret returns a canonical SecretID for the given name.

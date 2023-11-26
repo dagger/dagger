@@ -40,11 +40,11 @@ func (s *secretSchema) Resolvers() Resolvers {
 }
 
 type secretArgs struct {
-	ID core.SecretID
+	Name string
 }
 
 func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
-	return args.ID.Resolve(s.queryCache)
+	return core.NewDynamicSecret(args.Name), nil
 }
 
 type SecretPlaintext string
@@ -65,7 +65,7 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 		return nil, err
 	}
 
-	return secretID.Resolve(s.queryCache)
+	return load(ctx, secretID, s.MergedSchemas)
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args any) (string, error) {

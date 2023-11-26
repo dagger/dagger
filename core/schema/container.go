@@ -126,7 +126,7 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 		platform = *args.Platform
 	}
 	if args.ID != nil {
-		return args.ID.Resolve(s.queryCache)
+		return load(ctx, args.ID, s.MergedSchemas)
 	}
 	return core.NewContainer(parent.PipelinePath(), platform)
 }
@@ -156,13 +156,13 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx context.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	dir, err := args.Context.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Context, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
 	secrets := make([]*core.Secret, len(args.Secrets))
 	for i, id := range args.Secrets {
-		secrets[i], err = id.Resolve(s.queryCache)
+		secrets[i], err = load(ctx, id, s.MergedSchemas)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +184,7 @@ type containerWithRootFSArgs struct {
 }
 
 func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	dir, err := args.Directory.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Directory, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Source.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +464,7 @@ func (s *containerSchema) publish(ctx context.Context, parent *core.Container, a
 	variants := make([]*core.Container, len(args.PlatformVariants))
 	for i, id := range args.PlatformVariants {
 		var err error
-		variants[i], err = id.Resolve(s.queryCache)
+		variants[i], err = load(ctx, id, s.MergedSchemas)
 		if err != nil {
 			return "", err
 		}
@@ -479,7 +479,7 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	file, err := args.Source.Resolve(s.queryCache)
+	file, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -496,15 +496,15 @@ type containerWithMountedCacheArgs struct {
 
 func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
 	var dir *core.Directory
-	if args.Source.ID != nil {
+	if args.Source != nil {
 		var err error
-		dir, err = args.Source.Resolve(s.queryCache)
+		dir, err = load(ctx, args.Source, s.MergedSchemas)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cache, err := args.Cache.Resolve(s.queryCache)
+	cache, err := load(ctx, args.Cache, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -592,7 +592,7 @@ type containerWithSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
-	secret, err := args.Secret.Resolve(s.queryCache)
+	secret, err := load(ctx, args.Secret, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -607,7 +607,7 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	secret, err := args.Source.Resolve(s.queryCache)
+	secret, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +620,7 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Directory.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Directory, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -633,7 +633,7 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
-	file, err := args.Source.Resolve(s.queryCache)
+	file, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +656,7 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	socket, err := args.Source.Resolve(s.queryCache)
+	socket, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -686,7 +686,7 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 	variants := make([]*core.Container, len(args.PlatformVariants))
 	for i, id := range args.PlatformVariants {
 		var err error
-		variants[i], err = id.Resolve(s.queryCache)
+		variants[i], err = load(ctx, id, s.MergedSchemas)
 		if err != nil {
 			return false, err
 		}
@@ -708,7 +708,7 @@ func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container,
 	variants := make([]*core.Container, len(args.PlatformVariants))
 	for i, id := range args.PlatformVariants {
 		var err error
-		variants[i], err = id.Resolve(s.queryCache)
+		variants[i], err = load(ctx, id, s.MergedSchemas)
 		if err != nil {
 			return nil, err
 		}
@@ -722,7 +722,7 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	source, err := args.Source.Resolve(s.queryCache)
+	source, err := load(ctx, args.Source, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -779,7 +779,7 @@ type containerWithServiceBindingArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
-	svc, err := args.Service.Resolve(s.queryCache)
+	svc, err := load(ctx, args.Service, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}

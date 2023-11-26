@@ -61,7 +61,7 @@ func (s *hostSchema) setSecretFile(ctx context.Context, _ *core.Query, args setS
 		return nil, err
 	}
 
-	return secretID.Resolve(s.queryCache)
+	return load(ctx, secretID, s.MergedSchemas)
 }
 
 type hostDirectoryArgs struct {
@@ -97,7 +97,7 @@ type hostTunnelArgs struct {
 }
 
 func (s *hostSchema) tunnel(ctx context.Context, parent *core.Query, args hostTunnelArgs) (*core.Service, error) {
-	svc, err := args.Service.Resolve(s.queryCache)
+	svc, err := load(ctx, args.Service, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}

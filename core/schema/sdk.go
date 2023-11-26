@@ -177,10 +177,15 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 
 	genCodeID, ok := result.(string)
 	if !ok {
-		return nil, fmt.Errorf("expected string directory ID result, got %T", result)
+		return nil, fmt.Errorf("expected string generated code ID result, got %T", result)
 	}
 
-	return resourceid.DecodeFromID[*core.GeneratedCode](genCodeID, sdk.queryCache)
+	idp, err := resourceid.Decode(genCodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode generated code ID %q: %w", genCodeID, err)
+	}
+
+	return load(ctx, resourceid.FromProto[*core.GeneratedCode](idp), sdk.moduleSchema.MergedSchemas)
 }
 
 // Runtime calls the Runtime function on the SDK Module
@@ -249,7 +254,12 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 		return nil, fmt.Errorf("expected string container ID result, got %T", result)
 	}
 
-	return resourceid.DecodeFromID[*core.Container](runtimeID, sdk.queryCache)
+	idp, err := resourceid.Decode(runtimeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode container ID %q: %w", runtimeID, err)
+	}
+
+	return load(ctx, resourceid.FromProto[*core.Container](idp), sdk.moduleSchema.MergedSchemas)
 }
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged

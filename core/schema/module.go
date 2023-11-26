@@ -119,7 +119,7 @@ func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, a
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
 }) (*core.TypeDef, error) {
-	elemType, err := args.ElementType.Resolve(s.queryCache)
+	elemType, err := load(ctx, args.ElementType, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	TypeDef     core.TypeDefID
 	Description string
 }) (*core.TypeDef, error) {
-	fieldType, err := args.TypeDef.Resolve(s.queryCache)
+	fieldType, err := load(ctx, args.TypeDef, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -148,7 +148,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	fn, err := args.Function.Resolve(s.queryCache)
+	fn, err := load(ctx, args.Function, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -158,7 +158,7 @@ func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	fn, err := args.Function.Resolve(s.queryCache)
+	fn, err := load(ctx, args.Function, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -176,7 +176,7 @@ func (s *moduleSchema) typeDefKind(ctx context.Context, def *core.TypeDef, args 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
-	dir, err := args.Code.Resolve(s.queryCache)
+	dir, err := load(ctx, args.Code, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (s *moduleSchema) module(ctx context.Context, query *core.Query, args modul
 	if args.ID == nil {
 		return core.NewModule(s.platform, query.PipelinePath()), nil
 	}
-	return args.ID.Resolve(s.queryCache)
+	return load(ctx, args.ID, s.MergedSchemas)
 }
 
 type moduleConfigArgs struct {
@@ -212,7 +212,7 @@ type moduleConfigArgs struct {
 }
 
 func (s *moduleSchema) moduleConfig(ctx context.Context, query *core.Query, args moduleConfigArgs) (*modules.Config, error) {
-	srcDir, err := args.SourceDirectory.Resolve(s.queryCache)
+	srcDir, err := load(ctx, args.SourceDirectory, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source directory: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
-	returnType, err := args.ReturnType.Resolve(s.queryCache)
+	returnType, err := load(ctx, args.ReturnType, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
@@ -308,7 +308,7 @@ func (s *moduleSchema) moduleObjects(ctx context.Context, mod *core.Module, _ an
 func (s *moduleSchema) moduleWithObject(ctx context.Context, module *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Object.Resolve(s.queryCache)
+	def, err := load(ctx, args.Object, s.MergedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Description  string
 	DefaultValue any
 }) (*core.Function, error) {
-	argType, err := args.TypeDef.Resolve(s.queryCache)
+	argType, err := load(ctx, args.TypeDef, s.MergedSchemas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
 	}
@@ -660,7 +660,11 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 		if !ok {
 			return nil, fmt.Errorf("expected string result, got %T", result)
 		}
-		mod, err := resourceid.DecodeFromID[*core.Module](idStr, s.queryCache)
+		idProto, err := resourceid.Decode(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse module id: %w", err)
+		}
+		mod, err := resourceid.FromProto[*core.Module](idProto).Resolve(s.queryCache, schemaView.compiledSchema)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse module id: %w", err)
 		}

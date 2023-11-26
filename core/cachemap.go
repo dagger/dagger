@@ -50,6 +50,14 @@ func (m *CacheMap[K, T]) Get(key K) (T, error) {
 	return zero, fmt.Errorf("cache key %v not found", key)
 }
 
+func (m *CacheMap[K, T]) Set(key K, val T) {
+	m.l.Lock()
+	m.calls[key] = &cache[T]{
+		val: val,
+	}
+	m.l.Unlock()
+}
+
 func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {

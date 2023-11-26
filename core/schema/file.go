@@ -51,7 +51,7 @@ type fileArgs struct {
 }
 
 func (s *fileSchema) file(ctx context.Context, parent *core.Query, args fileArgs) (*core.File, error) {
-	return args.ID.Resolve(s.queryCache)
+	return load(ctx, args.ID, s.MergedSchemas)
 }
 
 func (s *fileSchema) sync(ctx context.Context, parent *core.File, _ any) (core.FileID, error) {

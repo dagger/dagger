@@ -52,7 +52,7 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.Resolve(s.queryCache)
+		svc, err := load(ctx, args.ExperimentalServiceHost, s.MergedSchemas)
 		if err != nil {
 			return nil, err
 		}
