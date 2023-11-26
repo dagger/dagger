@@ -35,12 +35,12 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"host": PassthroughResolver,
 		},
 		"Host": ObjectResolver{
-			"directory":     ToResolver(s.directory),
-			"file":          ToResolver(s.file),
-			"unixSocket":    ToResolver(s.socket),
-			"setSecretFile": ToResolver(s.setSecretFile),
-			"tunnel":        ToResolver(s.tunnel),
-			"service":       ToResolver(s.service),
+			"directory":     ToCachedResolver(s.queryCache, s.directory),
+			"file":          ToCachedResolver(s.queryCache, s.file),
+			"unixSocket":    ToCachedResolver(s.queryCache, s.socket),
+			"setSecretFile": ToCachedResolver(s.queryCache, s.setSecretFile),
+			"tunnel":        ToCachedResolver(s.queryCache, s.tunnel),
+			"service":       ToCachedResolver(s.queryCache, s.service),
 		},
 	}
 }
@@ -50,7 +50,7 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, _ any, args setSecretFileArgs) (*core.Secret, error) {
+func (s *hostSchema) setSecretFile(ctx context.Context, _ *core.Query, args setSecretFileArgs) (*core.Secret, error) {
 	secretFileContent, err := s.bk.ReadCallerHostFile(ctx, args.Path)
 	if err != nil {
 		return nil, fmt.Errorf("read secret file: %w", err)
@@ -61,7 +61,7 @@ func (s *hostSchema) setSecretFile(ctx context.Context, _ any, args setSecretFil
 		return nil, err
 	}
 
-	return secretID.Decode()
+	return secretID.Resolve(s.queryCache)
 }
 
 type hostDirectoryArgs struct {
@@ -78,7 +78,7 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx context.Context, parent any, args hostSocketArgs) (*core.Socket, error) {
+func (s *hostSchema) socket(ctx context.Context, parent *core.Query, args hostSocketArgs) (*core.Socket, error) {
 	return s.host.Socket(ctx, args.Path)
 }
 
@@ -96,8 +96,8 @@ type hostTunnelArgs struct {
 	Native  bool
 }
 
-func (s *hostSchema) tunnel(ctx context.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
-	svc, err := args.Service.Decode()
+func (s *hostSchema) tunnel(ctx context.Context, parent *core.Query, args hostTunnelArgs) (*core.Service, error) {
+	svc, err := args.Service.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ type hostServiceArgs struct {
 	Ports []core.PortForward
 }
 
-func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+func (s *hostSchema) service(ctx context.Context, parent *core.Query, args hostServiceArgs) (*core.Service, error) {
 	if len(args.Ports) == 0 {
 		return nil, errors.New("no ports specified")
 	}

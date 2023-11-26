@@ -11,8 +11,7 @@ import (
 	"github.com/vito/progrock"
 )
 
-type Host struct {
-}
+type Host struct{}
 
 func NewHost() *Host {
 	return &Host{}

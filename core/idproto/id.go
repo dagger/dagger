@@ -1,6 +1,9 @@
 package idproto
 
 import (
+	"fmt"
+
+	"github.com/dagger/graphql/language/ast"
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/protobuf/proto"
 )
@@ -36,8 +39,25 @@ func LiteralValue(value any) *Literal {
 		return &Literal{Value: &Literal_String_{String_: v}}
 	case bool:
 		return &Literal{Value: &Literal_Bool{Bool: v}}
+	case ast.Value:
+		return LiteralValue(v.GetValue())
+	case []ast.Value:
+		list := make([]*Literal, len(v))
+		for i, val := range v {
+			list[i] = LiteralValue(val)
+		}
+		return &Literal{Value: &Literal_List{List: &List{Values: list}}}
+	case []*ast.ObjectField:
+		list := make([]*Argument, len(v))
+		for i, val := range v {
+			list[i] = &Argument{
+				Name:  val.Name.Value,
+				Value: LiteralValue(val.Value),
+			}
+		}
+		return &Literal{Value: &Literal_Object{Object: &Object{Values: list}}}
 	default:
-		panic("TODO")
+		panic(fmt.Sprintf("unsupported literal type %T", v))
 	}
 }
 
@@ -89,6 +109,10 @@ func (id *ID) Digest() (digest.Digest, error) {
 		return "", err
 	}
 	return digest.FromBytes(bytes), nil
+}
+
+func (id *ID) Clone() *ID {
+	return proto.Clone(id).(*ID)
 }
 
 // Canonical returns the selector with any contained IDs canonicalized.

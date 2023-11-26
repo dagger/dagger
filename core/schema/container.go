@@ -26,9 +26,6 @@ type containerSchema struct {
 	svcs         *core.Services
 	ociStore     content.Store
 	leaseManager *leaseutil.Manager
-
-	buildCache  *core.CacheMap[uint64, *core.Container]
-	importCache *core.CacheMap[uint64, *specs.Descriptor]
 }
 
 var _ ExecutableSchema = &containerSchema{}
@@ -48,88 +45,88 @@ func (s *containerSchema) Schema() string {
 func (s *containerSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"container": ToResolver(s.container),
+			"container": ToCachedResolver(s.queryCache, s.container),
 		},
 	}
 
-	ResolveIDable[core.Container](s.queryCache, rs, "Container", ObjectResolver{
-		"sync":                    ToResolver(s.sync),
-		"from":                    ToResolver(s.from),
-		"build":                   ToResolver(s.build),
-		"rootfs":                  ToResolver(s.rootfs),
-		"pipeline":                ToResolver(s.pipeline),
-		"withRootfs":              ToResolver(s.withRootfs),
-		"file":                    ToResolver(s.file),
-		"directory":               ToResolver(s.directory),
-		"user":                    ToResolver(s.user),
-		"withUser":                ToResolver(s.withUser),
-		"workdir":                 ToResolver(s.workdir),
-		"withWorkdir":             ToResolver(s.withWorkdir),
-		"envVariables":            ToResolver(s.envVariables),
-		"envVariable":             ToResolver(s.envVariable),
-		"withEnvVariable":         ToResolver(s.withEnvVariable),
-		"withSecretVariable":      ToResolver(s.withSecretVariable),
-		"withoutEnvVariable":      ToResolver(s.withoutEnvVariable),
-		"withLabel":               ToResolver(s.withLabel),
-		"label":                   ToResolver(s.label),
-		"labels":                  ToResolver(s.labels),
-		"withoutLabel":            ToResolver(s.withoutLabel),
-		"entrypoint":              ToResolver(s.entrypoint),
-		"withEntrypoint":          ToResolver(s.withEntrypoint),
-		"defaultArgs":             ToResolver(s.defaultArgs),
-		"withDefaultArgs":         ToResolver(s.withDefaultArgs),
-		"mounts":                  ToResolver(s.mounts),
-		"withMountedDirectory":    ToResolver(s.withMountedDirectory),
-		"withMountedFile":         ToResolver(s.withMountedFile),
-		"withMountedTemp":         ToResolver(s.withMountedTemp),
-		"withMountedCache":        ToResolver(s.withMountedCache),
-		"withMountedSecret":       ToResolver(s.withMountedSecret),
-		"withUnixSocket":          ToResolver(s.withUnixSocket),
-		"withoutUnixSocket":       ToResolver(s.withoutUnixSocket),
-		"withoutMount":            ToResolver(s.withoutMount),
-		"withFile":                ToResolver(s.withFile),
-		"withNewFile":             ToResolver(s.withNewFile),
-		"withDirectory":           ToResolver(s.withDirectory),
-		"withExec":                ToResolver(s.withExec),
-		"stdout":                  ToResolver(s.stdout),
-		"stderr":                  ToResolver(s.stderr),
-		"publish":                 ToResolver(s.publish),
-		"platform":                ToResolver(s.platform),
-		"export":                  ToResolver(s.export),
-		"asTarball":               ToResolver(s.asTarball),
-		"import":                  ToResolver(s.import_),
-		"withRegistryAuth":        ToResolver(s.withRegistryAuth),
-		"withoutRegistryAuth":     ToResolver(s.withoutRegistryAuth),
-		"imageRef":                ToResolver(s.imageRef),
-		"withExposedPort":         ToResolver(s.withExposedPort),
-		"withoutExposedPort":      ToResolver(s.withoutExposedPort),
-		"exposedPorts":            ToResolver(s.exposedPorts),
-		"withServiceBinding":      ToResolver(s.withServiceBinding),
-		"withFocus":               ToResolver(s.withFocus),
-		"withoutFocus":            ToResolver(s.withoutFocus),
-		"shellEndpoint":           ToResolver(s.shellEndpoint),
-		"experimentalWithGPU":     ToResolver(s.withGPU),
-		"experimentalWithAllGPUs": ToResolver(s.withAllGPUs),
+	ResolveIDable[*core.Container](s.queryCache, rs, "Container", ObjectResolver{
+		"sync":                    ToCachedResolver(s.queryCache, s.sync),
+		"from":                    ToCachedResolver(s.queryCache, s.from),
+		"build":                   ToCachedResolver(s.queryCache, s.build),
+		"rootfs":                  ToCachedResolver(s.queryCache, s.rootfs),
+		"pipeline":                ToCachedResolver(s.queryCache, s.pipeline),
+		"withRootfs":              ToCachedResolver(s.queryCache, s.withRootfs),
+		"file":                    ToCachedResolver(s.queryCache, s.file),
+		"directory":               ToCachedResolver(s.queryCache, s.directory),
+		"user":                    ToCachedResolver(s.queryCache, s.user),
+		"withUser":                ToCachedResolver(s.queryCache, s.withUser),
+		"workdir":                 ToCachedResolver(s.queryCache, s.workdir),
+		"withWorkdir":             ToCachedResolver(s.queryCache, s.withWorkdir),
+		"envVariables":            ToCachedResolver(s.queryCache, s.envVariables),
+		"envVariable":             ToCachedResolver(s.queryCache, s.envVariable),
+		"withEnvVariable":         ToCachedResolver(s.queryCache, s.withEnvVariable),
+		"withSecretVariable":      ToCachedResolver(s.queryCache, s.withSecretVariable),
+		"withoutEnvVariable":      ToCachedResolver(s.queryCache, s.withoutEnvVariable),
+		"withLabel":               ToCachedResolver(s.queryCache, s.withLabel),
+		"label":                   ToCachedResolver(s.queryCache, s.label),
+		"labels":                  ToCachedResolver(s.queryCache, s.labels),
+		"withoutLabel":            ToCachedResolver(s.queryCache, s.withoutLabel),
+		"entrypoint":              ToCachedResolver(s.queryCache, s.entrypoint),
+		"withEntrypoint":          ToCachedResolver(s.queryCache, s.withEntrypoint),
+		"defaultArgs":             ToCachedResolver(s.queryCache, s.defaultArgs),
+		"withDefaultArgs":         ToCachedResolver(s.queryCache, s.withDefaultArgs),
+		"mounts":                  ToCachedResolver(s.queryCache, s.mounts),
+		"withMountedDirectory":    ToCachedResolver(s.queryCache, s.withMountedDirectory),
+		"withMountedFile":         ToCachedResolver(s.queryCache, s.withMountedFile),
+		"withMountedTemp":         ToCachedResolver(s.queryCache, s.withMountedTemp),
+		"withMountedCache":        ToCachedResolver(s.queryCache, s.withMountedCache),
+		"withMountedSecret":       ToCachedResolver(s.queryCache, s.withMountedSecret),
+		"withUnixSocket":          ToCachedResolver(s.queryCache, s.withUnixSocket),
+		"withoutUnixSocket":       ToCachedResolver(s.queryCache, s.withoutUnixSocket),
+		"withoutMount":            ToCachedResolver(s.queryCache, s.withoutMount),
+		"withFile":                ToCachedResolver(s.queryCache, s.withFile),
+		"withNewFile":             ToCachedResolver(s.queryCache, s.withNewFile),
+		"withDirectory":           ToCachedResolver(s.queryCache, s.withDirectory),
+		"withExec":                ToCachedResolver(s.queryCache, s.withExec),
+		"stdout":                  ToCachedResolver(s.queryCache, s.stdout),
+		"stderr":                  ToCachedResolver(s.queryCache, s.stderr),
+		"publish":                 ToCachedResolver(s.queryCache, s.publish),
+		"platform":                ToCachedResolver(s.queryCache, s.platform),
+		"export":                  ToCachedResolver(s.queryCache, s.export),
+		"asTarball":               ToCachedResolver(s.queryCache, s.asTarball),
+		"import":                  ToCachedResolver(s.queryCache, s.import_),
+		"withRegistryAuth":        ToCachedResolver(s.queryCache, s.withRegistryAuth),
+		"withoutRegistryAuth":     ToCachedResolver(s.queryCache, s.withoutRegistryAuth),
+		"imageRef":                ToCachedResolver(s.queryCache, s.imageRef),
+		"withExposedPort":         ToCachedResolver(s.queryCache, s.withExposedPort),
+		"withoutExposedPort":      ToCachedResolver(s.queryCache, s.withoutExposedPort),
+		"exposedPorts":            ToCachedResolver(s.queryCache, s.exposedPorts),
+		"withServiceBinding":      ToCachedResolver(s.queryCache, s.withServiceBinding),
+		"withFocus":               ToCachedResolver(s.queryCache, s.withFocus),
+		"withoutFocus":            ToCachedResolver(s.queryCache, s.withoutFocus),
+		"shellEndpoint":           ToCachedResolver(s.queryCache, s.shellEndpoint),
+		"experimentalWithGPU":     ToCachedResolver(s.queryCache, s.withGPU),
+		"experimentalWithAllGPUs": ToCachedResolver(s.queryCache, s.withAllGPUs),
 	})
 
 	return rs
 }
 
 type containerArgs struct {
-	ID       core.ContainerID
+	ID       core.ContainerID // XXX(vito): should the pointeriness be moved outside?
 	Platform *specs.Platform
 }
 
 func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
-	if args.ID.ID != nil {
-		return args.ID.Decode()
-	}
 	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
-		if args.ID.ID != nil {
+		if args.ID != nil {
 			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
 		}
 		platform = *args.Platform
+	}
+	if args.ID != nil {
+		return args.ID.Resolve(s.queryCache)
 	}
 	return core.NewContainer(parent.PipelinePath(), platform)
 }
@@ -139,7 +136,7 @@ func (s *containerSchema) sync(ctx context.Context, parent *core.Container, _ an
 	if err != nil {
 		return nil, err
 	}
-	return resourceid.FromProto[core.Container](parent.ID()), nil
+	return resourceid.FromProto[*core.Container](parent.ID()), nil
 }
 
 type containerFromArgs struct {
@@ -159,9 +156,16 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx context.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	dir, err := args.Context.Decode()
+	dir, err := args.Context.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
+	}
+	secrets := make([]*core.Secret, len(args.Secrets))
+	for i, id := range args.Secrets {
+		secrets[i], err = id.Resolve(s.queryCache)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return parent.Build(
 		ctx,
@@ -169,10 +173,9 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 		args.Dockerfile,
 		args.BuildArgs,
 		args.Target,
-		args.Secrets,
+		secrets,
 		s.bk,
 		s.svcs,
-		s.buildCache,
 	)
 }
 
@@ -181,7 +184,7 @@ type containerWithRootFSArgs struct {
 }
 
 func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	dir, err := args.Directory.Decode()
+	dir, err := args.Directory.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +446,7 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Source.Decode()
+	dir, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +464,7 @@ func (s *containerSchema) publish(ctx context.Context, parent *core.Container, a
 	variants := make([]*core.Container, len(args.PlatformVariants))
 	for i, id := range args.PlatformVariants {
 		var err error
-		variants[i], err = id.Decode()
+		variants[i], err = id.Resolve(s.queryCache)
 		if err != nil {
 			return "", err
 		}
@@ -476,7 +479,7 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx context.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	file, err := args.Source.Decode()
+	file, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -495,13 +498,13 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Con
 	var dir *core.Directory
 	if args.Source.ID != nil {
 		var err error
-		dir, err = args.Source.Decode()
+		dir, err = args.Source.Resolve(s.queryCache)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cache, err := args.Cache.Decode()
+	cache, err := args.Cache.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -589,7 +592,7 @@ type containerWithSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
-	secret, err := args.Secret.Decode()
+	secret, err := args.Secret.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +607,7 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx context.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	secret, err := args.Source.Decode()
+	secret, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +620,7 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	dir, err := args.Directory.Decode()
+	dir, err := args.Directory.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +633,7 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
-	file, err := args.Source.Decode()
+	file, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +656,7 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx context.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	socket, err := args.Source.Decode()
+	socket, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -683,7 +686,7 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 	variants := make([]*core.Container, len(args.PlatformVariants))
 	for i, id := range args.PlatformVariants {
 		var err error
-		variants[i], err = id.Decode()
+		variants[i], err = id.Resolve(s.queryCache)
 		if err != nil {
 			return false, err
 		}
@@ -705,7 +708,7 @@ func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container,
 	variants := make([]*core.Container, len(args.PlatformVariants))
 	for i, id := range args.PlatformVariants {
 		var err error
-		variants[i], err = id.Decode()
+		variants[i], err = id.Resolve(s.queryCache)
 		if err != nil {
 			return nil, err
 		}
@@ -719,7 +722,7 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	source, err := args.Source.Decode()
+	source, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -730,7 +733,6 @@ func (s *containerSchema) import_(ctx context.Context, parent *core.Container, a
 		s.bk,
 		s.host,
 		s.svcs,
-		s.importCache,
 		s.ociStore,
 		s.leaseManager,
 	)
@@ -777,7 +779,7 @@ type containerWithServiceBindingArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
-	svc, err := args.Service.Decode()
+	svc, err := args.Service.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}

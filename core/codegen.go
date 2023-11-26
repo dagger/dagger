@@ -1,11 +1,7 @@
 package core
 
-import (
-	"github.com/opencontainers/go-digest"
-)
-
 type GeneratedCode struct {
-	*Identified
+	Identified
 
 	Code              *Directory `json:"code"`
 	VCSIgnoredPaths   []string   `json:"vcsIgnoredPaths,omitempty"`
@@ -18,13 +14,9 @@ func NewGeneratedCode(code *Directory) *GeneratedCode {
 	}
 }
 
-func (code *GeneratedCode) Digest() (digest.Digest, error) {
-	return stableDigest(code)
-}
-
-func (code GeneratedCode) Clone() *GeneratedCode {
-	cp := code
-	cp.Identified = code.Identified.Clone()
+func (code *GeneratedCode) Clone() *GeneratedCode {
+	cp := *code
+	cp.Identified.Reset()
 	if cp.Code != nil {
 		cp.Code = cp.Code.Clone()
 	}

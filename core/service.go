@@ -12,13 +12,11 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
 
@@ -27,7 +25,7 @@ const (
 )
 
 type Service struct {
-	*Identified
+	Identified
 
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
@@ -68,9 +66,9 @@ var _ pipeline.Pipelineable = (*Service)(nil)
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (svc Service) Clone() *Service {
-	cp := svc
-	cp.Identified = svc.Identified.Clone()
+func (svc *Service) Clone() *Service {
+	cp := *svc
+	cp.Identified.Reset()
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
 	}
@@ -94,15 +92,6 @@ func (svc *Service) PipelinePath() pipeline.Path {
 	}
 }
 
-// Service is digestible so that it can be recorded as an output of the
-// --debug vertex that created it.
-var _ resourceid.Digestible = (*Service)(nil)
-
-// Digest returns the service's content hash.
-func (svc *Service) Digest() (digest.Digest, error) {
-	return stableDigest(svc)
-}
-
 func (svc *Service) Hostname(ctx context.Context, svcs *Services) (string, error) {
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
@@ -114,7 +103,7 @@ func (svc *Service) Hostname(ctx context.Context, svcs *Services) (string, error
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
 		svc.HostUpstream != "": // container=>host
-		dig, err := svc.Digest()
+		dig, err := svc.ID().Digest()
 		if err != nil {
 			return "", err
 		}
@@ -229,7 +218,7 @@ func (svc *Service) startContainer(
 	forwardStdout func(io.Reader),
 	forwardStderr func(io.Reader),
 ) (running *RunningService, err error) {
-	dig, err := svc.Digest()
+	dig, err := svc.ID().Digest()
 	if err != nil {
 		return nil, err
 	}
@@ -558,7 +547,7 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client, svcs *
 		closers[i] = closeListener
 	}
 
-	dig, err := svc.Digest()
+	dig, err := svc.ID().Digest()
 	if err != nil {
 		stop()
 		return nil, err
@@ -586,7 +575,7 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client, svcs *
 }
 
 func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client, svcs *Services) (running *RunningService, err error) {
-	dig, err := svc.Digest()
+	dig, err := svc.ID().Digest()
 	if err != nil {
 		return nil, err
 	}

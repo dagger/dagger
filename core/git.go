@@ -13,6 +13,8 @@ import (
 )
 
 type GitRef struct {
+	Identified
+
 	URL string `json:"url"`
 	Ref string `json:"ref"`
 
@@ -28,6 +30,7 @@ type GitRef struct {
 
 func (ref *GitRef) clone() *GitRef {
 	r := *ref
+	r.Identified.Reset()
 	r.Services = cloneSlice(r.Services)
 	r.Pipeline = cloneSlice(r.Pipeline)
 	return &r

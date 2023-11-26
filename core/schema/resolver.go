@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"runtime/debug"
+	"sort"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/idproto"
@@ -69,25 +72,32 @@ func (ScalarResolver) _resolver() {}
 // into a graphql resolver graphql.FieldResolveFn.
 func ToResolver[P any, A any, R any](f func(context.Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("panic in resolver: %v", err)
+				debug.PrintStack()
+				panic(err)
+			}
+		}()
 		recorder := progrock.FromContext(p.Context)
 
 		var args A
 		argBytes, err := json.Marshal(p.Args)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal args: %w", err)
+			return nil, fmt.Errorf("%s failed to marshal args: %w", p.Info.FieldName, err)
 		}
 		if err := json.Unmarshal(argBytes, &args); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal args: %w", err)
+			return nil, fmt.Errorf("%s failed to unmarshal args: %w", p.Info.FieldName, err)
 		}
 
 		parent, ok := p.Source.(P)
 		if !ok {
 			parentBytes, err := json.Marshal(p.Source)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal parent: %w", err)
+				return nil, fmt.Errorf("%s failed to marshal parent: %w", p.Info.FieldName, err)
 			}
 			if err := json.Unmarshal(parentBytes, &parent); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal parent: %w", err)
+				return nil, fmt.Errorf("%s failed to unmarshal parent: %w", p.Info.FieldName, err)
 			}
 		}
 
@@ -109,18 +119,97 @@ func ToResolver[P any, A any, R any](f func(context.Context, P, A) (R, error)) g
 			return nil, err
 		}
 
-		if edible, ok := any(res).(resourceid.Digestible); ok {
-			dg, err := edible.Digest()
-			if err != nil {
-				return nil, fmt.Errorf("failed to compute digest: %w", err)
-			}
-
-			vtx.Output(dg)
-		}
-
 		vtx.Done(nil)
 
 		return res, nil
+	}
+}
+
+type IDCache interface {
+	GetOrInitialize(digest.Digest, func() (any, error)) (any, error)
+}
+
+func chain(parent *idproto.ID, params graphql.ResolveParams) *idproto.ID {
+	chainedID := idproto.New(params.Info.ReturnType.String())
+
+	// convert query args to ID args, by AST
+	idArgs := make([]*idproto.Argument, len(params.Info.FieldASTs[0].Arguments))
+	for i, arg := range params.Info.FieldASTs[0].Arguments {
+		idArgs[i] = idproto.Arg(arg.Name.Value, arg.Value)
+	}
+
+	// ensure argument order does not matter
+	sort.SliceStable(idArgs, func(i, j int) bool {
+		return idArgs[i].Name < idArgs[j].Name
+	})
+
+	// append selector to the constructor
+	chainedID.Constructor = make([]*idproto.Selector, 0, len(parent.Constructor)+1)
+	copy(chainedID.Constructor, parent.Constructor)
+	chainedID.Append(params.Info.FieldName, idArgs...)
+
+	return chainedID
+}
+
+func ToCachedResolver[P core.IDable, A any, R any](cache IDCache, f func(context.Context, P, A) (R, error)) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("panic in resolver: %v", err)
+				debug.PrintStack()
+				panic(err)
+			}
+		}()
+
+		parent, ok := p.Source.(P)
+		if !ok {
+			return nil, fmt.Errorf("%s expected source to be %T, got %T", p.Info.FieldName, parent, p.Source)
+		}
+
+		id := chain(parent.ID(), p)
+
+		dig, err := id.Digest()
+		if err != nil {
+			return nil, err
+		}
+
+		log.Println("??? CACHE CHECK", dig)
+
+		return cache.GetOrInitialize(dig, func() (any, error) {
+			log.Println("!!! CACHE MISS", dig, id.String())
+
+			recorder := progrock.FromContext(p.Context)
+
+			var args A
+			argBytes, err := json.Marshal(p.Args)
+			if err != nil {
+				return nil, fmt.Errorf("%s failed to marshal args: %w", p.Info.FieldName, err)
+			}
+			if err := json.Unmarshal(argBytes, &args); err != nil {
+				return nil, fmt.Errorf("%s failed to unmarshal args: %w", p.Info.FieldName, err)
+			}
+
+			if pipelineable, ok := p.Source.(pipeline.Pipelineable); ok {
+				recorder = pipelineable.PipelinePath().RecorderGroup(recorder)
+				p.Context = progrock.ToContext(p.Context, recorder)
+			}
+
+			ctx := p.Context
+
+			res, err := f(ctx, parent, args)
+			if err != nil {
+				return nil, err
+			}
+
+			if idable, ok := any(res).(core.IDable); ok {
+				if idable.ID() == nil {
+					log.Printf("!!! SETTING %T ID: %s", idable, id.String())
+					idable.SetID(id)
+				}
+			}
+
+			return res, nil
+		})
 	}
 }
 
@@ -139,20 +228,60 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 	})
 }
 
-type IDable interface {
-	ID() *idproto.ID
-}
-
 func ResolveIDable[T core.Object[T]](cache *core.CacheMap[digest.Digest, any], rs Resolvers, name string, obj ObjectResolver) {
 	load := loader[*T](cache)
 
-	// Add resolver for the type.
-	rs[name] = ToIDableObjectResolver(load, obj)
+	// Wrap each field resolver to clone the object and set its ID.
+	// for name, fn := range obj {
+	// 	fn := fn
+	// 	// obj[name] = func(p graphql.ResolveParams) (any, error) {
+	// 	// 	queryID := idproto.New(p.Info.ReturnType.Name())
+	// 	// 	if idable, ok := any(p.Source).(core.IDable); ok {
+	// 	// 		queryID.Constructor = idable.ID().Constructor
+	// 	// 	}
+	// 	// 	idArgs := make([]*idproto.Argument, len(p.Info.FieldASTs[0].Arguments))
+	// 	// 	for i, arg := range p.Info.FieldASTs[0].Arguments {
+	// 	// 		idArgs[i] = idproto.Arg(arg.Name.Value, arg.Value.GetValue())
+	// 	// 	}
+	// 	// 	sort.SliceStable(idArgs, func(i, j int) bool {
+	// 	// 		return idArgs[i].Name < idArgs[j].Name
+	// 	// 	})
+	// 	// 	queryID.Append(p.Info.FieldName, idArgs...)
+
+	// 	// 	dig, err := queryID.Digest()
+	// 	// 	if err != nil {
+	// 	// 		return nil, err
+	// 	// 	}
+
+	// 	// 	return cache.GetOrInitialize(dig, func() (any, error) {
+	// 	// 		res, err := fn(p)
+	// 	// 		if err != nil {
+	// 	// 			return nil, err
+	// 	// 		}
+
+	// 	// 		if idable, ok := any(res).(core.IDable); ok {
+	// 	// 			// if the object already has an ID, respect it
+	// 	// 			if idable.ID() == nil {
+	// 	// 				log.Println("!!! SETTING ID", queryID.String())
+
+	// 	// 				idable.SetID(queryID)
+	// 	// 				// TODO: store in query cache
+	// 	// 			}
+	// 	// 		}
+
+	// 	// 		return res, nil
+	// 	// 	})
+	// 	// }
+	// }
 
 	// Add field for querying the object's ID.
 	obj["id"] = ToResolver(func(ctx context.Context, obj T, args any) (_ *resourceid.ID[T], rerr error) {
+		log.Println("!!! ID", obj)
 		return resourceid.FromProto[T](obj.ID()), nil
 	})
+
+	// Add resolver for the type.
+	rs[name] = ToIDableObjectResolver(load, obj)
 
 	// Add resolver for its ID type.
 	rs[name+"ID"] = idResolver[T]()

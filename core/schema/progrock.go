@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/core"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
@@ -24,11 +24,11 @@ func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any
 	// E.g. secret plaintext fields have a custom serialization that scrubs the value.
 	argBytes, err := json.Marshal(args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal args: %w", err)
+		return nil, fmt.Errorf("queryVtx failed to marshal args: %w", err)
 	}
 	argMap := map[string]any{}
 	if err := json.Unmarshal(argBytes, &argMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal args: %w", err)
+		return nil, fmt.Errorf("queryVtx failed to unmarshal args: %w", err)
 	}
 
 	name := fieldName
@@ -40,8 +40,8 @@ func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any
 			continue
 		}
 
-		if dg, ok := val.(resourceid.Digestible); ok {
-			d, err := dg.Digest()
+		if dg, ok := val.(core.IDable); ok {
+			d, err := dg.ID().Digest()
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute digest for param %q: %w", argName, err)
 			}
@@ -63,8 +63,8 @@ func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any
 		name += "(" + strings.Join(argStrs, ", ") + ")"
 	}
 
-	if edible, ok := parent.(resourceid.Digestible); ok {
-		id, err := edible.Digest()
+	if edible, ok := parent.(core.IDable); ok {
+		id, err := edible.ID().Digest()
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute digest: %w", err)
 		}
@@ -87,13 +87,13 @@ func queryDigest(fieldName string, parent, args any) (digest.Digest, error) {
 		Args   any
 	}
 
-	if v, ok := parent.(resourceid.Digestible); ok && v != nil {
-		d, err := v.Digest()
-		if err != nil {
-			return "", fmt.Errorf("failed to compute digest for parent: %w", err)
-		}
-		parent = d
-	}
+	// if v, ok := parent.(resourceid.Digestible); ok && v != nil {
+	// 	d, err := v.Digest()
+	// 	if err != nil {
+	// 		return "", fmt.Errorf("failed to compute digest for parent: %w", err)
+	// 	}
+	// 	parent = d
+	// }
 
 	payload, err := json.Marshal(subset{
 		Source: parent,

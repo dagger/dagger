@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -24,7 +23,7 @@ const (
 )
 
 type Module struct {
-	*Identified
+	Identified
 
 	// The module's source code root directory
 	SourceDirectory *Directory `json:"sourceDirectory"`
@@ -60,19 +59,6 @@ type Module struct {
 	Pipeline pipeline.Path `json:"pipeline,omitempty"`
 }
 
-func (mod *Module) Digest() (digest.Digest, error) {
-	return stableDigest(mod)
-}
-
-// Base gives a digest after unsetting Objects+Runtime, which is useful
-// as a digest of the "base" Module that's stable before+after loading TypeDefs
-func (mod *Module) BaseDigest() (digest.Digest, error) {
-	mod = mod.Clone()
-	mod.Objects = nil
-	mod.Runtime = nil
-	return stableDigest(mod)
-}
-
 func (mod *Module) PBDefinitions() ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if mod.SourceDirectory != nil {
@@ -92,9 +78,9 @@ func (mod *Module) PBDefinitions() ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-func (mod Module) Clone() *Module {
-	cp := mod
-	cp.Identified = mod.Identified.Clone()
+func (mod *Module) Clone() *Module {
+	cp := *mod
+	cp.Identified.Reset()
 	if mod.SourceDirectory != nil {
 		cp.SourceDirectory = mod.SourceDirectory.Clone()
 	}

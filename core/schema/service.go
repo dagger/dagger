@@ -31,16 +31,16 @@ func (s *serviceSchema) Schema() string {
 func (s *serviceSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Container": ObjectResolver{
-			"asService": ToResolver(s.containerAsService),
+			"asService": ToCachedResolver(s.queryCache, s.containerAsService),
 		},
 	}
 
-	ResolveIDable[core.Service](s.queryCache, rs, "Service", ObjectResolver{
-		"hostname": ToResolver(s.hostname),
-		"ports":    ToResolver(s.ports),
-		"endpoint": ToResolver(s.endpoint),
-		"start":    ToResolver(s.start),
-		"stop":     ToResolver(s.stop),
+	ResolveIDable[*core.Service](s.queryCache, rs, "Service", ObjectResolver{
+		"hostname": ToCachedResolver(s.queryCache, s.hostname),
+		"ports":    ToCachedResolver(s.queryCache, s.ports),
+		"endpoint": ToCachedResolver(s.queryCache, s.endpoint),
+		"start":    ToCachedResolver(s.queryCache, s.start),
+		"stop":     ToCachedResolver(s.queryCache, s.stop),
 	})
 
 	return rs
@@ -80,7 +80,7 @@ func (s *serviceSchema) start(ctx context.Context, parent *core.Service, args an
 		return nil, err
 	}
 
-	return resourceid.FromProto[core.Service](running.Service.ID()), nil
+	return resourceid.FromProto[*core.Service](running.Service.ID()), nil
 }
 
 func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
@@ -89,5 +89,5 @@ func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args any
 		return nil, err
 	}
 
-	return resourceid.FromProto[core.Service](parent.ID()), nil
+	return resourceid.FromProto[*core.Service](parent.ID()), nil
 }

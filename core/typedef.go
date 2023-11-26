@@ -5,11 +5,10 @@ import (
 	"strings"
 
 	"github.com/iancoleman/strcase"
-	"github.com/opencontainers/go-digest"
 )
 
 type Function struct {
-	*Identified
+	Identified
 
 	// Name is the standardized name of the function (lowerCamelCase), as used for the resolver in the graphql schema
 	Name        string         `json:"name"`
@@ -35,13 +34,9 @@ func NewFunction(name string, returnType *TypeDef) *Function {
 	}
 }
 
-func (fn *Function) Digest() (digest.Digest, error) {
-	return stableDigest(fn)
-}
-
-func (fn Function) Clone() *Function {
-	cp := fn
-	cp.Identified = fn.Identified.Clone()
+func (fn *Function) Clone() *Function {
+	cp := *fn
+	cp.Identified.Reset()
 	cp.Args = make([]*FunctionArg, len(fn.Args))
 	for i, arg := range fn.Args {
 		cp.Args[i] = arg.Clone()
@@ -71,7 +66,7 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 }
 
 type FunctionArg struct {
-	*Identified
+	Identified
 
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
 	Name         string   `json:"name"`
@@ -85,9 +80,9 @@ type FunctionArg struct {
 	OriginalName string `json:"originalName,omitempty"`
 }
 
-func (arg FunctionArg) Clone() *FunctionArg {
-	cp := arg
-	cp.Identified = arg.Identified.Clone()
+func (arg *FunctionArg) Clone() *FunctionArg {
+	cp := *arg
+	cp.Identified.Reset()
 	cp.TypeDef = arg.TypeDef.Clone()
 	// NB(vito): don't bother copying DefaultValue, it's already 'any' so it's
 	// hard to imagine anything actually mutating it at runtime vs. replacing it
@@ -96,16 +91,12 @@ func (arg FunctionArg) Clone() *FunctionArg {
 }
 
 type TypeDef struct {
-	*Identified
+	Identified
 
 	Kind     TypeDefKind    `json:"kind"`
 	Optional bool           `json:"optional"`
 	AsList   *ListTypeDef   `json:"asList"`
 	AsObject *ObjectTypeDef `json:"asObject"`
-}
-
-func (typeDef *TypeDef) Digest() (digest.Digest, error) {
-	return stableDigest(typeDef)
 }
 
 func (typeDef *TypeDef) Underlying() *TypeDef {
@@ -117,9 +108,9 @@ func (typeDef *TypeDef) Underlying() *TypeDef {
 	}
 }
 
-func (typeDef TypeDef) Clone() *TypeDef {
-	cp := typeDef
-	cp.Identified = typeDef.Identified.Clone()
+func (typeDef *TypeDef) Clone() *TypeDef {
+	cp := *typeDef
+	cp.Identified.Reset()
 	if typeDef.AsList != nil {
 		cp.AsList = typeDef.AsList.Clone()
 	}
@@ -214,8 +205,8 @@ func NewObjectTypeDef(name, description string) *ObjectTypeDef {
 	}
 }
 
-func (typeDef ObjectTypeDef) Clone() *ObjectTypeDef {
-	cp := typeDef
+func (typeDef *ObjectTypeDef) Clone() *ObjectTypeDef {
+	cp := *typeDef
 
 	cp.Fields = make([]*FieldTypeDef, len(typeDef.Fields))
 	for i, field := range typeDef.Fields {
@@ -264,8 +255,8 @@ type FieldTypeDef struct {
 	OriginalName string `json:"originalName,omitempty"`
 }
 
-func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
-	cp := typeDef
+func (typeDef *FieldTypeDef) Clone() *FieldTypeDef {
+	cp := *typeDef
 	if typeDef.TypeDef != nil {
 		cp.TypeDef = typeDef.TypeDef.Clone()
 	}
@@ -276,8 +267,8 @@ type ListTypeDef struct {
 	ElementTypeDef *TypeDef `json:"elementTypeDef"`
 }
 
-func (typeDef ListTypeDef) Clone() *ListTypeDef {
-	cp := typeDef
+func (typeDef *ListTypeDef) Clone() *ListTypeDef {
+	cp := *typeDef
 	if typeDef.ElementTypeDef != nil {
 		cp.ElementTypeDef = typeDef.ElementTypeDef.Clone()
 	}
@@ -300,14 +291,22 @@ const (
 )
 
 type FunctionCall struct {
-	Name       string       `json:"name"`
-	ParentName string       `json:"parentName"`
-	Parent     any          `json:"parent"`
-	InputArgs  []*CallInput `json:"inputArgs"`
+	Identified
+
+	Name       string      `json:"name"`
+	ParentName string      `json:"parentName"`
+	Parent     IDable      `json:"parent"`
+	InputArgs  []CallInput `json:"inputArgs"`
 }
 
-func (fnCall *FunctionCall) Digest() (digest.Digest, error) {
-	return stableDigest(fnCall)
+func (call *FunctionCall) Clone() *FunctionCall {
+	cp := *call
+	cp.Identified.Reset()
+	cp.InputArgs = make([]CallInput, len(call.InputArgs))
+	for i, arg := range call.InputArgs {
+		cp.InputArgs[i] = arg
+	}
+	return &cp
 }
 
 type CallInput struct {

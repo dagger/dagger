@@ -12,7 +12,7 @@ import (
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	*Identified
+	Identified
 
 	// Name specifies the arbitrary name/id of the secret.
 	Name string `json:"name,omitempty"`
@@ -24,9 +24,10 @@ func NewDynamicSecret(name string) *Secret {
 	}
 }
 
-func (secret Secret) Clone() *Secret {
-	secret.Identified = secret.Identified.Clone()
-	return &secret
+func (secret *Secret) Clone() *Secret {
+	cp := *secret
+	cp.Identified.Reset()
+	return &cp
 }
 
 func NewSecretStore() *SecretStore {
@@ -58,7 +59,7 @@ func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []
 
 // NewCanonicalSecret returns a canonical SecretID for the given name.
 func NewCanonicalSecret(name string) SecretID {
-	var id SecretID = resourceid.New[Secret]("Secret")
+	var id SecretID = resourceid.New[*Secret]("Secret!")
 	id.Append("secret", idproto.Arg("name", name))
 	return id
 }

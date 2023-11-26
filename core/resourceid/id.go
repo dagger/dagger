@@ -2,7 +2,7 @@ package resourceid
 
 import (
 	"encoding/base64"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,14 +10,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/protobuf/proto"
 )
-
-// Digestible is any object which can return a digest of its content.
-//
-// It is used to record the request's result as an output of the request's
-// vertex in the progress stream.
-type Digestible interface {
-	Digest() (digest.Digest, error)
-}
 
 func New[T any](typeName string) *ID[T] {
 	return &ID[T]{idproto.New(typeName)}
@@ -33,13 +25,33 @@ type ID[T any] struct {
 	*idproto.ID
 }
 
+func (id *ID[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(id.String())
+}
+
+func (id *ID[T]) UnmarshalJSON(p []byte) error {
+	var str string
+	if err := json.Unmarshal(p, &str); err != nil {
+		return err
+	}
+
+	idp, err := Decode(str)
+	if err != nil {
+		return err
+	}
+
+	id.ID = idp
+
+	return nil
+}
+
 func (id *ID[T]) ResourceTypeName() string {
 	var t T
 	name := fmt.Sprintf("%T", t)
 	return strings.TrimPrefix(name, "*")
 }
 
-func DecodeID[T any](id string) (*T, error) {
+func DecodeID[T any](id string) (*ID[T], error) {
 	if id == "" {
 		// TODO(vito): this is a little awkward, can we avoid
 		// it? adding initially for backwards compat, since some
@@ -50,7 +62,22 @@ func DecodeID[T any](id string) (*T, error) {
 	if err != nil {
 		return nil, err
 	}
-	return FromProto[T](idp).Decode()
+	return FromProto[T](idp), nil
+}
+
+func DecodeFromID[T any](id string, cache IDCache) (T, error) {
+	var zero T
+	if id == "" {
+		// TODO(vito): this is a little awkward, can we avoid
+		// it? adding initially for backwards compat, since some
+		// places compare with empty string
+		return zero, nil
+	}
+	idp, err := Decode(id)
+	if err != nil {
+		return zero, err
+	}
+	return FromProto[T](idp).Resolve(cache)
 }
 
 func Decode(id string) (*idproto.ID, error) {
@@ -79,7 +106,21 @@ func (id *ID[T]) String() string {
 	return base64.URLEncoding.EncodeToString(proto)
 }
 
-// Decode base64-decodes and JSON unmarshals an ID into the object T
-func (id *ID[T]) Decode() (*T, error) {
-	return nil, errors.New("TODO replace ID.Decode with resolving the ID and asserting on the return type")
+type IDCache interface {
+	Get(digest.Digest) (any, error)
+}
+
+// Resolve
+func (id *ID[T]) Resolve(cache IDCache) (T, error) {
+	var zero T
+
+	dig, err := id.Digest()
+	if err != nil {
+		return zero, err
+	}
+	obj, err := cache.Get(dig)
+	if err != nil {
+		return zero, err
+	}
+	return obj.(T), nil
 }

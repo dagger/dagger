@@ -33,7 +33,7 @@ func (s *httpSchema) Schema() string {
 func (s *httpSchema) Resolvers() Resolvers {
 	return Resolvers{
 		"Query": ObjectResolver{
-			"http": ToResolver(s.http),
+			"http": ToCachedResolver(s.queryCache, s.http),
 		},
 	}
 }
@@ -52,7 +52,7 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.Decode()
+		svc, err := args.ExperimentalServiceHost.Resolve(s.queryCache)
 		if err != nil {
 			return nil, err
 		}

@@ -29,11 +29,11 @@ func (s *socketSchema) Schema() string {
 func (s *socketSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"socket": ToResolver(s.socket),
+			"socket": ToCachedResolver(s.queryCache, s.socket),
 		},
 	}
 
-	ResolveIDable[core.Socket](s.queryCache, rs, "Socket", ObjectResolver{})
+	ResolveIDable[*core.Socket](s.queryCache, rs, "Socket", ObjectResolver{})
 
 	return rs
 }
@@ -43,6 +43,6 @@ type socketArgs struct {
 }
 
 // nolint: unparam
-func (s *socketSchema) socket(_ context.Context, _ any, args socketArgs) (*core.Socket, error) {
-	return args.ID.Decode()
+func (s *socketSchema) socket(_ context.Context, _ *core.Query, args socketArgs) (*core.Socket, error) {
+	return args.ID.Resolve(s.queryCache)
 }

@@ -49,52 +49,52 @@ func (s *moduleSchema) Schema() string {
 func (s *moduleSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"module":              ToResolver(s.module),
-			"currentModule":       ToResolver(s.currentModule),
-			"function":            ToResolver(s.function),
-			"currentFunctionCall": ToResolver(s.currentFunctionCall),
-			"typeDef":             ToResolver(s.typeDef),
-			"generatedCode":       ToResolver(s.generatedCode),
-			"moduleConfig":        ToResolver(s.moduleConfig),
+			"module":              ToCachedResolver(s.queryCache, s.module),
+			"currentModule":       ToCachedResolver(s.queryCache, s.currentModule),
+			"function":            ToCachedResolver(s.queryCache, s.function),
+			"currentFunctionCall": ToCachedResolver(s.queryCache, s.currentFunctionCall),
+			"typeDef":             ToCachedResolver(s.queryCache, s.typeDef),
+			"generatedCode":       ToCachedResolver(s.queryCache, s.generatedCode),
+			"moduleConfig":        ToCachedResolver(s.queryCache, s.moduleConfig),
 		},
 		"Directory": ObjectResolver{
-			"asModule": ToResolver(s.directoryAsModule),
+			"asModule": ToCachedResolver(s.queryCache, s.directoryAsModule),
 		},
 		"FunctionCall": ObjectResolver{
 			"returnValue": ToVoidResolver(s.functionCallReturnValue),
-			"parent":      ToResolver(s.functionCallParent),
+			"parent":      ToCachedResolver(s.queryCache, s.functionCallParent),
 		},
 	}
 
-	ResolveIDable[core.Module](s.queryCache, rs, "Module", ObjectResolver{
-		"dependencies":  ToResolver(s.moduleDependencies),
-		"objects":       ToResolver(s.moduleObjects),
-		"withObject":    ToResolver(s.moduleWithObject),
-		"generatedCode": ToResolver(s.moduleGeneratedCode),
+	ResolveIDable[*core.Module](s.queryCache, rs, "Module", ObjectResolver{
+		"dependencies":  ToCachedResolver(s.queryCache, s.moduleDependencies),
+		"objects":       ToCachedResolver(s.queryCache, s.moduleObjects),
+		"withObject":    ToCachedResolver(s.queryCache, s.moduleWithObject),
+		"generatedCode": ToCachedResolver(s.queryCache, s.moduleGeneratedCode),
 		"serve":         ToVoidResolver(s.moduleServe),
 	})
 
-	ResolveIDable[core.Function](s.queryCache, rs, "Function", ObjectResolver{
-		"withDescription": ToResolver(s.functionWithDescription),
-		"withArg":         ToResolver(s.functionWithArg),
+	ResolveIDable[*core.Function](s.queryCache, rs, "Function", ObjectResolver{
+		"withDescription": ToCachedResolver(s.queryCache, s.functionWithDescription),
+		"withArg":         ToCachedResolver(s.queryCache, s.functionWithArg),
 	})
 
-	ResolveIDable[core.FunctionArg](s.queryCache, rs, "FunctionArg", ObjectResolver{})
+	ResolveIDable[*core.FunctionArg](s.queryCache, rs, "FunctionArg", ObjectResolver{})
 
-	ResolveIDable[core.TypeDef](s.queryCache, rs, "TypeDef", ObjectResolver{
-		"kind":            ToResolver(s.typeDefKind),
-		"withOptional":    ToResolver(s.typeDefWithOptional),
-		"withKind":        ToResolver(s.typeDefWithKind),
-		"withListOf":      ToResolver(s.typeDefWithListOf),
-		"withObject":      ToResolver(s.typeDefWithObject),
-		"withField":       ToResolver(s.typeDefWithObjectField),
-		"withFunction":    ToResolver(s.typeDefWithObjectFunction),
-		"withConstructor": ToResolver(s.typeDefWithObjectConstructor),
+	ResolveIDable[*core.TypeDef](s.queryCache, rs, "TypeDef", ObjectResolver{
+		"kind":            ToCachedResolver(s.queryCache, s.typeDefKind),
+		"withOptional":    ToCachedResolver(s.queryCache, s.typeDefWithOptional),
+		"withKind":        ToCachedResolver(s.queryCache, s.typeDefWithKind),
+		"withListOf":      ToCachedResolver(s.queryCache, s.typeDefWithListOf),
+		"withObject":      ToCachedResolver(s.queryCache, s.typeDefWithObject),
+		"withField":       ToCachedResolver(s.queryCache, s.typeDefWithObjectField),
+		"withFunction":    ToCachedResolver(s.queryCache, s.typeDefWithObjectFunction),
+		"withConstructor": ToCachedResolver(s.queryCache, s.typeDefWithObjectConstructor),
 	})
 
-	ResolveIDable[core.GeneratedCode](s.queryCache, rs, "GeneratedCode", ObjectResolver{
-		"withVCSIgnoredPaths":   ToResolver(s.generatedCodeWithVCSIgnoredPaths),
-		"withVCSGeneratedPaths": ToResolver(s.generatedCodeWithVCSGeneratedPaths),
+	ResolveIDable[*core.GeneratedCode](s.queryCache, rs, "GeneratedCode", ObjectResolver{
+		"withVCSIgnoredPaths":   ToCachedResolver(s.queryCache, s.generatedCodeWithVCSIgnoredPaths),
+		"withVCSGeneratedPaths": ToCachedResolver(s.queryCache, s.generatedCodeWithVCSGeneratedPaths),
 	})
 
 	return rs
@@ -119,7 +119,7 @@ func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, a
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
 }) (*core.TypeDef, error) {
-	elemType, err := args.ElementType.Decode()
+	elemType, err := args.ElementType.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	TypeDef     core.TypeDefID
 	Description string
 }) (*core.TypeDef, error) {
-	fieldType, err := args.TypeDef.Decode()
+	fieldType, err := args.TypeDef.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -148,7 +148,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	fn, err := args.Function.Decode()
+	fn, err := args.Function.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -158,7 +158,7 @@ func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	fn, err := args.Function.Decode()
+	fn, err := args.Function.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -176,7 +176,7 @@ func (s *moduleSchema) typeDefKind(ctx context.Context, def *core.TypeDef, args 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
-	dir, err := args.Code.Decode()
+	dir, err := args.Code.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -200,10 +200,10 @@ type moduleArgs struct {
 }
 
 func (s *moduleSchema) module(ctx context.Context, query *core.Query, args moduleArgs) (*core.Module, error) {
-	if args.ID.ID == nil {
+	if args.ID == nil {
 		return core.NewModule(s.platform, query.PipelinePath()), nil
 	}
-	return args.ID.Decode()
+	return args.ID.Resolve(s.queryCache)
 }
 
 type moduleConfigArgs struct {
@@ -212,7 +212,7 @@ type moduleConfigArgs struct {
 }
 
 func (s *moduleSchema) moduleConfig(ctx context.Context, query *core.Query, args moduleConfigArgs) (*modules.Config, error) {
-	srcDir, err := args.SourceDirectory.Decode()
+	srcDir, err := args.SourceDirectory.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source directory: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
-	returnType, err := args.ReturnType.Decode()
+	returnType, err := args.ReturnType.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
@@ -308,7 +308,7 @@ func (s *moduleSchema) moduleObjects(ctx context.Context, mod *core.Module, _ an
 func (s *moduleSchema) moduleWithObject(ctx context.Context, module *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Object.Decode()
+	def, err := args.Object.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Description  string
 	DefaultValue any
 }) (*core.Function, error) {
-	argType, err := args.TypeDef.Decode()
+	argType, err := args.TypeDef.Resolve(s.queryCache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
 	}
@@ -356,9 +356,9 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 }
 
 type functionCallArgs struct {
-	Input              []*core.CallInput
+	Input              []core.CallInput
 	ParentOriginalName string
-	Parent             any
+	Parent             core.IDable // XXX(vito) so that we can chain the function call against it
 	Module             *core.Module
 	Cache              bool
 }
@@ -629,7 +629,7 @@ func (s *moduleSchema) serveModuleToView(ctx context.Context, mod *core.Module, 
 func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*core.Module, error) {
 	// We use the base digest as cache key because loadModuleTypes should behave idempotently,
 	// returning the same Module object whether or not its Objects+Runtime were already loaded.
-	dgst, err := mod.BaseDigest()
+	dgst, err := mod.ID().Digest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module digest: %w", err)
 	}
@@ -660,7 +660,7 @@ func (s *moduleSchema) loadModuleTypes(ctx context.Context, mod *core.Module) (*
 		if !ok {
 			return nil, fmt.Errorf("expected string result, got %T", result)
 		}
-		mod, err := resourceid.DecodeID[core.Module](idStr)
+		mod, err := resourceid.DecodeFromID[*core.Module](idStr, s.queryCache)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse module id: %w", err)
 		}
@@ -682,7 +682,7 @@ func (s *moduleSchema) moduleDependencies(ctx context.Context, mod *core.Module,
 }
 
 func (s *moduleSchema) dependenciesOf(ctx context.Context, mod *core.Module) ([]*core.Module, error) {
-	dgst, err := mod.BaseDigest()
+	dgst, err := mod.ID().Digest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module digest: %w", err)
 	}
@@ -868,7 +868,7 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 
 		if len(newObjResolver) > 0 {
 			typeSchemaResolvers[objName] = newObjResolver
-			typeSchemaResolvers[objName+"ID"] = idResolver[core.ModuleObject]()
+			typeSchemaResolvers[objName+"ID"] = idResolver[*core.ModuleObject]()
 
 			fromID := s.createIDResolver(def, schemaView)
 			queryResolver[fmt.Sprintf("load%sFromID", objName)] = func(p graphql.ResolveParams) (any, error) {
@@ -1088,7 +1088,9 @@ func (s *moduleSchema) functionResolver(
 	returnFromID := s.createIDResolver(fn.ReturnType, schemaView)
 	// parentIDableObjectResolver, _ := s.idableObjectResolver(parentTypeDef.Name, schemaView)
 
-	resolver := ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
+	// XXX(vito): i think this is right, but does this actually work? haven't
+	// done much w/ core.ModuleObject yet, something must need to return that
+	resolver := ToCachedResolver(s.queryCache, func(ctx context.Context, parent *core.ModuleObject, args map[string]any) (_ any, rerr error) {
 		defer func() {
 			if r := recover(); r != nil {
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
@@ -1104,7 +1106,7 @@ func (s *moduleSchema) functionResolver(
 		// 	parent = id
 		// }
 
-		var callInput []*core.CallInput
+		var callInput []core.CallInput
 		for k, v := range args {
 			name, ok := argNames[k]
 			if !ok {
@@ -1118,11 +1120,12 @@ func (s *moduleSchema) functionResolver(
 				}
 			}
 
-			callInput = append(callInput, &core.CallInput{
+			callInput = append(callInput, core.CallInput{
 				Name:  name,
 				Value: v,
 			})
 		}
+
 		result, err := s.functionCall(ctx, fn, functionCallArgs{
 			Module:             module,
 			Input:              callInput,
@@ -1343,6 +1346,7 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 					return nil, fmt.Errorf("expected map %s, or string %sID, got %T", typeDef.AsObject.Name, typeDef.AsObject.Name, a)
 				}
 
+				// XXX(vito)
 				value, err := resourceid.DecodeModuleID(id, typeDef.AsObject.Name)
 				if err != nil {
 					return nil, err

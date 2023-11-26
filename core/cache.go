@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
-	*Identified
+	Identified
 
 	Keys []string `json:"keys"`
 }
@@ -23,15 +22,11 @@ func NewCache(keys ...string) *CacheVolume {
 	return &CacheVolume{Keys: keys}
 }
 
-func (cache CacheVolume) Clone() *CacheVolume {
-	cp := cache
-	cp.Identified = cache.Identified.Clone()
+func (cache *CacheVolume) Clone() *CacheVolume {
+	cp := *cache
+	cp.Identified.Reset()
 	cp.Keys = cloneSlice(cp.Keys)
 	return &cp
-}
-
-func (cache *CacheVolume) Digest() (digest.Digest, error) {
-	return stableDigest(cache)
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.

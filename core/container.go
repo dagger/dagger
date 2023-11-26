@@ -32,8 +32,6 @@ import (
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -41,7 +39,7 @@ var ErrContainerNoExec = errors.New("no command has been executed")
 
 // Container is a content-addressed container.
 type Container struct {
-	*Identified
+	Identified
 
 	// The container's root filesystem.
 	FS *pb.Definition `json:"fs"`
@@ -117,9 +115,9 @@ func NewContainer(pipeline pipeline.Path, platform specs.Platform) (*Container, 
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (container Container) Clone() *Container {
-	cp := container
-	cp.Identified = container.Identified.Clone()
+func (container *Container) Clone() *Container {
+	cp := *container
+	cp.Identified.Reset()
 	cp.Config.ExposedPorts = cloneMap(cp.Config.ExposedPorts)
 	cp.Config.Env = cloneSlice(cp.Config.Env)
 	cp.Config.Entrypoint = cloneSlice(cp.Config.Entrypoint)
@@ -140,15 +138,6 @@ var _ pipeline.Pipelineable = (*Container)(nil)
 // PipelinePath returns the container's pipeline path.
 func (container *Container) PipelinePath() pipeline.Path {
 	return container.Pipeline
-}
-
-// Container is digestible so that it can be recorded as an output of the
-// --debug vertex that created it.
-var _ resourceid.Digestible = (*Container)(nil)
-
-// Digest returns the container's content hash.
-func (container *Container) Digest() (digest.Digest, error) {
-	return stableDigest(container)
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
@@ -324,55 +313,15 @@ func (container *Container) Build(
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
-	secrets []SecretID,
+	secrets []*Secret,
 	bk *buildkit.Client,
-	svcs *Services,
-	buildCache *CacheMap[uint64, *Container],
-) (*Container, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return buildCache.GetOrInitialize(
-		cacheKey(
-			container,
-			context,
-			dockerfile,
-			buildArgs,
-			target,
-			secrets,
-			// scope cache per-client to avoid sharing caches across builds that are
-			// structurally similar but use different client-specific inputs (i.e.
-			// local dir with same path but different content)
-			clientMetadata.ClientID,
-		),
-		func() (*Container, error) {
-			return container.buildUncached(ctx, bk, context, dockerfile, buildArgs, target, secrets, svcs)
-		},
-	)
-}
-
-func (container *Container) buildUncached(
-	ctx context.Context,
-	bk *buildkit.Client,
-	context *Directory,
-	dockerfile string,
-	buildArgs []BuildArg,
-	target string,
-	secrets []SecretID,
 	svcs *Services,
 ) (*Container, error) {
 	container = container.Clone()
 
 	container.Services.Merge(context.Services)
 
-	for _, secretID := range secrets {
-		secret, err := secretID.Decode()
-		if err != nil {
-			return nil, err
-		}
-
+	for _, secret := range secrets {
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Name:      secret.Name,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secret.Name),
@@ -1537,64 +1486,34 @@ func (container *Container) Import(
 	bk *buildkit.Client,
 	host *Host,
 	svcs *Services,
-	importCache *CacheMap[uint64, *specs.Descriptor],
 	store content.Store,
 	lm *leaseutil.Manager,
 ) (*Container, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	src, err := file.Open(ctx, host, bk, svcs)
 	if err != nil {
 		return nil, err
 	}
 
-	var release func(context.Context) error
-	loadManifest := func() (*specs.Descriptor, error) {
-		src, err := file.Open(ctx, host, bk, svcs)
-		if err != nil {
-			return nil, err
-		}
+	defer src.Close()
 
-		defer src.Close()
+	container = container.Clone()
 
-		container = container.Clone()
-
-		// override outer ctx with release ctx and set release
-		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
-		if err != nil {
-			return nil, err
-		}
-
-		stream := archive.NewImageImportStream(src, "")
-
-		desc, err := stream.Import(ctx, store)
-		if err != nil {
-			return nil, fmt.Errorf("image archive import: %w", err)
-		}
-
-		return resolveIndex(ctx, store, desc, container.Platform, tag)
-	}
-
-	// TODO: seems inefficient to recompute for each platform, but do need to get platform-specific manifest stil..
-	key := cacheKey(
-		file,
-		tag,
-		container.Platform,
-		// scope cache per-client to avoid sharing caches across builds that are
-		// structurally similar but use different client-specific inputs (i.e.
-		// local dir with same path but different content)
-		clientMetadata.ClientID,
-	)
-
-	manifestDesc, err := importCache.GetOrInitialize(key, loadManifest)
+	// override outer ctx with release ctx and set release
+	ctx, release, err := leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := store.Info(ctx, manifestDesc.Digest); err != nil {
-		// NB(vito): loadManifest again, to be durable to buildctl prune.
-		manifestDesc, err = loadManifest()
-		if err != nil {
-			return nil, fmt.Errorf("recover: %w", err)
-		}
+	stream := archive.NewImageImportStream(src, "")
+
+	desc, err := stream.Import(ctx, store)
+	if err != nil {
+		return nil, fmt.Errorf("image archive import: %w", err)
+	}
+
+	manifestDesc, err := resolveIndex(ctx, store, desc, container.Platform, tag)
+	if err != nil {
+		return nil, err
 	}
 
 	// NB: the repository portion of this ref doesn't actually matter, but it's

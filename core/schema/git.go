@@ -29,16 +29,16 @@ func (s *gitSchema) Schema() string {
 func (s *gitSchema) Resolvers() Resolvers {
 	return Resolvers{
 		"Query": ObjectResolver{
-			"git": ToResolver(s.git),
+			"git": ToCachedResolver(s.queryCache, s.git),
 		},
 		"GitRepository": ObjectResolver{
-			"branch": ToResolver(s.branch),
-			"tag":    ToResolver(s.tag),
-			"commit": ToResolver(s.commit),
+			"branch": ToCachedResolver(s.queryCache, s.branch),
+			"tag":    ToCachedResolver(s.queryCache, s.tag),
+			"commit": ToCachedResolver(s.queryCache, s.commit),
 		},
 		"GitRef": ObjectResolver{
-			"tree":   ToResolver(s.tree),
-			"commit": ToResolver(s.fetchCommit),
+			"tree":   ToCachedResolver(s.queryCache, s.tree),
+			"commit": ToCachedResolver(s.queryCache, s.fetchCommit),
 		},
 	}
 }
@@ -55,7 +55,7 @@ type gitArgs struct {
 func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRef, error) {
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.Decode()
+		svc, err := args.ExperimentalServiceHost.Resolve(s.queryCache)
 		if err != nil {
 			return nil, nil
 		}
@@ -70,7 +70,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		})
 	}
 
-	socket, err := args.SSHAuthSocket.Decode()
+	socket, err := args.SSHAuthSocket.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs tree
 	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket.ID != nil {
 		// no need for a full clone() here, we're only modifying string fields
 		res.SSHKnownHosts = treeArgs.SSHKnownHosts
-		socket, err := treeArgs.SSHAuthSocket.Decode()
+		socket, err := treeArgs.SSHAuthSocket.Resolve(s.queryCache)
 		if err != nil {
 			return nil, err
 		}

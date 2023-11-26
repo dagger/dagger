@@ -47,7 +47,7 @@ func (m *CacheMap[K, T]) Get(key K) (T, error) {
 	}
 	m.l.Unlock()
 	var zero T
-	return zero, fmt.Errorf("cache key %s not found", key)
+	return zero, fmt.Errorf("cache key %v not found", key)
 }
 
 func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {

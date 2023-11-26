@@ -148,7 +148,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 
 	result, err := sdk.moduleSchema.functionCall(ctx, codegenFn, functionCallArgs{
 		Module: sdk.mod,
-		Input: []*core.CallInput{
+		Input: []core.CallInput{
 			{
 				Name:  "modSource",
 				Value: srcDirID,
@@ -163,10 +163,13 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 			},
 		},
 		ParentOriginalName: sdkModuleOriginalName,
-		// TODO: params? somehow? maybe from module config? would be a good way to
-		// e.g. configure the language version.
-		Parent: map[string]any{},
-		Cache:  true,
+		Parent: &core.ModuleObject{
+			Type: sdkModuleName,
+			// TODO: params? somehow? maybe from module config? would be a good way to
+			// e.g. configure the language version.
+			Value: map[string]any{},
+		},
+		Cache: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
@@ -177,7 +180,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 		return nil, fmt.Errorf("expected string directory ID result, got %T", result)
 	}
 
-	return resourceid.DecodeID[core.GeneratedCode](genCodeID)
+	return resourceid.DecodeFromID[*core.GeneratedCode](genCodeID, sdk.queryCache)
 }
 
 // Runtime calls the Runtime function on the SDK Module
@@ -214,7 +217,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 
 	result, err := sdk.moduleSchema.functionCall(ctx, getRuntimeFn, functionCallArgs{
 		Module: sdk.mod,
-		Input: []*core.CallInput{
+		Input: []core.CallInput{
 			{
 				Name:  "modSource",
 				Value: srcDirID,
@@ -229,10 +232,13 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 			},
 		},
 		ParentOriginalName: sdkModuleOriginalName,
-		// TODO: params? somehow? maybe from module config? would be a good way to
-		// e.g. configure the language version.
-		Parent: map[string]any{},
-		Cache:  true,
+		Parent: &core.ModuleObject{
+			Type: sdkModuleName,
+			// TODO: params? somehow? maybe from module config? would be a good way to
+			// e.g. configure the language version.
+			Value: map[string]any{},
+		},
+		Cache: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
@@ -243,7 +249,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 		return nil, fmt.Errorf("expected string container ID result, got %T", result)
 	}
 
-	return resourceid.DecodeID[core.Container](runtimeID)
+	return resourceid.DecodeFromID[*core.Container](runtimeID, sdk.queryCache)
 }
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
@@ -465,7 +471,6 @@ func (sdk *goSDK) base(ctx context.Context) (*core.Container, error) {
 		sdk.bk,
 		sdk.host,
 		sdk.services,
-		sdk.importCache,
 		sdk.ociStore,
 		sdk.leaseManager,
 	)

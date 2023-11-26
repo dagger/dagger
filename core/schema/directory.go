@@ -14,9 +14,8 @@ import (
 type directorySchema struct {
 	*MergedSchemas
 
-	host       *core.Host
-	svcs       *core.Services
-	buildCache *core.CacheMap[uint64, *core.Container]
+	host *core.Host
+	svcs *core.Services
 }
 
 var _ ExecutableSchema = &directorySchema{}
@@ -36,27 +35,27 @@ func (s *directorySchema) Schema() string {
 func (s *directorySchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"directory": ToResolver(s.directory),
+			"directory": ToCachedResolver(s.queryCache, s.directory),
 		},
 	}
 
-	ResolveIDable[core.Directory](s.queryCache, rs, "Directory", ObjectResolver{
-		"sync":             ToResolver(s.sync),
-		"pipeline":         ToResolver(s.pipeline),
-		"entries":          ToResolver(s.entries),
-		"glob":             ToResolver(s.glob),
-		"file":             ToResolver(s.file),
-		"withFile":         ToResolver(s.withFile),
-		"withNewFile":      ToResolver(s.withNewFile),
-		"withoutFile":      ToResolver(s.withoutFile),
-		"directory":        ToResolver(s.subdirectory),
-		"withDirectory":    ToResolver(s.withDirectory),
-		"withTimestamps":   ToResolver(s.withTimestamps),
-		"withNewDirectory": ToResolver(s.withNewDirectory),
-		"withoutDirectory": ToResolver(s.withoutDirectory),
-		"diff":             ToResolver(s.diff),
-		"export":           ToResolver(s.export),
-		"dockerBuild":      ToResolver(s.dockerBuild),
+	ResolveIDable[*core.Directory](s.queryCache, rs, "Directory", ObjectResolver{
+		"sync":             ToCachedResolver(s.queryCache, s.sync),
+		"pipeline":         ToCachedResolver(s.queryCache, s.pipeline),
+		"entries":          ToCachedResolver(s.queryCache, s.entries),
+		"glob":             ToCachedResolver(s.queryCache, s.glob),
+		"file":             ToCachedResolver(s.queryCache, s.file),
+		"withFile":         ToCachedResolver(s.queryCache, s.withFile),
+		"withNewFile":      ToCachedResolver(s.queryCache, s.withNewFile),
+		"withoutFile":      ToCachedResolver(s.queryCache, s.withoutFile),
+		"directory":        ToCachedResolver(s.queryCache, s.subdirectory),
+		"withDirectory":    ToCachedResolver(s.queryCache, s.withDirectory),
+		"withTimestamps":   ToCachedResolver(s.queryCache, s.withTimestamps),
+		"withNewDirectory": ToCachedResolver(s.queryCache, s.withNewDirectory),
+		"withoutDirectory": ToCachedResolver(s.queryCache, s.withoutDirectory),
+		"diff":             ToCachedResolver(s.queryCache, s.diff),
+		"export":           ToCachedResolver(s.queryCache, s.export),
+		"dockerBuild":      ToCachedResolver(s.queryCache, s.dockerBuild),
 	})
 
 	return rs
@@ -77,8 +76,8 @@ type directoryArgs struct {
 }
 
 func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
-	if args.ID.ID != nil {
-		return args.ID.Decode()
+	if args.ID != nil {
+		return args.ID.Resolve(s.queryCache)
 	}
 	platform := s.platform
 	return core.NewScratchDirectory(parent.PipelinePath(), platform), nil
@@ -89,7 +88,7 @@ func (s *directorySchema) sync(ctx context.Context, parent *core.Directory, _ an
 	if err != nil {
 		return nil, err
 	}
-	return resourceid.FromProto[core.Directory](parent.ID()), nil
+	return resourceid.FromProto[*core.Directory](parent.ID()), nil
 }
 
 type subdirectoryArgs struct {
@@ -117,7 +116,7 @@ type withDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
-	dir, err := args.Directory.Decode()
+	dir, err := args.Directory.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +172,7 @@ type withFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
-	file, err := args.Source.Decode()
+	file, err := args.Source.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +201,7 @@ type diffArgs struct {
 }
 
 func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
-	dir, err := args.Other.Decode()
+	dir, err := args.Other.Resolve(s.queryCache)
 	if err != nil {
 		return nil, err
 	}
@@ -239,15 +238,21 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	if err != nil {
 		return ctr, err
 	}
+	secrets := make([]*core.Secret, len(args.Secrets))
+	for i, id := range args.Secrets {
+		secrets[i], err = id.Resolve(s.queryCache)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return ctr.Build(
 		ctx,
 		parent,
 		args.Dockerfile,
 		args.BuildArgs,
 		args.Target,
-		args.Secrets,
+		secrets,
 		s.bk,
 		s.svcs,
-		s.buildCache,
 	)
 }

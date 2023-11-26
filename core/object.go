@@ -1,13 +1,14 @@
 package core
 
 type ModuleObject struct {
-	*Identified
+	Identified
 
 	Type  string
 	Value any
 }
 
-func (obj ModuleObject) Clone() *ModuleObject {
-	obj.Identified = obj.Identified.Clone()
-	return &obj
+func (obj *ModuleObject) Clone() *ModuleObject {
+	cp := *obj
+	cp.Identified.Reset()
+	return &cp
 }

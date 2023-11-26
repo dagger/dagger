@@ -31,16 +31,16 @@ func (s *fileSchema) Schema() string {
 func (s *fileSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"file": ToResolver(s.file),
+			"file": ToCachedResolver(s.queryCache, s.file),
 		},
 	}
 
-	ResolveIDable[core.File](s.queryCache, rs, "File", ObjectResolver{
-		"sync":           ToResolver(s.sync),
-		"contents":       ToResolver(s.contents),
-		"size":           ToResolver(s.size),
-		"export":         ToResolver(s.export),
-		"withTimestamps": ToResolver(s.withTimestamps),
+	ResolveIDable[*core.File](s.queryCache, rs, "File", ObjectResolver{
+		"sync":           ToCachedResolver(s.queryCache, s.sync),
+		"contents":       ToCachedResolver(s.queryCache, s.contents),
+		"size":           ToCachedResolver(s.queryCache, s.size),
+		"export":         ToCachedResolver(s.queryCache, s.export),
+		"withTimestamps": ToCachedResolver(s.queryCache, s.withTimestamps),
 	})
 
 	return rs
@@ -50,8 +50,8 @@ type fileArgs struct {
 	ID core.FileID
 }
 
-func (s *fileSchema) file(ctx context.Context, parent any, args fileArgs) (*core.File, error) {
-	return args.ID.Decode()
+func (s *fileSchema) file(ctx context.Context, parent *core.Query, args fileArgs) (*core.File, error) {
+	return args.ID.Resolve(s.queryCache)
 }
 
 func (s *fileSchema) sync(ctx context.Context, parent *core.File, _ any) (core.FileID, error) {
@@ -59,7 +59,7 @@ func (s *fileSchema) sync(ctx context.Context, parent *core.File, _ any) (core.F
 	if err != nil {
 		return nil, err
 	}
-	return resourceid.FromProto[core.File](parent.ID()), nil
+	return resourceid.FromProto[*core.File](parent.ID()), nil
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args any) (string, error) {

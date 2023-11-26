@@ -25,7 +25,10 @@ type Identified struct {
 	id *idproto.ID
 }
 
-func (i Identified) ID() *idproto.ID {
+func (i *Identified) ID() *idproto.ID {
+	if i == nil {
+		return nil
+	}
 	return i.id
 }
 
@@ -33,8 +36,8 @@ func (i *Identified) SetID(id *idproto.ID) {
 	i.id = id
 }
 
-func (i Identified) Clone() *Identified {
-	return &i
+func (i *Identified) Reset() {
+	i.id = nil
 }
 
 // IDable is an object that has an ID.
@@ -46,27 +49,27 @@ type IDable interface {
 // Cloneable an object that can return a mutable copy of itself that will not
 // modify the original object.
 type Cloneable[T any] interface {
-	Clone() *T
+	Clone() T
 }
 
-type ContainerID = *resourceid.ID[Container]
+type ContainerID = *resourceid.ID[*Container]
 
-type ServiceID = *resourceid.ID[Service]
+type ServiceID = *resourceid.ID[*Service]
 
-type CacheVolumeID = *resourceid.ID[CacheVolume]
+type CacheVolumeID = *resourceid.ID[*CacheVolume]
 
-type DirectoryID = *resourceid.ID[Directory]
+type DirectoryID = *resourceid.ID[*Directory]
 
-type FileID = *resourceid.ID[File]
+type FileID = *resourceid.ID[*File]
 
-type SecretID = *resourceid.ID[Secret]
+type SecretID = *resourceid.ID[*Secret]
 
-type ModuleID = *resourceid.ID[Module]
+type ModuleID = *resourceid.ID[*Module]
 
-type FunctionID = *resourceid.ID[Function]
+type FunctionID = *resourceid.ID[*Function]
 
-type TypeDefID = *resourceid.ID[TypeDef]
+type TypeDefID = *resourceid.ID[*TypeDef]
 
-type GeneratedCodeID = *resourceid.ID[GeneratedCode]
+type GeneratedCodeID = *resourceid.ID[*GeneratedCode]
 
-type SocketID = *resourceid.ID[Socket]
+type SocketID = *resourceid.ID[*Socket]

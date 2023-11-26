@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -59,8 +60,11 @@ func TestContainerFrom(t *testing.T) {
 
 	res := struct {
 		Container struct {
+			ID   core.ContainerID
 			From struct {
+				ID   core.ContainerID
 				File struct {
+					ID       core.FileID
 					Contents string
 				}
 			}
@@ -70,15 +74,21 @@ func TestContainerFrom(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
+				id
 				from(address: "`+alpineImage+`") {
-                    file(path: "/etc/alpine-release") {
-                        contents
-                    }
+					id
+					file(path: "/etc/alpine-release") {
+						id
+							contents
+					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Equal(t, res.Container.From.File.Contents, "3.18.2\n")
+	assert.NotEmpty(t, res.Container.ID)
+	assert.NotEmpty(t, res.Container.From.ID)
+	assert.NotEmpty(t, res.Container.From.File.ID)
 }
 
 func TestContainerBuild(t *testing.T) {

@@ -88,7 +88,7 @@ func (ss *Services) Get(ctx context.Context, svc Startable) (*RunningService, er
 		return nil, err
 	}
 
-	dig, err := svc.Digest()
+	dig, err := svc.ID().Digest()
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (ss *Services) Get(ctx context.Context, svc Startable) (*RunningService, er
 }
 
 type Startable interface {
-	Digest() (digest.Digest, error)
+	IDable
 
 	Start(
 		ctx context.Context,
@@ -141,7 +141,7 @@ func (ss *Services) Start(ctx context.Context, svc Startable) (*RunningService, 
 		return nil, err
 	}
 
-	dig, err := svc.Digest()
+	dig, err := svc.ID().Digest()
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 		return err
 	}
 
-	dig, err := svc.Digest()
+	dig, err := svc.ID().Digest()
 	if err != nil {
 		return err
 	}

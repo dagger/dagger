@@ -22,13 +22,12 @@ import (
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	*Identified
+	Identified
 
 	LLB      *pb.Definition `json:"llb"`
 	Dir      string         `json:"dir"`
@@ -87,9 +86,9 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipe
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
-func (dir Directory) Clone() *Directory {
-	cp := dir
-	cp.Identified = dir.Identified.Clone()
+func (dir *Directory) Clone() *Directory {
+	cp := *dir
+	cp.Identified.Reset()
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
@@ -100,15 +99,6 @@ var _ pipeline.Pipelineable = (*Directory)(nil)
 func (dir *Directory) PipelinePath() pipeline.Path {
 	// TODO(vito): test
 	return dir.Pipeline
-}
-
-// Directory is digestible so that it can be recorded as an output of the
-// --debug vertex that created it.
-var _ resourceid.Digestible = (*Directory)(nil)
-
-// Digest returns the directory's content hash.
-func (dir *Directory) Digest() (digest.Digest, error) {
-	return stableDigest(dir)
 }
 
 func (dir *Directory) State() (llb.State, error) {

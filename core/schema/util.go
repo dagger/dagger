@@ -18,16 +18,17 @@ func idResolver[T core.Object[T]]() ScalarResolver {
 			switch v := value.(type) {
 			case string, T:
 				return v, nil
-			case resourceid.ID[T]:
+			case *resourceid.ID[T]:
 				return v.String(), nil
 			default:
-				panic(fmt.Sprintf("want string or resourceid.ID[T], have %T: %+v", v, v))
+				var t T
+				panic(fmt.Sprintf("want string or *resourceid.ID[%T], have %T: %+v", t, v, v))
 			}
 		},
 		ParseValue: func(value any) (any, error) {
 			switch v := value.(type) {
 			case string:
-				rid, err := resourceid.Decode(v)
+				rid, err := resourceid.DecodeID[T](v)
 				if err != nil {
 					return nil, fmt.Errorf("failed to parse resource ID %q: %w", v, err)
 				}
@@ -39,7 +40,7 @@ func idResolver[T core.Object[T]]() ScalarResolver {
 		ParseLiteral: func(valueAST ast.Value) (any, error) {
 			switch v := valueAST.(type) {
 			case *ast.StringValue:
-				rid, err := resourceid.Decode(v.Value)
+				rid, err := resourceid.DecodeID[T](v.Value)
 				if err != nil {
 					return nil, fmt.Errorf("failed to parse resource ID %q: %w", v, err)
 				}

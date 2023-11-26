@@ -59,8 +59,6 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
-		buildCache:        core.NewCacheMap[uint64, *core.Container](),
-		importCache:       core.NewCacheMap[uint64, *specs.Descriptor](),
 		moduleCache:       core.NewCacheMap[digest.Digest, *core.Module](),
 		dependenciesCache: core.NewCacheMap[digest.Digest, []*core.Module](),
 
@@ -83,8 +81,6 @@ type MergedSchemas struct {
 	host         *core.Host
 	services     *core.Services
 
-	buildCache        *core.CacheMap[uint64, *core.Container]
-	importCache       *core.CacheMap[uint64, *specs.Descriptor]
 	moduleCache       *core.CacheMap[digest.Digest, *core.Module]
 	dependenciesCache *core.CacheMap[digest.Digest, []*core.Module]
 
@@ -118,7 +114,7 @@ func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaV
 
 	err := ms.addSchemas(
 		&querySchema{s},
-		&directorySchema{s, s.host, s.services, s.buildCache},
+		&directorySchema{s, s.host, s.services},
 		&fileSchema{s, s.host, s.services},
 		&gitSchema{s, s.services},
 		&containerSchema{
@@ -127,8 +123,6 @@ func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaV
 			s.services,
 			s.ociStore,
 			s.leaseManager,
-			s.buildCache,
-			s.importCache,
 		},
 		&cacheSchema{s},
 		&secretSchema{s},
@@ -166,7 +160,7 @@ func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, er
 }
 
 func (s *MergedSchemas) getModuleSchemaView(mod *core.Module) (*schemaView, error) {
-	modDgst, err := mod.BaseDigest()
+	modDgst, err := mod.ID().Digest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute schema view digest: %w", err)
 	}
@@ -179,7 +173,7 @@ func (s *MergedSchemas) registerModuleFunctionCall(mod *core.Module, fnCall *cor
 		return nil, "", err
 	}
 
-	fnCallDgst, err := fnCall.Digest()
+	fnCallDgst, err := fnCall.ID().Digest()
 	if err != nil {
 		return nil, "", err
 	}
@@ -187,6 +181,7 @@ func (s *MergedSchemas) registerModuleFunctionCall(mod *core.Module, fnCall *cor
 	dgst := digest.FromString(schemaView.viewDigest.String() + "." + fnCallDgst.String())
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.moduleContexts[dgst] = &moduleContext{
 		module:     mod,
 		fnCall:     fnCall,
@@ -350,6 +345,11 @@ func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux := http.NewServeMux()
 	mux.Handle("/query", NewHandler(&HandlerConfig{
 		Schema: s.schema(),
+		RootObjectFn: func(ctx context.Context, r *http.Request) any {
+			q := &core.Query{}
+			q.SetID(idproto.New("Query"))
+			return q
+		},
 	}))
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()

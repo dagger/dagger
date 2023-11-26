@@ -5,7 +5,7 @@ import (
 )
 
 type Socket struct {
-	*Identified
+	Identified
 
 	// Unix
 	HostPath string `json:"host_path,omitempty"`
@@ -28,9 +28,10 @@ func NewHostIPSocket(proto string, addr string) *Socket {
 	}
 }
 
-func (socket Socket) Clone() *Socket {
-	socket.Identified = socket.Identified.Clone()
-	return &socket
+func (socket *Socket) Clone() *Socket {
+	cp := *socket
+	cp.Identified.Reset()
+	return &cp
 }
 
 func (socket *Socket) SocketID() string {

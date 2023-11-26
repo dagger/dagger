@@ -27,11 +27,11 @@ func (s *cacheSchema) Schema() string {
 func (s *cacheSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"cacheVolume": ToResolver(s.cacheVolume),
+			"cacheVolume": ToCachedResolver(s.queryCache, s.cacheVolume),
 		},
 	}
 
-	ResolveIDable[core.CacheVolume](s.queryCache, rs, "CacheVolume", ObjectResolver{})
+	ResolveIDable[*core.CacheVolume](s.queryCache, rs, "CacheVolume", ObjectResolver{})
 
 	return rs
 }
@@ -44,7 +44,7 @@ type cacheArgs struct {
 	Key string
 }
 
-func (s *cacheSchema) cacheVolume(ctx context.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
+func (s *cacheSchema) cacheVolume(ctx context.Context, parent *core.Query, args cacheArgs) (*core.CacheVolume, error) {
 	// TODO(vito): inject some sort of scope/session/project/user derived value
 	// here instead of a static value
 	//

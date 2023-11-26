@@ -202,7 +202,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // RootObjectFn allows a user to generate a RootObject per request
-type RootObjectFn func(ctx context.Context, r *http.Request) map[string]interface{}
+type RootObjectFn func(ctx context.Context, r *http.Request) any
 
 type HandlerConfig struct {
 	Schema           *graphql.Schema

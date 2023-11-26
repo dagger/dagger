@@ -5,6 +5,10 @@ import (
 )
 
 type Query struct {
+	// Believe it or not, Query is also IDable because there are queries that
+	// modify it.
+	Identified
+
 	// Pipeline
 	Pipeline pipeline.Path `json:"pipeline"`
 }
