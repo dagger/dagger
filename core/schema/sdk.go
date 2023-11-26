@@ -39,26 +39,17 @@ type SDK interface {
 
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Codegen(ctx context.Context, mod *core.Module) (*core.GeneratedCode, error)
+	Codegen(ctx context.Context, mod *UserMod) (*core.GeneratedCode, error)
 
 	/* Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
 
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Runtime(ctx context.Context, mod *core.Module) (*core.Container, error)
-}
-
-// load the Runtime Container for the module at the given source dir, subpath using the SDK with the given name.
-func (s *moduleSchema) runtimeForModule(ctx context.Context, mod *core.Module) (*core.Container, error) {
-	sdk, err := s.sdkForModule(ctx, mod)
-	if err != nil {
-		return nil, err
-	}
-	return sdk.Runtime(ctx, mod)
+	Runtime(ctx context.Context, mod *UserMod) (*core.Container, error)
 }
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
-func (s *moduleSchema) sdkForModule(ctx context.Context, mod *core.Module) (SDK, error) {
+func (s *APIServer) sdkForModule(ctx context.Context, mod *core.ModuleMetadata) (SDK, error) {
 	builtinSDK, err := s.builtinSDK(ctx, mod.SDK)
 	if err == nil {
 		return builtinSDK, nil
@@ -66,15 +57,10 @@ func (s *moduleSchema) sdkForModule(ctx context.Context, mod *core.Module) (SDK,
 		return nil, err
 	}
 
-	sdkMod, err := core.NewModule(s.platform, nil).FromRef(
-		ctx,
-		s.bk,
-		s.services,
-		s.progSockPath,
-		mod.SourceDirectory,
-		mod.SourceDirectorySubpath,
+	sdkMod, err := core.ModuleMetadataFromRef(
+		ctx, s.bk, s.services, s.progSockPath, nil, s.platform,
+		mod.SourceDirectory, mod.SourceDirectorySubpath,
 		mod.SDK,
-		s.runtimeForModule,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module %s: %w", mod.SDK, err)
@@ -86,10 +72,10 @@ func (s *moduleSchema) sdkForModule(ctx context.Context, mod *core.Module) (SDK,
 var errUnknownBuiltinSDK = fmt.Errorf("unknown builtin sdk")
 
 // return a builtin SDK implementation with the given name
-func (s *moduleSchema) builtinSDK(ctx context.Context, sdkName string) (SDK, error) {
+func (s *APIServer) builtinSDK(ctx context.Context, sdkName string) (SDK, error) {
 	switch sdkName {
 	case "go":
-		return &goSDK{moduleSchema: s}, nil
+		return &goSDK{APIServer: s}, nil
 	case "python":
 		return s.loadBuiltinSDK(ctx, sdkName, ciconsts.PythonSDKEngineContainerModulePath)
 	default:
@@ -99,76 +85,53 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, sdkName string) (SDK, err
 
 // moduleSDK is an SDK implemented as module; i.e. every module besides the special case go sdk.
 type moduleSDK struct {
-	*moduleSchema
+	*APIServer
 	// The module implementing this SDK.
-	mod *core.Module
+	mod *UserMod
 }
 
-func (s *moduleSchema) newModuleSDK(ctx context.Context, sdkMod *core.Module) (*moduleSDK, error) {
-	sdkMod, err := s.loadModuleTypes(ctx, sdkMod)
+func (s *APIServer) newModuleSDK(ctx context.Context, sdkModMeta *core.ModuleMetadata) (*moduleSDK, error) {
+	sdkMod, err := s.AddModFromMetadata(ctx, sdkModMeta, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load sdk module types: %w", err)
+		return nil, fmt.Errorf("failed to add sdk module to dag: %w", err)
 	}
-
-	return &moduleSDK{moduleSchema: s, mod: sdkMod}, nil
+	return &moduleSDK{APIServer: s, mod: sdkMod}, nil
 }
 
 // Codegen calls the Codegen function on the SDK Module
-func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.GeneratedCode, error) {
-	sdkModuleName := gqlObjectName(sdk.mod.Name)
-	var sdkModuleOriginalName string
-	funcName := "Codegen"
-	var codegenFn *core.Function
-	for _, obj := range sdk.mod.Objects {
-		if obj.AsObject.Name == sdkModuleName {
-			sdkModuleOriginalName = obj.AsObject.OriginalName
-			for _, fn := range obj.AsObject.Functions {
-				if fn.Name == gqlFieldName(funcName) {
-					codegenFn = fn
-					break
-				}
-			}
-		}
+func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.GeneratedCode, error) {
+	mainModObj, err := sdk.mod.MainModuleObject(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main module object for sdk module %s: %w", sdk.mod.Name(), err)
 	}
-	if codegenFn == nil {
-		return nil, fmt.Errorf("failed to find required Codegen function in SDK module %s", sdkModuleName)
+	codegenFn, err := mainModObj.FunctionByName("Codegen")
+	if err != nil {
+		return nil, fmt.Errorf("failed to find required Codegen function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
 
-	schemaView, err := sdk.installDeps(ctx, mod)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install deps during %s module sdk codegen: %w", sdkModuleName, err)
-	}
-	introspectionJSON, err := schemaView.schemaIntrospectionJSON(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdkModuleName, err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Name(), err)
 	}
 
-	srcDirID, err := mod.SourceDirectory.ID()
+	srcDirID, err := mod.metadata.SourceDirectory.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
 	}
 
-	result, err := sdk.moduleSchema.functionCall(ctx, codegenFn, functionCallArgs{
-		Module: sdk.mod,
-		Input: []*core.CallInput{
-			{
-				Name:  "modSource",
-				Value: srcDirID,
-			},
-			{
-				Name:  "subPath",
-				Value: mod.SourceDirectorySubpath,
-			},
-			{
-				Name:  "introspectionJson",
-				Value: introspectionJSON,
-			},
+	result, err := codegenFn.Call(ctx, true, nil, []*core.CallInput{
+		{
+			Name:  "modSource",
+			Value: srcDirID,
 		},
-		ParentOriginalName: sdkModuleOriginalName,
-		// TODO: params? somehow? maybe from module config? would be a good way to
-		// e.g. configure the language version.
-		Parent: map[string]any{},
-		Cache:  true,
+		{
+			Name:  "subPath",
+			Value: mod.metadata.SourceDirectorySubpath,
+		},
+		{
+			Name:  "introspectionJson",
+			Value: introspectionJSON,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
@@ -183,62 +146,41 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Gene
 }
 
 // Runtime calls the Runtime function on the SDK Module
-func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Container, error) {
-	sdkModuleName := gqlObjectName(sdk.mod.Name)
-	var sdkModuleOriginalName string
-	funcName := "ModuleRuntime"
-	var getRuntimeFn *core.Function
-	for _, obj := range sdk.mod.Objects {
-		if obj.AsObject.Name == sdkModuleName {
-			sdkModuleOriginalName = obj.AsObject.OriginalName
-			for _, fn := range obj.AsObject.Functions {
-				if fn.Name == gqlFieldName(funcName) {
-					getRuntimeFn = fn
-					break
-				}
-			}
-		}
+func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Container, error) {
+	mainModObj, err := sdk.mod.MainModuleObject(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main module object for sdk module %s: %w", sdk.mod.Name(), err)
 	}
-	if getRuntimeFn == nil {
-		return nil, fmt.Errorf("failed to find required ModuleRuntime function in SDK module %s", sdkModuleName)
+	getRuntimeFn, err := mainModObj.FunctionByName("ModuleRuntime")
+	if err != nil {
+		return nil, fmt.Errorf("failed to find required ModuleRuntime function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
 
-	schemaView, err := sdk.installDeps(ctx, mod)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install deps during %s module sdk codegen: %w", sdkModuleName, err)
-	}
-	introspectionJSON, err := schemaView.schemaIntrospectionJSON(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdkModuleName, err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Name(), err)
 	}
 
-	srcDirID, err := mod.SourceDirectory.ID()
+	srcDirID, err := mod.metadata.SourceDirectory.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
 	}
 
-	result, err := sdk.moduleSchema.functionCall(ctx, getRuntimeFn, functionCallArgs{
-		Module: sdk.mod,
-		Input: []*core.CallInput{
-			{
-				Name:  "modSource",
-				Value: srcDirID,
-			},
-			{
-				Name:  "subPath",
-				Value: mod.SourceDirectorySubpath,
-			},
-			{
-				Name:  "introspectionJson",
-				Value: introspectionJSON,
-			},
+	result, err := getRuntimeFn.Call(ctx, true, nil, []*core.CallInput{
+		{
+			Name:  "modSource",
+			Value: srcDirID,
 		},
-		ParentOriginalName: sdkModuleOriginalName,
-		// TODO: params? somehow? maybe from module config? would be a good way to
-		// e.g. configure the language version.
-		Parent: map[string]any{},
-		Cache:  true,
+		{
+			Name:  "subPath",
+			Value: mod.metadata.SourceDirectorySubpath,
+		},
+		{
+			Name:  "introspectionJson",
+			Value: introspectionJSON,
+		},
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
 	}
@@ -257,7 +199,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Cont
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
-func (s *moduleSchema) loadBuiltinSDK(ctx context.Context, name string, engineContainerModulePath string) (*moduleSDK, error) {
+func (s *APIServer) loadBuiltinSDK(ctx context.Context, name string, engineContainerModulePath string) (*moduleSDK, error) {
 	ctx, recorder := progrock.WithGroup(ctx, fmt.Sprintf("load builtin module sdk %s", name))
 
 	cfgPath := modules.NormalizeConfigPath(engineContainerModulePath)
@@ -297,18 +239,15 @@ func (s *moduleSchema) loadBuiltinSDK(ctx context.Context, name string, engineCo
 		return nil, fmt.Errorf("failed to get relative path of module sdk config file %s: %w", name, err)
 	}
 
-	sdkMod, err := core.NewModule(s.platform, nil).FromConfig(
-		ctx,
-		s.bk,
-		s.services,
-		s.progSockPath,
+	sdkMod, err := core.ModuleMetadataFromConfig(
+		ctx, s.bk, s.services, s.progSockPath,
 		core.NewDirectory(ctx, pbDef, "/", nil, s.platform, nil),
 		cfgRelPath,
-		s.runtimeForModule,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module: %w", err)
 	}
+
 	return s.newModuleSDK(ctx, sdkMod)
 }
 
@@ -327,10 +266,10 @@ The Codegen and Runtime methods are implemented by loading that tarball and exec
 to generate user code and then execute it with the resulting /runtime binary.
 */
 type goSDK struct {
-	*moduleSchema
+	*APIServer
 }
 
-func (sdk *goSDK) Codegen(ctx context.Context, mod *core.Module) (*core.GeneratedCode, error) {
+func (sdk *goSDK) Codegen(ctx context.Context, mod *UserMod) (*core.GeneratedCode, error) {
 	ctr, err := sdk.baseWithCodegen(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -341,12 +280,12 @@ func (sdk *goSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Generate
 		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
 	}
 
-	diff, err := mod.SourceDirectory.Diff(ctx, modifiedSrcDir)
+	diff, err := mod.metadata.SourceDirectory.Diff(ctx, modifiedSrcDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get diff: %w", err)
 	}
 	// diff needs to be of the subdir, if any, not necessarily the root
-	diff, err = diff.Directory(ctx, sdk.bk, sdk.services, mod.SourceDirectorySubpath)
+	diff, err = diff.Directory(ctx, sdk.bk, sdk.services, mod.metadata.SourceDirectorySubpath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-root diff: %w", err)
 	}
@@ -361,7 +300,7 @@ func (sdk *goSDK) Codegen(ctx context.Context, mod *core.Module) (*core.Generate
 	}, nil
 }
 
-func (sdk *goSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Container, error) {
+func (sdk *goSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Container, error) {
 	ctr, err := sdk.baseWithCodegen(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -392,15 +331,12 @@ func (sdk *goSDK) Runtime(ctx context.Context, mod *core.Module) (*core.Containe
 	return ctr, nil
 }
 
-func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module) (*core.Container, error) {
-	schemaView, err := sdk.installDeps(ctx, mod)
+func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Container, error) {
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install deps during go module sdk codegen: %w", err)
+		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", mod.Name(), err)
 	}
-	introspectionJSON, err := schemaView.schemaIntrospectionJSON(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during go module sdk codegen: %w", err)
-	}
+
 	introspectionJSONFile, err := core.NewFileWithContents(ctx, sdk.bk, sdk.services,
 		filepath.Base(goSDKIntrospectionJSONPath),
 		[]byte(introspectionJSON), 0444, nil,
@@ -416,8 +352,8 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module) (*core.
 	}
 	// delete dagger.gen.go if it exists, which is going to be overwritten anyways. If it doesn't exist, we ignore not found
 	// in the implementation of `Without` so it will be a no-op
-	sourceDir := mod.SourceDirectory
-	sourceDir, err = sourceDir.Without(ctx, filepath.Join(mod.SourceDirectorySubpath, "dagger.gen.go"))
+	sourceDir := mod.metadata.SourceDirectory
+	sourceDir, err = sourceDir.Without(ctx, filepath.Join(mod.metadata.SourceDirectorySubpath, "dagger.gen.go"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
@@ -431,7 +367,7 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module) (*core.
 		return nil, fmt.Errorf("failed to mount module source into go module sdk container codegen: %w", err)
 	}
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.WorkingDir = filepath.Join(goSDKUserModSourceDirPath, mod.SourceDirectorySubpath)
+		cfg.WorkingDir = filepath.Join(goSDKUserModSourceDirPath, mod.metadata.SourceDirectorySubpath)
 		cfg.Cmd = nil
 		return cfg
 	})

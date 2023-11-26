@@ -14,7 +14,7 @@ import (
 )
 
 type querySchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
 var _ ExecutableSchema = &querySchema{}

@@ -7,7 +7,7 @@ import (
 )
 
 type cacheSchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
 var _ ExecutableSchema = &cacheSchema{}

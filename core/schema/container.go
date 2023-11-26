@@ -20,7 +20,7 @@ import (
 )
 
 type containerSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host         *core.Host
 	svcs         *core.Services

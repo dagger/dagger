@@ -10,7 +10,7 @@ import (
 var _ ExecutableSchema = &gitSchema{}
 
 type gitSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	svcs *core.Services
 }

@@ -8,7 +8,7 @@ import (
 )
 
 type serviceSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	svcs *core.Services
 }

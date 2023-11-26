@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -16,12 +16,14 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
 	"github.com/dagger/graphql/gqlerrors"
+	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -29,11 +31,8 @@ import (
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"golang.org/x/sync/errgroup"
 )
-
-// NOTE: core is not *technically* a module (yet) but we treat it as one when checking
-// for where a given type was loaded from
-const coreModuleName = "core"
 
 type InitializeArgs struct {
 	BuildkitClient *buildkit.Client
@@ -45,9 +44,9 @@ type InitializeArgs struct {
 	Secrets        *core.SecretStore
 }
 
-func New(params InitializeArgs) (*MergedSchemas, error) {
+func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	svcs := core.NewServices(params.BuildkitClient)
-	merged := &MergedSchemas{
+	api := &APIServer{
 		bk:           params.BuildkitClient,
 		platform:     params.Platform,
 		progSockPath: params.ProgSockPath,
@@ -58,18 +57,58 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
-		buildCache:        core.NewCacheMap[uint64, *core.Container](),
-		importCache:       core.NewCacheMap[uint64, *specs.Descriptor](),
-		moduleCache:       core.NewCacheMap[digest.Digest, *core.Module](),
-		dependenciesCache: core.NewCacheMap[digest.Digest, []*core.Module](),
+		buildCache:  core.NewCacheMap[uint64, *core.Container](),
+		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
 
-		schemaViews:    map[digest.Digest]*schemaView{},
-		moduleContexts: map[digest.Digest]*moduleContext{},
+		modByName:         map[string]*UserMod{},
+		clientCallContext: map[digest.Digest]*clientCallContext{},
 	}
-	return merged, nil
+
+	coreSchema, err := mergeExecutableSchemas(
+		&querySchema{api},
+		&directorySchema{api, api.host, api.services, api.buildCache},
+		&fileSchema{api, api.host, api.services},
+		&gitSchema{api, api.services},
+		&containerSchema{
+			api,
+			api.host,
+			api.services,
+			api.ociStore,
+			api.leaseManager,
+			api.buildCache,
+			api.importCache,
+		},
+		&cacheSchema{api},
+		&secretSchema{api},
+		&serviceSchema{api, api.services},
+		&hostSchema{api, api.host, api.services},
+		&moduleSchema{api},
+		&httpSchema{api, api.services},
+		&platformSchema{api},
+		&socketSchema{api, api.host},
+	)
+	if err != nil {
+		return nil, err
+	}
+	compiledCoreSchema, err := compile(coreSchema)
+	if err != nil {
+		return nil, err
+	}
+	coreIntrospectionJSON, err := schemaIntrospectionJSON(ctx, *compiledCoreSchema)
+	if err != nil {
+		return nil, err
+	}
+	api.core = &CoreMod{executableSchema: coreSchema, introspectionJSON: coreIntrospectionJSON}
+
+	// the main client caller starts out the core API loaded
+	api.clientCallContext[""] = &clientCallContext{
+		dag: &ModDag{api: api, roots: []Mod{api.core}},
+	}
+
+	return api, nil
 }
 
-type MergedSchemas struct {
+type APIServer struct {
 	bk           *buildkit.Client
 	platform     specs.Platform
 	progSockPath string
@@ -80,202 +119,69 @@ type MergedSchemas struct {
 	host         *core.Host
 	services     *core.Services
 
-	buildCache        *core.CacheMap[uint64, *core.Container]
-	importCache       *core.CacheMap[uint64, *specs.Descriptor]
-	moduleCache       *core.CacheMap[digest.Digest, *core.Module]
-	dependenciesCache *core.CacheMap[digest.Digest, []*core.Module]
+	buildCache  *core.CacheMap[uint64, *core.Container]
+	importCache *core.CacheMap[uint64, *specs.Descriptor]
 
+	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
+	endpoints  map[string]http.Handler
+	endpointMu sync.RWMutex
+
+	// the core API simulated as a module (intrisic dep of every user module)
+	core *CoreMod
+
+	// name of user-defined module name -> vertex in the DAG for that module
+	modByName map[string]*UserMod
+
+	// The metadata of client calls.
+	// For the special case of the main client caller, the key is just empty string
+	clientCallContext map[digest.Digest]*clientCallContext
+
+	// TODO: split to separate locks more?
 	mu sync.RWMutex
-	// Map of module digest -> schema presented to module.
-	// For the original client not in an module, digest is just "".
-	schemaViews map[digest.Digest]*schemaView
-	// map of module contexts, used to store metadata about the module making api requests
-	// to this server. Needs to be separate from schemaViews because there can be multiple
-	// module contexts for a single schema view.
-	moduleContexts map[digest.Digest]*moduleContext
 }
 
-type moduleContext struct {
-	module     *core.Module
-	fnCall     *core.FunctionCall
-	schemaView *schemaView
+type clientCallContext struct {
+	// the DAG of modules being served to this client
+	dag *ModDag
+
+	// If the client is itself from a function call in a user module, these are set with the
+	// metadata of that ongoing function call
+	fn    *UserModFunction
+	args  []*core.CallInput
+	count int
 }
 
-// requires s.mu write lock held
-func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaView, error) {
-	ms := &schemaView{
-		viewDigest:      viewDigest,
-		separateSchemas: map[string]ExecutableSchema{},
-		endpoints:       map[string]http.Handler{},
-		services:        s.services,
-	}
-
-	err := ms.addSchemas(
-		&querySchema{s},
-		&directorySchema{s, s.host, s.services, s.buildCache},
-		&fileSchema{s, s.host, s.services},
-		&gitSchema{s, s.services},
-		&containerSchema{
-			s,
-			s.host,
-			s.services,
-			s.ociStore,
-			s.leaseManager,
-			s.buildCache,
-			s.importCache,
-		},
-		&cacheSchema{s},
-		&secretSchema{s},
-		&serviceSchema{s, s.services},
-		&hostSchema{s, s.host, s.services},
-		&moduleSchema{
-			MergedSchemas:     s,
-			moduleCache:       s.moduleCache,
-			dependenciesCache: s.dependenciesCache,
-		},
-		&httpSchema{s, s.services},
-		&platformSchema{s},
-		&socketSchema{s, s.host},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	s.schemaViews[viewDigest] = ms
-	return ms, nil
-}
-
-func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ms, ok := s.schemaViews[viewDigest]
-	if !ok {
-		var err error
-		ms, err = s.initializeSchemaView(viewDigest)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return ms, nil
-}
-
-func (s *MergedSchemas) getModuleSchemaView(mod *core.Module) (*schemaView, error) {
-	modDgst, err := mod.BaseDigest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute schema view digest: %w", err)
-	}
-	return s.getSchemaView(modDgst)
-}
-
-func (s *MergedSchemas) registerModuleFunctionCall(mod *core.Module, fnCall *core.FunctionCall) (*schemaView, digest.Digest, error) {
-	schemaView, err := s.getModuleSchemaView(mod)
-	if err != nil {
-		return nil, "", err
-	}
-
-	fnCallDgst, err := fnCall.Digest()
-	if err != nil {
-		return nil, "", err
-	}
-
-	dgst := digest.FromString(schemaView.viewDigest.String() + "." + fnCallDgst.String())
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.moduleContexts[dgst] = &moduleContext{
-		module:     mod,
-		fnCall:     fnCall,
-		schemaView: schemaView,
-	}
-
-	return schemaView, dgst, nil
-}
-
-func (s *MergedSchemas) currentSchemaView(ctx context.Context) (*schemaView, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if clientMetadata.ModuleContextDigest == "" {
-		return s.getSchemaView("")
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	moduleContext, ok := s.moduleContexts[clientMetadata.ModuleContextDigest]
-	if !ok {
-		return nil, fmt.Errorf("module context not found")
-	}
-	return moduleContext.schemaView, nil
-}
-
-func (s *MergedSchemas) currentModule(ctx context.Context) (*core.Module, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if clientMetadata.ModuleContextDigest == "" {
-		return nil, fmt.Errorf("not in a module")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	moduleContext, ok := s.moduleContexts[clientMetadata.ModuleContextDigest]
-	if !ok {
-		return nil, fmt.Errorf("module context not found")
-	}
-	return moduleContext.module, nil
-}
-
-func (s *MergedSchemas) currentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if clientMetadata.ModuleContextDigest == "" {
-		return nil, fmt.Errorf("not in a module")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	moduleContext, ok := s.moduleContexts[clientMetadata.ModuleContextDigest]
-	if !ok {
-		return nil, fmt.Errorf("module context not found")
-	}
-	return moduleContext.fnCall, nil
-}
-
-func (s *MergedSchemas) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	schemaView, err := s.currentSchemaView(r.Context())
-	if err != nil {
-		bklog.G(r.Context()).WithError(err).Error("failed to get schema view")
+func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	errorOut := func(err error) {
+		bklog.G(ctx).WithError(err).Error("failed to serve request")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		errorOut(err)
 		return
 	}
 
-	schemaView.ServeHTTP(w, r)
-}
-
-func (s *MergedSchemas) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
-	schemaView, err := s.currentSchemaView(ctx)
-	if err != nil {
-		return err
+	callContext, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
+	if !ok {
+		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest))
+		return
 	}
-	schemaView.muxEndpoint(path, handler)
-	return nil
-}
 
-type schemaView struct {
-	viewDigest digest.Digest
+	executableSchema, err := callContext.dag.Schema(ctx)
+	if err != nil {
+		errorOut(err)
+		return
+	}
+	// TODO: cache the conversion to compiledSchema somewhere
+	compiledSchema, err := compile(executableSchema)
+	if err != nil {
+		errorOut(err)
+		return
+	}
 
-	mu              sync.RWMutex
-	separateSchemas map[string]ExecutableSchema
-	mergedSchema    ExecutableSchema
-	compiledSchema  *graphql.Schema
-	endpointMu      sync.RWMutex
-	endpoints       map[string]http.Handler
-	services        *core.Services
-}
-
-func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if v := recover(); v != nil {
 			bklog.G(context.TODO()).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
@@ -311,16 +217,9 @@ func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
-	if err != nil {
-		bklog.G(context.TODO()).WithError(err).Error("failed to get client metadata")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	mux := http.NewServeMux()
 	mux.Handle("/query", NewHandler(&HandlerConfig{
-		Schema: s.schema(),
+		Schema: compiledSchema,
 	}))
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
@@ -339,137 +238,199 @@ func (s *schemaView) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeHTTP(w, r)
 }
 
-func (s *schemaView) muxEndpoint(path string, handler http.Handler) {
-	s.endpointMu.Lock()
-	defer s.endpointMu.Unlock()
-	s.endpoints[path] = handler
-}
-
-func (s *schemaView) schema() *graphql.Schema {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.compiledSchema
-}
-
-func (s *schemaView) schemaIntrospectionJSON(ctx context.Context) (string, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.compiledSchema == nil {
-		return "", errors.New("schema not initialized")
-	}
-
-	result := graphql.Do(graphql.Params{
-		Schema:        *s.compiledSchema,
-		RequestString: introspection.Query,
-		OperationName: "IntrospectionQuery",
-		Context:       ctx,
-	})
-	if result.HasErrors() {
-		var err error
-		for _, e := range result.Errors {
-			err = errors.Join(err, e)
-		}
-		return "", fmt.Errorf("introspection query failed: %w", err)
-	}
-	jsonBytes, err := json.Marshal(result.Data)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal introspection result: %w", err)
-	}
-	return string(jsonBytes), nil
-}
-
-func (s *MergedSchemas) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
+func (s *APIServer) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {
 	return s.services.StopClientServices(ctx, client)
 }
 
-func (s *schemaView) addSchemas(schemasToAdd ...ExecutableSchema) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// make a copy of the current schemas
-	separateSchemas := map[string]ExecutableSchema{}
-	for k, v := range s.separateSchemas {
-		separateSchemas[k] = v
-	}
-
-	// add in new schemas, recursively adding dependencies
-	newSchemas := make([]ExecutableSchema, 0, len(schemasToAdd))
-	for _, newSchema := range schemasToAdd {
-		// Skip adding schema if it has already been added, higher callers
-		// are expected to handle checks that schemas with the same name are
-		// actually equivalent
-		_, ok := separateSchemas[newSchema.Name()]
-		if ok {
-			continue
-		}
-
-		newSchemas = append(newSchemas, newSchema)
-		separateSchemas[newSchema.Name()] = newSchema
-	}
-	if len(newSchemas) == 0 {
-		return nil
-	}
-	sort.Slice(newSchemas, func(i, j int) bool {
-		return newSchemas[i].Name() < newSchemas[j].Name()
-	})
-
-	// merge existing and new schemas together
-	merged, err := mergeExecutableSchemas(s.mergedSchema, newSchemas...)
-	if err != nil {
-		return err
-	}
-
-	compiled, err := compile(merged)
-	if err != nil {
-		return err
-	}
-
-	s.separateSchemas = separateSchemas
-	s.mergedSchema = merged
-	s.compiledSchema = compiled
+func (s *APIServer) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
+	s.endpointMu.Lock()
+	defer s.endpointMu.Unlock()
+	s.endpoints[path] = handler
 	return nil
 }
 
-func (s *schemaView) resolvers() Resolvers {
+func (s *APIServer) AddModFromMetadata(
+	ctx context.Context,
+	modMeta *core.ModuleMetadata,
+	pipeline pipeline.Path,
+) (*UserMod, error) {
+	// TODO: wrap whole thing in a once or equiv?
+
+	var eg errgroup.Group
+	deps := make([]Mod, len(modMeta.DependencyConfig))
+	for i, depRef := range modMeta.DependencyConfig {
+		i, depRef := i, depRef
+		eg.Go(func() error {
+			mod, err := s.AddModFromRef(ctx, depRef, modMeta, pipeline)
+			if err != nil {
+				return err
+			}
+			deps[i] = mod
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	deps = append(deps, s.core)
+
+	sdk, err := s.sdkForModule(ctx, modMeta)
+	if err != nil {
+		return nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.mergedSchema.Resolvers()
+	mod, ok := s.modByName[modMeta.Name]
+	if ok {
+		return mod, nil
+	}
+
+	mod = newUserMod(s, modMeta, &ModDag{api: s, roots: deps}, sdk)
+	s.modByName[modMeta.Name] = mod
+	return mod, nil
 }
 
-func (s *schemaView) sourceModuleName(astType *ast.Type) (string, bool) {
-	if astType == nil {
-		return "", false
+func (s *APIServer) AddModFromRef(
+	ctx context.Context,
+	ref string,
+	parentMod *core.ModuleMetadata,
+	pipeline pipeline.Path,
+) (*UserMod, error) {
+	modMeta, err := core.ModuleMetadataFromRef(
+		ctx, s.bk, s.services, s.progSockPath, pipeline, s.platform,
+		parentMod.SourceDirectory, parentMod.SourceDirectorySubpath,
+		ref,
+	)
+	if err != nil {
+		return nil, err
 	}
-	if astType.Elem != nil {
-		return s.sourceModuleName(astType.Elem)
+	return s.AddModFromMetadata(ctx, modMeta, pipeline)
+}
+
+func (s *APIServer) GetModFromMetadata(modMeta *core.ModuleMetadata) (*UserMod, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	mod, ok := s.modByName[modMeta.Name]
+	if ok {
+		return mod, nil
+	}
+	return nil, fmt.Errorf("module %q not found", modMeta.Name)
+}
+
+func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.ModuleMetadata) error {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	if clientMetadata.ModuleContextDigest != "" {
+		return fmt.Errorf("cannot serve module to client %s", clientMetadata.ClientID)
 	}
 
-	typeName := astType.NamedType
+	mod, err := s.GetModFromMetadata(modMeta)
+	if err != nil {
+		return err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, schema := range s.separateSchemas {
-		_, ok := schema.Resolvers()[typeName]
-		if !ok {
-			continue
-		}
-		return schema.SourceModuleName(), true
+	callCtx, ok := s.clientCallContext[""]
+	if !ok {
+		return fmt.Errorf("client call not found")
 	}
-	return "", false
+	roots := append([]Mod{}, callCtx.dag.roots...)
+	roots = append(roots, mod)
+	callCtx.dag, err = newModDag(ctx, s, roots)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, fn *UserModFunction, args []*core.CallInput) (func(), error) {
+	if dgst == "" {
+		return nil, fmt.Errorf("cannot register function call with empty digest")
+	}
+
+	var callCtx *clientCallContext
+	cleanup := func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		callCtx.count--
+		if callCtx.count == 0 {
+			delete(s.clientCallContext, dgst)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	callCtx, ok := s.clientCallContext[dgst]
+	if ok {
+		callCtx.count++
+		return cleanup, nil
+	}
+	callCtx = &clientCallContext{
+		dag:   fn.obj.mod.deps,
+		fn:    fn,
+		args:  args,
+		count: 1,
+	}
+	return cleanup, nil
+}
+
+func (s *APIServer) CurrentModule(ctx context.Context) (*UserMod, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if clientMetadata.ModuleContextDigest == "" {
+		return nil, fmt.Errorf("no current module for main client caller")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
+	if !ok {
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
+	}
+	return callCtx.fn.obj.mod, nil
+}
+
+func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if clientMetadata.ModuleContextDigest == "" {
+		return nil, fmt.Errorf("no current function call for main client caller")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
+	if !ok {
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
+	}
+
+	// TODO: refactor this all so that UserModFunction.Call just gives the core.FunctionCall object directly
+	return &core.FunctionCall{
+		Name:       callCtx.fn.typeDef.OriginalName,
+		ParentName: callCtx.fn.obj.typeDef.AsObject.OriginalName,
+		Parent:     TODO, // TODO: fix to support parent object value again
+		InputArgs:  callCtx.args,
+	}, nil
 }
 
 type ExecutableSchema interface {
 	Name() string
-	SourceModuleName() string
 	Schema() string
 	Resolvers() Resolvers
 }
 
 type StaticSchemaParams struct {
-	Name             string
-	SourceModuleName string
-	Schema           string
-	Resolvers        Resolvers
+	Name      string
+	Schema    string
+	Resolvers Resolvers
 }
 
 func StaticSchema(p StaticSchemaParams) ExecutableSchema {
@@ -484,10 +445,6 @@ type staticSchema struct {
 
 func (s *staticSchema) Name() string {
 	return s.StaticSchemaParams.Name
-}
-
-func (s *staticSchema) SourceModuleName() string {
-	return s.StaticSchemaParams.SourceModuleName
 }
 
 func (s *staticSchema) Schema() string {
@@ -610,6 +567,27 @@ func compile(s ExecutableSchema) (*graphql.Schema, error) {
 	return &schema, nil
 }
 
+func schemaIntrospectionJSON(ctx context.Context, compiledSchema graphql.Schema) (string, error) {
+	result := graphql.Do(graphql.Params{
+		Schema:        compiledSchema,
+		RequestString: introspection.Query,
+		OperationName: "IntrospectionQuery",
+		Context:       ctx,
+	})
+	if result.HasErrors() {
+		var err error
+		for _, e := range result.Errors {
+			err = errors.Join(err, e)
+		}
+		return "", fmt.Errorf("introspection query failed: %w", err)
+	}
+	jsonBytes, err := json.Marshal(result.Data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal introspection result: %w", err)
+	}
+	return string(jsonBytes), nil
+}
+
 // getSourceContext is a little helper to extract a target line with a number
 // of lines of surrounding context. If surrounding is negative, then all the
 // lines will be returned.
@@ -638,4 +616,185 @@ func getSourceContext(input string, target int, surrounding int) string {
 		output.WriteString(fmt.Sprintf(" %*s | ...\n", padding, ""))
 	}
 	return output.String()
+}
+
+/*
+This formats comments in the schema as:
+"""
+comment
+"""
+
+Which avoids corner cases where the comment ends in a `"`.
+*/
+func formatGqlDescription(desc string, args ...any) string {
+	if desc == "" {
+		return ""
+	}
+	return "\n" + strings.TrimSpace(fmt.Sprintf(desc, args...)) + "\n"
+}
+
+func typeDefToASTType(typeDef *core.TypeDef, isInput bool) (*ast.Type, error) {
+	switch typeDef.Kind {
+	case core.TypeDefKindString:
+		return &ast.Type{
+			NamedType: "String",
+			NonNull:   !typeDef.Optional,
+		}, nil
+	case core.TypeDefKindInteger:
+		return &ast.Type{
+			NamedType: "Int",
+			NonNull:   !typeDef.Optional,
+		}, nil
+	case core.TypeDefKindBoolean:
+		return &ast.Type{
+			NamedType: "Boolean",
+			NonNull:   !typeDef.Optional,
+		}, nil
+	case core.TypeDefKindVoid:
+		return &ast.Type{
+			NamedType: "Void",
+			NonNull:   !typeDef.Optional,
+		}, nil
+	case core.TypeDefKindList:
+		if typeDef.AsList == nil {
+			return nil, fmt.Errorf("expected list type def, got nil")
+		}
+		astType, err := typeDefToASTType(typeDef.AsList.ElementTypeDef, isInput)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.Type{
+			Elem:    astType,
+			NonNull: !typeDef.Optional,
+		}, nil
+	case core.TypeDefKindObject:
+		if typeDef.AsObject == nil {
+			return nil, fmt.Errorf("expected object type def, got nil")
+		}
+		objTypeDef := typeDef.AsObject
+		objName := gqlObjectName(objTypeDef.Name)
+		if isInput {
+			// idable types use their ID scalar as the input value
+			return &ast.Type{NamedType: objName + "ID", NonNull: !typeDef.Optional}, nil
+		}
+		return &ast.Type{NamedType: objName, NonNull: !typeDef.Optional}, nil
+	default:
+		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
+	}
+}
+
+// relevant ast code we need to work with here:
+// https://github.com/vektah/gqlparser/blob/35199fce1fa1b73c27f23c84f4430f47ac93329e/ast/value.go#L44
+func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
+	if val == nil {
+		// no default value for this arg
+		return nil, nil
+	}
+	switch typeDef.Kind {
+	case core.TypeDefKindString:
+		strVal, ok := val.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string default value, got %T", val)
+		}
+		return &ast.Value{
+			Kind: ast.StringValue,
+			Raw:  strVal,
+		}, nil
+	case core.TypeDefKindInteger:
+		var intVal int
+		switch val := val.(type) {
+		case int:
+			intVal = val
+		case float64: // JSON unmarshaling to `any'
+			intVal = int(val)
+		default:
+			return nil, fmt.Errorf("expected integer default value, got %T", val)
+		}
+		return &ast.Value{
+			Kind: ast.IntValue,
+			Raw:  strconv.Itoa(intVal),
+		}, nil
+	case core.TypeDefKindBoolean:
+		boolVal, ok := val.(bool)
+		if !ok {
+			return nil, fmt.Errorf("expected bool default value, got %T", val)
+		}
+		return &ast.Value{
+			Kind: ast.BooleanValue,
+			Raw:  strconv.FormatBool(boolVal),
+		}, nil
+	case core.TypeDefKindVoid:
+		if val != nil {
+			return nil, fmt.Errorf("expected nil value, got %T", val)
+		}
+		return &ast.Value{
+			Kind: ast.NullValue,
+			Raw:  "null",
+		}, nil
+	case core.TypeDefKindList:
+		astVal := &ast.Value{Kind: ast.ListValue}
+		// val is coming from deserializing a json string (see jsonResolver), so it should be []any
+		listVal, ok := val.([]any)
+		if !ok {
+			return nil, fmt.Errorf("expected list default value, got %T", val)
+		}
+		for _, elemVal := range listVal {
+			elemASTVal, err := astDefaultValue(typeDef.AsList.ElementTypeDef, elemVal)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get default value for list element: %w", err)
+			}
+			astVal.Children = append(astVal.Children, &ast.ChildValue{
+				Value: elemASTVal,
+			})
+		}
+		return astVal, nil
+	case core.TypeDefKindObject:
+		astVal := &ast.Value{Kind: ast.ObjectValue}
+		// val is coming from deserializing a json string (see jsonResolver), so it should be map[string]any
+		mapVal, ok := val.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("expected object default value, got %T", val)
+		}
+		for name, val := range mapVal {
+			name = gqlFieldName(name)
+			field, ok := typeDef.AsObject.FieldByName(name)
+			if !ok {
+				return nil, fmt.Errorf("object field %s.%s not found", typeDef.AsObject.Name, name)
+			}
+			fieldASTVal, err := astDefaultValue(field.TypeDef, val)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get default value for object field %q: %w", name, err)
+			}
+			astVal.Children = append(astVal.Children, &ast.ChildValue{
+				Name:  name,
+				Value: fieldASTVal,
+			})
+		}
+		return astVal, nil
+	default:
+		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
+	}
+}
+
+func gqlObjectName(name string) string {
+	// gql object name is capitalized camel case
+	return strcase.ToCamel(name)
+}
+
+func namespaceObject(objName, namespace string) string {
+	// don't namespace the main module object itself (already is named after the module)
+	if gqlObjectName(objName) == gqlObjectName(namespace) {
+		return objName
+	}
+	return gqlObjectName(namespace + "_" + objName)
+}
+
+func gqlFieldName(name string) string {
+	// gql field name is uncapitalized camel case
+	return strcase.ToLowerCamel(name)
+}
+
+func gqlArgName(name string) string {
+	// gql arg name is uncapitalized camel case
+	return strcase.ToLowerCamel(name)
 }

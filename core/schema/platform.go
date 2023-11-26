@@ -10,7 +10,7 @@ import (
 )
 
 type platformSchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
 var _ ExecutableSchema = &platformSchema{}

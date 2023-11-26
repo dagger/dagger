@@ -7,7 +7,7 @@ import (
 )
 
 type secretSchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
 var _ ExecutableSchema = &secretSchema{}

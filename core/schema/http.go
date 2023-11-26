@@ -13,7 +13,7 @@ import (
 var _ ExecutableSchema = &httpSchema{}
 
 type httpSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	svcs *core.Services
 }

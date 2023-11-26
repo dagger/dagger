@@ -10,7 +10,7 @@ import (
 )
 
 type hostSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host *core.Host
 	svcs *core.Services

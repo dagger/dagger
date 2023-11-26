@@ -314,3 +314,7 @@ type CallInput struct {
 	Name  string `json:"name"`
 	Value any    `json:"value"`
 }
+
+func (callInput *CallInput) Digest() (digest.Digest, error) {
+	return stableDigest(callInput)
+}

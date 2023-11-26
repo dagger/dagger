@@ -8,7 +8,7 @@ import (
 )
 
 type socketSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host *core.Host
 }

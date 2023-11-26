@@ -31,7 +31,7 @@ type DaggerServer struct {
 	bkClient *buildkit.Client
 	worker   bkworker.Worker
 
-	schema      *schema.MergedSchemas
+	schema      *schema.APIServer
 	recorder    *progrock.Recorder
 	progCleanup func() error
 

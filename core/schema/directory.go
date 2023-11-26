@@ -11,7 +11,7 @@ import (
 )
 
 type directorySchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host       *core.Host
 	svcs       *core.Services

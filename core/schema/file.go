@@ -7,7 +7,7 @@ import (
 )
 
 type fileSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host *core.Host
 	svcs *core.Services
