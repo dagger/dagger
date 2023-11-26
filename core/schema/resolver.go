@@ -144,8 +144,9 @@ func chain(parent *idproto.ID, params graphql.ResolveParams) *idproto.ID {
 	})
 
 	// append selector to the constructor
-	chainedID.Constructor = make([]*idproto.Selector, 0, len(parent.Constructor)+1)
-	copy(chainedID.Constructor, parent.Constructor)
+	for _, sel := range parent.Constructor {
+		chainedID.Append(sel.Field, sel.Args...)
+	}
 	chainedID.Append(params.Info.FieldName, idArgs...)
 
 	return chainedID
@@ -173,7 +174,7 @@ func ToCachedResolver[P core.IDable, A any, R any](cache IDCache, f func(context
 			return nil, err
 		}
 
-		log.Println("??? CACHE CHECK", dig)
+		log.Println("??? CACHE CHECK", dig, id.String())
 
 		return cache.GetOrInitialize(dig, func() (any, error) {
 			log.Println("!!! CACHE MISS", dig, id.String())
