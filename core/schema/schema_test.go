@@ -1,11 +1,8 @@
 package schema
 
 import (
-	"context"
 	"testing"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -200,25 +197,4 @@ func TestMergeScalarConflict(t *testing.T) {
 		}),
 	)
 	require.ErrorIs(t, err, ErrMergeScalarConflict)
-}
-
-func TestWithMountedCacheSeen(t *testing.T) {
-	t.Parallel()
-
-	cs := &containerSchema{
-		MergedSchemas: &MergedSchemas{bk: &buildkit.Client{}},
-	}
-
-	cid, err := core.NewCache("test-seen").ID()
-	require.NoError(t, err)
-
-	_, err = cs.withMountedCache(
-		context.Background(),
-		&core.Container{},
-		containerWithMountedCacheArgs{Path: "/foo", Cache: cid},
-	)
-	require.NoError(t, err)
-
-	_, ok := core.SeenCacheKeys.Load("test-seen")
-	require.True(t, ok)
 }

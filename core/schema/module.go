@@ -66,7 +66,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[*core.Module](s.queryCache, rs, "Module", ObjectResolver{
+	ResolveIDable[*core.Module](s.queryCache, s.MergedSchemas, rs, "Module", ObjectResolver{
 		"dependencies":  ToCachedResolver(s.queryCache, s.moduleDependencies),
 		"objects":       ToCachedResolver(s.queryCache, s.moduleObjects),
 		"withObject":    ToCachedResolver(s.queryCache, s.moduleWithObject),
@@ -74,14 +74,14 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"serve":         ToVoidResolver(s.moduleServe),
 	})
 
-	ResolveIDable[*core.Function](s.queryCache, rs, "Function", ObjectResolver{
+	ResolveIDable[*core.Function](s.queryCache, s.MergedSchemas, rs, "Function", ObjectResolver{
 		"withDescription": ToCachedResolver(s.queryCache, s.functionWithDescription),
 		"withArg":         ToCachedResolver(s.queryCache, s.functionWithArg),
 	})
 
-	ResolveIDable[*core.FunctionArg](s.queryCache, rs, "FunctionArg", ObjectResolver{})
+	ResolveIDable[*core.FunctionArg](s.queryCache, s.MergedSchemas, rs, "FunctionArg", ObjectResolver{})
 
-	ResolveIDable[*core.TypeDef](s.queryCache, rs, "TypeDef", ObjectResolver{
+	ResolveIDable[*core.TypeDef](s.queryCache, s.MergedSchemas, rs, "TypeDef", ObjectResolver{
 		"kind":            ToCachedResolver(s.queryCache, s.typeDefKind),
 		"withOptional":    ToCachedResolver(s.queryCache, s.typeDefWithOptional),
 		"withKind":        ToCachedResolver(s.queryCache, s.typeDefWithKind),
@@ -92,7 +92,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"withConstructor": ToCachedResolver(s.queryCache, s.typeDefWithObjectConstructor),
 	})
 
-	ResolveIDable[*core.GeneratedCode](s.queryCache, rs, "GeneratedCode", ObjectResolver{
+	ResolveIDable[*core.GeneratedCode](s.queryCache, s.MergedSchemas, rs, "GeneratedCode", ObjectResolver{
 		"withVCSIgnoredPaths":   ToCachedResolver(s.queryCache, s.generatedCodeWithVCSIgnoredPaths),
 		"withVCSGeneratedPaths": ToCachedResolver(s.queryCache, s.generatedCodeWithVCSGeneratedPaths),
 	})
@@ -1338,24 +1338,20 @@ func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schem
 				if err != nil {
 					return nil, err
 				}
-				return resolver.FromID(idp)
+				return resolver.FromID(context.TODO(), idp, s.queryCache, schemaView.compiledSchema)
 			}
 		} else {
 			return func(a any) (any, error) {
-				id, ok := a.(string)
+				idStr, ok := a.(string)
 				if !ok {
-					if _, ok := a.(map[string]any); ok {
-						return a, nil
-					}
-					return nil, fmt.Errorf("expected map %s, or string %sID, got %T", typeDef.AsObject.Name, typeDef.AsObject.Name, a)
+					return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
 				}
-
-				// XXX(vito)
-				value, err := resourceid.DecodeModuleID(id, typeDef.AsObject.Name)
+				idp, err := resourceid.Decode(idStr)
 				if err != nil {
 					return nil, err
 				}
-				return value, nil
+				// XXX(vito): verify object name/type
+				return resourceid.FromProto[*core.ModuleObject](idp).Resolve(s.queryCache, schemaView.compiledSchema)
 			}
 		}
 	case core.TypeDefKindList:

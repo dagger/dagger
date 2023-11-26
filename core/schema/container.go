@@ -49,7 +49,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[*core.Container](s.queryCache, rs, "Container", ObjectResolver{
+	ResolveIDable[*core.Container](s.queryCache, s.MergedSchemas, rs, "Container", ObjectResolver{
 		"sync":                    ToCachedResolver(s.queryCache, s.sync),
 		"from":                    ToCachedResolver(s.queryCache, s.from),
 		"build":                   ToCachedResolver(s.queryCache, s.build),

@@ -39,7 +39,7 @@ func (s *directorySchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[*core.Directory](s.queryCache, rs, "Directory", ObjectResolver{
+	ResolveIDable[*core.Directory](s.queryCache, s.MergedSchemas, rs, "Directory", ObjectResolver{
 		"sync":             ToCachedResolver(s.queryCache, s.sync),
 		"pipeline":         ToCachedResolver(s.queryCache, s.pipeline),
 		"entries":          ToCachedResolver(s.queryCache, s.entries),

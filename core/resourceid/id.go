@@ -133,8 +133,16 @@ func (id *ID[T]) Resolve(cache IDCache, schema *graphql.Schema) (T, error) {
 
 	var zero T
 
+	op := ast.NewOperationDefinition(nil)
+	op.Operation = ast.OperationTypeQuery
+	op.SelectionSet = &ast.SelectionSet{
+		Selections: []ast.Selection{
+			id.GraphQLNode(),
+		},
+	}
+
 	doc := ast.NewDocument(nil)
-	doc.Definitions = []ast.Node{id.GraphQLNode()}
+	doc.Definitions = []ast.Node{op}
 
 	dig, err := id.Digest()
 	if err != nil {

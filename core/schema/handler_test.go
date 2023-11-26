@@ -198,7 +198,7 @@ func TestHandler_BasicQuery_WithRootObjFn(t *testing.T) {
 	h := schema.NewHandler(&schema.HandlerConfig{
 		Schema: &myNameSchema,
 		Pretty: true,
-		RootObjectFn: func(ctx context.Context, r *http.Request) map[string]interface{} {
+		RootObjectFn: func(ctx context.Context, r *http.Request) any {
 			return map[string]interface{}{"rootValue": "foo"}
 		},
 	})

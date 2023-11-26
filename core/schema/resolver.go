@@ -43,21 +43,26 @@ func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
 
 // TODO(vito): figure out how this changes with idproto
 type IDableObjectResolver interface {
-	FromID(*idproto.ID) (any, error)
+	FromID(context.Context, *idproto.ID, resourceid.IDCache, *graphql.Schema) (any, error)
 	Resolver
 }
 
-func ToIDableObjectResolver[T any](idToObject func(*idproto.ID) (*T, error), r ObjectResolver) IDableObjectResolver {
-	return idableObjectResolver[T]{idToObject, r}
+func ToIDableObjectResolver[T any](r ObjectResolver) IDableObjectResolver {
+	return idableObjectResolver{
+		func(ctx context.Context, idp *idproto.ID, cache resourceid.IDCache, schema *graphql.Schema) (any, error) {
+			return resourceid.FromProto[T](idp).Resolve(cache, schema)
+		},
+		r,
+	}
 }
 
-type idableObjectResolver[T any] struct {
-	idToObject func(*idproto.ID) (*T, error)
+type idableObjectResolver struct {
+	fromProto func(context.Context, *idproto.ID, resourceid.IDCache, *graphql.Schema) (any, error)
 	ObjectResolver
 }
 
-func (r idableObjectResolver[T]) FromID(id *idproto.ID) (any, error) {
-	return r.idToObject(id)
+func (r idableObjectResolver) FromID(ctx context.Context, id *idproto.ID, cache resourceid.IDCache, schema *graphql.Schema) (any, error) {
+	return r.fromProto(ctx, id, cache, schema)
 }
 
 type ScalarResolver struct {
@@ -133,11 +138,7 @@ type IDCache interface {
 func chain(parent *idproto.ID, params graphql.ResolveParams) *idproto.ID {
 	chainedID := idproto.New(params.Info.ReturnType.String())
 
-	// convert query args to ID args, by AST
-	// idArgs := make([]*idproto.Argument, len(params.Info.FieldASTs[0].Arguments))
-	// for i, arg := range params.Info.FieldASTs[0].Arguments {
-	// 	idArgs[i] = idproto.Arg(arg.Name.Value, arg.Value)
-	// }
+	// convert query args to ID args
 	idArgs := make([]*idproto.Argument, 0, len(params.Info.FieldASTs[0].Arguments))
 	for arg, val := range params.Args {
 		idArgs = append(idArgs, idproto.Arg(arg, val))
@@ -149,8 +150,10 @@ func chain(parent *idproto.ID, params graphql.ResolveParams) *idproto.ID {
 	})
 
 	// append selector to the constructor
-	for _, sel := range parent.Constructor {
-		chainedID.Append(sel.Field, sel.Args...)
+	if parent != nil {
+		for _, sel := range parent.Constructor {
+			chainedID.Append(sel.Field, sel.Args...)
+		}
 	}
 	chainedID.Append(params.Info.FieldName, idArgs...)
 
@@ -242,60 +245,14 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 	})
 }
 
-func ResolveIDable[T core.Object[T]](cache *core.CacheMap[digest.Digest, any], rs Resolvers, name string, obj ObjectResolver) {
-	load := loader[*T](cache)
-
-	// Wrap each field resolver to clone the object and set its ID.
-	// for name, fn := range obj {
-	// 	fn := fn
-	// 	// obj[name] = func(p graphql.ResolveParams) (any, error) {
-	// 	// 	queryID := idproto.New(p.Info.ReturnType.Name())
-	// 	// 	if idable, ok := any(p.Source).(core.IDable); ok {
-	// 	// 		queryID.Constructor = idable.ID().Constructor
-	// 	// 	}
-	// 	// 	idArgs := make([]*idproto.Argument, len(p.Info.FieldASTs[0].Arguments))
-	// 	// 	for i, arg := range p.Info.FieldASTs[0].Arguments {
-	// 	// 		idArgs[i] = idproto.Arg(arg.Name.Value, arg.Value.GetValue())
-	// 	// 	}
-	// 	// 	sort.SliceStable(idArgs, func(i, j int) bool {
-	// 	// 		return idArgs[i].Name < idArgs[j].Name
-	// 	// 	})
-	// 	// 	queryID.Append(p.Info.FieldName, idArgs...)
-
-	// 	// 	dig, err := queryID.Digest()
-	// 	// 	if err != nil {
-	// 	// 		return nil, err
-	// 	// 	}
-
-	// 	// 	return cache.GetOrInitialize(dig, func() (any, error) {
-	// 	// 		res, err := fn(p)
-	// 	// 		if err != nil {
-	// 	// 			return nil, err
-	// 	// 		}
-
-	// 	// 		if idable, ok := any(res).(core.IDable); ok {
-	// 	// 			// if the object already has an ID, respect it
-	// 	// 			if idable.ID() == nil {
-	// 	// 				log.Println("!!! SETTING ID", queryID.String())
-
-	// 	// 				idable.SetID(queryID)
-	// 	// 				// TODO: store in query cache
-	// 	// 			}
-	// 	// 		}
-
-	// 	// 		return res, nil
-	// 	// 	})
-	// 	// }
-	// }
-
+func ResolveIDable[T core.Object[T]](cache *core.CacheMap[digest.Digest, any], ms *MergedSchemas, rs Resolvers, name string, obj ObjectResolver) {
 	// Add field for querying the object's ID.
 	obj["id"] = ToResolver(func(ctx context.Context, obj T, args any) (_ *resourceid.ID[T], rerr error) {
-		log.Println("!!! ID", obj)
 		return resourceid.FromProto[T](obj.ID()), nil
 	})
 
 	// Add resolver for the type.
-	rs[name] = ToIDableObjectResolver(load, obj)
+	rs[name] = ToIDableObjectResolver[T](obj)
 
 	// Add resolver for its ID type.
 	rs[name+"ID"] = idResolver[T]()
@@ -307,7 +264,7 @@ func ResolveIDable[T core.Object[T]](cache *core.CacheMap[digest.Digest, any], r
 		rs["Query"] = query
 	}
 	loaderName := fmt.Sprintf("load%sFromID", name)
-	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID resourceid.ID[T] }) (*T, error) {
-		return load(args.ID.ID)
+	query[loaderName] = ToResolver(func(ctx context.Context, _ any, args struct{ ID *resourceid.ID[T] }) (T, error) {
+		return load(ctx, args.ID, ms)
 	})
 }

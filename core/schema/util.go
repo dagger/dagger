@@ -42,7 +42,7 @@ func idResolver[T core.Object[T]]() ScalarResolver {
 			case *ast.StringValue:
 				rid, err := resourceid.DecodeID[T](v.Value)
 				if err != nil {
-					return nil, fmt.Errorf("failed to parse resource ID %q: %w", v, err)
+					return nil, fmt.Errorf("failed to parse resource ID %q: %w", v.Value, err)
 				}
 				return rid, nil
 			default:

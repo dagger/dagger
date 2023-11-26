@@ -35,7 +35,7 @@ func (s *serviceSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[*core.Service](s.queryCache, rs, "Service", ObjectResolver{
+	ResolveIDable[*core.Service](s.queryCache, s.MergedSchemas, rs, "Service", ObjectResolver{
 		"hostname": ToCachedResolver(s.queryCache, s.hostname),
 		"ports":    ToCachedResolver(s.queryCache, s.ports),
 		"endpoint": ToCachedResolver(s.queryCache, s.endpoint),

@@ -35,7 +35,7 @@ func (s *fileSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[*core.File](s.queryCache, rs, "File", ObjectResolver{
+	ResolveIDable[*core.File](s.queryCache, s.MergedSchemas, rs, "File", ObjectResolver{
 		"sync":           ToCachedResolver(s.queryCache, s.sync),
 		"contents":       ToCachedResolver(s.queryCache, s.contents),
 		"size":           ToCachedResolver(s.queryCache, s.size),
