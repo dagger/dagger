@@ -121,10 +121,11 @@ func GraphQLNode(id *idproto.ID) *ast.Field {
 	field.Name.Value = first.Field
 	field.Arguments = make([]*ast.Argument, len(first.Args))
 	for i, arg := range first.Args {
-		field.Arguments[i] = &ast.Argument{
-			Name:  ast.NewName(nil),
-			Value: GraphQLValue(arg.Value),
-		}
+		astArg := ast.NewArgument(nil)
+		astArg.Name = ast.NewName(nil)
+		astArg.Name.Value = arg.Name
+		astArg.Value = GraphQLValue(arg.Value)
+		field.Arguments[i] = astArg
 	}
 
 	if len(rest) > 0 {

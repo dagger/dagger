@@ -2,9 +2,8 @@ package core
 
 import (
 	"fmt"
+	"log"
 	"sync"
-
-	"github.com/zeebo/xxh3"
 )
 
 type CacheMap[K comparable, T any] struct {
@@ -16,20 +15,6 @@ type cache[T any] struct {
 	wg  sync.WaitGroup
 	val T
 	err error
-}
-
-func cacheKey(keys ...any) uint64 {
-	hash := xxh3.New()
-
-	for _, key := range keys {
-		dig, err := stableDigest(key)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Fprintln(hash, dig)
-	}
-
-	return hash.Sum64()
 }
 
 func NewCacheMap[K comparable, T any]() *CacheMap[K, T] {
@@ -62,7 +47,9 @@ func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error)
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()
+		log.Println("!!! LOAD GETORINIT WAITING", key)
 		c.wg.Wait()
+		log.Println("!!! LOAD GETORINIT WAITING DONE", key)
 		return c.val, c.err
 	}
 
@@ -71,7 +58,9 @@ func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error)
 	m.calls[key] = c
 	m.l.Unlock()
 
+	log.Println("!!! LOAD GETORINIT CALLING", key)
 	c.val, c.err = fn()
+	log.Println("!!! LOAD GETORINIT CALLING DONE", key)
 	c.wg.Done()
 
 	if c.err != nil {

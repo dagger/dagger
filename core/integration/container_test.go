@@ -3123,7 +3123,7 @@ func TestContainerBuildNilContextError(t *testing.T) {
 				}
 			}
 		}`, &map[any]any{}, nil)
-	require.ErrorContains(t, err, "invalid nil input definition to definition op")
+	require.ErrorContains(t, err, "ID not provided")
 }
 
 func TestContainerInsecureRootCapabilites(t *testing.T) {

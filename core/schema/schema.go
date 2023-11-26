@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -148,17 +150,17 @@ func (s *MergedSchemas) initializeSchemaView(viewDigest digest.Digest) (*schemaV
 }
 
 func load[T any](ctx context.Context, id *resourceid.ID[T], ms *MergedSchemas) (T, error) {
-	if id == nil {
-		panic("ID is nil")
-	}
 	var zero T
+	if id == nil {
+		return zero, fmt.Errorf("%T: ID not provided", id)
+	}
 	val, err := ms.load(ctx, id.ID)
 	if err != nil {
 		return zero, err
 	}
 	obj, ok := val.(T)
 	if !ok {
-		return zero, fmt.Errorf("ID refers to a %T, not a %T", val, obj)
+		return zero, fmt.Errorf("ID refers to a %T, not a %T: %+v", val, obj, val)
 	}
 	return obj, nil
 }
@@ -169,37 +171,82 @@ func (s *MergedSchemas) load(ctx context.Context, id *idproto.ID) (any, error) {
 		return nil, err
 	}
 
-	return s.queryCache.GetOrInitialize(dig, func() (any, error) {
-		view, err := s.currentSchemaView(ctx)
-		if err != nil {
-			return nil, err
-		}
-		op := gqast.NewOperationDefinition(nil)
-		op.Operation = gqast.OperationTypeQuery
-		op.SelectionSet = &gqast.SelectionSet{
-			Selections: []gqast.Selection{
-				resourceid.GraphQLNode(id),
-			},
-		}
+	log.Println("!!! LOADING", dig, id)
+	defer log.Println("!!! DONE LOADING", dig, id)
 
-		doc := gqast.NewDocument(nil)
-		doc.Definitions = []gqast.Node{op}
+	val, err := s.queryCache.Get(dig)
+	if err == nil {
+		return val, nil
+	}
 
-		res := graphql.Execute(graphql.ExecuteParams{
-			Schema:  *view.compiledSchema,
-			Root:    &core.Query{},
-			AST:     doc,
-			Context: ctx,
-		})
-		if res.HasErrors() {
-			var err error
-			for _, e := range res.Errors {
-				err = errors.Join(err, e)
-			}
-			return nil, err
-		}
-		return res.Data, err
+	view, err := s.currentSchemaView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	op := gqast.NewOperationDefinition(nil)
+	op.Operation = gqast.OperationTypeQuery
+	op.SelectionSet = &gqast.SelectionSet{
+		Selections: []gqast.Selection{
+			resourceid.GraphQLNode(id),
+		},
+	}
+
+	doc := gqast.NewDocument(nil)
+	doc.Definitions = []gqast.Node{op}
+
+	enc := json.NewEncoder(os.Stderr)
+	enc.SetIndent("", "  ")
+	enc.Encode(doc)
+	log.Println("!!! EXECUTING ID", dig, id)
+
+	// NB: no need to wrap this in GetOrInitialize; the resolver handles that
+	// already.
+	res := graphql.Execute(graphql.ExecuteParams{
+		Schema:  *view.compiledSchema,
+		Root:    &core.Query{},
+		AST:     doc,
+		Context: ctx,
 	})
+	if res.HasErrors() {
+		var err error
+		for _, e := range res.Errors {
+			err = errors.Join(err, e)
+		}
+		log.Println("!!! ID HAS ERRS", err, res.Errors)
+		return nil, err
+	}
+
+	// above should have populated this
+	return s.queryCache.Get(dig)
+	if err == nil {
+		return val, nil
+	}
+
+	data := res.Data
+	path := id.Constructor
+	for {
+		log.Println("!!! LUPIN", data, path)
+		if len(path) == 0 {
+			return data, nil
+		}
+		switch x := data.(type) {
+		case map[string]any:
+			if len(x) != 1 {
+				return nil, fmt.Errorf("expected single result, got %d", len(x))
+			}
+			for k, v := range x {
+				if k != path[0].Field {
+					// sanity check
+					return nil, fmt.Errorf("expected %q, got %q", path[0], k)
+				}
+				data = v
+				path = path[1:]
+				break
+			}
+		default:
+			return x, nil
+		}
+	}
 }
 
 func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, error) {

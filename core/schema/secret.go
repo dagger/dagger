@@ -28,7 +28,7 @@ func (s *secretSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
 			"secret":    ToCachedResolver(s.queryCache, s.secret),
-			"setSecret": ToCachedResolver(s.queryCache, s.setSecret),
+			"setSecret": ToResolver(s.setSecret),
 		},
 	}
 
@@ -65,7 +65,9 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 		return nil, err
 	}
 
-	return load(ctx, secretID, s.MergedSchemas)
+	secret := core.NewDynamicSecret(args.Name)
+	secret.SetID(secretID.ID)
+	return secret, nil
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args any) (string, error) {
