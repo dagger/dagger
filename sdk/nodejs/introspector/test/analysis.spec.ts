@@ -31,6 +31,7 @@ describe("Analysis static Typescript", function () {
                   name: "name",
                   typeName: "string",
                   doc: "",
+                  optional: false,
                 },
               ],
             },
@@ -75,6 +76,7 @@ describe("Analysis static Typescript", function () {
                   name: "cmd",
                   typeName: "string[]",
                   doc: "Command to execute",
+                  optional: false,
                 },
               ],
             },
@@ -120,6 +122,7 @@ describe("Analysis static Typescript", function () {
                   name: "name",
                   typeName: "string",
                   doc: "",
+                  optional: false,
                 },
               ],
             },
@@ -132,6 +135,7 @@ describe("Analysis static Typescript", function () {
                   name: "name",
                   typeName: "string",
                   doc: "",
+                  optional: false,
                 },
               ],
             },
@@ -175,6 +179,7 @@ describe("Analysis static Typescript", function () {
                   name: "version",
                   typeName: "string",
                   doc: "version to use (default to: 3.16.2)",
+                  optional: true,
                 },
               ],
             },
@@ -187,6 +192,7 @@ describe("Analysis static Typescript", function () {
                   name: "pkgs",
                   typeName: "string[]",
                   doc: "",
+                  optional: false,
                 },
               ],
             },
@@ -199,6 +205,72 @@ describe("Analysis static Typescript", function () {
                   name: "cmd",
                   typeName: "string[]",
                   doc: "",
+                  optional: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      functions: [],
+    }
+
+    assert.deepEqual(result, expected)
+  })
+
+  it("Should detect optional parameters of a method", async function () {
+    const files = await listFiles(`${rootDirectory}/optionalParameter`)
+
+    const result = analysis(files)
+    const expected: Metadata = {
+      classes: [
+        {
+          name: "HelloWorld",
+          doc: "HelloWorld class",
+          properties: [],
+          methods: [
+            {
+              name: "helloWorld",
+              returnType: "string",
+              doc: "",
+              params: [
+                {
+                  name: "name",
+                  typeName: "string",
+                  doc: "",
+                  optional: true,
+                },
+              ],
+            },
+            {
+              name: "isTrue",
+              returnType: "boolean",
+              doc: "",
+              params: [
+                {
+                  name: "value",
+                  typeName: "boolean",
+                  doc: "",
+                  optional: false,
+                },
+              ],
+            },
+            {
+              name: "add",
+              returnType: "number",
+              doc: "",
+              params: [
+                {
+                  name: "a",
+                  typeName: "number",
+                  doc: "",
+                  optional: true,
+                },
+                {
+                  name: "b",
+                  typeName: "number",
+                  doc: "",
+                  optional: true,
                 },
               ],
             },

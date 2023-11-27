@@ -16,6 +16,8 @@ import { isFunction, isObject, isPublicProperty } from "./utils.js"
  * This function introspect files and returns metadata of their class and
  * functions that should be exposed to the Dagger API.
  *
+ * WARNING(28/11/23): This does NOT include arrow style function.
+ *
  * @param files List of Typescript files to introspect.
  */
 export function analysis(files: string[]): Metadata {
@@ -102,6 +104,7 @@ function introspectClass(
 
     // Handle public properties from the class.
     if (ts.isPropertyDeclaration(member) && isPublicProperty(member)) {
+      // Handle properties
       metadata.properties.push(introspectProperty(checker, member))
     }
   })
@@ -147,29 +150,30 @@ function introspectProperty(
  */
 function introspectMethod(
   checker: ts.TypeChecker,
-  method: ts.MethodDeclaration
+  method: ts.MethodDeclaration | ts.ArrowFunction
 ): FunctionMetadata {
-  const memberSymbol = checker.getSymbolAtLocation(method.name)
-  if (!memberSymbol) {
+  const methodSymbol = checker.getSymbolAtLocation(method.name)
+  if (!methodSymbol) {
     throw new UnknownDaggerError(
       `could not get method symbol: ${method.name.getText()}`,
       {}
     )
   }
 
-  const memberMetadata = serializeSymbol(checker, memberSymbol)
-  const memberSignatures = memberMetadata.type
+  const methodMetadata = serializeSymbol(checker, methodSymbol)
+  const methodSignature = methodMetadata.type
     .getCallSignatures()
-    .map((memberSignature) => serializeSignature(checker, memberSignature))[0]
+    .map((methodSignature) => serializeSignature(checker, methodSignature))[0]
 
   return {
-    name: memberMetadata.name,
-    doc: memberMetadata.doc,
-    params: memberSignatures.params.map(({ name, typeName, doc }) => ({
+    name: methodMetadata.name,
+    doc: methodMetadata.doc,
+    params: methodSignature.params.map(({ name, typeName, doc, optional }) => ({
       name,
       typeName,
       doc,
+      optional,
     })),
-    returnType: memberSignatures.returnType,
+    returnType: methodSignature.returnType,
   }
 }

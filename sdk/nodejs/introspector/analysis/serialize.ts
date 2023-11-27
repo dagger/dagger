@@ -2,6 +2,7 @@ import ts from "typescript"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 import { SignatureMetadata, SymbolMetadata } from "./metadata.js"
+import { isOptional } from "./utils.js"
 
 /**
  * Convert the function signature from the compiler API into a lighter data type.
@@ -16,9 +17,12 @@ export function serializeSignature(
   signature: ts.Signature
 ): SignatureMetadata {
   return {
-    params: signature.parameters.map((param) =>
-      serializeSymbol(checker, param)
-    ),
+    params: signature.parameters.map((param) => {
+      return {
+        ...serializeSymbol(checker, param),
+        optional: isOptional(param),
+      }
+    }),
     returnType: serializeType(checker, signature.getReturnType()),
   }
 }

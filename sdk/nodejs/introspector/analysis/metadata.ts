@@ -10,7 +10,7 @@ export type SymbolMetadata = {
 /**
  * Metadata of a function or method parameter.
  */
-export type ParamMetadata = SymbolMetadata
+export type ParamMetadata = SymbolMetadata & { optional: boolean }
 
 /**
  * Metadata of a class' property.
