@@ -20,7 +20,7 @@ require (
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171
+	github.com/dagger/graphql v0.0.0-20231127195326-bc781b6f7991
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2
@@ -69,7 +69,6 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/jackpal/gateway v1.0.7
 	github.com/juju/ansiterm v1.0.0
-	github.com/koron-go/prefixw v1.0.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.19
 	github.com/mitchellh/go-spdx v0.1.0
@@ -274,5 +273,3 @@ require (
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/dagger/graphql => ./graphql

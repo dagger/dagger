@@ -442,6 +442,8 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/cyphar/filepath-securejoin v0.2.2/go.mod h1:FpkQEhXnPnOthhzymB7CGsFk2G9VLXONKD9G7QGMM+4=
 github.com/cyphar/filepath-securejoin v0.2.4 h1:Ugdm7cg7i6ZK6x3xDF1oEu1nfkyfH53EtKeQYTC3kyg=
 github.com/cyphar/filepath-securejoin v0.2.4/go.mod h1:aPGpWjXOXUn2NCNjFvBE6aRxGGx79pTxQpKOJNYHHl4=
+github.com/dagger/graphql v0.0.0-20231127195326-bc781b6f7991 h1:15v/Qg3+Z9wQvKbDzvSpVMpBn44LSHe8R2RdJhoOUks=
+github.com/dagger/graphql v0.0.0-20231127195326-bc781b6f7991/go.mod h1:jxe8vuRdvEbdLR5nrc6F7gLPmPeJhGe2DbIgEok+pCA=
 github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e h1:5fyK89J8og+XMW5JetgXzaxRhoI9UrS0BhrNskj4cuA=
 github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e/go.mod h1:SXt7tSY8l+OVghRddofY+eDdv8EK82N0JlrrfrkqFEw=
 github.com/dave/jennifer v1.7.0 h1:uRbSBH9UTS64yXbh4FrMHfgfY762RD+C7bUPKODpSJE=
@@ -974,8 +976,6 @@ github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa02
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
-github.com/koron-go/prefixw v1.0.0 h1:p7OC1ffZ/z+Miz0j/Ddt4fVYr8g4W9BKWkViAZ+1LmI=
-github.com/koron-go/prefixw v1.0.0/go.mod h1:WZvD0yrbCrkJD23tq03BhCu1ucn5ZenktcXt39QbPyk=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.2.0/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
