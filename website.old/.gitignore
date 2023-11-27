@@ -7,9 +7,13 @@
 # Generated files
 .docusaurus
 .cache-loader
+/static/api/reference
+introspection.json
+/static/guides.json
 
 # Misc
 .DS_Store
+.env
 .env.local
 .env.development.local
 .env.test.local
