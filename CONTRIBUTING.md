@@ -62,9 +62,9 @@ If there are code changes in the SDKs, run `changie new` in the corresponding di
 
 Remember to add & commit the release notes fragment.
 This will be used at release time, in the changelog.
-Here is an example of the end-result for all release notes fragments: <https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md>
+Here is an example of the end-result for all release notes fragments: [https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md](https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md)
 
-You can find an asciinema of how `changie` works on <https://changie.dev>
+You can find an asciinema of how `changie` works on [https://changie.dev](https://changie.dev)
 
 ### 4. Update your pull request with latest changes
 
@@ -301,4 +301,3 @@ Go:
 
 - In your Go project, run `go mod edit -replace dagger.io/dagger=<PATH TO DAGGER FORK>/sdk/go`
 - Then `go mod tidy`
-

@@ -1,0 +1,197 @@
+---
+slug: /zenith/developer/python/419481/quickstart
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Quickstart"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.md';
+import PartialDeveloperTroubleshooting from '../../partials/_developer_troubleshooting.md';
+import PartialDeveloperQuickstartIntroduction from '../../partials/_developer_quickstart_introduction.md';
+import PartialDeveloperQuickstartTrivyTest from '../../partials/_developer_quickstart_trivy_test.md';
+import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quickstart_conclusion.md';
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Introduction
+
+<PartialDeveloperQuickstartIntroduction />
+
+## Requirements
+
+This quickstart assumes that:
+
+- You have a good understanding of the Dagger Python SDK. If not, refer to the [Python](https://dagger-io.readthedocs.org/) SDK reference.
+- You have the Dagger CLI installed. If not, [install Dagger](../../../current/cli/465058-install.md).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+
+## Step 1: Initialize a new module
+
+1. Create a new directory on your filesystem and run `dagger mod init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
+
+  ```sh
+  mkdir potato/
+  cd potato/
+
+  # initialize Dagger module
+  dagger mod init --name=potato --sdk=python
+  ```
+
+  This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
+
+1. Test the module. Run the generated `main.py` with the `dagger call` command:
+
+  ```sh
+  dagger call container-echo --string-arg 'Hello daggernauts!'
+  ```
+
+  :::tip
+  When using `dagger call` to call module functions, do not explicitly use the name of the module.
+  :::
+
+  An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
+
+  ```sh
+  echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
+  ```
+
+:::note
+When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+
+When using `dagger query` and GraphQL, all names are converted into a language-agnostic "camelCase" style.
+:::
+
+## Step 2: Prepare the development environment
+
+:::note
+If you don't need IDE support, you can skip this step.
+:::
+
+When opening the generated `src/main.py` in an IDE, it may throw an error or a warning on account of not recognizing the `dagger` module. To resolve this, install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) from the generated `./sdk` directory, as shown below:
+
+```sh
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ./sdk
+```
+
+:::tip
+As always, you can use any virtual environment manager, including [Poetry](https://python-poetry.org) and others. Just make sure you add `./sdk` as a development dependency. If you place the virtual environment inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json`.
+
+It's also important to install the SDK in **editable mode** (the `-e` in the `pip install` command) so you don't have to reinstall it after a `dagger mod sync`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
+:::
+
+## Step 3: Add a function
+
+Let's try changing the `src/main.py` file.
+
+1. Let's replace the auto-generated template with something simpler:
+
+  ```python file=./snippets/quickstart/step2/main.py
+  ```
+
+1. Test the new function, once again using `dagger call` or `dagger query`:
+
+  ```sh
+  dagger call hello-world
+  ```
+
+  or
+
+  ```sh
+  echo '{potato{helloWorld}}' | dagger query
+  ```
+
+## Step 4: Use input parameters and return types
+
+Your module functions can accept and return multiple different types, not just basic built-in types.
+
+1. Update the function to accept multiple parameters (some of which are optional):
+
+  ```python file=./snippets/quickstart/step3a/main.py
+  ```
+
+  The type annotation with the [Doc() metadata](https://peps.python.org/pep-0727/#specification) is used to document the parameter in the API.
+
+  Here's an example of calling the function with optional parameters:
+
+  ```sh
+  dagger call hello-world --count 10 --mashed
+  ```
+
+  or
+
+  ```sh
+  echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
+  ```
+
+1. Update the function to return a custom `PotatoMessage` type:
+
+  ```python file=./snippets/quickstart/step3b/main.py
+  ```
+
+  Test it using `dagger call` or `dagger query`:
+
+  ```sh
+  dagger call hello-world --message "I am a potato" message
+  dagger call hello-world --message "I am a potato" from
+  ```
+
+  or
+
+  ```sh
+  echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
+  ```
+
+  [dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
+  is only needed to allow accessing the field directly via the API. Otherwise,
+  it will still be used during serialization/deserialization when passing the
+  object instance to other functions.
+
+:::tip
+Use `dagger call --help` to get help on the commands and flags available.
+:::
+
+## Example: Write a vulnerability scanning module
+
+The example module in the previous sections was just that - an example. Next, let's put everything you've learnt to the test, by building a module with a real-world application: scanning a container image for vulnerabilities with [Trivy](https://trivy.dev/).
+
+1. Initialize a new module:
+
+  ```shell
+  mkdir trivy/
+  cd trivy/
+  dagger mod init --name=trivy --sdk=python
+  ```
+
+1. Replace the generated `main.py` file with the following code:
+
+  ```python file=./snippets/quickstart/trivy/main.py
+  ```
+
+  In this example, the `scan_image()` function accepts four parameters:
+    - A reference to the container image to be scanned (required);
+    - A severity filter (optional);
+    - The exit code to use if scanning finds vulnerabilities (optional);
+    - The reporting format (optional).
+
+  The function code performs the following operations:
+    - It uses the default `dagger` client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+    - It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `with_exec()` method returns a revised `Container` with the results of command execution.
+    - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
+
+1. Test the function using `dagger call`:
+
+<PartialDeveloperQuickstartTrivyTest />
+
+## Conclusion
+
+<PartialDeveloperQuickstartConclusion />
+
+## Appendix A: Troubleshooting
+
+If you come across bugs, here are some simple troubleshooting suggestions.
+
+<PartialDeveloperTroubleshooting />

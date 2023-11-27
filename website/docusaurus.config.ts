@@ -3,23 +3,23 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'My Site',
-  tagline: 'Dinosaurs are cool',
-  favicon: 'img/favicon.ico',
+  title: 'Dagger',
+  tagline: 'CI/CD as Code',
+  favicon: 'img/favicon.png',
 
   // Set the production url of your site here
-  url: 'https://your-docusaurus-site.example.com',
+  url: 'https://docs.dagger.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'facebook', // Usually your GitHub org/user name.
-  projectName: 'docusaurus', // Usually your repo name.
+  //organizationName: 'Dagger', // Usually your GitHub org/user name.
+  //projectName: 'Dagger', // Usually your repo name.
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenMarkdownLinks: 'throw',
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -28,105 +28,88 @@ const config: Config = {
     defaultLocale: 'en',
     locales: ['en'],
   },
-
   presets: [
     [
       'classic',
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+            'https://github.com/dagger/dagger/edit/main/website',
         },
-        blog: {
-          showReadingTime: true,
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
-        },
+        blog: false,
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: require.resolve("./src/css/custom.scss"),
+        },
+        gtag: {
+          trackingID: "G-RDXG80F635",
+          anonymizeIP: true,
         },
       } satisfies Preset.Options,
     ],
   ],
-
+  plugins: [
+    "docusaurus-plugin-sass",
+  ],
   themeConfig: {
-    // Replace with your project's social card
-    image: 'img/docusaurus-social-card.jpg',
+    sidebarCollapsed: false,
+    metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
+    prism: {
+      additionalLanguages: ["php", "rust", "elixir"],
+      theme: prismThemes.dracula,
+    },
     navbar: {
-      title: 'My Site',
       logo: {
-        alt: 'My Site Logo',
-        src: 'img/logo.svg',
+        alt: "Dagger Logo",
+        src: "img/dagger-logo-white.svg",
+        height: "50px",
       },
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'tutorialSidebar',
-          position: 'left',
-          label: 'Tutorial',
+          position: "right",
+          to: "https://dagger.io/blog",
+          label: "Blog",
+          className: "navbar-blog-link",
         },
-        {to: '/blog', label: 'Blog', position: 'left'},
         {
-          href: 'https://github.com/facebook/docusaurus',
-          label: 'GitHub',
-          position: 'right',
+          position: "right",
+          href: "https://github.com/dagger/dagger",
+          className: "header-github-link hide-target-icon",
+          "aria-label": "GitHub repository",
         },
+        {
+          position: "right",
+          href: "https://discord.gg/ufnyBtc8uY",
+          className: "header-discord-link",
+        },
+        {
+        type: "search",
+        position: "right",
+        className: "header-searchbar",
+      },
       ],
     },
-    footer: {
-      style: 'dark',
-      links: [
-        {
-          title: 'Docs',
-          items: [
-            {
-              label: 'Tutorial',
-              to: '/docs/intro',
-            },
-          ],
-        },
-        {
-          title: 'Community',
-          items: [
-            {
-              label: 'Stack Overflow',
-              href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-            },
-            {
-              label: 'Discord',
-              href: 'https://discordapp.com/invite/docusaurus',
-            },
-            {
-              label: 'Twitter',
-              href: 'https://twitter.com/docusaurus',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'Blog',
-              to: '/blog',
-            },
-            {
-              label: 'GitHub',
-              href: 'https://github.com/facebook/docusaurus',
-            },
-          ],
-        },
-      ],
-      copyright: `Copyright © ${new Date().getFullYear()} My Project, Inc. Built with Docusaurus.`,
+    algolia: {
+      apiKey: "bffda1490c07dcce81a26a144115cc02",
+      indexName: "dagger",
+      appId: "XEIYPBWGOI",
     },
-    prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+    hotjar: {
+      siteId: "2541514",
     },
+    colorMode: {
+      defaultMode: "light",
+    },
+    zoom: {
+      selector: '.markdown img:not(.not-zoom)',
+      background: {
+        light: 'rgb(255, 255, 255)',
+        dark: 'rgb(50, 50, 50)'
+      },
+      // medium-zoom configuration options
+      // Refer to https://github.com/francoischalifour/medium-zoom#options
+      config: {}
+    }
   } satisfies Preset.ThemeConfig,
 };
 
