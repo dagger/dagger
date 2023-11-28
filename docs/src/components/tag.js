@@ -1,5 +1,5 @@
 import React from "react";
-import styles from "@site/src/css/molecules/tag.module.scss";
+import styles from "@site/src/css/tag.module.scss";
 
 export default function Tag({label, onTagClick, onCloseClick, removable}) {
   return (

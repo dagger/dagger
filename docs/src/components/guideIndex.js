@@ -1,8 +1,8 @@
 import React, {useEffect, useState} from "react";
 import Link from "@docusaurus/Link";
-import styles from "@site/src/css/molecules/guideIndex.module.scss";
+import styles from "@site/src/css/guideIndex.module.scss";
 import guidesJSON from "@site/static/guides.json";
-import Tag from "../atoms/tag";
+import Tag from "./tag";
 
 export default function GuidesIndex() {
   const guides = guidesJSON.guides;

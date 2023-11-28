@@ -1,4 +1,4 @@
-@use "../custom.scss";
+@use "./custom.scss";
 
 .guideIndex {
   display: flex;
@@ -100,7 +100,7 @@
   max-height: 200px;
   overflow-y: scroll;
   z-index: 99;
-  
+
   html[data-theme="dark"] & {
     background: white;
     border: 1px solid var(--ifm-menu-color);

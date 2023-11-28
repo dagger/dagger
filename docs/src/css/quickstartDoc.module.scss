@@ -1,4 +1,4 @@
-@use "../custom.scss";
+@use "./custom.scss";
 
 .quickstartDoc {
   display: flex;
@@ -63,4 +63,3 @@ iframe {
 @media screen and (min-width: 1200px) {
   @include show-embed-in-column;
 }
-

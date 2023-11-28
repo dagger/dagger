@@ -1,4 +1,4 @@
-import styles from "../../css/atoms/embed.module.scss";
+import styles from "../css/embed.module.scss";
 import React, {useState} from "react";
 import BrowserOnly from "@docusaurus/BrowserOnly";
 

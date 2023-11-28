@@ -9,7 +9,7 @@ date: "2023-10-12"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
-import Embed from '@site/src/components/atoms/embed.js'
+import Embed from '@site/src/components/embed.js'
 
 # Use Services in Dagger
 
