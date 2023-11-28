@@ -1,5 +1,3 @@
-import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
-
 /**
  * Creating a sidebar enables you to:
  - create an ordered group of docs
@@ -10,8 +8,8 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
  Create as many sidebars as you want.
  */
-const sidebars: SidebarsConfig = {
 
+module.exports = {
   current: [
     {
       type: "doc",
@@ -581,5 +579,3 @@ const sidebars: SidebarsConfig = {
     },
   ],
 };
-
-export default sidebars;
