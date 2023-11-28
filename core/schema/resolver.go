@@ -188,16 +188,8 @@ func ToCachedResolver[P core.IDable, A any, R any](cache IDCache, f func(context
 
 			if idable, ok := any(res).(core.IDable); ok {
 				if idable.ID() == nil {
-					log.Printf("!!! SETTING %T ID ON ID-LESS OBJECT: %s", idable, id.String())
+					log.Printf("!!! SETTING ID ON ID-LESS %T: %s", idable, id.String())
 					idable.SetID(id)
-				} else {
-					// TODO: kinda weird
-					// log.Printf("!!! SETTING VALUE AS %T ID: %s", idable, id.String())
-					// idDig, err := idable.ID().Digest()
-					// if err != nil {
-					// 	return nil, err
-					// }
-					// cache.Set(idDig, res)
 				}
 			}
 

@@ -46,8 +46,6 @@ func LiteralValue(value any) *Literal {
 		return &Literal{Value: &Literal_String_{String_: v}}
 	case bool:
 		return &Literal{Value: &Literal_Bool{Bool: v}}
-	// case ast.Value:
-	// 	return LiteralValue(v.GetValue())
 	case []any:
 		list := make([]*Literal, len(v))
 		for i, val := range v {
@@ -68,21 +66,6 @@ func LiteralValue(value any) *Literal {
 			return args[i].Name < args[j].Name
 		})
 		return &Literal{Value: &Literal_Object{Object: &Object{Values: args}}}
-	// case []ast.Value:
-	// 	list := make([]*Literal, len(v))
-	// 	for i, val := range v {
-	// 		list[i] = LiteralValue(val)
-	// 	}
-	// 	return &Literal{Value: &Literal_List{List: &List{Values: list}}}
-	// case []*ast.ObjectField:
-	// 	list := make([]*Argument, len(v))
-	// 	for i, val := range v {
-	// 		list[i] = &Argument{
-	// 			Name:  val.Name.Value,
-	// 			Value: LiteralValue(val.Value),
-	// 		}
-	// 	}
-	// 	return &Literal{Value: &Literal_Object{Object: &Object{Values: list}}}
 	case Literate:
 		return v.Literal()
 	case specs.Platform: // XXX(vito): maybe just have our own type alias that implements Literate

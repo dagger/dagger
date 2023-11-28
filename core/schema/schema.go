@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -194,11 +193,6 @@ func (s *MergedSchemas) load(ctx context.Context, id *idproto.ID) (any, error) {
 	doc := gqast.NewDocument(nil)
 	doc.Definitions = []gqast.Node{op}
 
-	enc := json.NewEncoder(os.Stderr)
-	enc.SetIndent("", "  ")
-	enc.Encode(doc)
-	log.Println("!!! EXECUTING ID", dig, id)
-
 	// NB: no need to wrap this in GetOrInitialize; the resolver handles that
 	// already.
 	res := graphql.Execute(graphql.ExecuteParams{
@@ -217,36 +211,12 @@ func (s *MergedSchemas) load(ctx context.Context, id *idproto.ID) (any, error) {
 	}
 
 	// above should have populated this
-	return s.queryCache.Get(dig)
-	if err == nil {
-		return val, nil
+	v, err := s.queryCache.Get(dig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get %s from query cache: %w\n\nid: %s", dig, err, id)
 	}
 
-	data := res.Data
-	path := id.Constructor
-	for {
-		log.Println("!!! LUPIN", data, path)
-		if len(path) == 0 {
-			return data, nil
-		}
-		switch x := data.(type) {
-		case map[string]any:
-			if len(x) != 1 {
-				return nil, fmt.Errorf("expected single result, got %d", len(x))
-			}
-			for k, v := range x {
-				if k != path[0].Field {
-					// sanity check
-					return nil, fmt.Errorf("expected %q, got %q", path[0], k)
-				}
-				data = v
-				path = path[1:]
-				break
-			}
-		default:
-			return x, nil
-		}
-	}
+	return v, nil
 }
 
 func (s *MergedSchemas) getSchemaView(viewDigest digest.Digest) (*schemaView, error) {
