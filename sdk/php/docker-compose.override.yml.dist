@@ -1,0 +1,7 @@
+
+services:
+
+  dagger-engine:
+
+    ports:
+      - 8080:8080

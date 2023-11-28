@@ -1,0 +1,49 @@
+services:
+
+  cli:
+    build:
+      context: ./docker
+      dockerfile: dev.Dockerfile
+      target: dev
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-33}
+    depends_on:
+      - dagger-engine
+    environment:
+      DOCKER_HOST: 'tcp://docker:2375'
+    tty: true
+    working_dir: /srv
+    volumes:
+      - .:/srv
+      - .dagger:/var/www/dagger
+
+  docker:
+    build:
+      context: ./docker
+      dockerfile: dev.Dockerfile
+      target: dev
+    command: [ 'socat', '-d', 'TCP-L:2375,fork', 'UNIX:/var/run/docker.sock' ]
+    expose:
+      - 2375
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  dagger-engine:
+    build:
+      context: ./docker
+      dockerfile: dev.Dockerfile
+      target: php-dagger
+    depends_on:
+      - docker
+    environment:
+      DAGGER_SESSION_TOKEN: dev
+      DOCKER_HOST: 'tcp://docker:2375'
+    expose:
+      - 8080
+    entrypoint: ['/usr/local/bin/dagger']
+    command: ['listen', '--listen', '0.0.0.0:8080', '--focus=false', '--workdir', '/var/www/dagger']
+    volumes:
+      - .:/srv
+      - .dagger:/var/www/dagger
