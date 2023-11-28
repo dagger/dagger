@@ -8,8 +8,9 @@ services:
       args:
         UID: ${UID:-1000}
         GID: ${GID:-33}
+        DAGGER_VERSION: ${DAGGER_VERSION:-0.9.3}
     depends_on:
-      - dagger-engine
+      - dev-dagger-engine
     environment:
       DOCKER_HOST: 'tcp://docker:2375'
     tty: true
@@ -30,11 +31,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
-  dagger-engine:
+  dev-dagger-engine:
     build:
       context: ./docker
       dockerfile: dev.Dockerfile
       target: php-dagger
+      args:
+        DAGGER_VERSION: ${DAGGER_VERSION:-0.9.3}
     depends_on:
       - docker
     environment:

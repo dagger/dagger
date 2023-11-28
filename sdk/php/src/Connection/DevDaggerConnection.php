@@ -15,7 +15,7 @@ class DevDaggerConnection extends DaggerConnection
             return $this->client;
         }
 
-        $this->client = new Client('dagger-engine:8080/query', [
+        $this->client = new Client('dev-dagger-engine:8080/query', [
             'Authorization' => 'Basic '.base64_encode('dev:'),
         ]);
 
