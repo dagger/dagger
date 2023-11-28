@@ -21,7 +21,9 @@ def app():
     # TODO: Create custom exception hook to control exit code.
     rich.traceback.install(
         console=errors,
+        show_locals=logger.isEnabledFor(logging.DEBUG),
         suppress=[
+            "asyncio",
             "anyio",
         ],
     )
@@ -29,6 +31,8 @@ def app():
         mod = get_module()
         mod()
     except FatalError as e:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.exception("Fatal error")
         e.rich_print()
         sys.exit(1)
 

@@ -1,12 +1,13 @@
 import builtins
+import dataclasses
 import functools
 import inspect
 import operator
 import types
 import typing
-from collections.abc import Awaitable
+from collections.abc import Coroutine
 from functools import partial
-from typing import Any, TypeAlias, TypeVar, cast, get_args, get_origin
+from typing import Any, TypeAlias, TypeGuard, TypeVar, cast
 
 import anyio
 import anyio.from_thread
@@ -14,20 +15,22 @@ import anyio.to_thread
 import cattrs
 import cattrs.v
 import typing_extensions
+from beartype.door import TypeHint, UnionTypeHint
 from graphql.pyutils import snake_to_camel
 
 from ._arguments import Arg
+from ._types import ObjectDefinition
 
 asyncify = anyio.to_thread.run_sync
 syncify = anyio.from_thread.run
 
 T = TypeVar("T")
 
-AwaitableOrValue: TypeAlias = Awaitable[T] | T
+AwaitableOrValue: TypeAlias = Coroutine[Any, Any, T] | T
 
 
 async def await_maybe(value: AwaitableOrValue[T]) -> T:
-    return await value if inspect.isawaitable(value) else cast(T, value)
+    return await value if inspect.iscoroutine(value) else cast(T, value)
 
 
 def transform_error(
@@ -79,7 +82,17 @@ def get_doc(obj: Any) -> str | None:
     if inspect.getmodule(obj) != builtins and (
         inspect.isclass(obj) or inspect.isfunction(obj)
     ):
-        return inspect.getdoc(obj)
+        doc = inspect.getdoc(obj)
+        # By default, a dataclass's __doc__ will be the signature of the class,
+        # not None.
+        if (
+            doc
+            and dataclasses.is_dataclass(obj)
+            and doc.startswith(f"{obj.__name__}(")
+            and doc.endswith(")")
+        ):
+            doc = None
+        return doc
     return None
 
 
@@ -97,35 +110,31 @@ def get_arg_name(annotation: type) -> str | None:
     return None
 
 
-def is_union(tp: type) -> bool:
+def is_union(th: TypeHint) -> bool:
     """Returns True if the unsubscripted part of a type is a Union."""
-    return get_origin(tp) in (types.UnionType, typing.Union)
+    return isinstance(th, UnionTypeHint)
 
 
-def is_optional(tp: type) -> bool:
+def is_optional(th: TypeHint) -> bool:
     """Returns True if the annotation is SomeType | None.
 
     Does not support Annotated types. Use only on types that have been
     resolved with get_type_hints.
     """
-    # Optionals are represented as unions
-    if not is_union(tp):
-        return False
-
-    # For a Union to be optional it needs to have at least one None type.
-    return any(x == None.__class__ for x in get_args(tp))
+    return th.is_bearable(None)
 
 
-def non_optional(tp: type) -> type:
+def non_optional(th: TypeHint) -> TypeHint:
     """Removes None from a union.
 
     Does not support Annotated types. Use only on types that have been
     resolved with get_type_hints.
     """
-    if not is_optional(tp):
-        return tp
-    args = [x for x in get_args(tp) if x != None.__class__]
-    return args[0] if len(args) == 1 else functools.reduce(operator.or_, args)
+    if TypeHint(None) not in th:
+        return th
+
+    args = (x for x in th.args if x is not type(None))
+    return TypeHint(functools.reduce(operator.or_, args))
 
 
 _T = TypeVar("_T", bound=type)
@@ -142,3 +151,17 @@ def is_annotated(annotation: type) -> typing.TypeGuard[typing.Annotated]:
 def strip_annotations(t: _T) -> _T:
     """Strip the annotations from a given type."""
     return strip_annotations(typing.get_args(t)[0]) if is_annotated(t) else t
+
+
+def is_mod_object_type(cls) -> TypeGuard[ObjectDefinition]:
+    """Check if the given class was decorated with @object_type."""
+    return isinstance(getattr(cls, "__dagger_type__", None), ObjectDefinition)
+
+
+def get_alt_constructor(cls) -> types.MethodType | None:
+    """Get classmethod named `create` from object type."""
+    if inspect.isclass(cls) and is_mod_object_type(cls):
+        fn = getattr(cls, "create", None)
+        if inspect.ismethod(fn) and fn.__self__ is cls:
+            return fn
+    return None

@@ -1,14 +1,17 @@
+import dataclasses
+import functools
 import inspect
 import logging
 import typing
 from collections.abc import Sequence
 
-import typing_extensions
+from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
 
-from ._types import MissingType, ObjectDefinition
+from ._types import ObjectDefinition
 from ._utils import (
     get_doc,
+    is_annotated,
     is_optional,
     is_union,
     non_optional,
@@ -27,7 +30,6 @@ def make_converter():
     from dagger.client._guards import is_id_type, is_id_type_subclass
 
     conv = make_json_converter(
-        omit_if_default=True,
         detailed_validation=True,
     )
 
@@ -59,11 +61,11 @@ def make_converter():
     return conv
 
 
+@functools.cache
 def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
     """Convert Python object to API type."""
-    assert typing.get_origin(annotation) not in (
-        typing.Annotated,
-        typing_extensions.Annotated,
+    assert not is_annotated(
+        annotation
     ), "Annotated types should be handled by the caller."
 
     import dagger
@@ -71,12 +73,17 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
 
     td = dagger.type_def()
 
-    if is_optional(annotation):
+    if isinstance(annotation, dataclasses.InitVar):
+        annotation = annotation.type
+
+    typ = TypeHint(annotation)
+
+    if is_optional(typ):
         td = td.with_optional(True)
 
-    annotation = non_optional(annotation)
+    typ = non_optional(typ)
 
-    if annotation is MissingType:
+    if typ is TypeHint(None):
         return td.with_kind(dagger.TypeDefKind.VoidKind)
 
     builtins = {
@@ -85,37 +92,26 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
         bool: dagger.TypeDefKind.BooleanKind,
     }
 
-    if annotation in builtins:
-        return td.with_kind(builtins[annotation])
+    if typ.hint in builtins:
+        return td.with_kind(builtins[typ.hint])
 
     # Can't represent unions in the API.
-    if is_union(annotation):
-        msg = f"Unsupported union type: {annotation}"
+    if is_union(typ):
+        msg = f"Unsupported union type: {typ.hint}"
         raise TypeError(msg)
 
-    if origin := typing.get_origin(annotation):
-        if issubclass(origin, Sequence):
-            of_type, *rest = typing.get_args(annotation)
-            if rest:
-                msg = (
-                    "Unsupported sequence type with multiple "
-                    f"element types: {annotation}"
-                )
-                raise TypeError(msg)
+    if typ.is_subhint(TypeHint(Sequence)):
+        if len(typ) != 1:
+            msg = (
+                "Expected sequence type to be subscripted "
+                f"with 1 subtype, got {len(typ)}"
+            )
+            raise TypeError(msg)
 
-            return td.with_list_of(to_typedef(of_type))
+        return td.with_list_of(to_typedef(typ.args[0]))
 
-    elif issubclass(annotation, Sequence):
-        msg = (
-            "Unsupported sequence type without subscripted "
-            f"elements type: {annotation}"
-        )
-        raise TypeError(msg)
-
-    if inspect.isclass(annotation):
-        custom_obj: ObjectDefinition | None = getattr(
-            annotation, "__dagger_type__", None
-        )
+    if inspect.isclass(cls := typ.hint):
+        custom_obj: ObjectDefinition | None = getattr(cls, "__dagger_type__", None)
 
         if custom_obj is not None:
             return td.with_object(
@@ -123,13 +119,13 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
                 description=custom_obj.doc,
             )
 
-        if is_id_type_subclass(annotation):
-            return td.with_object(annotation.__name__)
+        if is_id_type_subclass(cls):
+            return td.with_object(cls.__name__)
 
         return td.with_object(
-            annotation.__name__,
-            description=get_doc(annotation),
+            cls.__name__,
+            description=get_doc(cls),
         )
 
-    msg = f"Unsupported type: {annotation!r}"
+    msg = f"Unsupported type: {typ.hint!r}"
     raise TypeError(msg)
