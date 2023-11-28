@@ -199,11 +199,8 @@ func ToCachedResolver[P core.IDable, A any, R any](cache IDCache, f func(context
 }
 
 func PassthroughResolver(p graphql.ResolveParams) (any, error) {
-	return ToResolver(func(ctx context.Context, parent any, args any) (any, error) {
-		if parent == nil {
-			parent = struct{}{}
-		}
-		return parent, nil
+	return ToResolver(func(ctx context.Context, parent *core.Query, args any) (any, error) {
+		return parent.Clone(), nil
 	})(p)
 }
 

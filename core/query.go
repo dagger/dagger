@@ -13,6 +13,12 @@ type Query struct {
 	Pipeline pipeline.Path `json:"pipeline"`
 }
 
+func (query *Query) Clone() *Query {
+	cp := *query
+	cp.Identified.Reset()
+	return &cp
+}
+
 func (query *Query) PipelinePath() pipeline.Path {
 	if query == nil {
 		return nil
