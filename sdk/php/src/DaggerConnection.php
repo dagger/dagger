@@ -2,11 +2,10 @@
 
 namespace DaggerIo;
 
-use CompileError;
+use DaggerIo\Connection\CliDownloader;
 use DaggerIo\Connection\DevDaggerConnection;
 use DaggerIo\Connection\EnvSessionDaggerConnection;
 use DaggerIo\Connection\ProcessSessionDaggerConnection;
-use DaggerIo\Gen\DaggerClient;
 use GraphQL\Client;
 use InvalidArgumentException;
 
@@ -26,7 +25,7 @@ abstract class DaggerConnection
     public static function newEnvSession(): EnvSessionDaggerConnection
     {
         $port = getenv('DAGGER_SESSION_PORT');
-        $token = getenv('DAGGER_SESSIon_TOKEN');
+        $token = getenv('DAGGER_SESSION_TOKEN');
 
         if (false === $port || false === $token) {
             throw new InvalidArgumentException('Missing env var "DAGGER_SESSION_*"');
@@ -38,18 +37,9 @@ abstract class DaggerConnection
         );
     }
 
-    public static function newProcessSession(string $workDir = '.'): ProcessSessionDaggerConnection
+    public static function newProcessSession(string $workDir, string $version): ProcessSessionDaggerConnection
     {
-        return new ProcessSessionDaggerConnection($workDir);
-    }
-
-    public function connect(): DaggerClient
-    {
-        if (!class_exists('DaggerIo\\Gen\\DaggerClient')) {
-            throw new CompileError('Missing code generated dagger client');
-        }
-
-        return new DaggerClient($this->getGraphQlClient());
+        return new ProcessSessionDaggerConnection($workDir, new CliDownloader($version));
     }
 
     abstract public function getGraphQlClient(): Client;

@@ -2,7 +2,9 @@
 
 namespace DaggerIo\Connection;
 
+use Composer\InstalledVersions;
 use DaggerIo\DaggerConnection;
+use Exception;
 use GraphQL\Client;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
@@ -11,13 +13,13 @@ use Symfony\Component\Process\Process;
 
 class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerAwareInterface
 {
-    protected const BINARY = 'dagger';
-    private Process $sessionProcess;
+    private ?Process $sessionProcess;
     private ?Client $client;
     private LoggerInterface $logger;
 
     public function __construct(
-        private readonly string $workDir = '.',
+        private readonly string $workDir,
+        private readonly CliDownloader $cliDownloader
     ) {
         $this->logger = new NullLogger();
     }
@@ -28,12 +30,19 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
             return $this->client;
         }
 
+        $cliBinPath = $this->getCliPath();
+        $sdkVersion = $this->getSdkVersion();
+
         $sessionInformation = null;
         $process = new Process([
-            self::BINARY,
+            $cliBinPath,
             'session',
             '--workdir',
             $this->workDir,
+            '--label',
+            'dagger.io/sdk.name:php',
+            '--label',
+            "dagger.io/sdk.version:{$sdkVersion}",
         ]);
         $process->setTimeout(null);
         $process->setPty(true);
@@ -70,7 +79,7 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
         $port = $sessionInformation->port;
         $token = $sessionInformation->session_token;
 
-        $this->client = new Client('127.0.0.1:'.$port.'/query', [
+        $this->client = new Client('http://127.0.0.1:'.$port.'/query', [
             'Authorization' => 'Basic '.base64_encode($token.':'),
         ]);
 
@@ -81,7 +90,8 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
 
     public function getVersion(): string
     {
-        $process = new Process([self::BINARY, 'version']);
+        $cliBinPath = $this->getCliPath();
+        $process = new Process([$cliBinPath, 'version']);
         $process->mustRun();
 
         return $process->getOutput();
@@ -90,7 +100,7 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
     /**
      * @internal
      */
-    public function getSessionProcess(): Process
+    public function getSessionProcess(): ?Process
     {
         return $this->sessionProcess;
     }
@@ -102,12 +112,37 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
 
     public function close(): void
     {
-        $this->sessionProcess->stop();
+        if (isset($this->sessionProcess)) {
+            $this->sessionProcess->stop();
+        }
         $this->client = null;
     }
 
     public function __destruct()
     {
         $this->close();
+    }
+
+    private function getCliPath(): string
+    {
+        $cliBinPath = getenv('_EXPERIMENTAL_DAGGER_CLI_BIN');
+        if (false === $cliBinPath) {
+            $cliBinPath = $this->cliDownloader->download();
+        }
+
+        return $cliBinPath;
+    }
+
+    private function getSdkVersion(): string
+    {
+        $projectDir = dirname(__DIR__, 2);
+
+        try {
+            $version = InstalledVersions::getVersion('dagger.io/dagger-php-sdk') ?? 'dev';
+        } catch (Exception) {
+            $version = 'dev';
+        }
+
+        return $version;
     }
 }

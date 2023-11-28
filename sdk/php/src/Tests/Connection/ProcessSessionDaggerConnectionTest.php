@@ -10,9 +10,12 @@ class ProcessSessionDaggerConnectionTest extends TestCase
 {
     public static function getConnection(): ProcessSessionDaggerConnection
     {
-        return DaggerConnection::newProcessSession(
-            __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'.dagger'
-        );
+        $testWorkDir = implode(DIRECTORY_SEPARATOR, [__DIR__, '..', 'Resources', 'workDir']);
+
+        // Use the dagger binary provided by our dev env
+        putenv('_EXPERIMENTAL_DAGGER_CLI_BIN=dagger');
+
+        return DaggerConnection::newProcessSession($testWorkDir, '0.9.3');
     }
 
     public function testVersion(): void
