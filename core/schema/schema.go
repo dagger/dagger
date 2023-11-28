@@ -134,6 +134,7 @@ type APIServer struct {
 
 	// The metadata of client calls.
 	// For the special case of the main client caller, the key is just empty string
+	// TODO: doc why this is never removed from
 	clientCallContext map[digest.Digest]*clientCallContext
 
 	// TODO: split to separate locks more?
@@ -146,9 +147,8 @@ type clientCallContext struct {
 
 	// If the client is itself from a function call in a user module, these are set with the
 	// metadata of that ongoing function call
-	fn    *UserModFunction
-	args  []*core.CallInput
-	count int
+	mod    *UserMod
+	fnCall *core.FunctionCall
 }
 
 func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +251,7 @@ func (s *APIServer) MuxEndpoint(ctx context.Context, path string, handler http.H
 
 func (s *APIServer) AddModFromMetadata(
 	ctx context.Context,
-	modMeta *core.ModuleMetadata,
+	modMeta *core.Module,
 	pipeline pipeline.Path,
 ) (*UserMod, error) {
 	// TODO: wrap whole thing in a once or equiv?
@@ -286,7 +286,10 @@ func (s *APIServer) AddModFromMetadata(
 		return mod, nil
 	}
 
-	mod = newUserMod(s, modMeta, &ModDag{api: s, roots: deps}, sdk)
+	mod, err = newUserMod(s, modMeta, &ModDag{api: s, roots: deps}, sdk)
+	if err != nil {
+		return nil, err
+	}
 	s.modByName[modMeta.Name] = mod
 	return mod, nil
 }
@@ -294,7 +297,7 @@ func (s *APIServer) AddModFromMetadata(
 func (s *APIServer) AddModFromRef(
 	ctx context.Context,
 	ref string,
-	parentMod *core.ModuleMetadata,
+	parentMod *core.Module,
 	pipeline pipeline.Path,
 ) (*UserMod, error) {
 	modMeta, err := core.ModuleMetadataFromRef(
@@ -308,7 +311,7 @@ func (s *APIServer) AddModFromRef(
 	return s.AddModFromMetadata(ctx, modMeta, pipeline)
 }
 
-func (s *APIServer) GetModFromMetadata(modMeta *core.ModuleMetadata) (*UserMod, error) {
+func (s *APIServer) GetModFromMetadata(modMeta *core.Module) (*UserMod, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	mod, ok := s.modByName[modMeta.Name]
@@ -318,7 +321,7 @@ func (s *APIServer) GetModFromMetadata(modMeta *core.ModuleMetadata) (*UserMod, 
 	return nil, fmt.Errorf("module %q not found", modMeta.Name)
 }
 
-func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.ModuleMetadata) error {
+func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.Module) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
@@ -347,35 +350,23 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	return nil
 }
 
-func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, fn *UserModFunction, args []*core.CallInput) (func(), error) {
+func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, mod *UserMod, call *core.FunctionCall) error {
 	if dgst == "" {
-		return nil, fmt.Errorf("cannot register function call with empty digest")
-	}
-
-	var callCtx *clientCallContext
-	cleanup := func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		callCtx.count--
-		if callCtx.count == 0 {
-			delete(s.clientCallContext, dgst)
-		}
+		return fmt.Errorf("cannot register function call with empty digest")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	callCtx, ok := s.clientCallContext[dgst]
+	_, ok := s.clientCallContext[dgst]
 	if ok {
-		callCtx.count++
-		return cleanup, nil
+		return nil
 	}
-	callCtx = &clientCallContext{
-		dag:   fn.obj.mod.deps,
-		fn:    fn,
-		args:  args,
-		count: 1,
+	s.clientCallContext[dgst] = &clientCallContext{
+		dag:    mod.deps,
+		mod:    mod,
+		fnCall: call,
 	}
-	return cleanup, nil
+	return nil
 }
 
 func (s *APIServer) CurrentModule(ctx context.Context) (*UserMod, error) {
@@ -393,7 +384,7 @@ func (s *APIServer) CurrentModule(ctx context.Context) (*UserMod, error) {
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
 	}
-	return callCtx.fn.obj.mod, nil
+	return callCtx.mod, nil
 }
 
 func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall, error) {
@@ -412,13 +403,7 @@ func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
 	}
 
-	// TODO: refactor this all so that UserModFunction.Call just gives the core.FunctionCall object directly
-	return &core.FunctionCall{
-		Name:       callCtx.fn.typeDef.OriginalName,
-		ParentName: callCtx.fn.obj.typeDef.AsObject.OriginalName,
-		Parent:     TODO, // TODO: fix to support parent object value again
-		InputArgs:  callCtx.args,
-	}, nil
+	return callCtx.fnCall, nil
 }
 
 type ExecutableSchema interface {

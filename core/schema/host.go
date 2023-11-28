@@ -22,10 +22,6 @@ func (s *hostSchema) Name() string {
 	return "host"
 }
 
-func (s *hostSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *hostSchema) Schema() string {
 	return Host
 }

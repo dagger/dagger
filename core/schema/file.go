@@ -19,10 +19,6 @@ func (s *fileSchema) Name() string {
 	return "file"
 }
 
-func (s *fileSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *fileSchema) Schema() string {
 	return File
 }

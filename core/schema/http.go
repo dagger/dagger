@@ -22,10 +22,6 @@ func (s *httpSchema) Name() string {
 	return "http"
 }
 
-func (s *httpSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *httpSchema) Schema() string {
 	return HTTP
 }

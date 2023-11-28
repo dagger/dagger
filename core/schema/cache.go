@@ -16,10 +16,6 @@ func (s *cacheSchema) Name() string {
 	return "cache"
 }
 
-func (s *cacheSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *cacheSchema) Schema() string {
 	return Cache
 }

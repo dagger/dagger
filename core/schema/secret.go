@@ -16,10 +16,6 @@ func (s *secretSchema) Name() string {
 	return "secret"
 }
 
-func (s *secretSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *secretSchema) Schema() string {
 	return Secret
 }

@@ -46,7 +46,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.ModuleMetadata](rs, "Module", ObjectResolver{
+	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
 		"dependencies":  ToResolver(s.moduleDependencies),
 		"objects":       ToResolver(s.moduleObjects),
 		"withObject":    ToResolver(s.moduleWithObject),
@@ -183,8 +183,8 @@ func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, c
 	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
-func (s *moduleSchema) module(ctx context.Context, query *core.Query, _ any) (*core.ModuleMetadata, error) {
-	return &core.ModuleMetadata{}, nil
+func (s *moduleSchema) module(ctx context.Context, query *core.Query, _ any) (*core.Module, error) {
+	return &core.Module{}, nil
 }
 
 type moduleConfigArgs struct {
@@ -243,7 +243,7 @@ type asModuleArgs struct {
 	SourceSubpath string
 }
 
-func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.ModuleMetadata, rerr error) {
+func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
 	modMeta, err := core.ModuleMetadataFromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
@@ -257,7 +257,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Di
 	return mod.metadata, nil
 }
 
-func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.ModuleMetadata, _ any) ([]*core.TypeDef, error) {
+func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.Module, _ any) ([]*core.TypeDef, error) {
 	mod, err := s.GetModFromMetadata(modMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
@@ -273,7 +273,7 @@ func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.ModuleMe
 	return typeDefs, nil
 }
 
-func (s *moduleSchema) currentModule(ctx context.Context, _, _ any) (*core.ModuleMetadata, error) {
+func (s *moduleSchema) currentModule(ctx context.Context, _, _ any) (*core.Module, error) {
 	mod, err := s.APIServer.CurrentModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -285,7 +285,7 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, _ *core.Query, _
 	return s.APIServer.CurrentFunctionCall(ctx)
 }
 
-func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.ModuleMetadata, _ any) error {
+func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, _ any) error {
 	return s.APIServer.ServeModuleToMainClient(ctx, modMeta)
 }
 
@@ -303,9 +303,9 @@ func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core
 	return s.bk.IOReaderExport(ctx, bytes.NewReader(valueBytes), filepath.Join(modMetaDirPath, modMetaOutputPath), 0600)
 }
 
-func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.ModuleMetadata, args struct {
+func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.Module, args struct {
 	Object core.TypeDefID
-}) (_ *core.ModuleMetadata, rerr error) {
+}) (_ *core.Module, rerr error) {
 	def, err := args.Object.Decode()
 	if err != nil {
 		return nil, err
@@ -313,12 +313,12 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.Modul
 	return modMeta.WithObject(def)
 }
 
-func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.ModuleMetadata, _ any) ([]*core.ModuleMetadata, error) {
+func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Module, _ any) ([]*core.Module, error) {
 	mod, err := s.GetModFromMetadata(modMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}
-	var modMetas []*core.ModuleMetadata
+	var modMetas []*core.Module
 	for _, dep := range mod.Dependencies() {
 		// only include user modules, not core
 		userMod, ok := dep.(*UserMod)
@@ -330,7 +330,7 @@ func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Mod
 	return modMetas, nil
 }
 
-func (s *moduleSchema) moduleGeneratedCode(ctx context.Context, modMeta *core.ModuleMetadata, _ any) (*core.GeneratedCode, error) {
+func (s *moduleSchema) moduleGeneratedCode(ctx context.Context, modMeta *core.Module, _ any) (*core.GeneratedCode, error) {
 	mod, err := s.GetModFromMetadata(modMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)

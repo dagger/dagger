@@ -37,10 +37,6 @@ func (s *containerSchema) Name() string {
 	return "container"
 }
 
-func (s *containerSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *containerSchema) Schema() string {
 	return Container
 }
@@ -124,7 +120,7 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 	if args.ID != "" {
 		return args.ID.Decode()
 	}
-	platform := s.MergedSchemas.platform
+	platform := s.APIServer.platform
 	if args.Platform != nil {
 		platform = *args.Platform
 	}
@@ -208,7 +204,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.WithExec(ctx, s.bk, s.progSockPath, s.MergedSchemas.platform, args.ContainerExecOpts)
+	return parent.WithExec(ctx, s.bk, s.progSockPath, s.APIServer.platform, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ any) (string, error) {
@@ -687,7 +683,7 @@ type containerAsTarballArgs struct {
 }
 
 func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
-	return parent.AsTarball(ctx, s.bk, s.MergedSchemas.platform, s.svcs, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
+	return parent.AsTarball(ctx, s.bk, s.APIServer.platform, s.svcs, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerImportArgs struct {

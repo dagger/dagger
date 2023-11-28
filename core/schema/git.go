@@ -19,10 +19,6 @@ func (s *gitSchema) Name() string {
 	return "git"
 }
 
-func (s *gitSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *gitSchema) Schema() string {
 	return Git
 }
@@ -78,7 +74,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		SSHAuthSocket: args.SSHAuthSocket,
 		Services:      svcs,
 		Pipeline:      parent.PipelinePath(),
-		Platform:      s.MergedSchemas.platform,
+		Platform:      s.APIServer.platform,
 	}
 	return repo, nil
 }

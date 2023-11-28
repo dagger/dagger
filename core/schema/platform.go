@@ -19,10 +19,6 @@ func (s *platformSchema) Name() string {
 	return "platform"
 }
 
-func (s *platformSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *platformSchema) Schema() string {
 	return Platform
 }

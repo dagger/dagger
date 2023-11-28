@@ -19,10 +19,6 @@ func (s *serviceSchema) Name() string {
 	return "service"
 }
 
-func (s *serviceSchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *serviceSchema) Schema() string {
 	return Service
 }

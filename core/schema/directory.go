@@ -24,10 +24,6 @@ func (s *directorySchema) Name() string {
 	return "directory"
 }
 
-func (s *directorySchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *directorySchema) Schema() string {
 	return Directory
 }

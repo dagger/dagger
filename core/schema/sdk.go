@@ -49,7 +49,7 @@ type SDK interface {
 }
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
-func (s *APIServer) sdkForModule(ctx context.Context, mod *core.ModuleMetadata) (SDK, error) {
+func (s *APIServer) sdkForModule(ctx context.Context, mod *core.Module) (SDK, error) {
 	builtinSDK, err := s.builtinSDK(ctx, mod.SDK)
 	if err == nil {
 		return builtinSDK, nil
@@ -90,7 +90,7 @@ type moduleSDK struct {
 	mod *UserMod
 }
 
-func (s *APIServer) newModuleSDK(ctx context.Context, sdkModMeta *core.ModuleMetadata) (*moduleSDK, error) {
+func (s *APIServer) newModuleSDK(ctx context.Context, sdkModMeta *core.Module) (*moduleSDK, error) {
 	sdkMod, err := s.AddModFromMetadata(ctx, sdkModMeta, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add sdk module to dag: %w", err)
@@ -119,7 +119,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
 	}
 
-	result, err := codegenFn.Call(ctx, true, nil, []*core.CallInput{
+	result, err := codegenFn.Call(ctx, true, nil, nil, []*core.CallInput{
 		{
 			Name:  "modSource",
 			Value: srcDirID,
@@ -166,7 +166,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Containe
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
 	}
 
-	result, err := getRuntimeFn.Call(ctx, true, nil, []*core.CallInput{
+	result, err := getRuntimeFn.Call(ctx, true, nil, nil, []*core.CallInput{
 		{
 			Name:  "modSource",
 			Value: srcDirID,

@@ -26,22 +26,35 @@ import (
 const (
 	modMetaDirPath    = "/.daggermod"
 	modMetaOutputPath = "output.json"
+
+	coreModuleName = "daggercore"
 )
 
 // TODO: consider renaming to ModDependencies, methods are performed on roots, not full DAG
 type ModDag struct {
-	api   *APIServer
-	roots []Mod
+	api       *APIServer
+	roots     []Mod
+	dagDigest digest.Digest
 }
 
+// TODO: consider validating that there are no duplicate modules in the DAG
+// TODO: consider validating that there are no cycles in the DAG (either here or elsewhere)
 func newModDag(ctx context.Context, api *APIServer, roots []Mod) (*ModDag, error) {
-	// TODO: consider validating that there are no duplicate modules in the DAG
-	// TODO: consider validating that there are no cycles in the DAG (either here or elsewhere)
-	panic("implement me")
+	var dagDigests []string
+	for _, root := range roots {
+		dagDigests = append(dagDigests, root.DagDigest().String())
+	}
+	dagDigest := digest.FromString(strings.Join(dagDigests, " "))
+
+	return &ModDag{
+		api:       api,
+		roots:     roots,
+		dagDigest: dagDigest,
+	}, nil
 }
 
-func (d *ModDag) Digest() (digest.Digest, error) {
-	panic("implement Digest")
+func (d *ModDag) DagDigest() digest.Digest {
+	return d.dagDigest
 }
 
 func (d *ModDag) Schema(ctx context.Context) (ExecutableSchema, error) {
@@ -81,9 +94,79 @@ func (d *ModDag) ObjectByName(ctx context.Context, objName string) (ModObject, b
 	return nil, false, nil
 }
 
+/* TODO: rm if unused
+func (d *ModDag) Walk(cb func(Mod) error) error {
+	memo := make(map[string]struct{})
+	currentMods := d.roots
+	for len(currentMods) > 0 {
+		var nextMods []Mod
+		for _, mod := range currentMods {
+			if _, ok := memo[mod.Name()]; ok {
+				continue
+			}
+			memo[mod.Name()] = struct{}{}
+			if err := cb(mod); err != nil {
+				return err
+			}
+			nextMods = append(nextMods, mod.Dependencies()...)
+		}
+		currentMods = nextMods
+	}
+	return nil
+}
+
+func (d *ModDag) TopologicalSort() []Mod {
+	// TODO: cache? or maybe just have callers cache as needed
+
+	modsByName := make(map[string]Mod)
+	modDeps := make(map[string]map[string]struct{})
+	reverseModDeps := make(map[string]map[string]struct{})
+	var currentMods []Mod
+	d.Walk(func(mod Mod) error {
+		modsByName[mod.Name()] = mod
+		if len(mod.Dependencies()) == 0 {
+			currentMods = append(currentMods, mod)
+			return nil
+		}
+		modDeps[mod.Name()] = make(map[string]struct{})
+		for _, dep := range mod.Dependencies() {
+			modDeps[mod.Name()][dep.Name()] = struct{}{}
+			reverseDeps, ok := reverseModDeps[dep.Name()]
+			if !ok {
+				reverseDeps = make(map[string]struct{})
+				reverseModDeps[dep.Name()] = reverseDeps
+			}
+			reverseDeps[mod.Name()] = struct{}{}
+		}
+		return nil
+	})
+
+	var sorted []Mod
+	for len(currentMods) > 0 {
+		sort.Slice(currentMods, func(i, j int) bool {
+			return currentMods[i].Name() < currentMods[j].Name()
+		})
+		sorted = append(sorted, currentMods...)
+
+		var nextMods []Mod
+		for _, mod := range currentMods {
+			for dep := range reverseModDeps[mod.Name()] {
+				delete(modDeps[dep], mod.Name())
+				if len(modDeps[dep]) == 0 {
+					nextMods = append(nextMods, modsByName[dep])
+				}
+			}
+		}
+		currentMods = nextMods
+	}
+
+	return sorted
+}
+*/
+
 type Mod interface {
 	Name() string
-	Digest() (digest.Digest, error)
+	DagDigest() digest.Digest
 	Dependencies() []Mod
 	Schema(context.Context) (ExecutableSchema, error)
 	DependencySchemaIntrospectionJSON(context.Context) (string, error)
@@ -106,9 +189,9 @@ func (m *CoreMod) Name() string {
 	return coreModuleName
 }
 
-func (m *CoreMod) Digest() (digest.Digest, error) {
+func (m *CoreMod) DagDigest() digest.Digest {
 	// core is always a leaf, so we just return a static digest
-	return digest.FromString(coreModuleName), nil
+	return digest.FromString(coreModuleName)
 }
 
 func (m *CoreMod) Dependencies() []Mod {
@@ -152,9 +235,11 @@ func (obj *CoreModObject) FromID(id string) (any, error) {
 
 type UserMod struct {
 	api      *APIServer
-	metadata *core.ModuleMetadata
+	metadata *core.Module
 	deps     *ModDag
 	sdk      SDK
+
+	dagDigest digest.Digest
 
 	// should not be read directly, call m.Objects() instead
 	lazilyLoadedObjects []*UserModObject
@@ -164,23 +249,29 @@ type UserMod struct {
 
 var _ Mod = (*UserMod)(nil)
 
-func newUserMod(api *APIServer, modMeta *core.ModuleMetadata, deps *ModDag, sdk SDK) *UserMod {
-	m := &UserMod{
-		api:      api,
-		metadata: modMeta,
-		deps:     deps,
-		sdk:      sdk,
+func newUserMod(api *APIServer, modMeta *core.Module, deps *ModDag, sdk SDK) (*UserMod, error) {
+	selfDigest, err := modMeta.BaseDigest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module digest: %w", err)
 	}
-	return m
+	dagDigest := digest.FromString(selfDigest.String() + " " + deps.DagDigest().String())
+
+	m := &UserMod{
+		api:       api,
+		metadata:  modMeta,
+		deps:      deps,
+		sdk:       sdk,
+		dagDigest: dagDigest,
+	}
+	return m, nil
 }
 
 func (m *UserMod) Name() string {
 	return m.metadata.Name
 }
 
-func (m *UserMod) Digest() (digest.Digest, error) {
-	// TODO: Incorporate digests of deps; think through remaining cases where LLB source isn't pinned
-	panic("implement Digest")
+func (m *UserMod) DagDigest() digest.Digest {
+	return m.dagDigest
 }
 
 func (m *UserMod) Dependencies() []Mod {
@@ -230,15 +321,15 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 	}
 
 	// TODO: re-doc this
-	result, err := newModFunction(nil, runtime, core.NewFunction("", &core.TypeDef{
+	result, err := newModFunction(m, nil, runtime, core.NewFunction("", &core.TypeDef{
 		Kind:     core.TypeDefKindObject,
 		AsObject: core.NewObjectTypeDef("Module", ""),
-	})).Call(ctx, true, nil, nil)
+	})).Call(ctx, true, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name, err)
 	}
 
-	modMeta, ok := result.(*core.ModuleMetadata)
+	modMeta, ok := result.(*core.Module)
 	if !ok {
 		return nil, fmt.Errorf("expected ModuleMetadata result, got %T", result)
 	}
@@ -462,7 +553,7 @@ func newModObject(ctx context.Context, mod *UserMod, typeDef *core.TypeDef) (*Us
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
 	for _, fn := range typeDef.AsObject.Functions {
-		obj.functions = append(obj.functions, newModFunction(obj, runtime, fn))
+		obj.functions = append(obj.functions, newModFunction(mod, obj, runtime, fn))
 	}
 	return obj, nil
 }
@@ -600,7 +691,7 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to get module runtime: %w", err)
 			}
-			fn := newModFunction(obj, runtime, fnTypeDef)
+			fn := newModFunction(obj.mod, obj, runtime, fnTypeDef)
 
 			fieldDef, resolver, err := fn.Schema(ctx)
 			if err != nil {
@@ -684,129 +775,41 @@ func (f *UserModField) Schema(ctx context.Context) (*ast.FieldDefinition, graphq
 
 type UserModFunction struct {
 	api     *APIServer
-	obj     *UserModObject
+	mod     *UserMod
+	obj     *UserModObject // may be nil for special functions like the module definition function call
 	typeDef *core.Function
 	runtime *core.Container
 }
 
-func newModFunction(obj *UserModObject, runtime *core.Container, typeDef *core.Function) *UserModFunction {
+func newModFunction(mod *UserMod, obj *UserModObject, runtime *core.Container, typeDef *core.Function) *UserModFunction {
 	return &UserModFunction{
+		api:     mod.api,
+		mod:     mod,
 		obj:     obj,
 		typeDef: typeDef,
 		runtime: runtime,
 	}
 }
 
-func (fn *UserModFunction) Digest() (digest.Digest, error) {
-	/* TODO: incorporate
-	* module digest
-	* object name
-	* function name
-	 */
-
-	panic("implement Digest")
-}
-
-func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeline.Path, args []*core.CallInput) (any, error) {
-	var cacheKeys []string
-
-	fnDgst, err := fn.Digest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get function digest: %w", err)
+func (fn *UserModFunction) Digest() digest.Digest {
+	inputs := []string{
+		fn.mod.DagDigest().String(),
+		fn.typeDef.Name,
 	}
-	cacheKeys = append(cacheKeys, fnDgst.String())
-
-	for _, arg := range args {
-		argDgst, err := arg.Digest()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get arg digest: %w", err)
-		}
-		cacheKeys = append(cacheKeys, argDgst.String())
+	if fn.obj != nil {
+		inputs = append(inputs, fn.obj.typeDef.AsObject.Name)
 	}
-
-	if !cache {
-		// [shykes] inject a cachebuster before runtime exec,
-		// to fix crippling mandatory memoization of all functions.
-		// [sipsma] use the ServerID so that we only bust once-per-session and thus avoid exponential runtime complexity
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client metadata: %w", err)
-		}
-		cacheKeys = append(cacheKeys, clientMetadata.ServerID)
-	}
-
-	cacheKey := digest.FromString(strings.Join(cacheKeys, " "))
-
-	ctr := fn.runtime
-
-	metaDir := core.NewScratchDirectory(pipeline, fn.api.platform)
-	ctr, err = ctr.WithMountedDirectory(ctx, fn.api.bk, modMetaDirPath, metaDir, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
-	}
-
-	// Setup the Exec for the Function call and evaluate it
-	ctr, err = ctr.WithExec(ctx, fn.api.bk, fn.api.progSockPath, fn.api.platform, core.ContainerExecOpts{
-		// TODO: rename ModuleContextDigest
-		ModuleContextDigest:           cacheKey,
-		ExperimentalPrivilegedNesting: true,
-		NestedInSameSession:           true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec function: %w", err)
-	}
-
-	ctrOutputDir, err := ctr.Directory(ctx, fn.api.bk, fn.api.services, modMetaDirPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get function output directory: %w", err)
-	}
-
-	deregister, err := fn.api.RegisterFunctionCall(cacheKey, fn, args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register function call: %w", err)
-	}
-	defer deregister()
-
-	result, err := ctrOutputDir.Evaluate(ctx, fn.api.bk, fn.api.services)
-	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate function: %w", err)
-	}
-	if result == nil {
-		return nil, fmt.Errorf("function returned nil result")
-	}
-
-	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
-	// we can end up in a state where we have a cached result with a dependency blob that we don't
-	// guarantee the continued existence of...
-
-	// Read the output of the function
-	outputBytes, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: modMetaOutputPath,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to read function output file: %w", err)
-	}
-
-	var returnValue any
-	if err := json.Unmarshal(outputBytes, &returnValue); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
-	}
-
-	returnValue, err = fn.obj.mod.convertValueIDs(ctx, returnValue, fn.typeDef.ReturnType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert return value: %w", err)
-	}
-
-	if err := fn.linkDependencyBlobs(ctx, result, returnValue, fn.typeDef.ReturnType); err != nil {
-		return nil, fmt.Errorf("failed to link dependency blobs: %w", err)
-	}
-
-	return returnValue, nil
+	return digest.FromString(strings.Join(inputs, " "))
 }
 
 func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, graphql.FieldResolveFn, error) {
 	fnName := gqlFieldName(fn.typeDef.Name)
-	objFnName := fmt.Sprintf("%s.%s", fn.obj.typeDef.AsObject.Name, fnName)
+	var objFnName string
+	if fn.obj != nil {
+		objFnName = fmt.Sprintf("%s.%s", fn.obj.typeDef.AsObject.Name, fnName)
+	} else {
+		objFnName = fnName
+	}
 
 	returnASTType, err := typeDefToASTType(fn.typeDef.ReturnType, false)
 	if err != nil {
@@ -816,13 +819,17 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 	// Check if this is a type from another (non-core) module, which is currently
 	// not allowed
 	if fn.typeDef.ReturnType.Kind == core.TypeDefKindObject {
-		obj, ok, err := fn.obj.mod.deps.ObjectByName(ctx, returnASTType.Name())
+		obj, ok, err := fn.mod.deps.ObjectByName(ctx, returnASTType.Name())
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get object for type def: %w", err)
 		}
 		if ok && obj.SourceMod().Name() != coreModuleName {
+			var objName string
+			if fn.obj != nil {
+				objName = fn.obj.typeDef.AsObject.OriginalName
+			}
 			return nil, nil, fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-				fn.obj.typeDef.AsObject.OriginalName,
+				objName,
 				fn.typeDef.OriginalName,
 				obj.SourceMod().Name(),
 			)
@@ -847,13 +854,17 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 		// Check if this is a type from another (non-core) module, which is currently
 		// not allowed
 		if fnArg.TypeDef.Kind == core.TypeDefKindObject {
-			obj, ok, err := fn.obj.mod.deps.ObjectByName(ctx, argASTType.Name())
+			obj, ok, err := fn.mod.deps.ObjectByName(ctx, argASTType.Name())
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to get object for type def: %w", err)
 			}
 			if ok && obj.SourceMod().Name() != coreModuleName {
+				var objName string
+				if fn.obj != nil {
+					objName = fn.obj.typeDef.AsObject.OriginalName
+				}
 				return nil, nil, fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-					fn.obj.typeDef.AsObject.OriginalName,
+					objName,
 					fn.typeDef.OriginalName,
 					fnArg.OriginalName,
 					obj.SourceMod().Name(),
@@ -881,9 +892,12 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
 			}
 		}()
-		parent, err := fn.obj.mod.convertValueIDs(ctx, parent, fn.obj.typeDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert parent: %w", err)
+		if fn.obj != nil {
+			var err error
+			parent, err = fn.mod.convertValueIDs(ctx, parent, fn.obj.typeDef)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert parent: %w", err)
+			}
 		}
 
 		var callInput []*core.CallInput
@@ -893,7 +907,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 				bklog.G(ctx).Warnf("unknown arg %q for function %q", k, objFnName)
 				continue
 			}
-			v, err := fn.obj.mod.convertValueIDs(ctx, v, argType.TypeDef)
+			v, err := fn.mod.convertValueIDs(ctx, v, argType.TypeDef)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert arg %q: %w", k, err)
 			}
@@ -903,7 +917,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 				Value: v,
 			})
 		}
-		result, err := fn.Call(ctx, false, nil, callInput)
+		result, err := fn.Call(ctx, false, nil, parent, callInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
 		}
@@ -911,6 +925,105 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 	})
 
 	return fieldDef, resolver, nil
+}
+
+func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeline.Path, parentVal any, args []*core.CallInput) (any, error) {
+	cacheKeys := []string{fn.Digest().String()}
+
+	for _, arg := range args {
+		argDgst, err := arg.Digest()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get arg digest: %w", err)
+		}
+		cacheKeys = append(cacheKeys, argDgst.String())
+	}
+
+	if !cache {
+		// [shykes] inject a cachebuster before runtime exec,
+		// to fix crippling mandatory memoization of all functions.
+		// [sipsma] use the ServerID so that we only bust once-per-session and thus avoid exponential runtime complexity
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		cacheKeys = append(cacheKeys, clientMetadata.ServerID)
+	}
+
+	cacheKey := digest.FromString(strings.Join(cacheKeys, " "))
+
+	ctr := fn.runtime
+
+	metaDir := core.NewScratchDirectory(pipeline, fn.api.platform)
+	ctr, err := ctr.WithMountedDirectory(ctx, fn.api.bk, modMetaDirPath, metaDir, "", false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
+	}
+
+	// Setup the Exec for the Function call and evaluate it
+	ctr, err = ctr.WithExec(ctx, fn.api.bk, fn.api.progSockPath, fn.api.platform, core.ContainerExecOpts{
+		// TODO: rename ModuleContextDigest
+		ModuleContextDigest:           cacheKey,
+		ExperimentalPrivilegedNesting: true,
+		NestedInSameSession:           true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec function: %w", err)
+	}
+
+	ctrOutputDir, err := ctr.Directory(ctx, fn.api.bk, fn.api.services, modMetaDirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get function output directory: %w", err)
+	}
+
+	callMeta := &core.FunctionCall{
+		Name:      fn.typeDef.OriginalName,
+		Parent:    parentVal,
+		InputArgs: args,
+	}
+	if fn.obj != nil {
+		callMeta.ParentName = fn.obj.typeDef.AsObject.OriginalName
+	}
+
+	err = fn.api.RegisterFunctionCall(cacheKey, fn.mod, callMeta)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register function call: %w", err)
+	}
+
+	result, err := ctrOutputDir.Evaluate(ctx, fn.api.bk, fn.api.services)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate function: %w", err)
+	}
+	if result == nil {
+		return nil, fmt.Errorf("function returned nil result")
+	}
+
+	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
+	// we can end up in a state where we have a cached result with a dependency blob that we don't
+	// guarantee the continued existence of...
+
+	// Read the output of the function
+	outputBytes, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
+		Filename: modMetaOutputPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read function output file: %w", err)
+	}
+
+	var returnValue any
+	if err := json.Unmarshal(outputBytes, &returnValue); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
+	}
+
+	returnValue, err = fn.mod.convertValueIDs(ctx, returnValue, fn.typeDef.ReturnType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert return value: %w", err)
+	}
+
+	if err := fn.linkDependencyBlobs(ctx, result, returnValue, fn.typeDef.ReturnType); err != nil {
+		return nil, fmt.Errorf("failed to link dependency blobs: %w", err)
+	}
+
+	return returnValue, nil
 }
 
 // If the result of a Function call contains IDs of resources, we need to ensure that the cache entry for the

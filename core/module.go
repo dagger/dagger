@@ -17,7 +17,7 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type ModuleMetadata struct {
+type Module struct {
 	// The module's source code root directory
 	SourceDirectory *Directory `json:"sourceDirectory"`
 
@@ -37,23 +37,23 @@ type ModuleMetadata struct {
 	SDK string `json:"sdk,omitempty"`
 }
 
-func (mod *ModuleMetadata) ID() (ModuleID, error) {
+func (mod *Module) ID() (ModuleID, error) {
 	return resourceid.Encode(mod)
 }
 
-func (mod *ModuleMetadata) Digest() (digest.Digest, error) {
+func (mod *Module) Digest() (digest.Digest, error) {
 	return stableDigest(mod)
 }
 
 // BaseDigest gives a digest after unsetting Objects, which is useful
 // as a digest of the "base" Module that's stable before+after loading TypeDefs
-func (mod *ModuleMetadata) BaseDigest() (digest.Digest, error) {
+func (mod *Module) BaseDigest() (digest.Digest, error) {
 	mod = mod.Clone()
 	mod.Objects = nil
 	return stableDigest(mod)
 }
 
-func (mod *ModuleMetadata) PBDefinitions() ([]*pb.Definition, error) {
+func (mod *Module) PBDefinitions() ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if mod.SourceDirectory != nil {
 		dirDefs, err := mod.SourceDirectory.PBDefinitions()
@@ -65,7 +65,7 @@ func (mod *ModuleMetadata) PBDefinitions() ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-func (mod ModuleMetadata) Clone() *ModuleMetadata {
+func (mod Module) Clone() *Module {
 	cp := mod
 	if mod.SourceDirectory != nil {
 		cp.SourceDirectory = mod.SourceDirectory.Clone()
@@ -78,7 +78,7 @@ func (mod ModuleMetadata) Clone() *ModuleMetadata {
 	return &cp
 }
 
-func (mod *ModuleMetadata) WithObject(def *TypeDef) (*ModuleMetadata, error) {
+func (mod *Module) WithObject(def *TypeDef) (*Module, error) {
 	mod = mod.Clone()
 	if def.AsObject == nil {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
@@ -133,7 +133,7 @@ func ModuleMetadataFromConfig(
 	progSock string,
 	sourceDir *Directory,
 	configPath string,
-) (*ModuleMetadata, error) {
+) (*Module, error) {
 	configPath, cfg, err := LoadModuleConfig(ctx, bk, svcs, sourceDir, configPath)
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func ModuleMetadataFromConfig(
 		}
 	}
 
-	return &ModuleMetadata{
+	return &Module{
 		SourceDirectory:        sourceDir,
 		SourceDirectorySubpath: filepath.Dir(configPath),
 		Name:                   cfg.Name,
@@ -191,7 +191,7 @@ func ModuleMetadataFromRef(
 	parentSrcDir *Directory, // nil if not being loaded as a dep of another mod
 	parentSrcSubpath string, // "" if not being loaded as a dep of another mod
 	moduleRefStr string,
-) (*ModuleMetadata, error) {
+) (*Module, error) {
 	modRef, err := modules.ResolveStableRef(moduleRefStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse dependency url %q: %w", moduleRefStr, err)

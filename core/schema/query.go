@@ -23,10 +23,6 @@ func (s *querySchema) Name() string {
 	return "query"
 }
 
-func (s *querySchema) SourceModuleName() string {
-	return coreModuleName
-}
-
 func (s *querySchema) Schema() string {
 	return Query
 }
