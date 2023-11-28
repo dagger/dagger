@@ -100,38 +100,53 @@ async with dagger.connection(config):
 
 ## Development
 
-This library is maintained with [Hatch](https://hatch.pypa.io/).
+The SDK is managed with a Dagger module in `./dev`. To see which tasks are
+available run:
 
-The following commands are available:
-- `hatch run test`: Run tests.
-- `hatch run fmt`: Re-format code following common styling conventions.
-- `hatch run lint`: Check for linting violations.
-- `hatch run typing:check`: Run the type checker.
-- `hatch run docs:build`: Build reference docs locally
-- `hatch run docs:preview`: Build and serve reference docs (defaults to localhost:8000)
+```shell
+dagger call -m dev
+```
+
+### Common tasks
+
+Run pytest in supported Python versions:
+
+```shell
+dagger call -m dev tests
+```
+
+Check for linting violations:
+```shell
+dagger call -m dev lint check
+```
+
+Re-format code following common styling conventions:
+```shell
+dagger dl -m dev lint format
+```
+
+Update pinned devevelopment dependencies:
+```shell
+dagger dl -m dev lock -o requirements/
+```
+
+Build and preview the reference documentation:
+```shell
+dagger up -m dev docs preview -n
+```
+
+Add `--help` to any command to check all the available options.
 
 ### Engine changes
 
-Testing and regenerating the client may fail if there’s changes in the engine code that haven’t been released yet.
-
-The simplest way to run those commands locally with the most updated engine version is to build it using [Dagger’s CI pipelines](https://github.com/dagger/dagger/blob/main/internal/mage/sdk/python.go) :
+Testing and regenerating the client may fail if there’s changes in the engine code that haven’t been released yet. Prefix with `hack/dev` to build a new engine before executing pipelines:
 
 ```shell
-../../hack/make sdk:python:generate
-../../hack/make sdk:python:lint
-../../hack/make sdk:python:test
+../../hack/dev dagger call -m dev test
 ```
 
-You can also build the CLI and use it directly within the Python SDK:
+To re-generate the client (codegen) after changes to the API schema):
 
 ```shell
-../../hack/dev hatch test
+./hack/dev ./hack/make sdk:python:generate
 ```
-
-Or build it separately and tell the SDK to use it directly (or any other CLI binary):
-
-```shell
-../../hack/make
-_EXPERIMENTAL_DAGGER_CLI_BIN=../../bin/dagger hatch test
-```
-

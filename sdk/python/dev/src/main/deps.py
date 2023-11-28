@@ -1,8 +1,8 @@
 import dagger
 from dagger.mod import Annotated, Doc, field, function, object_type
 
-from .consts import PYTHON_VERSION
-from .utils import cache, python_base
+from .consts import DEP_ENVS, PYTHON_VERSION
+from .utils import cache, from_host_file, python_base
 
 
 @object_type
@@ -12,7 +12,7 @@ class Hatch:
     ctr: Annotated[
         dagger.Container,
         Doc("Container to run hatch in"),
-    ] = field(default=python_base)
+    ] = field(default=lambda: python_base())
 
     version: Annotated[
         str,
@@ -125,7 +125,7 @@ class PipTools:
     ctr: Annotated[
         dagger.Container,
         Doc("Container to run pip-tools in"),
-    ] = field(default=python_base)
+    ] = field(default=lambda: python_base())
 
     version: Annotated[
         str,
@@ -193,28 +193,31 @@ class PipTools:
 
 @object_type
 class Deps:
-    """Manage the SDK's development dependencies."""
+    """Manage the SDK's development dependencies for a hatch environment."""
 
     env: Annotated[
         str,
-        Doc("The hatch environment to use"),
+        Doc(f"The hatch environment to use. Can be one of {DEP_ENVS}"),
     ] = field()
 
     hatch_config: Annotated[
         dagger.File,
-        Doc("The hatch.toml file with the environment dependencies"),
-    ] = field()
+        Doc("The hatch.toml file with the environments and their dependencies"),
+    ] = field(default=lambda: from_host_file("hatch.toml"))
 
     @function
     def hatch(self) -> Hatch:
+        """Run hatch tasks."""
         return Hatch(cfg=self.hatch_config)
 
     @function
     def requirements(self) -> dagger.File:
+        """Return the constrained development dependencies."""
         return self.hatch().requirements(self.env)
 
     @function
     def lock(self) -> dagger.File:
+        """Update the pinned development dependencies."""
         return PipTools().compile_(
             requirements=self.requirements(),
             output=f"{self.env}.txt",

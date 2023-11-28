@@ -1,16 +1,33 @@
 import dagger
-from dagger.mod import field, function, object_type
+from dagger.mod import Annotated, Doc, field, function, object_type
 
-from .utils import mounted_workdir, python_base, requirements, sdk
+from .utils import (
+    from_host_dir,
+    from_host_req,
+    mounted_workdir,
+    python_base,
+    requirements,
+    sdk,
+)
 
 
 @object_type
 class Docs:
-    requirements: dagger.File = field()
-    src: dagger.Directory = field()
+    """Manage the reference documentation (Sphinx)."""
+
+    requirements: Annotated[
+        dagger.File,
+        Doc("The requirements.txt file with the documentation dependencies"),
+    ] = field(default=lambda: from_host_req("docs"))
+
+    src: Annotated[
+        dagger.Directory,
+        Doc("Directory with the Sphinx source files"),
+    ] = field(default=lambda: from_host_dir("docs/"))
 
     @function
     def base(self) -> dagger.Container:
+        """Base container for building the documentation."""
         return (
             python_base()
             .with_(sdk)

@@ -1,20 +1,51 @@
 import dagger
-from dagger.mod import field, function, object_type
+from dagger.mod import Annotated, Doc, field, function, object_type
 
 from .consts import PYTHON_VERSION
-from .utils import cache, mounted_workdir, python_base, requirements
+from .utils import (
+    cache,
+    from_host,
+    from_host_req,
+    mounted_workdir,
+    python_base,
+    requirements,
+)
 
 
 @object_type
 class Lint:
     """Lint the codebase."""
 
-    requirements: dagger.File = field()
-    src: dagger.Directory = field()
-    pyproject: dagger.File | None = field()
+    requirements: Annotated[
+        dagger.File,
+        Doc("The requirements.txt file with the linting dependencies"),
+    ] = field(default=lambda: from_host_req("lint"))
+
+    src: Annotated[
+        dagger.Directory,
+        Doc("Directory with the .py, .ruff and .toml files to lint"),
+    ] = field(
+        default=lambda: from_host(
+            [
+                "**/*.py",
+                "**/*ruff.toml",
+                "**/pyproject.toml",
+                "**/.gitignore",
+            ]
+        )
+    )
+
+    pyproject: Annotated[
+        dagger.File | None,
+        Doc(
+            "The pyproject.toml file with the linting configuration, "
+            "if not in the source directory"
+        ),
+    ] = field(default=None)
 
     @function
     def base(self) -> dagger.Container:
+        """The base container with the Python environment for linting."""
         ctr = (
             python_base()
             .with_(requirements(self.requirements))
@@ -26,7 +57,7 @@ class Lint:
 
     @function
     def typing(self) -> dagger.Container:
-        """Run the type checker."""
+        """Run the type checker (mypy)."""
         return (
             self.base()
             .with_env_variable("MYPY_CACHE_DIR", "/root/.cache/mypy")
@@ -63,5 +94,6 @@ class Lint:
         )
 
     @function
-    def debug(self) -> dagger.Container:
+    def debug_format(self) -> dagger.Container:
+        """Container with mounted formatted files for debugging."""
         return self.base().with_(mounted_workdir(self.format_()))

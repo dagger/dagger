@@ -4,16 +4,36 @@ import dagger
 from dagger.mod import Annotated, Doc, field, function, object_type
 
 from .consts import PYTHON_VERSION
-from .utils import mounted_workdir, python_base, requirements
+from .utils import from_host, from_host_req, mounted_workdir, python_base, requirements
 
 
 @object_type
 class Test:
     """Run the test suite."""
 
-    requirements: dagger.File = field()
-    src: dagger.Directory = field()
-    version: str = field(default=PYTHON_VERSION)
+    requirements: Annotated[
+        dagger.File,
+        Doc("A requirements.txt file with the testing environment's dependencies"),
+    ] = field(default=lambda: from_host_req("test"))
+
+    src: Annotated[
+        dagger.Directory,
+        Doc("Directory with the tests and source code under test"),
+    ] = field(
+        default=lambda: from_host(
+            [
+                "pyproject.toml",
+                "README.md",
+                "src/",
+                "tests/",
+            ]
+        )
+    )
+
+    version: Annotated[
+        str,
+        Doc("Python version to test under"),
+    ] = field(default=PYTHON_VERSION)
 
     @function
     def base(self) -> dagger.Container:
@@ -26,8 +46,11 @@ class Test:
         )
 
     @function
-    def pytest(self, args: list[str]) -> dagger.Container:
-        """Run unit tests."""
+    def pytest(
+        self,
+        args: Annotated[list[str], Doc("Arguments to pass to pytest")],
+    ) -> dagger.Container:
+        """Run the pytest command."""
         return (
             self.base()
             .pipeline(f"Python {self.version}")
@@ -37,6 +60,11 @@ class Test:
                 experimental_privileged_nesting=True,
             )
         )
+
+    @function
+    def default(self) -> dagger.Container:
+        """Run integration tests."""
+        return self.pytest(["-Wd", "-l", "-m", "not provision"])
 
     @function
     def unit(self) -> dagger.Container:
@@ -60,6 +88,9 @@ class Test:
         This publishes a cli binary in an ephemeral http server and checks
         if the SDK can download, extract and run it.
         """
+        # TODO: Most of this setup can be reused for all SDKs that need to
+        # test provisioning. Move it to the common `ci` module when it's
+        # created and call the SDKs just for the test run.
         uname = platform.uname()
         os_name = uname.system.lower()
         arch_name = uname.machine.lower()
@@ -128,8 +159,3 @@ class Test:
                 insecure_root_capabilities=True,
             )
         )
-
-    @function
-    def default(self) -> dagger.Container:
-        """Run integration tests."""
-        return self.pytest(["-W", "default", "-m", "not provision"])
