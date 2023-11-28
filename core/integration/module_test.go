@@ -2301,7 +2301,7 @@ class Test:
 		require.NoError(t, err)
 		require.Contains(t, out, `"sdk": "python"`)
 
-		out, err = ctr.With(daggerCall("bar")).Stdout(ctx)
+		_, err = ctr.With(daggerCall("bar")).Sync(ctx)
 		require.NoError(t, err)
 	})
 }
