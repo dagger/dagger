@@ -1,6 +1,6 @@
 export function fct(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  target: any,
+  target: unknown,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   propertyKey: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
