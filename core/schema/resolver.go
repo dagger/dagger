@@ -73,13 +73,7 @@ func ToResolver[P any, A any, R any](f func(context.Context, P, A) (R, error)) g
 
 		parent, ok := p.Source.(P)
 		if !ok {
-			parentBytes, err := json.Marshal(p.Source)
-			if err != nil {
-				return nil, fmt.Errorf("%s failed to marshal parent: %w", p.Info.FieldName, err)
-			}
-			if err := json.Unmarshal(parentBytes, &parent); err != nil {
-				return nil, fmt.Errorf("%s failed to unmarshal parent: %w", p.Info.FieldName, err)
-			}
+			return nil, fmt.Errorf("%s expected source to be %T, got %T", p.Info.FieldName, parent, p.Source)
 		}
 
 		if pipelineable, ok := p.Source.(pipeline.Pipelineable); ok {
@@ -101,6 +95,12 @@ func ToResolver[P any, A any, R any](f func(context.Context, P, A) (R, error)) g
 		}
 
 		vtx.Done(nil)
+
+		if idable, ok := any(res).(core.IDable); ok {
+			if idable.ID() == nil {
+				log.Printf("!!! %T.%s RETURNING ID-LESS VALUE:", parent, p.Info.FieldName)
+			}
+		}
 
 		return res, nil
 	}
