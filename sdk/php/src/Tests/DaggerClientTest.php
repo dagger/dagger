@@ -65,4 +65,16 @@ class DaggerClientTest extends TestCase
 
         $this->assertEquals('3.16.2', trim($contents));
     }
+
+    public function testPipeline()
+    {
+        $client = Dagger::connect(null, true);
+        $stdout = $client->pipeline('test')
+            ->container()
+            ->from('alpine:3.16.2')
+            ->withExec(['cat', '/etc/alpine-release'])
+            ->stdout();
+
+        $this->assertEquals('3.16.2', trim($stdout));
+    }
 }
