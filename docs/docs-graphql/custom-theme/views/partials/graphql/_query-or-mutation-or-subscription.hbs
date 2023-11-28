@@ -1,0 +1,67 @@
+<section id="{{./htmlId}}"
+  class="operation operation-{{#if isQuery}}query{{else if isMutation}}mutation{{else if isSubscription}}subscription{{else}}unknown{{/if}}"
+  data-traverse-target="{{./htmlId}}">
+  {{# unless @first }}
+    {{#if parentHtmlId }}
+      <div class="operation-group-name">
+        <a href="#group-{{./parentHtmlId}}">{{./parentName}}</a>
+      </div>
+    {{/if}}
+  {{/unless}}
+
+  <h2 class="operation-heading {{#if (and isDeprecated (not @root.info.x-hideIsDeprecated)) }}operation-deprecated{{/if}}">
+    {{md (codify name) stripParagraph="true"}}
+  </h2>
+
+  {{#if (and deprecationReason (not @root.info.x-hideDeprecationReason))}}
+    <div class="doc-row">
+      <div class="doc-copy">
+        <div class="doc-copy-section">
+          <div class="deprecation-reason">
+            {{ md deprecationReason stripParagraph=true }}
+          </div>
+        </div>
+      </div>
+    </div>
+  {{/if}}
+
+  {{#if description}}
+    <div class="doc-row">
+      <div class="doc-copy">
+        <div class="operation-description doc-copy-section">
+          <h5>Description</h5>
+          {{ md (interpolateReferences description) }}
+        </div>
+      </div>
+    </div>
+  {{/if}}
+
+  <div class="doc-row">
+    <div class="doc-copy">
+      {{#if response}}
+        <div class="operation-response doc-copy-section">
+          <h5>Type</h5>
+          <p>
+            {{! If it's got items, then it's an array, and we don't care about the indefiniteArticle }}
+            {{!-- {{#unless response.isArray }}
+              {{ indefiniteArticle response.underlyingType.name }}
+            {{/unless}} --}}
+            {{~ md (mdTypeLink . codify=true) stripParagraph=true }}
+          </p>
+        </div>
+      {{/if}}
+      {{>graphql/_query-or-mutation-arguments}}
+    </div>
+  </div>
+
+    <div class="doc-row">
+      <div class="doc-copy">
+        <div class="operation-example doc-copy-section">
+          <h5>Example</h5>
+          {{#each examples }}
+            {{md (interpolateReferences this)}}
+          {{/each}}
+        </div>
+      </div>
+    </div>
+</section>

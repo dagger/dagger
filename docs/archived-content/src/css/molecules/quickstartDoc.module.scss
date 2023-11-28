@@ -1,0 +1,66 @@
+@use "../custom.scss";
+
+.quickstartDoc {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 30px;
+}
+
+.stepContent {
+  width: 45%;
+}
+
+iframe {
+  border-radius: var(--ifm-alert-border-radius);
+}
+
+@mixin show-embed-in-column {
+  .stepEmbed {
+    position: sticky;
+    top: 120px;
+    width: 55%;
+    right: 20px;
+    height: 100%;
+
+    iframe {
+      width: 100%;
+      min-height: 50vh;
+      height: 100%;
+      height: calc(100vh - 230px);
+    }
+  }
+
+  .stepContent :global(.embeds),
+  .stepContent :global(#embedWrapper) {
+    display: none !important;
+  }
+}
+
+@mixin show-embed-in-content {
+  .stepContent {
+    width: 100%;
+    max-width: var(--ifm-container-width-xl);
+
+    iframe {
+      display: inherit;
+      margin-bottom: 20px;
+    }
+  }
+
+  .stepContent :global(.embeds) {
+    display: inherit;
+  }
+
+  .stepEmbed {
+    display: none;
+  }
+}
+
+@media screen and (max-width: 1199px) {
+  @include show-embed-in-content;
+}
+
+@media screen and (min-width: 1200px) {
+  @include show-embed-in-column;
+}
+

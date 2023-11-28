@@ -1,0 +1,22 @@
+<div id="page" class="drawer-layout">
+  {{! DO THE NAVIGATION }}
+  <div id="sidebar">
+    <div class="sidebar-top-container">
+      <a href="{{info.docs-url}}" id="logo">
+        {{#if logo}}
+          <img src="images/{{logo}}" title="{{info.title}}" />
+        {{/if}}
+      </a>
+      <button class="close-button" aria-label="Close menu" type="button">
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+    {{>layout/nav/main}}
+  </div>
+
+  <div id="docs">
+    {{>layout/nav/mobile-navbar}}
+    {{>layout/content/main}}
+    <div class="drawer-overlay"></div>
+  </div>
+</div>

@@ -1,0 +1,14 @@
+<div class="doc-copy">
+  {{#if description}}
+    <div class="definition-description doc-copy-section">
+      <h5>Description</h5>
+      {{md (interpolateReferences description)}}
+    </div>
+  {{/if}}
+  {{#if fields}}
+    <div class="definition-properties doc-copy-section">
+      <h5>Fields</h5>
+      {{>graphql/kinds/_fields .}}
+    </div>
+  {{/if}}
+</div>
