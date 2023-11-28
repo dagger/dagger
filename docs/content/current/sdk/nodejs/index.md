@@ -62,4 +62,4 @@ lib -..-> engine -..-> oci -..-> A1 & B1 & C1
 
 ## Get started
 
-To learn more, [install the Node.js SDK](./835948-install.md) and [start using it](./783645-get-started.md).
+To learn more, [install the Node.js SDK](./835948-install.mdx) and [start using it](./783645-get-started.mdx).
