@@ -173,6 +173,7 @@ func (s *MergedSchemas) load(ctx context.Context, id *idproto.ID) (any, error) {
 	log.Println("!!! LOADING", dig, id)
 	defer log.Println("!!! DONE LOADING", dig, id)
 
+	// Optimization: check directly with the query cache first.
 	val, err := s.queryCache.Get(dig)
 	if err == nil {
 		return val, nil
