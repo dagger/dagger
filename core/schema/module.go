@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -49,10 +50,11 @@ func (s *moduleSchema) Schema() string {
 func (s *moduleSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
-			"module":              ToCachedResolver(s.queryCache, s.module),
-			"currentModule":       ToCachedResolver(s.queryCache, s.currentModule),
+			"module": ToCachedResolver(s.queryCache, s.module),
+			// TODO this needs to still chain the ID
+			"currentModule":       ToResolver(s.currentModule), // XXX(vito): test
 			"function":            ToCachedResolver(s.queryCache, s.function),
-			"currentFunctionCall": ToCachedResolver(s.queryCache, s.currentFunctionCall),
+			"currentFunctionCall": ToResolver(s.currentFunctionCall), // XXX(vito): test
 			"typeDef":             ToCachedResolver(s.queryCache, s.typeDef),
 			"generatedCode":       ToCachedResolver(s.queryCache, s.generatedCode),
 			"moduleConfig":        ToCachedResolver(s.queryCache, s.moduleConfig),
@@ -224,7 +226,12 @@ func (s *moduleSchema) moduleConfig(ctx context.Context, query *core.Query, args
 func (s *moduleSchema) currentModule(ctx context.Context, _ *core.Query, _ any) (*core.Module, error) {
 	// The caller should have been given a digest of the ModuleContext its executing in, which is passed along
 	// as request context metadata.
-	return s.MergedSchemas.currentModule(ctx)
+	mod, err := s.MergedSchemas.currentModule(ctx)
+	log.Println("!!! CURRENT MODULE", mod.Name, err, mod.ID())
+	if err != nil {
+		return nil, err
+	}
+	return mod, nil
 }
 
 func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
@@ -810,8 +817,9 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 			Description: formatGqlDescription("A unique identifier for a %s", objName),
 			Type:        ast.NonNullNamedType(objName+"ID", nil),
 		})
+		// XXX(vito): update for IDs v2; no need to encode it anymore
 		newObjResolver["id"] = func(p graphql.ResolveParams) (any, error) {
-			return resourceid.EncodeModule(objName, p.Source)
+			panic("TODO: module object custom type ID")
 		}
 
 		for _, field := range objTypeDef.Fields {
@@ -901,7 +909,12 @@ func (s *moduleSchema) moduleToSchema(ctx context.Context, module *core.Module) 
 				constructorResolver = resolver
 			} else {
 				// otherwise default to a simple field with no args that returns an initially empty object
-				constructorResolver = PassthroughResolver
+				constructorResolver = ToCachedResolver(s.queryCache, func(ctx context.Context, parent *core.Query, args any) (any, error) {
+					return &core.ModuleObject{
+						Type:  objName,
+						Value: map[string]any{},
+					}, nil
+				})
 			}
 
 			typeSchemaDoc.Extensions = append(typeSchemaDoc.Extensions, &ast.Definition{
@@ -1094,6 +1107,9 @@ func (s *moduleSchema) functionResolver(
 		}()
 
 		// XXX(vito): what was this trying to do?
+		// XXX(vito): this was probably from when we needed to support defining
+		// methods on core ID-able types, which marshal/unmarshal to their ID as a
+		// string
 		// if parentIDableObjectResolver != nil {
 		// 	id, err := parentIDableObjectResolver.ToID(parent)
 		// 	if err != nil {
@@ -1319,16 +1335,22 @@ func (s *moduleSchema) namespaceTypeDef(typeDef *core.TypeDef, mod *core.Module,
 func (s *moduleSchema) createIDResolver(typeDef *core.TypeDef, schemaView *schemaView) func(context.Context, any) (any, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindObject:
-		return func(ctx context.Context, a any) (any, error) {
-			idStr, ok := a.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected string %sID, got %T", typeDef.AsObject.Name, a)
+		return func(ctx context.Context, ret any) (any, error) {
+			switch x := ret.(type) {
+			case string:
+				idp, err := resourceid.Decode(x)
+				if err != nil {
+					return nil, err
+				}
+				return s.load(ctx, idp)
+			case map[string]any:
+				return &core.ModuleObject{
+					Type:  typeDef.AsObject.Name,
+					Value: x,
+				}, nil
+			default:
+				return nil, fmt.Errorf("expected string or map[string]any, got %T", ret)
 			}
-			idp, err := resourceid.Decode(idStr)
-			if err != nil {
-				return nil, err
-			}
-			return s.load(ctx, idp)
 		}
 	case core.TypeDefKindList:
 		fromID := s.createIDResolver(typeDef.AsList.ElementTypeDef, schemaView)
