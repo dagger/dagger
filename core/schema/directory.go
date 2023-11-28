@@ -54,7 +54,7 @@ func (s *directorySchema) Resolvers() Resolvers {
 		"withNewDirectory": ToCachedResolver(s.queryCache, s.withNewDirectory),
 		"withoutDirectory": ToCachedResolver(s.queryCache, s.withoutDirectory),
 		"diff":             ToCachedResolver(s.queryCache, s.diff),
-		"export":           ToCachedResolver(s.queryCache, s.export),
+		"export":           ToResolver(s.export), // XXX(vito): test
 		"dockerBuild":      ToCachedResolver(s.queryCache, s.dockerBuild),
 	})
 

@@ -28,12 +28,12 @@ func (s *secretSchema) Resolvers() Resolvers {
 	rs := Resolvers{
 		"Query": ObjectResolver{
 			"secret":    ToCachedResolver(s.queryCache, s.secret),
-			"setSecret": ToResolver(s.setSecret),
+			"setSecret": ToResolver(s.setSecret), // XXX(vito): test
 		},
 	}
 
 	ResolveIDable[*core.Secret](s.queryCache, s.MergedSchemas, rs, "Secret", ObjectResolver{
-		"plaintext": ToCachedResolver(s.queryCache, s.plaintext),
+		"plaintext": ToResolver(s.plaintext), // XXX(vito): test
 	})
 
 	return rs

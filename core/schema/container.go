@@ -90,9 +90,9 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withExec":                ToCachedResolver(s.queryCache, s.withExec),
 		"stdout":                  ToCachedResolver(s.queryCache, s.stdout),
 		"stderr":                  ToCachedResolver(s.queryCache, s.stderr),
-		"publish":                 ToCachedResolver(s.queryCache, s.publish),
+		"publish":                 ToResolver(s.publish), // XXX(vito): test
 		"platform":                ToCachedResolver(s.queryCache, s.platform),
-		"export":                  ToCachedResolver(s.queryCache, s.export),
+		"export":                  ToResolver(s.export), // XXX(vito): test
 		"asTarball":               ToCachedResolver(s.queryCache, s.asTarball),
 		"import":                  ToCachedResolver(s.queryCache, s.import_),
 		"withRegistryAuth":        ToCachedResolver(s.queryCache, s.withRegistryAuth),
@@ -104,7 +104,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withServiceBinding":      ToCachedResolver(s.queryCache, s.withServiceBinding),
 		"withFocus":               ToCachedResolver(s.queryCache, s.withFocus),
 		"withoutFocus":            ToCachedResolver(s.queryCache, s.withoutFocus),
-		"shellEndpoint":           ToCachedResolver(s.queryCache, s.shellEndpoint),
+		"shellEndpoint":           ToResolver(s.shellEndpoint), // XXX(vito): test
 		"experimentalWithGPU":     ToCachedResolver(s.queryCache, s.withGPU),
 		"experimentalWithAllGPUs": ToCachedResolver(s.queryCache, s.withAllGPUs),
 	})

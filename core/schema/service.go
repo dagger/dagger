@@ -39,8 +39,8 @@ func (s *serviceSchema) Resolvers() Resolvers {
 		"hostname": ToCachedResolver(s.queryCache, s.hostname),
 		"ports":    ToCachedResolver(s.queryCache, s.ports),
 		"endpoint": ToCachedResolver(s.queryCache, s.endpoint),
-		"start":    ToCachedResolver(s.queryCache, s.start),
-		"stop":     ToCachedResolver(s.queryCache, s.stop),
+		"start":    ToResolver(s.start), // XXX(vito): test
+		"stop":     ToResolver(s.stop),  // XXX(vito): test
 	})
 
 	return rs

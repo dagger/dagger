@@ -36,7 +36,7 @@ func (s *querySchema) Resolvers() Resolvers {
 		"JSON": jsonResolver,
 		"Void": voidScalarResolver,
 		"Query": ObjectResolver{
-			"pipeline":                  ToResolver(s.pipeline),
+			"pipeline":                  ToResolver(s.pipeline), // XXX(vito): meta
 			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),
 		},
 		"Port": ObjectResolver{

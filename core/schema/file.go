@@ -39,7 +39,7 @@ func (s *fileSchema) Resolvers() Resolvers {
 		"sync":           ToCachedResolver(s.queryCache, s.sync),
 		"contents":       ToCachedResolver(s.queryCache, s.contents),
 		"size":           ToCachedResolver(s.queryCache, s.size),
-		"export":         ToCachedResolver(s.queryCache, s.export),
+		"export":         ToResolver(s.export), // XXX(vito): test
 		"withTimestamps": ToCachedResolver(s.queryCache, s.withTimestamps),
 	})
 
