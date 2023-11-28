@@ -2,6 +2,8 @@
 
 namespace DaggerIo\Client;
 
+use DaggerIo\DaggerConnection;
+use DaggerIo\Gen\DaggerClient;
 use DaggerIo\GraphQl\QueryBuilderChain;
 use GraphQL\Client;
 use GraphQL\Query;
@@ -12,12 +14,19 @@ use RecursiveIteratorIterator;
 
 abstract class AbstractDaggerClient
 {
-    protected QueryBuilderChain $queryBuilderChain;
     protected AbstractDaggerClient $client;
+    protected Client $graphQlClient;
 
-    public function __construct(protected readonly Client $graphQlClient)
-    {
-        $this->queryBuilderChain = new QueryBuilderChain();
+    public function __construct(
+        DaggerConnection|DaggerClient $clientOrConnection,
+        protected readonly QueryBuilderChain $queryBuilderChain = new QueryBuilderChain()
+    ) {
+        if ($clientOrConnection instanceof DaggerConnection) {
+            $this->graphQlClient = $clientOrConnection->getGraphQlClient();
+        } else {
+            $this->graphQlClient = $clientOrConnection->graphQlClient;
+        }
+
         $this->client = $this;
     }
 

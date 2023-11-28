@@ -2,7 +2,7 @@
 
 namespace DaggerIo\Tests;
 
-use DaggerIo\DaggerConnection;
+use DaggerIo\Dagger;
 use DaggerIo\Gen\DaggerClient;
 use GraphQL\QueryBuilder\QueryBuilder;
 use PHPUnit\Framework\TestCase;
@@ -11,7 +11,7 @@ class DaggerClientTest extends TestCase
 {
     public function newClient(): DaggerClient
     {
-        return DaggerConnection::devConnection()->connect();
+        return Dagger::connect(null, true);
     }
 
     public function testQueryBuilder(): void
