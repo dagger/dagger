@@ -282,4 +282,50 @@ describe("Analysis static Typescript", function () {
 
     assert.deepEqual(result, expected)
   })
+
+  it("Should correctly handle function with void return", async function () {
+    const files = await listFiles(`${rootDirectory}/voidReturn`)
+
+    const result = analysis(files)
+    const expected: Metadata = {
+      classes: [
+        {
+          name: "HelloWorld",
+          doc: "HelloWorld class",
+          properties: [],
+          methods: [
+            {
+              name: "helloWorld",
+              returnType: "void",
+              doc: "",
+              params: [
+                {
+                  name: "name",
+                  typeName: "string",
+                  doc: "",
+                  optional: false,
+                },
+              ],
+            },
+            {
+              name: "asyncHelloWorld",
+              returnType: "void",
+              doc: "",
+              params: [
+                {
+                  name: "name",
+                  typeName: "string",
+                  doc: "",
+                  optional: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      functions: [],
+    }
+
+    assert.deepEqual(result, expected)
+  })
 })
