@@ -2177,7 +2177,25 @@ type Test struct {
 }
 `,
 			},
-			// TODO: Python doesn't support async calls in constructor.
+			{
+				sdk: "python",
+				source: `import dagger
+from dagger.mod import field, function, object_type
+
+@object_type
+class Test:
+    alpine_version: str = field()
+
+    @classmethod
+    async def create(cls) -> "Test":
+        return cls(alpine_version=await (
+            dagger.container()
+            .from_("alpine:3.18.4")
+            .file("/etc/alpine-release")
+            .contents()
+        ))
+`,
+			},
 		} {
 			tc := tc
 
@@ -2224,7 +2242,10 @@ type Test struct {
 
 @object_type
 class Test:
-    foo: str = field(default=lambda: raise ValueError("too bad"))
+    foo: str = field()
+
+    def __init__(self):
+        raise ValueError("too bad")
 `,
 			},
 		} {
@@ -2247,6 +2268,41 @@ class Test:
 				require.Contains(t, logs.String(), "too bad")
 			})
 		}
+	})
+
+	t.Run("python: with default factory", func(t *testing.T) {
+		t.Parallel()
+
+		content := identity.NewID()
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/test").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
+			With(sdkSource("python", fmt.Sprintf(`import dagger
+from dagger.mod import object_type, field
+
+@object_type
+class Test:
+    foo: dagger.File = field(default=lambda: (
+        dagger.directory()
+        .with_new_file("foo.txt", contents="%s")
+        .file("foo.txt")
+    ))
+    bar: list[str] = field(default=list)
+`, content),
+			))
+
+		out, err := ctr.With(daggerCall("foo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), content)
+
+		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"sdk": "python"`)
+
+		out, err = ctr.With(daggerCall("bar")).Stdout(ctx)
+		require.NoError(t, err)
 	})
 }
 

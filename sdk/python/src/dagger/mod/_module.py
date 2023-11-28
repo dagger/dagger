@@ -8,13 +8,12 @@ import textwrap
 import types
 import typing
 from collections import Counter, defaultdict
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any, TypeAlias, TypeVar
 
 import anyio
 import cattrs
 import cattrs.gen
-from graphql.pyutils import camel_to_snake
 from rich.console import Console
 from typing_extensions import dataclass_transform, overload
 
@@ -30,13 +29,21 @@ from ._exceptions import (
     UserError,
 )
 from ._resolver import (
+    F,
     FieldResolver,
     Func,
+    Function,
     FunctionResolver,
+    P,
     Resolver,
 )
 from ._types import APIName, FieldDefinition, ObjectDefinition
-from ._utils import asyncify, get_doc, to_pascal_case, transform_error
+from ._utils import (
+    asyncify,
+    get_doc,
+    to_pascal_case,
+    transform_error,
+)
 
 errors = Console(stderr=True, style="bold red")
 logger = logging.getLogger(__name__)
@@ -94,8 +101,8 @@ class Module:
                     qualname = func.__qualname__.split("<locals>.", 1)[-1]
                     if "." in qualname:
                         msg = (
-                            f"Function “{func.__qualname__}” seems to be defined "
-                            "in a class that's not decorated with @object_type."
+                            f"Function “{qualname}” seems to be decorated in a "
+                            "class that's not itself decorated with @object_type"
                         )
                         raise UserError(msg)
 
@@ -155,13 +162,15 @@ class Module:
         parent_name: str,
         name: str,
     ) -> Resolver:
+        suffix = f".{name}" if name else "()"
+        resolver_str = f"{parent_name}{suffix}"
         try:
             resolver = resolvers[ObjectDefinition(parent_name)][name]
         except KeyError as e:
-            msg = f"Unable to find resolver: {parent_name}.{name}"
+            msg = f"Unable to find resolver: {resolver_str}"
             raise FatalError(msg) from e
 
-        logger.debug("resolver => %s.%s", parent_name, name or "__init__")
+        logger.debug("resolver => %s", resolver_str)
 
         return resolver
 
@@ -212,8 +221,8 @@ class Module:
                     # Skip constructors of classes that are not the main object.
                     continue
 
-                typedef = await r.register(typedef, self._converter)
-                logger.debug("registered => %s.%s", obj.name, r.name or "__init__")
+                typedef = r.register(typedef)
+                logger.debug("registered => %s", str(r))
 
             mod = mod.with_object(typedef)
 
@@ -246,9 +255,9 @@ class Module:
             "invoke => %s",
             {
                 "parent_name": parent_name,
-                "parent_json": parent_json,
+                "parent_json": textwrap.shorten(parent_json, 144),
                 "name": name,
-                "input_args": inputs,
+                "input_args": textwrap.shorten(repr(inputs), 144),
             },
         )
 
@@ -259,47 +268,28 @@ class Module:
         self,
         resolver: Resolver,
         parent_json: dagger.JSON,
-        inputs: dict[str, Any],
+        inputs: Mapping[str, Any],
     ) -> Any:
-        # Constructor.
-        if not resolver.name:
-            assert isinstance(resolver, FunctionResolver)
+        root = None
+        if resolver.origin and not (
+            isinstance(resolver, FunctionResolver)
+            and inspect.isclass(resolver.wrapped_func)
+        ):
+            root = await self.get_root(resolver.origin, parent_json)
 
-            # Shouldn't have anything in `parent_json`, just ignore it.
-            result = root = await self.get_root(
-                resolver.wrapped_func,
-                resolver.original_name,
-                inputs,
-            )
+        try:
+            result = await resolver.get_result(self._converter, root, inputs)
+        except Exception as e:
+            raise FunctionError(e) from e
 
-        else:
-            parent: dict[str, Any] = {}
-            if parent_json.strip():
-                try:
-                    parent = json.loads(parent_json)
-                except ValueError as e:
-                    msg = f"Unable to decode parent value `{parent_json}`: {e}"
-                    raise FatalError(msg) from e
+        if inspect.iscoroutine(result):
+            msg = "Result is a coroutine. Did you forget to add async/await?"
+            raise UserError(msg)
 
-            root = await self.get_root(
-                resolver.origin,
-                resolver.original_name,
-                parent,
-            )
-
-            try:
-                result = await resolver.get_result(self._converter, root, inputs)
-            except Exception as e:
-                raise FunctionError(e) from e
-
-            if inspect.iscoroutine(result):
-                msg = "Result is a coroutine. Did you forget to add async/await?"
-                raise UserError(msg)
-
-            logger.debug(
-                "result => %s",
-                textwrap.shorten(repr(result), 144),
-            )
+        logger.debug(
+            "result => %s",
+            textwrap.shorten(repr(result), 144),
+        )
 
         try:
             return await asyncify(
@@ -317,28 +307,28 @@ class Module:
 
     async def get_root(
         self,
-        origin: Callable | None,
-        name: str,
-        parent: dict[str, Any],
+        origin: type,
+        parent_json: dagger.JSON,
     ) -> object | None:
+        parent: dict[str, Any] = {}
+        if parent_json.strip():
+            try:
+                parent = json.loads(parent_json)
+            except ValueError as e:
+                msg = f"Unable to decode parent value `{parent_json}`: {e}"
+                raise FatalError(msg) from e
+
         if not parent:
-            return origin() if origin else None
+            return origin()
 
-        if name != "__init__" and origin is None:
-            msg = f"Unexpected parent value for top-level function {name}: {parent!r}"
-            raise FatalError(msg)
-
-        return await asyncify(
-            self._converter.structure,
-            parent,
-            origin,
-        )
+        return await asyncify(self._converter.structure, parent, origin)
 
     def field(
         self,
         *,
         default: Callable[[], Any] | object = ...,
         name: APIName | None = None,
+        init: bool = True,
     ) -> Any:
         """Exposes an attribute as a :py:class:`dagger.FieldTypeDef`.
 
@@ -359,6 +349,9 @@ class Module:
         name:
             An alternative name for the API. Useful to avoid conflicts with
             reserved words.
+        init:
+            Whether the field should be included in the constructor.
+            Defaults to `True`.
         """
         field_def = FieldDefinition(name)
 
@@ -370,17 +363,19 @@ class Module:
         return dataclasses.field(
             metadata={FIELD_DEF_KEY: field_def},
             kw_only=True,
+            init=init,
+            repr=init,  # default repr shows field as an __init__ argument
             **kwargs,
         )
 
     @overload
     def function(
         self,
-        func: Func,
+        func: Func[P, F],
         *,
-        name: None = None,
-        doc: None = None,
-    ) -> Func:
+        name: APIName | None = None,
+        doc: str | None = None,
+    ) -> Function[P, F]:
         ...
 
     @overload
@@ -389,16 +384,16 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Callable[[Func], Func]:
+    ) -> Callable[[Func[P, F]], Function[P, F]]:
         ...
 
     def function(
         self,
-        func: Func | None = None,
+        func: Func[P, F] | None = None,
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Func | Callable[[Func], Func]:
+    ) -> Function[P, F] | Callable[[Func[P, F]], Function[P, F]]:
         """Exposes a Python function as a :py:class:`dagger.Function`.
 
         Example usage:
@@ -411,7 +406,8 @@ class Module:
         ----------
         func:
             Should be a top-level function or instance method in a class
-            decorated with :py:meth:`object_type`. Can be an async function.
+            decorated with :py:meth:`object_type`. Can be an async function
+            or a class, to use it's constructor.
         name:
             An alternative name for the API. Useful to avoid conflicts with
             reserved words.
@@ -420,36 +416,15 @@ class Module:
             docstring for other purposes.
         """
 
-        def wrapper(func: Func) -> Func:
+        def wrapper(func: Func[P, F]) -> Function[P, F]:
             if not callable(func):
                 msg = f"Expected a callable, got {type(func)}."
                 raise UserError(msg)
 
-            original_name = "__init__" if inspect.isclass(func) else func.__name__
+            f = Function(func, name, doc)
+            self.add_resolver(f.resolver)
 
-            resolver = FunctionResolver(
-                original_name=original_name,
-                name=name
-                if name is not None
-                else (
-                    camel_to_snake(func.__name__)
-                    if inspect.isclass(func)
-                    else original_name
-                ),
-                wrapped_func=func,
-                doc=doc or get_doc(func),
-                # This will be filled later with @object_type
-                # because it's not bound to a class yet.
-                origin=func if inspect.isclass(func) and name == "" else None,
-            )
-
-            # This is used by `object_type` to find the resolver
-            # for updating the origin.
-            func.__dagger_resolver__ = resolver
-
-            self.add_resolver(resolver)
-
-            return func
+            return f
 
         return wrapper(func) if func else wrapper
 
@@ -518,29 +493,25 @@ class Module:
                 self.add_resolver(r)
 
         # Register hooks for renaming field names in `mod.field()`.
-        if overrides:
-            self._converter.register_unstructure_hook(
+        # Include fields that are excluded from the constructor.
+        self._converter.register_unstructure_hook(
+            cls,
+            cattrs.gen.make_dict_unstructure_fn(
                 cls,
-                cattrs.gen.make_dict_unstructure_fn(
-                    cls,
-                    self._converter,
-                    **overrides,
-                ),
-            )
-            self._converter.register_structure_hook(
+                self._converter,
+                _cattrs_include_init_false=True,
+                **overrides,
+            ),
+        )
+        self._converter.register_structure_hook(
+            cls,
+            cattrs.gen.make_dict_structure_fn(
                 cls,
-                cattrs.gen.make_dict_structure_fn(
-                    cls,
-                    self._converter,
-                    **overrides,
-                ),
-            )
-
-        # Update origin in methods decorated with `mod.function()`.
-        for _, member in inspect.getmembers(cls):
-            resolver: FunctionResolver | None
-            if resolver := getattr(member, "__dagger_resolver__", None):
-                resolver.origin = cls
+                self._converter,
+                _cattrs_include_init_false=True,
+                **overrides,
+            ),
+        )
 
         # Save metadata in the class for later access.
         # These can be recalculated at any time but it helps to check if
