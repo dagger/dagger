@@ -1,6 +1,7 @@
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import * as path from 'path';
 
 const config: Config = {
   title: 'Dagger',
@@ -50,6 +51,16 @@ const config: Config = {
   ],
   plugins: [
     "docusaurus-plugin-sass",
+    path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
+    path.resolve(__dirname, "plugins/docusaurus-plugin-guides"),
+    path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
+    [
+      "posthog-docusaurus",
+      {
+        appUrl: "https://dagger.io/analytics",
+        apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d"
+      }
+    ],
   ],
   themeConfig: {
     sidebarCollapsed: false,
