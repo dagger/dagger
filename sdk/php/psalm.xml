@@ -9,6 +9,7 @@
 >
     <projectFiles>
         <directory name="src"/>
+        <directory name="generated" />
         <ignoreFiles>
             <directory name="src/Tests"/>
         </ignoreFiles>
