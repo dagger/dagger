@@ -77,7 +77,7 @@ class Lint:
         return (
             self.base()
             .with_focus()
-            .with_exec(["ruff", "check", "--no-cache", "."])
+            .with_exec(["ruff", "check", "--diff", "--no-cache", "."])
             .with_exec(["black", "--check", "."])
         )
 
