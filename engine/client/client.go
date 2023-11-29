@@ -615,7 +615,11 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 	}
 
 	// otherwise, do the whole directory sync back to the caller
-	return fsutil.Send(stream.Context(), stream, fsutil.NewFS(opts.Path, &fsutil.WalkOpt{
+	fs, err := fsutil.NewFS(opts.Path)
+	if err != nil {
+		return err
+	}
+	fs, err = fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
 		IncludePatterns: opts.IncludePatterns,
 		ExcludePatterns: opts.ExcludePatterns,
 		FollowPaths:     opts.FollowPaths,
@@ -624,7 +628,11 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 			st.Gid = 0
 			return fsutil.MapResultKeep
 		},
-	}), nil)
+	})
+	if err != nil {
+		return err
+	}
+	return fsutil.Send(stream.Context(), stream, fs, nil)
 }
 
 // Local dir exports
