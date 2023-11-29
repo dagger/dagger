@@ -11,7 +11,7 @@ date: "2023-09-22"
 
 ## Introduction
 
-This guide outlines how to run and connect to the Dagger Engine on Kubernetes.
+This guide outlines how to run, and connect to, the Dagger Engine on Kubernetes.
 
 ## Assumptions
 
