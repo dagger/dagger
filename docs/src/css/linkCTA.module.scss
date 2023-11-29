@@ -1,0 +1,29 @@
+a.linkCTA {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: fit-content;
+  justify-content: flex-start;
+
+  html[data-theme="dark"] & {
+    &:hover {
+      color: white !important;
+    }
+    img {
+      filter: brightness(100);
+    }
+  }
+
+  & img {
+    transition: all 0.2s ease;
+    width: 25px;
+    height: 25px;
+    margin-right: 12px;
+  }
+
+  &:hover {
+    & img {
+      transform: translateX(5px);
+    }
+  }
+}

@@ -66,6 +66,7 @@ const config = {
     "docusaurus-plugin-image-zoom",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
     path.resolve(__dirname, "plugins/docusaurus-plugin-guides"),
+    path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
     [
       "posthog-docusaurus",
       {
