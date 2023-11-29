@@ -13,7 +13,7 @@ type fileSchema struct {
 	svcs *core.Services
 }
 
-var _ ExecutableSchema = &fileSchema{}
+var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Name() string {
 	return "file"

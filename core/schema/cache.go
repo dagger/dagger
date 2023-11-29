@@ -10,7 +10,7 @@ type cacheSchema struct {
 	*APIServer
 }
 
-var _ ExecutableSchema = &cacheSchema{}
+var _ SchemaResolvers = &cacheSchema{}
 
 func (s *cacheSchema) Name() string {
 	return "cache"
@@ -32,7 +32,7 @@ func (s *cacheSchema) Resolvers() Resolvers {
 	return rs
 }
 
-func (s *cacheSchema) Dependencies() []ExecutableSchema {
+func (s *cacheSchema) Dependencies() []SchemaResolvers {
 	return nil
 }
 

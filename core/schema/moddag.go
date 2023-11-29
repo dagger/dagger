@@ -35,6 +35,12 @@ type ModDag struct {
 	api       *APIServer
 	roots     []Mod
 	dagDigest digest.Digest
+
+	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
+	lazilyLoadedSchema            *CompiledSchema
+	lazilyLoadedIntrospectionJSON string
+	loadSchemaErr                 error
+	loadSchemaLock                sync.Mutex
 }
 
 // TODO: consider validating that there are no duplicate modules in the DAG
@@ -57,28 +63,55 @@ func (d *ModDag) DagDigest() digest.Digest {
 	return d.dagDigest
 }
 
-func (d *ModDag) Schema(ctx context.Context) (ExecutableSchema, error) {
-	var executableSchemas []ExecutableSchema
-	for _, root := range d.roots {
-		schema, err := root.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get schema for root %q: %w", root.Name(), err)
-		}
-		executableSchemas = append(executableSchemas, schema)
+func (d *ModDag) Schema(ctx context.Context) (*CompiledSchema, error) {
+	schema, _, err := d.lazilyLoadSchema(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return mergeExecutableSchemas(nil, executableSchemas...)
+	return schema, nil
 }
 
 func (d *ModDag) SchemaIntrospectionJSON(ctx context.Context) (string, error) {
-	executableSchema, err := d.Schema(ctx)
+	_, introspectionJSON, err := d.lazilyLoadSchema(ctx)
 	if err != nil {
 		return "", err
 	}
-	compiledSchema, err := compile(executableSchema)
-	if err != nil {
-		return "", err
+	return introspectionJSON, nil
+}
+
+func (d *ModDag) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledSchema, loadedIntrospectionJSON string, rerr error) {
+	d.loadSchemaLock.Lock()
+	defer d.loadSchemaLock.Unlock()
+	if d.lazilyLoadedSchema != nil {
+		return d.lazilyLoadedSchema, d.lazilyLoadedIntrospectionJSON, nil
 	}
-	return schemaIntrospectionJSON(ctx, *compiledSchema)
+	if d.loadSchemaErr != nil {
+		return nil, "", d.loadSchemaErr
+	}
+	defer func() {
+		d.lazilyLoadedSchema = loadedSchema
+		d.lazilyLoadedIntrospectionJSON = loadedIntrospectionJSON
+		d.loadSchemaErr = rerr
+	}()
+
+	var schemas []SchemaResolvers
+	for _, root := range d.roots {
+		schema, err := root.Schema(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get schema for root %q: %w", root.Name(), err)
+		}
+		schemas = append(schemas, schema)
+	}
+	schema, err := mergeExecutableSchemas(schemas...)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to merge schemas: %w", err)
+	}
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, *schema.Compiled)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get schema introspection JSON: %w", err)
+	}
+
+	return schema, introspectionJSON, nil
 }
 
 func (d *ModDag) ObjectByName(ctx context.Context, objName string) (ModObject, bool, error) {
@@ -168,7 +201,7 @@ type Mod interface {
 	Name() string
 	DagDigest() digest.Digest
 	Dependencies() []Mod
-	Schema(context.Context) (ExecutableSchema, error)
+	Schema(context.Context) (*CompiledSchema, error)
 	DependencySchemaIntrospectionJSON(context.Context) (string, error)
 	ObjectByName(ctx context.Context, objName string) (ModObject, bool, error)
 }
@@ -179,7 +212,7 @@ type ModObject interface {
 }
 
 type CoreMod struct {
-	executableSchema  ExecutableSchema
+	compiledSchema    *CompiledSchema
 	introspectionJSON string
 }
 
@@ -198,8 +231,8 @@ func (m *CoreMod) Dependencies() []Mod {
 	return nil
 }
 
-func (m *CoreMod) Schema(_ context.Context) (ExecutableSchema, error) {
-	return m.executableSchema, nil
+func (m *CoreMod) Schema(_ context.Context) (*CompiledSchema, error) {
+	return m.compiledSchema, nil
 }
 
 func (m *CoreMod) DependencySchemaIntrospectionJSON(_ context.Context) (string, error) {
@@ -208,8 +241,9 @@ func (m *CoreMod) DependencySchemaIntrospectionJSON(_ context.Context) (string, 
 
 func (m *CoreMod) ObjectByName(_ context.Context, objName string) (ModObject, bool, error) {
 	objName = gqlObjectName(objName)
-	resolver, ok := m.executableSchema.Resolvers()[objName]
+	resolver, ok := m.compiledSchema.Resolvers()[objName]
 	if !ok {
+		return nil, false, nil
 	}
 	idableResolver, ok := resolver.(IDableObjectResolver)
 	if !ok {
@@ -301,6 +335,9 @@ func (m *UserMod) Runtime(ctx context.Context) (*core.Container, error) {
 }
 
 func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, rerr error) {
+	// TODO: usefu or noisy?
+	bklog.G(ctx).Debugf("getting objects")
+
 	m.loadObjectsLock.Lock()
 	defer m.loadObjectsLock.Unlock()
 	if len(m.lazilyLoadedObjects) > 0 {
@@ -326,7 +363,7 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 		AsObject: core.NewObjectTypeDef("Module", ""),
 	})).Call(ctx, true, nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name, err)
+		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name(), err)
 	}
 
 	modMeta, ok := result.(*core.Module)
@@ -355,13 +392,16 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 	return objs, nil
 }
 
-func (m *UserMod) Schema(ctx context.Context) (ExecutableSchema, error) {
+func (m *UserMod) Schema(ctx context.Context) (*CompiledSchema, error) {
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("module", m.Name()))
+	bklog.G(ctx).Debug("getting module schema")
+
 	objs, err := m.Objects(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	executableSchemas := make([]ExecutableSchema, 0, len(objs))
+	executableSchemas := make([]SchemaResolvers, 0, len(objs))
 	for _, obj := range objs {
 		objSchemaDoc, objResolvers, err := obj.Schema(ctx)
 		if err != nil {
@@ -379,7 +419,7 @@ func (m *UserMod) Schema(ctx context.Context) (ExecutableSchema, error) {
 		executableSchemas = append(executableSchemas, executableSchema)
 	}
 
-	return mergeExecutableSchemas(nil, executableSchemas...)
+	return mergeExecutableSchemas(executableSchemas...)
 }
 
 func (m *UserMod) DependencySchemaIntrospectionJSON(ctx context.Context) (string, error) {
@@ -497,7 +537,7 @@ func (m *UserMod) convertValueIDs(ctx context.Context, value any, resultTypeDef 
 			return value, nil
 		}
 
-		// This might be wrong, you also want to handle objects from this module and from core, but not other deps
+		// TODO: This might be wrong, you also want to handle objects from this module and from core, but not other deps
 		obj, ok, err := m.ObjectByName(ctx, resultTypeDef.AsObject.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get object for type def: %w", err)
@@ -577,6 +617,9 @@ func (obj *UserModObject) FunctionByName(name string) (*UserModFunction, error) 
 }
 
 func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Resolvers, error) {
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("object", obj.typeDef.AsObject.Name))
+	bklog.G(ctx).Debug("getting object schema")
+
 	typeSchemaDoc := &ast.SchemaDocument{}
 	queryResolver := ObjectResolver{}
 	typeSchemaResolvers := Resolvers{
@@ -894,6 +937,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 		}()
 		if fn.obj != nil {
 			var err error
+			// TODO: this is totally wrong; wrong direction; also should be done in Call directly
 			parent, err = fn.mod.convertValueIDs(ctx, parent, fn.obj.typeDef)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert parent: %w", err)
@@ -907,6 +951,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 				bklog.G(ctx).Warnf("unknown arg %q for function %q", k, objFnName)
 				continue
 			}
+			// TODO: this is totally wrong; wrong direction; also should be done in Call directly
 			v, err := fn.mod.convertValueIDs(ctx, v, argType.TypeDef)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert arg %q: %w", k, err)
@@ -928,6 +973,12 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 }
 
 func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeline.Path, parentVal any, args []*core.CallInput) (any, error) {
+	lg := bklog.G(ctx).WithField("module", fn.mod.Name()).WithField("function", fn.typeDef.Name)
+	if fn.obj != nil {
+		lg = lg.WithField("object", fn.obj.typeDef.AsObject.Name)
+	}
+	ctx = bklog.WithLogger(ctx, lg)
+
 	cacheKeys := []string{fn.Digest().String()}
 
 	for _, arg := range args {
@@ -951,6 +1002,12 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 
 	cacheKey := digest.FromString(strings.Join(cacheKeys, " "))
 
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("cache_key", cacheKey.String()))
+	bklog.G(ctx).Debug("function call")
+	defer func() {
+		bklog.G(ctx).Debug("function call done")
+	}()
+
 	ctr := fn.runtime
 
 	metaDir := core.NewScratchDirectory(pipeline, fn.api.platform)
@@ -970,11 +1027,6 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
-	ctrOutputDir, err := ctr.Directory(ctx, fn.api.bk, fn.api.services, modMetaDirPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get function output directory: %w", err)
-	}
-
 	callMeta := &core.FunctionCall{
 		Name:      fn.typeDef.OriginalName,
 		Parent:    parentVal,
@@ -984,9 +1036,14 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 		callMeta.ParentName = fn.obj.typeDef.AsObject.OriginalName
 	}
 
-	err = fn.api.RegisterFunctionCall(cacheKey, fn.mod, callMeta)
+	err = fn.api.RegisterFunctionCall(ctx, cacheKey, fn.mod, callMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
+	}
+
+	ctrOutputDir, err := ctr.Directory(ctx, fn.api.bk, fn.api.services, modMetaDirPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get function output directory: %w", err)
 	}
 
 	result, err := ctrOutputDir.Evaluate(ctx, fn.api.bk, fn.api.services)

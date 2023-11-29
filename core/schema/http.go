@@ -10,7 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-var _ ExecutableSchema = &httpSchema{}
+var _ SchemaResolvers = &httpSchema{}
 
 type httpSchema struct {
 	*APIServer

@@ -13,7 +13,7 @@ type serviceSchema struct {
 	svcs *core.Services
 }
 
-var _ ExecutableSchema = &serviceSchema{}
+var _ SchemaResolvers = &serviceSchema{}
 
 func (s *serviceSchema) Name() string {
 	return "service"

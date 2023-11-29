@@ -7,7 +7,7 @@ import (
 	"github.com/dagger/dagger/core/socket"
 )
 
-var _ ExecutableSchema = &gitSchema{}
+var _ SchemaResolvers = &gitSchema{}
 
 type gitSchema struct {
 	*APIServer

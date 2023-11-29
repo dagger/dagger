@@ -17,7 +17,7 @@ type querySchema struct {
 	*APIServer
 }
 
-var _ ExecutableSchema = &querySchema{}
+var _ SchemaResolvers = &querySchema{}
 
 func (s *querySchema) Name() string {
 	return "query"

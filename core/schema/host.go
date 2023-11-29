@@ -16,7 +16,7 @@ type hostSchema struct {
 	svcs *core.Services
 }
 
-var _ ExecutableSchema = &hostSchema{}
+var _ SchemaResolvers = &hostSchema{}
 
 func (s *hostSchema) Name() string {
 	return "host"

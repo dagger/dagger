@@ -16,7 +16,7 @@ type moduleSchema struct {
 	*APIServer
 }
 
-var _ ExecutableSchema = &moduleSchema{}
+var _ SchemaResolvers = &moduleSchema{}
 
 func (s *moduleSchema) Name() string {
 	return "module"

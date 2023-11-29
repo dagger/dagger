@@ -90,19 +90,19 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	compiledCoreSchema, err := compile(coreSchema)
+	coreIntrospectionJSON, err := schemaIntrospectionJSON(ctx, *coreSchema.Compiled)
 	if err != nil {
 		return nil, err
 	}
-	coreIntrospectionJSON, err := schemaIntrospectionJSON(ctx, *compiledCoreSchema)
-	if err != nil {
-		return nil, err
-	}
-	api.core = &CoreMod{executableSchema: coreSchema, introspectionJSON: coreIntrospectionJSON}
+	api.core = &CoreMod{compiledSchema: coreSchema, introspectionJSON: coreIntrospectionJSON}
 
 	// the main client caller starts out the core API loaded
+	dag, err := newModDag(ctx, api, []Mod{api.core})
+	if err != nil {
+		return nil, err
+	}
 	api.clientCallContext[""] = &clientCallContext{
-		dag: &ModDag{api: api, roots: []Mod{api.core}},
+		dag: dag,
 	}
 
 	return api, nil
@@ -170,13 +170,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	executableSchema, err := callContext.dag.Schema(ctx)
-	if err != nil {
-		errorOut(err)
-		return
-	}
-	// TODO: cache the conversion to compiledSchema somewhere
-	compiledSchema, err := compile(executableSchema)
+	schema, err := callContext.dag.Schema(ctx)
 	if err != nil {
 		errorOut(err)
 		return
@@ -219,7 +213,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/query", NewHandler(&HandlerConfig{
-		Schema: compiledSchema,
+		Schema: schema.Compiled,
 	}))
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
@@ -286,7 +280,11 @@ func (s *APIServer) AddModFromMetadata(
 		return mod, nil
 	}
 
-	mod, err = newUserMod(s, modMeta, &ModDag{api: s, roots: deps}, sdk)
+	dag, err := newModDag(ctx, s, deps)
+	if err != nil {
+		return nil, err
+	}
+	mod, err = newUserMod(s, modMeta, dag, sdk)
 	if err != nil {
 		return nil, err
 	}
@@ -350,9 +348,21 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	return nil
 }
 
-func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, mod *UserMod, call *core.FunctionCall) error {
+func (s *APIServer) RegisterFunctionCall(ctx context.Context, dgst digest.Digest, mod *UserMod, call *core.FunctionCall) error {
 	if dgst == "" {
 		return fmt.Errorf("cannot register function call with empty digest")
+	}
+
+	var dag *ModDag
+	if mod == nil {
+		// default to just serving the core API if this is for a special case like the Go SDK codegen
+		var err error
+		dag, err = newModDag(ctx, s, []Mod{s.core})
+		if err != nil {
+			return err
+		}
+	} else {
+		dag = mod.deps
 	}
 
 	s.mu.Lock()
@@ -362,7 +372,7 @@ func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, mod *UserMod, call 
 		return nil
 	}
 	s.clientCallContext[dgst] = &clientCallContext{
-		dag:    mod.deps,
+		dag:    dag,
 		mod:    mod,
 		fnCall: call,
 	}
@@ -406,8 +416,12 @@ func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall
 	return callCtx.fnCall, nil
 }
 
-type ExecutableSchema interface {
-	Name() string
+type CompiledSchema struct {
+	SchemaResolvers
+	Compiled *graphql.Schema
+}
+
+type SchemaResolvers interface {
 	Schema() string
 	Resolvers() Resolvers
 }
@@ -418,18 +432,14 @@ type StaticSchemaParams struct {
 	Resolvers Resolvers
 }
 
-func StaticSchema(p StaticSchemaParams) ExecutableSchema {
+func StaticSchema(p StaticSchemaParams) SchemaResolvers {
 	return &staticSchema{p}
 }
 
-var _ ExecutableSchema = &staticSchema{}
+var _ SchemaResolvers = &staticSchema{}
 
 type staticSchema struct {
 	StaticSchemaParams
-}
-
-func (s *staticSchema) Name() string {
-	return s.StaticSchemaParams.Name
 }
 
 func (s *staticSchema) Schema() string {
@@ -440,13 +450,8 @@ func (s *staticSchema) Resolvers() Resolvers {
 	return s.StaticSchemaParams.Resolvers
 }
 
-func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...ExecutableSchema) (ExecutableSchema, error) {
+func mergeExecutableSchemas(newSchemas ...SchemaResolvers) (*CompiledSchema, error) {
 	mergedSchema := StaticSchemaParams{Resolvers: make(Resolvers)}
-	if existingSchema != nil {
-		mergedSchema.Name = existingSchema.Name()
-		mergedSchema.Schema = existingSchema.Schema()
-		mergedSchema.Resolvers = existingSchema.Resolvers()
-	}
 	for _, newSchema := range newSchemas {
 		mergedSchema.Schema += newSchema.Schema() + "\n"
 		for name, resolver := range newSchema.Resolvers() {
@@ -500,10 +505,19 @@ func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...Execu
 		return nil, fmt.Errorf("schema validation failed: %w\n\n%s", err, sourceContext)
 	}
 
-	return StaticSchema(mergedSchema), nil
+	schemaResolvers := StaticSchema(mergedSchema)
+	compiled, err := compile(schemaResolvers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &CompiledSchema{
+		SchemaResolvers: schemaResolvers,
+		Compiled:        compiled,
+	}, nil
 }
 
-func compile(s ExecutableSchema) (*graphql.Schema, error) {
+func compile(s SchemaResolvers) (*graphql.Schema, error) {
 	typeResolvers := tools.ResolverMap{}
 	for name, resolver := range s.Resolvers() {
 		switch resolver := resolver.(type) {

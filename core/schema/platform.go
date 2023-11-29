@@ -13,7 +13,7 @@ type platformSchema struct {
 	*APIServer
 }
 
-var _ ExecutableSchema = &platformSchema{}
+var _ SchemaResolvers = &platformSchema{}
 
 func (s *platformSchema) Name() string {
 	return "platform"

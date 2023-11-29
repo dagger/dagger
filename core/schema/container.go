@@ -31,7 +31,7 @@ type containerSchema struct {
 	importCache *core.CacheMap[uint64, *specs.Descriptor]
 }
 
-var _ ExecutableSchema = &containerSchema{}
+var _ SchemaResolvers = &containerSchema{}
 
 func (s *containerSchema) Name() string {
 	return "container"

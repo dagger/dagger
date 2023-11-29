@@ -13,7 +13,7 @@ type socketSchema struct {
 	host *core.Host
 }
 
-var _ ExecutableSchema = &socketSchema{}
+var _ SchemaResolvers = &socketSchema{}
 
 func (s *socketSchema) Name() string {
 	return "socket"

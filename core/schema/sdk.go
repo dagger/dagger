@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	ciconsts "github.com/dagger/dagger/internal/mage/consts"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
 )
@@ -312,9 +313,7 @@ func (sdk *goSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Container, e
 			"-o", goSDKRuntimePath,
 			".",
 		},
-		SkipEntrypoint:                true,
-		ExperimentalPrivilegedNesting: true,
-		NestedInSameSession:           true,
+		SkipEntrypoint: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container runtime: %w", err)
@@ -375,6 +374,12 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Cont
 		return nil, fmt.Errorf("failed to update image config for go module sdk container codegen: %w", err)
 	}
 
+	// TODO: doc
+	cacheKey := digest.FromString(mod.DagDigest().String() + " " + "goSDKCodegen")
+	if err := sdk.APIServer.RegisterFunctionCall(ctx, cacheKey, nil, nil); err != nil {
+		return nil, fmt.Errorf("failed to register function call: %w", err)
+	}
+
 	ctr, err = ctr.WithExec(ctx, sdk.bk, sdk.progSockPath, sdk.platform, core.ContainerExecOpts{
 		Args: []string{
 			"--module", ".",
@@ -383,6 +388,7 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Cont
 		},
 		ExperimentalPrivilegedNesting: true,
 		NestedInSameSession:           true,
+		ModuleContextDigest:           cacheKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container codegen: %w", err)

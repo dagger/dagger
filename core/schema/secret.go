@@ -10,7 +10,7 @@ type secretSchema struct {
 	*APIServer
 }
 
-var _ ExecutableSchema = &secretSchema{}
+var _ SchemaResolvers = &secretSchema{}
 
 func (s *secretSchema) Name() string {
 	return "secret"
