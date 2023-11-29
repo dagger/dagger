@@ -64,7 +64,7 @@ class ObjectVisitor extends AbstractVisitor
                 $this->generateMethodArgumentsBody($method, $field->args, 'leafQueryBuilder');
                 if (Helpers::isCustomScalar($returnType)) {
                     $method->addBody(
-                        'return $this->queryLeafDaggerScalar($leafQueryBuilder, ?, '.$returnTypeClassName.'::class);',
+                        'return new '.$returnTypeClassName.'((string)$this->queryLeaf($leafQueryBuilder, ?));',
                         [$fieldName]
                     );
                 } elseif (Helpers::isEnumType($returnType)) {

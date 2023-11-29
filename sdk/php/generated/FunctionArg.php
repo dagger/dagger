@@ -22,7 +22,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
     public function defaultValue(): Json
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('defaultValue');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'defaultValue', \DaggerIo\Gen\Json::class);
+        return new \DaggerIo\Gen\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
     }
 
     /**
@@ -31,7 +31,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
     public function description(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
-        return $this->queryLeaf($leafQueryBuilder, 'description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -40,7 +40,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
     public function id(): FunctionArgId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\FunctionArgId::class);
+        return new \DaggerIo\Gen\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -49,7 +49,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**

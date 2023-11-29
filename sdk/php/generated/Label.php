@@ -19,7 +19,7 @@ class Label extends \DaggerIo\Client\AbstractDaggerObject
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -28,6 +28,6 @@ class Label extends \DaggerIo\Client\AbstractDaggerObject
     public function value(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('value');
-        return $this->queryLeaf($leafQueryBuilder, 'value');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'value');
     }
 }

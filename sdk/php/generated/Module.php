@@ -16,7 +16,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function dependencies(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('dependencies');
-        return $this->queryLeaf($leafQueryBuilder, 'dependencies');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
     /**
@@ -25,7 +25,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function dependencyConfig(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('dependencyConfig');
-        return $this->queryLeaf($leafQueryBuilder, 'dependencyConfig');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencyConfig');
     }
 
     /**
@@ -34,7 +34,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function description(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
-        return $this->queryLeaf($leafQueryBuilder, 'description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -52,7 +52,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function id(): ModuleId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\ModuleId::class);
+        return new \DaggerIo\Gen\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -61,7 +61,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -70,7 +70,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function objects(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('objects');
-        return $this->queryLeaf($leafQueryBuilder, 'objects');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'objects');
     }
 
     /**
@@ -79,7 +79,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function sdk(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sdk');
-        return $this->queryLeaf($leafQueryBuilder, 'sdk');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
     }
 
     /**
@@ -90,7 +90,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function serve(): NullVoid
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('serve');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'serve', \DaggerIo\Gen\NullVoid::class);
+        return new \DaggerIo\Gen\NullVoid((string)$this->queryLeaf($leafQueryBuilder, 'serve'));
     }
 
     /**
@@ -108,7 +108,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function sourceDirectorySubPath(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sourceDirectorySubPath');
-        return $this->queryLeaf($leafQueryBuilder, 'sourceDirectorySubPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceDirectorySubPath');
     }
 
     /**

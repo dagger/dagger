@@ -19,7 +19,7 @@ class Port extends \DaggerIo\Client\AbstractDaggerObject
     public function description(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
-        return $this->queryLeaf($leafQueryBuilder, 'description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -28,7 +28,7 @@ class Port extends \DaggerIo\Client\AbstractDaggerObject
     public function port(): int
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('port');
-        return $this->queryLeaf($leafQueryBuilder, 'port');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'port');
     }
 
     /**
@@ -37,6 +37,6 @@ class Port extends \DaggerIo\Client\AbstractDaggerObject
     public function protocol(): NetworkProtocol
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('protocol');
-        return \DaggerIo\Gen\NetworkProtocol::from($this->queryLeaf($leafQueryBuilder, 'protocol'));
+        return \DaggerIo\Gen\NetworkProtocol::from((string)$this->queryLeaf($leafQueryBuilder, 'protocol'));
     }
 }

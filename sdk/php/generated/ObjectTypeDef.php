@@ -19,7 +19,7 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
     public function description(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
-        return $this->queryLeaf($leafQueryBuilder, 'description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -28,7 +28,7 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
     public function fields(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('fields');
-        return $this->queryLeaf($leafQueryBuilder, 'fields');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
     }
 
     /**
@@ -37,7 +37,7 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
     public function functions(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('functions');
-        return $this->queryLeaf($leafQueryBuilder, 'functions');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'functions');
     }
 
     /**
@@ -46,6 +46,6 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 }

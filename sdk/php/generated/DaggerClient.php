@@ -27,7 +27,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('checkVersionCompatibility');
         $leafQueryBuilder->setArgument('version', $version);
-        return $this->queryLeaf($leafQueryBuilder, 'checkVersionCompatibility');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'checkVersionCompatibility');
     }
 
     /**
@@ -74,7 +74,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
     public function defaultPlatform(): Platform
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('defaultPlatform');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'defaultPlatform', \DaggerIo\Gen\Platform::class);
+        return new \DaggerIo\Gen\Platform((string)$this->queryLeaf($leafQueryBuilder, 'defaultPlatform'));
     }
 
     /**

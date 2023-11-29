@@ -84,7 +84,7 @@ class Directory extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
         if (null !== $path) {
         $leafQueryBuilder->setArgument('path', $path);
         }
-        return $this->queryLeaf($leafQueryBuilder, 'entries');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'entries');
     }
 
     /**
@@ -94,7 +94,7 @@ class Directory extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
-        return $this->queryLeaf($leafQueryBuilder, 'export');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -114,7 +114,7 @@ class Directory extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('glob');
         $leafQueryBuilder->setArgument('pattern', $pattern);
-        return $this->queryLeaf($leafQueryBuilder, 'glob');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'glob');
     }
 
     /**
@@ -123,7 +123,7 @@ class Directory extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function id(): DirectoryId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\DirectoryId::class);
+        return new \DaggerIo\Gen\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -148,7 +148,7 @@ class Directory extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function sync(): DirectoryId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sync');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'sync', \DaggerIo\Gen\DirectoryId::class);
+        return new \DaggerIo\Gen\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 
     /**

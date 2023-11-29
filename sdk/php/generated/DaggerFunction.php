@@ -22,7 +22,7 @@ class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \D
     public function args(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('args');
-        return $this->queryLeaf($leafQueryBuilder, 'args');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'args');
     }
 
     /**
@@ -31,7 +31,7 @@ class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \D
     public function description(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
-        return $this->queryLeaf($leafQueryBuilder, 'description');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
@@ -40,7 +40,7 @@ class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \D
     public function id(): FunctionId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\FunctionId::class);
+        return new \DaggerIo\Gen\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -49,7 +49,7 @@ class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \D
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**

@@ -22,7 +22,7 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
     public function id(): GeneratedCodeId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\GeneratedCodeId::class);
+        return new \DaggerIo\Gen\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -31,7 +31,7 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
     public function vcsGeneratedPaths(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('vcsGeneratedPaths');
-        return $this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
     }
 
     /**
@@ -40,7 +40,7 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
     public function vcsIgnoredPaths(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('vcsIgnoredPaths');
-        return $this->queryLeaf($leafQueryBuilder, 'vcsIgnoredPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsIgnoredPaths');
     }
 
     /**

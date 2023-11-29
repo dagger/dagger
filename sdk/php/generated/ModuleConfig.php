@@ -19,7 +19,7 @@ class ModuleConfig extends \DaggerIo\Client\AbstractDaggerObject
     public function dependencies(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('dependencies');
-        return $this->queryLeaf($leafQueryBuilder, 'dependencies');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
     /**
@@ -28,7 +28,7 @@ class ModuleConfig extends \DaggerIo\Client\AbstractDaggerObject
     public function exclude(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('exclude');
-        return $this->queryLeaf($leafQueryBuilder, 'exclude');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'exclude');
     }
 
     /**
@@ -37,7 +37,7 @@ class ModuleConfig extends \DaggerIo\Client\AbstractDaggerObject
     public function include(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('include');
-        return $this->queryLeaf($leafQueryBuilder, 'include');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'include');
     }
 
     /**
@@ -46,7 +46,7 @@ class ModuleConfig extends \DaggerIo\Client\AbstractDaggerObject
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -55,7 +55,7 @@ class ModuleConfig extends \DaggerIo\Client\AbstractDaggerObject
     public function root(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('root');
-        return $this->queryLeaf($leafQueryBuilder, 'root');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'root');
     }
 
     /**
@@ -64,6 +64,6 @@ class ModuleConfig extends \DaggerIo\Client\AbstractDaggerObject
     public function sdk(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sdk');
-        return $this->queryLeaf($leafQueryBuilder, 'sdk');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
     }
 }

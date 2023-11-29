@@ -26,7 +26,7 @@ class Service extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
         if (null !== $scheme) {
         $leafQueryBuilder->setArgument('scheme', $scheme);
         }
-        return $this->queryLeaf($leafQueryBuilder, 'endpoint');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'endpoint');
     }
 
     /**
@@ -35,7 +35,7 @@ class Service extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function hostname(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('hostname');
-        return $this->queryLeaf($leafQueryBuilder, 'hostname');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'hostname');
     }
 
     /**
@@ -44,7 +44,7 @@ class Service extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function id(): ServiceId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\ServiceId::class);
+        return new \DaggerIo\Gen\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -53,7 +53,7 @@ class Service extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function ports(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('ports');
-        return $this->queryLeaf($leafQueryBuilder, 'ports');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'ports');
     }
 
     /**
@@ -64,7 +64,7 @@ class Service extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function start(): ServiceId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('start');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'start', \DaggerIo\Gen\ServiceId::class);
+        return new \DaggerIo\Gen\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
     }
 
     /**
@@ -73,6 +73,6 @@ class Service extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function stop(): ServiceId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('stop');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'stop', \DaggerIo\Gen\ServiceId::class);
+        return new \DaggerIo\Gen\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'stop'));
     }
 }

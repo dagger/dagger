@@ -19,7 +19,7 @@ class GitRef extends \DaggerIo\Client\AbstractDaggerObject
     public function commit(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('commit');
-        return $this->queryLeaf($leafQueryBuilder, 'commit');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
     }
 
     /**

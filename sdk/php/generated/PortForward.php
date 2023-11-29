@@ -16,7 +16,7 @@ class PortForward extends \DaggerIo\Client\AbstractDaggerInputObject
     public function __construct(
         public int $backend,
         public ?int $frontend,
-        public ?\NetworkProtocol $protocol,
+        public ?NetworkProtocol $protocol,
     ) {
     }
 }

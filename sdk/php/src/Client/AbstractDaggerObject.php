@@ -19,11 +19,4 @@ abstract class AbstractDaggerObject
 
         return $this->client->queryLeaf($queryBuilderChain->getFullQuery(), $leafKey);
     }
-
-    protected function queryLeafDaggerScalar(QueryBuilder $leafQueryBuilder, string $leafKey, string $scalarObjectClass): DaggerScalar
-    {
-        $value = $this->queryLeaf($leafQueryBuilder, $leafKey);
-
-        return new $scalarObjectClass($value);
-    }
 }

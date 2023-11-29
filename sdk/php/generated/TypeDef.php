@@ -36,7 +36,7 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function id(): TypeDefId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\TypeDefId::class);
+        return new \DaggerIo\Gen\TypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -45,7 +45,7 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function kind(): TypeDefKind
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('kind');
-        return \DaggerIo\Gen\TypeDefKind::from($this->queryLeaf($leafQueryBuilder, 'kind'));
+        return \DaggerIo\Gen\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 
     /**
@@ -54,7 +54,7 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     public function optional(): bool
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('optional');
-        return $this->queryLeaf($leafQueryBuilder, 'optional');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
     }
 
     /**

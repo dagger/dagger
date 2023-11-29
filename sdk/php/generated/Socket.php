@@ -16,6 +16,6 @@ class Socket extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function id(): SocketId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\SocketId::class);
+        return new \DaggerIo\Gen\SocketId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

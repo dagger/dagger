@@ -80,7 +80,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function defaultArgs(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('defaultArgs');
-        return $this->queryLeaf($leafQueryBuilder, 'defaultArgs');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'defaultArgs');
     }
 
     /**
@@ -101,7 +101,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function entrypoint(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('entrypoint');
-        return $this->queryLeaf($leafQueryBuilder, 'entrypoint');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'entrypoint');
     }
 
     /**
@@ -111,7 +111,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('envVariable');
         $leafQueryBuilder->setArgument('name', $name);
-        return $this->queryLeaf($leafQueryBuilder, 'envVariable');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'envVariable');
     }
 
     /**
@@ -120,7 +120,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function envVariables(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('envVariables');
-        return $this->queryLeaf($leafQueryBuilder, 'envVariables');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'envVariables');
     }
 
     /**
@@ -172,7 +172,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
         }
-        return $this->queryLeaf($leafQueryBuilder, 'export');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -184,7 +184,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function exposedPorts(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('exposedPorts');
-        return $this->queryLeaf($leafQueryBuilder, 'exposedPorts');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'exposedPorts');
     }
 
     /**
@@ -215,7 +215,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function id(): ContainerId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\ContainerId::class);
+        return new \DaggerIo\Gen\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -224,7 +224,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function imageRef(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('imageRef');
-        return $this->queryLeaf($leafQueryBuilder, 'imageRef');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'imageRef');
     }
 
     /**
@@ -250,7 +250,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('label');
         $leafQueryBuilder->setArgument('name', $name);
-        return $this->queryLeaf($leafQueryBuilder, 'label');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'label');
     }
 
     /**
@@ -259,7 +259,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function labels(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('labels');
-        return $this->queryLeaf($leafQueryBuilder, 'labels');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'labels');
     }
 
     /**
@@ -268,7 +268,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function mounts(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('mounts');
-        return $this->queryLeaf($leafQueryBuilder, 'mounts');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'mounts');
     }
 
     /**
@@ -293,7 +293,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function platform(): Platform
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('platform');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'platform', \DaggerIo\Gen\Platform::class);
+        return new \DaggerIo\Gen\Platform((string)$this->queryLeaf($leafQueryBuilder, 'platform'));
     }
 
     /**
@@ -320,7 +320,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
         }
-        return $this->queryLeaf($leafQueryBuilder, 'publish');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }
 
     /**
@@ -341,7 +341,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function shellEndpoint(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('shellEndpoint');
-        return $this->queryLeaf($leafQueryBuilder, 'shellEndpoint');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'shellEndpoint');
     }
 
     /**
@@ -352,7 +352,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function stderr(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('stderr');
-        return $this->queryLeaf($leafQueryBuilder, 'stderr');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'stderr');
     }
 
     /**
@@ -363,7 +363,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function stdout(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('stdout');
-        return $this->queryLeaf($leafQueryBuilder, 'stdout');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'stdout');
     }
 
     /**
@@ -374,7 +374,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function sync(): ContainerId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sync');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'sync', \DaggerIo\Gen\ContainerId::class);
+        return new \DaggerIo\Gen\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 
     /**
@@ -383,7 +383,7 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function user(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('user');
-        return $this->queryLeaf($leafQueryBuilder, 'user');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'user');
     }
 
     /**
@@ -831,6 +831,6 @@ class Container extends \DaggerIo\Client\AbstractDaggerObject implements \Dagger
     public function workdir(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('workdir');
-        return $this->queryLeaf($leafQueryBuilder, 'workdir');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'workdir');
     }
 }

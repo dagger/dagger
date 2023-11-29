@@ -16,7 +16,7 @@ class FunctionCallArgValue extends \DaggerIo\Client\AbstractDaggerObject
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -25,6 +25,6 @@ class FunctionCallArgValue extends \DaggerIo\Client\AbstractDaggerObject
     public function value(): Json
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('value');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'value', \DaggerIo\Gen\Json::class);
+        return new \DaggerIo\Gen\Json((string)$this->queryLeaf($leafQueryBuilder, 'value'));
     }
 }

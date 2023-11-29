@@ -19,7 +19,7 @@ class File extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Cl
     public function contents(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('contents');
-        return $this->queryLeaf($leafQueryBuilder, 'contents');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'contents');
     }
 
     /**
@@ -32,7 +32,7 @@ class File extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Cl
         if (null !== $allowParentDirPath) {
         $leafQueryBuilder->setArgument('allowParentDirPath', $allowParentDirPath);
         }
-        return $this->queryLeaf($leafQueryBuilder, 'export');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -41,7 +41,7 @@ class File extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Cl
     public function id(): FileId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\FileId::class);
+        return new \DaggerIo\Gen\FileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -50,7 +50,7 @@ class File extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Cl
     public function size(): int
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('size');
-        return $this->queryLeaf($leafQueryBuilder, 'size');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'size');
     }
 
     /**
@@ -59,7 +59,7 @@ class File extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Cl
     public function sync(): FileId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sync');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'sync', \DaggerIo\Gen\FileId::class);
+        return new \DaggerIo\Gen\FileId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 
     /**

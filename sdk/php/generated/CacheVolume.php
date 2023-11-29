@@ -16,6 +16,6 @@ class CacheVolume extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
     public function id(): CacheVolumeId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\CacheVolumeId::class);
+        return new \DaggerIo\Gen\CacheVolumeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

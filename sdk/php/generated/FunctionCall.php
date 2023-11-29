@@ -16,7 +16,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
     public function inputArgs(): array
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('inputArgs');
-        return $this->queryLeaf($leafQueryBuilder, 'inputArgs');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'inputArgs');
     }
 
     /**
@@ -25,7 +25,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
     public function name(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
-        return $this->queryLeaf($leafQueryBuilder, 'name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**
@@ -35,7 +35,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
     public function parent(): Json
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('parent');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'parent', \DaggerIo\Gen\Json::class);
+        return new \DaggerIo\Gen\Json((string)$this->queryLeaf($leafQueryBuilder, 'parent'));
     }
 
     /**
@@ -45,7 +45,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
     public function parentName(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('parentName');
-        return $this->queryLeaf($leafQueryBuilder, 'parentName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'parentName');
     }
 
     /**
@@ -56,6 +56,6 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('returnValue');
         $leafQueryBuilder->setArgument('value', $value);
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'returnValue', \DaggerIo\Gen\NullVoid::class);
+        return new \DaggerIo\Gen\NullVoid((string)$this->queryLeaf($leafQueryBuilder, 'returnValue'));
     }
 }

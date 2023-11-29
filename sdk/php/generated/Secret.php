@@ -19,7 +19,7 @@ class Secret extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function id(): SecretId
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return $this->queryLeafDaggerScalar($leafQueryBuilder, 'id', \DaggerIo\Gen\SecretId::class);
+        return new \DaggerIo\Gen\SecretId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -28,6 +28,6 @@ class Secret extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
     public function plaintext(): string
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('plaintext');
-        return $this->queryLeaf($leafQueryBuilder, 'plaintext');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'plaintext');
     }
 }
