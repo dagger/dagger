@@ -189,7 +189,7 @@ dagger mod [-m string] [--focus] [sub-command [sub-command options]]
 | Option               | Description                           |
 | ---------------------| --------------------------------------|
 | `--focus`            | Only show output for focused commands |
-| `-m`, `--mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
+| `-m, --mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
 
 ### Examples
 
