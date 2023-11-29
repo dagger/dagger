@@ -449,7 +449,7 @@ dagger up [--port string] [--native] [function]
 | Option        | Description                                                        |
 | ------------- | -------------------------------------------------------------------|
 | `-p, --port string` | Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format          |
-| `--native`    | Forward all ports natively, matching frontend port to backend port |
+| `-n, --native`    | Forward all ports natively, matching frontend port to backend port |
 
 ### Examples
 
