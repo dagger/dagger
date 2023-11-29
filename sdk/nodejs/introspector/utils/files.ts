@@ -1,10 +1,14 @@
 import * as fs from "fs"
 import * as path from "path"
 
-// Extensions supported by the convertor
+/**
+ * Extensions supported by the loader.
+ */
 const allowedExtensions = [".ts", ".mts"]
 
-// Returns a list of path of all files in the given directory
+/**
+ * Returns a list of path of all files in the given directory
+ */
 export async function listFiles(dir = "."): Promise<string[]> {
   const res = await Promise.all(
     fs.readdirSync(dir).map(async (file) => {
