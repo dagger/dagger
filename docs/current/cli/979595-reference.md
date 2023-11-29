@@ -180,8 +180,8 @@ Manage Dagger modules. By default, print the configuration of the current module
 ### Usage
 
 ```shell
-dagger mod [--mod string] [--focus]
-dagger mod [--mod string] [--focus] [sub-command [sub-command options]]
+dagger mod [-m string] [--focus]
+dagger mod [-m string] [--focus] [sub-command [sub-command options]]
 ```
 
 ### Options
