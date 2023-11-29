@@ -33,7 +33,15 @@ The code samples in this tutorial are based on the above Go project. If using a 
 
 ## Step 1: Add the Dagger Go SDK to the project
 
-{@include: ../../partials/_install-sdk-go.md}
+:::note
+The Dagger Go SDK requires [Go 1.20 or later](https://go.dev/doc/install).
+:::
+
+From your existing Go module, install the Dagger Go SDK using the commands below:
+
+```shell
+go get dagger.io/dagger@latest
+```
 
 ## Step 2: Create a Go module for the tool
 
@@ -59,7 +67,7 @@ This Go CI tool stub imports the Dagger SDK and defines two functions: `main()`,
 
 The `build()` function creates a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect). This client provides an interface for executing commands against the Dagger engine. This function is sparse to begin with; it will be improved in subsequent steps.
 
-Try the Go CI tool by executing the commands below:
+Try the Go CI tool by executing the commands below from the project directory:
 
 ```shell
 dagger run go run multibuild/main.go
