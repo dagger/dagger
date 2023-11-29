@@ -70,12 +70,12 @@ class ObjectVisitor extends AbstractVisitor
                 } elseif (Helpers::isEnumType($returnType)) {
                     $enumClass = Helpers::formatPhpFqcn(Helpers::formatType($returnType));
                     $method->addBody(
-                        'return '.$enumClass.'::from($this->queryLeaf($leafQueryBuilder, ?));',
+                        'return '.$enumClass.'::from((string)$this->queryLeaf($leafQueryBuilder, ?));',
                         [$fieldName]
                     );
                 } else {
                     $method->addBody(
-                        'return $this->queryLeaf($leafQueryBuilder, ?);',
+                        'return ('.Helpers::formatType($returnType).')$this->queryLeaf($leafQueryBuilder, ?);',
                         [$fieldName]
                     );
                 }

@@ -35,7 +35,7 @@ abstract class AbstractDaggerClient
         return $this->graphQlClient->runQuery($query);
     }
 
-    public function queryLeaf(QueryBuilder|Query $query, string $leafKey): null|string|array
+    public function queryLeaf(QueryBuilder|Query $query, string $leafKey): null|array|string|int|float|bool
     {
         $response = $this->graphQlClient->runQuery($query);
         $data = $response->getData();

@@ -13,7 +13,7 @@ abstract class AbstractDaggerObject
     ) {
     }
 
-    protected function queryLeaf(QueryBuilder $leafQueryBuilder, string $leafKey): array|string|null
+    protected function queryLeaf(QueryBuilder $leafQueryBuilder, string $leafKey): null|array|string|int|float|bool
     {
         $queryBuilderChain = $this->queryBuilderChain->chain($leafQueryBuilder);
 
