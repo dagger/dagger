@@ -10,7 +10,6 @@ import TutorialCard from "@site/src/components/tutorialCard.js";
 import useIsBrowser from '@docusaurus/useIsBrowser';
 import PartialInstallCueSdk from '../../../partials/_install-sdk-cue.mdx';
 
-
 # Get Started with the Dagger CUE SDK
 
 ## Introduction
