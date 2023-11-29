@@ -186,9 +186,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
-	engineTask := loader.Task("starting engine")
-	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.UserAgent, loader)
-	engineTask.Done(err)
+	bkClient, bkInfo, err := newBuildkitClient(ctx, loader, remote, c.UserAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}

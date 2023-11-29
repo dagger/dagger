@@ -12,7 +12,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/pkg/errors"
+	"github.com/vito/progrock"
 )
 
 const (
@@ -34,7 +36,7 @@ const (
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent string) (string, error) {
+func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, runnerHost *url.URL, userAgent string) (bkcl *bkclient.Client, rerr error) {
 	imageRef := runnerHost.Host + runnerHost.Path
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
@@ -42,7 +44,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	fallbackToLeftoverEngine := false
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return "", errors.Wrap(err, "parsing image reference")
+		return nil, errors.Wrap(err, "parsing image reference")
 	}
 	if d, ok := ref.(name.Digest); ok {
 		// We already have the digest as part of the image ref
@@ -72,24 +74,30 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	}
 	if fallbackToLeftoverEngine {
 		if len(leftoverEngines) == 0 {
-			return "", errors.Errorf("no fallback container found")
+			return nil, errors.Errorf("no fallback container found")
 		}
+
+		startTask := rec.Task("starting engine")
+		defer startTask.Done(rerr)
 
 		// the first leftover engine may not be running, so make sure to start it
 		firstEngine := leftoverEngines[0]
 		cmd := exec.CommandContext(ctx, "docker", "start", firstEngine)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			return "", errors.Wrapf(err, "failed to start container: %s", output)
+			return nil, errors.Wrapf(err, "failed to start container: %s", output)
 		}
 
 		garbageCollectEngines(ctx, leftoverEngines[1:])
 
-		return "docker-container://" + firstEngine, nil
+		return buildkitConnectDefault(ctx, rec, &url.URL{
+			Scheme: "docker-container",
+			Host:   firstEngine,
+		})
 	}
 
 	_, id, ok := strings.Cut(id, "sha256:")
 	if !ok {
-		return "", errors.Errorf("invalid image reference %q", imageRef)
+		return nil, errors.Errorf("invalid image reference %q", imageRef)
 	}
 	id = id[:hashLen]
 
@@ -106,16 +114,32 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	for i, leftoverEngine := range leftoverEngines {
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
+			startTask := rec.Task("starting engine")
+			defer startTask.Done(rerr)
+
 			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
 			if output, err := cmd.CombinedOutput(); err != nil {
-				return "", errors.Wrapf(err, "failed to start container: %s", output)
+				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
 			garbageCollectEngines(ctx, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
-			return "docker-container://" + containerName, nil
+			return buildkitConnectDefault(ctx, rec, &url.URL{
+				Scheme: "docker-container",
+				Host:   containerName,
+			})
 		}
 	}
 
 	gpuIsEnabled := os.Getenv(GPUSupportEnvName) != ""
+
+	// ensure the image is pulled
+	if err := exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef).Run(); err != nil {
+		pullTask := rec.Task("pulling %s", imageRef)
+		if output, err := exec.CommandContext(ctx, "docker", "pull", imageRef).CombinedOutput(); err != nil {
+			pullTask.Done(err)
+			return nil, errors.Wrapf(err, "failed to pull image: %s", output)
+		}
+		pullTask.Done(nil)
+	}
 
 	runArgs := []string{
 		"run",
@@ -132,9 +156,11 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	}
 	runArgs = append(runArgs, imageRef, "--debug")
 
+	startTask := rec.Task("starting engine")
+	defer startTask.Done(rerr)
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		if !isContainerAlreadyInUseOutput(string(output)) {
-			return "", errors.Wrapf(err, "failed to run container: %s", output)
+			return nil, errors.Wrapf(err, "failed to run container: %s", output)
 		}
 	}
 
@@ -143,7 +169,10 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 	// version
 	garbageCollectEngines(ctx, leftoverEngines)
 
-	return "docker-container://" + containerName, nil
+	return buildkitConnectDefault(ctx, rec, &url.URL{
+		Scheme: "docker-container",
+		Host:   containerName,
+	})
 }
 
 func garbageCollectEngines(ctx context.Context, engines []string) {
