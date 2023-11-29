@@ -2,7 +2,7 @@
 slug: /194031/kubernetes
 displayed_sidebar: "current"
 category: "guides"
-tags: ["kubernetes", "github", "eks", "dagger-cloud"]
+tags: ["kubernetes"]
 authors: ["Joel Longtine", "Gerhard Lazu", "Vikram Vaswani"]
 date: "2023-09-22"
 ---
