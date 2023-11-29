@@ -410,7 +410,7 @@ dagger shell [--entrypoint strings] [function]
 
 | Option                 | Description                  |
 | ---------------------- | -----------------------------|
-| `--entrypoint strings` | Entrypoint(s) to use            |
+| `--entrypoint strings` | Entrypoint to use            |
 
 ### Example
 
