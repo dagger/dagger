@@ -3,8 +3,8 @@ slug: /194031/kubernetes
 displayed_sidebar: "current"
 category: "guides"
 tags: ["kubernetes"]
-authors: ["Joel Longtine", "Gerhard Lazu", "Vikram Vaswani"]
-date: "2023-09-22"
+authors: ["Gerhard Lazu", "Vikram Vaswani"]
+date: "2023-11-30"
 ---
 
 # Run Dagger on Kubernetes
