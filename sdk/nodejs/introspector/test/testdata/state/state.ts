@@ -1,4 +1,6 @@
-import { func, object, Container, dag, field } from '@dagger.io/dagger'
+import { func, object, field } from '../../../decorators/decorators.js'
+import { dag, Container } from '../../../../api/client.gen.js'
+
 
 /**
  * Alpine module
@@ -13,12 +15,12 @@ export class Alpine {
      * packages to install
      */
     @field
-    public packages: string[]
+    public packages: string[] = []
 
     @field
-    ctr: Container
+    ctr?: Container = undefined
 
-    ignored: string
+    ignored: string = ""
 
     /**
      * Returns a base Alpine container
@@ -45,7 +47,7 @@ export class Alpine {
     @func
     async exec(cmd: string[]): Promise<string> {
         return this
-            .ctr
+            .ctr!
             .withExec(["apk", "add", ...this.packages])
             .withExec(cmd)
             .withUser(this.user)

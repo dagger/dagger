@@ -1,4 +1,5 @@
-import { func, object, dag } from '@dagger.io/dagger'
+import { func, object } from '../../../decorators/decorators.js'
+import { dag } from '../../../../api/client.gen.js'
 
 /**
  * Bar class

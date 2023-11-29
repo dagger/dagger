@@ -2,6 +2,9 @@ import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 
 export type Class = { new (...args: unknown[]): unknown }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type State = { [property: string]: any }
+
 type RegistryClass = {
   [key: string]: {
     class_: Class
@@ -63,9 +66,8 @@ export class Registry {
   async getResult(
     object: string,
     method: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    state: { [property: string]: any },
-    args: unknown[]
+    state: State,
+    inputs: unknown[]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<any> {
     const resolver = this.classes[object]
@@ -92,7 +94,7 @@ export class Registry {
     r = Object.assign(r, state)
 
     // Execute and return the result
-    return await r[method](...args)
+    return await r[method](...inputs)
   }
 }
 

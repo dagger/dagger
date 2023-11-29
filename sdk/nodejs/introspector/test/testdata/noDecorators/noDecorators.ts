@@ -1,4 +1,4 @@
-import { func } from '@dagger.io/dagger'
+import { func } from '../../../decorators/decorators.js'
 
 /**
  * HelloWorld class
