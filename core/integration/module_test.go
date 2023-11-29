@@ -1357,17 +1357,19 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 	require.JSONEq(t, `{"foo":{"fn":"foo\n"}}`, out)
 }
 
-func TestModuleGoIDableType(t *testing.T) {
+func TestModuleIDableType(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			source: `package main
 
 type Foo struct {
 	Data string
@@ -1382,23 +1384,57 @@ func (m *Foo) Get() string {
 	return m.Data
 }
 `,
+		},
+		{
+			sdk: "python",
+			source: `from typing import Self
+
+from dagger.mod import field, function, object_type
+
+@object_type
+class Foo:
+    data: str = ""
+
+    @function
+    def set(self, data: str) -> Self:
+        self.data = data
+        return self
+
+    @function
+    def get(self) -> str:
+        return self.data
+`,
+		},
+	} {
+		tc := tc
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=foo", "--sdk="+tc.sdk)).
+				With(sdkSource(tc.sdk, tc.source))
+
+			if tc.sdk == "go" {
+				logGen(ctx, t, modGen.Directory("."))
+			}
+
+			// sanity check
+			out, err := modGen.With(daggerQuery(`{foo{set(data: "abc"){get}}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"foo":{"set":{"get": "abc"}}}`, out)
+
+			out, err = modGen.With(daggerQuery(`{foo{set(data: "abc"){id}}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			id := gjson.Get(out, "foo.set.id").String()
+			require.Contains(t, id, "moddata:")
+
+			out, err = modGen.With(daggerQuery(`{loadFooFromID(id: "%s"){get}}`, id)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"loadFooFromID":{"get": "abc"}}`, out)
 		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	// sanity check
-	out, err := modGen.With(daggerQuery(`{foo{set(data: "abc"){get}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"foo":{"set":{"get": "abc"}}}`, out)
-
-	out, err = modGen.With(daggerQuery(`{foo{set(data: "abc"){id}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	id := gjson.Get(out, "foo.set.id").String()
-	require.Contains(t, id, "moddata:")
-
-	out, err = modGen.With(daggerQuery(`{loadFooFromID(id: "%s"){get}}`, id)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"loadFooFromID":{"get": "abc"}}`, out)
+	}
 }
 
 func TestModuleArgOwnType(t *testing.T) {
@@ -1410,12 +1446,14 @@ func TestModuleArgOwnType(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			source: `package main
 
 import "strings"
 
@@ -1439,24 +1477,64 @@ func (m *Foo) Uppers(msg []Message) []Message {
 		msg[i].Content = strings.ToUpper(msg[i].Content)
 	}
 	return msg
-}
+}`,
+		},
+		{
+			sdk: "python",
+			source: `from dagger.mod import field, function, object_type
+
+@object_type
+class Message:
+    content: str = field()
+
+@object_type
+class Foo:
+    @function
+    def say_hello(self, name: str) -> Message:
+        return Message(content=f"hello {name}")
+
+    @function
+    def upper(self, msg: Message) -> Message:
+        msg.content = msg.content.upper()
+        return msg
+
+    @function
+    def uppers(self, msg: list[Message]) -> list[Message]:
+        for m in msg:
+            m.content = m.content.upper()
+        return msg
 `,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=foo", "--sdk="+tc.sdk)).
+				With(sdkSource(tc.sdk, tc.source))
+
+			if tc.sdk == "go" {
+				logGen(ctx, t, modGen.Directory("."))
+			}
+
+			out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			id := gjson.Get(out, "foo.sayHello.id").String()
+			require.Contains(t, id, "moddata:")
+
+			out, err = modGen.With(daggerQuery(`{foo{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"foo":{"upper":{"content": "HELLO WORLD"}}}`, out)
+
+			out, err = modGen.With(daggerQuery(`{foo{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"foo":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
 		})
-
-	logGen(ctx, t, modGen.Directory("."))
-
-	out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	id := gjson.Get(out, "foo.sayHello.id").String()
-	require.Contains(t, id, "moddata:")
-
-	out, err = modGen.With(daggerQuery(`{foo{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"foo":{"upper":{"content": "HELLO WORLD"}}}`, out)
-
-	out, err = modGen.With(daggerQuery(`{foo{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"foo":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
+	}
 }
 
 func TestModuleConflictingSameNameDeps(t *testing.T) {
