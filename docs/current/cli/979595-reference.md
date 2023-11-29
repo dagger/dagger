@@ -53,7 +53,7 @@ dagger call [function]
 Call a function returning a container. The standard output of the container is returned.
 
 ```shell
-dagger call build
+dagger call test
 ```
 
 ## dagger completion
