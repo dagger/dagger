@@ -287,7 +287,7 @@ dagger mod publish [--force]
 
 | Option      | Description                                                     |
 | ------------| ----------------------------------------------------------------|
-| `--force`   | Force publish even if the Git repository is not clean           |
+| `-f, --force`   | Force publish even if the Git repository is not clean           |
 
 ## dagger query
 
