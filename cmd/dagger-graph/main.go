@@ -13,12 +13,10 @@ import (
 	"github.com/dagger/dagger/telemetry"
 	"github.com/vito/progrock"
 
-	"oss.terrastruct.com/d2/d2graph"
-	"oss.terrastruct.com/d2/d2layouts/d2dagrelayout"
 	"oss.terrastruct.com/d2/d2lib"
 	"oss.terrastruct.com/d2/d2renderers/d2svg"
-	"oss.terrastruct.com/d2/d2themes/d2themescatalog"
 	"oss.terrastruct.com/d2/lib/textmeasure"
+	"oss.terrastruct.com/util-go/go2"
 )
 
 func main() {
@@ -132,16 +130,11 @@ func renderSVG(graph string) ([]byte, error) {
 		return nil, err
 	}
 	diagram, _, err := d2lib.Compile(context.Background(), graph, &d2lib.CompileOptions{
-		Layout: func(ctx context.Context, g *d2graph.Graph) error {
-			return d2dagrelayout.Layout(ctx, g, nil)
-		},
-		Ruler:   ruler,
-		ThemeID: d2themescatalog.NeutralDefault.ID,
-	})
+		Layout: go2.Pointer("dagre"),
+		Ruler:  ruler,
+	}, &d2svg.RenderOpts{})
 	if err != nil {
 		return nil, err
 	}
-	return d2svg.Render(diagram, &d2svg.RenderOpts{
-		Pad: d2svg.DEFAULT_PADDING,
-	})
+	return d2svg.Render(diagram, &d2svg.RenderOpts{})
 }
