@@ -29,9 +29,12 @@ class InputVisitor extends AbstractVisitor
 
         foreach ($type->getFields() as $field) {
             $fieldType = $field->getType();
+            $phpParameterType = Helpers::isBuiltinScalar($fieldType)
+                ? Helpers::formatType($fieldType)
+                : Helpers::formatPhpFqcn(Helpers::formatType($fieldType));
 
             $constructorParameter = $constructor->addPromotedParameter($field->name);
-            $constructorParameter->setType(Helpers::formatType($fieldType));
+            $constructorParameter->setType($phpParameterType);
             $constructorParameter->setNullable(!$field->isRequired());
             $constructorParameter->setPublic();
 
