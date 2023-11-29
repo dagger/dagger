@@ -1,21 +1,21 @@
-import { fct, object } from '@dagger.io/dagger'
+import { func, object } from '@dagger.io/dagger'
 
 /**
  * HelloWorld class
  */
 @object
 export class HelloWorld {
-    @fct
+    @func
     helloWorld(name?: string): string {
         return `hello world ${name}`
     }
 
-    @fct
+    @func
     isTrue(value: boolean): boolean {
         return value
     }
 
-    @fct
+    @func
     add(a = 0, b = 0): number {
         return a + b
     }

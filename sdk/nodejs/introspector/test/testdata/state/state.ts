@@ -1,4 +1,4 @@
-import { fct, object, Container, dag } from '@dagger.io/dagger'
+import { func, object, Container, dag, field } from '@dagger.io/dagger'
 
 /**
  * Alpine module
@@ -12,15 +12,19 @@ export class Alpine {
     /**
      * packages to install
      */
+    @field
     public packages: string[]
 
+    @field
     ctr: Container
+
+    ignored: string
 
     /**
      * Returns a base Alpine container
      * @param version version to use (default to: 3.16.2)
      */
-    @fct
+    @func
     base(version?: string): Alpine {
         if (version === undefined) {
             version = this.version
@@ -31,14 +35,14 @@ export class Alpine {
         return this
     }
 
-    @fct
+    @func
     install(pkgs: string[]): Alpine {
         this.packages.push(...pkgs)
 
         return this
     }
 
-    @fct
+    @func
     async exec(cmd: string[]): Promise<string> {
         return this
             .ctr

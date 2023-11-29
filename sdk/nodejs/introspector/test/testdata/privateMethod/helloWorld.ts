@@ -1,4 +1,4 @@
-import { fct, object } from '@dagger.io/dagger'
+import { func, object } from '@dagger.io/dagger'
 
 /**
  * HelloWorld class
@@ -9,12 +9,12 @@ export class HelloWorld {
         return `Private hello ${name}`
     }
 
-    @fct
+    @func
     greeting(name: string): string {
         return this.privateGreeting(name)
     }
 
-    @fct
+    @func
     helloWorld(name: string): string {
         return `hello ${name}`
     }

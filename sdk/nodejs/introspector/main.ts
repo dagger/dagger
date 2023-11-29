@@ -1,4 +1,4 @@
-import { analysis } from "./analysis/analysis.js"
+import { scan } from "./scanner/scan.js"
 import { listFiles } from "./utils/files.js"
 
 async function main() {
@@ -10,8 +10,9 @@ async function main() {
 
   const files = await listFiles(directory)
 
-  // Analysis files
-  analysis(files)
+  // scan files
+  const result = scan(files)
+  console.log(result)
 }
 
 main()

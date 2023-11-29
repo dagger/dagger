@@ -11,7 +11,7 @@ import { serializeSignature, serializeSymbol } from "./serialize.js"
 import { isFunction, isObject, isPublicProperty } from "./utils.js"
 
 /**
- * Analyse the list of Typescript File using the Typescript compiler API.
+ * Scan the list of Typescript File using the Typescript compiler API.
  *
  * This function introspect files and returns metadata of their class and
  * functions that should be exposed to the Dagger API.
@@ -20,7 +20,7 @@ import { isFunction, isObject, isPublicProperty } from "./utils.js"
  *
  * @param files List of Typescript files to introspect.
  */
-export function analysis(files: string[]): Metadata {
+export function scan(files: string[]): Metadata {
   if (files.length === 0) {
     throw new UnknownDaggerError("no files to introspect found", {})
   }
@@ -66,7 +66,7 @@ function introspectClass(
   checker: ts.TypeChecker,
   node: ts.ClassDeclaration
 ): ClassMetadata {
-  // Throw error if node.name is undefined because we cannot analyse its symbol.
+  // Throw error if node.name is undefined because we cannot scan its symbol.
   if (!node.name) {
     throw new UnknownDaggerError(`could not introspect class: ${node}`, {})
   }
@@ -168,12 +168,15 @@ function introspectMethod(
   return {
     name: methodMetadata.name,
     doc: methodMetadata.doc,
-    params: methodSignature.params.map(({ name, typeName, doc, optional }) => ({
-      name,
-      typeName,
-      doc,
-      optional,
-    })),
+    params: methodSignature.params.map(
+      ({ name, typeName, doc, optional, defaultValue }) => ({
+        name,
+        typeName,
+        doc,
+        optional,
+        defaultValue,
+      })
+    ),
     returnType: methodSignature.returnType,
   }
 }

@@ -1,16 +1,16 @@
-import { fct, object } from '@dagger.io/dagger'
+import { func, object } from '@dagger.io/dagger'
 
 /**
  * HelloWorld class
  */
 @object
 export class HelloWorld {
-    @fct
+    @func
     helloWorld(name: string): void {
         console.log(`hello ${name}`)
     }
 
-    @fct
+    @func
     async asyncHelloWorld(name?: string): Promise<void> {
         console.log(`async hello ${name}`)
     }

@@ -21,7 +21,7 @@ export function isObject(object: ts.ClassDeclaration): boolean {
  */
 export function isFunction(method: ts.MethodDeclaration): boolean {
   return (
-    ts.getDecorators(method)?.find((d) => d.expression.getText() === "fct") !==
+    ts.getDecorators(method)?.find((d) => d.expression.getText() === "func") !==
     undefined
   )
 }
@@ -40,13 +40,28 @@ export function isFunction(method: ts.MethodDeclaration): boolean {
  * class Human {
  *     private age = 22 // Return false
  *     protected familyName = "Doe" // Return false
+ *
+ *     @field
  *     name = "John" // Return true
+ *
+ *     city = "Paris" // Return false because there's no decorator
  * }
  * ```
  *
  * @param property The property to check on.
  */
 export function isPublicProperty(property: ts.PropertyDeclaration): boolean {
+  const decorators = ts.getDecorators(property)
+  if (!decorators) {
+    return false
+  }
+
+  if (
+    decorators.find((d) => d.expression.getText() === "field") === undefined
+  ) {
+    return false
+  }
+
   const modifiers = ts.getModifiers(property)
   if (!modifiers) {
     return true
@@ -59,15 +74,24 @@ export function isPublicProperty(property: ts.PropertyDeclaration): boolean {
   )
 }
 
+type OptionalValue = {
+  optional: boolean
+  defaultValue?: string
+}
+
 /**
  * Return true if the parameter is optional.
  *
  * This includes both optional value defines with `?` and value that
  * have a default value.
  *
+ * If there's a default value, its expression is returned in the result.
+ *
  * @param param The param to check.
  */
-export function isOptional(param: ts.Symbol): boolean {
+export function isOptional(param: ts.Symbol): OptionalValue {
+  const result: OptionalValue = { optional: false }
+
   const declarations = param.getDeclarations()
 
   // Only check if the parameters actually have declarations
@@ -76,12 +100,15 @@ export function isOptional(param: ts.Symbol): boolean {
 
     // Convert the symbol declaration into Parameter
     if (ts.isParameter(parameterDeclaration)) {
-      return (
+      result.optional =
         parameterDeclaration.questionToken !== undefined ||
         parameterDeclaration.initializer !== undefined
-      )
+
+      if (parameterDeclaration.initializer !== undefined) {
+        result.defaultValue = parameterDeclaration.initializer.getText()
+      }
     }
   }
 
-  return false
+  return result
 }

@@ -1,4 +1,4 @@
-import { fct, object } from '@dagger.io/dagger'
+import { func, object } from '@dagger.io/dagger'
 
 import { Bar } from './bar.js'
 
@@ -11,7 +11,7 @@ export class Foo {
     /**
      * Return Bar object
      */
-    @fct
+    @func
     bar(): Bar {
         return new Bar()
     }

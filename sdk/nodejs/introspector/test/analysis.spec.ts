@@ -2,19 +2,19 @@ import assert from "assert"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { analysis } from "../analysis/analysis.js"
-import { Metadata } from "../analysis/metadata.js"
+import { Metadata } from "../scanner/metadata.js"
+import { scan } from "../scanner/scan.js"
 import { listFiles } from "../utils/files.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDirectory = `${__dirname}/testdata`
 
-describe("Analysis static Typescript", function () {
-  it("Should correctly analyse a basic class with one method", async function () {
+describe("scan static Typescript", function () {
+  it("Should correctly scan a basic class with one method", async function () {
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [
         {
@@ -32,6 +32,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -47,7 +48,7 @@ describe("Analysis static Typescript", function () {
   it("Should ignore class that does not have the object decorator", async function () {
     const files = await listFiles(`${rootDirectory}/noDecorators`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [],
       functions: [],
@@ -59,7 +60,7 @@ describe("Analysis static Typescript", function () {
   it("Should supports multiple files and classes that returns classes", async function () {
     const files = await listFiles(`${rootDirectory}/multipleObjects`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [
         {
@@ -77,6 +78,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string[]",
                   doc: "Command to execute",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -105,7 +107,7 @@ describe("Analysis static Typescript", function () {
   it("Should not expose private methods from a class", async function () {
     const files = await listFiles(`${rootDirectory}/privateMethod`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [
         {
@@ -123,6 +125,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -136,6 +139,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -148,10 +152,10 @@ describe("Analysis static Typescript", function () {
     assert.deepEqual(result, expected)
   })
 
-  it("should analyse classes' properties to keep a state", async function () {
+  it("should scan classes' properties to keep a state", async function () {
     const files = await listFiles(`${rootDirectory}/state`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [
         {
@@ -180,6 +184,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "version to use (default to: 3.16.2)",
                   optional: true,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -193,6 +198,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string[]",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -206,6 +212,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string[]",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -221,7 +228,7 @@ describe("Analysis static Typescript", function () {
   it("Should detect optional parameters of a method", async function () {
     const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [
         {
@@ -239,6 +246,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "",
                   optional: true,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -252,6 +260,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "boolean",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -265,12 +274,14 @@ describe("Analysis static Typescript", function () {
                   typeName: "number",
                   doc: "",
                   optional: true,
+                  defaultValue: "0",
                 },
                 {
                   name: "b",
                   typeName: "number",
                   doc: "",
                   optional: true,
+                  defaultValue: "0",
                 },
               ],
             },
@@ -286,7 +297,7 @@ describe("Analysis static Typescript", function () {
   it("Should correctly handle function with void return", async function () {
     const files = await listFiles(`${rootDirectory}/voidReturn`)
 
-    const result = analysis(files)
+    const result = scan(files)
     const expected: Metadata = {
       classes: [
         {
@@ -304,6 +315,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "",
                   optional: false,
+                  defaultValue: undefined,
                 },
               ],
             },
@@ -317,6 +329,7 @@ describe("Analysis static Typescript", function () {
                   typeName: "string",
                   doc: "",
                   optional: true,
+                  defaultValue: undefined,
                 },
               ],
             },

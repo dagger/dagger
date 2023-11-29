@@ -1,4 +1,4 @@
-import { fct, object, dag } from '@dagger.io/dagger'
+import { func, object, dag } from '@dagger.io/dagger'
 
 /**
  * Bar class
@@ -9,7 +9,7 @@ export class Bar {
      * Execute the command and return its result
      * @param cmd Command to execute
      */
-    @fct
+    @func
     async exec(cmd: string[]): Promise<string> {
         return await dag
             .container()

@@ -1,15 +1,5 @@
-export function fct(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  target: unknown,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  propertyKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  descriptor: PropertyDescriptor
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-) {}
+import { registry } from "../registry/registry.js"
 
-export function object<T extends { new (...args: unknown[]): unknown }>(
-  constructor: T
-) {
-  return constructor
-}
+export const object = registry.object
+export const func = registry.func
+export const field = registry.field

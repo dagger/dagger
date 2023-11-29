@@ -18,9 +18,12 @@ export function serializeSignature(
 ): SignatureMetadata {
   return {
     params: signature.parameters.map((param) => {
+      const { optional, defaultValue } = isOptional(param)
+
       return {
         ...serializeSymbol(checker, param),
-        optional: isOptional(param),
+        optional,
+        defaultValue,
       }
     }),
     returnType: serializeType(checker, signature.getReturnType()),
