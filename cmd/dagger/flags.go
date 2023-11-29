@@ -207,7 +207,9 @@ func (v *directoryValue) Get(dag *dagger.Client) any {
 	// Try parsing as a Git URL
 	parsedGit, err := parseGit(v.String())
 	if err == nil {
-		gitOpts := dagger.GitOpts{}
+		gitOpts := dagger.GitOpts{
+			KeepGitDir: true,
+		}
 		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
