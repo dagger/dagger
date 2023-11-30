@@ -282,7 +282,11 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	vtx := rec.Vertex(dig, "start "+strings.Join(execOp.Meta.Args, " "))
+	vtxOpts := []progrock.VertexOpt{}
+	if ctr.Focused {
+		vtxOpts = append(vtxOpts, progrock.Focused())
+	}
+	vtx := rec.Vertex(dig, "start "+strings.Join(execOp.Meta.Args, " "), vtxOpts...)
 	defer func() {
 		if err != nil {
 			vtx.Error(err)
