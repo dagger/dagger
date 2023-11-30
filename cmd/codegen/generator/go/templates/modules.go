@@ -704,6 +704,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	}
 
 	// Fill out the static fields of the struct (if any)
+	astFields := unpackASTFields(astStructType.Fields)
 	for i := 0; i < t.NumFields(); i++ {
 		field := t.Field(i)
 		if !field.Exported() {
@@ -719,7 +720,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		}
 
 		var description string
-		if doc := astStructType.Fields.List[i].Doc; doc != nil {
+		if doc := astFields[i].Doc; doc != nil {
 			description = doc.Text()
 		}
 
