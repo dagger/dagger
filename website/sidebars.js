@@ -85,7 +85,7 @@ module.exports = {
             },
             {
               type: "link",
-              label: "Reference 🔗",
+              label: "Reference",
               href: "https://pkg.go.dev/dagger.io/dagger",
             },
           ],
@@ -133,7 +133,7 @@ module.exports = {
             },
             {
               type: "link",
-              label: "Reference 🔗",
+              label: "Reference",
               href: "https://dagger-io.readthedocs.org/",
             },
           ],
@@ -157,7 +157,7 @@ module.exports = {
             },
             {
               type: "link",
-              label: "Reference 🔗",
+              label: "Reference",
               href: "https://hexdocs.pm/dagger/Dagger.html",
             },
           ],
@@ -215,7 +215,7 @@ module.exports = {
     },
     {
       type: "link",
-      label: "Changelog 🔗",
+      label: "Changelog",
       href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
   ],
@@ -312,7 +312,7 @@ module.exports = {
             },
             {
               type: "link",
-              label: "Go SDK Reference 🔗",
+              label: "Go SDK Reference",
               href: "https://pkg.go.dev/dagger.io/dagger",
             },
 
@@ -332,7 +332,7 @@ module.exports = {
             },
             {
               type: "link",
-              label: "Python SDK Reference 🔗",
+              label: "Python SDK Reference",
               href: "https://dagger-io.readthedocs.org/",
             },
           ]
@@ -360,7 +360,7 @@ module.exports = {
         },
         {
           type: "link",
-          label: "API Reference 🔗",
+          label: "API Reference",
           href: "https://docs.dagger.io/api/reference",
         },
 
@@ -376,7 +376,7 @@ module.exports = {
     },
     {
       type: "link",
-      label: "Changelog 🔗",
+      label: "Changelog",
       href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
   ],
