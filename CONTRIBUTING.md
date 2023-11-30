@@ -258,33 +258,21 @@ To list available linters:
 
 ```shell
 > ./hack/make -l | grep lint
-docs:lint              lints documentation files
-engine:lint            lints the engine
-lint                   runs all linters
-sdk:all:lint           runs all SDK linters
-sdk:go:lint            lints the Go SDK
-sdk:nodejs:lint        lints the Node.js SDK
-sdk:python:lint        lints the Python SDK
+  docs:lint               lints documentation files
+  engine:lint             lints the engine
+  lint                    runs all linters
+  sdk:all:lint            runs all SDK linters
+  sdk:elixir:lint         lints the Elixir SDK
+  sdk:go:lint             lints the Go SDK
+  sdk:java:lint           lints the Java SDK
+  sdk:nodejs:lint         lints the Node.js SDK
+  sdk:python:lint         lints the Python SDK
+  sdk:rust:lint           lints the Rust SDK
 ```
 
 :::tip
 The `docs:lint` is misleading as it only lints the Markdown in documentation (`.md`). Go snippets in documentation are linted in `engine:lint` while the others are linted in `sdk:<name>:lint`.
 :::
-
-### How to re-run all GitHub Actions jobs?
-
-There isn't a button that Dagger contributors can click in their fork that will
-re-run all GitHub Actions jobs. See issue
-[#1169](https://github.com/dagger/dagger/issues/1169) for more context.
-
-The current workaround is to re-create the last commit:
-
-```shell
-git commit --amend -s
-
-# Force push the new commit to re-run all GitHub Actions jobs:
-git push -f mybranch
-```
 
 ### How to test SDK changes locally?
 
@@ -302,3 +290,48 @@ Go:
 - In your Go project, run `go mod edit -replace dagger.io/dagger=<PATH TO DAGGER FORK>/sdk/go`
 - Then `go mod tidy`
 
+### How to re-generate SDKs locally?
+
+SDKs need to be re-generated after changes to the GraphQL schemas, or after changes
+to the SDK code generation - the changes to the SDK should be included in the same
+PR that modified the schemas/SDKs.
+
+To list all available generators:
+
+```shell
+> ./hack/make -l | grep generate
+  sdk:all:generate        re-generates all SDK APIs
+  sdk:elixir:generate     re-generates the SDK API
+  sdk:go:generate         re-generates the SDK API
+  sdk:java:generate       re-generates the SDK API
+  sdk:nodejs:generate     re-generates the SDK API
+  sdk:python:generate     re-generates the SDK API
+  sdk:rust:generate       re-generates the SDK API
+```
+
+To re-generate all SDKs:
+
+```shell
+./hack/make sdk:all:generate
+```
+
+To re-generate just a single SDK (e.g. Go):
+
+```shell
+./hack/make sdk:go:generate
+```
+
+### How to re-run all GitHub Actions jobs?
+
+There isn't a button that Dagger contributors can click in their fork that will
+re-run all GitHub Actions jobs. See issue
+[#1169](https://github.com/dagger/dagger/issues/1169) for more context.
+
+The current workaround is to re-create the last commit:
+
+```shell
+git commit --amend -s
+
+# Force push the new commit to re-run all GitHub Actions jobs:
+git push -f mybranch
+```

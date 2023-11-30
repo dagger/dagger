@@ -26,7 +26,7 @@ var _ SDK = Rust{}
 
 type Rust mg.Namespace
 
-// Bump implements SDK
+// Bump the Rust SDK's Engine dependency
 func (Rust) Bump(ctx context.Context, engineVersion string) error {
 	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
 	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
@@ -55,7 +55,7 @@ func (Rust) Bump(ctx context.Context, engineVersion string) error {
 	return nil
 }
 
-// Generate implements SDK
+// Generate re-generates the SDK API
 func (r Rust) Generate(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -97,7 +97,7 @@ func (r Rust) Generate(ctx context.Context) error {
 	return nil
 }
 
-// Lint implements SDK
+// Lint lints the Rust SDK
 func (r Rust) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -136,7 +136,7 @@ func (r Rust) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Publish implements SDK
+// Publish publishes the Rust SDK
 func (r Rust) Publish(ctx context.Context, tag string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -183,7 +183,7 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 	return err
 }
 
-// Test implements SDK
+// Test tests the Rust SDK
 func (r Rust) Test(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
