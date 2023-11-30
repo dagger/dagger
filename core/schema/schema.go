@@ -61,6 +61,7 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
 
 		modByName:         map[string]*UserMod{},
+		loadModCache:      core.NewCacheMap[digest.Digest, *UserMod](),
 		clientCallContext: map[digest.Digest]*clientCallContext{},
 	}
 
@@ -131,6 +132,9 @@ type APIServer struct {
 
 	// name of user-defined module name -> vertex in the DAG for that module
 	modByName map[string]*UserMod
+
+	// cache used to de-dupe loading modules from metadata
+	loadModCache *core.CacheMap[digest.Digest, *UserMod]
 
 	// The metadata of client calls.
 	// For the special case of the main client caller, the key is just empty string
@@ -249,48 +253,45 @@ func (s *APIServer) AddModFromMetadata(
 	modMeta *core.Module,
 	pipeline pipeline.Path,
 ) (*UserMod, error) {
-	// TODO: wrap whole thing in a once or equiv?
-
-	var eg errgroup.Group
-	deps := make([]Mod, len(modMeta.DependencyConfig))
-	for i, depRef := range modMeta.DependencyConfig {
-		i, depRef := i, depRef
-		eg.Go(func() error {
-			mod, err := s.AddModFromRef(ctx, depRef, modMeta, pipeline)
-			if err != nil {
-				return err
-			}
-			deps[i] = mod
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-	deps = append(deps, s.core)
-
-	sdk, err := s.sdkForModule(ctx, modMeta)
+	dgst, err := modMeta.BaseDigest()
 	if err != nil {
 		return nil, err
 	}
+	return s.loadModCache.GetOrInitialize(dgst, func() (*UserMod, error) {
+		var eg errgroup.Group
+		deps := make([]Mod, len(modMeta.DependencyConfig))
+		for i, depRef := range modMeta.DependencyConfig {
+			i, depRef := i, depRef
+			eg.Go(func() error {
+				mod, err := s.AddModFromRef(ctx, depRef, modMeta, pipeline)
+				if err != nil {
+					return err
+				}
+				deps[i] = mod
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		deps = append(deps, s.core)
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	mod, ok := s.modByName[modMeta.Name]
-	if ok {
+		sdk, err := s.sdkForModule(ctx, modMeta)
+		if err != nil {
+			return nil, err
+		}
+
+		dag, err := newModDag(ctx, s, deps)
+		if err != nil {
+			return nil, err
+		}
+		mod, err := newUserMod(s, modMeta, dag, sdk)
+		if err != nil {
+			return nil, err
+		}
+		s.modByName[modMeta.Name] = mod
 		return mod, nil
-	}
-
-	dag, err := newModDag(ctx, s, deps)
-	if err != nil {
-		return nil, err
-	}
-	mod, err = newUserMod(s, modMeta, dag, sdk)
-	if err != nil {
-		return nil, err
-	}
-	s.modByName[modMeta.Name] = mod
-	return mod, nil
+	})
 }
 
 func (s *APIServer) AddModFromRef(
