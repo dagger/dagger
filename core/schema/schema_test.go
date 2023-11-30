@@ -14,6 +14,10 @@ func TestMergeObjects(t *testing.T) {
 	merged, err := mergeExecutableSchemas(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			type Query {
+				typeA: TypeA
+			}
+
 			type TypeA {
 				fieldA: String
 			}
@@ -27,6 +31,10 @@ func TestMergeObjects(t *testing.T) {
 
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			extend type Query {
+				typeB: TypeB
+			}
+
 			type TypeB {
 				fieldB: String
 			}
@@ -60,6 +68,10 @@ func TestMergeFieldExtend(t *testing.T) {
 	merged, err := mergeExecutableSchemas(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			type Query {
+				typeA: TypeA
+			}
+
 			type TypeA {
 				fieldA: String
 			}
@@ -157,19 +169,27 @@ func TestMergeScalars(t *testing.T) {
 	merged, err := mergeExecutableSchemas(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			type Query {
+				typeA: TypeA
+			}
+
 			scalar TypeA
 			`,
 			Resolvers: Resolvers{
-				"TypeA": ScalarResolver{},
+				"TypeA": stringResolver[string](),
 			},
 		}),
 
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			extend type Query {
+				typeB: TypeB
+			}
+
 			scalar TypeB
 			`,
 			Resolvers: Resolvers{
-				"TypeB": ScalarResolver{},
+				"TypeB": jsonResolver,
 			},
 		}),
 	)
