@@ -100,6 +100,8 @@ func (s *APIServer) newModuleSDK(ctx context.Context, sdkModMeta *core.Module) (
 }
 
 // Codegen calls the Codegen function on the SDK Module
+//
+//nolint:dupl
 func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.GeneratedCode, error) {
 	mainModObj, err := sdk.mod.MainModuleObject(ctx)
 	if err != nil {
@@ -149,6 +151,8 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 }
 
 // Runtime calls the Runtime function on the SDK Module
+//
+//nolint:dupl
 func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Container, error) {
 	mainModObj, err := sdk.mod.MainModuleObject(ctx)
 	if err != nil {

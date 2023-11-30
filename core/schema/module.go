@@ -266,7 +266,7 @@ func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.Module, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module objects: %w", err)
 	}
-	var typeDefs []*core.TypeDef
+	typeDefs := make([]*core.TypeDef, 0, len(objs))
 	for _, obj := range objs {
 		typeDefs = append(typeDefs, obj.typeDef)
 	}
@@ -318,7 +318,7 @@ func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Mod
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}
-	var modMetas []*core.Module
+	modMetas := make([]*core.Module, 0, len(mod.Dependencies()))
 	for _, dep := range mod.Dependencies() {
 		// only include user modules, not core
 		userMod, ok := dep.(*UserMod)

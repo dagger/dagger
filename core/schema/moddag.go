@@ -33,10 +33,9 @@ type ModDag struct {
 	loadSchemaLock                sync.Mutex
 }
 
-// TODO: consider validating that there are no cycles in the DAG (either here or elsewhere)
 func newModDag(ctx context.Context, api *APIServer, roots []Mod) (*ModDag, error) {
 	seen := map[digest.Digest]struct{}{}
-	var finalRoots []Mod
+	finalRoots := make([]Mod, 0, len(roots))
 	for _, root := range roots {
 		dagDigest := root.DagDigest()
 		if _, ok := seen[dagDigest]; ok {
@@ -48,7 +47,7 @@ func newModDag(ctx context.Context, api *APIServer, roots []Mod) (*ModDag, error
 	sort.Slice(finalRoots, func(i, j int) bool {
 		return finalRoots[i].DagDigest().String() < finalRoots[j].DagDigest().String()
 	})
-	var dagDigests []string
+	dagDigests := make([]string, 0, len(finalRoots))
 	for _, root := range finalRoots {
 		dagDigests = append(dagDigests, root.DagDigest().String())
 	}
@@ -294,7 +293,7 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 		return nil, fmt.Errorf("expected ModuleMetadata result, got %T", result)
 	}
 
-	var objs []*UserModObject
+	objs := make([]*UserModObject, 0, len(modMeta.Objects))
 	for _, objTypeDef := range modMeta.Objects {
 		if err := m.validateTypeDef(ctx, objTypeDef); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
