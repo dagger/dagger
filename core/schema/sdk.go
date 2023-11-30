@@ -138,12 +138,11 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
 	}
 
-	genCodeID, ok := result.(string)
+	genCode, ok := result.(*core.GeneratedCode)
 	if !ok {
-		return nil, fmt.Errorf("expected string directory ID result, got %T", result)
+		return nil, fmt.Errorf("expected generated code result, got %T", result)
 	}
-
-	return core.GeneratedCodeID(genCodeID).Decode()
+	return genCode, nil
 }
 
 // Runtime calls the Runtime function on the SDK Module
@@ -181,20 +180,15 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Containe
 			Value: introspectionJSON,
 		},
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to call sdk module: %w", err)
 	}
 
-	runtimeID, ok := result.(string)
+	runtime, ok := result.(*core.Container)
 	if !ok {
-		return nil, fmt.Errorf("expected string container ID result, got %T", result)
+		return nil, fmt.Errorf("expected container runtime result, got %T", result)
 	}
 
-	runtime, err := core.ContainerID(runtimeID).Decode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode container: %w", err)
-	}
 	return runtime, nil
 }
 

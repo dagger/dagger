@@ -69,26 +69,48 @@ func ResourceToID(r any) (string, error) {
 	switch r := r.(type) {
 	case *Container:
 		id, err = r.ID()
+	case ContainerID:
+		return string(r), nil
 	case *CacheVolume:
 		id, err = r.ID()
+	case CacheVolumeID:
+		return string(r), nil
 	case *Directory:
 		id, err = r.ID()
+	case DirectoryID:
+		return string(r), nil
 	case *File:
 		id, err = r.ID()
+	case FileID:
+		return string(r), nil
 	case *Secret:
 		id, err = r.ID()
+	case SecretID:
+		return string(r), nil
 	case *Service:
 		id, err = r.ID()
+	case ServiceID:
+		return string(r), nil
 	case *Module:
 		id, err = r.ID()
+	case ModuleID:
+		return string(r), nil
 	case *Function:
 		id, err = r.ID()
+	case FunctionID:
+		return string(r), nil
 	case *socket.Socket:
 		id, err = r.ID()
+	case socket.ID:
+		return string(r), nil
 	case *TypeDef:
 		id, err = r.ID()
+	case TypeDefID:
+		return string(r), nil
 	case *GeneratedCode:
 		id, err = r.ID()
+	case GeneratedCodeID:
+		return string(r), nil
 	default:
 		return "", fmt.Errorf("unknown resource type: %T", r)
 	}
