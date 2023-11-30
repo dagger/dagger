@@ -369,13 +369,12 @@ func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModTyp
 		}
 
 		// otherwise it must be from this module
-		typeName := gqlObjectName(typeDef.AsObject.Name)
 		objs, err := m.Objects(ctx)
 		if err != nil {
 			return nil, false, err
 		}
 		for _, obj := range objs {
-			if obj.typeDef.AsObject.Name == typeName {
+			if obj.typeDef.AsObject.Name == typeDef.AsObject.Name {
 				return obj, true, nil
 			}
 		}
@@ -446,8 +445,7 @@ func (m *UserMod) validateTypeDef(ctx context.Context, typeDef *core.TypeDef) er
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
-			if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.Name() != m.Name() {
+			if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.DagDigest() != m.DagDigest() {
 				// already validated, skip
 				return nil
 			}
@@ -800,8 +798,7 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		return nil, nil, fmt.Errorf("failed to get mod type for type def: %w", err)
 	}
 	if ok {
-		// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
-		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.Name() != obj.mod.Name() {
+		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.DagDigest() != obj.mod.DagDigest() {
 			// modules can reference types from core/other modules as types, but they
 			// can't attach any new fields or functions to them
 			if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
@@ -963,8 +960,7 @@ func (f *UserModField) Schema(ctx context.Context) (*ast.FieldDefinition, graphq
 
 	// Check if this is a type from another (non-core) module, which is currently not allowed
 	sourceMod := f.modType.SourceMod()
-	// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
-	if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.Name() != f.obj.mod.metadata.Name {
+	if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.DagDigest() != f.obj.mod.DagDigest() {
 		return nil, nil, fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
 			f.obj.typeDef.AsObject.OriginalName,
 			f.metadata.OriginalName,
@@ -1014,7 +1010,7 @@ func newModFunction(
 		return nil, fmt.Errorf("failed to get mod type for function %q return type: %w", metadata.Name, err)
 	}
 	if !ok {
-		return nil, fmt.Errorf("failed to get mod type for function %q return type", metadata.Name)
+		return nil, fmt.Errorf("failed to find mod type for function %q return type", metadata.Name)
 	}
 
 	argTypes := make(map[string]*UserModFunctionArg, len(metadata.Args))
@@ -1024,7 +1020,7 @@ func newModFunction(
 			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type", metadata.Name, argMetadata.Name)
+			return nil, fmt.Errorf("failed to find mod type for function %q arg %q type", metadata.Name, argMetadata.Name)
 		}
 		argTypes[argMetadata.Name] = &UserModFunctionArg{
 			metadata: argMetadata,
@@ -1070,8 +1066,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 
 	// Check if this is a type from another (non-core) module, which is currently not allowed
 	sourceMod := fn.returnType.SourceMod()
-	// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
-	if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.Name() != fn.mod.metadata.Name {
+	if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.DagDigest() != fn.mod.DagDigest() {
 		var objName string
 		if fn.obj != nil {
 			objName = fn.obj.typeDef.AsObject.OriginalName
@@ -1102,8 +1097,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 
 		// Check if this is a type from another (non-core) module, which is currently not allowed
 		sourceMod := arg.modType.SourceMod()
-		// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
-		if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.Name() != fn.mod.metadata.Name {
+		if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.DagDigest() != fn.mod.DagDigest() {
 			var objName string
 			if fn.obj != nil {
 				objName = fn.obj.typeDef.AsObject.OriginalName

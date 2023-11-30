@@ -60,7 +60,6 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		buildCache:  core.NewCacheMap[uint64, *core.Container](),
 		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
 
-		modByName:         map[string]*UserMod{},
 		loadModCache:      core.NewCacheMap[digest.Digest, *UserMod](),
 		clientCallContext: map[digest.Digest]*clientCallContext{},
 	}
@@ -130,9 +129,6 @@ type APIServer struct {
 	// the core API simulated as a module (intrisic dep of every user module)
 	core *CoreMod
 
-	// name of user-defined module name -> vertex in the DAG for that module
-	modByName map[string]*UserMod
-
 	// cache used to de-dupe loading modules from metadata
 	loadModCache *core.CacheMap[digest.Digest, *UserMod]
 
@@ -140,9 +136,7 @@ type APIServer struct {
 	// For the special case of the main client caller, the key is just empty string
 	// TODO: doc why this is never removed from
 	clientCallContext map[digest.Digest]*clientCallContext
-
-	// TODO: split to separate locks more?
-	mu sync.RWMutex
+	clientCallMu      sync.RWMutex
 }
 
 type clientCallContext struct {
@@ -289,7 +283,6 @@ func (s *APIServer) AddModFromMetadata(
 		if err != nil {
 			return nil, err
 		}
-		s.modByName[modMeta.Name] = mod
 		return mod, nil
 	})
 }
@@ -312,13 +305,11 @@ func (s *APIServer) AddModFromRef(
 }
 
 func (s *APIServer) GetModFromMetadata(modMeta *core.Module) (*UserMod, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	mod, ok := s.modByName[modMeta.Name]
-	if ok {
-		return mod, nil
+	dgst, err := modMeta.BaseDigest()
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("module %q not found", modMeta.Name)
+	return s.loadModCache.Get(dgst)
 }
 
 func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.Module) error {
@@ -335,8 +326,8 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 		return err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.clientCallMu.Lock()
+	defer s.clientCallMu.Unlock()
 	callCtx, ok := s.clientCallContext[""]
 	if !ok {
 		return fmt.Errorf("client call not found")
@@ -367,8 +358,8 @@ func (s *APIServer) RegisterFunctionCall(ctx context.Context, dgst digest.Digest
 		dag = mod.deps
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.clientCallMu.Lock()
+	defer s.clientCallMu.Unlock()
 	_, ok := s.clientCallContext[dgst]
 	if ok {
 		return nil
@@ -390,8 +381,8 @@ func (s *APIServer) CurrentModule(ctx context.Context) (*UserMod, error) {
 		return nil, fmt.Errorf("no current module for main client caller")
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.clientCallMu.RLock()
+	defer s.clientCallMu.RUnlock()
 	callCtx, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
@@ -408,8 +399,8 @@ func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall
 		return nil, fmt.Errorf("no current function call for main client caller")
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.clientCallMu.RLock()
+	defer s.clientCallMu.RUnlock()
 	callCtx, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
