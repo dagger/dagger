@@ -356,6 +356,7 @@ func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModTyp
 
 	case core.TypeDefKindObject:
 		// check to see if this is from a direct dependency
+		// TODO: this is wrong; it ends up recursing to non-direct deps
 		for _, depMod := range m.deps.roots {
 			depType, ok, err := depMod.ModTypeFor(ctx, typeDef)
 			if err != nil {
