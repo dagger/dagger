@@ -221,10 +221,10 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         yield handler.render(named_type)
         ctx.process_type(type_name)
 
-    yield render_default_client(
-        ctx.defined,
-        get_root_fields(schema.type_map),
-    )
+    yield ""
+    yield "dag = Client()"
+    yield '"""The global client instance."""'
+    ctx.defined.add("dag")
 
     yield ""
     yield "__all__ = ["
@@ -287,26 +287,6 @@ def create_id_query_map(id_map: IDMap, type_map: TypeMap) -> IDQueryMap:
 def get_root_fields(type_map: TypeMap) -> GraphQLFieldMap:
     """Get all fields under Query."""
     return cast(GraphQLObjectType, type_map["Query"]).fields
-
-
-@joiner
-def render_default_client(
-    defined: set[str], root_fields: GraphQLFieldMap
-) -> Iterator[str]:
-    names = sorted(format_name(name) for name in root_fields)
-
-    yield "_client = Client()"
-    yield from (f"{name} = _client.{name}" for name in names)
-    defined.update(names)
-
-    yield textwrap.dedent(
-        '''\
-        def default_client() -> Client:
-            """Return the default client instance."""
-            return _client
-        '''
-    )
-    defined.add("default_client")
 
 
 @dataclass(slots=True)

@@ -11,9 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 class Connection(ResourceManager):
-    """Connect to a Dagger Engine.
+    """Connect to a Dagger Engine with an isolated client.
 
     Example::
+
+        import dagger
 
         async def main():
             async with dagger.Connection() as client:
@@ -59,14 +61,17 @@ class Connection(ResourceManager):
 async def connection(config: Config | None = None):
     """Connect to a Dagger Engine using the global client.
 
-    This is similar to :py:class:`dagger.Connection` but uses a
-    global client so there's no need to pass around a client instance with this.
+    This is similar to :py:class:`dagger.Connection` but uses a global client
+    (:py:attr:`dag`) so there's no need to pass around a client instance with this.
 
     Example::
 
+        import dagger
+        from dagger import dag
+
         async def main():
             async with dagger.connection():
-                ctr = dagger.container().from_("alpine")
+                ctr = dag.container().from_("alpine")
 
             # Connection is closed when leaving the context manager's scope.
 
@@ -76,22 +81,19 @@ async def connection(config: Config | None = None):
         import sys
         import anyio
         import dagger
+        from dagger import dag
 
         async def main():
             cfg = dagger.Config(log_output=sys.stderr)
 
             async with dagger.connection(cfg):
-                ctr = dagger.container().from_("python:3.11.1-alpine")
+                ctr = dag.container().from_("python:3.11.1-alpine")
                 version = await ctr.with_exec(["python", "-V"]).stdout()
 
             print(version)
             # Output: Python 3.11.1
 
         anyio.run(main)
-
-    Warning
-    -------
-    Experimental.
     """
     logger.debug("Establishing connection with shared client")
     async with provision_engine(config or Config()) as engine:
@@ -104,35 +106,3 @@ async def connection(config: Config | None = None):
 _shared = SharedConnection()
 connect = _shared.connect
 close = _shared.close
-
-
-def closing():
-    """Context manager that closes the global client's connection.
-
-    It's an alternative to :py:func:`dagger.connection`, without automatic
-    engine provisioning and has a lazy connection. The connection is only
-    established when needed, i.e., when calling ``await`` on a client method.
-
-    Example::
-
-        import anyio
-        import dagger
-
-        async def main():
-            async with dagger.closing():
-                ctr = dagger.container().from_("python:3.11.1-alpine")
-                # Connection is only established when needed.
-                version = await ctr.with_exec(["python", "-V"]).stdout()
-
-            # Connection is closed when leaving the context manager's scope.
-
-            print(version)
-            # Output: Python 3.11.1
-
-        anyio.run(main)
-
-    Warning
-    -------
-    Experimental.
-    """
-    return contextlib.aclosing(_shared)

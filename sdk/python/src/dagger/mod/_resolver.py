@@ -22,6 +22,7 @@ from graphql.pyutils import camel_to_snake
 from typing_extensions import Self, override
 
 import dagger
+from dagger import dag
 
 from ._arguments import Parameter
 from ._converter import to_typedef
@@ -123,7 +124,7 @@ class FunctionResolver(Resolver, Generic[P, F]):
     @override
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
         """Add a new object to current module."""
-        fn = dagger.function(self.name, to_typedef(self.return_type))
+        fn = dag.function(self.name, to_typedef(self.return_type))
 
         if self.doc:
             fn = fn.with_description(self.doc)

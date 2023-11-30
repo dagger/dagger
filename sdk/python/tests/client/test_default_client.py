@@ -1,6 +1,7 @@
 import pytest
 
 import dagger
+from dagger import dag
 from dagger._connection import SharedConnection
 from dagger._engine.conn import provision_engine
 
@@ -26,7 +27,7 @@ async def test_context_manager_provision():
     async with dagger.connection():
         assert conn.is_connected(), "Connection should be established."
         out = await (
-            dagger.container()
+            dag.container()
             .from_("alpine:3.16.2")
             .with_exec(["echo", "-n", "hello"])
             .stdout()
@@ -39,7 +40,7 @@ async def test_context_manager_provision():
 class TestConnectionManagement:
     @pytest.fixture(scope="class", autouse=True)
     async def _setup(self):
-        # This allow running these tests from the host by auto provisioning.
+        # This allows running these tests from the host by auto provisioning.
         async with provision_engine(dagger.Config(retry=None)) as engine:
             # Just setup connection, don't connect yet.
             # We want to test connect and disconnect.
@@ -66,7 +67,7 @@ class TestConnectionManagement:
         async with await dagger.connect() as conn:
             assert conn.is_connected(), "Connection should be established."
             out = await (
-                dagger.container()
+                dag.container()
                 .from_("alpine:3.16.2")
                 .with_exec(["echo", "-n", "hello"])
                 .stdout()
@@ -77,7 +78,7 @@ class TestConnectionManagement:
         conn = await dagger.connect()
         assert conn.is_connected(), "Connection should be established."
         out = await (
-            dagger.container()
+            dag.container()
             .from_("alpine:3.16.2")
             .with_exec(["echo", "-n", "hello"])
             .stdout()
@@ -88,7 +89,7 @@ class TestConnectionManagement:
     async def test_connect_and_global_close(self):
         await dagger.connect()
         out = await (
-            dagger.container()
+            dag.container()
             .from_("alpine:3.16.2")
             .with_exec(["echo", "-n", "hello"])
             .stdout()
@@ -98,21 +99,10 @@ class TestConnectionManagement:
 
     async def test_lazy_connect_and_global_close(self):
         out = await (
-            dagger.container()
+            dag.container()
             .from_("alpine:3.16.2")
             .with_exec(["echo", "-n", "hello"])
             .stdout()
         )
         assert out == "hello"
         await dagger.close()
-
-    async def test_closing(self):
-        async with dagger.closing() as conn:
-            assert not conn.is_connected(), "Connection should not be established."
-            out = await (
-                dagger.container()
-                .from_("alpine:3.16.2")
-                .with_exec(["echo", "-n", "hello"])
-                .stdout()
-            )
-            assert out == "hello"

@@ -43,13 +43,14 @@ import sys
 
 import anyio
 import dagger
+from dagger import dag
 
 
 async def main(args: list[str]):
-    async with dagger.Connection() as client:
+    async with dagger.connection():
         # build container with cowsay entrypoint
         ctr = (
-            client.container()
+            dag.container()
             .from_("python:alpine")
             .with_exec(["pip", "install", "cowsay"])
             .with_entrypoint(["cowsay"])
@@ -87,7 +88,7 @@ If you need to debug, you can stream the logs from the engine with the `log_outp
 
 ```python
 config = dagger.Config(log_output=sys.stderr)
-async with dagger.Connection(config) as client:
+async with dagger.connection(config):
     ...
 ```
 

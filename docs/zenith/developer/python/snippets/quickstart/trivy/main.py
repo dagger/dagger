@@ -1,5 +1,4 @@
-import dagger
-from dagger.mod import function
+from dagger import dag, function
 
 
 @function
@@ -10,7 +9,7 @@ async def scan_image(
     format: str = "table",
 ) -> str:
     return await (
-        dagger.container()
+        dag.container()
         .from_("aquasec/trivy:latest")
         .with_exec(
             [

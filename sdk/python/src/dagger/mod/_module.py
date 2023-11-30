@@ -18,6 +18,7 @@ from rich.console import Console
 from typing_extensions import dataclass_transform, overload
 
 import dagger
+from dagger import dag
 from dagger.log import configure_logging
 
 from ._converter import make_converter
@@ -73,8 +74,8 @@ class Module:
         self._log_level = log_level  # TODO: Hook debug from `--debug` flag in CLI?
         self._converter: cattrs.Converter = make_converter()
         self._resolvers: list[Resolver] = []
-        self._fn_call = dagger.current_function_call()
-        self._mod = dagger.current_module()
+        self._fn_call = dag.current_function_call()
+        self._mod = dag.current_module()
 
     def add_resolver(self, resolver: Resolver):
         self._resolvers.append(resolver)
@@ -212,7 +213,7 @@ class Module:
         mod = self._mod
 
         for obj, obj_resolvers in resolvers.items():
-            typedef = dagger.type_def().with_object(
+            typedef = dag.type_def().with_object(
                 obj.name,
                 description=obj.doc,
             )

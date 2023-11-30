@@ -4,7 +4,8 @@ import pytest
 from beartype.door import TypeHint
 from typing_extensions import Doc
 
-from dagger.mod import Arg, Module, field
+from dagger import Arg, field
+from dagger.mod import Module
 from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
 
 

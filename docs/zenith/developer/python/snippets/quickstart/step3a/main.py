@@ -1,4 +1,6 @@
-from dagger.mod import Annotated, Doc, function
+from typing import Annotated
+
+from dagger import Doc, function
 
 
 @function
