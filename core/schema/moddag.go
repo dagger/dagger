@@ -657,12 +657,18 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 		return nil, nil
 	}
 
+	// TODO: in theory it's more correct to convert to an ID, but SDKs don't currently handle this correctly.
+	// They only do ID conversions for core types, but still expect custom objects to be passed as raw
+	// json serialized objects. This can be updated once SDKs are fixed
 	switch value := value.(type) {
 	case string:
-		// assume it's already been converted to an id
-		return value, nil
+		// TODO: this is what should be happening
+		// return value, nil
+		return resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
 	case map[string]any:
-		return resourceid.EncodeModule(obj.typeDef.AsObject.Name, value)
+		// TODO: this is what should be happening
+		// return resourceid.EncodeModule(obj.typeDef.AsObject.Name, value)
+		return value, nil
 	default:
 		return nil, fmt.Errorf("unexpected input value type %T for object %q", value, obj.typeDef.AsObject.Name)
 	}
@@ -814,8 +820,7 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		Type:        ast.NonNullNamedType(objName+"ID", nil),
 	})
 	newObjResolver["id"] = func(p graphql.ResolveParams) (any, error) {
-		// TODO: name of method is awkward in this case... better name?
-		return obj.ConvertToSDKInput(ctx, p.Source)
+		return resourceid.EncodeModule(objName, p.Source)
 	}
 
 	for _, field := range fields {
@@ -1050,7 +1055,7 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 		if fn.obj != nil {
 			objName = fn.obj.typeDef.AsObject.OriginalName
 		}
-		return nil, nil, fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+		return nil, nil, fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
 			objName,
 			fn.metadata.OriginalName,
 			sourceMod.Name(),
@@ -1134,13 +1139,12 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 
 	if fn.obj != nil {
 		// TODO: add parent val to cache keys
-		/* TODO: in theory this is probably correct, but not handled by SDKs rn
+
 		var err error
 		parentVal, err = fn.obj.ConvertToSDKInput(ctx, parentVal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert parent value: %w", err)
 		}
-		*/
 	}
 
 	for _, input := range inputs {
