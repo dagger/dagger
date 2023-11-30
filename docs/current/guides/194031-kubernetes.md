@@ -19,11 +19,19 @@ This guide assumes that you have:
 
 - A good understanding of how Kubernetes works, and of key Kubernetes components and add-ons.
 - A good understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/index.mdx).
-- A Kubernetes cluster [Helm](https://helm.sh) installed.
+- A Kubernetes cluster with [Helm](https://helm.sh) 3.x installed.
 
-## Step 1:
+## Step 1: Deploy a Dagger Engine DaemonSet with Helm
 
-TODO
+Create a Dagger Engine DaemonSet on the cluster with our Helm chart:
+
+```shell
+helm upgrade --create-namespace --install --namespace dagger dagger oci://registry.dagger.io/dagger-helm
+```
+
+## Step 2:
+
+TODO with Gerhard
 
 ## Conclusion
 
