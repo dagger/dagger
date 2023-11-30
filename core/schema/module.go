@@ -258,7 +258,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Di
 }
 
 func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.Module, _ any) ([]*core.TypeDef, error) {
-	mod, err := s.GetModFromMetadata(modMeta)
+	mod, err := s.GetModFromMetadata(ctx, modMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}
@@ -314,7 +314,7 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.Modul
 }
 
 func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Module, _ any) ([]*core.Module, error) {
-	mod, err := s.GetModFromMetadata(modMeta)
+	mod, err := s.GetModFromMetadata(ctx, modMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}
@@ -331,7 +331,7 @@ func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Mod
 }
 
 func (s *moduleSchema) moduleGeneratedCode(ctx context.Context, modMeta *core.Module, _ any) (*core.GeneratedCode, error) {
-	mod, err := s.GetModFromMetadata(modMeta)
+	mod, err := s.GetModFromMetadata(ctx, modMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}

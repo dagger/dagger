@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -38,7 +39,19 @@ func NewCacheMap[K comparable, T any]() *CacheMap[K, T] {
 	}
 }
 
-func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {
+type cacheMapContextKey[K comparable, T any] struct {
+	key K
+	m   *CacheMap[K, T]
+}
+
+var ErrCacheMapRecursiveCall = fmt.Errorf("recursive call detected")
+
+func (m *CacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, error) {
+	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
+		var zero T
+		return zero, ErrCacheMapRecursiveCall
+	}
+
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()
@@ -51,7 +64,8 @@ func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error)
 	m.calls[key] = c
 	m.l.Unlock()
 
-	c.val, c.err = fn()
+	ctx = context.WithValue(ctx, cacheMapContextKey[K, T]{key: key, m: m}, struct{}{})
+	c.val, c.err = fn(ctx)
 	c.wg.Done()
 
 	if c.err != nil {
@@ -63,7 +77,12 @@ func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error)
 	return c.val, c.err
 }
 
-func (m *CacheMap[K, T]) Get(key K) (T, error) {
+func (m *CacheMap[K, T]) Get(ctx context.Context, key K) (T, error) {
+	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
+		var zero T
+		return zero, ErrCacheMapRecursiveCall
+	}
+
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()

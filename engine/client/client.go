@@ -70,7 +70,7 @@ type Params struct {
 	// If this client is for a module function, this digest will be set in the
 	// grpc context metadata for any api requests back to the engine. It's used by the API
 	// server to determine which schema to serve and other module context metadata.
-	ModuleContextDigest digest.Digest
+	ModuleCallerDigest digest.Digest
 }
 
 type Client struct {
@@ -238,7 +238,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ClientHostname:      c.hostname,
 		Labels:              c.labels,
 		ParentClientIDs:     c.ParentClientIDs,
-		ModuleContextDigest: c.ModuleContextDigest,
+		ModuleCallertDigest: c.ModuleCallerDigest,
 	})
 
 	// progress
@@ -276,7 +276,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				Labels:                    c.labels,
-				ModuleContextDigest:       c.ModuleContextDigest,
+				ModuleCallertDigest:       c.ModuleCallerDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -466,7 +466,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 			ClientHostname:      c.hostname,
 			ParentClientIDs:     c.ParentClientIDs,
 			Labels:              c.labels,
-			ModuleContextDigest: c.ModuleContextDigest,
+			ModuleCallertDigest: c.ModuleCallerDigest,
 		}.ToGRPCMD())
 	}
 	if err != nil {

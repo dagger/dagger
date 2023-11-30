@@ -667,9 +667,9 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		clientParams.ServerID = serverID
 	}
 
-	moduleContextDigest, ok := internalEnv("_DAGGER_MODULE_CONTEXT_DIGEST")
+	moduleCallerDigest, ok := internalEnv("_DAGGER_MODULE_CALLER_DIGEST")
 	if ok {
-		clientParams.ModuleContextDigest = digest.Digest(moduleContextDigest)
+		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
 	}
 
 	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")

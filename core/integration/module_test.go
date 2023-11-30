@@ -3066,6 +3066,28 @@ func TestModuleGoSyncDeps(t *testing.T) {
 	require.JSONEq(t, `{"use":{"useHello":"goodbye"}}`, out)
 }
 
+func TestModuleLoops(t *testing.T) {
+	// verify circular module dependencies result in an error
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/depA").
+		With(daggerExec("mod", "init", "--name=depA", "--sdk=go", "--root=..")).
+		WithWorkdir("/work/depB").
+		With(daggerExec("mod", "init", "--name=depB", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../depA")).
+		WithWorkdir("/work/depC").
+		With(daggerExec("mod", "init", "--name=depC", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../depB")).
+		WithWorkdir("/work/depA").
+		With(daggerExec("mod", "install", "../depC")).
+		Sync(ctx)
+	require.ErrorContains(t, err, "module depA has a circular dependency")
+}
+
 //go:embed testdata/modules/go/id/arg/main.go
 var badIDArgGoSrc string
 

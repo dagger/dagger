@@ -134,7 +134,8 @@ type APIServer struct {
 
 	// The metadata of client calls.
 	// For the special case of the main client caller, the key is just empty string
-	// TODO: doc why this is never removed from
+	// This is never explicitly deleted from; instead it will just be garbage collected
+	// when this server for the session shuts down
 	clientCallContext map[digest.Digest]*clientCallContext
 	clientCallMu      sync.RWMutex
 }
@@ -162,9 +163,9 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	callContext, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
+	callContext, ok := s.clientCallContext[clientMetadata.ModuleCallertDigest]
 	if !ok {
-		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest), http.StatusInternalServerError)
+		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallertDigest), http.StatusInternalServerError)
 		return
 	}
 
@@ -251,7 +252,7 @@ func (s *APIServer) AddModFromMetadata(
 	if err != nil {
 		return nil, err
 	}
-	return s.loadModCache.GetOrInitialize(dgst, func() (*UserMod, error) {
+	mod, err := s.loadModCache.GetOrInitialize(ctx, dgst, func(ctx context.Context) (*UserMod, error) {
 		var eg errgroup.Group
 		deps := make([]Mod, len(modMeta.DependencyConfig))
 		for i, depRef := range modMeta.DependencyConfig {
@@ -285,6 +286,13 @@ func (s *APIServer) AddModFromMetadata(
 		}
 		return mod, nil
 	})
+	if err != nil {
+		if errors.Is(err, core.ErrCacheMapRecursiveCall) {
+			err = fmt.Errorf("module %s has a circular dependency", modMeta.Name)
+		}
+		return nil, err
+	}
+	return mod, nil
 }
 
 func (s *APIServer) AddModFromRef(
@@ -304,12 +312,12 @@ func (s *APIServer) AddModFromRef(
 	return s.AddModFromMetadata(ctx, modMeta, pipeline)
 }
 
-func (s *APIServer) GetModFromMetadata(modMeta *core.Module) (*UserMod, error) {
+func (s *APIServer) GetModFromMetadata(ctx context.Context, modMeta *core.Module) (*UserMod, error) {
 	dgst, err := modMeta.BaseDigest()
 	if err != nil {
 		return nil, err
 	}
-	return s.loadModCache.Get(dgst)
+	return s.loadModCache.Get(ctx, dgst)
 }
 
 func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.Module) error {
@@ -317,11 +325,11 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	if err != nil {
 		return err
 	}
-	if clientMetadata.ModuleContextDigest != "" {
+	if clientMetadata.ModuleCallertDigest != "" {
 		return fmt.Errorf("cannot serve module to client %s", clientMetadata.ClientID)
 	}
 
-	mod, err := s.GetModFromMetadata(modMeta)
+	mod, err := s.GetModFromMetadata(ctx, modMeta)
 	if err != nil {
 		return err
 	}
@@ -377,15 +385,15 @@ func (s *APIServer) CurrentModule(ctx context.Context) (*UserMod, error) {
 	if err != nil {
 		return nil, err
 	}
-	if clientMetadata.ModuleContextDigest == "" {
+	if clientMetadata.ModuleCallertDigest == "" {
 		return nil, fmt.Errorf("no current module for main client caller")
 	}
 
 	s.clientCallMu.RLock()
 	defer s.clientCallMu.RUnlock()
-	callCtx, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallertDigest]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallertDigest)
 	}
 	return callCtx.mod, nil
 }
@@ -395,15 +403,15 @@ func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall
 	if err != nil {
 		return nil, err
 	}
-	if clientMetadata.ModuleContextDigest == "" {
+	if clientMetadata.ModuleCallertDigest == "" {
 		return nil, fmt.Errorf("no current function call for main client caller")
 	}
 
 	s.clientCallMu.RLock()
 	defer s.clientCallMu.RUnlock()
-	callCtx, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallertDigest]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallertDigest)
 	}
 
 	return callCtx.fnCall, nil
