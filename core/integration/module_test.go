@@ -2739,9 +2739,9 @@ s += depS
 	}
 
 	// Create a base module, then add 6 layers of deps, where each layer has one more module
-	// than the last of modules as the previous layer and each module within the layer has a
-	// dep on each module from the previous layer. Finally add a single module at the top that
-	// depends on all modules from the last layer and call that.
+	// than the previous layer and each module within the layer has a dep on each module
+	// from the previous layer. Finally add a single module at the top that depends on all
+	// modules from the last layer and call that.
 	// Basically, this creates a quadratically growing DAG of modules and verifies we
 	// handle it efficiently enough to be callable.
 	curDeps := addModulesWithDeps(1, nil)

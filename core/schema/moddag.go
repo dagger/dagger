@@ -218,7 +218,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(_ context.Context, value any) (an
 	return obj.resolver.FromID(id)
 }
 
-func (obj *CoreModObject) ConvertToSDKInput(_ context.Context, value any) (any, error) {
+func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
 	if _, ok := value.(string); ok {
 		return value, nil
 	}
@@ -669,6 +669,26 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 	case map[string]any:
 		// TODO: this is what should be happening
 		// return resourceid.EncodeModule(obj.typeDef.AsObject.Name, value)
+
+		fields, err := obj.Fields(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get fields: %w", err)
+		}
+		fieldNameToModType := make(map[string]ModType) // TODO: cache
+		for _, field := range fields {
+			fieldNameToModType[field.metadata.Name] = field.modType
+		}
+		for k, v := range value {
+			normalizedName := gqlFieldName(k)
+			fieldType, ok := fieldNameToModType[normalizedName]
+			if !ok {
+				continue
+			}
+			value[k], err = fieldType.ConvertToSDKInput(ctx, v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert field %q: %w", k, err)
+			}
+		}
 		return value, nil
 	default:
 		return nil, fmt.Errorf("unexpected input value type %T for object %q", value, obj.typeDef.AsObject.Name)
