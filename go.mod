@@ -15,7 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.31.3 // indirect
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.2
-	github.com/containerd/containerd v1.7.2
+	github.com/containerd/containerd v1.7.8
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.6
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containernetworking/cni v1.1.2
@@ -26,17 +26,17 @@ require (
 	github.com/google/go-containerregistry v0.15.2
 	github.com/google/uuid v1.4.0
 	github.com/iancoleman/strcase v0.3.0
-	// https://github.com/moby/buildkit/commit/86e25b3ad8c20fc420669949f24bb86c74082b2f
-	github.com/moby/buildkit v0.13.0-beta1.0.20231011161957-86e25b3ad8c2
+	// https://github.com/moby/buildkit/commit/c4f191410a411d7b7cb31426e2bd17fae305acf1
+	github.com/moby/buildkit v0.13.0-beta1.0.20231107172747-c4f191410a41
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.0-rc3
+	github.com/opencontainers/image-spec v1.1.0-rc5
 	github.com/opencontainers/runtime-spec v1.1.0-rc.2
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
-	github.com/tonistiigi/fsutil v0.0.0-20230629203738-36ef4d8c0dbb
+	github.com/tonistiigi/fsutil v0.0.0-20230825212630-f09800878302
 	github.com/urfave/cli v1.22.12
 	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 	github.com/zeebo/xxh3 v1.0.2
@@ -100,7 +100,7 @@ require (
 require (
 	cdr.dev/slog v1.4.2 // indirect
 	dario.cat/mergo v1.0.0 // indirect
-	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230106234847-43070de90fa1 // indirect
+	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.0 // indirect
@@ -137,6 +137,7 @@ require (
 	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/containerd/go-cni v1.1.9 // indirect
 	github.com/containerd/go-runc v1.1.0 // indirect
+	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/typeurl/v2 v2.1.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
@@ -183,6 +184,7 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
+	github.com/moby/sys/user v0.1.0 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
@@ -223,20 +225,20 @@ require (
 require (
 	github.com/Khan/genqlient v0.6.0
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/Microsoft/hcsshim v0.10.0-rc.8 // indirect
+	github.com/Microsoft/hcsshim v0.11.1 // indirect
 	github.com/adrg/xdg v0.4.0
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
-	github.com/containerd/continuity v0.4.1
+	github.com/containerd/continuity v0.4.2
 	github.com/containerd/fifo v1.1.0 // indirect
-	github.com/containerd/nydus-snapshotter v0.8.2 // indirect
+	github.com/containerd/nydus-snapshotter v0.13.1 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/containerd/ttrpc v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/cli v24.0.5+incompatible
-	github.com/docker/docker v24.0.0-rc.2.0.20230905130451-032797ea4bcb+incompatible
+	github.com/docker/docker v25.0.0-beta.1+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
