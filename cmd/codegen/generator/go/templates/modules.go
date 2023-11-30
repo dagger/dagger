@@ -6,11 +6,14 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
@@ -917,7 +920,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 
 			paramFields := unpackASTFields(stype.Fields)
 			for f := 0; f < paramType.NumFields(); f++ {
-				spec, err := ps.parseParamSpecVar(paramType.Field(f), strings.TrimSpace(paramFields[f].Doc.Text()), strings.TrimSpace(paramFields[f].Comment.Text()))
+				spec, err := ps.parseParamSpecVar(paramType.Field(f), paramFields[f].Doc.Text(), paramFields[f].Comment.Text())
 				if err != nil {
 					return nil, err
 				}
@@ -933,7 +936,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 	paramFields := unpackASTFields(fnDecl.Type.Params)
 	for ; i < params.Len(); i++ {
 		docComment, lineComment := ps.commentForFuncField(fnDecl, paramFields, i)
-		spec, err := ps.parseParamSpecVar(params.At(i), strings.TrimSpace(docComment.Text()), strings.TrimSpace(lineComment.Text()))
+		spec, err := ps.parseParamSpecVar(params.At(i), docComment.Text(), lineComment.Text())
 		if err != nil {
 			return nil, err
 		}
@@ -961,6 +964,8 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	}
 
 	optional := false
+	defaultValue := ""
+
 	if named, ok := baseType.(*types.Named); ok {
 		if named.Obj().Name() == "Optional" && ps.isDaggerGenerated(named.Obj()) {
 			typeArgs := named.TypeArgs()
@@ -980,17 +985,30 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		}
 	}
 
-	comment := docComment
+	docPragmas, docComment := parsePragmaComment(docComment)
+	linePragmas, lineComment := parsePragmaComment(lineComment)
+	comment := strings.TrimSpace(docComment)
 	if comment == "" {
-		comment = lineComment
+		comment = strings.TrimSpace(lineComment)
+	}
+
+	pragmas := make(map[string]string)
+	maps.Copy(pragmas, docPragmas)
+	maps.Copy(pragmas, linePragmas)
+	if v, ok := pragmas["default"]; ok {
+		defaultValue = v
+	}
+	if v, ok := pragmas["optional"]; ok {
+		optional, _ = strconv.ParseBool(v)
 	}
 
 	return paramSpec{
-		name:        field.Name(),
-		paramType:   paramType,
-		baseType:    baseType,
-		optional:    optional,
-		description: comment,
+		name:         field.Name(),
+		paramType:    paramType,
+		baseType:     baseType,
+		optional:     optional,
+		defaultValue: defaultValue,
+		description:  comment,
 	}, nil
 }
 
@@ -1001,7 +1019,7 @@ type paramSpec struct {
 	optional bool
 	variadic bool
 
-	defaultValue string // NOTE: defaultVal is not currently populated
+	defaultValue string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, Optional, etc
@@ -1173,6 +1191,24 @@ func findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statem
 	default:
 		return t, access
 	}
+}
+
+var pragmaCommentRegexp = regexp.MustCompile(`dagger:\s*(\S+)=(.+)(\n|$)`)
+
+// parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
+func parsePragmaComment(comment string) (data map[string]string, rest string) {
+	data = map[string]string{}
+	lastEnd := 0
+	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
+		key, value := comment[v[2]:v[3]], comment[v[4]:v[5]]
+		data[key] = value
+
+		rest += comment[lastEnd:v[0]]
+		lastEnd = v[1]
+	}
+	rest += comment[lastEnd:]
+
+	return data, rest
 }
 
 func asInlineStruct(t types.Type) (*types.Struct, bool) {

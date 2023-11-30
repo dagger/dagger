@@ -55,3 +55,64 @@ go 1.20
 	require.NoError(t, err)
 	t.Log(generatedMain)
 }
+
+func TestParsePragmaComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		comment  string
+		expected map[string]string
+		rest     string
+	}{
+		{
+			name:    "single key-value",
+			comment: "dagger:foo=bar",
+			expected: map[string]string{
+				"foo": "bar",
+			},
+			rest: "",
+		},
+		{
+			name:    "single key-value with trailing",
+			comment: "dagger:foo=bar\n",
+			expected: map[string]string{
+				"foo": "bar",
+			},
+			rest: "",
+		},
+		{
+			name:    "multiple key-value",
+			comment: "dagger:foo=bar\ndagger:baz=qux",
+			expected: map[string]string{
+				"foo": "bar",
+				"baz": "qux",
+			},
+			rest: "",
+		},
+		{
+			name:    "interpolated key-value",
+			comment: "line 1\ndagger:foo=bar\nline 2\ndagger:baz=qux\nline 3",
+			expected: map[string]string{
+				"foo": "bar",
+				"baz": "qux",
+			},
+			rest: "line 1\nline 2\nline 3",
+		},
+		{
+			name:    "interpolated key-value with trailing",
+			comment: "line 1\ndagger:foo=bar\nline 2\ndagger:baz=qux\nline 3\n",
+			expected: map[string]string{
+				"foo": "bar",
+				"baz": "qux",
+			},
+			rest: "line 1\nline 2\nline 3\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual, rest := parsePragmaComment(test.comment)
+			require.Equal(t, test.expected, actual)
+			require.Equal(t, test.rest, rest)
+		})
+	}
+}

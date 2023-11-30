@@ -130,3 +130,17 @@ func (m *Minimal) EchoOptsInlineTags(ctx context.Context, opts struct {
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
 }
+
+func (m *Minimal) EchoOptsPragmas(
+	msg string,
+
+	// String to append to the echoed message
+	// dagger: optional=true
+	// dagger: default=...
+	suffix string,
+	// Number of times to repeat the message
+	// dagger: optional=true
+	times int, // dagger: default=3
+) string {
+	return strings.Repeat(msg+suffix, times)
+}
