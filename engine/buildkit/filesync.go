@@ -21,6 +21,7 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/compression"
 	bkworker "github.com/moby/buildkit/worker"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -209,7 +210,17 @@ func (c *Client) LocalDirExport(
 	ctx context.Context,
 	def *bksolverpb.Definition,
 	destPath string,
-) error {
+) (rerr error) {
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
+	bklog.G(ctx).Debug("exporting local dir")
+	defer func() {
+		lg := bklog.G(ctx)
+		if rerr != nil {
+			lg = lg.WithError(rerr)
+		}
+		lg.Debug("finished exporting local dir")
+	}()
+
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return err
@@ -266,7 +277,21 @@ func (c *Client) LocalFileExport(
 	destPath string,
 	filePath string,
 	allowParentDirPath bool,
-) error {
+) (rerr error) {
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
+		WithField("export_path", destPath).
+		WithField("file_path", filePath).
+		WithField("allow_parent_dir_path", allowParentDirPath),
+	)
+	bklog.G(ctx).Debug("exporting local file")
+	defer func() {
+		lg := bklog.G(ctx)
+		if rerr != nil {
+			lg = lg.WithError(rerr)
+		}
+		lg.Debug("finished exporting local file")
+	}()
+
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return err
@@ -370,7 +395,17 @@ func (c *Client) LocalFileExport(
 
 // IOReaderExport exports the contents of an io.Reader to the caller's local fs as a file
 // TODO: de-dupe this with the above method to extent possible
-func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) error {
+func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) (rerr error) {
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
+	bklog.G(ctx).Debug("exporting bytes")
+	defer func() {
+		lg := bklog.G(ctx)
+		if rerr != nil {
+			lg = lg.WithError(rerr)
+		}
+		lg.Debug("finished exporting bytes")
+	}()
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session ID: %s", err)
