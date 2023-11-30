@@ -952,7 +952,6 @@ func (f *UserModField) Schema(ctx context.Context) (*ast.FieldDefinition, graphq
 		Type:        fieldASTType,
 	}
 	return fieldDef, func(p graphql.ResolveParams) (any, error) {
-		p.Info.FieldName = f.metadata.OriginalName
 		res, err := graphql.DefaultResolveFn(p)
 		if err != nil {
 			return nil, err
