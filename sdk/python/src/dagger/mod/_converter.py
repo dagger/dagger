@@ -27,6 +27,7 @@ if typing.TYPE_CHECKING:
 
 def make_converter():
     from dagger import dag
+    from dagger.client._core import Arg
     from dagger.client._guards import is_id_type, is_id_type_subclass
 
     conv = make_json_converter(
@@ -36,7 +37,14 @@ def make_converter():
     def dagger_type_structure(id_, cls):
         """Get dagger object type from id."""
         cls = strip_annotations(cls)
-        return dag._get_object_instance(id_, cls)  # noqa: SLF001
+
+        if not is_id_type_subclass(cls):
+            msg = f"Unsupported type '{cls.__name__}'"
+            raise TypeError(msg)
+
+        return cls(
+            dag._select(f"load{cls.__name__}FromID", [Arg("id", id_)])  # noqa: SLF001
+        )
 
     def dagger_type_unstructure(obj):
         """Get id from dagger object."""

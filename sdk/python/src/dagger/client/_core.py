@@ -30,13 +30,12 @@ from dagger import (
     TransportError,
 )
 from dagger._exceptions import _query_error_from_transport
-from dagger.client.base import Scalar, Type
+from dagger.client.base import Type
 
 from ._guards import (
     IDType,
     is_id_type,
     is_id_type_sequence,
-    is_id_type_subclass,
 )
 from ._session import BaseConnection, SharedConnection
 
@@ -247,9 +246,6 @@ def make_converter(ctx: Context):
     return conv
 
 
-_Type = TypeVar("_Type", bound=Type)
-
-
 class Root(Type):
     """Top level query object type (a.k.a. Query)."""
 
@@ -269,16 +265,3 @@ class Root(Type):
         # Since SharedConnection is a singleton, we could make Context optional
         # in every Type like here, but let's keep it only for the root object for now.
         super().__init__(ctx or Context(SharedConnection()))
-
-    def _get_object_instance(self, id_: str | Scalar, cls: type[_Type]) -> _Type:
-        if not is_id_type_subclass(cls):
-            msg = f"Unsupported type '{cls.__name__}'"
-            raise TypeError(msg)
-
-        if type(id_) is not cls._id_type() and not isinstance(id_, str):
-            msg = f"Expected id type '{cls._id_type()}', got '{type(id_)}'"
-            raise TypeError(msg)
-
-        assert issubclass(cls, Type)
-        ctx = self._select(cls._from_id_query_field(), [Arg("id", id_)])
-        return cls(ctx)
