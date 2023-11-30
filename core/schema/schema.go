@@ -153,26 +153,27 @@ type clientCallContext struct {
 
 func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	errorOut := func(err error) {
+	errorOut := func(err error, code int) {
 		bklog.G(ctx).WithError(err).Error("failed to serve request")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), code)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		errorOut(err)
+		errorOut(err, http.StatusInternalServerError)
 		return
 	}
 
 	callContext, ok := s.clientCallContext[clientMetadata.ModuleContextDigest]
 	if !ok {
-		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest))
+		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleContextDigest), http.StatusInternalServerError)
 		return
 	}
 
 	schema, err := callContext.dag.Schema(ctx)
 	if err != nil {
-		errorOut(err)
+		// TODO: technically this is not *always* bad request, should ideally be more specific and differentiate
+		errorOut(err, http.StatusBadRequest)
 		return
 	}
 

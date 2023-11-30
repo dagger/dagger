@@ -105,7 +105,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main module object for sdk module %s: %w", sdk.mod.Name(), err)
 	}
-	codegenFn, err := mainModObj.FunctionByName("Codegen")
+	codegenFn, err := mainModObj.FunctionByName(ctx, "Codegen")
 	if err != nil {
 		return nil, fmt.Errorf("failed to find required Codegen function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
@@ -152,7 +152,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Containe
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main module object for sdk module %s: %w", sdk.mod.Name(), err)
 	}
-	getRuntimeFn, err := mainModObj.FunctionByName("ModuleRuntime")
+	getRuntimeFn, err := mainModObj.FunctionByName(ctx, "ModuleRuntime")
 	if err != nil {
 		return nil, fmt.Errorf("failed to find required ModuleRuntime function in SDK module %s: %w", sdk.mod.Name(), err)
 	}

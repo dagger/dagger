@@ -96,11 +96,11 @@ func (d *ModDag) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledSc
 
 	var schemas []SchemaResolvers
 	for _, root := range d.roots {
-		schema, err := root.Schema(ctx)
+		modSchemas, err := root.Schema(ctx)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to get schema for root %q: %w", root.Name(), err)
+			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", root.Name(), err)
 		}
-		schemas = append(schemas, schema)
+		schemas = append(schemas, modSchemas...)
 	}
 	schema, err := mergeExecutableSchemas(schemas...)
 	if err != nil {
@@ -114,101 +114,33 @@ func (d *ModDag) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledSc
 	return schema, introspectionJSON, nil
 }
 
-func (d *ModDag) ObjectByName(ctx context.Context, objName string) (ModObject, bool, error) {
+func (d *ModDag) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModType, bool, error) {
 	for _, root := range d.roots {
-		obj, ok, err := root.ObjectByName(ctx, objName)
+		modType, ok, err := root.ModTypeFor(ctx, typeDef)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to get object for root %q: %w", root.Name(), err)
+			return nil, false, fmt.Errorf("failed to get type from root %q: %w", root.Name(), err)
 		}
-		if ok {
-			return obj, true, nil
+		if !ok {
+			continue
 		}
+		return modType, true, nil
 	}
 	return nil, false, nil
 }
-
-/* TODO: rm if unused
-func (d *ModDag) Walk(cb func(Mod) error) error {
-	memo := make(map[string]struct{})
-	currentMods := d.roots
-	for len(currentMods) > 0 {
-		var nextMods []Mod
-		for _, mod := range currentMods {
-			if _, ok := memo[mod.Name()]; ok {
-				continue
-			}
-			memo[mod.Name()] = struct{}{}
-			if err := cb(mod); err != nil {
-				return err
-			}
-			nextMods = append(nextMods, mod.Dependencies()...)
-		}
-		currentMods = nextMods
-	}
-	return nil
-}
-
-func (d *ModDag) TopologicalSort() []Mod {
-	// TODO: cache? or maybe just have callers cache as needed
-
-	modsByName := make(map[string]Mod)
-	modDeps := make(map[string]map[string]struct{})
-	reverseModDeps := make(map[string]map[string]struct{})
-	var currentMods []Mod
-	d.Walk(func(mod Mod) error {
-		modsByName[mod.Name()] = mod
-		if len(mod.Dependencies()) == 0 {
-			currentMods = append(currentMods, mod)
-			return nil
-		}
-		modDeps[mod.Name()] = make(map[string]struct{})
-		for _, dep := range mod.Dependencies() {
-			modDeps[mod.Name()][dep.Name()] = struct{}{}
-			reverseDeps, ok := reverseModDeps[dep.Name()]
-			if !ok {
-				reverseDeps = make(map[string]struct{})
-				reverseModDeps[dep.Name()] = reverseDeps
-			}
-			reverseDeps[mod.Name()] = struct{}{}
-		}
-		return nil
-	})
-
-	var sorted []Mod
-	for len(currentMods) > 0 {
-		sort.Slice(currentMods, func(i, j int) bool {
-			return currentMods[i].Name() < currentMods[j].Name()
-		})
-		sorted = append(sorted, currentMods...)
-
-		var nextMods []Mod
-		for _, mod := range currentMods {
-			for dep := range reverseModDeps[mod.Name()] {
-				delete(modDeps[dep], mod.Name())
-				if len(modDeps[dep]) == 0 {
-					nextMods = append(nextMods, modsByName[dep])
-				}
-			}
-		}
-		currentMods = nextMods
-	}
-
-	return sorted
-}
-*/
 
 type Mod interface {
 	Name() string
 	DagDigest() digest.Digest
 	Dependencies() []Mod
-	Schema(context.Context) (*CompiledSchema, error)
+	Schema(context.Context) ([]SchemaResolvers, error)
 	DependencySchemaIntrospectionJSON(context.Context) (string, error)
-	ObjectByName(ctx context.Context, objName string) (ModObject, bool, error)
+	ModTypeFor(context.Context, *core.TypeDef) (ModType, bool, error)
 }
 
-type ModObject interface {
+type ModType interface {
+	ConvertFromSDKResult(ctx context.Context, value any) (any, error)
+	ConvertToSDKInput(ctx context.Context, value any) (any, error)
 	SourceMod() Mod
-	FromID(id string) (any, error)
 }
 
 type CoreMod struct {
@@ -231,25 +163,44 @@ func (m *CoreMod) Dependencies() []Mod {
 	return nil
 }
 
-func (m *CoreMod) Schema(_ context.Context) (*CompiledSchema, error) {
-	return m.compiledSchema, nil
+func (m *CoreMod) Schema(_ context.Context) ([]SchemaResolvers, error) {
+	return []SchemaResolvers{m.compiledSchema.SchemaResolvers}, nil
 }
 
 func (m *CoreMod) DependencySchemaIntrospectionJSON(_ context.Context) (string, error) {
 	return m.introspectionJSON, nil
 }
 
-func (m *CoreMod) ObjectByName(_ context.Context, objName string) (ModObject, bool, error) {
-	objName = gqlObjectName(objName)
-	resolver, ok := m.compiledSchema.Resolvers()[objName]
-	if !ok {
-		return nil, false, nil
+func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModType, bool, error) {
+	switch typeDef.Kind {
+	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:
+		return &PrimitiveType{}, true, nil
+
+	case core.TypeDefKindList:
+		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.ElementTypeDef)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
+		}
+		if !ok {
+			return nil, false, nil
+		}
+		return &ListType{underlying: underlyingType}, true, nil
+
+	case core.TypeDefKindObject:
+		typeName := gqlObjectName(typeDef.AsObject.Name)
+		resolver, ok := m.compiledSchema.Resolvers()[typeName]
+		if !ok {
+			return nil, false, nil
+		}
+		idableResolver, ok := resolver.(IDableObjectResolver)
+		if !ok {
+			return nil, false, nil
+		}
+		return &CoreModObject{coreMod: m, resolver: idableResolver}, true, nil
+
+	default:
+		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
-	idableResolver, ok := resolver.(IDableObjectResolver)
-	if !ok {
-		return nil, false, nil
-	}
-	return &CoreModObject{coreMod: m, resolver: idableResolver}, true, nil
 }
 
 type CoreModObject struct {
@@ -257,14 +208,25 @@ type CoreModObject struct {
 	resolver IDableObjectResolver
 }
 
-var _ ModObject = (*CoreModObject)(nil)
+var _ ModType = (*CoreModObject)(nil)
+
+func (obj *CoreModObject) ConvertFromSDKResult(_ context.Context, value any) (any, error) {
+	id, ok := value.(string)
+	if !ok {
+		return value, nil
+	}
+	return obj.resolver.FromID(id)
+}
+
+func (obj *CoreModObject) ConvertToSDKInput(_ context.Context, value any) (any, error) {
+	if _, ok := value.(string); ok {
+		return value, nil
+	}
+	return obj.resolver.ToID(value)
+}
 
 func (obj *CoreModObject) SourceMod() Mod {
 	return obj.coreMod
-}
-
-func (obj *CoreModObject) FromID(id string) (any, error) {
-	return obj.resolver.FromID(id)
 }
 
 type UserMod struct {
@@ -312,20 +274,6 @@ func (m *UserMod) Dependencies() []Mod {
 	return m.deps.roots
 }
 
-func (m *UserMod) MainModuleObject(ctx context.Context) (*UserModObject, error) {
-	objs, err := m.Objects(ctx)
-	if err != nil {
-		return nil, err
-	}
-	mainObjName := gqlObjectName(m.metadata.Name)
-	for _, obj := range objs {
-		if obj.typeDef.AsObject.Name == mainObjName {
-			return obj, nil
-		}
-	}
-	return nil, fmt.Errorf("failed to find main module object %q", mainObjName)
-}
-
 func (m *UserMod) Codegen(ctx context.Context) (*core.GeneratedCode, error) {
 	return m.sdk.Codegen(ctx, m)
 }
@@ -335,9 +283,6 @@ func (m *UserMod) Runtime(ctx context.Context) (*core.Container, error) {
 }
 
 func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, rerr error) {
-	// TODO: usefu or noisy?
-	bklog.G(ctx).Debugf("getting objects")
-
 	m.loadObjectsLock.Lock()
 	defer m.loadObjectsLock.Unlock()
 	if len(m.lazilyLoadedObjects) > 0 {
@@ -358,10 +303,14 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 	}
 
 	// TODO: re-doc this
-	result, err := newModFunction(m, nil, runtime, core.NewFunction("", &core.TypeDef{
+	getModDefFn, err := newModFunction(ctx, m, nil, runtime, core.NewFunction("", &core.TypeDef{
 		Kind:     core.TypeDefKindObject,
 		AsObject: core.NewObjectTypeDef("Module", ""),
-	})).Call(ctx, true, nil, nil, nil)
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", m.Name(), err)
+	}
+	result, err := getModDefFn.Call(ctx, true, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name(), err)
 	}
@@ -373,26 +322,83 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 
 	var objs []*UserModObject
 	for _, objTypeDef := range modMeta.Objects {
-		obj, err := newModObject(ctx, m, objTypeDef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create object: %w", err)
-		}
-
 		if err := m.validateTypeDef(ctx, objTypeDef); err != nil {
 			return nil, fmt.Errorf("failed to validate type def: %w", err)
 		}
 
-		// namespace the module objects
 		if err := m.namespaceTypeDef(ctx, objTypeDef); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
 
+		obj, err := newModObject(ctx, m, objTypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create object: %w", err)
+		}
 		objs = append(objs, obj)
 	}
 	return objs, nil
 }
 
-func (m *UserMod) Schema(ctx context.Context) (*CompiledSchema, error) {
+func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModType, bool, error) {
+	switch typeDef.Kind {
+	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:
+		return &PrimitiveType{}, true, nil
+
+	case core.TypeDefKindList:
+		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.ElementTypeDef)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
+		}
+		if !ok {
+			return nil, false, nil
+		}
+		return &ListType{underlying: underlyingType}, true, nil
+
+	case core.TypeDefKindObject:
+		// check to see if this is from a direct dependency
+		for _, depMod := range m.deps.roots {
+			depType, ok, err := depMod.ModTypeFor(ctx, typeDef)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get type from dependency %q: %w", depMod.Name(), err)
+			}
+			if !ok {
+				continue
+			}
+			return depType, true, nil
+		}
+
+		// otherwise it must be from this module
+		typeName := gqlObjectName(typeDef.AsObject.Name)
+		objs, err := m.Objects(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, obj := range objs {
+			if obj.typeDef.AsObject.Name == typeName {
+				return obj, true, nil
+			}
+		}
+		return nil, false, nil
+
+	default:
+		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+	}
+}
+
+func (m *UserMod) MainModuleObject(ctx context.Context) (*UserModObject, error) {
+	objs, err := m.Objects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, obj := range objs {
+		if obj.typeDef.AsObject.Name == gqlObjectName(m.metadata.Name) {
+			return obj, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to find main module object %q", m.metadata.Name)
+}
+
+func (m *UserMod) Schema(ctx context.Context) ([]SchemaResolvers, error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("module", m.Name()))
 	bklog.G(ctx).Debug("getting module schema")
 
@@ -401,7 +407,7 @@ func (m *UserMod) Schema(ctx context.Context) (*CompiledSchema, error) {
 		return nil, err
 	}
 
-	executableSchemas := make([]SchemaResolvers, 0, len(objs))
+	schemas := make([]SchemaResolvers, 0, len(objs))
 	for _, obj := range objs {
 		objSchemaDoc, objResolvers, err := obj.Schema(ctx)
 		if err != nil {
@@ -411,34 +417,19 @@ func (m *UserMod) Schema(ctx context.Context) (*CompiledSchema, error) {
 		formatter.NewFormatter(buf).FormatSchemaDocument(objSchemaDoc)
 		typeSchemaStr := buf.String()
 
-		executableSchema := StaticSchema(StaticSchemaParams{
+		schema := StaticSchema(StaticSchemaParams{
 			Name:      fmt.Sprintf("%s.%s", m.metadata.Name, obj.typeDef.AsObject.Name),
 			Schema:    typeSchemaStr,
 			Resolvers: objResolvers,
 		})
-		executableSchemas = append(executableSchemas, executableSchema)
+		schemas = append(schemas, schema)
 	}
 
-	return mergeExecutableSchemas(executableSchemas...)
+	return schemas, nil
 }
 
 func (m *UserMod) DependencySchemaIntrospectionJSON(ctx context.Context) (string, error) {
 	return m.deps.SchemaIntrospectionJSON(ctx)
-}
-
-func (m *UserMod) ObjectByName(ctx context.Context, objName string) (ModObject, bool, error) {
-	objName = gqlObjectName(objName)
-
-	objs, err := m.Objects(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, obj := range objs {
-		if gqlObjectName(obj.typeDef.AsObject.Name) == objName {
-			return obj, true, nil
-		}
-	}
-	return nil, false, nil
 }
 
 func (m *UserMod) validateTypeDef(ctx context.Context, typeDef *core.TypeDef) error {
@@ -447,16 +438,18 @@ func (m *UserMod) validateTypeDef(ctx context.Context, typeDef *core.TypeDef) er
 		return m.validateTypeDef(ctx, typeDef.AsList.ElementTypeDef)
 	case core.TypeDefKindObject:
 		obj := typeDef.AsObject
-		baseObjName := gqlObjectName(obj.Name)
 
 		// check whether this is a pre-existing object from core or another module
-		_, ok, err := m.deps.ObjectByName(ctx, baseObjName)
+		modType, ok, err := m.deps.ModTypeFor(ctx, typeDef)
 		if err != nil {
-			return fmt.Errorf("failed to get object for type def: %w", err)
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			// already validated, skip
-			return nil
+			// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
+			if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.Name() != m.Name() {
+				// already validated, skip
+				return nil
+			}
 		}
 
 		for _, field := range obj.Fields {
@@ -499,11 +492,11 @@ func (m *UserMod) namespaceTypeDef(ctx context.Context, typeDef *core.TypeDef) e
 		obj := typeDef.AsObject
 
 		// only namespace objects defined in this module
-		_, preExistingObject, err := m.deps.ObjectByName(ctx, obj.Name)
+		_, ok, err := m.deps.ModTypeFor(ctx, typeDef)
 		if err != nil {
-			return fmt.Errorf("failed to get object for type def: %w", err)
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
-		if !preExistingObject {
+		if !ok {
 			obj.Name = namespaceObject(obj.Name, m.metadata.Name)
 		}
 
@@ -528,53 +521,81 @@ func (m *UserMod) namespaceTypeDef(ctx context.Context, typeDef *core.TypeDef) e
 	return nil
 }
 
-// TODO: to support linkDependencyBlobs, this needs to be recursive maybe?
-func (m *UserMod) convertValueIDs(ctx context.Context, value any, resultTypeDef *core.TypeDef) (any, error) {
-	switch resultTypeDef.Kind {
-	case core.TypeDefKindObject:
-		id, ok := value.(string)
-		if !ok {
-			return value, nil
-		}
+type ListType struct {
+	underlying ModType
+}
 
-		// TODO: This might be wrong, you also want to handle objects from this module and from core, but not other deps
-		obj, ok, err := m.ObjectByName(ctx, resultTypeDef.AsObject.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get object for type def: %w", err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("failed to find object %q", resultTypeDef.AsObject.Name)
-		}
-		return obj.FromID(id)
-	case core.TypeDefKindList:
-		list, ok := value.([]any)
-		if !ok {
-			return nil, fmt.Errorf("expected list, got %T", value)
-		}
-		resultList := make([]any, len(list))
-		for i, item := range list {
-			var err error
-			resultList[i], err = m.convertValueIDs(ctx, item, resultTypeDef.AsList.ElementTypeDef)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return resultList, nil
-	default:
-		return value, nil
+func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
 	}
+
+	list, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected list, got %T", value)
+	}
+	resultList := make([]any, len(list))
+	for i, item := range list {
+		var err error
+		resultList[i], err = t.underlying.ConvertFromSDKResult(ctx, item)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return resultList, nil
+}
+
+func (t *ListType) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	list, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected list, got %T", value)
+	}
+	resultList := make([]any, len(list))
+	for i, item := range list {
+		var err error
+		resultList[i], err = t.underlying.ConvertToSDKInput(ctx, item)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return resultList, nil
+}
+
+func (t *ListType) SourceMod() Mod {
+	return t.underlying.SourceMod()
+}
+
+type PrimitiveType struct{}
+
+func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (any, error) {
+	return value, nil
+}
+
+func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
+	return value, nil
+}
+
+func (t *PrimitiveType) SourceMod() Mod {
+	return nil
 }
 
 type UserModObject struct {
-	api       *APIServer
-	mod       *UserMod
-	typeDef   *core.TypeDef
-	runtime   *core.Container
-	fields    []*UserModField
-	functions []*UserModFunction
+	api     *APIServer
+	mod     *UserMod
+	typeDef *core.TypeDef
+
+	// should not be read directly, call Fields() and Functions() instead
+	lazyLoadedFields    []*UserModField
+	lazyLoadedFunctions []*UserModFunction
+	loadErr             error
+	loadLock            sync.Mutex
 }
 
-var _ ModObject = (*UserModObject)(nil)
+var _ ModType = (*UserModObject)(nil)
 
 func newModObject(ctx context.Context, mod *UserMod, typeDef *core.TypeDef) (*UserModObject, error) {
 	if typeDef.Kind != core.TypeDefKindObject {
@@ -585,40 +606,151 @@ func newModObject(ctx context.Context, mod *UserMod, typeDef *core.TypeDef) (*Us
 		mod:     mod,
 		typeDef: typeDef,
 	}
-	for _, field := range typeDef.AsObject.Fields {
-		obj.fields = append(obj.fields, newModField(obj, field))
-	}
-	runtime, err := mod.Runtime(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module runtime: %w", err)
-	}
-	for _, fn := range typeDef.AsObject.Functions {
-		obj.functions = append(obj.functions, newModFunction(mod, obj, runtime, fn))
-	}
 	return obj, nil
+}
+
+func (obj *UserModObject) TypeDef() *core.TypeDef {
+	return obj.typeDef
+}
+
+func (obj *UserModObject) ConvertFromSDKResult(ctx context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	switch value := value.(type) {
+	case string:
+		decodedMap, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode module id: %w", err)
+		}
+		return obj.ConvertFromSDKResult(ctx, decodedMap)
+	case map[string]any:
+		fields, err := obj.Fields(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get fields: %w", err)
+		}
+		fieldNameToModType := make(map[string]ModType) // TODO: cache
+		for _, field := range fields {
+			fieldNameToModType[field.metadata.Name] = field.modType
+		}
+		for k, v := range value {
+			normalizedName := gqlFieldName(k)
+			fieldType, ok := fieldNameToModType[normalizedName]
+			if !ok {
+				continue
+			}
+			delete(value, k)
+			value[normalizedName], err = fieldType.ConvertFromSDKResult(ctx, v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert field %q: %w", k, err)
+			}
+		}
+		return value, nil
+	default:
+		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, obj.typeDef.AsObject.Name)
+	}
+}
+
+func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	switch value := value.(type) {
+	case string:
+		// assume it's already been converted to an id
+		return value, nil
+	case map[string]any:
+		return resourceid.EncodeModule(obj.typeDef.AsObject.Name, value)
+	default:
+		return nil, fmt.Errorf("unexpected input value type %T for object %q", value, obj.typeDef.AsObject.Name)
+	}
 }
 
 func (obj *UserModObject) SourceMod() Mod {
 	return obj.mod
 }
 
-func (obj *UserModObject) FromID(id string) (any, error) {
-	return resourceid.DecodeModuleID(id, obj.typeDef.AsObject.Name)
+func (obj *UserModObject) Fields(ctx context.Context) ([]*UserModField, error) {
+	fields, _, err := obj.loadFieldsAndFunctions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return fields, nil
 }
 
-func (obj *UserModObject) FunctionByName(name string) (*UserModFunction, error) {
+func (obj *UserModObject) Functions(ctx context.Context) ([]*UserModFunction, error) {
+	_, functions, err := obj.loadFieldsAndFunctions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return functions, nil
+}
+
+func (obj *UserModObject) loadFieldsAndFunctions(ctx context.Context) (
+	loadedFields []*UserModField, loadedFunctions []*UserModFunction, rerr error,
+) {
+	obj.loadLock.Lock()
+	defer obj.loadLock.Unlock()
+	if len(obj.lazyLoadedFields) > 0 || len(obj.lazyLoadedFunctions) > 0 {
+		return obj.lazyLoadedFields, obj.lazyLoadedFunctions, nil
+	}
+	if obj.loadErr != nil {
+		return nil, nil, obj.loadErr
+	}
+	defer func() {
+		obj.lazyLoadedFields = loadedFields
+		obj.lazyLoadedFunctions = loadedFunctions
+		obj.loadErr = rerr
+	}()
+
+	runtime, err := obj.mod.Runtime(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get module runtime: %w", err)
+	}
+
+	for _, fieldTypeDef := range obj.typeDef.AsObject.Fields {
+		modField, err := newModField(ctx, obj, fieldTypeDef)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create field: %w", err)
+		}
+		loadedFields = append(loadedFields, modField)
+	}
+	for _, fn := range obj.typeDef.AsObject.Functions {
+		modFunction, err := newModFunction(ctx, obj.mod, obj, runtime, fn)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create function: %w", err)
+		}
+		loadedFunctions = append(loadedFunctions, modFunction)
+	}
+	return loadedFields, loadedFunctions, nil
+}
+
+func (obj *UserModObject) FunctionByName(ctx context.Context, name string) (*UserModFunction, error) {
+	_, functions, err := obj.loadFieldsAndFunctions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	name = gqlFieldName(name)
-	for _, fn := range obj.functions {
-		if gqlFieldName(fn.typeDef.Name) == name {
+	for _, fn := range functions {
+		if gqlFieldName(fn.metadata.Name) == name {
 			return fn, nil
 		}
 	}
+
 	return nil, fmt.Errorf("failed to find function %q", name)
 }
 
 func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Resolvers, error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("object", obj.typeDef.AsObject.Name))
 	bklog.G(ctx).Debug("getting object schema")
+
+	fields, functions, err := obj.loadFieldsAndFunctions(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	typeSchemaDoc := &ast.SchemaDocument{}
 	queryResolver := ObjectResolver{}
@@ -636,17 +768,20 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 	}
 
 	// check whether this is a pre-existing object from a dependency module
-	_, preExistingObject, err := obj.mod.deps.ObjectByName(ctx, objName)
+	modType, ok, err := obj.mod.deps.ModTypeFor(ctx, obj.typeDef)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get object for type def: %w", err)
+		return nil, nil, fmt.Errorf("failed to get mod type for type def: %w", err)
 	}
-	if preExistingObject {
-		// modules can reference types from core/other modules as types, but they
-		// can't attach any new fields or functions to them
-		if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
-			return nil, nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
+	if ok {
+		// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
+		if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.Name() != obj.mod.Name() {
+			// modules can reference types from core/other modules as types, but they
+			// can't attach any new fields or functions to them
+			if len(objTypeDef.Fields) > 0 || len(objTypeDef.Functions) > 0 {
+				return nil, nil, fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objName)
+			}
+			return nil, nil, nil
 		}
-		return nil, nil, nil
 	}
 
 	astDef := &ast.Definition{
@@ -679,10 +814,11 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		Type:        ast.NonNullNamedType(objName+"ID", nil),
 	})
 	newObjResolver["id"] = func(p graphql.ResolveParams) (any, error) {
-		return resourceid.EncodeModule(objName, p.Source)
+		// TODO: name of method is awkward in this case... better name?
+		return obj.ConvertToSDKInput(ctx, p.Source)
 	}
 
-	for _, field := range obj.fields {
+	for _, field := range fields {
 		fieldDef, resolver, err := field.Schema(ctx)
 		if err != nil {
 			return nil, nil, err
@@ -691,7 +827,7 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		newObjResolver[fieldDef.Name] = resolver
 	}
 
-	for _, fn := range obj.functions {
+	for _, fn := range functions {
 		fieldDef, resolver, err := fn.Schema(ctx)
 		if err != nil {
 			return nil, nil, err
@@ -705,7 +841,8 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		typeSchemaResolvers[objName+"ID"] = stringResolver[string]()
 
 		queryResolver[fmt.Sprintf("load%sFromID", objName)] = func(p graphql.ResolveParams) (any, error) {
-			return obj.mod.convertValueIDs(ctx, p.Args["id"], obj.typeDef)
+			// TODO: name of method is awkward in this case... better name?
+			return obj.ConvertFromSDKResult(ctx, p.Args["id"])
 		}
 	}
 
@@ -734,7 +871,10 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to get module runtime: %w", err)
 			}
-			fn := newModFunction(obj.mod, obj, runtime, fnTypeDef)
+			fn, err := newModFunction(ctx, obj.mod, obj, runtime, fnTypeDef)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to create function: %w", err)
+			}
 
 			fieldDef, resolver, err := fn.Schema(ctx)
 			if err != nil {
@@ -768,51 +908,56 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 }
 
 type UserModField struct {
-	obj     *UserModObject
-	typeDef *core.FieldTypeDef
+	obj      *UserModObject
+	metadata *core.FieldTypeDef
+	modType  ModType
 }
 
-func newModField(obj *UserModObject, typeDef *core.FieldTypeDef) *UserModField {
-	return &UserModField{
-		obj:     obj,
-		typeDef: typeDef,
+func newModField(ctx context.Context, obj *UserModObject, metadata *core.FieldTypeDef) (*UserModField, error) {
+	modType, ok, err := obj.mod.ModTypeFor(ctx, metadata.TypeDef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mod type for field %q: %w", metadata.Name, err)
 	}
+	if !ok {
+		return nil, fmt.Errorf("failed to get mod type for field %q", metadata.Name)
+	}
+	return &UserModField{
+		obj:      obj,
+		metadata: metadata,
+		modType:  modType,
+	}, nil
 }
 
 func (f *UserModField) Schema(ctx context.Context) (*ast.FieldDefinition, graphql.FieldResolveFn, error) {
-	fieldASTType, err := typeDefToASTType(f.typeDef.TypeDef, false)
+	typeDef := f.metadata.TypeDef
+	fieldASTType, err := typeDefToASTType(typeDef, false)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Check if this is a type from another (non-core) module, which is currently
-	// not allowed
-	if f.typeDef.TypeDef.Kind == core.TypeDefKindObject {
-		obj, ok, err := f.obj.mod.deps.ObjectByName(ctx, fieldASTType.Name())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get object for type def: %w", err)
-		}
-		if ok && obj.SourceMod().Name() != coreModuleName {
-			return nil, nil, fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-				f.obj.typeDef.AsObject.OriginalName,
-				f.typeDef.OriginalName,
-				obj.SourceMod().Name(),
-			)
-		}
+	// Check if this is a type from another (non-core) module, which is currently not allowed
+	sourceMod := f.modType.SourceMod()
+	// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
+	if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.Name() != f.obj.mod.metadata.Name {
+		return nil, nil, fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+			f.obj.typeDef.AsObject.OriginalName,
+			f.metadata.OriginalName,
+			sourceMod.Name(),
+		)
 	}
 
 	fieldDef := &ast.FieldDefinition{
-		Name:        f.typeDef.Name,
-		Description: formatGqlDescription(f.typeDef.Description),
+		Name:        f.metadata.Name,
+		Description: formatGqlDescription(f.metadata.Description),
 		Type:        fieldASTType,
 	}
 	return fieldDef, func(p graphql.ResolveParams) (any, error) {
-		p.Info.FieldName = f.typeDef.OriginalName
+		p.Info.FieldName = f.metadata.OriginalName
 		res, err := graphql.DefaultResolveFn(p)
 		if err != nil {
 			return nil, err
 		}
-		return f.obj.mod.convertValueIDs(ctx, res, f.typeDef.TypeDef)
+		return f.modType.ConvertFromSDKResult(ctx, res)
 	}, nil
 }
 
@@ -820,24 +965,63 @@ type UserModFunction struct {
 	api     *APIServer
 	mod     *UserMod
 	obj     *UserModObject // may be nil for special functions like the module definition function call
-	typeDef *core.Function
 	runtime *core.Container
+
+	metadata   *core.Function
+	returnType ModType
+	args       map[string]*UserModFunctionArg
 }
 
-func newModFunction(mod *UserMod, obj *UserModObject, runtime *core.Container, typeDef *core.Function) *UserModFunction {
-	return &UserModFunction{
-		api:     mod.api,
-		mod:     mod,
-		obj:     obj,
-		typeDef: typeDef,
-		runtime: runtime,
+type UserModFunctionArg struct {
+	metadata *core.FunctionArg
+	modType  ModType
+}
+
+func newModFunction(
+	ctx context.Context,
+	mod *UserMod,
+	obj *UserModObject,
+	runtime *core.Container,
+	metadata *core.Function,
+) (*UserModFunction, error) {
+	returnType, ok, err := mod.ModTypeFor(ctx, metadata.ReturnType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mod type for function %q return type: %w", metadata.Name, err)
 	}
+	if !ok {
+		return nil, fmt.Errorf("failed to get mod type for function %q return type", metadata.Name)
+	}
+
+	argTypes := make(map[string]*UserModFunctionArg, len(metadata.Args))
+	for _, argMetadata := range metadata.Args {
+		argModType, ok, err := mod.ModTypeFor(ctx, argMetadata.TypeDef)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type", metadata.Name, argMetadata.Name)
+		}
+		argTypes[argMetadata.Name] = &UserModFunctionArg{
+			metadata: argMetadata,
+			modType:  argModType,
+		}
+	}
+
+	return &UserModFunction{
+		api:        mod.api,
+		mod:        mod,
+		obj:        obj,
+		runtime:    runtime,
+		metadata:   metadata,
+		returnType: returnType,
+		args:       argTypes,
+	}, nil
 }
 
 func (fn *UserModFunction) Digest() digest.Digest {
 	inputs := []string{
 		fn.mod.DagDigest().String(),
-		fn.typeDef.Name,
+		fn.metadata.Name,
 	}
 	if fn.obj != nil {
 		inputs = append(inputs, fn.obj.typeDef.AsObject.Name)
@@ -846,7 +1030,7 @@ func (fn *UserModFunction) Digest() digest.Digest {
 }
 
 func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, graphql.FieldResolveFn, error) {
-	fnName := gqlFieldName(fn.typeDef.Name)
+	fnName := gqlFieldName(fn.metadata.Name)
 	var objFnName string
 	if fn.obj != nil {
 		objFnName = fmt.Sprintf("%s.%s", fn.obj.typeDef.AsObject.Name, fnName)
@@ -854,79 +1038,70 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 		objFnName = fnName
 	}
 
-	returnASTType, err := typeDefToASTType(fn.typeDef.ReturnType, false)
+	returnASTType, err := typeDefToASTType(fn.metadata.ReturnType, false)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Check if this is a type from another (non-core) module, which is currently
-	// not allowed
-	if fn.typeDef.ReturnType.Kind == core.TypeDefKindObject {
-		obj, ok, err := fn.mod.deps.ObjectByName(ctx, returnASTType.Name())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get object for type def: %w", err)
+	// Check if this is a type from another (non-core) module, which is currently not allowed
+	sourceMod := fn.returnType.SourceMod()
+	// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
+	if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.Name() != fn.mod.metadata.Name {
+		var objName string
+		if fn.obj != nil {
+			objName = fn.obj.typeDef.AsObject.OriginalName
 		}
-		if ok && obj.SourceMod().Name() != coreModuleName {
-			var objName string
-			if fn.obj != nil {
-				objName = fn.obj.typeDef.AsObject.OriginalName
-			}
-			return nil, nil, fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-				objName,
-				fn.typeDef.OriginalName,
-				obj.SourceMod().Name(),
-			)
-		}
+		return nil, nil, fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+			objName,
+			fn.metadata.OriginalName,
+			sourceMod.Name(),
+		)
 	}
 
 	fieldDef := &ast.FieldDefinition{
 		Name:        fnName,
-		Description: formatGqlDescription(fn.typeDef.Description),
+		Description: formatGqlDescription(fn.metadata.Description),
 		Type:        returnASTType,
 	}
 
-	// graphql arg name -> arg type
-	argsByName := make(map[string]*core.FunctionArg, len(fn.typeDef.Args))
+	for _, argMetadata := range fn.metadata.Args {
+		arg, ok := fn.args[argMetadata.Name]
+		if !ok {
+			return nil, nil, fmt.Errorf("failed to find arg %q", argMetadata.Name)
+		}
 
-	for _, fnArg := range fn.typeDef.Args {
-		argASTType, err := typeDefToASTType(fnArg.TypeDef, true)
+		argASTType, err := typeDefToASTType(argMetadata.TypeDef, true)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		// Check if this is a type from another (non-core) module, which is currently
-		// not allowed
-		if fnArg.TypeDef.Kind == core.TypeDefKindObject {
-			obj, ok, err := fn.mod.deps.ObjectByName(ctx, argASTType.Name())
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get object for type def: %w", err)
+		// Check if this is a type from another (non-core) module, which is currently not allowed
+		sourceMod := arg.modType.SourceMod()
+		// TODO: using name isn't quite right, can be multiple mods in full dag w/ same name
+		if sourceMod != nil && sourceMod.Name() != coreModuleName && sourceMod.Name() != fn.mod.metadata.Name {
+			var objName string
+			if fn.obj != nil {
+				objName = fn.obj.typeDef.AsObject.OriginalName
 			}
-			if ok && obj.SourceMod().Name() != coreModuleName {
-				var objName string
-				if fn.obj != nil {
-					objName = fn.obj.typeDef.AsObject.OriginalName
-				}
-				return nil, nil, fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-					objName,
-					fn.typeDef.OriginalName,
-					fnArg.OriginalName,
-					obj.SourceMod().Name(),
-				)
-			}
+			return nil, nil, fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+				objName,
+				fn.metadata.OriginalName,
+				argMetadata.OriginalName,
+				sourceMod.Name(),
+			)
 		}
 
-		defaultValue, err := astDefaultValue(fnArg.TypeDef, fnArg.DefaultValue)
+		defaultValue, err := astDefaultValue(argMetadata.TypeDef, argMetadata.DefaultValue)
 		if err != nil {
 			return nil, nil, err
 		}
 		argDef := &ast.ArgumentDefinition{
-			Name:         gqlArgName(fnArg.Name),
-			Description:  formatGqlDescription(fnArg.Description),
+			Name:         gqlArgName(argMetadata.Name),
+			Description:  formatGqlDescription(argMetadata.Description),
 			Type:         argASTType,
 			DefaultValue: defaultValue,
 		}
 		fieldDef.Arguments = append(fieldDef.Arguments, argDef)
-		argsByName[argDef.Name] = fnArg
 	}
 
 	resolver := ToResolver(func(ctx context.Context, parent any, args map[string]any) (_ any, rerr error) {
@@ -935,74 +1110,73 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 				rerr = fmt.Errorf("panic in %s: %s %s", objFnName, r, string(debug.Stack()))
 			}
 		}()
-		if fn.obj != nil {
-			var err error
-			// TODO: this is totally wrong; wrong direction; also should be done in Call directly
-			parent, err = fn.mod.convertValueIDs(ctx, parent, fn.obj.typeDef)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert parent: %w", err)
-			}
-		}
 
 		var callInput []*core.CallInput
 		for k, v := range args {
-			argType, ok := argsByName[k]
-			if !ok {
-				bklog.G(ctx).Warnf("unknown arg %q for function %q", k, objFnName)
-				continue
-			}
-			// TODO: this is totally wrong; wrong direction; also should be done in Call directly
-			v, err := fn.mod.convertValueIDs(ctx, v, argType.TypeDef)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert arg %q: %w", k, err)
-			}
-
 			callInput = append(callInput, &core.CallInput{
-				Name:  argType.OriginalName,
+				Name:  k,
 				Value: v,
 			})
 		}
-		result, err := fn.Call(ctx, false, nil, parent, callInput)
-		if err != nil {
-			return nil, fmt.Errorf("failed to call function %q: %w", objFnName, err)
-		}
-		return result, nil
+		return fn.Call(ctx, false, nil, parent, callInput)
 	})
 
 	return fieldDef, resolver, nil
 }
 
-func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeline.Path, parentVal any, args []*core.CallInput) (any, error) {
-	lg := bklog.G(ctx).WithField("module", fn.mod.Name()).WithField("function", fn.typeDef.Name)
+func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeline.Path, parentVal any, inputs []*core.CallInput) (any, error) {
+	lg := bklog.G(ctx).WithField("module", fn.mod.Name()).WithField("function", fn.metadata.Name)
 	if fn.obj != nil {
 		lg = lg.WithField("object", fn.obj.typeDef.AsObject.Name)
 	}
 	ctx = bklog.WithLogger(ctx, lg)
 
-	cacheKeys := []string{fn.Digest().String()}
+	callerDigestInputs := []string{fn.Digest().String()}
 
-	for _, arg := range args {
-		argDgst, err := arg.Digest()
+	if fn.obj != nil {
+		// TODO: add parent val to cache keys
+		/* TODO: in theory this is probably correct, but not handled by SDKs rn
+		var err error
+		parentVal, err = fn.obj.ConvertToSDKInput(ctx, parentVal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert parent value: %w", err)
+		}
+		*/
+	}
+
+	for _, input := range inputs {
+		normalizedName := gqlArgName(input.Name)
+		arg, ok := fn.args[normalizedName]
+		if !ok {
+			return nil, fmt.Errorf("failed to find arg %q", input.Name)
+		}
+		input.Name = arg.metadata.OriginalName
+
+		var err error
+		input.Value, err = arg.modType.ConvertToSDKInput(ctx, input.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
+		}
+
+		dgst, err := input.Digest()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get arg digest: %w", err)
 		}
-		cacheKeys = append(cacheKeys, argDgst.String())
+		callerDigestInputs = append(callerDigestInputs, dgst.String())
 	}
 
 	if !cache {
-		// [shykes] inject a cachebuster before runtime exec,
-		// to fix crippling mandatory memoization of all functions.
-		// [sipsma] use the ServerID so that we only bust once-per-session and thus avoid exponential runtime complexity
+		// use the ServerID so that we bust cache once-per-session
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client metadata: %w", err)
 		}
-		cacheKeys = append(cacheKeys, clientMetadata.ServerID)
+		callerDigestInputs = append(callerDigestInputs, clientMetadata.ServerID)
 	}
 
-	cacheKey := digest.FromString(strings.Join(cacheKeys, " "))
+	callerDigest := digest.FromString(strings.Join(callerDigestInputs, " "))
 
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("cache_key", cacheKey.String()))
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("caller_digest", callerDigest.String()))
 	bklog.G(ctx).Debug("function call")
 	defer func() {
 		bklog.G(ctx).Debug("function call done")
@@ -1019,7 +1193,7 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, fn.api.bk, fn.api.progSockPath, fn.api.platform, core.ContainerExecOpts{
 		// TODO: rename ModuleContextDigest
-		ModuleContextDigest:           cacheKey,
+		ModuleContextDigest:           callerDigest,
 		ExperimentalPrivilegedNesting: true,
 		NestedInSameSession:           true,
 	})
@@ -1028,15 +1202,15 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 	}
 
 	callMeta := &core.FunctionCall{
-		Name:      fn.typeDef.OriginalName,
+		Name:      fn.metadata.OriginalName,
 		Parent:    parentVal,
-		InputArgs: args,
+		InputArgs: inputs,
 	}
 	if fn.obj != nil {
 		callMeta.ParentName = fn.obj.typeDef.AsObject.OriginalName
 	}
 
-	err = fn.api.RegisterFunctionCall(ctx, cacheKey, fn.mod, callMeta)
+	err = fn.api.RegisterFunctionCall(ctx, callerDigest, fn.mod, callMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
 	}
@@ -1071,12 +1245,12 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
 	}
 
-	returnValue, err = fn.mod.convertValueIDs(ctx, returnValue, fn.typeDef.ReturnType)
+	returnValue, err = fn.returnType.ConvertFromSDKResult(ctx, returnValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
 
-	if err := fn.linkDependencyBlobs(ctx, result, returnValue, fn.typeDef.ReturnType); err != nil {
+	if err := fn.linkDependencyBlobs(ctx, result, returnValue, fn.metadata.ReturnType); err != nil {
 		return nil, fmt.Errorf("failed to link dependency blobs: %w", err)
 	}
 
@@ -1092,6 +1266,8 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 // If we didn't do this, then it would be possible for Buildkit to prune the content pointed to by the blob://
 // source without pruning the function call cache entry. That would result callers being able to evaluate the
 // result of a function call but hitting an error about missing content.
+
+// TODO: check if this can be simplified/integrated w/ related code that walks types
 func (fn *UserModFunction) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value any, typeDef *core.TypeDef) error {
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger,

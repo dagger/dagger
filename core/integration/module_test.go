@@ -786,7 +786,8 @@ func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (st
 func TestModuleGoSignaturesUnexported(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -859,6 +860,8 @@ func (b *bar) Hello(name string) string {
 
 	_, err = modGen.With(inspectModule).Stderr(ctx)
 	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "cannot code-generate unexported type bar")
 }
 
 func TestModuleGoSignaturesMixMatch(t *testing.T) {
