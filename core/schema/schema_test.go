@@ -206,7 +206,7 @@ func TestWithMountedCacheSeen(t *testing.T) {
 	t.Parallel()
 
 	cs := &containerSchema{
-		MergedSchemas: &APIServer{bk: &buildkit.Client{}},
+		APIServer: &APIServer{bk: &buildkit.Client{}},
 	}
 
 	cid, err := core.NewCache("test-seen").ID()
