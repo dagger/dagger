@@ -95,7 +95,7 @@ This guide described a few common architecture patterns to consider when setting
 
 Use the following resources to learn more about the topics discussed in this guide:
 
-- Guide on [running Dagger on Amazon EKS with GitHub Actions Runner and Karpenter](./934191-eks-github-karpenter.md)
+- See an example of [running Dagger on Amazon EKS with GitHub Actions Runner and Karpenter](./934191-eks-github-karpenter.md)
 - [Dagger Cloud](https://docs.dagger.io/cloud)
 - [Dagger GraphQL API](https://docs.dagger.io/api/975146/concepts)
 - Dagger [Go](https://docs.dagger.io/sdk/go), [Node.js](https://docs.dagger.io/sdk/nodejs) and [Python](https://docs.dagger.io/sdk/python) SDKs
