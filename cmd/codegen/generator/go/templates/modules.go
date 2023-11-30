@@ -113,10 +113,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				continue
 			}
 			obj := named.Obj()
-			if obj.Pkg() != funcs.modulePkg.Types {
-				// the type must be created in the target package
-				continue
-			}
 			if !obj.Exported() {
 				// the type must be exported
 				if !topLevel {
@@ -149,7 +145,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
 				// errors indicate an internal problem rather than something w/ user code, so error instead
-				return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
+				return "", fmt.Errorf("failed to generate function cases for %s: %w", ps.objFullName(obj), err)
 			}
 
 			if len(objFunctionCases[obj.Name()]) == 0 && !ps.isMainModuleObject(obj.Name()) {
@@ -291,12 +287,12 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 }
 
 // TODO: use jennifer for generating this magical typedef
-func renderNameOrStruct(t types.Type) string {
+func (ps *parseState) renderNameOrStruct(t types.Type) string {
 	if ptr, ok := t.(*types.Pointer); ok {
-		return "*" + renderNameOrStruct(ptr.Elem())
+		return "*" + ps.renderNameOrStruct(ptr.Elem())
 	}
 	if sl, ok := t.(*types.Slice); ok {
-		return "[]" + renderNameOrStruct(sl.Elem())
+		return "[]" + ps.renderNameOrStruct(sl.Elem())
 	}
 	if st, ok := t.(*types.Struct); ok {
 		result := "struct {\n"
@@ -304,7 +300,7 @@ func renderNameOrStruct(t types.Type) string {
 			if !st.Field(i).Embedded() {
 				result += st.Field(i).Name() + " "
 			}
-			result += renderNameOrStruct(st.Field(i).Type())
+			result += ps.renderNameOrStruct(st.Field(i).Type())
 			if tag := st.Tag(i); tag != "" {
 				result += " `" + tag + "`"
 			}
@@ -314,21 +310,21 @@ func renderNameOrStruct(t types.Type) string {
 		return result
 	}
 	if named, ok := t.(*types.Named); ok {
-		// Assume local
-		//
-		// TODO: this isn't always true - we likely want to support returning
-		// types from other packages as well. However, this is tricky - how
-		// should we handle returning *time.Time? We should probably convert
-		// this to a graphql type that all langs can convert to their native
-		// representation.
+		// TODO: this isn't always the best option for returning from other
+		// packages. For example, returning items from the standard library
+		// like time.Time or url.URL should instead be converted to strings
+		// over the wire.
 		base := named.Obj().Name()
+		if named.Obj().Pkg().Path() != ps.pkg.PkgPath {
+			base = named.Obj().Pkg().Name() + "." + base
+		}
 		if typeArgs := named.TypeArgs(); typeArgs.Len() > 0 {
 			base += "["
 			for i := 0; i < typeArgs.Len(); i++ {
 				if i > 0 {
 					base += ", "
 				}
-				base += renderNameOrStruct(typeArgs.At(i))
+				base += ps.renderNameOrStruct(typeArgs.At(i))
 			}
 			base += "]"
 		}
@@ -348,15 +344,16 @@ var checkErrStatement = If(Err().Op("!=").Nil()).Block(
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object
 func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string][]Code) error {
-	var objName string
+	var obj types.Object
 	switch x := type_.(type) {
 	case *types.Pointer:
 		return ps.fillObjectFunctionCases(x.Elem(), cases)
 	case *types.Named:
-		objName = x.Obj().Name()
+		obj = x.Obj()
 	default:
 		return nil
 	}
+	objName := obj.Name()
 
 	if existingCases := cases[objName]; len(existingCases) > 0 {
 		// handles recursive types, e.g. objects with chainable methods that return themselves
@@ -372,7 +369,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 
 	for _, method := range methods {
 		fnName, sig := method.fn.Name(), method.fn.Type().(*types.Signature)
-		if err := ps.fillObjectFunctionCase(objName, fnName, fnName, sig, method.paramSpecs, cases); err != nil {
+		if err := ps.fillObjectFunctionCase(obj, fnName, fnName, sig, method.paramSpecs, cases); err != nil {
 			return err
 		}
 	}
@@ -405,7 +402,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 			return fmt.Errorf("%s must return the main module object %q", constructorFuncName, objName)
 		}
 
-		if err := ps.fillObjectFunctionCase(objName, ps.constructor.Name(), "", sig, paramSpecs, cases); err != nil {
+		if err := ps.fillObjectFunctionCase(obj, ps.constructor.Name(), "", sig, paramSpecs, cases); err != nil {
 			return err
 		}
 	}
@@ -419,7 +416,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 }
 
 func (ps *parseState) fillObjectFunctionCase(
-	objName string,
+	obj types.Object,
 	fnName string,
 	caseName string, // separate from fnName to handle constructor where the caseName is empty string
 	sig *types.Signature,
@@ -430,7 +427,7 @@ func (ps *parseState) fillObjectFunctionCase(
 
 	parentVarName := "parent"
 	statements = append(statements,
-		Var().Id(parentVarName).Id(objName),
+		Var().Id(parentVarName).Id(ps.objFullName(obj)),
 		Err().Op("=").Qual("json", "Unmarshal").Call(Id(parentJSONVar), Op("&").Id(parentVarName)),
 		checkErrStatement,
 	)
@@ -478,7 +475,7 @@ func (ps *parseState) fillObjectFunctionCase(
 				access = access2
 			}
 
-			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
+			statements = append(statements, Var().Id(varName).Id(ps.renderNameOrStruct(tp)))
 			if spec.variadic {
 				fnCallArgs = append(fnCallArgs, access.Op("..."))
 			} else {
@@ -500,7 +497,7 @@ func (ps *parseState) fillObjectFunctionCase(
 
 	var callStatement *Statement
 	if sig.Recv() != nil {
-		callStatement = Parens(Op("*").Id(objName)).Dot(fnName).Call(fnCallArgs...)
+		callStatement = Parens(Op("*").Id(ps.objFullName(obj))).Dot(fnName).Call(fnCallArgs...)
 	} else {
 		callStatement = Id(fnName).Call(fnCallArgs...)
 	}
@@ -515,7 +512,7 @@ func (ps *parseState) fillObjectFunctionCase(
 		}
 
 		statements = append(statements, Return(callStatement))
-		cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+		cases[obj.Name()] = append(cases[obj.Name()], Case(Lit(caseName)).Block(statements...))
 
 		if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
 			return err
@@ -528,12 +525,12 @@ func (ps *parseState) fillObjectFunctionCase(
 			// void error return
 
 			statements = append(statements, Return(Nil(), callStatement))
-			cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+			cases[obj.Name()] = append(cases[obj.Name()], Case(Lit(caseName)).Block(statements...))
 		} else {
 			// non-error return
 
 			statements = append(statements, Return(callStatement, Nil()))
-			cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+			cases[obj.Name()] = append(cases[obj.Name()], Case(Lit(caseName)).Block(statements...))
 
 			if err := ps.fillObjectFunctionCases(results.At(0).Type(), cases); err != nil {
 				return err
@@ -551,7 +548,7 @@ func (ps *parseState) fillObjectFunctionCase(
 		statements = append(statements,
 			callStatement,
 			Return(Nil(), Nil()))
-		cases[objName] = append(cases[objName], Case(Lit(caseName)).Block(statements...))
+		cases[obj.Name()] = append(cases[obj.Name()], Case(Lit(caseName)).Block(statements...))
 
 		return nil
 
@@ -585,7 +582,7 @@ func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*Stat
 		// Named types are any types declared like `type Foo <...>`
 		typeDef, _, err := ps.goTypeToAPIType(t.Underlying(), t)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert named type: %w", err)
+			return nil, nil, fmt.Errorf("failed to convert named type %q: %w", ps.objFullName(t.Obj()), err)
 		}
 		return typeDef, t, nil
 	case *types.Pointer:
@@ -691,7 +688,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	// Fill out the Description with the comment above the struct (if any)
 	typeSpec, err := ps.typeSpecForNamedType(named)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to find decl for named type %s: %w", typeName, err)
+		return nil, nil, fmt.Errorf("failed to find decl for named type %q: %w", ps.objFullName(named.Obj()), err)
 	}
 	if comment := typeSpec.Doc.Text(); comment != "" {
 		withObjectOpts = append(withObjectOpts, Id("Description").Op(":").Lit(strings.TrimSpace(comment)))
@@ -707,7 +704,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	for _, method := range methods {
 		fnTypeDef, functionSubTypes, err := ps.goFuncToAPIFunctionDef(typeName, method)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert method %s to function def: %w", method.Name(), err)
+			return nil, nil, fmt.Errorf("failed to convert method %q on %q to function def: %w", method.Name(), ps.objFullName(named.Obj()), err)
 		}
 		subTypes = append(subTypes, functionSubTypes...)
 
@@ -729,7 +726,7 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 
 		fieldTypeDef, subType, err := ps.goTypeToAPIType(field.Type(), nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert field type: %w", err)
+			return nil, nil, fmt.Errorf("failed to convert field type %q on %q: %w", field.Name(), ps.objFullName(named.Obj()), err)
 		}
 		if subType != nil {
 			subTypes = append(subTypes, subType)
@@ -1061,7 +1058,14 @@ func (ps *parseState) typeSpecForNamedType(namedType *types.Named) (*ast.TypeSpe
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", namedType.Obj().Name())
 	}
-	for _, f := range ps.pkg.Syntax {
+	pkg := ps.pkg
+	if namedType.Obj().Pkg() != ps.pkg.Types {
+		pkg = ps.pkg.Imports[namedType.Obj().Pkg().Path()]
+		if pkg == nil {
+			return nil, fmt.Errorf("no package for %s", namedType.Obj().Pkg().Path())
+		}
+	}
+	for _, f := range pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue
 		}
@@ -1095,7 +1099,14 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", fnType.Name())
 	}
-	for _, f := range ps.pkg.Syntax {
+	pkg := ps.pkg
+	if fnType.Pkg() != ps.pkg.Types {
+		pkg = ps.pkg.Imports[fnType.Pkg().Path()]
+		if pkg == nil {
+			return nil, fmt.Errorf("no package for %s", fnType.Pkg().Path())
+		}
+	}
+	for _, f := range pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue
 		}
@@ -1199,6 +1210,14 @@ func (ps *parseState) isOptionalWrapper(typ types.Type) (*types.Named, bool) {
 		return named, true
 	}
 	return nil, false
+}
+
+func (ps *parseState) objFullName(obj types.Object) string {
+	name := obj.Name()
+	if obj.Pkg() != ps.pkg.Types {
+		name = obj.Pkg().Name() + "." + name
+	}
+	return name
 }
 
 // findOptsAccessPattern takes a type and a base statement (the name of a

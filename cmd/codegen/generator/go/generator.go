@@ -318,7 +318,9 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 			packages.NeedTypes |
 			packages.NeedSyntax |
 			packages.NeedTypesInfo |
-			packages.NeedModule,
+			packages.NeedModule |
+			packages.NeedDeps |
+			packages.NeedImports,
 	}, ".")
 	if err != nil {
 		return nil, nil, err

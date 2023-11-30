@@ -1435,6 +1435,60 @@ func (m *Playground) Scan() ScanResult {
 	require.JSONEq(t, `{"playground":{"scan":{"targets":[{"stdout":"hello world\n"}],"report":{"contents":"hello world","authors":["foo","bar"]}}}}`, out)
 }
 
+func TestModuleGoArgReturnPackage(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "main/mypkg"
+
+type Foo struct {}
+
+func (m *Foo) MyArgs(value int) mypkg.Args {
+	return mypkg.Args{Value: value}
+}
+
+func (m *Foo) Finalize(args mypkg.Args) mypkg.Return {
+	return mypkg.Return{Result: args.Value}
+}
+`,
+		}).
+		WithNewFile("mypkg/mypkg.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package mypkg
+
+type Args struct {
+	Value int
+}
+
+type Return struct {
+	Result int
+}
+
+func (a *Args) Double() *Args {
+	a.Value *= 2
+	return a
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(daggerQuery(`{foo{myArgs(value: 3){double{id}}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	id := gjson.Get(out, "foo.myArgs.double.id").String()
+
+	out, err = modGen.With(daggerQuery(`{foo{finalize(args:"%s"){result}}}`, id)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"foo":{"finalize":{"result": 6}}}`, out)
+}
+
 func TestModuleGoGlobalVarDAG(t *testing.T) {
 	t.Parallel()
 
