@@ -19,6 +19,11 @@ class Hatch:
         Doc("hatch version"),
     ] = field(default="1.7.0")
 
+    pyproject: Annotated[
+        dagger.File | None,
+        Doc("The pyproject.toml file with the project's dependencies"),
+    ] = field(default=None)
+
     cfg: Annotated[
         dagger.File | None,
         Doc("hatch.toml file"),
@@ -43,6 +48,8 @@ class Hatch:
         ctr = ctr.with_exec(["pip", "install", f"hatch=={self.version}"]).with_workdir(
             "/work"
         )
+        if self.pyproject:
+            ctr = ctr.with_mounted_file("pyproject.toml", self.pyproject)
         if self.cfg:
             ctr = ctr.with_mounted_file("hatch.toml", self.cfg)
         return ctr
@@ -57,12 +64,13 @@ class Hatch:
     ) -> dagger.File:
         """Enumerate an environment's dependencies as a list of requirements."""
         file = f"requirements.{env}.in"
+        flag = "-p" if env == "proj" else "-e"
         return (
             self.base()
             .pipeline(f"{env} requirements")
-            .with_env_variable("HATCH_ENV", env)
+            .with_env_variable("HATCH_ENV", env if env != "proj" else "")
             .with_exec(
-                ["hatch", "dep", "show", "requirements", "-e"],
+                ["hatch", "dep", "show", "requirements", flag],
                 redirect_stdout=file,
             )
             .file(file)
@@ -198,17 +206,22 @@ class Deps:
     env: Annotated[
         str,
         Doc(f"The hatch environment to use. Can be one of {DEP_ENVS}"),
-    ] = field()
+    ] = field(default="proj")
 
     hatch_config: Annotated[
         dagger.File,
         Doc("The hatch.toml file with the environments and their dependencies"),
     ] = field(default=lambda: from_host_file("hatch.toml"))
 
+    pyproject: Annotated[
+        dagger.File | None,
+        Doc("The pyproject.toml file with the project's dependencies"),
+    ] = field(default=lambda: from_host_file("pyproject.toml"))
+
     @function
     def hatch(self) -> Hatch:
         """Run hatch tasks."""
-        return Hatch(cfg=self.hatch_config)
+        return Hatch(cfg=self.hatch_config, pyproject=self.pyproject)
 
     @function
     def requirements(self) -> dagger.File:
@@ -221,5 +234,5 @@ class Deps:
         return PipTools().compile_(
             requirements=self.requirements(),
             output=f"{self.env}.txt",
-            command=f"dagger dl -m dev deps --env={self.env} lock -o requirements",
+            command=f"dagger dl -m dev deps --env={self.env} lock",
         )

@@ -47,10 +47,10 @@ def lock(
 ) -> dagger.Directory:
     """Update all of the SDK's pinned development dependencies."""
     if src is None:
-        src = from_host(["requirements/*.txt"]).directory("/requirements")
+        src = from_host(["requirements/*.txt"])
     dist = src
     for env in DEP_ENVS:
-        dist = dist.with_file(f"{env}.txt", Deps(env=env).lock())
+        dist = dist.with_file(f"requirements/{env}.txt", Deps(env=env).lock())
     return src.diff(dist)
 
 

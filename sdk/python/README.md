@@ -127,7 +127,7 @@ dagger dl -m dev lint format
 
 Update pinned devevelopment dependencies:
 ```shell
-dagger dl -m dev lock -o requirements/
+dagger dl -m dev lock
 ```
 
 Build and preview the reference documentation:
