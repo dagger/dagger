@@ -719,10 +719,11 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 			subTypes = append(subTypes, subType)
 		}
 
-		var description string
-		if doc := astFields[i].Doc; doc != nil {
-			description = doc.Text()
+		description := astFields[i].Doc.Text()
+		if description == "" {
+			description = astFields[i].Comment.Text()
 		}
+		description = strings.TrimSpace(description)
 
 		name := field.Name()
 
@@ -822,8 +823,8 @@ func (ps *parseState) goFuncToAPIFunctionDef(receiverTypeName string, fn *types.
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
-	if doc := funcDecl.Doc; doc != nil {
-		fnDef = dotLine(fnDef, "WithDescription").Call(Lit(doc.Text()))
+	if comment := funcDecl.Doc.Text(); comment != "" {
+		fnDef = dotLine(fnDef, "WithDescription").Call(Lit(strings.TrimSpace(comment)))
 	}
 
 	for i, spec := range specs {
