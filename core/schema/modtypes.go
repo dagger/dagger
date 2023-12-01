@@ -21,12 +21,20 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// ModType wraps the core TypeDef type with schema specific concerns like ID conversion
+// and tracking of the module in which the type was originally defined.
 type ModType interface {
+	// ConvertFromSDKResult converts a value returned from an SDK into values expected by the server,
+	// including conversion of IDs to their "unpacked" objects
 	ConvertFromSDKResult(ctx context.Context, value any) (any, error)
+	// ConvertToSDKInput converts a value from the server into a value expected by the SDK, which may
+	// include converting objects to their IDs
 	ConvertToSDKInput(ctx context.Context, value any) (any, error)
+	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
 }
 
+// PrimitiveType are the basic types like string, int, bool, void, etc.
 type PrimitiveType struct{}
 
 func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (any, error) {
@@ -89,6 +97,7 @@ func (t *ListType) SourceMod() Mod {
 	return t.underlying.SourceMod()
 }
 
+// CoreModObject represents objects from core (Container, Directory, etc.)
 type CoreModObject struct {
 	coreMod  *CoreMod
 	resolver IDableObjectResolver
@@ -115,6 +124,7 @@ func (obj *CoreModObject) SourceMod() Mod {
 	return obj.coreMod
 }
 
+// UserModObject is an object defined by a user module
 type UserModObject struct {
 	api     *APIServer
 	mod     *UserMod

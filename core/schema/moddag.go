@@ -21,126 +21,34 @@ const (
 	coreModuleName = "daggercore"
 )
 
-type ModDag struct {
-	api       *APIServer
-	roots     []Mod
-	dagDigest digest.Digest
-
-	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema            *CompiledSchema
-	lazilyLoadedIntrospectionJSON string
-	loadSchemaErr                 error
-	loadSchemaLock                sync.Mutex
-}
-
-func newModDag(ctx context.Context, api *APIServer, roots []Mod) (*ModDag, error) {
-	seen := map[digest.Digest]struct{}{}
-	finalRoots := make([]Mod, 0, len(roots))
-	for _, root := range roots {
-		dagDigest := root.DagDigest()
-		if _, ok := seen[dagDigest]; ok {
-			continue
-		}
-		seen[dagDigest] = struct{}{}
-		finalRoots = append(finalRoots, root)
-	}
-	sort.Slice(finalRoots, func(i, j int) bool {
-		return finalRoots[i].DagDigest().String() < finalRoots[j].DagDigest().String()
-	})
-	dagDigests := make([]string, 0, len(finalRoots))
-	for _, root := range finalRoots {
-		dagDigests = append(dagDigests, root.DagDigest().String())
-	}
-	dagDigest := digest.FromString(strings.Join(dagDigests, " "))
-
-	return &ModDag{
-		api:       api,
-		roots:     roots,
-		dagDigest: dagDigest,
-	}, nil
-}
-
-func (d *ModDag) DagDigest() digest.Digest {
-	return d.dagDigest
-}
-
-func (d *ModDag) Schema(ctx context.Context) (*CompiledSchema, error) {
-	schema, _, err := d.lazilyLoadSchema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return schema, nil
-}
-
-func (d *ModDag) SchemaIntrospectionJSON(ctx context.Context) (string, error) {
-	_, introspectionJSON, err := d.lazilyLoadSchema(ctx)
-	if err != nil {
-		return "", err
-	}
-	return introspectionJSON, nil
-}
-
-func (d *ModDag) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledSchema, loadedIntrospectionJSON string, rerr error) {
-	d.loadSchemaLock.Lock()
-	defer d.loadSchemaLock.Unlock()
-	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, d.lazilyLoadedIntrospectionJSON, nil
-	}
-	if d.loadSchemaErr != nil {
-		return nil, "", d.loadSchemaErr
-	}
-	defer func() {
-		d.lazilyLoadedSchema = loadedSchema
-		d.lazilyLoadedIntrospectionJSON = loadedIntrospectionJSON
-		d.loadSchemaErr = rerr
-	}()
-
-	var schemas []SchemaResolvers
-	for _, root := range d.roots {
-		modSchemas, err := root.Schema(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", root.Name(), err)
-		}
-		schemas = append(schemas, modSchemas...)
-	}
-	schema, err := mergeExecutableSchemas(schemas...)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to merge schemas: %w", err)
-	}
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, *schema.Compiled)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get schema introspection JSON: %w", err)
-	}
-
-	return schema, introspectionJSON, nil
-}
-
-// Search the *roots* of the DAG for the given type def, returning the ModType if found. This does
-// not recurse to transitive dependencies; it only returns types directly exposed by the schema
-// of this DAG.
-func (d *ModDag) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModType, bool, error) {
-	for _, root := range d.roots {
-		modType, ok, err := root.ModTypeFor(ctx, typeDef, false)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get type from root %q: %w", root.Name(), err)
-		}
-		if !ok {
-			continue
-		}
-		return modType, true, nil
-	}
-	return nil, false, nil
-}
-
+/*
+Mod is a module in loaded into the server's DAG of modules; it's the vertex type of the DAG.
+It's an interface so we can abstract over user modules and core and treat them the same.
+*/
 type Mod interface {
+	// The name of the module
 	Name() string
+
+	// The digest of the module itself plus the recursive digests of the DAG it depends on
 	DagDigest() digest.Digest
+
+	// The direct dependencies of this module
 	Dependencies() []Mod
+
+	// The schema+resolvers exposed by this module (does not include dependencies)
 	Schema(context.Context) ([]SchemaResolvers, error)
-	DependencySchemaIntrospectionJSON(context.Context) (string, error)
+
+	// The introspection json for this module's schema
+	SchemaIntrospectionJSON(context.Context) (string, error)
+
+	// ModTypeFor returns the ModType for the given typedef based on this module's schema. If checkDirectDeps is true,
+	// then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error)
 }
 
+// CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
+// but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
+// implicit dependency of every user module.
 type CoreMod struct {
 	compiledSchema    *CompiledSchema
 	introspectionJSON string
@@ -165,7 +73,7 @@ func (m *CoreMod) Schema(_ context.Context) ([]SchemaResolvers, error) {
 	return []SchemaResolvers{m.compiledSchema.SchemaResolvers}, nil
 }
 
-func (m *CoreMod) DependencySchemaIntrospectionJSON(_ context.Context) (string, error) {
+func (m *CoreMod) SchemaIntrospectionJSON(_ context.Context) (string, error) {
 	return m.introspectionJSON, nil
 }
 
@@ -201,10 +109,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	}
 }
 
+/*
+A user defined module loaded into this server's DAG.
+*/
 type UserMod struct {
 	api      *APIServer
 	metadata *core.Module
-	deps     *ModDag
+	deps     *ModDeps
 	sdk      SDK
 
 	dagDigest digest.Digest
@@ -217,7 +128,7 @@ type UserMod struct {
 
 var _ Mod = (*UserMod)(nil)
 
-func newUserMod(api *APIServer, modMeta *core.Module, deps *ModDag, sdk SDK) (*UserMod, error) {
+func newUserMod(api *APIServer, modMeta *core.Module, deps *ModDeps, sdk SDK) (*UserMod, error) {
 	selfDigest, err := modMeta.BaseDigest()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module digest: %w", err)
@@ -243,7 +154,7 @@ func (m *UserMod) DagDigest() digest.Digest {
 }
 
 func (m *UserMod) Dependencies() []Mod {
-	return m.deps.roots
+	return m.deps.mods
 }
 
 func (m *UserMod) Codegen(ctx context.Context) (*core.GeneratedCode, error) {
@@ -399,10 +310,11 @@ func (m *UserMod) Schema(ctx context.Context) ([]SchemaResolvers, error) {
 	return schemas, nil
 }
 
-func (m *UserMod) DependencySchemaIntrospectionJSON(ctx context.Context) (string, error) {
+func (m *UserMod) SchemaIntrospectionJSON(ctx context.Context) (string, error) {
 	return m.deps.SchemaIntrospectionJSON(ctx)
 }
 
+// verify the typedef is has no reserved names
 func (m *UserMod) validateTypeDef(ctx context.Context, typeDef *core.TypeDef) error {
 	switch typeDef.Kind {
 	case core.TypeDefKindList:
@@ -452,6 +364,7 @@ func (m *UserMod) validateTypeDef(ctx context.Context, typeDef *core.TypeDef) er
 	return nil
 }
 
+// prefix the given typedef (and any recursively referenced typedefs) with this module's name for any objects
 func (m *UserMod) namespaceTypeDef(ctx context.Context, typeDef *core.TypeDef) error {
 	switch typeDef.Kind {
 	case core.TypeDefKindList:
@@ -489,4 +402,122 @@ func (m *UserMod) namespaceTypeDef(ctx context.Context, typeDef *core.TypeDef) e
 		}
 	}
 	return nil
+}
+
+/*
+ModDeps represents a set of dependencies for a module or for a caller depending on a
+particular set of modules to be served.
+*/
+type ModDeps struct {
+	api       *APIServer
+	mods      []Mod
+	dagDigest digest.Digest
+
+	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
+	lazilyLoadedSchema            *CompiledSchema
+	lazilyLoadedIntrospectionJSON string
+	loadSchemaErr                 error
+	loadSchemaLock                sync.Mutex
+}
+
+func newModDeps(ctx context.Context, api *APIServer, mods []Mod) (*ModDeps, error) {
+	seen := map[digest.Digest]struct{}{}
+	finalMods := make([]Mod, 0, len(mods))
+	for _, mod := range mods {
+		dagDigest := mod.DagDigest()
+		if _, ok := seen[dagDigest]; ok {
+			continue
+		}
+		seen[dagDigest] = struct{}{}
+		finalMods = append(finalMods, mod)
+	}
+	sort.Slice(finalMods, func(i, j int) bool {
+		return finalMods[i].DagDigest().String() < finalMods[j].DagDigest().String()
+	})
+	dagDigests := make([]string, 0, len(finalMods))
+	for _, mod := range finalMods {
+		dagDigests = append(dagDigests, mod.DagDigest().String())
+	}
+	dagDigest := digest.FromString(strings.Join(dagDigests, " "))
+
+	return &ModDeps{
+		api:       api,
+		mods:      mods,
+		dagDigest: dagDigest,
+	}, nil
+}
+
+// The digest of all the modules in the DAG
+func (d *ModDeps) DagDigest() digest.Digest {
+	return d.dagDigest
+}
+
+// The combined schema exposed by each mod in this set of dependencies
+func (d *ModDeps) Schema(ctx context.Context) (*CompiledSchema, error) {
+	schema, _, err := d.lazilyLoadSchema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return schema, nil
+}
+
+// The introspection json for combined schema exposed by each mod in this set of dependencies
+func (d *ModDeps) SchemaIntrospectionJSON(ctx context.Context) (string, error) {
+	_, introspectionJSON, err := d.lazilyLoadSchema(ctx)
+	if err != nil {
+		return "", err
+	}
+	return introspectionJSON, nil
+}
+
+func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledSchema, loadedIntrospectionJSON string, rerr error) {
+	d.loadSchemaLock.Lock()
+	defer d.loadSchemaLock.Unlock()
+	if d.lazilyLoadedSchema != nil {
+		return d.lazilyLoadedSchema, d.lazilyLoadedIntrospectionJSON, nil
+	}
+	if d.loadSchemaErr != nil {
+		return nil, "", d.loadSchemaErr
+	}
+	defer func() {
+		d.lazilyLoadedSchema = loadedSchema
+		d.lazilyLoadedIntrospectionJSON = loadedIntrospectionJSON
+		d.loadSchemaErr = rerr
+	}()
+
+	var schemas []SchemaResolvers
+	for _, mod := range d.mods {
+		modSchemas, err := mod.Schema(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
+		}
+		schemas = append(schemas, modSchemas...)
+	}
+	schema, err := mergeExecutableSchemas(schemas...)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to merge schemas: %w", err)
+	}
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, *schema.Compiled)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get schema introspection JSON: %w", err)
+	}
+
+	return schema, introspectionJSON, nil
+}
+
+// Search the deps for the given type def, returning the ModType if found. This does not recurse
+// to transitive dependencies; it only returns types directly exposed by the schema of the top-level
+// deps.
+func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModType, bool, error) {
+	for _, mod := range d.mods {
+		modType, ok, err := mod.ModTypeFor(ctx, typeDef, false)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get type from mod %q: %w", mod.Name(), err)
+		}
+		if !ok {
+			continue
+		}
+		return modType, true, nil
+	}
+	return nil, false, nil
 }

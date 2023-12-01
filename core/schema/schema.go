@@ -97,7 +97,7 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	api.core = &CoreMod{compiledSchema: coreSchema, introspectionJSON: coreIntrospectionJSON}
 
 	// the main client caller starts out the core API loaded
-	dag, err := newModDag(ctx, api, []Mod{api.core})
+	dag, err := newModDeps(ctx, api, []Mod{api.core})
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ type APIServer struct {
 
 type clientCallContext struct {
 	// the DAG of modules being served to this client
-	dag *ModDag
+	dag *ModDeps
 
 	// If the client is itself from a function call in a user module, these are set with the
 	// metadata of that ongoing function call
@@ -276,7 +276,7 @@ func (s *APIServer) AddModFromMetadata(
 			return nil, err
 		}
 
-		dag, err := newModDag(ctx, s, deps)
+		dag, err := newModDeps(ctx, s, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -340,9 +340,9 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	if !ok {
 		return fmt.Errorf("client call not found")
 	}
-	roots := append([]Mod{}, callCtx.dag.roots...)
-	roots = append(roots, mod)
-	callCtx.dag, err = newModDag(ctx, s, roots)
+	deps := append([]Mod{}, callCtx.dag.mods...)
+	deps = append(deps, mod)
+	callCtx.dag, err = newModDeps(ctx, s, deps)
 	if err != nil {
 		return err
 	}
@@ -354,11 +354,11 @@ func (s *APIServer) RegisterFunctionCall(ctx context.Context, dgst digest.Digest
 		return fmt.Errorf("cannot register function call with empty digest")
 	}
 
-	var dag *ModDag
+	var dag *ModDeps
 	if mod == nil {
 		// default to just serving the core API if this is for a special case like the Go SDK codegen
 		var err error
-		dag, err = newModDag(ctx, s, []Mod{s.core})
+		dag, err = newModDeps(ctx, s, []Mod{s.core})
 		if err != nil {
 			return err
 		}
