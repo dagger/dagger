@@ -207,10 +207,12 @@ dance:
 // function that will detach from all of them after 10 seconds.
 func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	running := []*RunningService{}
+	rec := progrock.FromContext(ctx)
 	detach := func() {
 		go func() {
 			<-time.After(DetachGracePeriod)
 			for _, svc := range running {
+				rec.Debug(fmt.Sprintf("detach grace period reached, detaching from service %s", svc.Host))
 				ss.Detach(ctx, svc)
 			}
 		}()
