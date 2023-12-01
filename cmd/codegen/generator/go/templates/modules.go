@@ -677,8 +677,8 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to find decl for named type %s: %w", typeName, err)
 	}
-	if doc := typeSpec.Doc; doc != nil { // TODO(vito): for some reason this is always nil
-		withObjectOpts = append(withObjectOpts, Id("Description").Op(":").Lit(doc.Text()))
+	if comment := typeSpec.Doc.Text(); comment != "" {
+		withObjectOpts = append(withObjectOpts, Id("Description").Op(":").Lit(strings.TrimSpace(comment)))
 	}
 	if len(withObjectOpts) > 0 {
 		withObjectArgs = append(withObjectArgs, Id("TypeDefWithObjectOpts").Values(withObjectOpts...))
@@ -1046,6 +1046,9 @@ func (ps *parseState) typeSpecForNamedType(namedType *types.Named) (*ast.TypeSpe
 					continue
 				}
 				if typeSpec.Name.Name == namedType.Obj().Name() {
+					if typeSpec.Doc == nil {
+						typeSpec.Doc = genDecl.Doc
+					}
 					return typeSpec, nil
 				}
 			}
