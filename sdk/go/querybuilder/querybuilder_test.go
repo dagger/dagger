@@ -122,6 +122,6 @@ func TestUnpack(t *testing.T) {
 		}
 	`), &response)
 	require.NoError(t, err)
-	require.NoError(t, root.unpack(response))
+	require.NoError(t, root.Unpack(response))
 	require.Equal(t, "TEST", contents)
 }

@@ -19,12 +19,12 @@ type Selection struct {
 	name  string
 	alias string
 	args  map[string]*argument
-	bind  interface{}
+	bind  any
 
 	prev *Selection
 }
 
-func (s *Selection) path() []*Selection {
+func (s *Selection) Path() []*Selection {
 	selections := []*Selection{}
 	for sel := s; sel.prev != nil; sel = sel.prev {
 		selections = append([]*Selection{sel}, selections...)
@@ -58,7 +58,7 @@ func (s *Selection) Arg(name string, value any) *Selection {
 	return &sel
 }
 
-func (s *Selection) Bind(v interface{}) *Selection {
+func (s *Selection) Bind(v any) *Selection {
 	sel := *s
 	sel.bind = v
 	return &sel
@@ -66,7 +66,7 @@ func (s *Selection) Bind(v interface{}) *Selection {
 
 func (s *Selection) marshalArguments(ctx context.Context) error {
 	eg, gctx := errgroup.WithContext(ctx)
-	for _, sel := range s.path() {
+	for _, sel := range s.Path() {
 		for _, arg := range sel.args {
 			arg := arg
 			eg.Go(func() error {
@@ -86,7 +86,7 @@ func (s *Selection) Build(ctx context.Context) (string, error) {
 	var b strings.Builder
 	b.WriteString("query")
 
-	path := s.path()
+	path := s.Path()
 
 	for _, sel := range path {
 		b.WriteRune('{')
@@ -118,8 +118,21 @@ func (s *Selection) Build(ctx context.Context) (string, error) {
 	return b.String(), nil
 }
 
-func (s *Selection) unpack(data interface{}) error {
-	for _, i := range s.path() {
+func (s *Selection) Pack(data any) any {
+	path := s.Path()
+	for i := len(path) - 1; i >= 0; i-- {
+		p := path[i]
+		k := p.name
+		if p.alias != "" {
+			k = p.alias
+		}
+		data = map[string]any{k: data}
+	}
+	return data
+}
+
+func (s *Selection) Unpack(data any) error {
+	for _, i := range s.Path() {
 		k := i.name
 		if i.alias != "" {
 			k = i.alias
@@ -127,12 +140,12 @@ func (s *Selection) unpack(data interface{}) error {
 
 		// Try to assert type of the value
 		switch f := data.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			data = f[k]
-		case []interface{}:
+		case []any:
 			data = f
 		default:
-			fmt.Printf("type not found %s\n", f)
+			return fmt.Errorf("type not found: %v (%T)", f, f)
 		}
 
 		if i.bind != nil {
@@ -164,7 +177,7 @@ func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
 		return err
 	}
 
-	return s.unpack(response)
+	return s.Unpack(response)
 }
 
 type argument struct {
