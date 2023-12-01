@@ -48,7 +48,7 @@ httpx==0.25.2
     # via
     #   -r -
     #   pytest-httpx
-idna==3.5
+idna==3.6
     # via
     #   anyio
     #   httpx
