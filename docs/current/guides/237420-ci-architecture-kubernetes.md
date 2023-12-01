@@ -1,5 +1,5 @@
 ---
-slug: /194031/ci-architecture-kubernetes
+slug: /237420/ci-architecture-kubernetes
 displayed_sidebar: "current"
 category: "guides"
 tags: ["kubernetes"]
@@ -22,7 +22,7 @@ This guide assumes that you have:
 
 ## Architecture Patterns
 
-### Base pattern
+### Base pattern: Persistent nodes
 
 The base pattern consists of persistent Kubernetes nodes with ephemeral CI runners.
 
