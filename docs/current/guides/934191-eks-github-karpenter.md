@@ -72,7 +72,8 @@ A Dagger Engine is required on each of the GitHub Actions runner nodes. A Daemon
 Use our Helm chart to create the Dagger Engine DaemonSet on the cluster:
 
 ```shell
-helm upgrade --create-namespace --install --namespace dagger dagger oci://registry.dagger.io/dagger-helm
+helm upgrade --install --namespace=dagger --create-namespace \
+    dagger oci://registry.dagger.io/dagger-helm
 ```
 
 This Dagger Engine DaemonSet configuration is designed to:
