@@ -4344,9 +4344,15 @@ type CacheSharingMode string
 func (CacheSharingMode) IsEnum() {}
 
 const (
-	Locked  CacheSharingMode = "LOCKED"
+	// Shares the cache volume amongst many build pipelines,
+	// but will serialize the writes
+	Locked CacheSharingMode = "LOCKED"
+
+	// Keeps a cache volume for a single build pipeline
 	Private CacheSharingMode = "PRIVATE"
-	Shared  CacheSharingMode = "SHARED"
+
+	// Shares the cache volume amongst many build pipelines
+	Shared CacheSharingMode = "SHARED"
 )
 
 type ImageLayerCompression string
@@ -4354,10 +4360,13 @@ type ImageLayerCompression string
 func (ImageLayerCompression) IsEnum() {}
 
 const (
-	Estargz      ImageLayerCompression = "EStarGZ"
-	Gzip         ImageLayerCompression = "Gzip"
+	Estargz ImageLayerCompression = "EStarGZ"
+
+	Gzip ImageLayerCompression = "Gzip"
+
 	Uncompressed ImageLayerCompression = "Uncompressed"
-	Zstd         ImageLayerCompression = "Zstd"
+
+	Zstd ImageLayerCompression = "Zstd"
 )
 
 type ImageMediaTypes string
@@ -4366,7 +4375,8 @@ func (ImageMediaTypes) IsEnum() {}
 
 const (
 	Dockermediatypes ImageMediaTypes = "DockerMediaTypes"
-	Ocimediatypes    ImageMediaTypes = "OCIMediaTypes"
+
+	Ocimediatypes ImageMediaTypes = "OCIMediaTypes"
 )
 
 type NetworkProtocol string
@@ -4374,7 +4384,10 @@ type NetworkProtocol string
 func (NetworkProtocol) IsEnum() {}
 
 const (
+	// TCP (Transmission Control Protocol)
 	Tcp NetworkProtocol = "TCP"
+
+	// UDP (User Datagram Protocol)
 	Udp NetworkProtocol = "UDP"
 )
 
@@ -4383,10 +4396,29 @@ type TypeDefKind string
 func (TypeDefKind) IsEnum() {}
 
 const (
+	// A boolean value
 	Booleankind TypeDefKind = "BooleanKind"
+
+	// An integer value
 	Integerkind TypeDefKind = "IntegerKind"
-	Listkind    TypeDefKind = "ListKind"
-	Objectkind  TypeDefKind = "ObjectKind"
-	Stringkind  TypeDefKind = "StringKind"
-	Voidkind    TypeDefKind = "VoidKind"
+
+	// A list of values all having the same type.
+	//
+	// Always paired with a ListTypeDef.
+	Listkind TypeDefKind = "ListKind"
+
+	// A named type defined in the GraphQL schema, with fields and functions.
+	//
+	// Always paired with an ObjectTypeDef.
+	Objectkind TypeDefKind = "ObjectKind"
+
+	// A string value
+	Stringkind TypeDefKind = "StringKind"
+
+	// A special kind used to signify that no value is returned.
+	//
+	// This is used for functions that have no return value. The outer TypeDef
+	// specifying this Kind is always Optional, as the Void is never actually
+	// represented.
+	Voidkind TypeDefKind = "VoidKind"
 )

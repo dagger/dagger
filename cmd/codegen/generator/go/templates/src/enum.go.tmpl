@@ -5,9 +5,10 @@ type {{ $enumName }} string
 func ({{ $enumName }}) IsEnum() {}
 
 const (
-	{{- range $index, $field :=  .EnumValues | SortEnumFields }}
+	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{ $field.Description | Comment }}
 	{{ $field.Name | FormatEnum}} {{ $enumName }} = "{{ $field.Name }}"
-	{{- end }}
+	{{ end }}
 )
 
 {{- end }}
