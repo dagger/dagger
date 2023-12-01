@@ -23,7 +23,7 @@ require (
 	github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
-	github.com/google/go-containerregistry v0.15.2
+	github.com/google/go-containerregistry v0.17.0
 	github.com/google/uuid v1.4.0
 	github.com/iancoleman/strcase v0.3.0
 	// https://github.com/moby/buildkit/commit/c4f191410a411d7b7cb31426e2bd17fae305acf1
