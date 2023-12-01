@@ -23,7 +23,7 @@
     "graphql": "^16.8.0",
     "graphql-request": "^6.1.0",
     "graphql-tag": "^2.12.6",
-    "node-color-log": "^10.0.2",
+    "node-color-log": "^11.0.0",
     "node-fetch": "^3.3.1",
     "tar": "^6.1.13"
   },
