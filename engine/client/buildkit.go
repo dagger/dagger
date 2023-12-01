@@ -19,38 +19,18 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/ssh"
 )
 
-func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string, loader *progrock.VertexRecorder) (*bkclient.Client, *bkclient.Info, error) {
-	buildkitdHost := remote.String()
-	if remote.Scheme == DockerImageProvider {
-		var err error
-		buildkitdHost, err = dockerImageProvider(ctx, remote, userAgent)
-		if err != nil {
-			return nil, nil, err
-		}
+func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote *url.URL, userAgent string) (*bkclient.Client, *bkclient.Info, error) {
+	var c *bkclient.Client
+	var err error
+	switch remote.Scheme {
+	case DockerImageProvider:
+		c, err = buildkitConnectDocker(ctx, rec, remote, userAgent)
+	default:
+		task := rec.Task("starting engine")
+		c, err = buildkitConnectDefault(ctx, rec, remote)
+		task.Done(err)
 	}
-
-	opts := []bkclient.ClientOpt{
-		bkclient.WithFailFast(),
-		bkclient.WithTracerProvider(otel.GetTracerProvider()),
-	}
-
-	exp, err := detect.Exporter()
-	if err == nil {
-		if td, ok := exp.(bkclient.TracerDelegate); ok {
-			opts = append(opts, bkclient.WithTracerDelegate(td))
-		}
-	} else {
-		fmt.Fprintln(loader.Stdout(), "failed to detect opentelemetry exporter: ", err)
-	}
-
-	c, err := bkclient.New(ctx, buildkitdHost, opts...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("buildkit client: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-	if err := c.Wait(ctx); err != nil {
 		return nil, nil, err
 	}
 
@@ -63,4 +43,33 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string, l
 	}
 
 	return c, info, nil
+}
+
+func buildkitConnectDefault(ctx context.Context, rec *progrock.VertexRecorder, remote *url.URL) (*bkclient.Client, error) {
+	opts := []bkclient.ClientOpt{
+		bkclient.WithFailFast(),
+		bkclient.WithTracerProvider(otel.GetTracerProvider()),
+	}
+
+	exp, err := detect.Exporter()
+	if err == nil {
+		if td, ok := exp.(bkclient.TracerDelegate); ok {
+			opts = append(opts, bkclient.WithTracerDelegate(td))
+		}
+	} else {
+		fmt.Fprintln(rec.Stdout(), "failed to detect opentelemetry exporter: ", err)
+	}
+
+	c, err := bkclient.New(ctx, remote.String(), opts...)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit client: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if err := c.Wait(ctx); err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }

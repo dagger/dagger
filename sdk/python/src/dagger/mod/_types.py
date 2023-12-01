@@ -1,8 +1,6 @@
 import dataclasses
 from typing import TypeAlias
 
-MissingType = type(object)
-
 PythonName: TypeAlias = str
 APIName: TypeAlias = str
 

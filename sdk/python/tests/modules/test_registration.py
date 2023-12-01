@@ -1,31 +1,7 @@
 import pytest
-from typing_extensions import Self
 
-import dagger
-from dagger.mod import Annotated, Arg, Module
+from dagger.mod import Module
 from dagger.mod._exceptions import NameConflictError, UserError
-
-
-def get_resolver(mod: Module, parent_name: str, resolver_name: str):
-    return mod.get_resolver(
-        mod.get_resolvers("foo"),
-        parent_name,
-        resolver_name,
-    )
-
-
-async def get_result(
-    mod: Module,
-    parent_name: str,
-    parent_json: str,
-    resolver_name: str,
-    inputs: dict,
-):
-    return await mod.get_result(
-        get_resolver(mod, parent_name, resolver_name),
-        dagger.JSON(parent_json),
-        inputs,
-    )
 
 
 def test_object_type_resolvers():
@@ -57,6 +33,7 @@ def test_object_type_resolvers():
     assert resolvers == [
         ("exposed_method", "ExposedClass"),
         ("exposed_field", "ExposedClass"),
+        ("", "ExposedClass"),
         ("exposed_function", None),
     ]
 
@@ -125,49 +102,3 @@ def test_main_object_name(mod_name, class_name):
 
     resolvers = mod.get_resolvers(mod_name)
     assert next(iter(resolvers.keys())).name == class_name
-
-
-@pytest.mark.anyio()
-class TestNameOverrides:
-    @pytest.fixture(scope="class")
-    def mod(self):
-        _mod = Module()
-
-        @_mod.object_type
-        class Bar:
-            with_: str = _mod.field(name="with")
-
-        @_mod.function
-        def bar() -> Bar:
-            return Bar(with_="bar")
-
-        @_mod.function(name="import")
-        def import_(from_: Annotated[str, Arg("from")]) -> str:
-            return from_
-
-        return _mod
-
-    async def test_function_and_arg_name(self, mod: Module):
-        assert await get_result(mod, "Foo", "{}", "import", {"from": "egg"}) == "egg"
-
-    async def test_field_unstructure(self, mod: Module):
-        assert await get_result(mod, "Foo", "{}", "bar", {}) == {"with": "bar"}
-
-    async def test_field_structure(self, mod: Module):
-        assert await get_result(mod, "Bar", '{"with": "baz"}', "with", {}) == "baz"
-
-
-@pytest.mark.anyio()
-async def test_method_returns_self():
-    mod = Module()
-
-    @mod.object_type
-    class Foo:
-        message: str = "foo"
-
-        @mod.function
-        def bar(self) -> Self:
-            self.message = "foobar"
-            return self
-
-    assert await get_result(mod, "Foo", "{}", "bar", {}) == {"message": "foobar"}

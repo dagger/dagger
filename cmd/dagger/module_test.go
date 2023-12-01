@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/moby/buildkit/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,154 +49,166 @@ func TestOriginToPath(t *testing.T) {
 func TestParseGit(t *testing.T) {
 	for _, tc := range []struct {
 		urlStr string
-		want   parsedGitURL
+		want   *gitutil.GitURL
 	}{
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/shykes/daggerverse",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/shykes/daggerverse",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "main",
 				},
-				ref: "main",
+				Remote: "ssh://git@github.com/shykes/daggerverse",
 			},
 		},
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse.git",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/shykes/daggerverse.git",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/shykes/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "main",
 				},
-				ref: "main",
+				Remote: "ssh://git@github.com/shykes/daggerverse.git",
 			},
 		},
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse#v0.9.1",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/shykes/daggerverse",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/shykes/daggerverse",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "v0.9.1",
 				},
-				ref: "v0.9.1",
+				Remote: "ssh://git@github.com/shykes/daggerverse",
 			},
 		},
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse.git#v0.9.1",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/shykes/daggerverse.git",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/shykes/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "v0.9.1",
 				},
-				ref: "v0.9.1",
+				Remote: "ssh://git@github.com/shykes/daggerverse.git",
 			},
 		},
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse#v0.9.1:subdir1/subdir2",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/shykes/daggerverse",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/shykes/daggerverse",
+				Fragment: &gitutil.GitURLFragment{
+					Ref:    "v0.9.1",
+					Subdir: "subdir1/subdir2",
 				},
-				ref:    "v0.9.1",
-				subdir: "subdir1/subdir2",
+				Remote: "ssh://git@github.com/shykes/daggerverse",
 			},
 		},
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse.git#v0.9.1:subdir1/subdir2",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/shykes/daggerverse.git",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "/shykes/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref:    "v0.9.1",
+					Subdir: "subdir1/subdir2",
 				},
-				ref:    "v0.9.1",
-				subdir: "subdir1/subdir2",
+				Remote: "ssh://git@github.com/shykes/daggerverse.git",
 			},
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/sipsma/daggerverse",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "sipsma/daggerverse",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "main",
 				},
-				ref: "main",
+				Remote: "git@github.com:sipsma/daggerverse",
 			},
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse.git",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/sipsma/daggerverse.git",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "sipsma/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "main",
 				},
-				ref: "main",
+				Remote: "git@github.com:sipsma/daggerverse.git",
 			},
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse#v0.9.1",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/sipsma/daggerverse",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "sipsma/daggerverse",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "v0.9.1",
 				},
-				ref: "v0.9.1",
+				Remote: "git@github.com:sipsma/daggerverse",
 			},
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse.git#v0.9.1",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/sipsma/daggerverse.git",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "sipsma/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref: "v0.9.1",
 				},
-				ref: "v0.9.1",
+				Remote: "git@github.com:sipsma/daggerverse.git",
 			},
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse#v0.9.1:subdir1/subdir2",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/sipsma/daggerverse",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "sipsma/daggerverse",
+				Fragment: &gitutil.GitURLFragment{
+					Ref:    "v0.9.1",
+					Subdir: "subdir1/subdir2",
 				},
-				ref:    "v0.9.1",
-				subdir: "subdir1/subdir2",
+				Remote: "git@github.com:sipsma/daggerverse",
 			},
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse.git#v0.9.1:subdir1/subdir2",
-			want: parsedGitURL{
-				url: &url.URL{
-					Scheme: "ssh",
-					User:   url.User("git"),
-					Host:   "github.com",
-					Path:   "/sipsma/daggerverse.git",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   url.User("git"),
+				Host:   "github.com",
+				Path:   "sipsma/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref:    "v0.9.1",
+					Subdir: "subdir1/subdir2",
 				},
-				ref:    "v0.9.1",
-				subdir: "subdir1/subdir2",
+				Remote: "git@github.com:sipsma/daggerverse.git",
 			},
 		},
 	} {
@@ -205,7 +218,7 @@ func TestParseGit(t *testing.T) {
 			parsedGit, err := parseGit(tc.urlStr)
 			require.NoError(t, err)
 			require.NotNil(t, parsedGit)
-			require.Equal(t, tc.want, *parsedGit)
+			require.Equal(t, tc.want, parsedGit)
 		})
 	}
 }

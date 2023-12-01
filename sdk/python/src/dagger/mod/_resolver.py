@@ -2,31 +2,46 @@ import dataclasses
 import inspect
 import json
 import logging
+import types
 from abc import ABC, abstractmethod, abstractproperty
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import cached_property
 from typing import (
     Any,
     Generic,
+    ParamSpec,
+    TypeAlias,
     TypeVar,
+    cast,
     get_type_hints,
+    overload,
 )
 
 import cattrs
+from graphql.pyutils import camel_to_snake
 from typing_extensions import Self, override
 
 import dagger
 
 from ._arguments import Parameter
 from ._converter import to_typedef
-from ._exceptions import FatalError, UserError
-from ._types import APIName, MissingType, PythonName
-from ._utils import asyncify, await_maybe, get_arg_name, get_doc, transform_error
+from ._exceptions import UserError
+from ._types import APIName, PythonName
+from ._utils import (
+    asyncify,
+    await_maybe,
+    get_alt_constructor,
+    get_arg_name,
+    get_doc,
+    transform_error,
+)
 
 logger = logging.getLogger(__name__)
 
+F = TypeVar("F")
+P = ParamSpec("P")
 
-Func = TypeVar("Func", bound=Callable[..., Any])
+Func: TypeAlias = Callable[P, F]
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
@@ -34,6 +49,10 @@ class Resolver(ABC):
     original_name: PythonName
     name: APIName = dataclasses.field(repr=False)
     doc: str | None = dataclasses.field(repr=False)
+
+    # Used for instance methods, to get the parent class for the `self` argument.
+    # NB: In a FunctionResolver, if `wrapped_func` is a class, it's only useful
+    # to know if the class's constructor is being added to another class.
     origin: type | None
 
     @abstractproperty
@@ -49,7 +68,7 @@ class Resolver(ABC):
         self,
         converter: cattrs.Converter,
         root: object | None,
-        inputs: dict[APIName, Any],
+        inputs: Mapping[APIName, Any],
     ) -> Any:
         ...
 
@@ -60,8 +79,8 @@ class FieldResolver(Resolver):
     is_optional: bool
 
     @override
-    def register(self, object_typedef: dagger.TypeDef) -> dagger.TypeDef:
-        return object_typedef.with_field(
+    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
+        return typedef.with_field(
             self.name,
             to_typedef(self.type_annotation).with_optional(self.is_optional),
             description=self.doc or None,
@@ -72,15 +91,12 @@ class FieldResolver(Resolver):
         self,
         _: cattrs.Converter,
         root: object | None,
-        inputs: dict[APIName, Any],
+        inputs: Mapping[APIName, Any],
     ) -> Any:
-        if inputs:
-            msg = f"Unexpected input args for field resolver: {self}"
-            raise FatalError(msg)
-
-        if root is None:
-            msg = f"Unexpected None root for field resolver: {self}"
-
+        # NB: This is only useful in unit tests because the API server
+        # resolves trivial fields automatically, without invoking the
+        # module.
+        assert not inputs
         return getattr(root, self.original_name)
 
     @property
@@ -94,14 +110,15 @@ class FieldResolver(Resolver):
         return f"{self.origin.__name__}.{self.original_name}"
 
 
-@dataclasses.dataclass(kw_only=True, repr=False)
-class FunctionResolver(Resolver, Generic[Func]):
+# Can't use slots because of @cached_property.
+@dataclasses.dataclass(kw_only=True)
+class FunctionResolver(Resolver, Generic[P, F]):
     """Base class for wrapping user-defined functions."""
 
-    wrapped_func: Func
+    wrapped_func: Func[P, F]
 
-    def __repr__(self):
-        return repr(self.wrapped_func)
+    def __str__(self):
+        return repr(self.sig_func)
 
     @override
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
@@ -116,37 +133,92 @@ class FunctionResolver(Resolver, Generic[Func]):
                 param.name,
                 to_typedef(param.resolved_type).with_optional(param.is_optional),
                 description=param.doc,
-                default_value=(
-                    dagger.JSON(json.dumps(param.signature.default))
-                    if param.is_optional
-                    else None
-                ),
+                default_value=self._get_default_value(param),
             )
 
-        return typedef.with_function(fn)
+        return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
+
+    def _get_default_value(self, param: Parameter) -> dagger.JSON | None:
+        if not param.is_optional:
+            return None
+
+        default_value = param.signature.default
+
+        try:
+            return dagger.JSON(json.dumps(default_value))
+        except TypeError as e:
+            # Rather than failing on a default value that's not JSON
+            # serializable and going through hoops to support more and more
+            # types, just don't register it. It'll still be registered
+            # as optional so the API server will call the function without
+            # it and let Python handle it.
+            logger.debug(
+                "Not registering default value for %s: %s",
+                param.signature,
+                e,
+            )
+            return None
 
     @property
     def return_type(self):
         """Return the resolved return type of the wrapped function."""
+        is_class = inspect.isclass(self.wrapped_func)
         try:
-            r = self._type_hints["return"]
+            r: type = self.type_hints["return"]
         except KeyError:
-            return MissingType
+            # When no return type is specified, assume None.
+            return self.wrapped_func if is_class else type(None)
+
+        if is_class:
+            if self.sig_func.__name__ == "__init__":
+                if r is not type(None):
+                    msg = (
+                        "Expected None return type "
+                        f"in __init__ constructor, got {r!r}"
+                    )
+                    raise UserError(msg)
+                return self.wrapped_func
+
+            if r not in (Self, self.wrapped_func):
+                msg = (
+                    f"Expected `{self.wrapped_func.__name__}` return type "
+                    f"in {self.sig_func!r}, got {r!r}"
+                )
+                raise UserError(msg)
+            return self.wrapped_func
+
         if r is Self:
             if self.origin is None:
                 msg = "Can't return Self without parent class"
                 raise UserError(msg)
             return self.origin
+
         return r
 
+    @property
+    def func(self):
+        """Return the callable to invoke."""
+        # It should be the same as `wrapped_func` except for the alternative
+        # constructor which is different than `wrapped_func`.
+        # It's simpler not to execute `__init__` directly since it's unbound.
+        return get_alt_constructor(self.wrapped_func) or self.wrapped_func
+
+    @property
+    def sig_func(self):
+        """Return the callable to inspect."""
+        # For more accurate inspection, as it can be different
+        # than the callable to invoke.
+        if inspect.isclass(cls := self.wrapped_func):
+            return get_alt_constructor(cls) or cls.__init__
+        return self.wrapped_func
+
     @cached_property
-    def _type_hints(self):
-        return get_type_hints(self.wrapped_func)
+    def type_hints(self):
+        return get_type_hints(self.sig_func)
 
     @cached_property
     def signature(self):
-        """Return the signature of the wrapped function."""
-        return inspect.signature(self.wrapped_func, follow_wrapped=True)
+        return inspect.signature(self.sig_func, follow_wrapped=True)
 
     @cached_property
     def parameters(self):
@@ -154,10 +226,17 @@ class FunctionResolver(Resolver, Generic[Func]):
 
         Keys are the Python parameter names.
         """
+        is_method = (
+            inspect.isclass(self.wrapped_func)
+            and self.sig_func.__name__ == "__init__"
+            or self.origin
+        )
         mapping: dict[PythonName, Parameter] = {}
 
         for param in self.signature.parameters.values():
-            if self.origin and param.name == "self":
+            # Skip `self` parameter on instance methods.
+            # It will be added manually on `get_result`.
+            if is_method and param.name == "self":
                 continue
 
             if param.kind is inspect.Parameter.POSITIONAL_ONLY:
@@ -167,13 +246,16 @@ class FunctionResolver(Resolver, Generic[Func]):
             try:
                 # Use type_hints instead of param.annotation to get
                 # resolved forward references and stripped Annotated.
-                annotation = self._type_hints[param.name]
+                annotation = self.type_hints[param.name]
             except KeyError:
                 logger.warning(
                     "Missing type annotation for parameter '%s'",
                     param.name,
                 )
                 annotation = Any
+
+            if isinstance(annotation, dataclasses.InitVar):
+                annotation = annotation.type
 
             parameter = Parameter(
                 name=get_arg_name(param.annotation) or param.name,
@@ -191,26 +273,35 @@ class FunctionResolver(Resolver, Generic[Func]):
         self,
         converter: cattrs.Converter,
         root: object | None,
-        inputs: dict[APIName, Any],
+        inputs: Mapping[APIName, Any],
     ) -> Any:
-        args = (root,) if root is not None else ()
+        # NB: `root` is only needed on instance methods (with first `self` argument).
+        # Use bound instance method to remove `self` from the list of arguments.
+        func = getattr(root, self.original_name) if root else self.func
 
+        signature = (
+            self.signature
+            if func is self.sig_func
+            else inspect.signature(func, follow_wrapped=True)
+        )
+
+        logger.debug("func => %s", repr(signature))
         logger.debug("input args => %s", repr(inputs))
         kwargs = await self._convert_inputs(converter, inputs)
         logger.debug("structured args => %s", repr(kwargs))
 
         try:
-            bound = self.signature.bind(*args, **kwargs)
+            bound = signature.bind(**kwargs)
         except TypeError as e:
             msg = f"Unable to bind arguments: {e}"
             raise UserError(msg) from e
 
-        return await await_maybe(self.wrapped_func(*bound.args, **bound.kwargs))
+        return await await_maybe(func(*bound.args, **bound.kwargs))
 
     async def _convert_inputs(
         self,
         converter: cattrs.Converter,
-        inputs: dict[APIName, Any],
+        inputs: Mapping[APIName, Any],
     ):
         """Convert arguments to the expected parameter types."""
         kwargs: dict[PythonName, Any] = {}
@@ -224,7 +315,7 @@ class FunctionResolver(Resolver, Generic[Func]):
                 continue
 
             value = inputs[param.name]
-            type_ = param.signature.annotation
+            type_ = param.resolved_type
 
             try:
                 kwargs[python_name] = await asyncify(converter.structure, value, type_)
@@ -232,9 +323,66 @@ class FunctionResolver(Resolver, Generic[Func]):
                 msg = transform_error(
                     e,
                     f"Invalid argument `{param.name}`",
-                    self.wrapped_func,
+                    self.sig_func,
                     type_,
                 )
                 raise UserError(msg) from e
 
         return kwargs
+
+
+@dataclasses.dataclass(slots=True)
+class Function(Generic[P, F]):
+    """Descriptor for wrapping user-defined functions."""
+
+    func: Func[P, F]
+    name: APIName | None = None
+    doc: str | None = None
+    resolver: FunctionResolver = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        original_name = self.func.__name__
+        name = original_name if self.name is None else self.name
+        origin = None
+
+        if inspect.isclass(self.func):
+            if self.name is None:
+                name = camel_to_snake(name)
+            elif self.name == "":
+                origin = self.func
+
+        self.resolver = FunctionResolver(
+            original_name=original_name,
+            name=name,
+            wrapped_func=self.func,
+            doc=self.doc,
+            origin=origin,
+        )
+
+    def __set_name__(self, owner: type, name: str):
+        if self.name is None:
+            self.name = name
+            self.resolver.name = name
+        self.resolver.origin = owner
+
+    @overload
+    def __get__(self, instance: None, owner=None) -> Self:
+        ...
+
+    @overload
+    def __get__(self, instance: object, owner=None) -> Func[P, F]:
+        ...
+
+    def __get__(self, instance, owner=None) -> Func[P, F] | Self:
+        if instance is None:
+            return self
+        if inspect.isclass(self.func):
+            return cast(Func[P, F], self.func)
+        return cast(Func[P, F], types.MethodType(self.func, instance))
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> F:
+        # NB: This is only needed for top-level functions because only
+        # class attributes can access descriptors via `__get__`. For
+        # the top-level functions, you'll get this `Function` instance
+        # instead, so we need to proxy the call to the wrapped function.
+        return self.func(*args, **kwargs)

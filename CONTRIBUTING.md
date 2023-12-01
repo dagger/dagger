@@ -258,33 +258,21 @@ To list available linters:
 
 ```shell
 > ./hack/make -l | grep lint
-docs:lint              lints documentation files
-engine:lint            lints the engine
-lint                   runs all linters
-sdk:all:lint           runs all SDK linters
-sdk:go:lint            lints the Go SDK
-sdk:nodejs:lint        lints the Node.js SDK
-sdk:python:lint        lints the Python SDK
+  docs:lint               lints documentation files
+  engine:lint             lints the engine
+  lint                    runs all linters
+  sdk:all:lint            runs all SDK linters
+  sdk:elixir:lint         lints the Elixir SDK
+  sdk:go:lint             lints the Go SDK
+  sdk:java:lint           lints the Java SDK
+  sdk:nodejs:lint         lints the Node.js SDK
+  sdk:python:lint         lints the Python SDK
+  sdk:rust:lint           lints the Rust SDK
 ```
 
 :::tip
 The `docs:lint` is misleading as it only lints the Markdown in documentation (`.md`). Go snippets in documentation are linted in `engine:lint` while the others are linted in `sdk:<name>:lint`.
 :::
-
-### How to re-run all GitHub Actions jobs?
-
-There isn't a button that Dagger contributors can click in their fork that will
-re-run all GitHub Actions jobs. See issue
-[#1169](https://github.com/dagger/dagger/issues/1169) for more context.
-
-The current workaround is to re-create the last commit:
-
-```shell
-git commit --amend -s
-
-# Force push the new commit to re-run all GitHub Actions jobs:
-git push -f mybranch
-```
 
 ### How to test SDK changes locally?
 

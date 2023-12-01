@@ -1,9 +1,10 @@
 from typing import Annotated, Optional
 
 import pytest
+from beartype.door import TypeHint
 from typing_extensions import Doc
 
-from dagger.mod._arguments import Arg
+from dagger.mod import Arg, Module, field
 from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
 
 
@@ -17,7 +18,7 @@ from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
     ],
 )
 def test_is_optional(typ, expected):
-    assert is_optional(typ) == expected
+    assert is_optional(TypeHint(typ)) == expected
 
 
 @pytest.mark.parametrize(
@@ -31,7 +32,7 @@ def test_is_optional(typ, expected):
     ],
 )
 def test_non_optional(typ, expected):
-    assert non_optional(typ) == expected
+    assert non_optional(TypeHint(typ)) == TypeHint(expected)
 
 
 class ClassWithDocstring:
@@ -88,6 +89,16 @@ async def async_func_without_docstring():
 )
 def test_no_annotated_doc(annotation):
     assert get_doc(annotation) is None
+
+
+def test_no_dataclass_default_doc():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        bar: str = field()
+
+    assert get_doc(Foo) is None
 
 
 def test_get_arg_name():
