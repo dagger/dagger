@@ -42,18 +42,16 @@ func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
 	if dir.LLB != nil {
 		defs = append(defs, dir.LLB)
 	}
-	if dir.Services != nil {
-		for _, bnd := range dir.Services {
-			ctr := bnd.Service.Container
-			if ctr == nil {
-				continue
-			}
-			ctrDefs, err := ctr.PBDefinitions()
-			if err != nil {
-				return nil, err
-			}
-			defs = append(defs, ctrDefs...)
+	for _, bnd := range dir.Services {
+		ctr := bnd.Service.Container
+		if ctr == nil {
+			continue
 		}
+		ctrDefs, err := ctr.PBDefinitions()
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, ctrDefs...)
 	}
 	return defs, nil
 }

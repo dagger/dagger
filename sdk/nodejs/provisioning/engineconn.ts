@@ -1,12 +1,16 @@
+import { GraphQLClient } from "graphql-request"
 import { Writable } from "node:stream"
-
-import { Client } from "../api/client.gen.js"
 
 export interface ConnectOpts {
   Workdir?: string
   Project?: string
   LogOutput?: Writable
   Timeout?: number
+}
+
+export interface ConnectParams {
+  port: number
+  session_token: string
 }
 
 export interface EngineConn {
@@ -19,7 +23,7 @@ export interface EngineConn {
    * Connect initializes a ready to use GraphQL Client that
    * points to the engine.
    */
-  Connect: (opts: ConnectOpts) => Promise<Client>
+  Connect: (opts: ConnectOpts) => Promise<GraphQLClient>
 
   /**
    * Close stops the current connection.

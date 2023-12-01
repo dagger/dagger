@@ -16,19 +16,13 @@ const AttrNetConfig = "gitdns.netconfig"
 // Git is a helper mimicking the llb.Git function, but with the ability to
 // set additional attributes.
 func State(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
-	hi := &llb.GitInfo{}
-	for _, o := range opts {
-		o.SetGitOption(hi)
-	}
-
 	remote, err := gitutil.ParseURL(url)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
 		url = "https://" + url
 		remote, err = gitutil.ParseURL(url)
 	}
 	if remote != nil {
-		remote.Fragment = ""
-		url = remote.String()
+		url = remote.Remote
 	}
 
 	var id string
@@ -45,7 +39,6 @@ func State(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State
 			id += "#" + ref
 		}
 	}
-	attrs := map[string]string{}
 
 	// TODO(vito): replace when custom sources are supported
 	hack, err := buildkit.EncodeIDHack(DaggerGitURLHack{
@@ -64,6 +57,7 @@ func State(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State
 	for _, o := range opts {
 		o.SetGitOption(gi)
 	}
+	attrs := map[string]string{}
 	if gi.KeepGitDir {
 		attrs[pb.AttrKeepGitDir] = "true"
 	}

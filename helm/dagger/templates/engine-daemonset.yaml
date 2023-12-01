@@ -5,7 +5,6 @@ metadata:
   name: {{ include "dagger.fullname" . }}-engine
   namespace: {{ .Release.Namespace }}
   labels:
-    k8s-app: {{ include "dagger.fullname" . }}-engine
     {{- include "dagger.labels" . | nindent 4 }}
 spec:
   selector:
@@ -38,10 +37,11 @@ spec:
         runAsGroup: 1001
         fsGroup: 1001
         fsGroupChangePolicy: "OnRootMismatch"
+      serviceAccountName: {{ include "dagger.serviceAccountName" . }}
       containers:
         - name: dagger-engine
           image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           args:
             - "--oci-max-parallelism"
             - "num-cpu"
@@ -51,7 +51,11 @@ spec:
             value: {{ required "A magicache url is required" .Values.magicache.url }}
           envFrom:
           - secretRef:
+              {{- if .Values.magicache.secretName }}
+              name: {{ .Values.magicache.secretName }}
+              {{- else}}
               name: {{ include "dagger.fullname" . }}-magicache-token
+              {{- end}}
           {{- end }}
           securityContext:
             privileged: true

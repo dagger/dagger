@@ -7,10 +7,86 @@ import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
 
+import { dag } from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
-import { connect } from "../connect.js"
+import { connect, close, connection } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
+
+describe("NodeJS default client", function () {
+  it("Should use the default client and close connection on call to close", async function () {
+    this.timeout(60000)
+
+    // Check if the connection is actually not set before calling an execution
+    // We verify the lazy evaluation that way
+    assert.equal(dag["_ctx"]["_client"], undefined)
+
+    const out = await dag
+      .container()
+      .from("alpine:3.16.2")
+      .withExec(["echo", "hello", "world"])
+      .stdout()
+
+    assert.equal(out, "hello world\n")
+
+    // Check if the connection is still up
+    assert.notEqual(dag["_ctx"]["_client"], undefined)
+
+    close()
+
+    // Check if the connection has been correctly reset
+    assert.equal(dag["_ctx"]["_client"], undefined)
+  })
+
+  it("Should automatically close connection", async function () {
+    this.timeout(60000)
+
+    // Check if the connection is actually not set before calling connection
+    assert.equal(dag["_ctx"]["_client"], undefined)
+
+    await connection(async () => {
+      const out = await dag
+        .container()
+        .from("alpine:3.16.2")
+        .withExec(["echo", "hello", "world"])
+        .stdout()
+
+      assert.equal(out, "hello world\n")
+
+      // Check if the connection is still up
+      assert.notEqual(dag["_ctx"]["_client"], undefined)
+    })
+
+    // Check if the connection has been correctly reset
+    assert.equal(dag["_ctx"]["_client"], undefined)
+  })
+
+  it("Should automatically close connection with config", async function () {
+    this.timeout(60000)
+
+    // Check if the connection is actually not set before calling connection
+    assert.equal(dag["_ctx"]["_client"], undefined)
+
+    await connection(
+      async () => {
+        // Check if the connection is up
+        assert.notEqual(dag["_ctx"]["_client"], undefined)
+
+        const out = await dag
+          .container()
+          .from("alpine:3.16.2")
+          .withExec(["echo", "hello", "world"])
+          .stdout()
+
+        assert.equal(out, "hello world\n")
+      },
+      { LogOutput: process.stderr }
+    )
+
+    // Check if the connection has been correctly reset
+    assert.equal(dag["_ctx"]["_client"], undefined)
+  })
+})
 
 describe("NodeJS sdk Connect", function () {
   it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
@@ -22,9 +98,15 @@ describe("NodeJS sdk Connect", function () {
     await connect(
       async (client) => {
         const authorization = JSON.stringify(
-          client?.["client"]["requestConfig"].headers
+          client["_ctx"]["_client"]?.requestConfig.headers
         )
-        assert.equal(client["client"]["url"], "http://127.0.0.1:1234/query")
+
+        assert.equal(
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          client["_ctx"]["_client"]["url"],
+          "http://127.0.0.1:1234/query"
+        )
         assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)
       },
       { LogOutput: process.stderr }

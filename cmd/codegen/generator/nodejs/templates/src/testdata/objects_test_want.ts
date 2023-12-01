@@ -9,14 +9,14 @@ export class CacheVolume extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
      _id?: CacheVolumeID,
    ) {
      super(parent)
 
      this._id = _id
    }
-  async id(): Promise<CacheVolumeID> {
+  id = async (): Promise<CacheVolumeID> => {
     if (this._id) {
       return this._id
     }
@@ -28,7 +28,7 @@ export class CacheVolume extends BaseClient {
           operation: "id",
         },
       ],
-      this.client
+      await this._ctx.connection()
     )
 
     
@@ -45,7 +45,7 @@ export class Host extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+    parent?: { queryTree?: QueryTree[], ctx: Context },
    ) {
      super(parent)
 
@@ -54,7 +54,7 @@ export class Host extends BaseClient {
   /**
    * Access a directory on the host
    */
-  directory(path: string, opts?: HostDirectoryOpts): Directory {
+  directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -63,15 +63,14 @@ export class Host extends BaseClient {
           args: { path, ...opts },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
-  envVariable(name: string): HostVariable {
+  envVariable = (name: string): HostVariable => {
     return new HostVariable({
       queryTree: [
         ...this._queryTree,
@@ -80,15 +79,14 @@ export class Host extends BaseClient {
           args: { name },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 
   /**
    * The current working directory on the host
    */
-  workdir(opts?: HostWorkdirOpts): Directory {
+  workdir = (opts?: HostWorkdirOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -97,8 +95,7 @@ export class Host extends BaseClient {
           args: { ...opts },
         },
       ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
+      ctx: this._ctx,
     })
   }
 }

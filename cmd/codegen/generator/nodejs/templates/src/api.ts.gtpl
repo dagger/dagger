@@ -13,4 +13,6 @@ extra breaking line.
 	{{- template "types" . }}
 {{""}}
 	{{- template "objects" . }}
+{{""}}
+    {{- template "default" . }}
 {{ end }}

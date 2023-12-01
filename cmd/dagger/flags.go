@@ -171,32 +171,21 @@ func (v *directoryValue) String() string {
 	return v.address
 }
 
-type parsedGitURL struct {
-	url    *url.URL
-	ref    string
-	subdir string
-}
-
-func parseGit(urlStr string) (*parsedGitURL, error) {
+func parseGit(urlStr string) (*gitutil.GitURL, error) {
 	// FIXME: handle tarball-over-http (where http(s):// is scheme but not a git repo)
 	u, err := gitutil.ParseURL(urlStr)
 	if err != nil {
 		return nil, err
 	}
-
-	ref, subdir := gitutil.SplitGitFragment(u.Fragment)
-	if ref == "" {
+	if u.Fragment == nil {
+		u.Fragment = &gitutil.GitURLFragment{}
+	}
+	if u.Fragment.Ref == "" {
 		// FIXME: default branch can be remotely looked up, but that would
 		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
-		ref = "main"
+		u.Fragment.Ref = "main"
 	}
-	u.Fragment = ""
-
-	return &parsedGitURL{
-		url:    u,
-		ref:    ref,
-		subdir: subdir,
-	}, nil
+	return u, nil
 }
 
 func (v *directoryValue) Get(dag *dagger.Client) any {
@@ -207,13 +196,15 @@ func (v *directoryValue) Get(dag *dagger.Client) any {
 	// Try parsing as a Git URL
 	parsedGit, err := parseGit(v.String())
 	if err == nil {
-		gitOpts := dagger.GitOpts{}
+		gitOpts := dagger.GitOpts{
+			KeepGitDir: true,
+		}
 		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
-		gitDir := dag.Git(parsedGit.url.String(), gitOpts).Branch(parsedGit.ref).Tree()
-		if parsedGit.subdir != "" {
-			gitDir = gitDir.Directory(parsedGit.subdir)
+		gitDir := dag.Git(parsedGit.Remote, gitOpts).Branch(parsedGit.Fragment.Ref).Tree()
+		if subdir := parsedGit.Fragment.Subdir; subdir != "" {
+			gitDir = gitDir.Directory(subdir)
 		}
 		return gitDir
 	}
