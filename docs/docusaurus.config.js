@@ -110,10 +110,10 @@ const config = {
             className: "header-discord-link",
           },
           {
-          type: "search",
-          position: "right",
-          className: "header-searchbar",
-        },
+            type: "search",
+            position: "right",
+            className: "header-searchbar",
+          },
         ],
       },
       algolia: {
