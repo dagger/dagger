@@ -1,19 +1,19 @@
 ---
 slug: /zenith/user/quickstart/532928/up
 hide_table_of_contents: true
-title: "Expose services or containers from a function on the host"
+title: "Expose services returned by a function on the host"
 ---
 
 # Quickstart
 
-## Expose services or containers from a function on the host
+## Expose services returned by a function on the host
 
-The `dagger up` command allows `Service` and `Container` types returned by a function to be executed and have any exposed ports forwarded to the host machine.
+The `dagger up` command allows `Service` types returned by a function to be executed and have any exposed ports forwarded to the host machine.
 
 This has many potential use cases, such as manually testing web servers or databases directly from the host browser or host system.
 
 :::note
-In order for this to work, the service/container returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports.
+In order for this to work, the service returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports.
 :::
 
 ### Expose a service
