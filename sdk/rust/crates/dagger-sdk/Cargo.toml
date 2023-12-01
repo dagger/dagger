@@ -1,12 +1,12 @@
 [package]
 name = "dagger-sdk"
-version = "0.3.2"
-edition = "2021"
-readme = "README.md"
-license-file = "LICENSE"
-authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
 description = "A dagger sdk for rust, written in rust"
-repository = "https://github.com/dagger/dagger"
+version.workspace = true 
+edition.workspace = true 
+readme.workspace = true 
+license-file.workspace = true 
+authors.workspace = true 
+repository.workspace = true 
 publish = true
 
 [dependencies]
@@ -18,33 +18,26 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 thiserror.workspace = true
 
-futures = "0.3.29"
-derive_builder = "0.12.0"
-base64 = "0.21.5"
-dirs = "5.0.1"
-flate2 = { version = "1.0.28", features = ["rust_backend"] }
-graphql_client = { version = "0.13.0", features = [
-  "reqwest-rustls",
-  "graphql_query_derive",
-], default-features = false }
-hex = "0.4.3"
-hex-literal = "0.4.1"
-platform-info = "2.0.2"
-reqwest = { version = "0.11.22", features = [
-  "stream",
-  "rustls-tls",
-], default-features = false }
-
-sha2 = "0.10.8"
-tar = "0.4.40"
-tempfile = "3.8.1"
-async-trait = "0.1.74"
+futures.workspace = true
+derive_builder.workspace = true
+base64.workspace = true
+dirs.workspace = true
+flate2.workspace = true
+graphql_client.workspace = true
+hex.workspace = true
+hex-literal.workspace = true
+platform-info.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
+async-trait.workspace = true
 
 
 [dev-dependencies]
-pretty_assertions = "1.4.0"
-rand = "0.8.5"
-tracing-test = "0.2.4"
+pretty_assertions.workspace = true
+rand.workspace = true
+tracing-test.workspace = true
 
 [features]
 

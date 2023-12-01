@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-bootstrap"
-version = "0.2.10"
+version = "0.3.2"
 dependencies = [
  "clap",
  "color-eyre",
@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-codegen"
-version = "0.2.8"
+version = "0.3.2"
 dependencies = [
  "convert_case",
  "dagger-sdk",

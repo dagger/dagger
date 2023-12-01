@@ -6,10 +6,18 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.3.2"
+edition = "2021"
+readme = "README.md"
+license-file = "LICENSE"
+authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
+repository = "https://github.com/dagger/dagger"
+
 [workspace.dependencies]
-dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }
-dagger-bootstrap = { path = "crates/dagger-bootstrap", version = "^0.2.10" }
-dagger-sdk = { path = "crates/dagger-sdk", version = "^0.3.1" }
+dagger-codegen = { path = "crates/dagger-codegen" }
+dagger-bootstrap = { path = "crates/dagger-bootstrap" }
+dagger-sdk = { path = "crates/dagger-sdk" }
 
 eyre = "0.6.9"
 color-eyre = "0.6.2"
@@ -22,3 +30,31 @@ tracing-subscriber = { version = "0.3.18", features = [
   "tracing",
 ] }
 thiserror = "1.0.50"
+futures = "0.3.29"
+derive_builder = "0.12.0"
+base64 = "0.21.5"
+dirs = "5.0.1"
+flate2 = { version = "1.0.28", features = ["rust_backend"] }
+graphql_client = { version = "0.13.0", features = [
+  "reqwest-rustls",
+  "graphql_query_derive",
+], default-features = false }
+hex = "0.4.3"
+hex-literal = "0.4.1"
+platform-info = "2.0.2"
+reqwest = { version = "0.11.22", features = [
+  "stream",
+  "rustls-tls",
+], default-features = false }
+sha2 = "0.10.8"
+tar = "0.4.40"
+tempfile = "3.8.1"
+async-trait = "0.1.74"
+genco = "0.17.8"
+convert_case = "0.6.0"
+itertools = "0.12.0"
+
+pretty_assertions = "1.4.0"
+rand = "0.8.5"
+tracing-test = "0.2.4"
+clap = "4.4.8"
