@@ -72,7 +72,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	}
 
 	if moduleRef != "" {
-		ref, err := modules.ResolveMovingRef(ctx, dag, moduleRef)
+		ref, err := modules.ParseRef(moduleRef)
 		if err != nil {
 			return fmt.Errorf("resolve module ref: %w", err)
 		}

@@ -231,7 +231,7 @@ func (mod *Module) FromRef(
 	moduleRefStr string,
 	getRuntime getRuntimeFunc,
 ) (*Module, error) {
-	modRef, err := modules.ResolveStableRef(moduleRefStr)
+	modRef, err := modules.ParseRef(moduleRefStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse dependency url %q: %w", moduleRefStr, err)
 	}
@@ -244,23 +244,23 @@ func (mod *Module) FromRef(
 	var sourceDir *Directory
 	var configPath string
 	switch {
-	case modRef.Local:
+	case modRef.Local != nil:
 		if parentSrcDir == nil {
 			return nil, fmt.Errorf("invalid local module ref is local relative to nil parent %q", moduleRefStr)
 		}
 		sourceDir = parentSrcDir
-		configPath = modules.NormalizeConfigPath(filepath.Join(filepath.Dir(parentSrcSubpath), modRef.Path))
+		configPath = modules.NormalizeConfigPath(filepath.Join(filepath.Dir(parentSrcSubpath), modRef.Local.Path))
 
 		if strings.HasPrefix(configPath+"/", "../") {
-			return nil, fmt.Errorf("local module path %q is not under root", modRef.Path)
+			return nil, fmt.Errorf("local module path %q is not under root", modRef.Local.Path)
 		}
 	case modRef.Git != nil:
 		var err error
-		sourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL, modRef.Version), "", mod.Pipeline, mod.Platform, nil)
+		sourceDir, err = NewDirectorySt(ctx, llb.Git(modRef.Git.CloneURL.String(), modRef.Git.Commit), "", mod.Pipeline, mod.Platform, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create git directory: %w", err)
 		}
-		configPath = modules.NormalizeConfigPath(modRef.SubPath)
+		configPath = modules.NormalizeConfigPath(modRef.Git.Dir)
 	default:
 		return nil, fmt.Errorf("invalid module ref %q", moduleRefStr)
 	}

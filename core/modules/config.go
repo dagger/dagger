@@ -64,9 +64,15 @@ func (cfg *Config) Use(ctx context.Context, dag *dagger.Client, ref *Ref, refs .
 	deps = append(deps, refs...)
 	depSet := make(map[string]*Ref)
 	for _, dep := range deps {
-		depMod, err := ResolveModuleDependency(ctx, dag, ref, dep)
+		depMod, err := ref.ParseDependency(dep)
 		if err != nil {
 			return fmt.Errorf("failed to get module: %w", err)
+		}
+		if !depMod.IsPinned() {
+			// XXX(vito): resolve ref
+			// if err := depMod.Pin(); err != nil {
+			// 	return fmt.Errorf("failed to pin module: %w", err)
+			// }
 		}
 		depSet[depMod.Symbolic()] = depMod
 	}

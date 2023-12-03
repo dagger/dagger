@@ -81,7 +81,7 @@ var moduleCmd = &cobra.Command{
 			}
 			var cfg *modules.Config
 			switch {
-			case mod.Local:
+			case mod.Local != nil:
 				cfg, err = mod.Config(ctx, nil)
 				if err != nil {
 					return fmt.Errorf("failed to get local module config: %w", err)
@@ -125,7 +125,7 @@ var moduleInitCmd = &cobra.Command{
 				return fmt.Errorf("module init is only supported for local modules")
 			}
 			if _, err := ref.Config(ctx, nil); err == nil {
-				return fmt.Errorf("module init config path already exists: %s", ref.Path)
+				return fmt.Errorf("module init config path already exists: %s", ref)
 			}
 			if err := findOrCreateLicense(ctx, moduleDir); err != nil {
 				return err
@@ -409,8 +409,8 @@ func getModuleRef(ctx context.Context, dag *dagger.Client) (*modules.Ref, bool, 
 	} else {
 		wasSet = true
 	}
-	cfg, err := modules.ResolveMovingRef(ctx, dag, moduleURL)
-	return cfg, wasSet, err
+	ref, err := modules.ParseRef(moduleURL)
+	return ref, wasSet, err
 }
 
 func loadModCmdWrapper(
