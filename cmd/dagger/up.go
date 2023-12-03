@@ -42,6 +42,10 @@ var upCmd = &FuncCommand{
 
 		srv := c.c.Dagger().LoadServiceFromID(dagger.ServiceID(srvID))
 
+		if len(portForwards) == 0 && !portForwardsNative {
+			portForwardsNative = true
+		}
+
 		opts := dagger.HostTunnelOpts{
 			Native: portForwardsNative,
 		}
