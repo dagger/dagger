@@ -582,6 +582,10 @@ export type GitRefTreeOpts = {
   sshAuthSocket?: Socket
 }
 
+export type GitRepositoryTagsOpts = {
+  patterns?: string[]
+}
+
 export type HostDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3755,11 +3759,18 @@ export class GitRef extends BaseClient {
  * A git repository.
  */
 export class GitRepository extends BaseClient {
+  private readonly _defaultBranch?: string = undefined
+
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _defaultBranch?: string
+  ) {
     super(parent)
+
+    this._defaultBranch = _defaultBranch
   }
 
   /**
@@ -3797,6 +3808,27 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * The default branch of the repository.
+   */
+  defaultBranch = async (): Promise<string> => {
+    if (this._defaultBranch) {
+      return this._defaultBranch
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "defaultBranch",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
    * Returns details on one tag.
    * @param name Tag's name (e.g., "v0.3.9").
    */
@@ -3811,6 +3843,85 @@ export class GitRepository extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * Returns tags that match any of the given glob patterns.
+   */
+  tags = async (opts?: GitRepositoryTagsOpts): Promise<string[]> => {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "tags",
+          args: { ...opts },
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+export class GitTag extends BaseClient {
+  private readonly _commit?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _commit?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._commit = _commit
+    this._name = _name
+  }
+
+  /**
+   * The resolved commit id at this tag.
+   */
+  commit = async (): Promise<string> => {
+    if (this._commit) {
+      return this._commit
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "commit",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the ref.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
   }
 }
 

@@ -26,12 +26,38 @@ defmodule Dagger.GitRepository do
   )
 
   (
+    @doc "The default branch of the repository."
+    @spec default_branch(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def default_branch(%__MODULE__{} = git_repository) do
+      selection = select(git_repository.selection, "defaultBranch")
+      execute(selection, git_repository.client)
+    end
+  )
+
+  (
     @doc "Returns details on one tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\")."
     @spec tag(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def tag(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "tag")
       selection = arg(selection, "name", name)
       %Dagger.GitRef{selection: selection, client: git_repository.client}
+    end
+  )
+
+  (
+    @doc "Returns tags that match any of the given glob patterns.\n\n\n\n## Optional Arguments\n\n* `patterns` -"
+    @spec tags(t(), keyword()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
+    def tags(%__MODULE__{} = git_repository, optional_args \\ []) do
+      selection = select(git_repository.selection, "tags")
+
+      selection =
+        if is_nil(optional_args[:patterns]) do
+          selection
+        else
+          arg(selection, "patterns", optional_args[:patterns])
+        end
+
+      execute(selection, git_repository.client)
     end
   )
 end

@@ -2913,6 +2913,11 @@ pub struct GitRepository {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryTagsOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub patterns: Option<Vec<&'a str>>,
+}
 impl GitRepository {
     /// Returns details on one branch.
     ///
@@ -2942,6 +2947,11 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// The default branch of the repository.
+    pub async fn default_branch(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultBranch");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Returns details on one tag.
     ///
     /// # Arguments
@@ -2955,6 +2965,48 @@ impl GitRepository {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// Returns tags that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn tags(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("tags");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns tags that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn tags_opts<'a>(
+        &self,
+        opts: GitRepositoryTagsOpts<'a>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("tags");
+        if let Some(patterns) = opts.patterns {
+            query = query.arg("patterns", patterns);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct GitTag {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl GitTag {
+    /// The resolved commit id at this tag.
+    pub async fn commit(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("commit");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the ref.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
