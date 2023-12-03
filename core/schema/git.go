@@ -33,9 +33,11 @@ func (s *gitSchema) Resolvers() Resolvers {
 			"git": ToResolver(s.git),
 		},
 		"GitRepository": ObjectResolver{
-			"branch": ToResolver(s.branch),
-			"tag":    ToResolver(s.tag),
-			"commit": ToResolver(s.commit),
+			"tags":          ToResolver(s.tags),
+			"defaultBranch": ToResolver(s.defaultBranch),
+			"branch":        ToResolver(s.branch),
+			"tag":           ToResolver(s.tag),
+			"commit":        ToResolver(s.commit),
 		},
 		"GitRef": ObjectResolver{
 			"tree":   ToResolver(s.tree),
@@ -81,6 +83,14 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		Platform:      s.MergedSchemas.platform,
 	}
 	return repo, nil
+}
+
+func (s *gitSchema) tags(ctx context.Context, parent *core.GitRef, args struct{ Patterns []string }) ([]string, error) {
+	return parent.Tags(ctx, s.bk, args.Patterns...)
+}
+
+func (s *gitSchema) defaultBranch(ctx context.Context, parent *core.GitRef, args any) (string, error) {
+	return parent.DefaultBranch(ctx, s.bk)
 }
 
 type commitArgs struct {

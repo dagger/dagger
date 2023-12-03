@@ -26,6 +26,9 @@ extend type Query {
 
 "A git repository."
 type GitRepository {
+  "The default branch of the repository."
+  defaultBranch: String!
+
   """
   Returns details on one branch.
   """
@@ -35,6 +38,11 @@ type GitRepository {
     """
     name: String!
   ): GitRef!
+
+  """
+  Returns tags that match any of the given glob patterns.
+  """
+  tags(patterns: [String!]): [String!]!
 
   """
   Returns details on one tag.
@@ -57,14 +65,22 @@ type GitRepository {
   ): GitRef!
 }
 
+type GitTag {
+  "The name of the ref."
+  name: String!
+
+  "The resolved commit id at this tag."
+  commit: String!
+}
+
 "A git ref (tag, branch or commit)."
 type GitRef {
+  "The resolved commit id at this ref."
+  commit: String!
+
   "The filesystem tree at this ref."
   tree(
     sshKnownHosts: String @deprecated(reason: "This option should be passed to `git` instead.")
     sshAuthSocket: SocketID @deprecated(reason: "This option should be passed to `git` instead.")
   ): Directory!
-
-  "The resolved commit id at this ref."
-  commit: String!
 }

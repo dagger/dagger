@@ -1,7 +1,12 @@
 package core
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"fmt"
+	"os/exec"
+	"strings"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
@@ -38,6 +43,61 @@ func (ref *GitRef) WithRef(name string) *GitRef {
 	ref = ref.clone()
 	ref.Ref = name
 	return ref
+}
+
+func (ref *GitRef) DefaultBranch(ctx context.Context, bk *buildkit.Client) (string, error) {
+	output, err := exec.CommandContext(ctx, "git", "ls-remote", "--symref", ref.URL, "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(output))
+
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 {
+			continue
+		}
+
+		if fields[0] == "ref:" && fields[2] == "HEAD" {
+			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
+		}
+	}
+
+	return "", fmt.Errorf("could not parse default branch from output:\n%s", output)
+}
+
+func (ref *GitRef) Tags(ctx context.Context, bk *buildkit.Client, patterns ...string) ([]string, error) {
+	args := []string{
+		"ls-remote",
+		"--tags", // we only want tags
+		"--refs", // we don't want to include ^{} entries for annotated tags
+		ref.URL,
+	}
+	args = append(args, patterns...)
+
+	output, err := exec.CommandContext(ctx, "git", args...).Output()
+	if err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(output))
+
+	tags := []string{}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+
+		// this API is to fetch tags, not refs, so we can drop the `refs/tags/`
+		// prefix
+		tag := strings.TrimPrefix(fields[1], "refs/tags/")
+
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
 }
 
 func (ref *GitRef) Tree(ctx context.Context, bk *buildkit.Client) (*Directory, error) {

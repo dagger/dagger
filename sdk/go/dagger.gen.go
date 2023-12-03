@@ -2688,6 +2688,8 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 type GitRepository struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	defaultBranch *string
 }
 
 // Returns details on one branch.
@@ -2712,6 +2714,19 @@ func (r *GitRepository) Commit(id string) *GitRef {
 	}
 }
 
+// The default branch of the repository.
+func (r *GitRepository) DefaultBranch(ctx context.Context) (string, error) {
+	if r.defaultBranch != nil {
+		return *r.defaultBranch, nil
+	}
+	q := r.q.Select("defaultBranch")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Returns details on one tag.
 func (r *GitRepository) Tag(name string) *GitRef {
 	q := r.q.Select("tag")
@@ -2721,6 +2736,61 @@ func (r *GitRepository) Tag(name string) *GitRef {
 		q: q,
 		c: r.c,
 	}
+}
+
+// GitRepositoryTagsOpts contains options for GitRepository.Tags
+type GitRepositoryTagsOpts struct {
+	Patterns []string
+}
+
+// Returns tags that match any of the given glob patterns.
+func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts) ([]string, error) {
+	q := r.q.Select("tags")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `patterns` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Patterns) {
+			q = q.Arg("patterns", opts[i].Patterns)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+type GitTag struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	commit *string
+	name   *string
+}
+
+// The resolved commit id at this tag.
+func (r *GitTag) Commit(ctx context.Context) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.q.Select("commit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the ref.
+func (r *GitTag) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Information about the host execution environment.

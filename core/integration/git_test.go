@@ -193,6 +193,60 @@ sleep infinity
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
+func TestGitDefaultBranch(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	branch, err := c.Git("https://github.com/dagger/dagger").DefaultBranch(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "main", branch)
+}
+
+func TestGitTags(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("all tags", func(t *testing.T) {
+		t.Parallel()
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+
+	t.Run("tag pattern", func(t *testing.T) {
+		t.Parallel()
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
+			Patterns: []string{"v*"},
+		})
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+
+	t.Run("ref-qualified tag pattern", func(t *testing.T) {
+		t.Parallel()
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
+			Patterns: []string{"refs/tags/v*"},
+		})
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.NotContains(t, tags, "sdk/go/v0.9.3")
+	})
+
+	t.Run("prefix-qualified tag pattern", func(t *testing.T) {
+		t.Parallel()
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
+			Patterns: []string{"sdk/go/v*"},
+		})
+		require.NoError(t, err)
+		require.NotContains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+}
+
 func TestGitKeepGitDir(t *testing.T) {
 	t.Parallel()
 
