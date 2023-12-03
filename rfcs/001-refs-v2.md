@@ -87,10 +87,10 @@ We might not need all these, just throwing ideas around:
     * this would only be worth it if we imagine it being a common thing and/or
       are interested in making `dag/` a convention
 
-## Combining refs
+## Crawling dependencies
 
-Let's say the module at `mod://vito//testcontainers` has a local ref dependency
-in its `dagger.json`:
+Let's say the module at `mod://vito//testcontainers:v1.2.3@deadbeef` has a
+local `../docker` ref as a dependency in its `dagger.json`:
 
 ```json
 {
@@ -102,25 +102,32 @@ in its `dagger.json`:
 }
 ```
 
-Local refs like `../docker` are made relative to the origin ref.
+To crawl `../docker`, apply two steps to the origin ref:
 
-When crawling `mod://vito//testcontainers` and recursing into its dependencies,
-this local `../docker` ref is made relative to the origin ref to yield:
+1. Drop the tag portion from the ref, leaving only the hash.
+  * An error must be raised if a hash is not present.
+1. Combine the path with the origin ref's subpath.
+  * An error must be raised if the result is outside of the source directory,
+    i.e. if it begins with `../`.
 
-```
-mod://vito//docker
-```
-
-The tricky part is the above ref might resolve to a version different from the
-one we came from.
-
-When crawling `mod://vito//testcontainers:v1.2.3` we have to be more careful.
-The semver tag here is shorthand for the tag `testcontainers/v1.2.3`, so we
-need to preserve that when swapping the subdirectory for `//docker`:
+Example:
 
 ```
-mod://vito//docker:testcontainers/v1.2.3
+mod://vito//testcontainers:v1.2.3@deadbeef
++ ../docker
+= mod://vito//docker@deadbeef
 ```
 
-Note that in practice the crawling would typically be from a hashed ref, which
-would just be preserved in both cases and provide more safety either way.
+Note that the `:v1.2.3` tag is dropped in the process. This is a mandatory step
+because otherwise semver tags can become ambiguous.
+
+Take the following example:
+
+```
+github.com/vito/my-mod:v1.2.3@deadbeef
++ ./submod/
+= github.com/vito/mymod//submod:v1.2.3@deadbeef # WRONG
+```
+
+The ref above is trying to reference `refs/tags/v1.2.3`, but it appears to
+reference `refs/tags/submod/v1.2.3` instead.
