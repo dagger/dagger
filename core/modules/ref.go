@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"path"
@@ -126,19 +125,11 @@ func (source *Source) Pin(ctx context.Context, dag *dagger.Client) (string, stri
 					}
 				} else {
 					ref = versions[len(versions)-1].Original()
-					log.Println("!!! LATEST VERSION", ref)
 				}
 			}
 		}
 
-		if ver, err := semver.NewVersion(ref); err == nil {
-			// TODO: this is wrong, want v1 to match v1.*, v1.2 to match v1.2.*, and
-			// v1.2.3 to mean exactly v1.2.3. using ~ will allow v1.2.4+.
-			constraint, err := semver.NewConstraint("~" + ver.Original())
-			if err != nil {
-				return "", "", fmt.Errorf("parse semver constraint: %w", err)
-			}
-			log.Println("CONSTRAINT", constraint)
+		if constraint, ok := parseSemverConstraintShorthand(ref); ok {
 			versions, err := source.Git.Versions(ctx, dag)
 			if err != nil {
 				return "", "", fmt.Errorf("list versions: %w", err)
@@ -155,7 +146,6 @@ func (source *Source) Pin(ctx context.Context, dag *dagger.Client) (string, stri
 
 		if source.Git.Dir != "" {
 			tag = path.Join(source.Git.Dir, tag)
-			log.Println("!!! REF", ref)
 		}
 
 		if commit == "" {
@@ -240,7 +230,8 @@ func ParseRef(ref string) (*Ref, error) {
 			u.Path == "..",
 			strings.HasPrefix(u.Path, "./"),
 			strings.HasPrefix(u.Path, "../"),
-			strings.HasPrefix(u.Path, "/"):
+			strings.HasPrefix(u.Path, "/"),
+			!isDomainLike(u.Path):
 			return parseLocalRef(u)
 		default:
 			// guess that this is a git URL
@@ -254,6 +245,11 @@ func ParseRef(ref string) (*Ref, error) {
 	default:
 		return nil, fmt.Errorf("unsupported ref scheme: %q", u.Scheme)
 	}
+}
+
+func isDomainLike(str string) bool {
+	first, _, _ := strings.Cut(str, "/")
+	return strings.Contains(first, ".")
 }
 
 // String returns the canonical representation of the ref.
@@ -384,172 +380,8 @@ func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module,
 	}
 }
 
-//// TODO dedup with ResolveMovingRef
-//func ResolveStableRef(modQuery string) (*Ref, error) {
-//	modPath, modVersion, hasVersion := strings.Cut(modQuery, "@")
-
-//	ref := &Ref{
-//		Path: modPath,
-//	}
-
-//	// TODO: figure out how to support arbitrary repos in a predictable way.
-//	// Maybe piggyback on whatever Go supports? (the whole <meta go-import>
-//	// thing)
-//	isGitHub := strings.HasPrefix(modPath, "github.com/")
-
-//	if !hasVersion {
-//		if isGitHub {
-//			return nil, fmt.Errorf("no version provided for remote ref: %s", modQuery)
-//		}
-
-//		// assume local path
-//		//
-//		// NB(vito): HTTP URLs should be supported by taking a sha256 digest as the
-//		// version. so it should be safe to assume no version = local path. as a
-//		// rule, if it's local we don't need to version it; if it's remote, we do.
-//		ref.Local = true
-//		return ref, nil
-//	}
-
-//	ref.Git = &GitRef{} // assume git for now, HTTP can come later
-
-//	if !isGitHub {
-//		return nil, fmt.Errorf("for now, only github.com/ paths are supported: %s", modPath)
-//	}
-
-//	segments := strings.SplitN(modPath, "/", 4)
-//	if len(segments) < 3 {
-//		return nil, fmt.Errorf("invalid github.com path: %s", modPath)
-//	}
-
-//	ref.Git.CloneURL = "https://" + segments[0] + "/" + segments[1] + "/" + segments[2]
-
-//	if !hasVersion {
-//		return nil, fmt.Errorf("no version provided for %s", modPath)
-//	}
-
-//	ref.Version = modVersion    // assume commit
-//	ref.Git.Commit = modVersion // assume commit
-
-//	if len(segments) == 4 {
-//		ref.SubPath = segments[3]
-//		ref.Git.HTMLURL = "https://" + segments[0] + "/" + segments[1] + "/" + segments[2] + "/tree/" + ref.Version + "/" + ref.SubPath
-//	} else {
-//		ref.Git.HTMLURL = "https://" + segments[0] + "/" + segments[1] + "/" + segments[2]
-//	}
-
-//	return ref, nil
-//}
-
-//func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) (*Ref, error) {
-//	modPath, modVersion, hasVersion := strings.Cut(modQuery, "@")
-
-//	ref := &Ref{
-//		Path: modPath,
-//	}
-
-//	// TODO: figure out how to support arbitrary repos in a predictable way.
-//	// Maybe piggyback on whatever Go supports? (the whole <meta go-import>
-//	// thing)
-//	isGitHub := strings.HasPrefix(modPath, "github.com/")
-
-//	if !hasVersion && !isGitHub {
-//		// assume local path
-//		//
-//		// NB(vito): HTTP URLs should be supported by taking a sha256 digest as the
-//		// version. so it should be safe to assume no version = local path. as a
-//		// rule, if it's local we don't need to version it; if it's remote, we do.
-//		ref.Local = true
-//		return ref, nil
-//	}
-
-//	ref.Git = &GitRef{} // assume git for now, HTTP can come later
-
-//	if !isGitHub {
-//		return nil, fmt.Errorf("for now, only github.com/ paths are supported: %q", modQuery)
-//	}
-
-//	segments := strings.SplitN(modPath, "/", 4)
-//	if len(segments) < 3 {
-//		return nil, fmt.Errorf("invalid github.com path: %s", modPath)
-//	}
-
-//	ref.Git.CloneURL = "https://" + segments[0] + "/" + segments[1] + "/" + segments[2]
-
-//	if !hasVersion {
-//		var err error
-//		modVersion, err = defaultBranch(ctx, dag, ref.Git.CloneURL)
-//		if err != nil {
-//			return nil, fmt.Errorf("determine default branch: %w", err)
-//		}
-//	}
-
-//	gitCommit, err := dag.Git(ref.Git.CloneURL, dagger.GitOpts{KeepGitDir: true}).Commit(modVersion).Commit(ctx)
-//	if err != nil {
-//		return nil, fmt.Errorf("resolve git ref: %w", err)
-//	}
-
-//	ref.Version = gitCommit    // TODO preserve semver here
-//	ref.Git.Commit = gitCommit // but tell the truth here
-
-//	if len(segments) == 4 {
-//		ref.SubPath = segments[3]
-//		ref.Git.HTMLURL = "https://" + segments[0] + "/" + segments[1] + "/" + segments[2] + "/tree/" + ref.Version + "/" + ref.SubPath
-//	} else {
-//		ref.Git.HTMLURL = "https://" + segments[0] + "/" + segments[1] + "/" + segments[2]
-//	}
-
-//	return ref, nil
-//}
-
-func (depRef *Ref) ParseDependency(dep string) (*Ref, error) {
-	depRef, err := ParseRef(dep)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve module: %w", err)
-	}
-
-	if depRef.Local == nil {
-		return depRef, nil
-	}
-
-	// WEIRD: in a monorepo, there are semver tags associated to each subdir.
-	// But we can have apko/v1.2.3 depend on ../git which technically needs to be
-	// referred to by some bastardization like gh://vito//git:apko/v1.2.3@deadbeef.
-	cp := *depRef
-	cp.Source = depRef.Join(depRef.Local.Path)
-	return &cp, nil
-}
-
-//func defaultBranch(ctx context.Context, dag *dagger.Client, repo string) (string, error) {
-//	output, err := dag.Container().
-//		From("alpine/git").
-//		WithEnvVariable("CACHEBUSTER", identity.NewID()). // force this to always run so we don't get stale data
-//		WithExec([]string{"git", "ls-remote", "--symref", repo, "HEAD"}, dagger.ContainerWithExecOpts{
-//			SkipEntrypoint: true,
-//		}).
-//		Stdout(ctx)
-//	if err != nil {
-//		return "", err
-//	}
-
-//	scanner := bufio.NewScanner(bytes.NewBufferString(output))
-
-//	for scanner.Scan() {
-//		fields := strings.Fields(scanner.Text())
-//		if len(fields) < 3 {
-//			continue
-//		}
-
-//		if fields[0] == "ref:" && fields[2] == "HEAD" {
-//			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
-//		}
-//	}
-
-//	return "", fmt.Errorf("could not deduce default branch from output:\n%s", output)
-//}
-
 func parseLocalRef(u *url.URL) (*Ref, error) {
-	localPath, dir, tag, hash := parseDirTagHash(u.Path)
+	localPath, dir, tag, hash := parsePathComponents(u.Path)
 	if tag != "" {
 		return nil, fmt.Errorf("tags are not supported for local modules")
 	}
@@ -569,7 +401,7 @@ func parseGitRef(u *url.URL) (*Ref, error) {
 	if u.Host == "" {
 		return nil, fmt.Errorf("missing host in git URL")
 	}
-	rest, dir, tag, hash := parseDirTagHash(u.Path)
+	rest, dir, tag, hash := parsePathComponents(u.Path)
 	if u.Host == "github.com" && dir == "" {
 		// BACKWARDS-COMPAT: for github.com, assume the first two segments are
 		// user/repo and the rest is the subdir.
@@ -601,7 +433,7 @@ func parseGitRef(u *url.URL) (*Ref, error) {
 }
 
 func parseGHRef(u *url.URL) (*Ref, error) {
-	rest, dir, tag, hash := parseDirTagHash(u.Path)
+	rest, dir, tag, hash := parsePathComponents(u.Path)
 	user, repo := u.Host, rest
 	if strings.Contains(repo, "/") {
 		return nil, fmt.Errorf("gh:// format has extra path after repo: %q - must be gh://USER[/REPO][//SUBDIR]", repo)
@@ -627,7 +459,7 @@ func parseGHRef(u *url.URL) (*Ref, error) {
 	}, nil
 }
 
-func parseDirTagHash(str string) (rest, dir, tag, hash string) {
+func parsePathComponents(str string) (rest, dir, tag, hash string) {
 	var ok bool
 	rest, hash, ok = strings.Cut(str, "@")
 	if ok {
@@ -643,4 +475,30 @@ func parseDirTagHash(str string) (rest, dir, tag, hash string) {
 	}
 	rest = strings.TrimPrefix(rest, "/")
 	return
+}
+
+func parseSemverConstraintShorthand(orig string) (*semver.Constraints, bool) {
+	ver, err := semver.NewVersion(orig)
+	if err != nil {
+		// not a semver; ignore
+		return nil, false
+	}
+	if ver.Metadata() != "" || ver.Prerelease() != "" {
+		// obviously not shorthand
+		return nil, false
+	}
+	switch strings.Count(ver.Original(), ".") {
+	case 0:
+		c, err := semver.NewConstraint(fmt.Sprintf("~%d", ver.Major()))
+		return c, err == nil
+	case 1:
+		c, err := semver.NewConstraint(fmt.Sprintf("~%d.%d", ver.Major(), ver.Minor()))
+		return c, err == nil
+	case 2:
+		// this is exact; no fudging
+		return nil, false
+	default:
+		// not sure how this is even possible
+		return nil, false
+	}
 }

@@ -157,7 +157,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get module config: %w", err)
 			}
-			if err := modCfg.Use(ctx, dag, ref, extraArgs...); err != nil {
+			if err := modCfg.InstallDependency(ctx, dag, ref, extraArgs...); err != nil {
 				return fmt.Errorf("failed to add module dependency: %w", err)
 			}
 			return updateModuleConfig(ctx, dag, moduleDir, ref, modCfg, cmd)

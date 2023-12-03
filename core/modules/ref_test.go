@@ -7,18 +7,10 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/daggertest"
 	"dagger.io/dagger/querybuilder"
-	"github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/daggertest"
 )
-
-type refParseExample struct {
-	ref string
-	res *modules.Ref
-	err string
-}
 
 var github = &url.URL{
 	Scheme: "https",
@@ -30,6 +22,12 @@ var exampleOrg = &url.URL{
 	Scheme: "https",
 	Host:   "example.org",
 	Path:   "/",
+}
+
+type refParseExample struct {
+	ref string
+	res *modules.Ref
+	err string
 }
 
 func (example refParseExample) Test(t *testing.T) {
@@ -89,6 +87,16 @@ func TestParseLocalRef(t *testing.T) {
 			},
 		},
 		{
+			ref: "./foo",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Local: &modules.LocalSource{
+						Path: "foo",
+					},
+				},
+			},
+		},
+		{
 			ref: "./foo/bar",
 			res: &modules.Ref{
 				Source: modules.Source{
@@ -124,6 +132,26 @@ func TestParseLocalRef(t *testing.T) {
 				Source: modules.Source{
 					Local: &modules.LocalSource{
 						Path: "foo/bar/baz",
+					},
+				},
+			},
+		},
+		{
+			ref: "foo",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Local: &modules.LocalSource{
+						Path: "foo",
+					},
+				},
+			},
+		},
+		{
+			ref: "foo/bar",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Local: &modules.LocalSource{
+						Path: "foo/bar",
 					},
 				},
 			},
@@ -392,7 +420,7 @@ func TestParseGitSchemeRef(t *testing.T) {
 			},
 		},
 		{
-			// user/repo/subdir assumption is only for github.com/...
+			// user/repo/subdir assumption is only for github.com/
 			ref: "git://example.org/user/repo/subdir",
 			res: &modules.Ref{
 				Source: modules.Source{
@@ -449,79 +477,96 @@ type pinExample struct {
 
 func TestPinGitRef(t *testing.T) {
 	daggerRepo := "https://github.com/dagger/dagger"
+	daggerRepoURL, err := url.Parse(daggerRepo)
+	require.NoError(t, err)
 
-	conn := new(daggertest.Conn)
+	// This test requires various forms of published tags which are a real pain
+	// in the butt to set up, so we stub it out.
+	conn := daggertest.NewConn(t)
+
+	dag, ctx := daggertest.Connect(t, dagger.WithConn(conn))
 
 	//// stubs for github.com/dagger/dagger
 	conn.Stub(
-		// query{git(url:"https://github.com/dagger/dagger"){tags(patterns:["refs/tags/v*"])}}
 		querybuilder.Query().
 			Select("git").Arg("url", daggerRepo).
 			Select("tags").Arg("patterns", []string{"refs/tags/v*"}),
 		[]string{
+			"v0.0.1",
 			"v0.1.0",
-			"v0.9.3",
+			"v0.1.1",
+			"v0.2.0",
+			"v0.2.1",
+			"v0.3.0",
+			"v1.0.0",
+			"v1.1.0",
+			"v2.0.0",
+			"v2.1.1",
 		},
 	)
 	conn.Stub(
-		// query{git(url:"https://github.com/dagger/dagger"){tag(name:"v0.1.0"){commit}}}
 		querybuilder.Query().
 			Select("git").Arg("url", daggerRepo).
 			Select("tag").Arg("name", "v0.1.0").
 			Select("commit"),
-		"eebd91820b701259841f818aaded760c3106bcc3",
+		"deadbeef010",
 	)
 	conn.Stub(
-		// query{git(url:"https://github.com/dagger/dagger"){tag(name:"v0.9.3"){commit}}}
 		querybuilder.Query().
 			Select("git").Arg("url", daggerRepo).
-			Select("tag").Arg("name", "v0.9.3").
+			Select("tag").Arg("name", "v0.1.1").
+			Select("commit"),
+		"deadbeef011",
+	)
+	conn.Stub(
+		querybuilder.Query().
+			Select("git").Arg("url", daggerRepo).
+			Select("tag").Arg("name", "v0.3.0").
+			Select("commit"),
+		"deadbeef030",
+	)
+	conn.Stub(
+		querybuilder.Query().
+			Select("git").Arg("url", daggerRepo).
+			Select("tag").Arg("name", "v1.1.0").
+			Select("commit"),
+		"deadbeef110",
+	)
+	conn.Stub(
+		querybuilder.Query().
+			Select("git").Arg("url", daggerRepo).
+			Select("tag").Arg("name", "v2.1.1").
 			Select("commit"),
 		// TODO: this actually returns 94120a6b0b70bfebad67a256beee8352dd7a67d7 due
 		// to a bug in Buildkit, hence all the stubbing
-		"d44c734dbbbcecc75507003c07acabb16375891d",
+		"deadbeef211",
 	)
 
 	//// stubs for github.com/dagger/dagger/sdk/go
 	conn.Stub(
-		// query{git(url:"https://github.com/dagger/dagger"){tags(patterns:["refs/tags/sdk/go/v*"])}}
 		querybuilder.Query().
 			Select("git").Arg("url", daggerRepo).
 			Select("tags").Arg("patterns", []string{"refs/tags/sdk/go/v*"}),
-		[]string{"v0.1.0", "v0.9.3"},
+		[]string{
+			"v0.0.1",
+			"v0.1.0",
+			"v0.1.1",
+			"v0.2.0",
+			"v0.2.1",
+			"v0.3.0",
+			"v1.0.0",
+			"v1.1.0",
+			"v2.0.0",
+			"v2.1.1",
+		},
 	)
 	conn.Stub(
-		// query{git(url:"https://github.com/dagger/dagger"){tag(name:"sdk/go/v0.9.3"){commit}}}
 		querybuilder.Query().
 			Select("git").Arg("url", daggerRepo).
-			Select("tag").Arg("name", "sdk/go/v0.9.3").
+			Select("tag").Arg("name", "sdk/go/v2.1.1").
 			Select("commit"),
-		"94120a6b0b70bfebad67a256beee8352dd7a67d7",
+		"sdkgodeadbeef211",
 	)
-
-	dag, ctx := daggertest.Connect(t, dagger.WithConn(conn))
-
-	daggerRepoURL, err := url.Parse(daggerRepo)
-	require.NoError(t, err)
-
-	// NB: this _should_ not cause a race condition since the Pin call should
-	// just do a cache hit
-	var latestVersion *semver.Version
-	daggerTags, err := dag.Git(daggerRepo).Tags(ctx, dagger.GitRepositoryTagsOpts{
-		Patterns: []string{"refs/tags/v*"},
-	})
-	require.NoError(t, err)
-	for _, t := range daggerTags {
-		v, err := semver.NewVersion(t)
-		if err == nil {
-			if latestVersion == nil || v.GreaterThan(latestVersion) {
-				latestVersion = v
-			}
-		}
-	}
-	latestTag := latestVersion.Original()
-	latestCommit, err := dag.Git(daggerRepo).Tag(latestTag).Commit(ctx)
-	require.NoError(t, err)
 
 	for _, example := range []pinExample{
 		{
@@ -530,12 +575,12 @@ func TestPinGitRef(t *testing.T) {
 				Source: modules.Source{
 					Git: &modules.GitSource{
 						CloneURL: daggerRepoURL,
-						Ref:      latestTag,
-						Commit:   latestCommit,
+						Ref:      "v2.1.1",
+						Commit:   "deadbeef211",
 					},
 				},
-				Tag:  latestTag,
-				Hash: latestCommit,
+				Tag:  "v2.1.1",
+				Hash: "deadbeef211",
 			},
 		},
 		{
@@ -545,38 +590,80 @@ func TestPinGitRef(t *testing.T) {
 					Git: &modules.GitSource{
 						CloneURL: daggerRepoURL,
 						Ref:      "v0.1.0",
-						Commit:   "eebd91820b701259841f818aaded760c3106bcc3",
+						Commit:   "deadbeef010",
 					},
 				},
 				Tag:  "v0.1.0",
-				Hash: "eebd91820b701259841f818aaded760c3106bcc3",
+				Hash: "deadbeef010",
 			},
 		},
 		{
-			ref: "github.com/dagger/dagger@d44c734dbbbcecc75507003c07acabb16375891d",
+			ref: "github.com/dagger/dagger:v0.1",
 			res: &modules.Ref{
 				Source: modules.Source{
 					Git: &modules.GitSource{
 						CloneURL: daggerRepoURL,
-						Commit:   "d44c734dbbbcecc75507003c07acabb16375891d",
+						Ref:      "v0.1.1",
+						Commit:   "deadbeef011",
 					},
 				},
-				Hash: "d44c734dbbbcecc75507003c07acabb16375891d",
+				Tag:  "v0.1.1",
+				Hash: "deadbeef011",
 			},
 		},
 		{
-			ref: "github.com/dagger/dagger//sdk/go:v0.9.3",
+			ref: "github.com/dagger/dagger:v0",
 			res: &modules.Ref{
 				Source: modules.Source{
 					Git: &modules.GitSource{
 						CloneURL: daggerRepoURL,
-						Ref:      "sdk/go/v0.9.3",
-						Commit:   "94120a6b0b70bfebad67a256beee8352dd7a67d7",
+						Ref:      "v0.3.0",
+						Commit:   "deadbeef030",
+					},
+				},
+				Tag:  "v0.3.0",
+				Hash: "deadbeef030",
+			},
+		},
+		{
+			ref: "github.com/dagger/dagger:v1",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: daggerRepoURL,
+						Ref:      "v1.1.0",
+						Commit:   "deadbeef110",
+					},
+				},
+				Tag:  "v1.1.0",
+				Hash: "deadbeef110",
+			},
+		},
+		{
+			ref: "github.com/dagger/dagger@deadbeefpinned",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: daggerRepoURL,
+						Commit:   "deadbeefpinned",
+					},
+				},
+				Hash: "deadbeefpinned",
+			},
+		},
+		{
+			ref: "github.com/dagger/dagger//sdk/go:v2.1.1",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: daggerRepoURL,
+						Ref:      "sdk/go/v2.1.1",
+						Commit:   "sdkgodeadbeef211",
 						Dir:      "sdk/go",
 					},
 				},
-				Tag:  "v0.9.3",
-				Hash: "94120a6b0b70bfebad67a256beee8352dd7a67d7",
+				Tag:  "v2.1.1",
+				Hash: "sdkgodeadbeef211",
 			},
 		},
 	} {

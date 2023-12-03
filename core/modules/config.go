@@ -57,22 +57,22 @@ func (cfg *Config) RootAndSubpath(modSourceDir string) (string, string, error) {
 	return modRootDir, subPath, nil
 }
 
-// Use adds the given module references to the module's dependencies.
-func (cfg *Config) Use(ctx context.Context, dag *dagger.Client, ref *Ref, refs ...string) error {
+// InstallDependency adds the given module references to the module's
+// dependencies.
+func (cfg *Config) InstallDependency(ctx context.Context, dag *dagger.Client, ref *Ref, refs ...string) error {
 	var deps []string
 	deps = append(deps, cfg.Dependencies...)
 	deps = append(deps, refs...)
 	depSet := make(map[string]*Ref)
 	for _, dep := range deps {
-		depMod, err := ref.ParseDependency(dep)
+		depMod, err := ParseRef(dep)
 		if err != nil {
 			return fmt.Errorf("failed to get module: %w", err)
 		}
 		if !depMod.IsPinned() {
-			// XXX(vito): resolve ref
-			// if err := depMod.Pin(); err != nil {
-			// 	return fmt.Errorf("failed to pin module: %w", err)
-			// }
+			if err := depMod.Pin(ctx, dag); err != nil {
+				return fmt.Errorf("failed to pin module: %w", err)
+			}
 		}
 		depSet[depMod.Symbolic()] = depMod
 	}
