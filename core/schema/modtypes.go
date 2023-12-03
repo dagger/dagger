@@ -123,8 +123,9 @@ func (obj *CoreModObject) SourceMod() Mod {
 
 // UserModObject is an object defined by a user module
 type UserModObject struct {
-	api     *APIServer
-	mod     *UserMod
+	api *APIServer
+	mod *UserMod
+	// the type def metadata, with namespacing already applied
 	typeDef *core.TypeDef
 
 	// should not be read directly, call Fields() and Functions() instead
@@ -359,7 +360,7 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 	}
 	astIDDef := &ast.Definition{
 		Name:        objName + "ID",
-		Description: formatGqlDescription("A reference to %s", objName),
+		Description: formatGqlDescription("%s identifier", objName),
 		Kind:        ast.Scalar,
 	}
 	astLoadDef := &ast.FieldDefinition{
@@ -680,13 +681,23 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 				Value: v,
 			})
 		}
-		return fn.Call(ctx, false, nil, parent, callInput)
+		return fn.Call(ctx, &CallOpts{
+			Inputs:    callInput,
+			ParentVal: parent,
+		})
 	})
 
 	return fieldDef, resolver, nil
 }
 
-func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeline.Path, parentVal any, inputs []*core.CallInput) (any, error) {
+type CallOpts struct {
+	Inputs    []*core.CallInput
+	ParentVal any
+	Cache     bool
+	Pipeline  pipeline.Path
+}
+
+func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error) {
 	lg := bklog.G(ctx).WithField("module", fn.mod.Name()).WithField("function", fn.metadata.Name)
 	if fn.obj != nil {
 		lg = lg.WithField("object", fn.obj.typeDef.AsObject.Name)
@@ -695,6 +706,7 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 
 	callerDigestInputs := []string{fn.Digest().String()}
 
+	parentVal := opts.ParentVal
 	if fn.obj != nil {
 		// serialize the parentVal so it can be added to the cache key
 		parentBytes, err := json.Marshal(parentVal)
@@ -709,7 +721,7 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 		}
 	}
 
-	for _, input := range inputs {
+	for _, input := range opts.Inputs {
 		normalizedName := gqlArgName(input.Name)
 		arg, ok := fn.args[normalizedName]
 		if !ok {
@@ -730,7 +742,7 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 		callerDigestInputs = append(callerDigestInputs, dgst.String())
 	}
 
-	if !cache {
+	if !opts.Cache {
 		// use the ServerID so that we bust cache once-per-session
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
@@ -749,7 +761,7 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 
 	ctr := fn.runtime
 
-	metaDir := core.NewScratchDirectory(pipeline, fn.api.platform)
+	metaDir := core.NewScratchDirectory(opts.Pipeline, fn.api.platform)
 	ctr, err := ctr.WithMountedDirectory(ctx, fn.api.bk, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
@@ -768,13 +780,13 @@ func (fn *UserModFunction) Call(ctx context.Context, cache bool, pipeline pipeli
 	callMeta := &core.FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentVal,
-		InputArgs: inputs,
+		InputArgs: opts.Inputs,
 	}
 	if fn.obj != nil {
 		callMeta.ParentName = fn.obj.typeDef.AsObject.OriginalName
 	}
 
-	err = fn.api.RegisterFunctionCall(ctx, callerDigest, fn.mod, callMeta)
+	err = fn.api.RegisterFunctionCall(callerDigest, fn.mod, callMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
 	}

@@ -41,8 +41,9 @@ type Mod interface {
 	// The introspection json for this module's schema
 	SchemaIntrospectionJSON(context.Context) (string, error)
 
-	// ModTypeFor returns the ModType for the given typedef based on this module's schema. If checkDirectDeps is true,
-	// then its direct dependencies will also be checked.
+	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
+	// The returned type will have any namespacing already applied.
+	// If checkDirectDeps is true, then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error)
 }
 
@@ -165,6 +166,7 @@ func (m *UserMod) Runtime(ctx context.Context) (*core.Container, error) {
 	return m.sdk.Runtime(ctx, m)
 }
 
+// The objects defined by this module, with namespacing applied
 func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, rerr error) {
 	m.loadObjectsLock.Lock()
 	defer m.loadObjectsLock.Unlock()
@@ -194,7 +196,7 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", m.Name(), err)
 	}
-	result, err := getModDefFn.Call(ctx, true, nil, nil, nil)
+	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name(), err)
 	}
@@ -420,7 +422,7 @@ type ModDeps struct {
 	loadSchemaLock                sync.Mutex
 }
 
-func newModDeps(ctx context.Context, api *APIServer, mods []Mod) (*ModDeps, error) {
+func newModDeps(api *APIServer, mods []Mod) (*ModDeps, error) {
 	seen := map[digest.Digest]struct{}{}
 	finalMods := make([]Mod, 0, len(mods))
 	for _, mod := range mods {
@@ -493,7 +495,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledS
 		}
 		schemas = append(schemas, modSchemas...)
 	}
-	schema, err := mergeExecutableSchemas(schemas...)
+	schema, err := mergeSchemaResolvers(schemas...)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to merge schemas: %w", err)
 	}

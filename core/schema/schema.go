@@ -64,7 +64,7 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		clientCallContext: map[digest.Digest]*clientCallContext{},
 	}
 
-	coreSchema, err := mergeExecutableSchemas(
+	coreSchema, err := mergeSchemaResolvers(
 		&querySchema{api},
 		&directorySchema{api, api.host, api.services, api.buildCache},
 		&fileSchema{api, api.host, api.services},
@@ -95,14 +95,14 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		return nil, err
 	}
 	api.core = &CoreMod{compiledSchema: coreSchema, introspectionJSON: coreIntrospectionJSON}
-
-	// the main client caller starts out the core API loaded
-	dag, err := newModDeps(ctx, api, []Mod{api.core})
+	api.defaultDeps, err = newModDeps(api, []Mod{api.core})
 	if err != nil {
 		return nil, err
 	}
+
+	// the main client caller starts out the core API loaded
 	api.clientCallContext[""] = &clientCallContext{
-		dag: dag,
+		deps: api.defaultDeps,
 	}
 
 	return api, nil
@@ -126,14 +126,16 @@ type APIServer struct {
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
 
-	// the core API simulated as a module (intrisic dep of every user module)
+	// the core API simulated as a module
 	core *CoreMod
+	// the default deps of every user module (currently just core)
+	defaultDeps *ModDeps
 
 	// cache used to de-dupe loading modules from metadata
 	loadModCache *core.CacheMap[digest.Digest, *UserMod]
 
 	// The metadata of client calls.
-	// For the special case of the main client caller, the key is just empty string
+	// For the special case of the main client caller, the key is just empty string.
 	// This is never explicitly deleted from; instead it will just be garbage collected
 	// when this server for the session shuts down
 	clientCallContext map[digest.Digest]*clientCallContext
@@ -142,7 +144,7 @@ type APIServer struct {
 
 type clientCallContext struct {
 	// the DAG of modules being served to this client
-	dag *ModDeps
+	deps *ModDeps
 
 	// If the client is itself from a function call in a user module, these are set with the
 	// metadata of that ongoing function call
@@ -169,7 +171,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schema, err := callContext.dag.Schema(ctx)
+	schema, err := callContext.deps.Schema(ctx)
 	if err != nil {
 		// TODO: technically this is not *always* bad request, should ideally be more specific and differentiate
 		errorOut(err, http.StatusBadRequest)
@@ -269,14 +271,14 @@ func (s *APIServer) AddModFromMetadata(
 		if err := eg.Wait(); err != nil {
 			return nil, err
 		}
-		deps = append(deps, s.core)
+		deps = append(deps, s.defaultDeps.mods...)
 
 		sdk, err := s.sdkForModule(ctx, modMeta)
 		if err != nil {
 			return nil, err
 		}
 
-		dag, err := newModDeps(ctx, s, deps)
+		dag, err := newModDeps(s, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -301,8 +303,8 @@ func (s *APIServer) AddModFromRef(
 	parentMod *core.Module,
 	pipeline pipeline.Path,
 ) (*UserMod, error) {
-	modMeta, err := core.ModuleMetadataFromRef(
-		ctx, s.bk, s.services, s.progSockPath, pipeline, s.platform,
+	modMeta, err := core.ModuleFromRef(
+		ctx, s.bk, s.services, pipeline, s.platform,
 		parentMod.SourceDirectory, parentMod.SourceDirectorySubpath,
 		ref,
 	)
@@ -340,30 +342,18 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	if !ok {
 		return fmt.Errorf("client call not found")
 	}
-	deps := append([]Mod{}, callCtx.dag.mods...)
+	deps := append([]Mod{}, callCtx.deps.mods...)
 	deps = append(deps, mod)
-	callCtx.dag, err = newModDeps(ctx, s, deps)
+	callCtx.deps, err = newModDeps(s, deps)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *APIServer) RegisterFunctionCall(ctx context.Context, dgst digest.Digest, mod *UserMod, call *core.FunctionCall) error {
+func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, mod *UserMod, call *core.FunctionCall) error {
 	if dgst == "" {
 		return fmt.Errorf("cannot register function call with empty digest")
-	}
-
-	var dag *ModDeps
-	if mod == nil {
-		// default to just serving the core API if this is for a special case like the Go SDK codegen
-		var err error
-		dag, err = newModDeps(ctx, s, []Mod{s.core})
-		if err != nil {
-			return err
-		}
-	} else {
-		dag = mod.deps
 	}
 
 	s.clientCallMu.Lock()
@@ -373,7 +363,7 @@ func (s *APIServer) RegisterFunctionCall(ctx context.Context, dgst digest.Digest
 		return nil
 	}
 	s.clientCallContext[dgst] = &clientCallContext{
-		dag:    dag,
+		deps:   mod.deps,
 		mod:    mod,
 		fnCall: call,
 	}
@@ -451,7 +441,7 @@ func (s *staticSchema) Resolvers() Resolvers {
 	return s.StaticSchemaParams.Resolvers
 }
 
-func mergeExecutableSchemas(newSchemas ...SchemaResolvers) (*CompiledSchema, error) {
+func mergeSchemaResolvers(newSchemas ...SchemaResolvers) (*CompiledSchema, error) {
 	mergedSchema := StaticSchemaParams{Resolvers: make(Resolvers)}
 	for _, newSchema := range newSchemas {
 		mergedSchema.Schema += newSchema.Schema() + "\n"

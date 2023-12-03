@@ -244,7 +244,7 @@ type asModuleArgs struct {
 }
 
 func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Directory, args asModuleArgs) (_ *core.Module, rerr error) {
-	modMeta, err := core.ModuleMetadataFromConfig(ctx, s.bk, s.services, s.progSockPath, sourceDir, args.SourceSubpath)
+	modMeta, err := core.ModuleFromConfig(ctx, s.bk, s.services, sourceDir, args.SourceSubpath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}

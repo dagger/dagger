@@ -27,6 +27,9 @@ type Module struct {
 	// The name of the module
 	Name string `json:"name"`
 
+	// The doc string of the module, if any
+	Description string `json:"description"`
+
 	// Dependencies as configured by the module
 	DependencyConfig []string `json:"dependencyConfig"`
 
@@ -125,12 +128,11 @@ func LoadModuleConfig(
 	return configPath, cfg, nil
 }
 
-// ModuleMetadataFromConfig creates a ModuleMetadata from a dagger.json config file.
-func ModuleMetadataFromConfig(
+// ModuleFromConfig creates a Module from a dagger.json config file.
+func ModuleFromConfig(
 	ctx context.Context,
 	bk *buildkit.Client,
 	svcs *Services,
-	progSock string,
 	sourceDir *Directory,
 	configPath string,
 ) (*Module, error) {
@@ -181,11 +183,10 @@ func ModuleMetadataFromConfig(
 // Load the module metadata from the given module reference.
 // parentSrcDir and parentSrcSubpath are used to resolve local
 // module refs if needed (i.e. this is a local dep of another module)
-func ModuleMetadataFromRef(
+func ModuleFromRef(
 	ctx context.Context,
 	bk *buildkit.Client,
 	svcs *Services,
-	progSock string,
 	pipeline pipeline.Path,
 	platform ocispecs.Platform,
 	parentSrcDir *Directory, // nil if not being loaded as a dep of another mod
@@ -226,5 +227,5 @@ func ModuleMetadataFromRef(
 		return nil, fmt.Errorf("invalid module ref %q", moduleRefStr)
 	}
 
-	return ModuleMetadataFromConfig(ctx, bk, svcs, progSock, sourceDir, configPath)
+	return ModuleFromConfig(ctx, bk, svcs, sourceDir, configPath)
 }

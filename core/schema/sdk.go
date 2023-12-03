@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	ciconsts "github.com/dagger/dagger/internal/mage/consts"
-	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vito/progrock"
 )
@@ -58,8 +57,7 @@ func (s *APIServer) sdkForModule(ctx context.Context, mod *core.Module) (SDK, er
 		return nil, err
 	}
 
-	sdkMod, err := core.ModuleMetadataFromRef(
-		ctx, s.bk, s.services, s.progSockPath, nil, s.platform,
+	sdkMod, err := core.ModuleFromRef(ctx, s.bk, s.services, nil, s.platform,
 		mod.SourceDirectory, mod.SourceDirectorySubpath,
 		mod.SDK,
 	)
@@ -125,18 +123,21 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
 	}
 
-	result, err := codegenFn.Call(ctx, true, nil, nil, []*core.CallInput{
-		{
-			Name:  "modSource",
-			Value: srcDirID,
-		},
-		{
-			Name:  "subPath",
-			Value: mod.metadata.SourceDirectorySubpath,
-		},
-		{
-			Name:  "introspectionJson",
-			Value: introspectionJSON,
+	result, err := codegenFn.Call(ctx, &CallOpts{
+		Cache: true,
+		Inputs: []*core.CallInput{
+			{
+				Name:  "modSource",
+				Value: srcDirID,
+			},
+			{
+				Name:  "subPath",
+				Value: mod.metadata.SourceDirectorySubpath,
+			},
+			{
+				Name:  "introspectionJson",
+				Value: introspectionJSON,
+			},
 		},
 	})
 	if err != nil {
@@ -176,18 +177,21 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Containe
 		return nil, fmt.Errorf("failed to get source directory id: %w", err)
 	}
 
-	result, err := getRuntimeFn.Call(ctx, true, nil, nil, []*core.CallInput{
-		{
-			Name:  "modSource",
-			Value: srcDirID,
-		},
-		{
-			Name:  "subPath",
-			Value: mod.metadata.SourceDirectorySubpath,
-		},
-		{
-			Name:  "introspectionJson",
-			Value: introspectionJSON,
+	result, err := getRuntimeFn.Call(ctx, &CallOpts{
+		Cache: true,
+		Inputs: []*core.CallInput{
+			{
+				Name:  "modSource",
+				Value: srcDirID,
+			},
+			{
+				Name:  "subPath",
+				Value: mod.metadata.SourceDirectorySubpath,
+			},
+			{
+				Name:  "introspectionJson",
+				Value: introspectionJSON,
+			},
 		},
 	})
 	if err != nil {
@@ -244,8 +248,7 @@ func (s *APIServer) loadBuiltinSDK(ctx context.Context, name string, engineConta
 		return nil, fmt.Errorf("failed to get relative path of module sdk config file %s: %w", name, err)
 	}
 
-	sdkMod, err := core.ModuleMetadataFromConfig(
-		ctx, s.bk, s.services, s.progSockPath,
+	sdkMod, err := core.ModuleFromConfig(ctx, s.bk, s.services,
 		core.NewDirectory(ctx, pbDef, "/", nil, s.platform, nil),
 		cfgRelPath,
 	)
@@ -378,12 +381,6 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Cont
 		return nil, fmt.Errorf("failed to update image config for go module sdk container codegen: %w", err)
 	}
 
-	// TODO: doc
-	cacheKey := digest.FromString(mod.DagDigest().String() + " " + "goSDKCodegen")
-	if err := sdk.APIServer.RegisterFunctionCall(ctx, cacheKey, nil, nil); err != nil {
-		return nil, fmt.Errorf("failed to register function call: %w", err)
-	}
-
 	ctr, err = ctr.WithExec(ctx, sdk.bk, sdk.progSockPath, sdk.platform, core.ContainerExecOpts{
 		Args: []string{
 			"--module", ".",
@@ -391,8 +388,6 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Cont
 			"--introspection-json-path", goSDKIntrospectionJSONPath,
 		},
 		ExperimentalPrivilegedNesting: true,
-		NestedInSameSession:           true,
-		ModuleCallerDigest:            cacheKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container codegen: %w", err)
