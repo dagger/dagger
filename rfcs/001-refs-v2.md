@@ -87,6 +87,81 @@ We might not need all these, just throwing ideas around:
     * this would only be worth it if we imagine it being a common thing and/or
       are interested in making `dag/` a convention
 
+## Tagged refs
+
+A ref's tag helps a human identify and control the version of the source being
+referenced. While the hash component ultimately determines the content you
+receive, the tag component is what originally determines the hash.
+
+When a tag is omitted the source is queried to find the latest version. If no
+versions are found, the source is queried to determine a default tag. For a Git
+source latest version is found by listing `refs/tags/v*`, and if no version is
+found the default branch is used.
+
+### Semantic versioning
+
+Refs are designed to reference [semantically versioned](https://semver.org)
+reproducible data, so while a tag may be any term understood by the source,
+special meaning is given to tags that are valid versions.
+
+#### Shorthand
+
+When a tag is semver shorthand like `v1` or `v1.2` it is treated as a
+constraint and expanded to a full version as part of pinning.
+
+* `v1` means `v1.0.0 <= x < v2.0.0`
+* `v1.2` means `v1.2.0 <= x < v1.3.0`
+
+This mimicks conventions from Docker images without requiring authors to
+publish and micromanage a bunch of extra tags for intermediate versions.
+
+#### Scoping
+
+When a ref has both a subpath and a semver tag the version is scoped to the
+subpath.
+
+* `github.com/dagger/dagger:v0.9.3` means `refs/tags/v0.9.3`
+* `github.com/dagger/dagger//sdk/go:v0.9.3` means `refs/tags/sdk/go/v0.9.3`
+
+This is a crucial element of supporting Git monorepos.
+
+## Pinned refs
+
+A ref is _pinned_ when it contains a hash component. Otherwise the ref is
+considered _moving_ - even if it contains a tag component.
+
+To support reproducible builds, a moving ref should always be pinned prior to
+being stored anywhere long-term (like `dagger.json`).
+
+The pinning process involves expanding the tag to an exact version (e.g. `v1`
+=> `v1.2.3`) and resolving the tag to a hash.
+
+Assuming the latest version of Dagger is currently v0.9.3, the following moving
+refs all expand to the same pinned ref:
+
+```
+github.com/dagger/dagger
+=> github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
+
+github.com/dagger/dagger:v0
+=> github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
+
+github.com/dagger/dagger:v0.9
+=> github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
+
+github.com/dagger/dagger:v0.9.3
+=> github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
+```
+
+When it comes to data deduplication, you can also consider all of the above
+refs to be equivalent to any refs with the same source, subpath, and hash:
+
+```
+github.com/dagger/dagger@d44c734dbbbcecc75507003c07acabb16375891d
+github.com/dagger/dagger:main@d44c734dbbbcecc75507003c07acabb16375891d
+github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
+```
+
 ## Crawling dependencies
 
 Let's say the module at `mod://vito//testcontainers:v1.2.3@deadbeef` has a
