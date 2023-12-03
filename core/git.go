@@ -46,7 +46,7 @@ func (ref *GitRef) WithRef(name string) *GitRef {
 }
 
 func (ref *GitRef) DefaultBranch(ctx context.Context, bk *buildkit.Client) (string, error) {
-	output, err := exec.CommandContext(ctx, "git", "ls-remote", "--symref", ref.URL, "HEAD").Output()
+	output, err := exec.CommandContext(ctx, "git", "ls-remote", "--symref", ref.URL, "HEAD").Output() // nolint:gosec
 	if err != nil {
 		return "", err
 	}
