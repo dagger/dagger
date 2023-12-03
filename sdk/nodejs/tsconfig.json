@@ -1,7 +1,7 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
   "include": ["./**/*"],
-  "exclude": ["./**/*.spec.ts", "./dist/**/*"],
+  "exclude": ["./**/*.spec.ts", "./dist/**/*", "./**/testdata/*"],
   "compilerOptions": {
     "target": "ES2022",
     "strict": true,
@@ -13,6 +13,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "Node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
     "declaration": true,
     "declarationMap": true,
   },

@@ -12,16 +12,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/cmd/codegen/generator"
-	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
-	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/imports"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 const ClientGenFile = "dagger.gen.go"
