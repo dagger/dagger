@@ -114,9 +114,6 @@ func (obj *CoreModObject) ConvertFromSDKResult(_ context.Context, value any) (an
 }
 
 func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
-	if _, ok := value.(string); ok {
-		return value, nil
-	}
 	return obj.resolver.ToID(value)
 }
 
@@ -195,18 +192,14 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 		return nil, nil
 	}
 
-	// TODO: in theory it's more correct to convert to an ID, but SDKs don't currently handle this correctly.
-	// They only do ID conversions for core types, but still expect custom objects to be passed as raw
-	// json serialized objects. This can be updated once SDKs are fixed
+	// NOTE: user mod objects are currently only passed as inputs to the module they originate from; modules
+	// can't have inputs/outputs from other modules (other than core). These objects are also passed as their
+	// direct json serialization rather than as an ID (so that SDKs can decode them without needing to make
+	// calls to their own API).
 	switch value := value.(type) {
 	case string:
-		// TODO: this is what should be happening
-		// return value, nil
 		return resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
 	case map[string]any:
-		// TODO: this is what should be happening
-		// return resourceid.EncodeModule(obj.typeDef.AsObject.Name, value)
-
 		for k, v := range value {
 			normalizedName := gqlFieldName(k)
 			field, ok, err := obj.FieldByName(ctx, normalizedName)

@@ -71,6 +71,23 @@ func (id ID[T]) Decode() (*T, error) {
 	return &payload, nil
 }
 
+func (id ID[T]) Validate() error {
+	if id == "" {
+		return fmt.Errorf("ID cannot be empty")
+	}
+
+	actualType, _, ok := strings.Cut(string(id), ":")
+	if !ok {
+		return fmt.Errorf("malformed ID: %v", id)
+	}
+
+	if actualType != id.ResourceTypeName() {
+		return fmt.Errorf("ID type mismatch: %v != %v", actualType, id.ResourceTypeName())
+	}
+
+	return nil
+}
+
 // Encode JSON marshals and base64-encodes an arbitrary payload.
 func Encode[T any, I ID[T]](payload *T) (I, error) {
 	jsonBytes, err := json.Marshal(payload)

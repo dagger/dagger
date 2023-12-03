@@ -94,6 +94,10 @@ func (arg FunctionArg) Clone() *FunctionArg {
 	return &cp
 }
 
+func (arg *FunctionArg) ID() (FunctionArgID, error) {
+	return resourceid.Encode(arg)
+}
+
 type TypeDef struct {
 	Kind     TypeDefKind    `json:"kind"`
 	Optional bool           `json:"optional"`

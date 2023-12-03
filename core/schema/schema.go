@@ -163,9 +163,9 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	callContext, ok := s.clientCallContext[clientMetadata.ModuleCallertDigest]
+	callContext, ok := s.clientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
-		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallertDigest), http.StatusInternalServerError)
+		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest), http.StatusInternalServerError)
 		return
 	}
 
@@ -325,7 +325,7 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	if err != nil {
 		return err
 	}
-	if clientMetadata.ModuleCallertDigest != "" {
+	if clientMetadata.ModuleCallerDigest != "" {
 		return fmt.Errorf("cannot serve module to client %s", clientMetadata.ClientID)
 	}
 
@@ -385,15 +385,15 @@ func (s *APIServer) CurrentModule(ctx context.Context) (*UserMod, error) {
 	if err != nil {
 		return nil, err
 	}
-	if clientMetadata.ModuleCallertDigest == "" {
+	if clientMetadata.ModuleCallerDigest == "" {
 		return nil, fmt.Errorf("no current module for main client caller")
 	}
 
 	s.clientCallMu.RLock()
 	defer s.clientCallMu.RUnlock()
-	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallertDigest]
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallertDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
 	return callCtx.mod, nil
 }
@@ -403,15 +403,15 @@ func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall
 	if err != nil {
 		return nil, err
 	}
-	if clientMetadata.ModuleCallertDigest == "" {
+	if clientMetadata.ModuleCallerDigest == "" {
 		return nil, fmt.Errorf("no current function call for main client caller")
 	}
 
 	s.clientCallMu.RLock()
 	defer s.clientCallMu.RUnlock()
-	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallertDigest]
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallertDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
 
 	return callCtx.fnCall, nil

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/graphql"
@@ -42,12 +41,21 @@ type IDableObjectResolver interface {
 	Resolver
 }
 
-func ToIDableObjectResolver[T any, I ~string](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
-	return idableObjectResolver[T, I]{idToObject, r}
+func ToIDableObjectResolver[T any, I ~string](
+	idToObject func(I) (*T, error),
+	objectToID func(*T) (I, error),
+	r ObjectResolver,
+) IDableObjectResolver {
+	return idableObjectResolver[T, I]{
+		idToObject:     idToObject,
+		objectToID:     objectToID,
+		ObjectResolver: r,
+	}
 }
 
 type idableObjectResolver[T any, I ~string] struct {
 	idToObject func(I) (*T, error)
+	objectToID func(*T) (I, error)
 	ObjectResolver
 }
 
@@ -55,8 +63,30 @@ func (r idableObjectResolver[T, I]) FromID(id string) (any, error) {
 	return r.idToObject(I(id))
 }
 
-func (r idableObjectResolver[T, I]) ToID(t any) (string, error) {
-	return core.ResourceToID(t)
+func (r idableObjectResolver[T, I]) ToID(x any) (string, error) {
+	switch t := x.(type) {
+	case T:
+		id, err := resourceid.Encode(&t)
+		if err != nil {
+			return "", err
+		}
+		return string(id), nil
+	case *T:
+		id, err := resourceid.Encode(t)
+		if err != nil {
+			return "", err
+		}
+		return string(id), nil
+	case I:
+		return string(t), nil
+	case string:
+		if err := resourceid.ID[T](t).Validate(); err != nil {
+			return "", err
+		}
+		return t, nil
+	default:
+		return "", fmt.Errorf("cannot convert %T to ID", x)
+	}
 }
 
 type ScalarResolver struct {
@@ -143,7 +173,7 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 
 func ResolveIDable[T any](rs Resolvers, name string, obj ObjectResolver) {
 	// Add resolver for the type.
-	rs[name] = ToIDableObjectResolver(resourceid.ID[T].Decode, obj)
+	rs[name] = ToIDableObjectResolver(resourceid.ID[T].Decode, resourceid.Encode[T], obj)
 
 	// Add field for querying the object's ID.
 	obj["id"] = ToResolver(func(ctx context.Context, obj *T, args any) (_ resourceid.ID[T], rerr error) {
