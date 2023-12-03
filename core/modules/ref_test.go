@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/daggertest"
 	"dagger.io/dagger/querybuilder"
 	"github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/require"

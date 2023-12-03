@@ -15,8 +15,8 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/daggertest"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/daggertest"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
