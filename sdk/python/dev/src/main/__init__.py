@@ -1,12 +1,13 @@
 import logging
 import uuid
 from collections.abc import Sequence
+from typing import Annotated
 
 import anyio
 
 import dagger
+from dagger import Doc, dag, function
 from dagger.log import configure_logging
-from dagger.mod import Annotated, Doc, function
 
 from .consts import DEP_ENVS
 from .deps import Deps, Hatch
@@ -108,7 +109,7 @@ def script(
         .with_(sdk)
         .with_(
             mounted_workdir(
-                dagger.directory().with_file("main.py", file),
+                dag.directory().with_file("main.py", file),
             ),
         )
         .with_focus()

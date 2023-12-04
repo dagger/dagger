@@ -1,5 +1,7 @@
+from typing import Annotated
+
 import dagger
-from dagger.mod import Annotated, Doc, field, function, object_type
+from dagger import Doc, field, function, object_type
 
 from .consts import DEP_ENVS, PYTHON_VERSION
 from .utils import cache, from_host_file, python_base

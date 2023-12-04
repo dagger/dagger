@@ -1,7 +1,8 @@
 import platform
+from typing import Annotated
 
 import dagger
-from dagger.mod import Annotated, Doc, field, function, object_type
+from dagger import Doc, dag, field, function, object_type
 
 from .consts import PYTHON_VERSION
 from .utils import from_host, from_host_req, mounted_workdir, python_base, requirements
@@ -117,13 +118,13 @@ class Test:
 
         docker_version = "24.0.7"
 
-        ctr = dagger.dockerd().attach(
+        ctr = dag.dockerd().attach(
             (
                 self.base()
                 .pipeline(f"Python {self.version}")
                 .with_mounted_file(
                     "/opt/docker.tgz",
-                    dagger.http(
+                    dag.http(
                         "https://download.docker.com/linux/static/stable"
                         f"/{arch_name}/docker-{docker_version}.tgz"
                     ),

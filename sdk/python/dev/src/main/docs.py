@@ -1,5 +1,7 @@
+from typing import Annotated
+
 import dagger
-from dagger.mod import Annotated, Doc, field, function, object_type
+from dagger import Doc, field, function, object_type
 
 from .utils import (
     from_host_dir,

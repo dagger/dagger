@@ -1,5 +1,7 @@
+from typing import Annotated
+
 import dagger
-from dagger.mod import Annotated, Doc, function
+from dagger import Doc, dag, function
 
 from .consts import IMAGE, PYTHON_VERSION
 
@@ -16,7 +18,7 @@ def python_base(
 ) -> dagger.Container:
     """Base Python container with an activated virtual environment."""
     return (
-        dagger.container()
+        dag.container()
         .from_(f"python:{version}-{IMAGE}")
         .with_default_args(args=["/bin/bash"])  # for dagger shell
         .with_(cache("/root/.cache/pip", keys=["pip", version, IMAGE]))
@@ -47,7 +49,7 @@ def cache(
             src = ctr.with_exec(init).directory(path)
         return ctr.with_mounted_cache(
             path,
-            dagger.cache_volume("-".join([*keys, "pythonsdkdev", "cache"])),
+            dag.cache_volume("-".join([*keys, "pythonsdkdev", "cache"])),
             source=src,
         )
 
@@ -72,9 +74,9 @@ def venv(ctr: dagger.Container) -> dagger.Container:
 
 def sdk(ctr: dagger.Container) -> dagger.Container:
     """Mount and install the SDK into a container."""
-    return ctr.with_mounted_directory(
-        "/sdk", dagger.host().directory("/sdk")
-    ).with_exec(["pip", "install", "/sdk"])
+    return ctr.with_mounted_directory("/sdk", dag.host().directory("/sdk")).with_exec(
+        ["pip", "install", "/sdk"]
+    )
 
 
 def mounted_workdir(src: dagger.Directory):
@@ -104,7 +106,7 @@ def from_host(
     """Get directory from host, with filtered files."""
     if exclude is None:
         exclude = []
-    return dagger.host().directory(
+    return dag.host().directory(
         "/src",
         include=include,
         exclude=[
