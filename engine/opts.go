@@ -64,7 +64,7 @@ type ClientMetadata struct {
 	// If this client is for a module function, this digest will be set in the
 	// grpc context metadata for any api requests back to the engine. It's used by the API
 	// server to determine which schema to serve and other module context metadata.
-	ModuleContextDigest digest.Digest `json:"module_context_digest"`
+	ModuleCallerDigest digest.Digest `json:"module_caller_digest"`
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry

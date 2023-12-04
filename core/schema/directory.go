@@ -11,21 +11,17 @@ import (
 )
 
 type directorySchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host       *core.Host
 	svcs       *core.Services
 	buildCache *core.CacheMap[uint64, *core.Container]
 }
 
-var _ ExecutableSchema = &directorySchema{}
+var _ SchemaResolvers = &directorySchema{}
 
 func (s *directorySchema) Name() string {
 	return "directory"
-}
-
-func (s *directorySchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *directorySchema) Schema() string {

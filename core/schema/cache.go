@@ -7,17 +7,13 @@ import (
 )
 
 type cacheSchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
-var _ ExecutableSchema = &cacheSchema{}
+var _ SchemaResolvers = &cacheSchema{}
 
 func (s *cacheSchema) Name() string {
 	return "cache"
-}
-
-func (s *cacheSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *cacheSchema) Schema() string {
@@ -36,7 +32,7 @@ func (s *cacheSchema) Resolvers() Resolvers {
 	return rs
 }
 
-func (s *cacheSchema) Dependencies() []ExecutableSchema {
+func (s *cacheSchema) Dependencies() []SchemaResolvers {
 	return nil
 }
 

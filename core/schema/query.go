@@ -14,17 +14,13 @@ import (
 )
 
 type querySchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
-var _ ExecutableSchema = &querySchema{}
+var _ SchemaResolvers = &querySchema{}
 
 func (s *querySchema) Name() string {
 	return "query"
-}
-
-func (s *querySchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *querySchema) Schema() string {

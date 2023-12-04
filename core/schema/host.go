@@ -10,20 +10,16 @@ import (
 )
 
 type hostSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host *core.Host
 	svcs *core.Services
 }
 
-var _ ExecutableSchema = &hostSchema{}
+var _ SchemaResolvers = &hostSchema{}
 
 func (s *hostSchema) Name() string {
 	return "host"
-}
-
-func (s *hostSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *hostSchema) Schema() string {

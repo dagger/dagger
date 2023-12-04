@@ -11,9 +11,13 @@ import (
 
 func TestMergeObjects(t *testing.T) {
 	t.Parallel()
-	merged, err := mergeExecutableSchemas(
+	merged, err := mergeSchemaResolvers(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			type Query {
+				typeA: TypeA
+			}
+
 			type TypeA {
 				fieldA: String
 			}
@@ -27,6 +31,10 @@ func TestMergeObjects(t *testing.T) {
 
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			extend type Query {
+				typeB: TypeB
+			}
+
 			type TypeB {
 				fieldB: String
 			}
@@ -57,9 +65,13 @@ func TestMergeObjects(t *testing.T) {
 
 func TestMergeFieldExtend(t *testing.T) {
 	t.Parallel()
-	merged, err := mergeExecutableSchemas(
+	merged, err := mergeSchemaResolvers(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			type Query {
+				typeA: TypeA
+			}
+
 			type TypeA {
 				fieldA: String
 			}
@@ -95,7 +107,7 @@ func TestMergeFieldExtend(t *testing.T) {
 
 func TestMergeFieldConflict(t *testing.T) {
 	t.Parallel()
-	_, err := mergeExecutableSchemas(
+	_, err := mergeSchemaResolvers(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			type TypeA {
@@ -126,7 +138,7 @@ func TestMergeFieldConflict(t *testing.T) {
 }
 
 func TestMergeTypeConflict(t *testing.T) {
-	_, err := mergeExecutableSchemas(
+	_, err := mergeSchemaResolvers(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			type TypeA {
@@ -154,22 +166,30 @@ func TestMergeTypeConflict(t *testing.T) {
 
 func TestMergeScalars(t *testing.T) {
 	t.Parallel()
-	merged, err := mergeExecutableSchemas(
+	merged, err := mergeSchemaResolvers(
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			type Query {
+				typeA: TypeA
+			}
+
 			scalar TypeA
 			`,
 			Resolvers: Resolvers{
-				"TypeA": ScalarResolver{},
+				"TypeA": stringResolver[string](),
 			},
 		}),
 
 		StaticSchema(StaticSchemaParams{
 			Schema: `
+			extend type Query {
+				typeB: TypeB
+			}
+
 			scalar TypeB
 			`,
 			Resolvers: Resolvers{
-				"TypeB": ScalarResolver{},
+				"TypeB": jsonResolver,
 			},
 		}),
 	)
@@ -184,7 +204,7 @@ func TestMergeScalars(t *testing.T) {
 
 func TestMergeScalarConflict(t *testing.T) {
 	t.Parallel()
-	_, err := mergeExecutableSchemas(
+	_, err := mergeSchemaResolvers(
 		StaticSchema(StaticSchemaParams{
 			Schema: `scalar TypeA`,
 			Resolvers: Resolvers{
@@ -206,7 +226,7 @@ func TestWithMountedCacheSeen(t *testing.T) {
 	t.Parallel()
 
 	cs := &containerSchema{
-		MergedSchemas: &MergedSchemas{bk: &buildkit.Client{}},
+		APIServer: &APIServer{bk: &buildkit.Client{}},
 	}
 
 	cid, err := core.NewCache("test-seen").ID()
