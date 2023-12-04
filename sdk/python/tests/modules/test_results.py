@@ -1,11 +1,13 @@
 import json
 from dataclasses import InitVar
+from typing import Annotated
 
 import pytest
 from typing_extensions import Self
 
 import dagger
-from dagger.mod import Annotated, Arg, Doc, Module
+from dagger import Arg, Doc, dag
+from dagger.mod import Module
 from dagger.mod._exceptions import FatalError
 
 pytestmark = [
@@ -50,7 +52,7 @@ async def test_unstructure_structure():
 
     @mod.function
     def foo() -> Bar:
-        return Bar(ctr=dagger.container().from_("alpine"))
+        return Bar(ctr=dag.container().from_("alpine"))
 
     async with dagger.connection():
         resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "foo")

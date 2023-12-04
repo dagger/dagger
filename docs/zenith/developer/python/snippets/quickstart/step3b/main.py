@@ -1,4 +1,4 @@
-from dagger.mod import field, function, object_type
+from dagger import field, function, object_type
 
 
 @object_type

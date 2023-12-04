@@ -4,6 +4,7 @@ from textwrap import dedent
 import pytest
 
 import dagger
+from dagger import dag
 
 pytestmark = [
     pytest.mark.anyio,
@@ -23,22 +24,22 @@ async def _connection():
 
 
 async def test_container():
-    alpine = dagger.container().from_("alpine:3.16.2")
+    alpine = dag.container().from_("alpine:3.16.2")
     version = await alpine.with_exec(["cat", "/etc/alpine-release"]).stdout()
 
     assert version == "3.16.2\n"
 
 
 async def test_git_repository():
-    repo = dagger.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
+    repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
     readme = await repo.file("README.md").contents()
 
     assert readme.split("\n")[0] == "## What is Dagger?"
 
 
 async def test_container_build():
-    repo = dagger.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
-    dagger_img = dagger.container().build(repo)
+    repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
+    dagger_img = dag.container().build(repo)
 
     out = await dagger_img.with_exec(["version"]).stdout()
 
@@ -55,9 +56,9 @@ async def test_input_arg():
     CMD printenv
     """
     out = await (
-        dagger.container()
+        dag.container()
         .build(
-            dagger.directory().with_new_file("Dockerfile", dockerfile),
+            dag.directory().with_new_file("Dockerfile", dockerfile),
             build_args=[dagger.BuildArg("SPAM", "egg")],
         )
         .stdout()
@@ -66,7 +67,7 @@ async def test_input_arg():
 
 
 async def test_optionals_in_input_fields():
-    svc = dagger.host().service([dagger.PortForward(8000)])
+    svc = dag.host().service([dagger.PortForward(8000)])
     field = svc._ctx.selections.pop()
     assert field.args == {"ports": [{"backend": 8000}]}
 
@@ -74,7 +75,7 @@ async def test_optionals_in_input_fields():
 @pytest.mark.parametrize("val", ["spam", ""])
 async def test_container_with_env_variable(val):
     out = await (
-        dagger.container()
+        dag.container()
         .from_("alpine:3.16.2")
         .with_env_variable("FOO", val)
         .with_exec(["sh", "-c", "echo -n $FOO"])
@@ -85,13 +86,13 @@ async def test_container_with_env_variable(val):
 
 async def test_container_with_mounted_directory():
     dir_ = (
-        dagger.directory()
+        dag.directory()
         .with_new_file("hello.txt", "Hello, world!")
         .with_new_file("goodbye.txt", "Goodbye, world!")
     )
 
     container = (
-        dagger.container().from_("alpine:3.16.2").with_mounted_directory("/mnt", dir_)
+        dag.container().from_("alpine:3.16.2").with_mounted_directory("/mnt", dir_)
     )
 
     out = await container.with_exec(["ls", "/mnt"]).stdout()
@@ -109,9 +110,9 @@ async def test_container_with_mounted_cache():
     filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
     container = (
-        dagger.container()
+        dag.container()
         .from_("alpine:3.16.2")
-        .with_mounted_cache("/cache", dagger.cache_volume(cache_key))
+        .with_mounted_cache("/cache", dag.cache_volume(cache_key))
     )
 
     out = ""
@@ -130,7 +131,7 @@ async def test_container_with_mounted_cache():
 
 async def test_directory():
     dir_ = (
-        dagger.directory()
+        dag.directory()
         .with_new_file("hello.txt", "Hello, world!")
         .with_new_file("goodbye.txt", "Goodbye, world!")
     )
@@ -141,7 +142,7 @@ async def test_directory():
 
 
 async def test_host_directory():
-    readme = await dagger.host().directory(".").file("README.md").contents()
+    readme = await dag.host().directory(".").file("README.md").contents()
     assert "Dagger" in readme
 
 
@@ -150,12 +151,12 @@ async def test_object_sequence(tmp_path):
     # In this case, we're using Container.export's
     # platform_variants which is a Sequence[Container].
     variants = [
-        dagger.container(platform=dagger.Platform(platform))
+        dag.container(platform=dagger.Platform(platform))
         .from_("alpine:3.16.2")
         .with_exec(["uname", "-m"])
         for platform in ("linux/amd64", "linux/arm64")
     ]
-    await dagger.container().export(
+    await dag.container().export(
         path=str(tmp_path / "export.tar.gz"),
         platform_variants=variants,
     )
@@ -167,12 +168,12 @@ async def test_container_with():
 
     def secret(token: str):
         def _secret(ctr: dagger.Container):
-            return ctr.with_secret_variable("TOKEN", dagger.set_secret("TOKEN", token))
+            return ctr.with_secret_variable("TOKEN", dag.set_secret("TOKEN", token))
 
         return _secret
 
     await (
-        dagger.container()
+        dag.container()
         .from_("alpine:3.16.2")
         .with_(env)
         .with_(secret("baz"))
@@ -182,7 +183,7 @@ async def test_container_with():
 
 
 async def test_container_sync():
-    base = dagger.container().from_("alpine:3.16.2")
+    base = dag.container().from_("alpine:3.16.2")
 
     # short cirtcut
     with pytest.raises(dagger.QueryError, match="foobar"):
@@ -194,7 +195,7 @@ async def test_container_sync():
 
 
 async def test_container_awaitable():
-    base = dagger.container().from_("alpine:3.16.2")
+    base = dag.container().from_("alpine:3.16.2")
 
     # short cirtcut
     with pytest.raises(dagger.QueryError, match="foobar"):
@@ -208,7 +209,7 @@ async def test_container_awaitable():
 async def test_directory_sync():
     # This feature is tested in core, we're just testing if
     # sync in different types work.
-    base = dagger.directory().with_new_file("foo", "bar")
+    base = dag.directory().with_new_file("foo", "bar")
 
     # short cirtcut
     with pytest.raises(dagger.QueryError, match="no such file or directory"):
@@ -220,7 +221,7 @@ async def test_directory_sync():
 
 
 async def test_return_list_of_objects():
-    envs = await dagger.container().from_("alpine:3.16.2").env_variables()
+    envs = await dag.container().from_("alpine:3.16.2").env_variables()
     assert await envs[0].name() == "PATH"
 
 

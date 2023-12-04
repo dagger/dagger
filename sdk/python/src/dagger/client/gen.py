@@ -4758,45 +4758,8 @@ class TypeDef(Type):
         return cb(self)
 
 
-_client = Client()
-cache_volume = _client.cache_volume
-check_version_compatibility = _client.check_version_compatibility
-container = _client.container
-current_function_call = _client.current_function_call
-current_module = _client.current_module
-default_platform = _client.default_platform
-directory = _client.directory
-file = _client.file
-function = _client.function
-generated_code = _client.generated_code
-git = _client.git
-host = _client.host
-http = _client.http
-load_cache_volume_from_id = _client.load_cache_volume_from_id
-load_container_from_id = _client.load_container_from_id
-load_directory_from_id = _client.load_directory_from_id
-load_file_from_id = _client.load_file_from_id
-load_function_arg_from_id = _client.load_function_arg_from_id
-load_function_from_id = _client.load_function_from_id
-load_generated_code_from_id = _client.load_generated_code_from_id
-load_module_from_id = _client.load_module_from_id
-load_secret_from_id = _client.load_secret_from_id
-load_service_from_id = _client.load_service_from_id
-load_socket_from_id = _client.load_socket_from_id
-load_type_def_from_id = _client.load_type_def_from_id
-module = _client.module
-module_config = _client.module_config
-pipeline = _client.pipeline
-secret = _client.secret
-set_secret = _client.set_secret
-socket = _client.socket
-type_def = _client.type_def
-
-
-def default_client() -> Client:
-    """Return the default client instance."""
-    return _client
-
+dag = Client()
+"""The global client instance."""
 
 __all__ = [
     "BuildArg",
@@ -4847,37 +4810,5 @@ __all__ = [
     "TypeDefID",
     "TypeDefKind",
     "Void",
-    "cache_volume",
-    "check_version_compatibility",
-    "container",
-    "current_function_call",
-    "current_module",
-    "default_client",
-    "default_platform",
-    "directory",
-    "file",
-    "function",
-    "generated_code",
-    "git",
-    "host",
-    "http",
-    "load_cache_volume_from_id",
-    "load_container_from_id",
-    "load_directory_from_id",
-    "load_file_from_id",
-    "load_function_arg_from_id",
-    "load_function_from_id",
-    "load_generated_code_from_id",
-    "load_module_from_id",
-    "load_secret_from_id",
-    "load_service_from_id",
-    "load_socket_from_id",
-    "load_type_def_from_id",
-    "module",
-    "module_config",
-    "pipeline",
-    "secret",
-    "set_secret",
-    "socket",
-    "type_def",
+    "dag",
 ]
