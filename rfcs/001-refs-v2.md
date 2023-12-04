@@ -4,19 +4,25 @@ A ref is a short string that refers to a versioned and/or content-addressed
 object, such as a file or a directory stored in a Git repository, or artifacts
 in an OCI registry.
 
-    [git://]example.org/dagger/dagger[//sdk/go][:v0.9.3][@d44c734db]
-     scheme          source            path      tag       hash 
+## Format
+
+The following diagram summarizes the format with `[brackets]` denoting optional
+components:
+
+    [git://]example.org/acme/repo[//subdir/foo][:v0.10.1][@d44c734db]
+     └┬┘    └─────────┬─────────┘   └────┬───┘   └──┬──┘   └───┬───┘
+    scheme          source            subpath      tag       hash 
 
 * `git://` is an optional URI scheme, with `git://` as the default. See
   [Proposed schemes](#proposed-schemes) for more information.
 
-* `github.com/dagger/dagger` identifies the source location.
+* `example.org/acme/repo` identifies the source location.
 
-* `//sdk/go` is a subpath within the fetched source, using double-slash (`//`)
-  to distinguish it from the source path.
+* `//subdir/foo` is a subpath within the fetched source, using double-slash
+  (`//`) to distinguish it from the source path.
 
-* `:v1.2.3` is an optional tag. The subpath is prepended to semver tags, so
-  this actually corresponds to the tag `sdk/go/v1.2.3`.
+* `:v0.10.1` is an optional tag. The subpath is prepended to semver tags, so
+  this actually corresponds to the tag `subdir/foo/v1.2.3`.
 
 * `@d44c734db` is an optional hash of the referenced content. For a Git ref this is
   a commit hash. For other schemes this may be a `sha256:...` digest.
@@ -24,6 +30,20 @@ in an OCI registry.
 The URI scheme determines the interpretation of the rest of the ref, but every
 ref always has the same components with the same delimiters (`://`, `//`, `:`,
 and `@`).
+
+### Backwards compatibility
+
+For backwards compatibility with module refs used prior to Zenith's launch, a
+ref whose source refers to `github.com` will assume that the first two path
+segments are `user/repo` and the rest of the path is actually the subpath.
+
+That is, the following are equivalent:
+
+```
+github.com/a/b/c
+github.com/a/b//c
+git://github.com/a/b//c
+```
 
 ## Goals
 
