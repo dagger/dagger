@@ -141,6 +141,9 @@ class Context:
         if not self.remaining:
             return s
 
+        # Add quotes to names that haven't been defined yet (forward references).
+        # Need to fix optionals because `"File" | None` is not a valid annotation.
+        # The whole annotation needs to be quoted (`"File | None"`).
         return re.sub(rf"\b({'|'.join(self.remaining)})\b", r'"\1"', s).replace(
             '" | None',
             ' | None"',
