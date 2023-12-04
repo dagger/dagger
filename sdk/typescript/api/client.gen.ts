@@ -276,6 +276,11 @@ export type ContainerWithExposedPortOpts = {
    * Optional port description
    */
   description?: string
+
+  /**
+   * Skip the health check when run as a service.
+   */
+  skipHealthCheck?: boolean
 }
 
 export type ContainerWithFileOpts = {
@@ -1844,6 +1849,7 @@ export class Container extends BaseClient {
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
+   * @param opts.skipHealthCheck Skip the health check when run as a service.
    */
   withExposedPort = (
     port: number,
@@ -5143,6 +5149,7 @@ export class Port extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _port?: number = undefined
   private readonly _protocol?: NetworkProtocol = undefined
+  private readonly _skipHealthCheck?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5152,7 +5159,8 @@ export class Port extends BaseClient {
     _id?: PortID,
     _description?: string,
     _port?: number,
-    _protocol?: NetworkProtocol
+    _protocol?: NetworkProtocol,
+    _skipHealthCheck?: boolean
   ) {
     super(parent)
 
@@ -5160,6 +5168,7 @@ export class Port extends BaseClient {
     this._description = _description
     this._port = _port
     this._protocol = _protocol
+    this._skipHealthCheck = _skipHealthCheck
   }
 
   /**
@@ -5226,6 +5235,23 @@ export class Port extends BaseClient {
         ...this._queryTree,
         {
           operation: "protocol",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+  skipHealthCheck = async (): Promise<boolean> => {
+    if (this._skipHealthCheck) {
+      return this._skipHealthCheck
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "skipHealthCheck",
         },
       ],
       await this._ctx.connection()

@@ -10,9 +10,10 @@ import (
 
 // Port configures a port to exposed from a container or service.
 type Port struct {
-	Port        int             `field:"true" doc:"The port number."`
-	Protocol    NetworkProtocol `field:"true" doc:"The transport layer protocol."`
-	Description *string         `field:"true" doc:"The port description."`
+	Port            int             `field:"true" doc:"The port number."`
+	Protocol        NetworkProtocol `field:"true" doc:"The transport layer protocol."`
+	Description     *string         `field:"true" doc:"The port description."`
+	SkipHealthCheck bool            `field:"true" doc:"Skip the health check when run as a service."`
 }
 
 func (Port) Type() *ast.Type {

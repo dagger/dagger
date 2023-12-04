@@ -39,4 +39,10 @@ class Port extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('protocol');
         return \Dagger\NetworkProtocol::from((string)$this->queryLeaf($leafQueryBuilder, 'protocol'));
     }
+
+    public function skipHealthCheck(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('skipHealthCheck');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'skipHealthCheck');
+    }
 }

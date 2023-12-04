@@ -650,6 +650,9 @@ pub struct ContainerWithExposedPortOpts<'a> {
     /// Transport layer network protocol
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
+    /// Skip the health check when run as a service.
+    #[builder(setter(into, strip_option), default)]
+    pub skip_health_check: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts<'a> {
@@ -1475,6 +1478,9 @@ impl Container {
         }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(skip_health_check) = opts.skip_health_check {
+            query = query.arg("skipHealthCheck", skip_health_check);
         }
         return Container {
             proc: self.proc.clone(),
@@ -3824,6 +3830,10 @@ impl Port {
     }
     pub async fn protocol(&self) -> Result<NetworkProtocol, DaggerError> {
         let query = self.selection.select("protocol");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn skip_health_check(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("skipHealthCheck");
         query.execute(self.graphql_client.clone()).await
     }
 }

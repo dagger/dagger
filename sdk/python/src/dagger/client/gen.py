@@ -589,6 +589,7 @@ class Container(Type):
             _description="description",
             _port="port",
             _protocol="protocol",
+            _skip_health_check="skipHealthCheck",
         )
         return await _ctx.execute(list[Port])
 
@@ -1173,6 +1174,7 @@ class Container(Type):
         *,
         protocol: NetworkProtocol | None = "TCP",
         description: str | None = None,
+        skip_health_check: bool | None = False,
     ) -> "Container":
         """Expose a network port.
 
@@ -1190,11 +1192,14 @@ class Container(Type):
             Transport layer network protocol
         description:
             Optional port description
+        skip_health_check:
+            Skip the health check when run as a service.
         """
         _args = [
             Arg("port", port),
             Arg("protocol", protocol, "TCP"),
             Arg("description", description, None),
+            Arg("skipHealthCheck", skip_health_check, False),
         ]
         _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)
@@ -4243,11 +4248,13 @@ class Port(Type):
         "_description",
         "_port",
         "_protocol",
+        "_skip_health_check",
     )
 
     _description: str | None
     _port: int | None
     _protocol: NetworkProtocol | None
+    _skip_health_check: bool | None
 
     @typecheck
     async def description(self) -> str | None:
@@ -4337,6 +4344,26 @@ class Port(Type):
         _args: list[Arg] = []
         _ctx = self._select("protocol", _args)
         return await _ctx.execute(NetworkProtocol)
+
+    @typecheck
+    async def skip_health_check(self) -> bool:
+        """Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_skip_health_check"):
+            return self._skip_health_check
+        _args: list[Arg] = []
+        _ctx = self._select("skipHealthCheck", _args)
+        return await _ctx.execute(bool)
 
 
 class Client(Root):
@@ -5124,6 +5151,7 @@ class Service(Type):
             _description="description",
             _port="port",
             _protocol="protocol",
+            _skip_health_check="skipHealthCheck",
         )
         return await _ctx.execute(list[Port])
 

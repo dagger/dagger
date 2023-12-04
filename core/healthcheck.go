@@ -34,7 +34,9 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 
 	args := []string{"check", d.host}
 	for _, port := range d.ports {
-		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
+		if !port.SkipHealthCheck {
+			args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
+		}
 	}
 
 	// show health-check logs in a --debug vertex

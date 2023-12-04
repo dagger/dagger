@@ -40,4 +40,13 @@ defmodule Dagger.Port do
       execute(selection, port.client)
     end
   )
+
+  (
+    @doc ""
+    @spec skip_health_check(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def skip_health_check(%__MODULE__{} = port) do
+      selection = select(port.selection, "skipHealthCheck")
+      execute(selection, port.client)
+    end
+  )
 end

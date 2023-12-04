@@ -476,6 +476,9 @@ type Container {
 
     """Transport layer network protocol"""
     protocol: NetworkProtocol = TCP
+
+    """Skip the health check when run as a service."""
+    skipHealthCheck: Boolean = false
   ): Container!
 
   """
@@ -1522,6 +1525,7 @@ type Port {
   id: PortID!
   port: Int!
   protocol: NetworkProtocol!
+  skipHealthCheck: Boolean!
 }
 
 """Port forwarding rules for tunneling network traffic."""
