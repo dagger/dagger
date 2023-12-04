@@ -245,6 +245,7 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.field
       msg: string
