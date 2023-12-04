@@ -126,7 +126,20 @@ type blobSourceInstance struct {
 }
 
 func (bs *blobSourceInstance) CacheKey(context.Context, session.Group, int) (string, string, solver.CacheOpts, bool, error) {
-	return "session:" + bs.id.Digest.String(), bs.id.Digest.String(), nil, true, nil
+	// HACK: ideally, we should return a "session:" prefix (turning into a "random:"
+	// digest), which ensures that we don't upload the local directory into the cache.
+	// However, this is currently unavoidable, since we already upload the local
+	// directory because of the cached llb.Copy in client.LocalImport.
+	//
+	// Since we're already exporting the local directory anyways, we might as well
+	// just cause it to upload here, which lets us match on the definition-based
+	// fast cache for blob sources.
+	// return "session:" + bs.id.Digest.String(), bs.id.Digest.String(), nil, true, nil
+
+	// Definition-based fast cache does not currently match on "random:" digests
+	// (because the exported cache loses these pieces). This requires an upstream
+	// buildkit fix.
+	return "dagger:" + bs.id.Digest.String(), bs.id.Digest.String(), nil, true, nil
 }
 
 func (bs *blobSourceInstance) Snapshot(ctx context.Context, _ session.Group) (cache.ImmutableRef, error) {
