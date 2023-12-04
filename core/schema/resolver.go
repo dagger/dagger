@@ -65,25 +65,25 @@ func (r idableObjectResolver[T, I]) FromID(id string) (any, error) {
 
 func (r idableObjectResolver[T, I]) ToID(x any) (string, error) {
 	switch t := x.(type) {
-	case T:
-		id, err := resourceid.Encode(&t)
-		if err != nil {
+	case string:
+		if err := resourceid.ID[T](t).Validate(); err != nil {
 			return "", err
 		}
-		return string(id), nil
+		return t, nil
+	case I:
+		return string(t), nil
 	case *T:
 		id, err := resourceid.Encode(t)
 		if err != nil {
 			return "", err
 		}
 		return string(id), nil
-	case I:
-		return string(t), nil
-	case string:
-		if err := resourceid.ID[T](t).Validate(); err != nil {
+	case T:
+		id, err := resourceid.Encode(&t)
+		if err != nil {
 			return "", err
 		}
-		return t, nil
+		return string(id), nil
 	default:
 		return "", fmt.Errorf("cannot convert %T to ID", x)
 	}
