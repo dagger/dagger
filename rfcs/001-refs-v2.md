@@ -1,22 +1,25 @@
 ## v2 refs
 
-A ref is a short string that refers to a versioned and/or content-addressed
-object, such as a file or a directory stored in a Git repository, or artifacts
-in an OCI registry.
+A ref is a short URI-like string that refers to a versioned and/or
+content-addressed object, such as a file or a directory stored in a Git
+repository or artifacts in an OCI registry.
 
 ## Format
 
 The following diagram summarizes the format with `[brackets]` denoting optional
 components:
 
-    [git://]example.org/acme/repo[//subdir/foo][:v0.10.1][@d44c734db]
-     └┬┘    └─────────┬─────────┘   └────┬───┘   └──┬──┘   └───┬───┘
-    scheme          source            subpath      tag       hash 
+              authority
+             ┌────┴────┐
+    [git:][//example.org/]acme/repo[//subdir/foo][:v0.10.1][@d44c734db]
+     └┬─┘  └──────────┬───────────┘ └─────┬────┘   └──┬──┘   └───┬───┘
+    scheme          source             subpath       tag       digest
 
-* `git://` is an optional URI scheme, with `git://` as the default. See
-  [Proposed schemes](#proposed-schemes) for more information.
+* `git:` is an optional URI scheme. See [Proposed schemes](#proposed-schemes)
+  for more information.
 
-* `example.org/acme/repo` identifies the source location.
+* `//example.org/acme/repo` identifies the source, i.e. the object to be
+  fetched.
 
 * `//subdir/foo` is a subpath within the fetched source, using double-slash
   (`//`) to distinguish it from the source path.
@@ -24,8 +27,8 @@ components:
 * `:v0.10.1` is an optional tag. The subpath is prepended to semver tags, so
   this actually corresponds to the tag `subdir/foo/v1.2.3`.
 
-* `@d44c734db` is an optional hash of the referenced content. For a Git ref this is
-  a commit hash. For other schemes this may be a `sha256:...` digest.
+* `@d44c734db` is an optional digest of the referenced content. For a Git ref
+  this is a commit hash. For other schemes this may be a `sha256:...` digest.
 
 The URI scheme determines the interpretation of the rest of the ref, but every
 ref always has the same components with the same delimiters (`://`, `//`, `:`,
@@ -47,6 +50,8 @@ git://github.com/a/b//c
 
 ## Goals
 
+* Can refer to any versioned resource, but typically files or directories.
+
 * Can specify a directory within the fetched (and possibly unpacked) directory.
 
 * Docker-style semver shorthand (v1.2 means v1.2.0 >= x < v1.3.0).
@@ -55,9 +60,13 @@ git://github.com/a/b//c
 
 * Use schemes for syntax sugar (with a high threshold for entry).
 
-* Can refer to any semver'd URL-able resource, but typically files or directories.
-
 * Can be used for both module refs and CLI flags.
+
+## Non-goals
+
+* Refs are platform-agnostic and refer to sources, not binaries. It is a
+  non-goal to treat a link to a specific tarball like
+  `dagger_v0.9.3_linux_amd64.tar.gz` like a ref.
 
 ## Constraints
 
@@ -72,46 +81,68 @@ git://github.com/a/b//c
 We might not need all these, just throwing ideas around:
 
 * no scheme
-    * `.`, `..`, `./foo`, `../foo`, `/foo` are interpreted as local refs
-    * otherwise, defaults to `git://`
+    * A ref's scheme may be omitted, in which case it will be inferred based on
+      whether the ref's source appears to refer to a remote authority.
+    * For a source like `github.com/...` the remote default scheme will be
+      used, e.g. `git://` or `dv://`.
+    * For a source like `foo` the local default scheme will be used, e.g.
+      `file:`, though it would also make sense to default this to something
+      like `oci:` for image refs.
+    * `.`, `..`, `./foo`, `../foo`, `/foo`, and `foo` are all interpreted as
+      local refs.
+
+* `file://foo/bar/baz`
+    * refers to a path on the local filesystem
 
 * `git://github.com/foo/bar//baz`
-    * will clone `https://github.com/foo/bar` and consume the `./baz` subdirectory
+    * refers to the `/baz` subdirectory of the `https://github.com/foo/bar`
+      repository
 
-* `https://github.com/foo/bar//baz`
-    * TODO: this is either same as above or references a single HTTP file to download + unpack, unsure
-    * TODO: unpacking should maybe be determined by scheme `zip://github.com/vito/daggerverse/archive/refs/heads/v1.2.3.zip//apko@sha256:...`
-
-* `gh://vito/daggerverse//apko`
+* `gh:vito/daggerverse/apko`
     * shorthand for `git://github.com/vito/daggerverse//apko`
-    * Can use github.com HTTP downloads as an optimization if needed
+    * `/apko` is inferred as subpath as all GitHub repos are `owner/repo`
 
-* `mod://vito//apko`
+* `gh://git.acme.com/vito/daggerverse/apko`
+    * shorthand for `git://git.acme.com/vito/daggerverse//apko`
+    * `//git.acme.com` indicates alternative GitHub host
+    * `/apko` is inferred as subpath as all GitHub repos are `owner/repo`
+
+* `dv:vito//apko`
     * shorthand for `git://github.com/vito/daggerverse//apko`
-    * Can use github.com HTTP downloads as an optimization if needed
 
-* `mod://git.acme.com/vito//apko`
+* `dv:aweris/gale//gale`
+    * shorthand for `git://github.com/aweris/gale//daggerverse/gale`
+
+* `dv://git.acme.com/vito//apko`
     * shorthand for `git://git.acme.com/vito/daggerverse//apko`
 
-* `mod://gitlab.com/dir1/dir2/dir3//apko`
-    * shorthand for `git://gitlab.com/dir1/dir2/dir3//daggerverse//apko`
+* `dv://gitlab.com/group-1/group-2/group-3//apko`
+    * shorthand for `git://gitlab.com/group-1/group-2/group-3/daggerverse//apko`
+
+### Possible future schemes
+
+* `https://github.com/foo/bar//baz`
+    * same as `git://`
+    * will clone `https://github.com/foo/bar` and consume the `./baz` subdirectory
+    * It was tempting to have this represent a plain old HTTP download, but in
+      practice those URLs tend to bake in the version and even a platform,
+      which goes against the spirit of refs.
+    * Since it's not obvious whether we'll need this, I propose we just skip it
+      for now.
 
 * `oci://alpine`
-    * OCI registry (TODO artifacts? images? who knows!)
-
-* `dag://vito/booklit`
-    * shorthand for `git://github.com/vito/booklit//dag`
-    * alternative to `mod://vito/booklit//dag`
-    * `dagger -m dag://vito/booklit download binary` if we want to branch into
-      a package distribution mechanism (would be slick to also `chmod +x`)
-    * this would only be worth it if we imagine it being a common thing and/or
-      are interested in making `dag/` a convention
+    * An OCI registry ref
+    * Tags and digests work the same as with conventional registry refs
+    * Unclear what exactly we'll want to reference here, don't seem to need it
+      yet, but the door is open
+    * Maybe we transition `container.from` to a ref in a backwards-compatible way?
 
 ## Tagged refs
 
 A ref's tag helps a human identify and control the version of the source being
-referenced. While the hash component ultimately determines the content you
-receive, the tag component is what originally determines the hash.
+referenced. While the digest component ultimately determines the content you
+receive, the tag component is what originally discovers the digest, or allows a
+human to recognize where the digest comes from after the fact.
 
 When a tag is omitted the source is queried to find the latest version. If no
 versions are found, the source is queried to determine a default tag. For a Git
@@ -147,14 +178,14 @@ This is a crucial element of supporting Git monorepos.
 
 ## Pinned refs
 
-A ref is _pinned_ when it contains a hash component. Otherwise the ref is
+A ref is _pinned_ when it contains a digest component. Otherwise the ref is
 considered _moving_ - even if it contains a tag component.
 
 To support reproducible builds, a moving ref should always be pinned prior to
 being stored anywhere long-term (like `dagger.json`).
 
 The pinning process involves expanding the tag to an exact version (e.g. `v1`
-=> `v1.2.3`) and resolving the tag to a hash.
+=> `v1.2.3`) and resolving the tag to a digest.
 
 Assuming the latest version of Dagger is currently v0.9.3, the following moving
 refs all expand to the same pinned ref:
@@ -174,7 +205,7 @@ github.com/dagger/dagger:v0.9.3
 ```
 
 When it comes to data deduplication, you can also consider all of the above
-refs to be equivalent to any refs with the same source, subpath, and hash:
+refs to be equivalent to any refs with the same source, subpath, and digest:
 
 ```
 github.com/dagger/dagger@d44c734dbbbcecc75507003c07acabb16375891d
@@ -184,8 +215,8 @@ github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
 
 ## Crawling dependencies
 
-Let's say the module at `mod://vito//testcontainers:v1.2.3@deadbeef` has a
-local `../docker` ref as a dependency in its `dagger.json`:
+Let's say the module at `dv://vito//testcontainers:v1.2.3@deadbeef` has a local
+`../docker` ref as a dependency in its `dagger.json`:
 
 ```json
 {
@@ -199,8 +230,8 @@ local `../docker` ref as a dependency in its `dagger.json`:
 
 To crawl `../docker`, apply two steps to the origin ref:
 
-1. Drop the tag portion from the ref, leaving only the hash.
-  * An error must be raised if a hash is not present.
+1. Drop the tag portion from the ref, leaving only the digest.
+  * An error must be raised if a digest is not present.
 1. Combine the path with the origin ref's subpath.
   * An error must be raised if the result is outside of the source directory,
     i.e. if it begins with `../`.
@@ -208,9 +239,9 @@ To crawl `../docker`, apply two steps to the origin ref:
 Example:
 
 ```
-mod://vito//testcontainers:v1.2.3@deadbeef
+dv://vito//testcontainers:v1.2.3@deadbeef
 + ../docker
-= mod://vito//docker@deadbeef
+= dv://vito//docker@deadbeef
 ```
 
 Note that the `:v1.2.3` tag is dropped in the process. This is a mandatory step
