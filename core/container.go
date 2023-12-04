@@ -876,6 +876,7 @@ func (container *Container) withMounted(
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
+		Readonly:   readonly,
 	})
 
 	container.Services.Merge(svcs)
