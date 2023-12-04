@@ -64,8 +64,16 @@ func TestParsePragmaComment(t *testing.T) {
 		rest     string
 	}{
 		{
+			name:    "single key",
+			comment: "+foo",
+			expected: map[string]string{
+				"foo": "",
+			},
+			rest: "",
+		},
+		{
 			name:    "single key-value",
-			comment: "dagger:foo=bar",
+			comment: "+foo=bar",
 			expected: map[string]string{
 				"foo": "bar",
 			},
@@ -73,7 +81,7 @@ func TestParsePragmaComment(t *testing.T) {
 		},
 		{
 			name:    "single key-value with trailing",
-			comment: "dagger:foo=bar\n",
+			comment: "+foo=bar\n",
 			expected: map[string]string{
 				"foo": "bar",
 			},
@@ -81,7 +89,7 @@ func TestParsePragmaComment(t *testing.T) {
 		},
 		{
 			name:    "multiple key-value",
-			comment: "dagger:foo=bar\ndagger:baz=qux",
+			comment: "+foo=bar\n+baz=qux",
 			expected: map[string]string{
 				"foo": "bar",
 				"baz": "qux",
@@ -90,7 +98,7 @@ func TestParsePragmaComment(t *testing.T) {
 		},
 		{
 			name:    "interpolated key-value",
-			comment: "line 1\ndagger:foo=bar\nline 2\ndagger:baz=qux\nline 3",
+			comment: "line 1\n+foo=bar\nline 2\n+baz=qux\nline 3",
 			expected: map[string]string{
 				"foo": "bar",
 				"baz": "qux",
@@ -99,7 +107,7 @@ func TestParsePragmaComment(t *testing.T) {
 		},
 		{
 			name:    "interpolated key-value with trailing",
-			comment: "line 1\ndagger:foo=bar\nline 2\ndagger:baz=qux\nline 3\n",
+			comment: "line 1\n+foo=bar\nline 2\n+baz=qux\nline 3\n",
 			expected: map[string]string{
 				"foo": "bar",
 				"baz": "qux",

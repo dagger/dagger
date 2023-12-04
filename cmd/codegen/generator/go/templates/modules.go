@@ -999,7 +999,11 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		defaultValue = v
 	}
 	if v, ok := pragmas["optional"]; ok {
-		optional, _ = strconv.ParseBool(v)
+		if v == "" {
+			optional = true
+		} else {
+			optional, _ = strconv.ParseBool(v)
+		}
 	}
 
 	return paramSpec{
@@ -1193,14 +1197,20 @@ func findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statem
 	}
 }
 
-var pragmaCommentRegexp = regexp.MustCompile(`dagger:\s*(\S+)=(.+)(\n|$)`)
+var pragmaCommentRegexp = regexp.MustCompile(`\+\s*(\S+?)(?:=(.+))?(?:\n|$)`)
 
 // parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
 func parsePragmaComment(comment string) (data map[string]string, rest string) {
 	data = map[string]string{}
 	lastEnd := 0
 	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
-		key, value := comment[v[2]:v[3]], comment[v[4]:v[5]]
+		var key, value string
+		if v[2] != -1 {
+			key = comment[v[2]:v[3]]
+		}
+		if v[4] != -1 {
+			value = comment[v[4]:v[5]]
+		}
 		data[key] = value
 
 		rest += comment[lastEnd:v[0]]

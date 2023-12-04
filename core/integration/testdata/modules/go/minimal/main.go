@@ -135,12 +135,12 @@ func (m *Minimal) EchoOptsPragmas(
 	msg string,
 
 	// String to append to the echoed message
-	// dagger: optional=true
-	// dagger: default=...
+	// +optional=true
+	// +default=...
 	suffix string,
 	// Number of times to repeat the message
-	// dagger: optional=true
-	times int, // dagger: default=3
+	// +optional
+	times int, // +default=3
 ) string {
 	return strings.Repeat(msg+suffix, times)
 }
