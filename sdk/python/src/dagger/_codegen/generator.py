@@ -136,6 +136,19 @@ class Context:
         self.remaining.remove(name)
         self.defined.add(name)
 
+    def render_types(self, s: str) -> str:
+        """Render type names as forward references if they haven't been defined yet."""
+        if not self.remaining:
+            return s
+
+        # Add quotes to names that haven't been defined yet (forward references).
+        # Need to fix optionals because `"File" | None` is not a valid annotation.
+        # The whole annotation needs to be quoted (`"File | None"`).
+        return re.sub(rf"\b({'|'.join(self.remaining)})\b", r'"\1"', s).replace(
+            '" | None',
+            ' | None"',
+        )
+
 
 _H = TypeVar("_H", bound=GraphQLNamedType)
 """Handler generic type"""
@@ -184,7 +197,6 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         import warnings
         from collections.abc import Callable, Sequence
         from dataclasses import dataclass
-        from typing import Optional
 
         from ._core import Arg, Root
         from ._guards import typecheck
@@ -473,7 +485,7 @@ def format_input_type(t: GraphQLInputType, id_map: IDMap) -> str:
         t = t.of_type
         fmt = "%s"
     else:
-        fmt = "Optional[%s]"
+        fmt = "%s | None"
 
     if is_list_type(t):
         return fmt % f"list[{format_input_type(t.of_type, id_map)}]"
@@ -558,12 +570,7 @@ class _InputField:
     def __str__(self) -> Iterator[str]:
         """Output for an InputObject field."""
         yield ""
-
-        field = self.as_param()
-        # Add quotes around types that haven't been defined yet (forward references).
-        if self.ctx.remaining:
-            field = re.sub(rf"\b({'|'.join(self.ctx.remaining)})\b", r'"\1"', field)
-        yield field
+        yield self.ctx.render_types(self.as_param())
 
         if self.description:
             yield doc(self.description)
@@ -706,12 +713,9 @@ class _ObjectField:
         # arbitrary heuristic to force trailing comma in long signatures
         if len(params) > 40:  # noqa: PLR2004
             params = f"{params},"
-        sig = f"def {self.name}({params}) -> {self.type}:"
+        sig = self.ctx.render_types(f"def {self.name}({params}) -> {self.type}:")
         if self.is_exec:
             sig = f"async {sig}"
-        # Add quotes around types that haven't been defined yet (forward references).
-        if self.ctx.remaining:
-            sig = re.sub(rf"\b({'|'.join(self.ctx.remaining)})\b", r'"\1"', sig)
         return sig
 
     @joiner
