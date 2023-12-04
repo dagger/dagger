@@ -1391,7 +1391,7 @@ func (m *Foo) Get() string {
 			sdk: "python",
 			source: `from typing import Self
 
-from dagger.mod import field, function, object_type
+from dagger import field, function, object_type
 
 @object_type
 class Foo:
@@ -1483,7 +1483,7 @@ func (m *Foo) Uppers(msg []Message) []Message {
 		},
 		{
 			sdk: "python",
-			source: `from dagger.mod import field, function, object_type
+			source: `from dagger import field, function, object_type
 
 @object_type
 class Message:
@@ -1897,12 +1897,11 @@ func TestModuleUseLocal(t *testing.T) {
 			With(daggerExec("mod", "init", "--name=use", "--sdk=python")).
 			With(daggerExec("mod", "install", "./dep")).
 			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
-				Contents: `from dagger.mod import function
-import dagger
+				Contents: `from dagger import dag, function
 
 @function
 def use_hello() -> str:
-    return dagger.dep().hello()
+    return dag.dep().hello()
 `,
 			})
 
@@ -1984,12 +1983,11 @@ func TestModuleCodegenonDepChange(t *testing.T) {
 			With(daggerExec("mod", "init", "--name=use", "--sdk=python")).
 			With(daggerExec("mod", "install", "./dep")).
 			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
-				Contents: `from dagger.mod import function
-import dagger
+				Contents: `from dagger import dag, function
 
 @function
 def use_hello() -> str:
-    return dagger.dep().hello()
+    return dag.dep().hello()
 `,
 			})
 
@@ -2013,12 +2011,11 @@ def use_hello() -> str:
 
 		modGen = modGen.
 			WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
-				Contents: `from dagger.mod import function
-import dagger
+				Contents: `from dagger import dag, function
 
 @function
 def use_hello() -> str:
-    return dagger.dep().hellov2()
+    return dag.dep().hellov2()
 `,
 			})
 
@@ -2153,7 +2150,7 @@ func (m *Test) GimmeDirEnts(ctx context.Context) ([]string, error) {
 			{
 				sdk: "python",
 				source: `import dagger
-from dagger.mod import field, function, object_type
+from dagger import field, function, object_type
 
 @object_type
 class Test:
@@ -2259,8 +2256,7 @@ type Test struct {
 			},
 			{
 				sdk: "python",
-				source: `import dagger
-from dagger.mod import field, function, object_type
+				source: `from dagger import dag, field, function, object_type
 
 @object_type
 class Test:
@@ -2269,7 +2265,7 @@ class Test:
     @classmethod
     async def create(cls) -> "Test":
         return cls(alpine_version=await (
-            dagger.container()
+            dag.container()
             .from_("alpine:3.18.4")
             .file("/etc/alpine-release")
             .contents()
@@ -2318,7 +2314,7 @@ type Test struct {
 			},
 			{
 				sdk: "python",
-				source: `from dagger.mod import object_type, field
+				source: `from dagger import object_type, field
 
 @object_type
 class Test:
@@ -2360,12 +2356,12 @@ class Test:
 			WithWorkdir("/work/test").
 			With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
 			With(sdkSource("python", fmt.Sprintf(`import dagger
-from dagger.mod import object_type, field
+from dagger import dag, object_type, field
 
 @object_type
 class Test:
     foo: dagger.File = field(default=lambda: (
-        dagger.directory()
+        dag.directory()
         .with_new_file("foo.txt", contents="%s")
         .file("foo.txt")
     ))
@@ -2516,7 +2512,7 @@ version = "0.0.0"
 				Contents: "from . import notmain\n",
 			}).
 			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
-				Contents: `from dagger.mod import function
+				Contents: `from dagger import function
 
 @function
 def hello() -> str:
@@ -2545,7 +2541,7 @@ func TestModulePythonReturnSelf(t *testing.T) {
 		WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 			Contents: `from typing import Self
 
-from dagger.mod import field, function, object_type
+from dagger import field, function, object_type
 
 @object_type
 class Foo:
@@ -2619,7 +2615,7 @@ func TestModuleLotsOfFunctions(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		mainSrc := `from dagger.mod import function
+		mainSrc := `from dagger import function
 		`
 
 		for i := 0; i < funcCount; i++ {

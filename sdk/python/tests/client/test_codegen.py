@@ -29,15 +29,7 @@ from dagger._codegen.generator import Scalar as ScalarHandler
 @pytest.fixture()
 def ctx():
     return Context(
-        id_map={
-            "CacheVolumeID": "CacheVolume",
-            "FileID": "File",
-            "SecretID": "Secret",
-        },
-        id_query_map={
-            "ContainerID": "container",
-            "DirectoryID": "directory",
-        },
+        ids=frozenset({}),
         simple_objects_map={},
         remaining={"Secret"},
     )
@@ -70,20 +62,20 @@ opts = InputObject(
     ("graphql", "expected"),
     [
         (NonNull(List(NonNull(String))), "list[str]"),
-        (List(String), "Optional[list[Optional[str]]]"),
-        (List(NonNull(String)), "Optional[list[str]]"),
+        (List(String), "list[str | None] | None"),
+        (List(NonNull(String)), "list[str] | None"),
         (NonNull(Scalar("FileID")), "File"),
-        (Scalar("FileID"), "Optional[File]"),
+        (Scalar("FileID"), "File | None"),
         (NonNull(opts), "Options"),
-        (opts, "Optional[Options]"),
+        (opts, "Options | None"),
         (NonNull(List(NonNull(opts))), "list[Options]"),
-        (NonNull(List(opts)), "list[Optional[Options]]"),
-        (List(NonNull(opts)), "Optional[list[Options]]"),
-        (List(opts), "Optional[list[Optional[Options]]]"),
+        (NonNull(List(opts)), "list[Options | None]"),
+        (List(NonNull(opts)), "list[Options] | None"),
+        (List(opts), "list[Options | None] | None"),
     ],
 )
-def test_format_input_type(graphql, expected, ctx: Context):
-    assert format_input_type(graphql, ctx.id_map) == expected
+def test_format_input_type(graphql, expected):
+    assert format_input_type(graphql) == expected
 
 
 cache_volume = Object(
@@ -101,14 +93,14 @@ cache_volume = Object(
     ("graphql", "expected"),
     [
         (NonNull(List(NonNull(String))), "list[str]"),
-        (List(String), "Optional[list[Optional[str]]]"),
-        (List(NonNull(String)), "Optional[list[str]]"),
+        (List(String), "list[str | None] | None"),
+        (List(NonNull(String)), "list[str] | None"),
         (NonNull(Scalar("FileID")), "FileID"),
-        (Scalar("FileID"), "Optional[FileID]"),
+        (Scalar("FileID"), "FileID | None"),
         (NonNull(cache_volume), "CacheVolume"),
         (cache_volume, "CacheVolume"),
         (List(NonNull(cache_volume)), "list[CacheVolume]"),
-        (List(cache_volume), "list[Optional[CacheVolume]]"),
+        (List(cache_volume), "list[CacheVolume | None]"),
     ],
 )
 def test_format_output_type(graphql, expected):
@@ -118,11 +110,11 @@ def test_format_output_type(graphql, expected):
 @pytest.mark.parametrize(
     ("name", "args", "expected"),
     [
-        ("args", (NonNull(List(String)),), "args: Sequence[Optional[str]]"),
+        ("args", (NonNull(List(String)),), "args: Sequence[str | None]"),
         ("secret", (NonNull(Scalar("SecretID")),), "secret: Secret"),
-        ("secret", (Scalar("SecretID"),), "secret: Optional[Secret] = None"),
-        ("from", (String, None), "from_: Optional[str] = None"),
-        ("lines", (Int, 1), "lines: Optional[int] = 1"),
+        ("secret", (Scalar("SecretID"),), "secret: Secret | None = None"),
+        ("from", (String, None), "from_: str | None = None"),
+        ("lines", (Int, 1), "lines: int | None = 1"),
         (
             "configPath",
             (NonNull(String), "/dagger.json"),

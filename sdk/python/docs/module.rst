@@ -3,7 +3,7 @@ Module
 
 Experimental Dagger modules support.
 
-.. currentmodule:: dagger.mod
+.. currentmodule:: dagger
 
 .. autodecorator:: object_type
 

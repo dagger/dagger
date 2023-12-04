@@ -1,4 +1,6 @@
-from dagger.mod import Annotated, Doc, field, function, object_type
+from typing import Annotated
+
+from dagger import Doc, field, function, object_type
 
 
 @object_type

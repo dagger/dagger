@@ -24,7 +24,13 @@ from ._connection import Connection as Connection
 from ._connection import connection as connection
 from ._connection import connect as connect
 from ._connection import close as close
-from ._connection import closing as closing
+
+# Modules.
+from .mod import Arg as Arg
+from .mod import Doc as Doc
+from .mod import field as field
+from .mod import function as function
+from .mod import object_type as object_type
 
 # Re-export imports so they look like they live directly in this package.
 for _value in list(locals().values()):

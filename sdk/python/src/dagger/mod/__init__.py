@@ -1,4 +1,3 @@
-from typing import Annotated
 from typing_extensions import Doc
 
 
@@ -18,10 +17,8 @@ def default_module() -> Module:
 
 
 __all__ = [
-    "Annotated",
     "Arg",
-    "Doc",
-    "Module",
+    "Doc",  # Only re-exported because it's in `typing_extensions`.
     "field",
     "function",
     "object_type",

@@ -1,4 +1,4 @@
-from dagger.mod import function
+from dagger import function
 
 @function
 def fn(id: str) -> str:

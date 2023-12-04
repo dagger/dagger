@@ -3,7 +3,6 @@
 import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Optional
 
 from ._core import Arg, Root
 from ._guards import typecheck
@@ -181,10 +180,10 @@ class PortForward(Input):
     backend: int
     """Destination port for traffic."""
 
-    frontend: Optional[int] = None
+    frontend: int | None = None
     """Port to expose to clients. If unspecified, a default will be chosen."""
 
-    protocol: Optional[NetworkProtocol] = None
+    protocol: NetworkProtocol | None = None
     """Protocol to use for traffic."""
 
 
@@ -195,7 +194,7 @@ class CacheVolume(Type):
     async def id(self) -> CacheVolumeID:
         """Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -212,14 +211,6 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return CacheVolumeID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadCacheVolumeFromID"
 
 
 class Container(Type):
@@ -239,9 +230,9 @@ class Container(Type):
     def as_tarball(
         self,
         *,
-        platform_variants: Optional[Sequence["Container"]] = None,
-        forced_compression: Optional[ImageLayerCompression] = None,
-        media_types: Optional[ImageMediaTypes] = None,
+        platform_variants: Sequence["Container"] | None = None,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = None,
     ) -> "File":
         """Returns a File representing the container serialized to a tarball.
 
@@ -280,10 +271,10 @@ class Container(Type):
         self,
         context: "Directory",
         *,
-        dockerfile: Optional[str] = None,
-        build_args: Optional[Sequence[BuildArg]] = None,
-        target: Optional[str] = None,
-        secrets: Optional[Sequence["Secret"]] = None,
+        dockerfile: str | None = None,
+        build_args: Sequence[BuildArg] | None = None,
+        target: str | None = None,
+        secrets: Sequence["Secret"] | None = None,
     ) -> "Container":
         """Initializes this container from a Dockerfile build.
 
@@ -319,12 +310,12 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    async def default_args(self) -> Optional[list[str]]:
+    async def default_args(self) -> list[str] | None:
         """Retrieves default arguments for future commands.
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -338,7 +329,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultArgs", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
     def directory(self, path: str) -> "Directory":
@@ -358,12 +349,12 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    async def entrypoint(self) -> Optional[list[str]]:
+    async def entrypoint(self) -> list[str] | None:
         """Retrieves entrypoint to be prepended to the arguments of all commands.
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -377,10 +368,10 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
-    async def env_variable(self, name: str) -> Optional[str]:
+    async def env_variable(self, name: str) -> str | None:
         """Retrieves the value of the specified environment variable.
 
         Parameters
@@ -390,7 +381,7 @@ class Container(Type):
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -406,7 +397,7 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("envVariable", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def env_variables(self) -> list["EnvVariable"]:
@@ -450,9 +441,9 @@ class Container(Type):
         self,
         path: str,
         *,
-        platform_variants: Optional[Sequence["Container"]] = None,
-        forced_compression: Optional[ImageLayerCompression] = None,
-        media_types: Optional[ImageMediaTypes] = None,
+        platform_variants: Sequence["Container"] | None = None,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = None,
     ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platform variants.
@@ -562,7 +553,7 @@ class Container(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -581,22 +572,14 @@ class Container(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ContainerID)
 
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ContainerID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadContainerFromID"
-
     @typecheck
-    async def image_ref(self) -> Optional[str]:
+    async def image_ref(self) -> str | None:
         """The unique image reference which can only be retrieved immediately
         after the 'Container.From' call.
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -610,14 +593,14 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("imageRef", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     def import_(
         self,
         source: "File",
         *,
-        tag: Optional[str] = None,
+        tag: str | None = None,
     ) -> "Container":
         """Reads the container from an OCI tarball.
 
@@ -643,12 +626,12 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    async def label(self, name: str) -> Optional[str]:
+    async def label(self, name: str) -> str | None:
         """Retrieves the value of the specified label.
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -664,7 +647,7 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("label", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def labels(self) -> list["Label"]:
@@ -704,8 +687,8 @@ class Container(Type):
         self,
         name: str,
         *,
-        description: Optional[str] = None,
-        labels: Optional[Sequence[PipelineLabel]] = None,
+        description: str | None = None,
+        labels: Sequence[PipelineLabel] | None = None,
     ) -> "Container":
         """Creates a named sub-pipeline
 
@@ -753,9 +736,9 @@ class Container(Type):
         self,
         address: str,
         *,
-        platform_variants: Optional[Sequence["Container"]] = None,
-        forced_compression: Optional[ImageLayerCompression] = None,
-        media_types: Optional[ImageMediaTypes] = None,
+        platform_variants: Sequence["Container"] | None = None,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = None,
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
@@ -919,12 +902,12 @@ class Container(Type):
         return self.sync().__await__()
 
     @typecheck
-    async def user(self) -> Optional[str]:
+    async def user(self) -> str | None:
         """Retrieves the user to be set for all commands.
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -938,13 +921,13 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     def with_default_args(
         self,
         *,
-        args: Optional[Sequence[str]] = None,
+        args: Sequence[str] | None = None,
     ) -> "Container":
         """Configures default arguments for future commands.
 
@@ -966,9 +949,9 @@ class Container(Type):
         path: str,
         directory: "Directory",
         *,
-        exclude: Optional[Sequence[str]] = None,
-        include: Optional[Sequence[str]] = None,
-        owner: Optional[str] = None,
+        exclude: Sequence[str] | None = None,
+        include: Sequence[str] | None = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus a directory written at the given path.
 
@@ -1021,7 +1004,7 @@ class Container(Type):
         name: str,
         value: str,
         *,
-        expand: Optional[bool] = None,
+        expand: bool | None = None,
     ) -> "Container":
         """Retrieves this container plus the given environment variable.
 
@@ -1049,12 +1032,12 @@ class Container(Type):
         self,
         args: Sequence[str],
         *,
-        skip_entrypoint: Optional[bool] = None,
-        stdin: Optional[str] = None,
-        redirect_stdout: Optional[str] = None,
-        redirect_stderr: Optional[str] = None,
-        experimental_privileged_nesting: Optional[bool] = None,
-        insecure_root_capabilities: Optional[bool] = None,
+        skip_entrypoint: bool | None = None,
+        stdin: str | None = None,
+        redirect_stdout: str | None = None,
+        redirect_stderr: str | None = None,
+        experimental_privileged_nesting: bool | None = None,
+        insecure_root_capabilities: bool | None = None,
     ) -> "Container":
         """Retrieves this container after executing the specified command inside
         it.
@@ -1109,8 +1092,8 @@ class Container(Type):
         self,
         port: int,
         *,
-        protocol: Optional[NetworkProtocol] = None,
-        description: Optional[str] = None,
+        protocol: NetworkProtocol | None = None,
+        description: str | None = None,
     ) -> "Container":
         """Expose a network port.
 
@@ -1141,8 +1124,8 @@ class Container(Type):
         path: str,
         source: "File",
         *,
-        permissions: Optional[int] = None,
-        owner: Optional[str] = None,
+        permissions: int | None = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus the contents of the given file copied to
         the given path.
@@ -1206,9 +1189,9 @@ class Container(Type):
         path: str,
         cache: CacheVolume,
         *,
-        source: Optional["Directory"] = None,
-        sharing: Optional[CacheSharingMode] = None,
-        owner: Optional[str] = None,
+        source: "Directory | None" = None,
+        sharing: CacheSharingMode | None = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus a cache volume mounted at the given
         path.
@@ -1250,7 +1233,7 @@ class Container(Type):
         path: str,
         source: "Directory",
         *,
-        owner: Optional[str] = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus a directory mounted at the given path.
 
@@ -1280,7 +1263,7 @@ class Container(Type):
         path: str,
         source: "File",
         *,
-        owner: Optional[str] = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus a file mounted at the given path.
 
@@ -1310,8 +1293,8 @@ class Container(Type):
         path: str,
         source: "Secret",
         *,
-        owner: Optional[str] = None,
-        mode: Optional[int] = None,
+        owner: str | None = None,
+        mode: int | None = None,
     ) -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
         given path.
@@ -1362,9 +1345,9 @@ class Container(Type):
         self,
         path: str,
         *,
-        contents: Optional[str] = None,
-        permissions: Optional[int] = None,
-        owner: Optional[str] = None,
+        contents: str | None = None,
+        permissions: int | None = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus a new file written at the given path.
 
@@ -1483,7 +1466,7 @@ class Container(Type):
         path: str,
         source: "Socket",
         *,
-        owner: Optional[str] = None,
+        owner: str | None = None,
     ) -> "Container":
         """Retrieves this container plus a socket forwarded to the given Unix
         socket path.
@@ -1558,7 +1541,7 @@ class Container(Type):
         self,
         port: int,
         *,
-        protocol: Optional[NetworkProtocol] = None,
+        protocol: NetworkProtocol | None = None,
     ) -> "Container":
         """Unexpose a previously exposed port.
 
@@ -1654,12 +1637,12 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    async def workdir(self) -> Optional[str]:
+    async def workdir(self) -> str | None:
         """Retrieves the working directory for all commands.
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -1673,7 +1656,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("workdir", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     def with_(self, cb: Callable[["Container"], "Container"]) -> "Container":
         """Call the provided callable with current Container.
@@ -1690,7 +1673,7 @@ class Directory(Type):
     def as_module(
         self,
         *,
-        source_subpath: Optional[str] = None,
+        source_subpath: str | None = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
@@ -1750,11 +1733,11 @@ class Directory(Type):
     def docker_build(
         self,
         *,
-        dockerfile: Optional[str] = None,
-        platform: Optional[Platform] = None,
-        build_args: Optional[Sequence[BuildArg]] = None,
-        target: Optional[str] = None,
-        secrets: Optional[Sequence["Secret"]] = None,
+        dockerfile: str | None = None,
+        platform: Platform | None = None,
+        build_args: Sequence[BuildArg] | None = None,
+        target: str | None = None,
+        secrets: Sequence["Secret"] | None = None,
     ) -> Container:
         """Builds a new Docker container from this directory.
 
@@ -1784,7 +1767,7 @@ class Directory(Type):
         return Container(_ctx)
 
     @typecheck
-    async def entries(self, *, path: Optional[str] = None) -> list[str]:
+    async def entries(self, *, path: str | None = None) -> list[str]:
         """Returns a list of files and directories at the given path.
 
         Parameters
@@ -1889,7 +1872,7 @@ class Directory(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -1907,21 +1890,13 @@ class Directory(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
 
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return DirectoryID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadDirectoryFromID"
-
     @typecheck
     def pipeline(
         self,
         name: str,
         *,
-        description: Optional[str] = None,
-        labels: Optional[Sequence[PipelineLabel]] = None,
+        description: str | None = None,
+        labels: Sequence[PipelineLabel] | None = None,
     ) -> "Directory":
         """Creates a named sub-pipeline
 
@@ -1970,8 +1945,8 @@ class Directory(Type):
         path: str,
         directory: "Directory",
         *,
-        exclude: Optional[Sequence[str]] = None,
-        include: Optional[Sequence[str]] = None,
+        exclude: Sequence[str] | None = None,
+        include: Sequence[str] | None = None,
     ) -> "Directory":
         """Retrieves this directory plus a directory written at the given path.
 
@@ -2003,7 +1978,7 @@ class Directory(Type):
         path: str,
         source: "File",
         *,
-        permissions: Optional[int] = None,
+        permissions: int | None = None,
     ) -> "Directory":
         """Retrieves this directory plus the contents of the given file copied to
         the given path.
@@ -2031,7 +2006,7 @@ class Directory(Type):
         self,
         path: str,
         *,
-        permissions: Optional[int] = None,
+        permissions: int | None = None,
     ) -> "Directory":
         """Retrieves this directory plus a new directory created at the given
         path.
@@ -2057,7 +2032,7 @@ class Directory(Type):
         path: str,
         contents: str,
         *,
-        permissions: Optional[int] = None,
+        permissions: int | None = None,
     ) -> "Directory":
         """Retrieves this directory plus a new file written at the given path.
 
@@ -2143,8 +2118,8 @@ class EnvVariable(Type):
         "_value",
     )
 
-    _name: Optional[str]
-    _value: Optional[str]
+    _name: str | None
+    _value: str | None
 
     @typecheck
     async def name(self) -> str:
@@ -2206,16 +2181,16 @@ class FieldTypeDef(Type):
         "_name",
     )
 
-    _description: Optional[str]
-    _name: Optional[str]
+    _description: str | None
+    _name: str | None
 
     @typecheck
-    async def description(self) -> Optional[str]:
+    async def description(self) -> str | None:
         """A doc string for the field, if any
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2231,7 +2206,7 @@ class FieldTypeDef(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def name(self) -> str:
@@ -2295,7 +2270,7 @@ class File(Type):
         self,
         path: str,
         *,
-        allow_parent_dir_path: Optional[bool] = None,
+        allow_parent_dir_path: bool | None = None,
     ) -> bool:
         """Writes the file to a file path on the host.
 
@@ -2333,7 +2308,7 @@ class File(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2350,14 +2325,6 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FileID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return FileID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadFileFromID"
 
     @typecheck
     async def size(self) -> int:
@@ -2436,8 +2403,8 @@ class Function(Type):
         "_name",
     )
 
-    _description: Optional[str]
-    _name: Optional[str]
+    _description: str | None
+    _name: str | None
 
     @typecheck
     async def args(self) -> list["FunctionArg"]:
@@ -2452,12 +2419,12 @@ class Function(Type):
         return await _ctx.execute(list[FunctionArg])
 
     @typecheck
-    async def description(self) -> Optional[str]:
+    async def description(self) -> str | None:
         """A doc string for the function, if any
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2473,7 +2440,7 @@ class Function(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def id(self) -> FunctionID:
@@ -2481,7 +2448,7 @@ class Function(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2498,14 +2465,6 @@ class Function(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return FunctionID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadFunctionFromID"
 
     @typecheck
     async def name(self) -> str:
@@ -2544,8 +2503,8 @@ class Function(Type):
         name: str,
         type_def: "TypeDef",
         *,
-        description: Optional[str] = None,
-        default_value: Optional[JSON] = None,
+        description: str | None = None,
+        default_value: JSON | None = None,
     ) -> "Function":
         """Returns the function with the provided argument
 
@@ -2598,18 +2557,18 @@ class FunctionArg(Type):
         "_name",
     )
 
-    _default_value: Optional[JSON]
-    _description: Optional[str]
-    _name: Optional[str]
+    _default_value: JSON | None
+    _description: str | None
+    _name: str | None
 
     @typecheck
-    async def default_value(self) -> Optional[JSON]:
+    async def default_value(self) -> JSON | None:
         """A default value to use for this argument when not explicitly set by
         the caller, if any
 
         Returns
         -------
-        Optional[JSON]
+        JSON | None
             An arbitrary JSON-encoded value.
 
         Raises
@@ -2623,15 +2582,15 @@ class FunctionArg(Type):
             return self._default_value
         _args: list[Arg] = []
         _ctx = self._select("defaultValue", _args)
-        return await _ctx.execute(Optional[JSON])
+        return await _ctx.execute(JSON | None)
 
     @typecheck
-    async def description(self) -> Optional[str]:
+    async def description(self) -> str | None:
         """A doc string for the argument, if any
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2647,7 +2606,7 @@ class FunctionArg(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def id(self) -> FunctionArgID:
@@ -2655,7 +2614,7 @@ class FunctionArg(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2672,14 +2631,6 @@ class FunctionArg(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionArgID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return FunctionArgID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadFunctionArgFromID"
 
     @typecheck
     async def name(self) -> str:
@@ -2794,14 +2745,14 @@ class FunctionCall(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def return_value(self, value: JSON) -> Optional[Void]:
+    async def return_value(self, value: JSON) -> Void | None:
         """Set the return value of the function call to the provided value.
         The value should be a string of the JSON serialization of the return
         value.
 
         Returns
         -------
-        Optional[Void]
+        Void | None
             The absense of a value.  A Null Void is used as a placeholder for
             resolvers that do not return anything.
 
@@ -2816,7 +2767,7 @@ class FunctionCall(Type):
             Arg("value", value),
         ]
         _ctx = self._select("returnValue", _args)
-        return await _ctx.execute(Optional[Void])
+        return await _ctx.execute(Void | None)
 
 
 class FunctionCallArgValue(Type):
@@ -2825,8 +2776,8 @@ class FunctionCallArgValue(Type):
         "_value",
     )
 
-    _name: Optional[str]
-    _value: Optional[JSON]
+    _name: str | None
+    _value: JSON | None
 
     @typecheck
     async def name(self) -> str:
@@ -2888,7 +2839,7 @@ class GeneratedCode(Type):
     async def id(self) -> GeneratedCodeID:
         """Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2906,22 +2857,14 @@ class GeneratedCode(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(GeneratedCodeID)
 
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return GeneratedCodeID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadGeneratedCodeFromID"
-
     @typecheck
-    async def vcs_generated_paths(self) -> Optional[list[str]]:
+    async def vcs_generated_paths(self) -> list[str] | None:
         """List of paths to mark generated in version control (i.e.
         .gitattributes)
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2935,15 +2878,15 @@ class GeneratedCode(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("vcsGeneratedPaths", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
-    async def vcs_ignored_paths(self) -> Optional[list[str]]:
+    async def vcs_ignored_paths(self) -> list[str] | None:
         """List of paths to ignore in version control (i.e. .gitignore)
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2957,7 +2900,7 @@ class GeneratedCode(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("vcsIgnoredPaths", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
     def with_vcs_generated_paths(self, paths: Sequence[str]) -> "GeneratedCode":
@@ -3016,8 +2959,8 @@ class GitRef(Type):
     def tree(
         self,
         *,
-        ssh_known_hosts: Optional[str] = None,
-        ssh_auth_socket: Optional["Socket"] = None,
+        ssh_known_hosts: str | None = None,
+        ssh_auth_socket: "Socket | None" = None,
     ) -> Directory:
         """The filesystem tree at this ref."""
         _args = [
@@ -3086,8 +3029,8 @@ class Host(Type):
         self,
         path: str,
         *,
-        exclude: Optional[Sequence[str]] = None,
-        include: Optional[Sequence[str]] = None,
+        exclude: Sequence[str] | None = None,
+        include: Sequence[str] | None = None,
     ) -> Directory:
         """Accesses a directory on the host.
 
@@ -3130,7 +3073,7 @@ class Host(Type):
         self,
         ports: Sequence[PortForward],
         *,
-        host: Optional[str] = "localhost",
+        host: str | None = "localhost",
     ) -> "Service":
         """Creates a service that forwards traffic to a specified address via the
         host.
@@ -3179,8 +3122,8 @@ class Host(Type):
         self,
         service: "Service",
         *,
-        native: Optional[bool] = False,
-        ports: Optional[Sequence[PortForward]] = None,
+        native: bool | None = False,
+        ports: Sequence[PortForward] | None = None,
     ) -> "Service":
         """Creates a tunnel that forwards traffic from the host to a service.
 
@@ -3237,8 +3180,8 @@ class Label(Type):
         "_value",
     )
 
-    _name: Optional[str]
-    _value: Optional[str]
+    _name: str | None
+    _value: str | None
 
     @typecheck
     async def name(self) -> str:
@@ -3310,12 +3253,12 @@ class Module(Type):
         "_source_directory_sub_path",
     )
 
-    _dependency_config: Optional[str]
-    _description: Optional[str]
-    _name: Optional[str]
-    _sdk: Optional[str]
-    _serve: Optional[Void]
-    _source_directory_sub_path: Optional[str]
+    _dependency_config: str | None
+    _description: str | None
+    _name: str | None
+    _sdk: str | None
+    _serve: Void | None
+    _source_directory_sub_path: str | None
 
     @typecheck
     async def dependencies(self) -> list["Module"]:
@@ -3357,12 +3300,12 @@ class Module(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
-    async def description(self) -> Optional[str]:
+    async def description(self) -> str | None:
         """The doc string of the module, if any
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3378,7 +3321,7 @@ class Module(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     def generated_code(self) -> GeneratedCode:
@@ -3393,7 +3336,7 @@ class Module(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -3410,14 +3353,6 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ModuleID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadModuleFromID"
 
     @typecheck
     async def name(self) -> str:
@@ -3480,7 +3415,7 @@ class Module(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def serve(self) -> Optional[Void]:
+    async def serve(self) -> Void | None:
         """Serve a module's API in the current session.
             Note: this can only be called once per session.
             In the future, it could return a stream or service to remove the
@@ -3488,7 +3423,7 @@ class Module(Type):
 
         Returns
         -------
-        Optional[Void]
+        Void | None
             The absense of a value.  A Null Void is used as a placeholder for
             resolvers that do not return anything.
 
@@ -3503,7 +3438,7 @@ class Module(Type):
             return self._serve
         _args: list[Arg] = []
         _ctx = self._select("serve", _args)
-        return await _ctx.execute(Optional[Void])
+        return await _ctx.execute(Void | None)
 
     @typecheck
     def source_directory(self) -> Directory:
@@ -3558,12 +3493,12 @@ class ModuleConfig(Type):
     dagger.json)"""
 
     @typecheck
-    async def dependencies(self) -> Optional[list[str]]:
+    async def dependencies(self) -> list[str] | None:
         """Modules that this module depends on.
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3577,15 +3512,15 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
-    async def exclude(self) -> Optional[list[str]]:
+    async def exclude(self) -> list[str] | None:
         """Exclude these file globs when loading the module root.
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3599,15 +3534,15 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exclude", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
-    async def include(self) -> Optional[list[str]]:
+    async def include(self) -> list[str] | None:
         """Include only these file globs when loading the module root.
 
         Returns
         -------
-        Optional[list[str]]
+        list[str] | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3621,7 +3556,7 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("include", _args)
-        return await _ctx.execute(Optional[list[str]])
+        return await _ctx.execute(list[str] | None)
 
     @typecheck
     async def name(self) -> str:
@@ -3646,13 +3581,13 @@ class ModuleConfig(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def root(self) -> Optional[str]:
+    async def root(self) -> str | None:
         """The root directory of the module's project, which may be above the
         module source code.
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3666,7 +3601,7 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("root", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def sdk(self) -> str:
@@ -3703,12 +3638,12 @@ class ObjectTypeDef(Type):
         return Function(_ctx)
 
     @typecheck
-    async def description(self) -> Optional[str]:
+    async def description(self) -> str | None:
         """The doc string for the object, if any
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3722,7 +3657,7 @@ class ObjectTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def fields(self) -> list[FieldTypeDef]:
@@ -3778,17 +3713,17 @@ class Port(Type):
         "_protocol",
     )
 
-    _description: Optional[str]
-    _port: Optional[int]
-    _protocol: Optional[NetworkProtocol]
+    _description: str | None
+    _port: int | None
+    _protocol: NetworkProtocol | None
 
     @typecheck
-    async def description(self) -> Optional[str]:
+    async def description(self) -> str | None:
         """The port description.
 
         Returns
         -------
-        Optional[str]
+        str | None
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3804,7 +3739,7 @@ class Port(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str | None)
 
     @typecheck
     async def port(self) -> int:
@@ -3902,8 +3837,8 @@ class Client(Root):
     def container(
         self,
         *,
-        id: Optional[ContainerID] = None,
-        platform: Optional[Platform] = None,
+        id: ContainerID | None = None,
+        platform: Platform | None = None,
     ) -> Container:
         """Creates a scratch container or loads one by ID.
 
@@ -3960,11 +3895,7 @@ class Client(Root):
         return await _ctx.execute(Platform)
 
     @typecheck
-    def directory(
-        self,
-        *,
-        id: Optional[DirectoryID] = None,
-    ) -> Directory:
+    def directory(self, *, id: DirectoryID | None = None) -> Directory:
         """Creates an empty directory or loads one by ID."""
         _args = [
             Arg("id", id, None),
@@ -4017,10 +3948,10 @@ class Client(Root):
         self,
         url: str,
         *,
-        keep_git_dir: Optional[bool] = None,
-        ssh_known_hosts: Optional[str] = None,
-        ssh_auth_socket: Optional["Socket"] = None,
-        experimental_service_host: Optional["Service"] = None,
+        keep_git_dir: bool | None = None,
+        ssh_known_hosts: str | None = None,
+        ssh_auth_socket: "Socket | None" = None,
+        experimental_service_host: "Service | None" = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -4062,7 +3993,7 @@ class Client(Root):
         self,
         url: str,
         *,
-        experimental_service_host: Optional["Service"] = None,
+        experimental_service_host: "Service | None" = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -4200,7 +4131,7 @@ class Client(Root):
         self,
         source_directory: Directory,
         *,
-        subpath: Optional[str] = None,
+        subpath: str | None = None,
     ) -> ModuleConfig:
         """Load the static configuration for a module from the given source
         directory and optional subpath.
@@ -4217,8 +4148,8 @@ class Client(Root):
         self,
         name: str,
         *,
-        description: Optional[str] = None,
-        labels: Optional[Sequence[PipelineLabel]] = None,
+        description: str | None = None,
+        labels: Sequence[PipelineLabel] | None = None,
     ) -> "Client":
         """Creates a named sub-pipeline.
 
@@ -4278,7 +4209,7 @@ class Client(Root):
         return Secret(_ctx)
 
     @typecheck
-    def socket(self, *, id: Optional[SocketID] = None) -> "Socket":
+    def socket(self, *, id: SocketID | None = None) -> "Socket":
         """Loads a socket by its ID.
 
         .. deprecated::
@@ -4320,7 +4251,7 @@ class Secret(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4337,14 +4268,6 @@ class Secret(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SecretID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return SecretID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "secret"
 
     @typecheck
     async def plaintext(self) -> str:
@@ -4374,8 +4297,8 @@ class Service(Type):
     async def endpoint(
         self,
         *,
-        port: Optional[int] = None,
-        scheme: Optional[str] = None,
+        port: int | None = None,
+        scheme: str | None = None,
     ) -> str:
         """Retrieves an endpoint that clients can use to reach this container.
 
@@ -4442,7 +4365,7 @@ class Service(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4459,14 +4382,6 @@ class Service(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ServiceID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ServiceID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadServiceFromID"
 
     @typecheck
     async def ports(self) -> list[Port]:
@@ -4524,7 +4439,7 @@ class Socket(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4542,14 +4457,6 @@ class Socket(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(SocketID)
 
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return SocketID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "socket"
-
 
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
@@ -4559,8 +4466,8 @@ class TypeDef(Type):
         "_optional",
     )
 
-    _kind: Optional[TypeDefKind]
-    _optional: Optional[bool]
+    _kind: TypeDefKind | None
+    _optional: bool | None
 
     @typecheck
     def as_list(self) -> ListTypeDef:
@@ -4584,7 +4491,7 @@ class TypeDef(Type):
     async def id(self) -> TypeDefID:
         """Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4602,21 +4509,13 @@ class TypeDef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(TypeDefID)
 
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return TypeDefID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadTypeDefFromID"
-
     @typecheck
-    async def kind(self) -> Optional[TypeDefKind]:
+    async def kind(self) -> TypeDefKind | None:
         """The kind of type this is (e.g. primitive, list, object)
 
         Returns
         -------
-        Optional[TypeDefKind]
+        TypeDefKind | None
             Distinguishes the different kinds of TypeDefs.
 
         Raises
@@ -4630,7 +4529,7 @@ class TypeDef(Type):
             return self._kind
         _args: list[Arg] = []
         _ctx = self._select("kind", _args)
-        return await _ctx.execute(Optional[TypeDefKind])
+        return await _ctx.execute(TypeDefKind | None)
 
     @typecheck
     async def optional(self) -> bool:
@@ -4671,7 +4570,7 @@ class TypeDef(Type):
         name: str,
         type_def: "TypeDef",
         *,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> "TypeDef":
         """Adds a static field for an Object TypeDef, failing if the type is not
         an object.
@@ -4729,7 +4628,7 @@ class TypeDef(Type):
         self,
         name: str,
         *,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> "TypeDef":
         """Returns a TypeDef of kind Object with the provided name.
 
@@ -4763,45 +4662,8 @@ class TypeDef(Type):
         return cb(self)
 
 
-_client = Client()
-cache_volume = _client.cache_volume
-check_version_compatibility = _client.check_version_compatibility
-container = _client.container
-current_function_call = _client.current_function_call
-current_module = _client.current_module
-default_platform = _client.default_platform
-directory = _client.directory
-file = _client.file
-function = _client.function
-generated_code = _client.generated_code
-git = _client.git
-host = _client.host
-http = _client.http
-load_cache_volume_from_id = _client.load_cache_volume_from_id
-load_container_from_id = _client.load_container_from_id
-load_directory_from_id = _client.load_directory_from_id
-load_file_from_id = _client.load_file_from_id
-load_function_arg_from_id = _client.load_function_arg_from_id
-load_function_from_id = _client.load_function_from_id
-load_generated_code_from_id = _client.load_generated_code_from_id
-load_module_from_id = _client.load_module_from_id
-load_secret_from_id = _client.load_secret_from_id
-load_service_from_id = _client.load_service_from_id
-load_socket_from_id = _client.load_socket_from_id
-load_type_def_from_id = _client.load_type_def_from_id
-module = _client.module
-module_config = _client.module_config
-pipeline = _client.pipeline
-secret = _client.secret
-set_secret = _client.set_secret
-socket = _client.socket
-type_def = _client.type_def
-
-
-def default_client() -> Client:
-    """Return the default client instance."""
-    return _client
-
+dag = Client()
+"""The global client instance."""
 
 __all__ = [
     "BuildArg",
@@ -4852,37 +4714,5 @@ __all__ = [
     "TypeDefID",
     "TypeDefKind",
     "Void",
-    "cache_volume",
-    "check_version_compatibility",
-    "container",
-    "current_function_call",
-    "current_module",
-    "default_client",
-    "default_platform",
-    "directory",
-    "file",
-    "function",
-    "generated_code",
-    "git",
-    "host",
-    "http",
-    "load_cache_volume_from_id",
-    "load_container_from_id",
-    "load_directory_from_id",
-    "load_file_from_id",
-    "load_function_arg_from_id",
-    "load_function_from_id",
-    "load_generated_code_from_id",
-    "load_module_from_id",
-    "load_secret_from_id",
-    "load_service_from_id",
-    "load_socket_from_id",
-    "load_type_def_from_id",
-    "module",
-    "module_config",
-    "pipeline",
-    "secret",
-    "set_secret",
-    "socket",
-    "type_def",
+    "dag",
 ]
