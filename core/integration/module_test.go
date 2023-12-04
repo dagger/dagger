@@ -973,7 +973,9 @@ func TestModuleGoDocsEdgeCases(t *testing.T) {
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
-type Minimal struct {}
+type Minimal struct {
+	X, Y string
+}
 
 // some docs
 func (m *Minimal) Hello(foo string, bar string,

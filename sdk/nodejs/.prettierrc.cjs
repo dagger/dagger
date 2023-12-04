@@ -7,5 +7,6 @@ module.exports = {
   bracketSpacing: true,
   arrowParens: "always",
   importOrder: ["^[./]"],
-  importOrderSeparation: true
+  importOrderSeparation: true,
+  importOrderParserPlugins: ["typescript", "decorators-legacy"]
 }
