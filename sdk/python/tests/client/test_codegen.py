@@ -29,15 +29,7 @@ from dagger._codegen.generator import Scalar as ScalarHandler
 @pytest.fixture()
 def ctx():
     return Context(
-        id_map={
-            "CacheVolumeID": "CacheVolume",
-            "FileID": "File",
-            "SecretID": "Secret",
-        },
-        id_query_map={
-            "ContainerID": "container",
-            "DirectoryID": "directory",
-        },
+        ids=frozenset({}),
         simple_objects_map={},
         remaining={"Secret"},
     )
@@ -82,8 +74,8 @@ opts = InputObject(
         (List(opts), "list[Options | None] | None"),
     ],
 )
-def test_format_input_type(graphql, expected, ctx: Context):
-    assert format_input_type(graphql, ctx.id_map) == expected
+def test_format_input_type(graphql, expected):
+    assert format_input_type(graphql) == expected
 
 
 cache_volume = Object(

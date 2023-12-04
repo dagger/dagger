@@ -194,7 +194,7 @@ class CacheVolume(Type):
     async def id(self) -> CacheVolumeID:
         """Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -211,14 +211,6 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return CacheVolumeID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadCacheVolumeFromID"
 
 
 class Container(Type):
@@ -561,7 +553,7 @@ class Container(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -579,14 +571,6 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ContainerID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ContainerID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadContainerFromID"
 
     @typecheck
     async def image_ref(self) -> str | None:
@@ -1888,7 +1872,7 @@ class Directory(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -1905,14 +1889,6 @@ class Directory(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return DirectoryID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadDirectoryFromID"
 
     @typecheck
     def pipeline(
@@ -2332,7 +2308,7 @@ class File(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2349,14 +2325,6 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FileID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return FileID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadFileFromID"
 
     @typecheck
     async def size(self) -> int:
@@ -2480,7 +2448,7 @@ class Function(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2497,14 +2465,6 @@ class Function(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return FunctionID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadFunctionFromID"
 
     @typecheck
     async def name(self) -> str:
@@ -2654,7 +2614,7 @@ class FunctionArg(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2671,14 +2631,6 @@ class FunctionArg(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionArgID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return FunctionArgID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadFunctionArgFromID"
 
     @typecheck
     async def name(self) -> str:
@@ -2887,7 +2839,7 @@ class GeneratedCode(Type):
     async def id(self) -> GeneratedCodeID:
         """Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -2904,14 +2856,6 @@ class GeneratedCode(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(GeneratedCodeID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return GeneratedCodeID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadGeneratedCodeFromID"
 
     @typecheck
     async def vcs_generated_paths(self) -> list[str] | None:
@@ -3392,7 +3336,7 @@ class Module(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -3409,14 +3353,6 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ModuleID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadModuleFromID"
 
     @typecheck
     async def name(self) -> str:
@@ -4315,7 +4251,7 @@ class Secret(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4332,14 +4268,6 @@ class Secret(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SecretID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return SecretID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "secret"
 
     @typecheck
     async def plaintext(self) -> str:
@@ -4437,7 +4365,7 @@ class Service(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4454,14 +4382,6 @@ class Service(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ServiceID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return ServiceID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadServiceFromID"
 
     @typecheck
     async def ports(self) -> list[Port]:
@@ -4519,7 +4439,7 @@ class Socket(Type):
 
         Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4536,14 +4456,6 @@ class Socket(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SocketID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return SocketID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "socket"
 
 
 class TypeDef(Type):
@@ -4579,7 +4491,7 @@ class TypeDef(Type):
     async def id(self) -> TypeDefID:
         """Note
         ----
-        This is lazyly evaluated, no operation is actually run.
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
@@ -4596,14 +4508,6 @@ class TypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(TypeDefID)
-
-    @classmethod
-    def _id_type(cls) -> type[Scalar]:
-        return TypeDefID
-
-    @classmethod
-    def _from_id_query_field(cls):
-        return "loadTypeDefFromID"
 
     @typecheck
     async def kind(self) -> TypeDefKind | None:

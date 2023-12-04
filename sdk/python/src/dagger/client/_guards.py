@@ -8,40 +8,30 @@ from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar, overload
 from beartype import beartype
 from beartype.door import TypeHint
 from beartype.roar import BeartypeCallHintViolation
-from beartype.vale import IsInstance, IsSubclass
+from beartype.vale import Is, IsInstance, IsSubclass
 
 from .base import Scalar, Type
 
-
-@typing.runtime_checkable
-class FromIDType(typing.Protocol):
-    @classmethod
-    def _id_type(cls) -> Scalar:
-        ...
-
-    @classmethod
-    def _from_id_query_field(cls) -> str:
-        ...
-
-
-IDTypeSubclass = Annotated[FromIDType, IsSubclass[Type, FromIDType]]
-IDTypeSubclassHint = TypeHint(IDTypeSubclass)
-
-
-def is_id_type_subclass(v: type) -> TypeGuard[type[IDTypeSubclass]]:
-    return IDTypeSubclassHint.is_bearable(v)
+IDScalar = Annotated[Scalar, Is[lambda obj: type(obj).__name__.endswith("ID")]]
 
 
 @typing.runtime_checkable
 class HasID(typing.Protocol):
-    async def id(self) -> Scalar:  # noqa: A003
+    async def id(self) -> IDScalar:  # noqa: A003
         ...
 
 
+IDTypeSubclass = Annotated[type[HasID], IsSubclass[Type]]
 IDType = Annotated[HasID, IsInstance[Type]]
 IDTypeSeq = Annotated[Sequence[IDType], ~IsInstance[str]]
+
+IDTypeSubclassHint = TypeHint(IDTypeSubclass)
 IDTypeHint = TypeHint(IDType)
 IDTypeSeqHint = TypeHint(IDTypeSeq)
+
+
+def is_id_type_subclass(v: type) -> TypeGuard[type[Type]]:
+    return IDTypeSubclassHint.is_bearable(v)
 
 
 def is_id_type(v: object) -> TypeGuard[IDType]:
