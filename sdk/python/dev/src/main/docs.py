@@ -32,8 +32,8 @@ class Docs:
         """Base container for building the documentation."""
         return (
             python_base()
-            .with_(sdk)
             .with_(requirements(self.requirements))
+            .with_(sdk)
             .with_(mounted_workdir(self.src))
         )
 

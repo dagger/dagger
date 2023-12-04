@@ -14,7 +14,7 @@ backoff==2.2.1
     # via gql
 beartype==0.16.4
     # via -r requirements.in
-cattrs==23.2.2
+cattrs==23.2.3
     # via -r requirements.in
 certifi==2023.11.17
     # via
