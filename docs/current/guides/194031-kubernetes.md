@@ -17,9 +17,9 @@ This guide outlines how to run, and connect to, the Dagger Engine on Kubernetes.
 
 This guide assumes that you have:
 
-- [Dagger CLI](../cli/465058-install.md) installed locally.
-- [Helm](https://helm.sh) 3 available locally.
-- A running Kubernetes cluster (tested as seen on 1.28).
+- The [Dagger CLI](../cli/465058-install.md) installed locally.
+- [Helm](https://helm.sh) v3.x available locally.
+- A running Kubernetes cluster (tested with Kubernetes v1.28).
 
 ## Step 1: Deploy Dagger with Helm
 
@@ -30,7 +30,7 @@ helm upgrade --install --namespace=dagger --create-namespace \
     dagger oci://registry.dagger.io/dagger-helm
 ```
 
-Wait for Dagger Engine to become ready:
+Wait for the Dagger Engine to become ready:
 
 ```shell
 kubectl wait --for condition=Ready --timeout=60s pod \
@@ -61,7 +61,7 @@ _EXPERIMENTAL_DAGGER_RUNNER_HOST="kube-pod://$DAGGER_ENGINE_POD_NAME?namespace=d
 export _EXPERIMENTAL_DAGGER_RUNNER_HOST
 ```
 
-Finally, run an operation that shows the kernel info of the K8s node where this Dagger Engine runs:
+Finally, run an operation that shows the kernel info of the Kubernetes node where this Dagger Engine runs:
 
 ```shell
 dagger query <<EOF
@@ -123,8 +123,7 @@ kubectl logs pod/$DAGGER_ENGINE_POD_NAME --namespace=dagger --follow
 
 ## Conclusion
 
-This guide demonstrated the simplest approach to using Dagger on Kubernetes.
-For more complex scenarios, such as setting up a Continuous Integration (CI) environment with Dagger on Kubernetes, use the following resources:
+This guide demonstrated the simplest approach to using Dagger on Kubernetes. For more complex scenarios, such as setting up a Continuous Integration (CI) environment with Dagger on Kubernetes, use the following resources:
 
 - Understand [CI architecture patterns on Kubernetes with Dagger](./237420-ci-architecture-kubernetes.md)
 - See an example of [running Dagger on Amazon EKS with GitHub Actions Runner and Karpenter](./934191-eks-github-karpenter.md)
