@@ -94,6 +94,10 @@ func (arg FunctionArg) Clone() *FunctionArg {
 	return &cp
 }
 
+func (arg *FunctionArg) ID() (FunctionArgID, error) {
+	return resourceid.Encode(arg)
+}
+
 type TypeDef struct {
 	Kind     TypeDefKind    `json:"kind"`
 	Optional bool           `json:"optional"`
@@ -313,4 +317,8 @@ func (fnCall *FunctionCall) Digest() (digest.Digest, error) {
 type CallInput struct {
 	Name  string `json:"name"`
 	Value any    `json:"value"`
+}
+
+func (callInput *CallInput) Digest() (digest.Digest, error) {
+	return stableDigest(callInput)
 }

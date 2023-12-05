@@ -10,20 +10,16 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-var _ ExecutableSchema = &httpSchema{}
+var _ SchemaResolvers = &httpSchema{}
 
 type httpSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	svcs *core.Services
 }
 
 func (s *httpSchema) Name() string {
 	return "http"
-}
-
-func (s *httpSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *httpSchema) Schema() string {

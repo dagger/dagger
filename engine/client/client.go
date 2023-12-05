@@ -70,7 +70,7 @@ type Params struct {
 	// If this client is for a module function, this digest will be set in the
 	// grpc context metadata for any api requests back to the engine. It's used by the API
 	// server to determine which schema to serve and other module context metadata.
-	ModuleContextDigest digest.Digest
+	ModuleCallerDigest digest.Digest
 }
 
 type Client struct {
@@ -232,13 +232,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
-		ClientID:            c.ID(),
-		ClientSecretToken:   c.SecretToken,
-		ServerID:            c.ServerID,
-		ClientHostname:      c.hostname,
-		Labels:              c.labels,
-		ParentClientIDs:     c.ParentClientIDs,
-		ModuleContextDigest: c.ModuleContextDigest,
+		ClientID:           c.ID(),
+		ClientSecretToken:  c.SecretToken,
+		ServerID:           c.ServerID,
+		ClientHostname:     c.hostname,
+		Labels:             c.labels,
+		ParentClientIDs:    c.ParentClientIDs,
+		ModuleCallerDigest: c.ModuleCallerDigest,
 	})
 
 	// progress
@@ -276,7 +276,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				Labels:                    c.labels,
-				ModuleContextDigest:       c.ModuleContextDigest,
+				ModuleCallerDigest:        c.ModuleCallerDigest,
 			}.AppendToMD(meta))
 		})
 	})
@@ -460,13 +460,13 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
 	} else {
 		conn, err = grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-			ClientID:            c.ID(),
-			ClientSecretToken:   c.SecretToken,
-			ServerID:            c.ServerID,
-			ClientHostname:      c.hostname,
-			ParentClientIDs:     c.ParentClientIDs,
-			Labels:              c.labels,
-			ModuleContextDigest: c.ModuleContextDigest,
+			ClientID:           c.ID(),
+			ClientSecretToken:  c.SecretToken,
+			ServerID:           c.ServerID,
+			ClientHostname:     c.hostname,
+			ParentClientIDs:    c.ParentClientIDs,
+			Labels:             c.labels,
+			ModuleCallerDigest: c.ModuleCallerDigest,
 		}.ToGRPCMD())
 	}
 	if err != nil {

@@ -7,20 +7,16 @@ import (
 )
 
 type fileSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host *core.Host
 	svcs *core.Services
 }
 
-var _ ExecutableSchema = &fileSchema{}
+var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Name() string {
 	return "file"
-}
-
-func (s *fileSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *fileSchema) Schema() string {

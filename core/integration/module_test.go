@@ -786,7 +786,8 @@ func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (st
 func TestModuleGoSignaturesUnexported(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -859,12 +860,15 @@ func (b *bar) Hello(name string) string {
 
 	_, err = modGen.With(inspectModule).Stderr(ctx)
 	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "cannot code-generate unexported type bar")
 }
 
 func TestModuleGoSignaturesMixMatch(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -885,6 +889,8 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 
 	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "nested structs are not supported")
 }
 
 var inspectModule = daggerQuery(`
@@ -2733,9 +2739,9 @@ s += depS
 	}
 
 	// Create a base module, then add 6 layers of deps, where each layer has one more module
-	// than the last of modules as the previous layer and each module within the layer has a
-	// dep on each module from the previous layer. Finally add a single module at the top that
-	// depends on all modules from the last layer and call that.
+	// than the previous layer and each module within the layer has a dep on each module
+	// from the previous layer. Finally add a single module at the top that depends on all
+	// modules from the last layer and call that.
 	// Basically, this creates a quadratically growing DAG of modules and verifies we
 	// handle it efficiently enough to be callable.
 	curDeps := addModulesWithDeps(1, nil)
@@ -3058,6 +3064,28 @@ func TestModuleGoSyncDeps(t *testing.T) {
 	out, err = modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"use":{"useHello":"goodbye"}}`, out)
+}
+
+func TestModuleLoops(t *testing.T) {
+	// verify circular module dependencies result in an error
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/depA").
+		With(daggerExec("mod", "init", "--name=depA", "--sdk=go", "--root=..")).
+		WithWorkdir("/work/depB").
+		With(daggerExec("mod", "init", "--name=depB", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../depA")).
+		WithWorkdir("/work/depC").
+		With(daggerExec("mod", "init", "--name=depC", "--sdk=go", "--root=..")).
+		With(daggerExec("mod", "install", "../depB")).
+		WithWorkdir("/work/depA").
+		With(daggerExec("mod", "install", "../depC")).
+		Sync(ctx)
+	require.ErrorContains(t, err, "module depA has a circular dependency")
 }
 
 //go:embed testdata/modules/go/id/arg/main.go

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -136,7 +137,7 @@ func digestInner(value any, dest io.Writer) error {
 			return err
 		}
 
-		stabilized, err := stableDefCache.GetOrInitialize(x, func() (*pb.Definition, error) {
+		stabilized, err := stableDefCache.GetOrInitialize(context.Background(), x, func(_ context.Context) (*pb.Definition, error) {
 			return stabilizeDef(x)
 		})
 		if err != nil {

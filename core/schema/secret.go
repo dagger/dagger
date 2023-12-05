@@ -7,17 +7,13 @@ import (
 )
 
 type secretSchema struct {
-	*MergedSchemas
+	*APIServer
 }
 
-var _ ExecutableSchema = &secretSchema{}
+var _ SchemaResolvers = &secretSchema{}
 
 func (s *secretSchema) Name() string {
 	return "secret"
-}
-
-func (s *secretSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *secretSchema) Schema() string {

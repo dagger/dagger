@@ -8,19 +8,15 @@ import (
 )
 
 type serviceSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	svcs *core.Services
 }
 
-var _ ExecutableSchema = &serviceSchema{}
+var _ SchemaResolvers = &serviceSchema{}
 
 func (s *serviceSchema) Name() string {
 	return "service"
-}
-
-func (s *serviceSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *serviceSchema) Schema() string {

@@ -328,7 +328,7 @@ const defaultDockerfileName = "Dockerfile"
 
 func (container *Container) Build(
 	ctx context.Context,
-	context *Directory,
+	contextDir *Directory,
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
@@ -342,10 +342,10 @@ func (container *Container) Build(
 		return nil, err
 	}
 
-	return buildCache.GetOrInitialize(
+	return buildCache.GetOrInitialize(ctx,
 		cacheKey(
 			container,
-			context,
+			contextDir,
 			dockerfile,
 			buildArgs,
 			target,
@@ -355,8 +355,8 @@ func (container *Container) Build(
 			// local dir with same path but different content)
 			clientMetadata.ClientID,
 		),
-		func() (*Container, error) {
-			return container.buildUncached(ctx, bk, context, dockerfile, buildArgs, target, secrets, svcs)
+		func(ctx context.Context) (*Container, error) {
+			return container.buildUncached(ctx, bk, contextDir, dockerfile, buildArgs, target, secrets, svcs)
 		},
 	)
 }
@@ -1055,8 +1055,8 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
 	}
 
-	if opts.ModuleContextDigest != "" {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_CONTEXT_DIGEST", opts.ModuleContextDigest.String()))
+	if opts.ModuleCallerDigest != "" {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_CALLER_DIGEST", opts.ModuleCallerDigest.String()))
 	}
 
 	if opts.NestedInSameSession {
@@ -1104,7 +1104,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		if name == "_DAGGER_ENABLE_NESTING" && !opts.ExperimentalPrivilegedNesting {
 			continue
 		}
-		if name == "_DAGGER_MODULE_CONTEXT_DIGEST" && opts.ModuleContextDigest == "" {
+		if name == "_DAGGER_MODULE_CALLER_DIGEST" && opts.ModuleCallerDigest == "" {
 			continue
 		}
 		if name == "_DAGGER_ENABLE_NESTING_IN_SAME_SESSION" && !opts.NestedInSameSession {
@@ -1600,7 +1600,7 @@ func (container *Container) Import(
 	}
 
 	var release func(context.Context) error
-	loadManifest := func() (*specs.Descriptor, error) {
+	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
 		src, err := file.Open(ctx, host, bk, svcs)
 		if err != nil {
 			return nil, err
@@ -1637,14 +1637,14 @@ func (container *Container) Import(
 		clientMetadata.ClientID,
 	)
 
-	manifestDesc, err := importCache.GetOrInitialize(key, loadManifest)
+	manifestDesc, err := importCache.GetOrInitialize(ctx, key, loadManifest)
 	if err != nil {
 		return nil, err
 	}
 
 	if _, err := store.Info(ctx, manifestDesc.Digest); err != nil {
 		// NB(vito): loadManifest again, to be durable to buildctl prune.
-		manifestDesc, err = loadManifest()
+		manifestDesc, err = loadManifest(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("recover: %w", err)
 		}
@@ -1879,7 +1879,7 @@ type ContainerExecOpts struct {
 	// (Internal-only) If this exec is for a module function, this digest will be set in the
 	// grpc context metadata for any api requests back to the engine. It's used by the API
 	// server to determine which schema to serve and other module context metadata.
-	ModuleContextDigest digest.Digest
+	ModuleCallerDigest digest.Digest
 
 	// (Internal-only) Used for module function execs to trigger the nested api client to
 	// be connected back to the same session.

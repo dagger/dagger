@@ -31,7 +31,7 @@ type DaggerServer struct {
 	bkClient *buildkit.Client
 	worker   bkworker.Worker
 
-	schema      *schema.MergedSchemas
+	schema      *schema.APIServer
 	recorder    *progrock.Recorder
 	progCleanup func() error
 
@@ -112,7 +112,7 @@ func NewDaggerServer(
 		}
 	}()
 
-	apiSchema, err := schema.New(schema.InitializeArgs{
+	apiSchema, err := schema.New(ctx, schema.InitializeArgs{
 		BuildkitClient: srv.bkClient,
 		Platform:       srv.worker.Platforms(true)[0],
 		ProgSockPath:   bkClient.ProgSockPath,

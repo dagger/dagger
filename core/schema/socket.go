@@ -8,19 +8,15 @@ import (
 )
 
 type socketSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	host *core.Host
 }
 
-var _ ExecutableSchema = &socketSchema{}
+var _ SchemaResolvers = &socketSchema{}
 
 func (s *socketSchema) Name() string {
 	return "socket"
-}
-
-func (s *socketSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *socketSchema) Schema() string {

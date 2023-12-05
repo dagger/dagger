@@ -7,20 +7,16 @@ import (
 	"github.com/dagger/dagger/core/socket"
 )
 
-var _ ExecutableSchema = &gitSchema{}
+var _ SchemaResolvers = &gitSchema{}
 
 type gitSchema struct {
-	*MergedSchemas
+	*APIServer
 
 	svcs *core.Services
 }
 
 func (s *gitSchema) Name() string {
 	return "git"
-}
-
-func (s *gitSchema) SourceModuleName() string {
-	return coreModuleName
 }
 
 func (s *gitSchema) Schema() string {
@@ -78,7 +74,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		SSHAuthSocket: args.SSHAuthSocket,
 		Services:      svcs,
 		Pipeline:      parent.PipelinePath(),
-		Platform:      s.MergedSchemas.platform,
+		Platform:      s.APIServer.platform,
 	}
 	return repo, nil
 }
