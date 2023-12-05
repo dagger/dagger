@@ -31,7 +31,7 @@ components:
   this is a commit hash. For other schemes this may be a `sha256:...` digest.
 
 The URI scheme determines the interpretation of the rest of the ref, but every
-ref always has the same components with the same delimiters (`://`, `//`, `:`,
+ref always has the same components with the same delimiters (`:`, `//`, `:`,
 and `@`).
 
 ### Backwards compatibility
@@ -84,7 +84,7 @@ We might not need all these, just throwing ideas around:
     * A ref's scheme may be omitted, in which case it will be inferred based on
       whether the ref's source appears to refer to a remote authority.
     * For a source like `github.com/...` the remote default scheme will be
-      used, e.g. `git://` or `dv://`.
+      used, e.g. `git:` or `dv:`.
     * For a source like `foo` the local default scheme will be used, e.g.
       `file:`, though it would also make sense to default this to something
       like `oci:` for image refs.
@@ -130,7 +130,7 @@ We might not need all these, just throwing ideas around:
     * Since it's not obvious whether we'll need this, I propose we just skip it
       for now.
 
-* `oci://alpine`
+* `oci:alpine`, `oci://docker.io/vito/foo`
     * An OCI registry ref
     * Tags and digests work the same as with conventional registry refs
     * Unclear what exactly we'll want to reference here, don't seem to need it
@@ -215,7 +215,7 @@ github.com/dagger/dagger:v0.9.3@d44c734dbbbcecc75507003c07acabb16375891d
 
 ## Crawling dependencies
 
-Let's say the module at `dv://vito//testcontainers:v1.2.3@deadbeef` has a local
+Let's say the module at `dv:vito//testcontainers:v1.2.3@deadbeef` has a local
 `../docker` ref as a dependency in its `dagger.json`:
 
 ```json
@@ -231,17 +231,17 @@ Let's say the module at `dv://vito//testcontainers:v1.2.3@deadbeef` has a local
 To crawl `../docker`, apply two steps to the origin ref:
 
 1. Drop the tag portion from the ref, leaving only the digest.
-  * An error must be raised if a digest is not present.
+    * An error must be raised if a digest is not present.
 1. Combine the path with the origin ref's subpath.
-  * An error must be raised if the result is outside of the source directory,
-    i.e. if it begins with `../`.
+    * An error must be raised if the result is outside of the source directory,
+      i.e. if it begins with `../`.
 
 Example:
 
 ```
-dv://vito//testcontainers:v1.2.3@deadbeef
+dv:vito//testcontainers:v1.2.3@deadbeef
 + ../docker
-= dv://vito//docker@deadbeef
+= dv:vito//docker@deadbeef
 ```
 
 Note that the `:v1.2.3` tag is dropped in the process. This is a mandatory step
