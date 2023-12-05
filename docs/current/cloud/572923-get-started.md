@@ -207,6 +207,10 @@ Learn more about [using Dagger with Argo Workflows](../guides/324301-argo-workfl
 </TabItem>
 </Tabs>
 
+:::tip
+Do you also want to see local runs in Dagger Cloud? Create and export a new local environment variable named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Your local run data will now appear in Dagger Cloud.
+:::tip
+
 ## Step 3: Visualize a CI run with Dagger Cloud
 
 :::info
