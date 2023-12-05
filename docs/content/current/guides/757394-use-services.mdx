@@ -120,6 +120,10 @@ You can use services in Dagger in three ways:
 - [Expose service containers to the host](#expose-service-containers-to-the-host)
 - [Expose host services to client containers](#expose-host-services-to-containers)
 
+:::note
+Services are automatically started when needed and stopped when no longer needed. Dagger cancels each service run after a 10 second grace period to avoid frequent restarts. For more information, read [how service binding works](#reference-how-service-binding-works-for-container-services) or [start/stop services explicitly](#start-and-stop-services) if you need more control.
+:::
+
 ### Bind service containers
 
 :::warning
@@ -258,7 +262,7 @@ To connect client containers to Unix sockets on the host instead of TCP, see `Ho
 
 ## Persist service state
 
-Another way to avoid relying on the grace period is to use a cache volume to persist a service's data, as in the following example:
+Dagger cancels each service run after a 10 second grace period to avoid frequent restarts. To avoid relying on the grace period, use a cache volume to persist a service's data, as in the following example:
 
 <Tabs groupId="language">
 <TabItem value="Go">
