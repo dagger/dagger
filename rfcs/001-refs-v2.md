@@ -257,3 +257,69 @@ github.com/vito/my-mod:v1.2.3@deadbeef
 
 The ref above is trying to reference `refs/tags/v1.2.3`, but it appears to
 reference `refs/tags/submod/v1.2.3` instead.
+
+# Questions & Alternatives
+
+## Is the `//` part a valid URL?
+
+Yes - it is valid for `//` to appear in a URL's path. Go's `net.URL` parsing
+preserves it as normal.
+
+## Won't the `//` be stripped by `path.Clean`?
+
+This is true, but this is true of any URL, since the same would happen for the
+`foo://` part.
+
+## Why not just copy Go?
+
+The v1 refs design is modeled on Go's module reference syntax.
+
+You just type a path that looks like a URL, like so:
+
+```
+github.com/foo/bar/baz
+gitlab.com/group1/group2/group3/repo
+```
+
+This currently works by hardcoding support for `github.com` and anticipating
+that the first two path segments (`/foo/bar`) specify the repo source location,
+with the remainder of the path being a subpath beneath the source.
+
+But we don't want to be tied to just `github.com`. How does Go figure this out
+for other hosts?
+
+For this to work, Go employs two tricks:
+
+1. It has a [series of regexes looking for common hostnames][go-cli-regexes].
+   If there is a static match, the job is done. This is the case for GitHub
+   paths.
+
+2. If no regexes match, it falls back on [dynamic discovery]. This involves
+   sending a `GET` request to the path with `?go-get=1`, which tells the server
+   to include a `<meta>` tag, which Go parses. This is how GitLab paths work,
+   since GitLab supports arbitrary nesting.
+
+The second half is honestly pretty neat, except parsing HTML is no fun, and the
+whole thing is Go-specific. It's also how vanity imports are supported. We
+_could_ piggy-back on this infrastructure, it just feels kinda wrong.
+
+It's not clear to me that all of this baggage is how the Go authors would have
+wanted it to work, or if they painted themselves into a corner with `$GOPATH`
+semantics and this was just the least-bad way to move forward without breaking
+everything.
+
+We could attempt to define a less Go-specific analogue and just support both
+for compatibility with existing infra, but I'm not sure we'd have as much sway
+as Google to get other forges to implement it; we'd likely just end up using
+the Go infra and having a no-op alternative implemented to make us feel better.
+
+Of course, if we can stomach maintaining code for above (as all the Go code is
+tucked under `internal/`), this is still an option. We'd probably want to
+figure out a `daggerverse` shorthand, but I suppose vanity URLs are always an
+option.
+
+[go-pkgsite-regexes]: https://go.googlesource.com/pkgsite/+/a211259848f813324d383e8fe9190c9df51ea4ea/internal/source/source.go#618
+[go-cli-regexes]: https://github.com/golang/go/blob/16d3040a84be821d801b75bd1a3d8ab4cc89ee36/src/cmd/go/internal/vcs/vcs.go#L1519
+[go-cli-root]: https://github.com/golang/go/blob/16d3040a84be821d801b75bd1a3d8ab4cc89ee36/src/cmd/go/internal/vcs/vcs.go#L1075
+[dynamic discovery]: https://github.com/golang/go/blob/16d3040a84be821d801b75bd1a3d8ab4cc89ee36/src/cmd/go/internal/vcs/vcs.go#L1281
+
