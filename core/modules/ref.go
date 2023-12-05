@@ -13,6 +13,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/Masterminds/semver/v3"
+	"github.com/distribution/reference"
 	"golang.org/x/exp/slog"
 )
 
@@ -218,38 +219,49 @@ func (source *GitSource) Versions(ctx context.Context, dag *dagger.Client) ([]*s
 	return versions, nil
 }
 
-func ParseRef(ref string) (*Ref, error) {
+type ParseConfig struct {
+	DefaultRemoteScheme string
+	DefaultLocalScheme  string
+}
+
+var GitOrFileParser = ParseConfig{
+	DefaultRemoteScheme: "git",
+	DefaultLocalScheme:  "file",
+}
+
+func (cfg ParseConfig) ParseRef(ref string) (*Ref, error) {
 	u, err := url.Parse(ref)
 	if err != nil {
 		return nil, fmt.Errorf("parse ref: %w", err)
 	}
 	switch u.Scheme {
 	case "":
-		switch {
-		case u.Path == ".",
-			u.Path == "..",
-			strings.HasPrefix(u.Path, "./"),
-			strings.HasPrefix(u.Path, "../"),
-			strings.HasPrefix(u.Path, "/"),
-			!isDomainLike(u.Path):
-			return parseLocalRef(u)
-		default:
-			// guess that this is a git URL
-			return ParseRef("git://" + u.Path)
+		if isRemote(u.Path) {
+			u.Scheme = cfg.DefaultRemoteScheme
+		} else {
+			u.Scheme = cfg.DefaultLocalScheme
 		}
+		return cfg.ParseRef(u.String())
+	case "file":
+		return parseLocalRef(u)
 	case "git":
 		return parseGitRef(u)
 	case "gh":
-		return parseGHRef(u)
-	// case "http":
+		return parseGitHubRef(u)
+	case "dv":
+		return parseDaggerverseRef(u)
 	default:
 		return nil, fmt.Errorf("unsupported ref scheme: %q", u.Scheme)
 	}
 }
 
-func isDomainLike(str string) bool {
+func ParseRef(ref string) (*Ref, error) {
+	return GitOrFileParser.ParseRef(ref)
+}
+
+func isRemote(str string) bool {
 	first, _, _ := strings.Cut(str, "/")
-	return strings.Contains(first, ".")
+	return reference.DomainRegexp.MatchString(first)
 }
 
 // String returns the canonical representation of the ref.
@@ -432,7 +444,33 @@ func parseGitRef(u *url.URL) (*Ref, error) {
 	}, nil
 }
 
-func parseGHRef(u *url.URL) (*Ref, error) {
+func parseGitHubRef(u *url.URL) (*Ref, error) {
+	rest, dir, tag, hash := parsePathComponents(u.Path)
+	fullPath := path.Join(rest, dir)
+	host := "github.com"
+	if maybeRemote, subPath, ok := strings.Cut(fullPath, "/"); ok && isRemote(maybeRemote) {
+		fullPath = subPath
+	}
+	user, repo := u.Host, rest
+	return &Ref{
+		Source: Source{
+			Git: &GitSource{
+				CloneURL: &url.URL{
+					Scheme: "https",
+					Host:   host,
+					Path:   path.Join("/", user, repo),
+				},
+				Ref:    tag,
+				Commit: hash,
+				Dir:    dir,
+			},
+		},
+		Tag:  tag,
+		Hash: hash,
+	}, nil
+}
+
+func parseDaggerverseRef(u *url.URL) (*Ref, error) {
 	rest, dir, tag, hash := parsePathComponents(u.Path)
 	user, repo := u.Host, rest
 	if strings.Contains(repo, "/") {

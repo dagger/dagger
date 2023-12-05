@@ -438,11 +438,33 @@ func TestParseGitSchemeRef(t *testing.T) {
 func TestParseGHSchemeRef(t *testing.T) {
 	for _, example := range []refParseExample{
 		{
-			ref: "gh://user//subdir",
+			ref: "gh:user/repo",
 			res: &modules.Ref{
 				Source: modules.Source{
 					Git: &modules.GitSource{
-						CloneURL: github.JoinPath("user", "daggerverse"),
+						CloneURL: github.JoinPath("user", "repo"),
+						Dir:      "subdir",
+					},
+				},
+			},
+		},
+		{
+			ref: "gh:user/repo/subdir",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: github.JoinPath("user", "repo"),
+						Dir:      "subdir",
+					},
+				},
+			},
+		},
+		{
+			ref: "gh://user//repo",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: github.JoinPath("user", "repo"),
 						Dir:      "subdir",
 					},
 				},
@@ -459,10 +481,75 @@ func TestParseGHSchemeRef(t *testing.T) {
 				},
 			},
 		},
+	} {
+		example.Test(t)
+	}
+}
+
+func TestParseDaggerverseSchemeRef(t *testing.T) {
+	for _, example := range []refParseExample{
+		{
+			ref: "dv:user/subdir",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: github.JoinPath("user", "daggerverse"),
+						Dir:      "subdir",
+					},
+				},
+			},
+		},
+		{
+			ref: "dv:user/subdir:v1",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: github.JoinPath("user", "daggerverse"),
+						Dir:      "subdir",
+					},
+				},
+				Tag: "v1",
+			},
+		},
+		{
+			ref: "dv:user/subdir:v1@deadbeef",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: github.JoinPath("user", "daggerverse"),
+						Dir:      "subdir",
+					},
+				},
+				Tag:  "v1",
+				Hash: "deadbeef",
+			},
+		},
+		{
+			ref: "dv://user//subdir",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: github.JoinPath("user", "daggerverse"),
+						Dir:      "subdir",
+					},
+				},
+			},
+		},
+		{
+			ref: "dv://example.org/user//subdir",
+			res: &modules.Ref{
+				Source: modules.Source{
+					Git: &modules.GitSource{
+						CloneURL: exampleOrg.JoinPath("user", "daggerverse"),
+						Dir:      "subdir",
+					},
+				},
+			},
+		},
 		{
 			// NB: arguably we could support this and just have it merge into the //
 			// part. as long as it's unambiguous.
-			ref: "gh://user/repo/extra//subdir",
+			ref: "dv://user/repo/extra//subdir",
 			err: "extra path after repo",
 		},
 	} {
