@@ -28,6 +28,13 @@ func main() {
 		WithLabel("org.opencontainers.image.licenses", "MIT")
 
 	addr, err := ctr.Publish(ctx, "ttl.sh/my-alpine")
+
+	// note: some registries (e.g. ghcr.io) may require explicit use
+	// of Docker mediatypes rather than the default OCI mediatypes
+	// addr, err := ctr.Publish(ctx, "ttl.sh/my-alpine", dagger.ContainerPublishOpts{
+	//   MediaTypes: dagger.Dockermediatypes,
+	// })
+
 	if err != nil {
 		panic(err)
 	}
