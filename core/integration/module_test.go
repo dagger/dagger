@@ -1670,6 +1670,48 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 	require.Nil(t, types.Get("D"))
 }
 
+func TestModuleSelfAPICall(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Test struct{}
+
+func (m *Test) FnA(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.c.MakeRequest(ctx, &graphql.Request{
+		Query: "{test{fnB}}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["test"].(map[string]any)["fnB"].(string), nil
+}
+
+func (m *Test) FnB() string {
+	return "hi from b"
+}
+`,
+		}).
+		With(daggerQuery(`{test{fnA}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"fnA": "hi from b"}}`, out)
+}
+
 func TestModuleWithOtherModuleTypes(t *testing.T) {
 	t.Parallel()
 

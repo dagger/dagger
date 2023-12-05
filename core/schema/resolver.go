@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
@@ -21,6 +22,7 @@ type FieldResolvers interface {
 	Resolver
 	Fields() map[string]graphql.FieldResolveFn
 	SetField(string, graphql.FieldResolveFn)
+	Clone() FieldResolvers
 }
 
 type ObjectResolver map[string]graphql.FieldResolveFn
@@ -33,6 +35,12 @@ func (r ObjectResolver) Fields() map[string]graphql.FieldResolveFn {
 
 func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
 	r[name] = fn
+}
+
+func (r ObjectResolver) Clone() FieldResolvers {
+	cp := ObjectResolver{}
+	maps.Copy(cp, r)
+	return cp
 }
 
 type IDableObjectResolver interface {
@@ -86,6 +94,14 @@ func (r idableObjectResolver[T, I]) ToID(x any) (string, error) {
 		return string(id), nil
 	default:
 		return "", fmt.Errorf("cannot convert %T to ID", x)
+	}
+}
+
+func (r idableObjectResolver[T, I]) Clone() FieldResolvers {
+	return idableObjectResolver[T, I]{
+		idToObject:     r.idToObject,
+		objectToID:     r.objectToID,
+		ObjectResolver: r.ObjectResolver.Clone().(ObjectResolver),
 	}
 }
 
