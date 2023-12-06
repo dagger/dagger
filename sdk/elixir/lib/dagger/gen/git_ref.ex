@@ -15,6 +15,15 @@ defmodule Dagger.GitRef do
   )
 
   (
+    @doc "Retrieves the content-addressed identifier of the git ref."
+    @spec id(t()) :: {:ok, Dagger.GitRefID.t()} | {:error, term()}
+    def id(%__MODULE__{} = git_ref) do
+      selection = select(git_ref.selection, "id")
+      execute(selection, git_ref.client)
+    end
+  )
+
+  (
     @doc "The filesystem tree at this ref.\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
     @spec tree(t(), keyword()) :: Dagger.Directory.t()
     def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
