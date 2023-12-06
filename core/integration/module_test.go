@@ -1113,6 +1113,67 @@ func (m *Minimal) HelloFinal(
 	require.Equal(t, "", prop.Get("description").String())
 }
 
+func TestModuleGoOptionalMustBeNil(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+func (m *Minimal) Foo(x *Optional[*string]) string {
+	if v, _ := x.Get(); v != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+
+func (m *Minimal) Bar(opts struct {
+	x *Optional[*string]
+}) string {
+	if v, _ := opts.x.Get(); v != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+
+func (m *Minimal) Baz(
+	// +optional
+	x *string,
+) string {
+	if x != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+
+func (m *Minimal) Qux(opts struct {
+	// +optional
+	x *string
+}) string {
+	if opts.x != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	for _, name := range []string{"foo", "bar", "baz", "qux"} {
+		out, err := modGen.With(daggerQuery(`{minimal{%s}}`, name)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": ""}}`, name), out)
+	}
+}
+
 //go:embed testdata/modules/go/extend/main.go
 var goExtend string
 

@@ -464,7 +464,15 @@ func (ps *parseState) fillObjectFunctionCase(
 		if _, ok := vars[varName]; !ok {
 			vars[varName] = struct{}{}
 
-			tp, access := findOptsAccessPattern(varType, Id(varName))
+			tp := varType
+			access := Id(varName)
+			tp2, access2 := findOptsAccessPattern(varType, Id(varName))
+			if _, isStrct := tp2.(*types.Struct); isStrct {
+				// only apply the access pattern if this is an inline opts struct wrapper
+				tp = tp2
+				access = access2
+			}
+
 			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
 			if spec.variadic {
 				fnCallArgs = append(fnCallArgs, access.Op("..."))
