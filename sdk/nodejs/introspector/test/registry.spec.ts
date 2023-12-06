@@ -238,4 +238,39 @@ describe("Registry", function () {
       assert.equal(result, "Hello Dagger")
     })
   })
+
+  it("Should support constructor", async function () {
+    this.timeout(60000)
+
+    const registry = new Registry()
+
+    @registry.object
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    class HelloWorld {
+      @registry.field
+      msg: string
+
+      constructor(msg?: string) {
+        this.msg = msg || "world"
+      }
+
+      @registry.func
+      sayHi(): string {
+        return `Hello ${this.msg}`
+      }
+    }
+
+    const constructorResult = await registry.getResult("HelloWorld", "", {}, [
+      "Dagger",
+    ])
+    assert.deepEqual(constructorResult, { msg: "Dagger" })
+
+    const result = await registry.getResult(
+      "HelloWorld",
+      "sayHi",
+      constructorResult,
+      []
+    )
+    assert.deepEqual(result, "Hello Dagger")
+  })
 })
