@@ -901,6 +901,7 @@ query {
         objects {
           asObject {
             name
+            description
             functions {
               name
               description
@@ -908,6 +909,10 @@ query {
                 name
                 description
               }
+            }
+            fields {
+              name
+              description
             }
           }
         }
@@ -979,8 +984,10 @@ func TestModuleGoDocsEdgeCases(t *testing.T) {
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
+// Minimal is a thing
 type Minimal struct {
-	X, Y string
+	// X is this
+	X, Y string  // Y is not this
 }
 
 // some docs
@@ -1028,6 +1035,7 @@ func (m *Minimal) HelloFinal(
 	require.NoError(t, err)
 	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
 	require.Equal(t, "Minimal", obj.Get("name").String())
+	require.Equal(t, "Minimal is a thing", obj.Get("description").String())
 
 	hello := obj.Get(`functions.#(name="hello")`)
 	require.Equal(t, "hello", hello.Get("name").String())
@@ -1074,6 +1082,13 @@ func (m *Minimal) HelloFinal(
 	require.Len(t, hello.Get("args").Array(), 1)
 	require.Equal(t, "foo", hello.Get("args.0.name").String())
 	require.Equal(t, "", hello.Get("args.0.description").String())
+
+	prop := obj.Get(`fields.#(name="x")`)
+	require.Equal(t, "x", prop.Get("name").String())
+	require.Equal(t, "X is this", prop.Get("description").String())
+	prop = obj.Get(`fields.#(name="y")`)
+	require.Equal(t, "y", prop.Get("name").String())
+	require.Equal(t, "", prop.Get("description").String())
 }
 
 //go:embed testdata/modules/go/extend/main.go
