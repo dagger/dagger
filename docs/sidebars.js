@@ -13,22 +13,22 @@ module.exports = {
   current: [
     {
       type: "doc",
-      id: "current/index",
+      id: "index",
       label: "Introduction",
     },
     {
       type: "doc",
-      id: "current/quickstart/index",
+      id: "quickstart/index",
       label: "Quickstart",
     },
     {
       type: "doc",
-      id: "current/guides",
+      id: "guides",
       label: "Guides",
     },
     {
       type: "doc",
-      id: "current/cookbook",
+      id: "cookbook",
       label: "Cookbook",
     },
     {
@@ -40,12 +40,12 @@ module.exports = {
         {
           type: "doc",
           label: "Overview",
-          id: "current/cloud/index",
+          id: "cloud/index",
         },
         {
           type: "doc",
           label: "Get Started",
-          id: "current/cloud/get-started",
+          id: "cloud/get-started",
         },
         {
           type: "category",
@@ -53,9 +53,9 @@ module.exports = {
           collapsible: true,
           collapsed: true,
           items: [
-            "current/cloud/reference/user-interface",
-            "current/cloud/reference/roles-permissions",
-            "current/cloud/reference/org-administration",
+            "cloud/reference/user-interface",
+            "cloud/reference/roles-permissions",
+            "cloud/reference/org-administration",
           ]
         },
       ],
@@ -75,13 +75,13 @@ module.exports = {
             {
               type: "doc",
               label: "Overview",
-              id: "current/sdk/go/index",
+              id: "sdk/go/index",
             },
-            "current/sdk/go/install",
+            "sdk/go/install",
             {
               type: "doc",
               label: "Get Started",
-              id: "current/sdk/go/get-started",
+              id: "sdk/go/get-started",
             },
             {
               type: "link",
@@ -99,18 +99,18 @@ module.exports = {
             {
               type: "doc",
               label: "Overview",
-              id: "current/sdk/nodejs/index",
+              id: "sdk/nodejs/index",
             },
-            "current/sdk/nodejs/install",
+            "sdk/nodejs/install",
             {
               type: "doc",
               label: "Get Started",
-              id: "current/sdk/nodejs/get-started",
+              id: "sdk/nodejs/get-started",
             },
             {
               type: "doc",
               label: "Reference",
-              id: "current/sdk/nodejs/reference/modules",
+              id: "sdk/nodejs/reference/modules",
             },
           ],
         },
@@ -123,13 +123,13 @@ module.exports = {
             {
               type: "doc",
               label: "Overview",
-              id: "current/sdk/python/index",
+              id: "sdk/python/index",
             },
-            "current/sdk/python/install",
+            "sdk/python/install",
             {
               type: "doc",
               label: "Get Started",
-              id: "current/sdk/python/get-started",
+              id: "sdk/python/get-started",
             },
             {
               type: "link",
@@ -147,13 +147,13 @@ module.exports = {
             {
               type: "doc",
               label: "Overview",
-              id: "current/sdk/elixir/index",
+              id: "sdk/elixir/index",
             },
-            "current/sdk/elixir/install",
+            "sdk/elixir/install",
             {
               type: "doc",
               label: "Get Started",
-              id: "current/sdk/elixir/get-started",
+              id: "sdk/elixir/get-started",
             },
             {
               type: "link",
@@ -171,11 +171,11 @@ module.exports = {
             {
               type: "doc",
               label: "Overview",
-              id: "current/api/index",
+              id: "api/index",
             },
-            "current/api/concepts",
-            "current/api/playground",
-            "current/api/build-custom-client",
+            "api/concepts",
+            "api/playground",
+            "api/build-custom-client",
             {
               type: "link",
               label: "Reference",
@@ -194,24 +194,24 @@ module.exports = {
         {
           type: "doc",
           label: "Overview",
-          id: "current/cli/index",
+          id: "cli/index",
         },
-        "current/cli/install",
-        "current/cli/run-pipelines-cli",
+        "cli/install",
+        "cli/run-pipelines-cli",
         {
           type: "doc",
           label: "Reference",
-          id: "current/cli/reference",
+          id: "cli/reference",
         },
       ],
     },
     {
       type: "doc",
-      id: "current/faq",
+      id: "faq",
     },
     {
       type: "doc",
-      id: "current/contributing",
+      id: "contributing",
     },
     {
       type: "link",
@@ -222,7 +222,7 @@ module.exports = {
   quickstart: [
     {
       type: "doc",
-      id: "current/index",
+      id: "index",
       label: "Home",
     },
     {
@@ -231,151 +231,21 @@ module.exports = {
       collapsible: false,
       collapsed: false,
       items: [
-        "current/quickstart/index",
-        "current/quickstart/basics",
-        "current/quickstart/setup",
-        "current/quickstart/cli",
-        "current/quickstart/sdk",
-        "current/quickstart/hello",
-        "current/quickstart/test",
-        "current/quickstart/build",
-        "current/quickstart/publish",
-        "current/quickstart/build-multi",
-        "current/quickstart/caching",
-        "current/quickstart/build-dockerfile",
-        "current/quickstart/conclusion",
+        "quickstart/index",
+        "quickstart/basics",
+        "quickstart/setup",
+        "quickstart/cli",
+        "quickstart/sdk",
+        "quickstart/hello",
+        "quickstart/test",
+        "quickstart/build",
+        "quickstart/publish",
+        "quickstart/build-multi",
+        "quickstart/caching",
+        "quickstart/build-dockerfile",
+        "quickstart/conclusion",
       ]
     }
   ],
-  zenith: [
-    {
-      type: "doc",
-      id: "zenith/index",
-      label: "Introduction",
-    },
-    {
-      type: "category",
-      label: "Using Dagger",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "Installation",
-          id: "zenith/user/install",
-        },
-        {
-          type: "category",
-          label: "Quickstart",
-          items: [
-            "zenith/user/quickstart/index",
-            "zenith/user/quickstart/setup",
-            "zenith/user/quickstart/functions",
-            "zenith/user/quickstart/call",
-            "zenith/user/quickstart/download",
-            "zenith/user/quickstart/shell",
-            "zenith/user/quickstart/up",
-            "zenith/user/quickstart/conclusion",
-          ]
-        },
 
-      ],
-    },
-    {
-      type: "category",
-      label: "Programming Dagger",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "Introduction",
-          id: "zenith/developer/index",
-        },
-        {
-          type: "category",
-          label: "Go",
-          items: [
-            {
-              type: "doc",
-              id: "zenith/developer/go/quickstart",
-            },
-            {
-              type: "doc",
-              id: "zenith/developer/go/test-build-publish",
-            },
-            {
-              type: "doc",
-              id: "zenith/developer/go/advanced-programming",
-            },
-            {
-              type: "link",
-              label: "Go SDK Reference",
-              href: "https://pkg.go.dev/dagger.io/dagger",
-            },
-
-          ]
-        },
-        {
-          type: "category",
-          label: "Python",
-          items: [
-            {
-              type: "doc",
-              id: "zenith/developer/python/quickstart",
-            },
-            {
-              type: "doc",
-              id: "zenith/developer/python/advanced-programming",
-            },
-            {
-              type: "link",
-              label: "Python SDK Reference",
-              href: "https://dagger-io.readthedocs.org/",
-            },
-          ]
-        },
-        {
-          type: "doc",
-          id: "zenith/developer/publishing-modules",
-        },
-        {
-          type: "doc",
-          id: "zenith/developer/troubleshooting",
-        },
-      ],
-    },
-    {
-      type: "category",
-      label: "Reference",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "CLI Reference",
-          id: "current/cli/reference",
-        },
-        {
-          type: "link",
-          label: "API Reference",
-          href: "https://docs.dagger.io/api/reference",
-        },
-
-      ],
-    },
-    {
-      type: "doc",
-      id: "current/faq",
-    },
-    {
-      type: "doc",
-      id: "current/contributing",
-    },
-    {
-      type: "link",
-      label: "Changelog",
-      href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
-    },
-  ],
 };
