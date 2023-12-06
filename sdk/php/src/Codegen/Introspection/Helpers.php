@@ -26,7 +26,7 @@ class Helpers
         $objectName = str_replace(['ID', 'JSON'], ['Id', 'Json'], $objectName);
 
         return match ($objectName) {
-            'Function' => 'DaggerFunction',
+            'Function' => 'Function_',
             'Void' => 'NullVoid',
             default => $objectName,
         };

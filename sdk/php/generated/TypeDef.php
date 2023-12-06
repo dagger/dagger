@@ -74,7 +74,7 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
     /**
      * Adds a function for an Object TypeDef, failing if the type is not an object.
      */
-    public function withFunction(FunctionId|DaggerFunction $function): TypeDef
+    public function withFunction(FunctionId|Function_ $function): TypeDef
     {
         $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withFunction');
         $innerQueryBuilder->setArgument('function', $function);

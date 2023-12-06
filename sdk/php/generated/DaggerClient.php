@@ -102,12 +102,12 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
     /**
      * Create a function.
      */
-    public function function(string $name, TypeDefId|TypeDef $returnType): DaggerFunction
+    public function function(string $name, TypeDefId|TypeDef $returnType): Function_
     {
         $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('function');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('returnType', $returnType);
-        return new \DaggerIo\Gen\DaggerFunction($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \DaggerIo\Gen\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -224,11 +224,11 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
     /**
      * Load a function by ID.
      */
-    public function loadFunctionFromID(FunctionId|DaggerFunction $id): DaggerFunction
+    public function loadFunctionFromID(FunctionId|Function_ $id): Function_
     {
         $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadFunctionFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\DaggerFunction($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \DaggerIo\Gen\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

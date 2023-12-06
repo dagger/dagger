@@ -14,7 +14,7 @@ namespace DaggerIo\Gen;
  * A function always evaluates against a parent object and is given a set of
  * named arguments.
  */
-class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Client\IdAble
+class Function_ extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Client\IdAble
 {
     /**
      * Arguments accepted by this function, if any
@@ -69,7 +69,7 @@ class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \D
         TypeDefId|TypeDef $typeDef,
         ?string $description = null,
         ?Json $defaultValue = null,
-    ): DaggerFunction
+    ): Function_
     {
         $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
@@ -80,16 +80,16 @@ class DaggerFunction extends \DaggerIo\Client\AbstractDaggerObject implements \D
         if (null !== $defaultValue) {
         $innerQueryBuilder->setArgument('defaultValue', $defaultValue);
         }
-        return new \DaggerIo\Gen\DaggerFunction($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \DaggerIo\Gen\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Returns the function with the doc string
      */
-    public function withDescription(string $description): DaggerFunction
+    public function withDescription(string $description): Function_
     {
         $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withDescription');
         $innerQueryBuilder->setArgument('description', $description);
-        return new \DaggerIo\Gen\DaggerFunction($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \DaggerIo\Gen\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
