@@ -7,7 +7,7 @@ module.exports = async function guidesPlugin(context, options) {
   return {
     name: "docusaurus-plugin-guides",
     async loadContent() {
-      const guidesFolderPath = path.resolve("./content/current/guides");
+      const guidesFolderPath = path.resolve("./content/guides");
       const guides = fs.readdirSync(guidesFolderPath).flatMap((x) => {
         const guidePath = `${guidesFolderPath}/${x}`;
         const isFile = fs.lstatSync(guidePath).isFile();

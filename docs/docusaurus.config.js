@@ -48,7 +48,19 @@ const config = {
           editUrl: 'https://github.com/dagger/dagger/edit/main/website',
           remarkPlugins: [
             [remarkCodeImport, { allowImportingFromOutside: true }],
-          ]
+          ],
+          versions: {
+            zenith: {
+              path: '/zenith',
+              banner: 'none',
+              badge: false
+            },
+            current: {
+              path: '/',
+              banner: 'none',
+              badge: false
+            },
+          },
         },
         blog: false,
         theme: {
@@ -78,7 +90,7 @@ const config = {
         {
           entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts', '../sdk/nodejs/common/errors/index.ts'],
           tsconfig: '../sdk/nodejs/tsconfig.json',
-          out: '../content/current/sdk/nodejs/reference/',
+          out: '../content/sdk/nodejs/reference/',
           excludeProtected: true,
           skipErrorChecking: true,
           disableSources: true,
