@@ -1015,7 +1015,7 @@ class Container(Type):
         value:
             The value of the environment variable. (e.g., "localhost").
         expand:
-            Replace ${VAR} or $VAR in the value according to the current
+            Replace `${VAR}` or $VAR in the value according to the current
             environment
             variables defined in the container (e.g., "/opt/bin:$PATH").
         """
@@ -1098,8 +1098,9 @@ class Container(Type):
         """Expose a network port.
 
         Exposed ports serve two purposes:
-          - For health checks and introspection, when running services
-          - For setting the EXPOSE OCI field when publishing the container
+
+        - For health checks and introspection, when running services
+        - For setting the EXPOSE OCI field when publishing the container
 
         Parameters
         ----------
@@ -3959,8 +3960,8 @@ class Client(Root):
         ----------
         url:
             Url of the git repository.
-            Can be formatted as https://{host}/{owner}/{repo},
-            git@{host}:{owner}/{repo}
+            Can be formatted as `https://{host}/{owner}/{repo}`,
+            `git@{host}:{owner}/{repo}`
             Suffix ".git" is optional.
         keep_git_dir:
             Set to true to keep .git directory.

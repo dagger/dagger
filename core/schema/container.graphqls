@@ -174,7 +174,7 @@ type Container {
     value: String!
 
     """
-    Replace $\\{VAR\\} or $VAR in the value according to the current environment
+    Replace `${VAR}` or $VAR in the value according to the current environment
     variables defined in the container (e.g., "/opt/bin:$PATH").
     """
     expand: Boolean

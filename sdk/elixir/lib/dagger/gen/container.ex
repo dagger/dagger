@@ -513,7 +513,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\").\n\n## Optional Arguments\n\n* `expand` - Replace ${VAR} or $VAR in the value according to the current environment\nvariables defined in the container (e.g., \"/opt/bin:$PATH\")."
+    @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\").\n\n## Optional Arguments\n\n* `expand` - Replace `${VAR}` or $VAR in the value according to the current environment\nvariables defined in the container (e.g., \"/opt/bin:$PATH\")."
     @spec with_env_variable(t(), Dagger.String.t(), Dagger.String.t(), keyword()) ::
             Dagger.Container.t()
     def with_env_variable(%__MODULE__{} = container, name, value, optional_args \\ []) do
@@ -590,7 +590,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n  - For health checks and introspection, when running services\n  - For setting the EXPOSE OCI field when publishing the container\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description"
+    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n\n- For health checks and introspection, when running services\n- For setting the EXPOSE OCI field when publishing the container\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description"
     @spec with_exposed_port(t(), Dagger.Int.t(), keyword()) :: Dagger.Container.t()
     def with_exposed_port(%__MODULE__{} = container, port, optional_args \\ []) do
       selection = select(container.selection, "withExposedPort")

@@ -410,7 +410,7 @@ pub struct ContainerWithDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
-    /// Replace ${VAR} or $VAR in the value according to the current environment
+    /// Replace `${VAR}` or $VAR in the value according to the current environment
     /// variables defined in the container (e.g., "/opt/bin:$PATH").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
@@ -3642,7 +3642,7 @@ impl Query {
     /// # Arguments
     ///
     /// * `url` - Url of the git repository.
-    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
+    /// Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`
     /// Suffix ".git" is optional.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git(&self, url: impl Into<String>) -> GitRepository {
@@ -3659,7 +3659,7 @@ impl Query {
     /// # Arguments
     ///
     /// * `url` - Url of the git repository.
-    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
+    /// Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`
     /// Suffix ".git" is optional.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git_opts<'a>(&self, url: impl Into<String>, opts: QueryGitOpts<'a>) -> GitRepository {

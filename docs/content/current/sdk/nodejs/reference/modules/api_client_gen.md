@@ -278,7 +278,7 @@ ___
 
 | Name | Type | Description |
 | :------ | :------ | :------ |
-| `expand?` | `boolean` | Replace $\{VAR\} or $VAR in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH"). |
+| `expand?` | `boolean` | Replace `${VAR}` or $VAR in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH"). |
 
 ___
 
