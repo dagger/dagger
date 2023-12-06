@@ -713,8 +713,9 @@ ___
 Expose a network port.
 
 Exposed ports serve two purposes:
-  - For health checks and introspection, when running services
-  - For setting the EXPOSE OCI field when publishing the container
+
+- For health checks and introspection, when running services
+- For setting the EXPOSE OCI field when publishing the container
 
 #### Parameters
 

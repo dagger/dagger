@@ -21,6 +21,7 @@ Enable logs output
 **`Example`**
 
 LogOutput
+
 ```ts
 connect(async (client: Client) => {
  const source = await client.host().workdir().id()
