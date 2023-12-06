@@ -51,13 +51,20 @@ func OptEmpty[T any]() Optional[T] {
 
 // Get returns the internal value of the optional and a boolean indicating if
 // the value was set explicitly by the caller.
-func (o Optional[T]) Get() (T, bool) {
+func (o *Optional[T]) Get() (T, bool) {
+	if o == nil {
+		var empty T
+		return empty, false
+	}
 	return o.value, o.isSet
 }
 
 // GetOr returns the internal value of the optional or the given default value
 // if the value was not explicitly set by the caller.
-func (o Optional[T]) GetOr(defaultValue T) T {
+func (o *Optional[T]) GetOr(defaultValue T) T {
+	if o == nil {
+		return defaultValue
+	}
 	if o.isSet {
 		return o.value
 	}
