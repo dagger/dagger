@@ -30,7 +30,7 @@ func (s *gitSchema) Resolvers() Resolvers {
 		},
 	}
 
-	ResolveIDable[core.GitRef](rs, "GitRepository", ObjectResolver{
+	ResolveIDable[core.GitRepository](rs, "GitRepository", ObjectResolver{
 		"branch": ToResolver(s.branch),
 		"tag":    ToResolver(s.tag),
 		"commit": ToResolver(s.commit),
@@ -52,7 +52,7 @@ type gitArgs struct {
 	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
 }
 
-func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRef, error) {
+func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRepository, error) {
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost != nil {
 		svc, err := args.ExperimentalServiceHost.Decode()
@@ -70,7 +70,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		})
 	}
 
-	repo := &core.GitRef{
+	repo := &core.GitRepository{
 		URL:           args.URL,
 		KeepGitDir:    args.KeepGitDir,
 		SSHKnownHosts: args.SSHKnownHosts,
@@ -86,24 +86,33 @@ type commitArgs struct {
 	ID string
 }
 
-func (s *gitSchema) commit(ctx context.Context, parent *core.GitRef, args commitArgs) (*core.GitRef, error) {
-	return parent.WithRef(args.ID), nil
+func (s *gitSchema) commit(ctx context.Context, parent *core.GitRepository, args commitArgs) (*core.GitRef, error) {
+	return &core.GitRef{
+		Ref:  args.ID,
+		Repo: parent,
+	}, nil
 }
 
 type branchArgs struct {
 	Name string
 }
 
-func (s *gitSchema) branch(ctx context.Context, parent *core.GitRef, args branchArgs) (*core.GitRef, error) {
-	return parent.WithRef(args.Name), nil
+func (s *gitSchema) branch(ctx context.Context, parent *core.GitRepository, args branchArgs) (*core.GitRef, error) {
+	return &core.GitRef{
+		Ref:  args.Name,
+		Repo: parent,
+	}, nil
 }
 
 type tagArgs struct {
 	Name string
 }
 
-func (s *gitSchema) tag(ctx context.Context, parent *core.GitRef, args tagArgs) (*core.GitRef, error) {
-	return parent.WithRef(args.Name), nil
+func (s *gitSchema) tag(ctx context.Context, parent *core.GitRepository, args tagArgs) (*core.GitRef, error) {
+	return &core.GitRef{
+		Ref:  args.Name,
+		Repo: parent,
+	}, nil
 }
 
 type treeArgs struct {
@@ -115,10 +124,12 @@ type treeArgs struct {
 
 func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, treeArgs treeArgs) (*core.Directory, error) {
 	res := *parent
+	repo := *res.Repo
+	res.Repo = &repo
 	if treeArgs.SSHKnownHosts != "" || treeArgs.SSHAuthSocket != "" {
 		// no need for a full clone() here, we're only modifying string fields
-		res.SSHKnownHosts = treeArgs.SSHKnownHosts
-		res.SSHAuthSocket = treeArgs.SSHAuthSocket
+		res.Repo.SSHKnownHosts = treeArgs.SSHKnownHosts
+		res.Repo.SSHAuthSocket = treeArgs.SSHAuthSocket
 	}
 	return res.Tree(ctx, s.bk)
 }

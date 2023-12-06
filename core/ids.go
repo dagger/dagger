@@ -26,4 +26,8 @@ type TypeDefID = resourceid.ID[TypeDef]
 
 type GeneratedCodeID = resourceid.ID[GeneratedCode]
 
+type GitRepositoryID = resourceid.ID[GitRepository]
+
+type GitRefID = resourceid.ID[GitRef]
+
 // SocketID is in the socket package (to avoid circular imports)
