@@ -23,6 +23,7 @@
     "clsx": "^1.2.1",
     "docusaurus-plugin-image-zoom": "^1.0.1",
     "docusaurus-plugin-sass": "^0.2.5",
+    "docusaurus-plugin-typedoc": "^0.21.0",
     "posthog-docusaurus": "^2.0.0",
     "prism-react-renderer": "^2.1.0",
     "react": "^18.0.0",
@@ -30,7 +31,8 @@
     "remark-code-import": "^1.2.0",
     "spectaql": "^2.3.0",
     "typedoc": "^0.25.4",
-    "typedoc-plugin-markdown": "^3.17.1"
+    "typedoc-plugin-markdown": "^3.17.1",
+    "typescript": "^5.3.2"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.0.1",

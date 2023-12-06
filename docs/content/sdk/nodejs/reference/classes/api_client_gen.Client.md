@@ -237,7 +237,7 @@ Queries a git repository.
 
 | Name | Type | Description |
 | :------ | :------ | :------ |
-| `url` | `string` | Url of the git repository. Can be formatted as https://\{host\}/\{owner\}/\{repo\}, git@\{host\}:\{owner\}/\{repo\} Suffix ".git" is optional. |
+| `url` | `string` | Url of the git repository. Can be formatted as `https://\{host\}/\{owner\}/\{repo\}`, git@\{host\}:\{owner\}/\{repo\} Suffix ".git" is optional. |
 | `opts?` | [`ClientGitOpts`](../modules/api_client_gen.md#clientgitopts) | - |
 
 #### Returns
