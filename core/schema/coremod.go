@@ -80,6 +80,9 @@ type CoreModObject struct {
 var _ ModType = (*CoreModObject)(nil)
 
 func (obj *CoreModObject) ConvertFromSDKResult(_ context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
 	id, ok := value.(string)
 	if !ok {
 		return value, nil
