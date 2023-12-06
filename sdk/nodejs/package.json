@@ -33,7 +33,7 @@
     "test": "mocha",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --fix .",
-    "docs:lint": "yarn eslint --max-warnings=0 --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/current",
+    "docs:lint": "yarn eslint --max-warnings=0 --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/content/current",
     "docs:fmt": "yarn eslint --fix --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/current ."
   },
   "devDependencies": {
