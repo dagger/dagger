@@ -94,6 +94,12 @@ type FunctionID string
 // A reference to GeneratedCode.
 type GeneratedCodeID string
 
+// A git reference identifier.
+type GitRefID string
+
+// A git repository identifier.
+type GitRepositoryID string
+
 // An arbitrary JSON-encoded value.
 type JSON string
 
@@ -2642,6 +2648,7 @@ type GitRef struct {
 	c graphql.Client
 
 	commit *string
+	id     *GitRefID
 }
 
 // The resolved commit id at this ref.
@@ -2655,6 +2662,46 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Retrieves the content-addressed identifier of the git ref.
+func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response GitRefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitRef) XXX_GraphQLType() string {
+	return "GitRef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitRef) XXX_GraphQLIDType() string {
+	return "GitRefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitRef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitRef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // GitRefTreeOpts contains options for GitRef.Tree
@@ -2688,6 +2735,8 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 type GitRepository struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	id *GitRepositoryID
 }
 
 // Returns details on one branch.
@@ -2710,6 +2759,46 @@ func (r *GitRepository) Commit(id string) *GitRef {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Retrieves the content-addressed identifier of the git repository.
+func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response GitRepositoryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitRepository) XXX_GraphQLType() string {
+	return "GitRepository"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitRepository) XXX_GraphQLIDType() string {
+	return "GitRepositoryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitRepository) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitRepository) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 // Returns details on one tag.
@@ -3686,6 +3775,28 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	q = q.Arg("id", id)
 
 	return &GeneratedCode{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a git ref from its ID.
+func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
+	q := r.q.Select("loadGitRefFromID")
+	q = q.Arg("id", id)
+
+	return &GitRef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a git repository from its ID.
+func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
+	q := r.q.Select("loadGitRepositoryFromID")
+	q = q.Arg("id", id)
+
+	return &GitRepository{
 		q: q,
 		c: r.c,
 	}

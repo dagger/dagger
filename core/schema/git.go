@@ -24,20 +24,23 @@ func (s *gitSchema) Schema() string {
 }
 
 func (s *gitSchema) Resolvers() Resolvers {
-	return Resolvers{
+	rs := Resolvers{
 		"Query": ObjectResolver{
 			"git": ToResolver(s.git),
 		},
-		"GitRepository": ObjectResolver{
-			"branch": ToResolver(s.branch),
-			"tag":    ToResolver(s.tag),
-			"commit": ToResolver(s.commit),
-		},
-		"GitRef": ObjectResolver{
-			"tree":   ToResolver(s.tree),
-			"commit": ToResolver(s.fetchCommit),
-		},
 	}
+
+	ResolveIDable[core.GitRef](rs, "GitRepository", ObjectResolver{
+		"branch": ToResolver(s.branch),
+		"tag":    ToResolver(s.tag),
+		"commit": ToResolver(s.commit),
+	})
+	ResolveIDable[core.GitRef](rs, "GitRef", ObjectResolver{
+		"tree":   ToResolver(s.tree),
+		"commit": ToResolver(s.fetchCommit),
+	})
+
+	return rs
 }
 
 type gitArgs struct {

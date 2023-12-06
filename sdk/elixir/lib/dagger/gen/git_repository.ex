@@ -26,6 +26,15 @@ defmodule Dagger.GitRepository do
   )
 
   (
+    @doc "Retrieves the content-addressed identifier of the git repository."
+    @spec id(t()) :: {:ok, Dagger.GitRepositoryID.t()} | {:error, term()}
+    def id(%__MODULE__{} = git_repository) do
+      selection = select(git_repository.selection, "id")
+      execute(selection, git_repository.client)
+    end
+  )
+
+  (
     @doc "Returns details on one tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\")."
     @spec tag(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def tag(%__MODULE__{} = git_repository, name) do
