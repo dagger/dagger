@@ -695,6 +695,14 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi!hi!"}}`, out)
 	})
+
+	t.Run("func EchoOptsPragmas(string, string, int) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsPragmas(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsPragmas":"hi...hi...hi..."}}`, out)
+	})
 }
 
 func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {
@@ -908,6 +916,7 @@ query {
               args {
                 name
                 description
+                defaultValue
               }
             }
             fields {
@@ -969,6 +978,19 @@ func TestModuleGoDocs(t *testing.T) {
 	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
 	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
 	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+
+	// test the arg-based form (with pragmas)
+	echoOpts = obj.Get(`functions.#(name="echoOptsPragmas")`)
+	require.Equal(t, "echoOptsPragmas", echoOpts.Get("name").String())
+	require.Len(t, echoOpts.Get("args").Array(), 3)
+	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "", echoOpts.Get("args.0.defaultValue").String())
+	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+	require.Equal(t, "\"...\"", echoOpts.Get("args.1.defaultValue").String())
+	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "3", echoOpts.Get("args.2.defaultValue").String())
 	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
 }
 

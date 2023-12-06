@@ -6,11 +6,14 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
@@ -886,7 +889,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 
 	i := 0
 	if params.At(i).Type().String() == contextTypename {
-		spec, err := ps.parseParamSpecVar(params.At(i))
+		spec, err := ps.parseParamSpecVar(params.At(i), "", "")
 		if err != nil {
 			return nil, err
 		}
@@ -919,16 +922,11 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 
 			paramFields := unpackASTFields(stype.Fields)
 			for f := 0; f < paramType.NumFields(); f++ {
-				spec, err := ps.parseParamSpecVar(paramType.Field(f))
+				spec, err := ps.parseParamSpecVar(paramType.Field(f), paramFields[f].Doc.Text(), paramFields[f].Comment.Text())
 				if err != nil {
 					return nil, err
 				}
 				spec.parent = parent
-				spec.description = paramFields[f].Doc.Text()
-				if spec.description == "" {
-					spec.description = paramFields[f].Comment.Text()
-				}
-				spec.description = strings.TrimSpace(spec.description)
 				specs = append(specs, spec)
 			}
 			return specs, nil
@@ -939,25 +937,20 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 	// as a top-level param
 	paramFields := unpackASTFields(fnDecl.Type.Params)
 	for ; i < params.Len(); i++ {
-		spec, err := ps.parseParamSpecVar(params.At(i))
+		docComment, lineComment := ps.commentForFuncField(fnDecl, paramFields, i)
+		spec, err := ps.parseParamSpecVar(params.At(i), docComment.Text(), lineComment.Text())
 		if err != nil {
 			return nil, err
 		}
 		if sig.Variadic() && i == params.Len()-1 {
 			spec.variadic = true
 		}
-
-		if cmt, err := ps.commentForFuncField(fnDecl, paramFields, i); err == nil {
-			spec.description = cmt.Text()
-			spec.description = strings.TrimSpace(spec.description)
-		}
-
 		specs = append(specs, spec)
 	}
 	return specs, nil
 }
 
-func (ps *parseState) parseParamSpecVar(field *types.Var) (paramSpec, error) {
+func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lineComment string) (paramSpec, error) {
 	if _, ok := field.Type().(*types.Struct); ok {
 		return paramSpec{}, fmt.Errorf("nested structs are not supported")
 	}
@@ -973,6 +966,8 @@ func (ps *parseState) parseParamSpecVar(field *types.Var) (paramSpec, error) {
 	}
 
 	optional := false
+	defaultValue := ""
+
 	if named, ok := baseType.(*types.Named); ok {
 		if named.Obj().Name() == "Optional" && ps.isDaggerGenerated(named.Obj()) {
 			typeArgs := named.TypeArgs()
@@ -992,11 +987,34 @@ func (ps *parseState) parseParamSpecVar(field *types.Var) (paramSpec, error) {
 		}
 	}
 
+	docPragmas, docComment := parsePragmaComment(docComment)
+	linePragmas, lineComment := parsePragmaComment(lineComment)
+	comment := strings.TrimSpace(docComment)
+	if comment == "" {
+		comment = strings.TrimSpace(lineComment)
+	}
+
+	pragmas := make(map[string]string)
+	maps.Copy(pragmas, docPragmas)
+	maps.Copy(pragmas, linePragmas)
+	if v, ok := pragmas["default"]; ok {
+		defaultValue = v
+	}
+	if v, ok := pragmas["optional"]; ok {
+		if v == "" {
+			optional = true
+		} else {
+			optional, _ = strconv.ParseBool(v)
+		}
+	}
+
 	return paramSpec{
-		name:      field.Name(),
-		paramType: paramType,
-		baseType:  baseType,
-		optional:  optional,
+		name:         field.Name(),
+		paramType:    paramType,
+		baseType:     baseType,
+		optional:     optional,
+		defaultValue: defaultValue,
+		description:  comment,
 	}, nil
 }
 
@@ -1007,7 +1025,7 @@ type paramSpec struct {
 	optional bool
 	variadic bool
 
-	defaultValue string // NOTE: defaultVal is not currently populated
+	defaultValue string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, Optional, etc
@@ -1083,11 +1101,11 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 // commentForFuncField returns the *ast* comment group for the given position. This
 // is needed because function args (despite being fields) don't have comments
 // associated with them, so this is a neat little hack to get them out.
-func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams []*ast.Field, i int) (*ast.CommentGroup, error) {
+func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams []*ast.Field, i int) (docComment *ast.CommentGroup, lineComment *ast.CommentGroup) {
 	pos := unpackedParams[i].Pos()
 	tokenFile := ps.fset.File(pos)
 	if tokenFile == nil {
-		return nil, fmt.Errorf("no file for function %s", fnDecl.Name.Name)
+		return nil, nil
 	}
 	line := tokenFile.Line(pos)
 
@@ -1135,23 +1153,25 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams [
 			npos := tokenFile.LineStart(tokenFile.Line(pos)) - 1
 			for _, comment := range f.Comments {
 				if comment.Pos() <= npos && npos <= comment.End() {
-					return comment, nil
+					docComment = comment
+					break
 				}
 			}
 		}
 
 		if allowLineComment {
-			// if no doc-style comment found, fallback to the current line to
-			// find a comment at the end of the line
+			// take the last position in the current line, and try and find a
+			// comment that contains it
 			npos := tokenFile.LineStart(tokenFile.Line(pos)+1) - 1
 			for _, comment := range f.Comments {
 				if comment.Pos() <= npos && npos <= comment.End() {
-					return comment, nil
+					lineComment = comment
+					break
 				}
 			}
 		}
 	}
-	return nil, fmt.Errorf("no comment for function %s", fnDecl.Name.Name)
+	return docComment, lineComment
 }
 
 func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
@@ -1180,6 +1200,30 @@ func findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statem
 	default:
 		return t, access
 	}
+}
+
+var pragmaCommentRegexp = regexp.MustCompile(`\+\s*(\S+?)(?:=(.+))?(?:\n|$)`)
+
+// parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
+func parsePragmaComment(comment string) (data map[string]string, rest string) {
+	data = map[string]string{}
+	lastEnd := 0
+	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
+		var key, value string
+		if v[2] != -1 {
+			key = comment[v[2]:v[3]]
+		}
+		if v[4] != -1 {
+			value = comment[v[4]:v[5]]
+		}
+		data[key] = value
+
+		rest += comment[lastEnd:v[0]]
+		lastEnd = v[1]
+	}
+	rest += comment[lastEnd:]
+
+	return data, rest
 }
 
 func asInlineStruct(t types.Type) (*types.Struct, bool) {
