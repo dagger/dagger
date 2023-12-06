@@ -3,6 +3,7 @@
 namespace DaggerIo\Codegen\Introspection;
 
 use DaggerIo\Codegen\CodeWriter;
+use DateTimeImmutable;
 use GraphQL\Type\Definition\CustomScalarType;
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;
@@ -27,7 +28,6 @@ class Helpers
 
         return match ($objectName) {
             'Function' => 'Function_',
-            'Void' => 'NullVoid',
             default => $objectName,
         };
     }
@@ -45,7 +45,7 @@ class Helpers
         }
 
         if ($type instanceof ScalarType) {
-            switch ($type) {
+            switch ($type->toString()) {
                 case 'String':
                     return 'string';
                 case 'Boolean':
@@ -54,6 +54,10 @@ class Helpers
                     return 'int';
                 case 'Float':
                     return 'float';
+                case 'Void':
+                    return 'void';
+                case 'DateTime':
+                    return DateTimeImmutable::class;
             }
         }
 
@@ -139,5 +143,12 @@ class Helpers
         return $type instanceof NonNull
             ? $type->getWrappedType() instanceof EnumType
             : $type instanceof EnumType;
+    }
+
+    public static function isVoidType(Type $returnType): bool
+    {
+        return
+            $returnType instanceof CustomScalarType
+            && 'Void' === $returnType->name;
     }
 }

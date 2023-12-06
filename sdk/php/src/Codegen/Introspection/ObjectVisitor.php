@@ -62,7 +62,7 @@ class ObjectVisitor extends AbstractVisitor
             if (Helpers::isScalar($returnType) || Helpers::isList($returnType) || Helpers::isEnumType($returnType)) {
                 $method->addBody('$leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder(?);', [$fieldName]);
                 $this->generateMethodArgumentsBody($method, $field->args, 'leafQueryBuilder');
-                if (Helpers::isCustomScalar($returnType)) {
+                if (Helpers::isCustomScalar($returnType) && !Helpers::isVoidType($returnType)) {
                     $method->addBody(
                         'return new '.$returnTypeClassName.'((string)$this->queryLeaf($leafQueryBuilder, ?));',
                         [$fieldName]
@@ -71,6 +71,11 @@ class ObjectVisitor extends AbstractVisitor
                     $enumClass = Helpers::formatPhpFqcn(Helpers::formatType($returnType));
                     $method->addBody(
                         'return '.$enumClass.'::from((string)$this->queryLeaf($leafQueryBuilder, ?));',
+                        [$fieldName]
+                    );
+                } elseif (Helpers::isVoidType($returnType)) {
+                    $method->addBody(
+                        '$this->queryLeaf($leafQueryBuilder, ?);',
                         [$fieldName]
                     );
                 } else {

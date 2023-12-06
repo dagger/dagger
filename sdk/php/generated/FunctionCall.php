@@ -52,10 +52,10 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
      * Set the return value of the function call to the provided value.
      * The value should be a string of the JSON serialization of the return value.
      */
-    public function returnValue(Json $value): NullVoid
+    public function returnValue(Json $value): void
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('returnValue');
         $leafQueryBuilder->setArgument('value', $value);
-        return new \DaggerIo\Gen\NullVoid((string)$this->queryLeaf($leafQueryBuilder, 'returnValue'));
+        $this->queryLeaf($leafQueryBuilder, 'returnValue');
     }
 }

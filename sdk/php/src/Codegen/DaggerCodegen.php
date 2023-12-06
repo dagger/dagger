@@ -3,6 +3,7 @@
 namespace DaggerIo\Codegen;
 
 use DaggerIo\Codegen\Introspection\CodegenVisitor;
+use DaggerIo\Codegen\Introspection\Helpers;
 use GraphQL\Type\Definition\CustomScalarType;
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;
@@ -28,7 +29,9 @@ class DaggerCodegen
         });
 
         $scalarTypes = array_filter($filteredTypes, function ($type) {
-            return $type instanceof CustomScalarType;
+            return $type instanceof CustomScalarType
+                && !Helpers::isVoidType($type)
+                && 'DateTime' !== $type->name;
         });
 
         $inputObjectTypes = array_filter($filteredTypes, function ($type) {

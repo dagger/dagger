@@ -87,10 +87,10 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      *     Note: this can only be called once per session.
      *     In the future, it could return a stream or service to remove the side effect.
      */
-    public function serve(): NullVoid
+    public function serve(): void
     {
         $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('serve');
-        return new \DaggerIo\Gen\NullVoid((string)$this->queryLeaf($leafQueryBuilder, 'serve'));
+        $this->queryLeaf($leafQueryBuilder, 'serve');
     }
 
     /**
