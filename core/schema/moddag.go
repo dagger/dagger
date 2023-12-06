@@ -126,7 +126,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledS
 	}()
 
 	var schemas []SchemaResolvers
-	var modNames []string // for debugging+error messages
+	modNames := make([]string, 0, len(d.mods)) // for debugging+error messages
 	for _, mod := range d.mods {
 		modSchemas, err := mod.Schema(ctx)
 		if err != nil {
