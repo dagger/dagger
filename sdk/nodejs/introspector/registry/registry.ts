@@ -1,6 +1,7 @@
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 
-export type Class = { new (...args: unknown[]): unknown }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Class = { new (...args: any[]): any }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type State = { [property: string]: any }
@@ -78,7 +79,7 @@ export class Registry {
   }
 
   /**
-   * The definition of @field decorator that should be on top of any
+   * The definition of @func decorator that should be on top of any
    * class' method that must be exposed to the Dagger API.
    */
   func = (
@@ -119,6 +120,11 @@ export class Registry {
         `${object} is not register as a resolver`,
         {}
       )
+    }
+
+    // If method is nil, apply the constructor.
+    if (method === "") {
+      return new resolver.class_(...inputs)
     }
 
     // Safety check to make sure the method called exist in the class
