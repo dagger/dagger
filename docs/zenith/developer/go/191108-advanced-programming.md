@@ -7,7 +7,7 @@ date: "2023-11-03"
 
 # Advanced Programming
 
-{@include: ../../partials/_experimental.md}
+{@include: ../../partials/\_experimental.md}
 
 ## Introduction
 
@@ -65,6 +65,7 @@ So long as your object can be JSON-serialized by your SDK, its state will be pre
 Here is an example module using the Go SDK:
 
 ```go file=./snippets/advanced-programming/chaining/main.go
+
 ```
 
 And here is an example query for this module:
@@ -93,6 +94,36 @@ The result will be:
         "message": "Bonjour, Monde!"
       }
     }
+  }
+}
+```
+
+## Write a module constructor function
+
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, be a simple way to accept module-wide configuration.
+
+Here is an example module using the Go SDK:
+
+```go file=./snippets/advanced-programming/constructor/main.go
+
+```
+
+And here is an example query for this module:
+
+```graphql
+{
+  helloWorld(greeting: "Bonjour") {
+    message
+  }
+}
+```
+
+The result will be:
+
+```json
+{
+  "helloWorld": {
+    "message": "Bonjour, World!"
   }
 }
 ```
