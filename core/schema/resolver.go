@@ -73,6 +73,8 @@ func (r idableObjectResolver[T, I]) FromID(id string) (any, error) {
 
 func (r idableObjectResolver[T, I]) ToID(x any) (string, error) {
 	switch t := x.(type) {
+	case nil:
+		return "", nil
 	case string:
 		if err := resourceid.ID[T](t).Validate(); err != nil {
 			return "", err

@@ -1307,6 +1307,8 @@ func (m *Playground) MySlice() []*Container {
 
 type Foo struct {
 	Con *Container
+	// verify fields can remain nil w/out error too
+	UnsetFile *File
 }
 
 func (m *Playground) MyStruct() *Foo {
@@ -2213,6 +2215,7 @@ type Test struct {
 	Bar int
 	Baz []string
 	Dir *Directory
+	NeverSetDir *Directory
 }
 
 func (m *Test) GimmeFoo() string {
@@ -2243,6 +2246,7 @@ class Test:
     dir: dagger.Directory = field()
     bar: int = field(default=42)
     baz: list[str] = field(default=list)
+    never_set_dir: dagger.Directory | None = field(default=None)
 
     @function
     def gimme_foo(self) -> str:
