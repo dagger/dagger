@@ -297,16 +297,21 @@ describe("Registry", function () {
       }
     }
 
-    const constructorResult = await registry.getResult("HelloWorld", "", {}, [
-      "Dagger",
-    ])
+    const constructorResult = await registry.getResult(
+      "HelloWorld",
+      "",
+      {},
+      {
+        msg: "Dagger",
+      }
+    )
     assert.deepEqual(constructorResult, { msg: "Dagger" })
 
     const result = await registry.getResult(
       "HelloWorld",
       "sayHi",
       constructorResult,
-      []
+      {}
     )
     assert.deepEqual(result, "Hello Dagger")
   })

@@ -126,7 +126,9 @@ export class Registry {
 
     // If method is nil, apply the constructor.
     if (method === "") {
-      return new resolver.class_(...inputs)
+      return new resolver.class_(
+        ...this.getArgOrder(resolver.class_).map((arg) => inputs[arg])
+      )
     }
 
     // Safety check to make sure the method called exist in the class
@@ -145,21 +147,31 @@ export class Registry {
     // Apply state to the class
     r = Object.assign(r, state)
 
-    // Get the order of argument by reading its content and create an array of its argument
-    // We cannot use r[method].prototype because it can be empty depending on the loading.
-    // Note(TomChv): This is a workaround until we find something more accurate.
-    const fnStr = r[method]
-      .toString()
-      .replace(/((\/\/.*$)|(\/\*[\s\S]*?\*\/))/gm, "") as string
-    const argOrder = fnStr
-      .slice(fnStr.indexOf("(") + 1, fnStr.indexOf(")"))
-      .match(/([^\s,]+)/g)
-
     // Order argument following the arg order and picking argument from the inputs map
-    const args = argOrder?.map((arg) => inputs[arg]) ?? []
+    const args = this.getArgOrder(r[method]).map((arg) => inputs[arg])
 
     // Execute and return the result
     return await r[method](...args)
+  }
+
+  /**
+   * Get the order of argument by reading its content and create an array of its argument
+   * We cannot use r[method].prototype because it can be empty depending on the loading.
+   * Note(TomChv): This is a workaround until we find something more accurate.
+   * @param fct
+   * @private
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private getArgOrder(fct: any): string[] {
+    const fnStr = fct
+      .toString()
+      .replace(/((\/\/.*$)|(\/\*[\s\S]*?\*\/))/gm, "") as string
+
+    return (
+      fnStr
+        .slice(fnStr.indexOf("(") + 1, fnStr.indexOf(")"))
+        .match(/([^\s,]+)/g) ?? []
+    )
   }
 }
 
