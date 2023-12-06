@@ -55,8 +55,9 @@
 
       		{{- with $optionals }}
       			{{- if $required }}, {{ end -}}
-        ...opts{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
+        ...opts
 			{{- end -}}
+			{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
 {{""}} },
 		{{- end }}
         },

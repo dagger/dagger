@@ -17,9 +17,14 @@ describe("Registry", function () {
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "greeting", {}, [
-      "world",
-    ])
+    const result = await registry.getResult(
+      "HelloWorld",
+      "greeting",
+      {},
+      {
+        name: "world",
+      }
+    )
     assert.equal(result, "Hello world")
   })
 
@@ -35,9 +40,14 @@ describe("Registry", function () {
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "asyncGreeting", {}, [
-      "world",
-    ])
+    const result = await registry.getResult(
+      "HelloWorld",
+      "asyncGreeting",
+      {},
+      {
+        name: "world",
+      }
+    )
     assert.equal(result, "Hello world")
   })
 
@@ -62,7 +72,9 @@ describe("Registry", function () {
       "HelloWorld",
       "asyncGreeting",
       {},
-      ["world"]
+      {
+        name: "world",
+      }
     )
     assert.equal(resultAsyncGreeting, "Hello world")
 
@@ -70,7 +82,9 @@ describe("Registry", function () {
       "HelloWorld",
       "greeting",
       {},
-      ["world"]
+      {
+        name: "world",
+      }
     )
     assert.equal(resultGreeting, "Hello world")
   })
@@ -89,9 +103,15 @@ describe("Registry", function () {
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "greeting", {}, [
-      "world",
-    ])
+    const result = await registry.getResult(
+      "HelloWorld",
+      "greeting",
+      {},
+
+      {
+        name: "world",
+      }
+    )
     assert.equal(result, "Hello world")
   })
 
@@ -116,7 +136,9 @@ describe("Registry", function () {
       {
         prefix: "Hey",
       },
-      ["world"]
+      {
+        name: "world",
+      }
     )
 
     assert.equal(result, "Hey world")
@@ -139,7 +161,7 @@ describe("Registry", function () {
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "greeting", {}, [])
+    const result = await registry.getResult("HelloWorld", "greeting", {}, {})
 
     assert.deepEqual(result, { prefix: "self" })
   })
@@ -171,9 +193,14 @@ describe("Registry", function () {
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "container", {}, [
-      ctr,
-    ])
+    const result = await registry.getResult(
+      "HelloWorld",
+      "container",
+      {},
+      {
+        ctr: ctr,
+      }
+    )
 
     assert.deepEqual(result, { ctr: { id: "1" } })
   })
@@ -185,14 +212,24 @@ describe("Registry", function () {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.func
-      compute(a: number, b: number): number {
-        return a + b
+      compute(a: number, b: number, c: number): number {
+        return a * b + c
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "compute", {}, [1, 2])
+    const result = await registry.getResult(
+      "HelloWorld",
+      "compute",
+      {},
+      {
+        // Send argument in disorder to ensure we order them back
+        c: 3,
+        b: 2,
+        a: 1,
+      }
+    )
 
-    assert.equal(result, `3`)
+    assert.equal(result, 5)
   })
 
   it("Should correctly serialize data", async function () {
@@ -231,9 +268,9 @@ describe("Registry", function () {
     }
 
     await connection(async () => {
-      const fooResult = await registry.getResult("Foo", "foo", {}, [])
+      const fooResult = await registry.getResult("Foo", "foo", {}, {})
 
-      const result = await registry.getResult("Bar", "bar", fooResult, [])
+      const result = await registry.getResult("Bar", "bar", fooResult, {})
 
       assert.equal(result, "Hello Dagger")
     })

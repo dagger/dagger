@@ -5771,7 +5771,9 @@ export class TypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "withConstructor",
-          args: { function_ },
+          args: {
+            function: function_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -5810,7 +5812,9 @@ export class TypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "withFunction",
-          args: { function_ },
+          args: {
+            function: function_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -5821,12 +5825,16 @@ export class TypeDef extends BaseClient {
    * Sets the kind of the type.
    */
   withKind = (kind: TypeDefKind): TypeDef => {
+    const metadata: Metadata = {
+      kind: { is_enum: true },
+    }
+
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withKind",
-          args: { kind },
+          args: { kind, __metadata: metadata },
         },
       ],
       ctx: this._ctx,

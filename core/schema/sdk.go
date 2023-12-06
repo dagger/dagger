@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"path/filepath"
 
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vito/progrock"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	ciconsts "github.com/dagger/dagger/internal/mage/consts"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vito/progrock"
 )
 
 /*
@@ -77,6 +78,8 @@ func (s *APIServer) builtinSDK(ctx context.Context, sdkName string) (SDK, error)
 		return &goSDK{APIServer: s}, nil
 	case "python":
 		return s.loadBuiltinSDK(ctx, sdkName, ciconsts.PythonSDKEngineContainerModulePath)
+	case "typescript":
+		return s.loadBuiltinSDK(ctx, sdkName, ciconsts.TypescriptSDKEngineContainerModulePath)
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}

@@ -2,8 +2,8 @@ import assert from "assert"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { Metadata } from "../scanner/metadata.js"
-import { scan } from "../scanner/scan.js"
+import { TypeDefKind } from "../../api/client.gen.js"
+import { scan, ScanResult } from "../scanner/scan.js"
 import { listFiles } from "../utils/files.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -15,22 +15,25 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [
         {
           name: "HelloWorld",
-          doc: "HelloWorld class",
-          properties: [],
+          description: "HelloWorld class",
+          fields: [],
+          constructor: undefined,
           methods: [
             {
               name: "helloWorld",
-              returnType: "string",
-              doc: "",
-              params: [
+              returnType: {
+                kind: TypeDefKind.Stringkind,
+              },
+              description: "",
+              args: [
                 {
                   name: "name",
-                  typeName: "string",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -49,7 +52,7 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/noDecorators`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [],
       functions: [],
     }
@@ -61,22 +64,28 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/multipleObjects`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [
         {
           name: "Bar",
-          doc: "Bar class",
-          properties: [],
+          description: "Bar class",
+          constructor: undefined,
+          fields: [],
           methods: [
             {
               name: "exec",
-              doc: "Execute the command and return its result",
-              returnType: "string",
-              params: [
+              description: "Execute the command and return its result",
+              returnType: { kind: TypeDefKind.Stringkind },
+              args: [
                 {
                   name: "cmd",
-                  typeName: "string[]",
-                  doc: "Command to execute",
+                  typeDef: {
+                    kind: TypeDefKind.Listkind,
+                    typeDef: {
+                      kind: TypeDefKind.Stringkind,
+                    },
+                  },
+                  description: "Command to execute",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -86,14 +95,18 @@ describe("scan static Typescript", function () {
         },
         {
           name: "Foo",
-          doc: "Foo class",
-          properties: [],
+          description: "Foo class",
+          constructor: undefined,
+          fields: [],
           methods: [
             {
               name: "bar",
-              doc: "Return Bar object",
-              returnType: "Bar",
-              params: [],
+              description: "Return Bar object",
+              returnType: {
+                kind: TypeDefKind.Objectkind,
+                name: "Bar",
+              },
+              args: [],
             },
           ],
         },
@@ -108,22 +121,23 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/privateMethod`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [
         {
           name: "HelloWorld",
-          doc: "HelloWorld class",
-          properties: [],
+          description: "HelloWorld class",
+          constructor: undefined,
+          fields: [],
           methods: [
             {
               name: "greeting",
-              returnType: "string",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Stringkind },
+              description: "",
+              args: [
                 {
                   name: "name",
-                  typeName: "string",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -131,13 +145,13 @@ describe("scan static Typescript", function () {
             },
             {
               name: "helloWorld",
-              returnType: "string",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Stringkind },
+              description: "",
+              args: [
                 {
                   name: "name",
-                  typeName: "string",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -156,33 +170,45 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/state`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [
         {
           name: "Alpine",
-          doc: "Alpine module",
-          properties: [
+          description: "Alpine module",
+          constructor: undefined,
+          fields: [
             {
               name: "packages",
-              typeName: "string[]",
-              doc: "packages to install",
+              typeDef: {
+                kind: TypeDefKind.Listkind,
+                typeDef: {
+                  kind: TypeDefKind.Stringkind,
+                },
+              },
+              description: "packages to install",
             },
             {
               name: "ctr",
-              typeName: "Container",
-              doc: "",
+              typeDef: {
+                kind: TypeDefKind.Objectkind,
+                name: "Container",
+              },
+              description: "",
             },
           ],
           methods: [
             {
               name: "base",
-              returnType: "Alpine",
-              doc: "Returns a base Alpine container",
-              params: [
+              returnType: {
+                kind: TypeDefKind.Objectkind,
+                name: "Alpine",
+              },
+              description: "Returns a base Alpine container",
+              args: [
                 {
                   name: "version",
-                  typeName: "string",
-                  doc: "version to use (default to: 3.16.2)",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "version to use (default to: 3.16.2)",
                   optional: true,
                   defaultValue: undefined,
                 },
@@ -190,13 +216,21 @@ describe("scan static Typescript", function () {
             },
             {
               name: "install",
-              returnType: "Alpine",
-              doc: "",
-              params: [
+              returnType: {
+                kind: TypeDefKind.Objectkind,
+                name: "Alpine",
+              },
+              description: "",
+              args: [
                 {
                   name: "pkgs",
-                  typeName: "string[]",
-                  doc: "",
+                  typeDef: {
+                    kind: TypeDefKind.Listkind,
+                    typeDef: {
+                      kind: TypeDefKind.Stringkind,
+                    },
+                  },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -204,13 +238,18 @@ describe("scan static Typescript", function () {
             },
             {
               name: "exec",
-              returnType: "string",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Stringkind },
+              description: "",
+              args: [
                 {
                   name: "cmd",
-                  typeName: "string[]",
-                  doc: "",
+                  typeDef: {
+                    kind: TypeDefKind.Listkind,
+                    typeDef: {
+                      kind: TypeDefKind.Stringkind,
+                    },
+                  },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -229,22 +268,23 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [
         {
           name: "HelloWorld",
-          doc: "HelloWorld class",
-          properties: [],
+          description: "HelloWorld class",
+          fields: [],
+          constructor: undefined,
           methods: [
             {
               name: "helloWorld",
-              returnType: "string",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Stringkind },
+              description: "",
+              args: [
                 {
                   name: "name",
-                  typeName: "string",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
                   optional: true,
                   defaultValue: undefined,
                 },
@@ -252,13 +292,13 @@ describe("scan static Typescript", function () {
             },
             {
               name: "isTrue",
-              returnType: "boolean",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Booleankind },
+              description: "",
+              args: [
                 {
                   name: "value",
-                  typeName: "boolean",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Booleankind },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -266,20 +306,20 @@ describe("scan static Typescript", function () {
             },
             {
               name: "add",
-              returnType: "number",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Integerkind },
+              description: "",
+              args: [
                 {
                   name: "a",
-                  typeName: "number",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Integerkind },
+                  description: "",
                   optional: true,
                   defaultValue: "0",
                 },
                 {
                   name: "b",
-                  typeName: "number",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Integerkind },
+                  description: "",
                   optional: true,
                   defaultValue: "0",
                 },
@@ -298,22 +338,23 @@ describe("scan static Typescript", function () {
     const files = await listFiles(`${rootDirectory}/voidReturn`)
 
     const result = scan(files)
-    const expected: Metadata = {
+    const expected: ScanResult = {
       classes: [
         {
           name: "HelloWorld",
-          doc: "HelloWorld class",
-          properties: [],
+          description: "HelloWorld class",
+          constructor: undefined,
+          fields: [],
           methods: [
             {
               name: "helloWorld",
-              returnType: "void",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Voidkind },
+              description: "",
+              args: [
                 {
                   name: "name",
-                  typeName: "string",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
@@ -321,13 +362,13 @@ describe("scan static Typescript", function () {
             },
             {
               name: "asyncHelloWorld",
-              returnType: "void",
-              doc: "",
-              params: [
+              returnType: { kind: TypeDefKind.Voidkind },
+              description: "",
+              args: [
                 {
                   name: "name",
-                  typeName: "string",
-                  doc: "",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
                   optional: true,
                   defaultValue: undefined,
                 },

@@ -56,7 +56,9 @@ export function serializeSymbol(
 
   return {
     name: symbol.getName(),
-    doc: ts.displayPartsToString(symbol.getDocumentationComment(checker)),
+    description: ts.displayPartsToString(
+      symbol.getDocumentationComment(checker)
+    ),
     typeName: serializeType(checker, type),
     type,
   }
