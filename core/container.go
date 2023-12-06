@@ -333,6 +333,7 @@ func (container *Container) Build(
 	buildArgs []BuildArg,
 	target string,
 	secrets []SecretID,
+	attestations []Attestation,
 	bk *buildkit.Client,
 	svcs *Services,
 	buildCache *CacheMap[uint64, *Container],
@@ -350,13 +351,14 @@ func (container *Container) Build(
 			buildArgs,
 			target,
 			secrets,
+			attestations,
 			// scope cache per-client to avoid sharing caches across builds that are
 			// structurally similar but use different client-specific inputs (i.e.
 			// local dir with same path but different content)
 			clientMetadata.ClientID,
 		),
 		func(ctx context.Context) (*Container, error) {
-			return container.buildUncached(ctx, bk, contextDir, dockerfile, buildArgs, target, secrets, svcs)
+			return container.buildUncached(ctx, bk, contextDir, dockerfile, buildArgs, target, secrets, attestations, svcs)
 		},
 	)
 }
@@ -369,6 +371,7 @@ func (container *Container) buildUncached(
 	buildArgs []BuildArg,
 	target string,
 	secrets []SecretID,
+	attestations []Attestation,
 	svcs *Services,
 ) (*Container, error) {
 	container = container.Clone()
@@ -420,6 +423,11 @@ func (container *Container) buildUncached(
 		opts["build-arg:"+buildArg.Name] = buildArg.Value
 	}
 
+	for _, att := range attestations {
+		opts["attest:"+att.Type] = strings.Join(att.Params, ",")
+	}
+	fmt.Printf("opts: %v\n", opts)
+
 	inputs := map[string]*pb.Definition{
 		dockerui.DefaultLocalNameContext:    context.LLB,
 		dockerui.DefaultLocalNameDockerfile: context.LLB,
@@ -448,6 +456,10 @@ func (container *Container) buildUncached(
 			return nil, err
 		}
 	}
+
+	// p, _ := resolveProvenance(ctx, bk, st)
+	// b, _ := json.Marshal(p)
+	// fmt.Printf("provenance: %s\n", string(b))
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
@@ -1339,7 +1351,6 @@ func (container *Container) Publish(
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
-	attestations []Attestation,
 ) (string, error) {
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
@@ -1395,9 +1406,6 @@ func (container *Container) Publish(
 	if forcedCompression != "" {
 		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
-	}
-	for _, att := range attestations {
-		opts[string(att.Type)] = strings.Join(att.Params, ",")
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, bk, services)
@@ -1969,14 +1977,14 @@ const (
 	DockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 )
 
-type AttestType string
+type AttestationType string
 
 const (
-	AttestTypeSBOM       AttestType = "attest:sbom"
-	AttestTypeProvenance AttestType = "attest:provenance"
+	SBOMAttestation       AttestationType = "sbom"
+	ProvenanceAttestation AttestationType = "provenance"
 )
 
 type Attestation struct {
-	Type   AttestType
+	Type   string
 	Params []string
 }

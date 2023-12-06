@@ -88,6 +88,11 @@ type Container {
     e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)"
     """
     secrets: [SecretID!]
+
+    """
+    List of attestations to include in the image.
+    """
+    attestations: [Attestation!]
   ): Container!
 
   "Retrieves this container's root filesystem. Mounts are not included."
@@ -630,11 +635,6 @@ type Container {
     registries without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes
-
-    """
-    Lists of attestations to push to the registry.
-    """
-    attestations: [Attestation]
   ): String!
 
   """
@@ -893,12 +893,12 @@ enum ImageMediaTypes {
   DockerMediaTypes
 }
 
-type Attestation {
-  type: AttestType!
+input Attestation {
+  type: AttestationType!
   params: [String]
 }
 
-enum AttestType {
-  AttestTypeSBOM
-  AttestTypeProvenance
+enum AttestationType {
+  sbom
+  provenance
 }

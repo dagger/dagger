@@ -218,11 +218,12 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 }
 
 type dirDockerBuildArgs struct {
-	Platform   *specs.Platform
-	Dockerfile string
-	BuildArgs  []core.BuildArg
-	Target     string
-	Secrets    []core.SecretID
+	Platform     *specs.Platform
+	Dockerfile   string
+	BuildArgs    []core.BuildArg
+	Target       string
+	Secrets      []core.SecretID
+	Attestations []core.Attestation
 }
 
 func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
@@ -241,6 +242,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 		args.BuildArgs,
 		args.Target,
 		args.Secrets,
+		args.Attestations,
 		s.bk,
 		s.svcs,
 		s.buildCache,

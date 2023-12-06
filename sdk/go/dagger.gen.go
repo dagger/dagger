@@ -128,6 +128,12 @@ type TypeDefID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+type Attestation struct {
+	Params []string `json:"params"`
+
+	Type AttestationType `json:"type"`
+}
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -304,6 +310,8 @@ type ContainerBuildOpts struct {
 	// and mount path /run/secrets/[secret-name]
 	// e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)"
 	Secrets []*Secret
+	// List of attestations to include in the image.
+	Attestations []Attestation
 }
 
 // Initializes this container from a Dockerfile build.
@@ -326,6 +334,10 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
+		}
+		// `attestations` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Attestations) {
+			q = q.Arg("attestations", opts[i].Attestations)
 		}
 	}
 	q = q.Arg("context", context)
@@ -4449,6 +4461,16 @@ func (r *TypeDef) WithOptional(optional bool) *TypeDef {
 		c: r.c,
 	}
 }
+
+type AttestationType string
+
+func (AttestationType) IsEnum() {}
+
+const (
+	Provenance AttestationType = "provenance"
+
+	Sbom AttestationType = "sbom"
+)
 
 type CacheSharingMode string
 

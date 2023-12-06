@@ -148,11 +148,12 @@ func (s *containerSchema) from(ctx context.Context, parent *core.Container, args
 }
 
 type containerBuildArgs struct {
-	Context    core.DirectoryID
-	Dockerfile string
-	BuildArgs  []core.BuildArg
-	Target     string
-	Secrets    []core.SecretID
+	Context      core.DirectoryID
+	Dockerfile   string
+	BuildArgs    []core.BuildArg
+	Target       string
+	Secrets      []core.SecretID
+	Attestations []core.Attestation
 }
 
 func (s *containerSchema) build(ctx context.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
@@ -167,6 +168,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 		args.BuildArgs,
 		args.Target,
 		args.Secrets,
+		args.Attestations,
 		s.bk,
 		s.svcs,
 		s.buildCache,
@@ -452,11 +454,10 @@ type containerPublishArgs struct {
 	PlatformVariants  []core.ContainerID
 	ForcedCompression core.ImageLayerCompression
 	MediaTypes        core.ImageMediaTypes
-	Attestations      []core.Attestation
 }
 
 func (s *containerSchema) publish(ctx context.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes, args.Attestations)
+	return parent.Publish(ctx, s.bk, s.svcs, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerWithMountedFileArgs struct {
