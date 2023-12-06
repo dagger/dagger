@@ -5,7 +5,7 @@ extend type Query {
   git(
     """
     Url of the git repository.
-    Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
+    Can be formatted as `https://\{host\}/\{owner\}/\{repo\}`, git@\\{host\\}:\\{owner\\}/\\{repo\\}
     Suffix ".git" is optional.
     """
     url: String!

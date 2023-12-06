@@ -73,6 +73,27 @@ const config = {
         apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d"
       }
     ],
+    [
+        "docusaurus-plugin-typedoc",
+        {
+          entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts', '../sdk/nodejs/common/errors/index.ts'],
+          tsconfig: '../sdk/nodejs/tsconfig.json',
+          out: '../content/current/sdk/nodejs/reference/',
+          excludeProtected: true,
+          skipErrorChecking: true,
+          disableSources: true,
+          sidebar: {
+            categoryLabel: 'Reference',
+          },
+          frontmatter: {
+            displayed_sidebar: 'current',
+            sidebar_label: 'Reference',
+            title: "Dagger NodeJS SDK"
+          },
+          hideMembersSymbol: true,
+          requiredToBeDocumented: ["Class"]
+        },
+      ],
   ],
   themes: ['@docusaurus/theme-mermaid'],
   themeConfig:
