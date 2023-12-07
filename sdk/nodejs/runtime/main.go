@@ -22,22 +22,28 @@ const (
 )
 
 // ModuleRuntime returns a container with the node entrypoint ready to be called.
-func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) *Container {
-	return t.
-		CodegenBase(ctx, modSource, subPath, introspectionJson).
+func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
+	ctr, err := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr.
 		// Install dependencies
 		WithExec([]string{"yarn", "install"}).
 		// Add tsx to execute the entrypoint
 		WithExec([]string{"yarn", "global", "add", "tsx"}).
-		WithWorkdir(ModSourceDirPath).
 		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
-		WithDefaultArgs()
+		WithDefaultArgs(), nil
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) *GeneratedCode {
+func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*GeneratedCode, error) {
 	// Get base container
-	ctr := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
+	ctr, err := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
+	if err != nil {
+		return nil, err
+	}
 
 	// Add the SDK source into the container at genDir path
 	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
@@ -59,16 +65,16 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *Directory, subPa
 		WithVCSIgnoredPaths([]string{
 			genDir,
 			"node_modules",
-		})
+		}), nil
 }
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) *Container {
+func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
 	// Load module name for the template class
-	name, err := dag.ModuleConfig(modSource).Name(ctx)
+	name, err := dag.ModuleConfig(modSource.Directory(subPath)).Name(ctx)
 	if err != nil {
-		panic(fmt.Errorf("could not load module config: %v", err))
+		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
 
 	return t.Base("").
@@ -103,7 +109,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		WithExec([]string{"sh", "-c",
 			fmt.Sprintf("[ -f package.json ] || cp -r /opt/runtime/template/* . && sed -i -e 's/QuickStart/%s/g' ./src/index.ts", strcase.ToCamel(name))},
 			ContainerWithExecOpts{SkipEntrypoint: true},
-		)
+		), nil
 }
 
 // Base returns a Node container with cache setup for yarn
@@ -114,7 +120,7 @@ func (t *TypescriptSdk) Base(version string) *Container {
 
 	return dag.Container().
 		From(fmt.Sprintf("node:%s", version)).
-		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("yarn-cache"))
+		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("mod-yarn-cache"))
 }
 
 // TODO: fix .. restriction

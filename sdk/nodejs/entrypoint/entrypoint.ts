@@ -36,7 +36,6 @@ async function entrypoint() {
         result = await register(files)
       } else {
         // Invocation
-        const parentName = await fnCall.parentName()
         const fnName = await fnCall.name()
         const parentJson = await fnCall.parent()
         const fnArgs = await fnCall.inputArgs()

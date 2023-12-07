@@ -89,7 +89,7 @@ function addArg(args: FunctionArg[]): (fct: Function_) => Function_ {
 }
 
 /**
- * Wrapper around TypeDef to make dagger call on it.
+ * Wrapper around TypeDef to return the right Dagger TypesDef with its options.
  *
  * This function only convert the Typedef into correct dagger call
  * but, it's up to function above with more context to add documentation,

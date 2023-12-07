@@ -351,21 +351,17 @@ func pythonSDK(c *dagger.Client) *dagger.Directory {
 
 func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
 	return c.Host().Directory("sdk/nodejs", dagger.HostDirectoryOpts{
+		Include: []string{
+			"**/*.ts",
+			"LICENSE",
+			"README.md",
+			"runtime",
+		},
 		Exclude: []string{
 			"node_modules",
-			".changes",
-			".idea",
 			"dist",
+			"**/test",
 			"**/*.spec.ts",
-			".changie.yaml",
-			".eslintrc.cjs",
-			".mocharc.json",
-			".prettierrc.cjs",
-			".gitignore",
-			".gitattributes",
-			"package.json",
-			"tsconfig.json",
-			"yarn.lock",
 		},
 	}).WithFile("/codegen", goSDKCodegenBin(c, arch))
 }

@@ -33,24 +33,13 @@ export async function loadArg(value: string): Promise<any> {
 
   const [source] = trimmedValue.split(":")
 
-  switch (source) {
-    case "core.Directory":
-      return dag.loadDirectoryFromID(trimmedValue as DirectoryID)
-    case "core.File":
-      return dag.loadFileFromID(trimmedValue as FileID)
-    case "core.Container":
-      return dag.loadContainerFromID(trimmedValue as ContainerID)
-    case "core.Socket":
-      return dag.loadSocketFromID(trimmedValue as SocketID)
-    case "core.CacheVolume":
-      return dag.loadCacheVolumeFromID(trimmedValue as CacheVolumeID)
-    case "core.Secret":
-      return dag.loadSecretFromID(trimmedValue as SecretID)
-    case "core.Service":
-      return dag.loadServiceFromID(trimmedValue as ServiceID)
-    case "core.TypeDef":
-      return dag.loadTypeDefFromID(trimmedValue as TypeDefID)
-    default:
-      return trimmedValue
+  const [origin, type] = source.split(".")
+  if (origin === "core") {
+    // Workaround to call get any object that has an id
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    return dag[`load${type}FromID`](trimmedValue as DirectoryID)
+  } else {
+    return trimmedValue
   }
 }
