@@ -12,14 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 func TestModuleGoInit(t *testing.T) {
@@ -2707,6 +2708,48 @@ class Foo:
 	out, err := modGen.With(daggerQuery(`{foo{bar{message}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"foo":{"bar":{"message":"foobar"}}}`, out)
+}
+
+func TestModuleTypescriptInit(t *testing.T) {
+	t.Skip("unstable because of a typescript error")
+
+	t.Run("from scratch", func(t *testing.T) {
+		t.Skip("unstable because of a typescript error")
+
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("with different root", func(t *testing.T) {
+		t.Skip("unstable because of a typescript error")
+
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/child").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript", "--root=.."))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
 }
 
 func TestModuleLotsOfFunctions(t *testing.T) {
