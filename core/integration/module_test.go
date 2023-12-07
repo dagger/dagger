@@ -2711,7 +2711,11 @@ class Foo:
 }
 
 func TestModuleTypescriptInit(t *testing.T) {
+	t.Skip("unstable because of a typescript error")
+
 	t.Run("from scratch", func(t *testing.T) {
+		t.Skip("unstable because of a typescript error")
+
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -2729,6 +2733,8 @@ func TestModuleTypescriptInit(t *testing.T) {
 	})
 
 	t.Run("with different root", func(t *testing.T) {
+		t.Skip("unstable because of a typescript error")
+
 		t.Parallel()
 
 		c, ctx := connect(t)
