@@ -11,7 +11,7 @@ class QueryBuilderChainTest extends TestCase
 {
     public function testChain(): void
     {
-        $connection = DaggerConnection::devConnection();
+        $connection = DaggerConnection::newEnvSession();
         $graphQlClient = $connection->getGraphQlClient();
 
         $queryChain = new QueryBuilderChain();

@@ -3,7 +3,6 @@
 namespace DaggerIo;
 
 use DaggerIo\Connection\CliDownloader;
-use DaggerIo\Connection\DevDaggerConnection;
 use DaggerIo\Connection\EnvSessionDaggerConnection;
 use DaggerIo\Connection\ProcessSessionDaggerConnection;
 use GraphQL\Client;
@@ -11,17 +10,6 @@ use InvalidArgumentException;
 
 abstract class DaggerConnection
 {
-    protected static ?DevDaggerConnection $devConnectionInstance = null;
-
-    public static function devConnection(): DevDaggerConnection
-    {
-        if (null === static::$devConnectionInstance) {
-            static::$devConnectionInstance = new DevDaggerConnection();
-        }
-
-        return static::$devConnectionInstance;
-    }
-
     public static function newEnvSession(): EnvSessionDaggerConnection
     {
         $port = getenv('DAGGER_SESSION_PORT');

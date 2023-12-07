@@ -5,7 +5,7 @@
   </php>
   <testsuites>
     <testsuite name="dagger-php-sdk">
-      <directory>./src/Tests/</directory>
+      <directory>./tests/</directory>
     </testsuite>
   </testsuites>
   <coverage/>

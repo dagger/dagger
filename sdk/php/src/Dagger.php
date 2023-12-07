@@ -11,16 +11,12 @@ class Dagger
 {
     public const DEFAULT_CLI_VERSION = '0.9.3';
 
-    public static function connect(?string $workingDir, ?bool $dev = false): DaggerClient
+    public static function connect(string $workingDir = null): DaggerClient
     {
         $connection = null;
 
         if (!class_exists('DaggerIo\\Gen\\DaggerClient')) {
             throw new CompileError('Missing code generated dagger client');
-        }
-
-        if (true === $dev) {
-            $connection = DaggerConnection::devConnection();
         }
 
         $port = getenv('DAGGER_SESSION_PORT');

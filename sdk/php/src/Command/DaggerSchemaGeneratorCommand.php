@@ -4,6 +4,7 @@ namespace DaggerIo\Command;
 
 use DaggerIo\Codegen\SchemaGenerator;
 use DaggerIo\Connection\DevDaggerConnection;
+use DaggerIo\Dagger;
 use DaggerIo\DaggerConnection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -27,7 +28,7 @@ class DaggerSchemaGeneratorCommand extends Command
     public function __construct()
     {
         parent::__construct();
-        $this->daggerConnection = new DevDaggerConnection();
+        $this->daggerConnection = DaggerConnection::newProcessSession('.', Dagger::DEFAULT_CLI_VERSION);
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

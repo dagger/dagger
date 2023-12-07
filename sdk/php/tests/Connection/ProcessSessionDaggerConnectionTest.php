@@ -3,6 +3,7 @@
 namespace DaggerIo\Tests\Connection;
 
 use DaggerIo\Connection\ProcessSessionDaggerConnection;
+use DaggerIo\Dagger;
 use DaggerIo\DaggerConnection;
 use PHPUnit\Framework\TestCase;
 
@@ -15,7 +16,7 @@ class ProcessSessionDaggerConnectionTest extends TestCase
         // Use the dagger binary provided by our dev env
         putenv('_EXPERIMENTAL_DAGGER_CLI_BIN=dagger');
 
-        return DaggerConnection::newProcessSession($testWorkDir, '0.9.3');
+        return DaggerConnection::newProcessSession($testWorkDir, Dagger::DEFAULT_CLI_VERSION);
     }
 
     public function testVersion(): void

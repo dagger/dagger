@@ -11,7 +11,7 @@ class DaggerClientTest extends TestCase
 {
     public function newClient(): DaggerClient
     {
-        return Dagger::connect(null, true);
+        return Dagger::connect();
     }
 
     public function testQueryBuilder(): void
@@ -68,7 +68,7 @@ class DaggerClientTest extends TestCase
 
     public function testPipeline()
     {
-        $client = Dagger::connect(null, true);
+        $client = $this->newClient();
         $stdout = $client->pipeline('test')
             ->container()
             ->from('alpine:3.16.2')
