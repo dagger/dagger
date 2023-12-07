@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix `WithMountedDirectory` invalidating cache
+time: 2023-12-07T12:46:11.471013421Z
+custom:
+  Author: jedevc
+  PR: "6211"
