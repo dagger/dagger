@@ -80,6 +80,23 @@ func (o *Optional[T]) UnmarshalJSON(dt []byte) error {
 	return json.Unmarshal(dt, &o.value)
 }
 
+type DaggerObject querybuilder.GraphQLMarshaller
+
+func convertSlice[I any, O any](in []I, f func(I) O) []O {
+	out := make([]O, len(in))
+	for i, v := range in {
+		out[i] = f(v)
+	}
+	return out
+}
+
+func convertOptionalVal[I any, O any](opt Optional[I], f func(I) O) Optional[O] {
+	if !opt.isSet {
+		return Optional[O]{}
+	}
+	return Optional[O]{value: f(opt.value), isSet: true}
+}
+
 // A global cache volume identifier.
 type CacheVolumeID string
 
@@ -406,7 +423,9 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 		for i := range fields {
 			val := EnvVariable{name: &fields[i].Name, value: &fields[i].Value}
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -518,7 +537,9 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -670,7 +691,9 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 		for i := range fields {
 			val := Label{name: &fields[i].Name, value: &fields[i].Value}
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -2241,7 +2264,9 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 			val := FunctionArg{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
 			val.c = r.c
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -2505,7 +2530,9 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 
 		for i := range fields {
 			val := FunctionCallArgValue{name: &fields[i].Name, value: &fields[i].Value}
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -3023,6 +3050,77 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// A definition of a custom interface defined in a Module.
+type InterfaceTypeDef struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	name        *string
+}
+
+// The doc string for the interface, if any
+func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Functions defined on this interface, if any
+func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
+	q := r.q.Select("functions")
+
+	q = q.Select("id")
+
+	type functions struct {
+		Id FunctionID
+	}
+
+	convert := func(fields []functions) []Function {
+		out := []Function{}
+
+		for i := range fields {
+			val := Function{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+
+			out = append(out, val)
+
+		}
+
+		return out
+	}
+	var response []functions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The name of the interface
+func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	q *querybuilder.Selection
@@ -3111,7 +3209,9 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 			val := Module{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadModuleFromID").Arg("id", fields[i].Id)
 			val.c = r.c
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -3231,7 +3331,9 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 			val := TypeDef{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
 			val.c = r.c
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -3298,6 +3400,18 @@ func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// TODO: doc
+func (r *Module) WithInterface(iface *TypeDef) *Module {
+	assertNotNil("iface", iface)
+	q := r.q.Select("withInterface")
+	q = q.Arg("iface", iface)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
 }
 
 // This module plus the given Object type and associated functions
@@ -3440,7 +3554,9 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{description: &fields[i].Description, name: &fields[i].Name}
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -3474,7 +3590,9 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 			val := Function{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
 			val.c = r.c
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -4280,7 +4398,9 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
+
 			out = append(out, val)
+
 		}
 
 		return out
@@ -4376,6 +4496,17 @@ type WithTypeDefFunc func(r *TypeDef) *TypeDef
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 	return f(r)
+}
+
+// If kind is INTERFACE, the interface-specific type definition.
+// If kind is not INTERFACE, this will be null.
+func (r *TypeDef) AsInterface() *InterfaceTypeDef {
+	q := r.q.Select("asInterface")
+
+	return &InterfaceTypeDef{
+		q: q,
+		c: r.c,
+	}
 }
 
 // If kind is LIST, the list-specific type definition.
@@ -4502,11 +4633,33 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	}
 }
 
-// Adds a function for an Object TypeDef, failing if the type is not an object.
+// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	assertNotNil("function", function)
 	q := r.q.Select("withFunction")
 	q = q.Arg("function", function)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TypeDefWithInterfaceOpts contains options for TypeDef.WithInterface
+type TypeDefWithInterfaceOpts struct {
+	Description string
+}
+
+// Returns a TypeDef of kind Interface with the provided name.
+func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *TypeDef {
+	q := r.q.Select("withInterface")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &TypeDef{
 		q: q,
@@ -4636,6 +4789,9 @@ const (
 
 	// An integer value
 	Integerkind TypeDefKind = "IntegerKind"
+
+	// TODO: doc
+	Interfacekind TypeDefKind = "InterfaceKind"
 
 	// A list of values all having the same type.
 	//

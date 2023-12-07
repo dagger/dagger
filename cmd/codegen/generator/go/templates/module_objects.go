@@ -63,7 +63,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	})
 
 	for _, goFuncType := range goFuncTypes {
-		funcTypeSpec, err := ps.parseGoFunc(spec.name, goFuncType)
+		funcTypeSpec, err := ps.parseGoFunc(named, goFuncType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse method %s: %w", goFuncType.Name(), err)
 		}
@@ -138,7 +138,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	}
 
 	if ps.isMainModuleObject(spec.name) && ps.constructor != nil {
-		spec.constructor, err = ps.parseGoFunc("", ps.constructor)
+		spec.constructor, err = ps.parseGoFunc(nil, ps.constructor)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse constructor: %w", err)
 		}
@@ -157,6 +157,8 @@ type parsedObjectType struct {
 
 	goType *types.Struct
 }
+
+var _ ParsedType = &parsedObjectType{}
 
 func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	withObjectArgsCode := []Code{

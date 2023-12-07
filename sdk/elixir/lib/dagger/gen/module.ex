@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedCode id name objects sdk serve sourceDirectory sourceDirectorySubPath withObject"
+          "dependencies dependencyConfig description generatedCode id name objects sdk serve sourceDirectory sourceDirectorySubPath withInterface withObject"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -110,6 +110,16 @@ defmodule Dagger.Module do
     def source_directory_sub_path(%__MODULE__{} = module) do
       selection = select(module.selection, "sourceDirectorySubPath")
       execute(selection, module.client)
+    end
+  )
+
+  (
+    @doc "TODO: doc\n\n## Required Arguments\n\n* `iface` -"
+    @spec with_interface(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
+    def with_interface(%__MODULE__{} = module, iface) do
+      selection = select(module.selection, "withInterface")
+      selection = arg(selection, "iface", iface)
+      %Dagger.Module{selection: selection, client: module.client}
     end
   )
 

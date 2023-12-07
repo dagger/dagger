@@ -28,6 +28,7 @@ type UserMod struct {
 
 	// should not be read directly, call m.Objects() instead
 	lazilyLoadedObjects []*UserModObject
+	lazilyLoadedIfaces  []*InterfaceType
 	loadObjectsErr      error
 	loadObjectsLock     sync.Mutex
 }
@@ -72,24 +73,42 @@ func (m *UserMod) Runtime(ctx context.Context) (*core.Container, error) {
 }
 
 // The objects defined by this module, with namespacing applied
-func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, rerr error) {
+func (m *UserMod) Objects(ctx context.Context) ([]*UserModObject, error) {
+	objs, _, err := m.objectsAndInterfaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return objs, nil
+}
+
+// The interfaces defined by this module, with namespacing applied
+func (m *UserMod) Interfaces(ctx context.Context) ([]*InterfaceType, error) {
+	_, ifaces, err := m.objectsAndInterfaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ifaces, nil
+}
+
+func (m *UserMod) objectsAndInterfaces(ctx context.Context) (loadedObjects []*UserModObject, loadedIfaces []*InterfaceType, rerr error) {
 	m.loadObjectsLock.Lock()
 	defer m.loadObjectsLock.Unlock()
-	if len(m.lazilyLoadedObjects) > 0 {
-		return m.lazilyLoadedObjects, nil
+	if len(m.lazilyLoadedObjects) > 0 || len(m.lazilyLoadedIfaces) > 0 {
+		return m.lazilyLoadedObjects, m.lazilyLoadedIfaces, nil
 	}
 	if m.loadObjectsErr != nil {
-		return nil, m.loadObjectsErr
+		return nil, nil, m.loadObjectsErr
 	}
 
 	defer func() {
 		m.lazilyLoadedObjects = loadedObjects
+		m.lazilyLoadedIfaces = loadedIfaces
 		m.loadObjectsErr = rerr
 	}()
 
 	runtime, err := m.Runtime(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module runtime: %w", err)
+		return nil, nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
 
 	// construct a special function with no object or function name, which tells the SDK to return the module's definition
@@ -99,35 +118,53 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 		AsObject: core.NewObjectTypeDef("Module", ""),
 	}))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", m.Name(), err)
+		return nil, nil, fmt.Errorf("failed to create module definition function for module %q: %w", m.Name(), err)
 	}
 	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true, SkipSelfSchema: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name(), err)
+		return nil, nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name(), err)
 	}
 
 	modMeta, ok := result.(*core.Module)
 	if !ok {
-		return nil, fmt.Errorf("expected Module result, got %T", result)
+		return nil, nil, fmt.Errorf("expected Module result, got %T", result)
 	}
 
 	objs := make([]*UserModObject, 0, len(modMeta.Objects))
 	for _, objTypeDef := range modMeta.Objects {
 		if err := m.validateTypeDef(ctx, objTypeDef); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
+			return nil, nil, fmt.Errorf("failed to validate type def: %w", err)
 		}
 
 		if err := m.namespaceTypeDef(ctx, objTypeDef); err != nil {
-			return nil, fmt.Errorf("failed to namespace type def: %w", err)
+			return nil, nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
 
 		obj, err := newModObject(ctx, m, objTypeDef)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create object: %w", err)
+			return nil, nil, fmt.Errorf("failed to create object: %w", err)
 		}
 		objs = append(objs, obj)
 	}
-	return objs, nil
+
+	ifaces := make([]*InterfaceType, 0, len(modMeta.Interfaces))
+	for _, ifaceTypeDef := range modMeta.Interfaces {
+		if err := m.validateTypeDef(ctx, ifaceTypeDef); err != nil {
+			return nil, nil, fmt.Errorf("failed to validate type def: %w", err)
+		}
+
+		if err := m.namespaceTypeDef(ctx, ifaceTypeDef); err != nil {
+			return nil, nil, fmt.Errorf("failed to namespace type def: %w", err)
+		}
+
+		iface, err := newModIface(ctx, m, ifaceTypeDef)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create interface: %w", err)
+		}
+		ifaces = append(ifaces, iface)
+	}
+
+	return objs, ifaces, nil
 }
 
 func (m *UserMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
@@ -149,7 +186,7 @@ func (m *UserMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:
-		return &PrimitiveType{}, true, nil
+		return &PrimitiveType{kind: typeDef.Kind}, true, nil
 
 	case core.TypeDefKindList:
 		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.ElementTypeDef, checkDirectDeps)
@@ -166,7 +203,7 @@ func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			// check to see if this is from a *direct* dependency
 			depType, ok, err := m.deps.ModTypeFor(ctx, typeDef)
 			if err != nil {
-				return nil, false, fmt.Errorf("failed to get type from dependency: %w", err)
+				return nil, false, fmt.Errorf("failed to get object type from dependency: %w", err)
 			}
 			if ok {
 				return depType, true, nil
@@ -181,6 +218,30 @@ func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		for _, obj := range objs {
 			if obj.typeDef.AsObject.Name == typeDef.AsObject.Name {
 				return obj, true, nil
+			}
+		}
+		return nil, false, nil
+
+	case core.TypeDefKindInterface:
+		if checkDirectDeps {
+			// check to see if this is from a *direct* dependency
+			depType, ok, err := m.deps.ModTypeFor(ctx, typeDef)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get interface type from dependency: %w", err)
+			}
+			if ok {
+				return depType, true, nil
+			}
+		}
+
+		// otherwise it must be from this module
+		ifaces, err := m.Interfaces(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, iface := range ifaces {
+			if iface.typeDef.Name == typeDef.AsInterface.Name {
+				return iface, true, nil
 			}
 		}
 		return nil, false, nil
@@ -207,12 +268,13 @@ func (m *UserMod) Schema(ctx context.Context) ([]SchemaResolvers, error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("module", m.Name()))
 	bklog.G(ctx).Debug("getting module schema")
 
-	objs, err := m.Objects(ctx)
+	objs, ifaces, err := m.objectsAndInterfaces(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	schemas := make([]SchemaResolvers, 0, len(objs))
+	schemaResolvers := make([]SchemaResolvers, 0, len(objs)+len(ifaces))
+
 	for _, obj := range objs {
 		objSchemaDoc, objResolvers, err := obj.Schema(ctx)
 		if err != nil {
@@ -227,13 +289,30 @@ func (m *UserMod) Schema(ctx context.Context) ([]SchemaResolvers, error) {
 			Schema:    typeSchemaStr,
 			Resolvers: objResolvers,
 		})
-		schemas = append(schemas, schema)
+		schemaResolvers = append(schemaResolvers, schema)
 	}
 
-	return schemas, nil
+	for _, iface := range ifaces {
+		ifaceSchemaDoc, ifaceResolvers, err := iface.Schema(ctx)
+		if err != nil {
+			return nil, err
+		}
+		buf := &bytes.Buffer{}
+		formatter.NewFormatter(buf).FormatSchemaDocument(ifaceSchemaDoc)
+		typeSchemaStr := buf.String()
+
+		schema := StaticSchema(StaticSchemaParams{
+			Name:      fmt.Sprintf("%s.%s", m.metadata.Name, iface.typeDef.Name),
+			Schema:    typeSchemaStr,
+			Resolvers: ifaceResolvers,
+		})
+		schemaResolvers = append(schemaResolvers, schema)
+	}
+
+	return schemaResolvers, nil
 }
 
-func (m *UserMod) SchemaIntrospectionJSON(ctx context.Context) (string, error) {
+func (m *UserMod) DependencySchemaIntrospectionJSON(ctx context.Context) (string, error) {
 	return m.deps.SchemaIntrospectionJSON(ctx)
 }
 
@@ -269,6 +348,38 @@ func (m *UserMod) validateTypeDef(ctx context.Context, typeDef *core.TypeDef) er
 		for _, fn := range obj.Functions {
 			if gqlFieldName(fn.Name) == "id" {
 				return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
+			}
+			if err := m.validateTypeDef(ctx, fn.ReturnType); err != nil {
+				return err
+			}
+
+			for _, arg := range fn.Args {
+				if gqlArgName(arg.Name) == "id" {
+					return fmt.Errorf("cannot define argument with reserved name %q on function %q", arg.Name, fn.Name)
+				}
+				if err := m.validateTypeDef(ctx, arg.TypeDef); err != nil {
+					return err
+				}
+			}
+		}
+	case core.TypeDefKindInterface:
+		iface := typeDef.AsInterface
+
+		// check whether this is a pre-existing interface from core or another module
+		modType, ok, err := m.deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+		if ok {
+			if sourceMod := modType.SourceMod(); sourceMod != nil && sourceMod.DagDigest() != m.DagDigest() {
+				// already validated, skip
+				return nil
+			}
+		}
+
+		for _, fn := range iface.Functions {
+			if gqlFieldName(fn.Name) == "id" {
+				return fmt.Errorf("cannot define function with reserved name %q on interface %q", fn.Name, iface.Name)
 			}
 			if err := m.validateTypeDef(ctx, fn.ReturnType); err != nil {
 				return err
@@ -323,6 +434,29 @@ func (m *UserMod) namespaceTypeDef(ctx context.Context, typeDef *core.TypeDef) e
 				}
 			}
 		}
+	case core.TypeDefKindInterface:
+		iface := typeDef.AsInterface
+
+		// only namespace interfaces defined in this module
+		_, ok, err := m.deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+		if !ok {
+			iface.Name = namespaceObject(iface.Name, m.metadata.Name)
+		}
+
+		for _, fn := range iface.Functions {
+			if err := m.namespaceTypeDef(ctx, fn.ReturnType); err != nil {
+				return err
+			}
+
+			for _, arg := range fn.Args {
+				if err := m.namespaceTypeDef(ctx, arg.TypeDef); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -355,10 +489,6 @@ func newModObject(ctx context.Context, mod *UserMod, typeDef *core.TypeDef) (*Us
 	return obj, nil
 }
 
-func (obj *UserModObject) TypeDef() *core.TypeDef {
-	return obj.typeDef
-}
-
 func (obj *UserModObject) ConvertFromSDKResult(ctx context.Context, value any) (any, error) {
 	if value == nil {
 		return nil, nil
@@ -366,7 +496,7 @@ func (obj *UserModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 
 	switch value := value.(type) {
 	case string:
-		decodedMap, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
+		decodedMap, _, _, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode module id: %w", err)
 		}
@@ -405,7 +535,8 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 	// calls to their own API).
 	switch value := value.(type) {
 	case string:
-		return resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
+		decoded, _, _, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
+		return decoded, err
 	case map[string]any:
 		for k, v := range value {
 			normalizedName := gqlFieldName(k)
@@ -424,6 +555,30 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 			}
 		}
 		return value, nil
+	case *interfaceRuntimeValue:
+		return obj.ConvertToSDKInput(ctx, value.Value)
+	default:
+		return nil, fmt.Errorf("unexpected input value type %T for object %q", value, obj.typeDef.AsObject.Name)
+	}
+}
+
+// ConvertToID converts the given value to an ID for this object. This is needed separately from ConvertToSDKInput
+// due to the inconsistency mentioned in that method about how user objects are passed to their own module.
+// Interface support requires actual conversion of the object to an ID and uses this method to do so.
+func (obj *UserModObject) ConvertToID(ctx context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	switch value := value.(type) {
+	case string:
+		return value, nil
+	case map[string]any:
+		objMap, err := obj.ConvertToSDKInput(ctx, value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert to sdk input: %w", err)
+		}
+		return resourceid.EncodeModule(obj.mod.DagDigest(), obj.typeDef.AsObject.Name, objMap)
 	default:
 		return nil, fmt.Errorf("unexpected input value type %T for object %q", value, obj.typeDef.AsObject.Name)
 	}
@@ -586,11 +741,11 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 
 	astDef.Fields = append(astDef.Fields, &ast.FieldDefinition{
 		Name:        "id",
-		Description: formatGqlDescription("A unique identifier for a %s", objName),
+		Description: formatGqlDescription("A unique identifier for this %s", objName),
 		Type:        ast.NonNullNamedType(objName+"ID", nil),
 	})
 	newObjResolver["id"] = func(p graphql.ResolveParams) (any, error) {
-		return resourceid.EncodeModule(objName, p.Source)
+		return resourceid.EncodeModule(obj.mod.DagDigest(), objName, p.Source)
 	}
 
 	for _, field := range fields {
@@ -681,11 +836,87 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 	return typeSchemaDoc, typeSchemaResolvers, nil
 }
 
+func (obj *UserModObject) InterfaceExtensionsSchema(ctx context.Context, ifaces []*InterfaceType) (SchemaResolvers, error) {
+	if len(ifaces) == 0 {
+		return nil, nil
+	}
+
+	typeSchemaDoc := &ast.SchemaDocument{}
+	objResolver := ObjectResolver{}
+	for _, iface := range ifaces {
+		if !obj.typeDef.AsObject.IsSubtypeOf(iface.typeDef) {
+			continue
+		}
+
+		ifaceName := iface.typeDef.Name
+
+		asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", ifaceName))
+		typeSchemaDoc.Extensions = append(typeSchemaDoc.Extensions, &ast.Definition{
+			Name: obj.typeDef.AsObject.Name,
+			Kind: ast.Object,
+			Fields: ast.FieldList{{
+				Name: asIfaceFieldName,
+				Type: ast.NonNullNamedType(ifaceName, nil),
+			}},
+		})
+
+		objResolver[asIfaceFieldName] = func(p graphql.ResolveParams) (any, error) {
+			return &interfaceRuntimeValue{
+				Value:          p.Source,
+				UnderlyingType: obj,
+				IfaceType:      iface,
+			}, nil
+		}
+	}
+
+	if len(objResolver) == 0 {
+		return nil, nil
+	}
+
+	buf := &bytes.Buffer{}
+	formatter.NewFormatter(buf).FormatSchemaDocument(typeSchemaDoc)
+	typeSchemaStr := buf.String()
+	return StaticSchema(StaticSchemaParams{
+		Name:   fmt.Sprintf("%s.%s.interface_extensions", obj.mod.metadata.Name, obj.typeDef.AsObject.Name),
+		Schema: typeSchemaStr,
+		Resolvers: Resolvers{
+			obj.typeDef.AsObject.Name: objResolver,
+		},
+	}), nil
+}
+
+func (obj *UserModObject) GetCallable(ctx context.Context, graphqlFieldName string) (Callable, error) {
+	objField, ok, err := obj.FieldByName(ctx, graphqlFieldName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get field %s.%s: %w", obj.typeDef.AsObject.Name, graphqlFieldName, err)
+	}
+	if ok {
+		return objField, nil
+	}
+
+	fn, ok, err := obj.FunctionByName(ctx, graphqlFieldName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get function %s.%s: %w", obj.typeDef.AsObject.Name, graphqlFieldName, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("no field or function %s.%s", obj.typeDef.AsObject.Name, graphqlFieldName)
+	}
+	return fn, nil
+}
+
+type Callable interface {
+	Call(context.Context, *CallOpts) (any, error)
+	ReturnType() (ModType, error)
+	ArgType(argName string) (ModType, error)
+}
+
 type UserModField struct {
 	obj      *UserModObject
 	metadata *core.FieldTypeDef
 	modType  ModType
 }
+
+var _ Callable = (*UserModField)(nil)
 
 func newModField(ctx context.Context, obj *UserModObject, metadata *core.FieldTypeDef) (*UserModField, error) {
 	modType, ok, err := obj.mod.ModTypeFor(ctx, metadata.TypeDef, true)
@@ -725,10 +956,22 @@ func (f *UserModField) Schema(ctx context.Context) (*ast.FieldDefinition, graphq
 		Type:        fieldASTType,
 	}
 	return fieldDef, func(p graphql.ResolveParams) (any, error) {
-		res, err := graphql.DefaultResolveFn(p)
-		if err != nil {
-			return nil, err
-		}
-		return f.modType.ConvertFromSDKResult(ctx, res)
+		return f.Call(p.Context, &CallOpts{ParentVal: p.Source})
 	}, nil
+}
+
+func (f *UserModField) Call(ctx context.Context, callOpts *CallOpts) (any, error) {
+	objMap, ok := callOpts.ParentVal.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected object value type %T while calling %s.%s", callOpts.ParentVal, f.obj.typeDef.AsObject.Name, f.metadata.Name)
+	}
+	return f.modType.ConvertFromSDKResult(ctx, objMap[gqlFieldName(f.metadata.Name)])
+}
+
+func (f *UserModField) ReturnType() (ModType, error) {
+	return f.modType, nil
+}
+
+func (f *UserModField) ArgType(_ string) (ModType, error) {
+	return nil, fmt.Errorf("field %s.%s has no arguments", f.obj.typeDef.AsObject.Name, f.metadata.Name)
 }

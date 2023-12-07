@@ -3,6 +3,8 @@ package schema
 import (
 	"context"
 	"fmt"
+
+	"github.com/dagger/dagger/core"
 )
 
 // ModType wraps the core TypeDef type with schema specific concerns like ID conversion
@@ -11,15 +13,19 @@ type ModType interface {
 	// ConvertFromSDKResult converts a value returned from an SDK into values expected by the server,
 	// including conversion of IDs to their "unpacked" objects
 	ConvertFromSDKResult(ctx context.Context, value any) (any, error)
+
 	// ConvertToSDKInput converts a value from the server into a value expected by the SDK, which may
 	// include converting objects to their IDs
 	ConvertToSDKInput(ctx context.Context, value any) (any, error)
+
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
 }
 
 // PrimitiveType are the basic types like string, int, bool, void, etc.
-type PrimitiveType struct{}
+type PrimitiveType struct {
+	kind core.TypeDefKind
+}
 
 func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (any, error) {
 	return value, nil

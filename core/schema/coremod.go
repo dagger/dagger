@@ -15,8 +15,8 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	compiledSchema    *CompiledSchema
-	introspectionJSON string
+	api            *APIServer
+	compiledSchema *CompiledSchema
 }
 
 var _ Mod = (*CoreMod)(nil)
@@ -35,17 +35,13 @@ func (m *CoreMod) Dependencies() []Mod {
 }
 
 func (m *CoreMod) Schema(_ context.Context) ([]SchemaResolvers, error) {
-	return []SchemaResolvers{m.compiledSchema.SchemaResolvers}, nil
-}
-
-func (m *CoreMod) SchemaIntrospectionJSON(_ context.Context) (string, error) {
-	return m.introspectionJSON, nil
+	return []SchemaResolvers{m.compiledSchema}, nil
 }
 
 func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:
-		return &PrimitiveType{}, true, nil
+		return &PrimitiveType{kind: typeDef.Kind}, true, nil
 
 	case core.TypeDefKindList:
 		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.ElementTypeDef, checkDirectDeps)
@@ -67,7 +63,14 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		if !ok {
 			return nil, false, nil
 		}
-		return &CoreModObject{coreMod: m, resolver: idableResolver}, true, nil
+		return &CoreModObject{
+			coreMod:  m,
+			resolver: idableResolver,
+		}, true, nil
+
+	case core.TypeDefKindInterface:
+		// core does not yet defined any interfaces
+		return nil, false, nil
 
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)

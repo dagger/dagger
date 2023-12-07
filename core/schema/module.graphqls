@@ -56,6 +56,9 @@ type Module {
 
   "This module plus the given Object type and associated functions"
   withObject(object: TypeDefID!): Module! # TODO: ObjectTypeDefID?
+  "TODO: doc"
+  withInterface(iface: TypeDefID!): Module!
+
   """
   Serve a module's API in the current session.
       Note: this can only be called once per session.

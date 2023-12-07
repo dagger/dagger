@@ -3314,6 +3314,33 @@ impl Host {
     }
 }
 #[derive(Clone)]
+pub struct InterfaceTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl InterfaceTypeDef {
+    /// The doc string for the interface, if any
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Functions defined on this interface, if any
+    pub fn functions(&self) -> Vec<Function> {
+        let query = self.selection.select("functions");
+        return vec![Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+    /// The name of the interface
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct Label {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -3427,6 +3454,22 @@ impl Module {
     pub async fn source_directory_sub_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceDirectorySubPath");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO: doc
+    pub fn with_interface(&self, iface: TypeDef) -> Module {
+        let mut query = self.selection.select("withInterface");
+        query = query.arg_lazy(
+            "iface",
+            Box::new(move || {
+                let iface = iface.clone();
+                Box::pin(async move { iface.id().await.unwrap().quote() })
+            }),
+        );
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// This module plus the given Object type and associated functions
     pub fn with_object(&self, object: TypeDef) -> Module {
@@ -4389,11 +4432,26 @@ pub struct TypeDefWithFieldOpts<'a> {
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithInterfaceOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithObjectOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
 impl TypeDef {
+    /// If kind is INTERFACE, the interface-specific type definition.
+    /// If kind is not INTERFACE, this will be null.
+    pub fn as_interface(&self) -> InterfaceTypeDef {
+        let query = self.selection.select("asInterface");
+        return InterfaceTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// If kind is LIST, the list-specific type definition.
     /// If kind is not LIST, this will be null.
     pub fn as_list(&self) -> ListTypeDef {
@@ -4498,7 +4556,7 @@ impl TypeDef {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Adds a function for an Object TypeDef, failing if the type is not an object.
+    /// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
     pub fn with_function(&self, function: Function) -> TypeDef {
         let mut query = self.selection.select("withFunction");
         query = query.arg_lazy(
@@ -4508,6 +4566,41 @@ impl TypeDef {
                 Box::pin(async move { function.id().await.unwrap().quote() })
             }),
         );
+        return TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Returns a TypeDef of kind Interface with the provided name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_interface(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withInterface");
+        query = query.arg("name", name.into());
+        return TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Returns a TypeDef of kind Interface with the provided name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_interface_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: TypeDefWithInterfaceOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withInterface");
+        query = query.arg("name", name.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
         return TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -4619,6 +4712,7 @@ pub enum NetworkProtocol {
 pub enum TypeDefKind {
     BooleanKind,
     IntegerKind,
+    InterfaceKind,
     ListKind,
     ObjectKind,
     StringKind,

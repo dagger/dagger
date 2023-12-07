@@ -290,7 +290,7 @@ func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error
 		// by default, serve both deps and the module's own API to itself
 		depMods := append([]Mod{fn.mod}, fn.mod.deps.mods...)
 		var err error
-		deps, err = newModDeps(fn.api, depMods)
+		deps, err = newModDeps(depMods)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get deps: %w", err)
 		}
@@ -341,6 +341,18 @@ func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error
 	}
 
 	return returnValue, nil
+}
+
+func (fn *UserModFunction) ReturnType() (ModType, error) {
+	return fn.returnType, nil
+}
+
+func (fn *UserModFunction) ArgType(argName string) (ModType, error) {
+	arg, ok := fn.args[gqlArgName(argName)]
+	if !ok {
+		return nil, fmt.Errorf("failed to find arg %q", argName)
+	}
+	return arg.modType, nil
 }
 
 // If the result of a Function call contains IDs of resources, we need to ensure that the cache entry for the

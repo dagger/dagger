@@ -51,6 +51,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"dependencies":  ToResolver(s.moduleDependencies),
 		"objects":       ToResolver(s.moduleObjects),
 		"withObject":    ToResolver(s.moduleWithObject),
+		"withInterface": ToResolver(s.moduleWithInterface),
 		"generatedCode": ToResolver(s.moduleGeneratedCode),
 		"serve":         ToVoidResolver(s.moduleServe),
 	})
@@ -68,8 +69,9 @@ func (s *moduleSchema) Resolvers() Resolvers {
 		"withKind":        ToResolver(s.typeDefWithKind),
 		"withListOf":      ToResolver(s.typeDefWithListOf),
 		"withObject":      ToResolver(s.typeDefWithObject),
+		"withInterface":   ToResolver(s.typeDefWithInterface),
 		"withField":       ToResolver(s.typeDefWithObjectField),
-		"withFunction":    ToResolver(s.typeDefWithObjectFunction),
+		"withFunction":    ToResolver(s.typeDefWithFunction),
 		"withConstructor": ToResolver(s.typeDefWithObjectConstructor),
 	})
 
@@ -122,6 +124,13 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	return def.WithObject(args.Name, args.Description), nil
 }
 
+func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Description string
+}) (*core.TypeDef, error) {
+	return def.WithInterface(args.Name, args.Description), nil
+}
+
 func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	TypeDef     core.TypeDefID
@@ -134,14 +143,14 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	return def.WithObjectField(args.Name, fieldType, args.Description)
 }
 
-func (s *moduleSchema) typeDefWithObjectFunction(ctx context.Context, def *core.TypeDef, args struct {
+func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
 	fn, err := args.Function.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithObjectFunction(fn)
+	return def.WithFunction(fn)
 }
 
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
@@ -250,7 +259,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Di
 		return nil, fmt.Errorf("failed to create module from config: %w", err)
 	}
 
-	mod, err := s.AddModFromMetadata(ctx, modMeta, sourceDir.PipelinePath())
+	mod, err := s.GetOrAddModFromMetadata(ctx, modMeta, sourceDir.PipelinePath())
 	if err != nil {
 		return nil, fmt.Errorf("failed to add module to dag: %w", err)
 	}
@@ -259,7 +268,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir *core.Di
 }
 
 func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.Module, _ any) ([]*core.TypeDef, error) {
-	mod, err := s.GetModFromMetadata(ctx, modMeta)
+	mod, err := s.GetOrAddModFromMetadata(ctx, modMeta, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}
@@ -322,8 +331,18 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.Modul
 	return modMeta.WithObject(def)
 }
 
+func (s *moduleSchema) moduleWithInterface(ctx context.Context, modMeta *core.Module, args struct {
+	Iface core.TypeDefID
+}) (_ *core.Module, rerr error) {
+	def, err := args.Iface.Decode()
+	if err != nil {
+		return nil, err
+	}
+	return modMeta.WithInterface(def)
+}
+
 func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Module, _ any) ([]*core.Module, error) {
-	mod, err := s.GetModFromMetadata(ctx, modMeta)
+	mod, err := s.GetOrAddModFromMetadata(ctx, modMeta, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}
@@ -340,7 +359,7 @@ func (s *moduleSchema) moduleDependencies(ctx context.Context, modMeta *core.Mod
 }
 
 func (s *moduleSchema) moduleGeneratedCode(ctx context.Context, modMeta *core.Module, _ any) (*core.GeneratedCode, error) {
-	mod, err := s.GetModFromMetadata(ctx, modMeta)
+	mod, err := s.GetOrAddModFromMetadata(ctx, modMeta, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module: %w", err)
 	}

@@ -93,7 +93,7 @@ type moduleSDK struct {
 }
 
 func (s *APIServer) newModuleSDK(ctx context.Context, sdkModMeta *core.Module) (*moduleSDK, error) {
-	sdkMod, err := s.AddModFromMetadata(ctx, sdkModMeta, nil)
+	sdkMod, err := s.GetOrAddModFromMetadata(ctx, sdkModMeta, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add sdk module to dag: %w", err)
 	}
@@ -116,7 +116,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 		return nil, fmt.Errorf("failed to find required Codegen function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
 
-	introspectionJSON, err := mod.SchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Name(), err)
 	}
@@ -170,7 +170,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Containe
 		return nil, fmt.Errorf("failed to find required ModuleRuntime function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
 
-	introspectionJSON, err := mod.SchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Name(), err)
 	}
@@ -341,7 +341,7 @@ func (sdk *goSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Container, e
 }
 
 func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Container, error) {
-	introspectionJSON, err := mod.SchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", mod.Name(), err)
 	}
