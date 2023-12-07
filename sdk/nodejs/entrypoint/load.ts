@@ -1,14 +1,4 @@
-import {
-  CacheVolumeID,
-  ContainerID,
-  dag,
-  DirectoryID,
-  FileID,
-  SecretID,
-  ServiceID,
-  SocketID,
-  TypeDefID,
-} from "../api/client.gen.js"
+import { dag, ID } from "../api/client.gen.js"
 
 /**
  * Import all given typescript files so that trigger their decorators
@@ -38,7 +28,7 @@ export async function loadArg(value: string): Promise<any> {
     // Workaround to call get any object that has an id
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    return dag[`load${type}FromID`](trimmedValue as DirectoryID)
+    return dag[`load${type}FromID`](trimmedValue as ID)
   } else {
     return trimmedValue
   }
