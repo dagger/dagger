@@ -1,5 +1,5 @@
 {
-    "name": "dagger.io/dagger-php-sdk",
+    "name": "dagger/dagger",
     "description": "Dagger PHP SDK",
     "version": "0.0.2",
     "type": "library",
@@ -9,7 +9,7 @@
         "gmostafa/php-graphql-client": "^1.13",
         "psr/log": "^3.0"
     },
-    "license": "MIT",
+    "license": "Apache-2.0",
     "autoload": {
         "psr-4": {
             "DaggerIo\\": "src/",
