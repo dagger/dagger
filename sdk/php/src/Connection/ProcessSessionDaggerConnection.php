@@ -43,7 +43,12 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
             'dagger.io/sdk.name:php',
             '--label',
             "dagger.io/sdk.version:{$sdkVersion}",
-        ]);
+        ], env: [
+                'DAGGER_SESSION_TOKEN' => false,
+                'DAGGER_SESSION_PORT' => false,
+        ]
+        );
+
         $process->setTimeout(null);
         $process->setPty(true);
         $process->start(function ($type, $output) {
@@ -75,6 +80,10 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
 
             return false;
         });
+
+        if (null === $sessionInformation) {
+            throw new \RuntimeException('Cannot fetch informations from process session');
+        }
 
         $port = $sessionInformation->port;
         $token = $sessionInformation->session_token;
