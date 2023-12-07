@@ -464,7 +464,20 @@ func (ps *parseState) fillObjectFunctionCase(
 		if _, ok := vars[varName]; !ok {
 			vars[varName] = struct{}{}
 
-			tp, access := findOptsAccessPattern(varType, Id(varName))
+			tp := varType
+			access := Id(varName)
+			tp2, access2 := findOptsAccessPattern(varType, Id(varName))
+			// only apply the access pattern if this is an inline opts struct wrapper or an Optional type wrapper
+			_, applyAccessPattern := tp2.(*types.Struct) // inline struct case
+			if !applyAccessPattern {
+				// check for Optional
+				_, applyAccessPattern = ps.isOptionalWrapper(tp2)
+			}
+			if applyAccessPattern {
+				tp = tp2
+				access = access2
+			}
+
 			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
 			if spec.variadic {
 				fnCallArgs = append(fnCallArgs, access.Op("..."))
@@ -968,22 +981,20 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	optional := false
 	defaultValue := ""
 
-	if named, ok := baseType.(*types.Named); ok {
-		if named.Obj().Name() == "Optional" && ps.isDaggerGenerated(named.Obj()) {
-			typeArgs := named.TypeArgs()
-			if typeArgs.Len() != 1 {
-				return paramSpec{}, fmt.Errorf("optional type must have exactly one type argument")
-			}
-			optional = true
+	if named, ok := ps.isOptionalWrapper(baseType); ok {
+		typeArgs := named.TypeArgs()
+		if typeArgs.Len() != 1 {
+			return paramSpec{}, fmt.Errorf("optional type must have exactly one type argument")
+		}
+		optional = true
 
-			baseType = typeArgs.At(0)
-			for {
-				ptr, ok := baseType.(*types.Pointer)
-				if !ok {
-					break
-				}
-				baseType = ptr.Elem()
+		baseType = typeArgs.At(0)
+		for {
+			ptr, ok := baseType.(*types.Pointer)
+			if !ok {
+				break
 			}
+			baseType = ptr.Elem()
 		}
 	}
 
@@ -1177,6 +1188,17 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams [
 func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
 	tokenFile := ps.fset.File(obj.Pos())
 	return filepath.Base(tokenFile.Name()) == daggerGenFilename
+}
+
+func (ps *parseState) isOptionalWrapper(typ types.Type) (*types.Named, bool) {
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return nil, false
+	}
+	if named.Obj().Name() == "Optional" && ps.isDaggerGenerated(named.Obj()) {
+		return named, true
+	}
+	return nil, false
 }
 
 // findOptsAccessPattern takes a type and a base statement (the name of a
