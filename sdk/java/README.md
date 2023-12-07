@@ -115,15 +115,15 @@ Select sample:
 
 ### Run pipeline with Dagger CLI
 
-To run a Java pipeline the Java SDK is needed as jar file containing all dependencies.
+To run a Java pipeline, the Java SDK is needed as a JAR file containing all dependencies.
 
-This self-contained jar can be built with this command:
+This self-contained JAR file can be built with this command:
 
 ```bash
 ./mvnw clean package -Pbigjar,release
 ```
 
-To run an sample the classpath has to contain the Java SDK jar and the samples jar.
+To run a sample, the classpath has to contain the Java SDK JAR file and the samples JAR file.
 
 The following command uses the Dagger CLI to start the ListEnvVars sample:
 
@@ -131,7 +131,7 @@ The following command uses the Dagger CLI to start the ListEnvVars sample:
 dagger run java -cp dagger-java-sdk/target/dagger-java-sdk-1.0.0-SNAPSHOT-jar-with-dependencies.jar:dagger-java-samples/target/dagger-java-samples-1.0.0-SNAPSHOT.jar io.dagger.sample.ListEnvVars
 ```
 
-**Warning**: It can happen that the pipeline does not terminate after the execution of the sample code.
+**Warning**: It may happen that the pipeline does not terminate after the execution of the sample code.
 
 ## Customizing the code generation
 
