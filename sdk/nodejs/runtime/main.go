@@ -30,7 +30,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 
 	return ctr.
 		// Install dependencies
-		WithExec([]string{"yarn", "install"}).
+		WithExec([]string{"yarn", "install", "--network-concurrency", "1"}).
 		// Add tsx to execute the entrypoint
 		WithExec([]string{"yarn", "global", "add", "tsx"}).
 		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
