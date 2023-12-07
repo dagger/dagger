@@ -1,6 +1,5 @@
 {
   "name": "typescript-sdk",
   "sdk": "go",
-  "root": "..",
-  "sdkRuntime": "vito/dagger-sdk-go:f239c6f6c3ceaa1f760b589fac43b1d0704e45d3@sha256:915f41b414b12a878c60d96869f8ff8155e6ce122b1849303b995b65a343591f"
+  "root": ".."
 }
