@@ -120,7 +120,7 @@ func (t *TypescriptSdk) Base(version string) *Container {
 
 	return dag.Container().
 		From(fmt.Sprintf("node:%s", version)).
-		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("mod-yarn-cache"))
+		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("mod-yarn-cache-"+version))
 }
 
 // TODO: fix .. restriction
