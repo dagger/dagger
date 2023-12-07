@@ -30,12 +30,12 @@ from ._exceptions import (
     UserError,
 )
 from ._resolver import (
-    F,
     FieldResolver,
     Func,
     Function,
     FunctionResolver,
     P,
+    R,
     Resolver,
 )
 from ._types import APIName, FieldDefinition, ObjectDefinition
@@ -372,11 +372,11 @@ class Module:
     @overload
     def function(
         self,
-        func: Func[P, F],
+        func: Func[P, R],
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Function[P, F]:
+    ) -> Func[P, R]:
         ...
 
     @overload
@@ -385,16 +385,16 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Callable[[Func[P, F]], Function[P, F]]:
+    ) -> Callable[[Func[P, R]], Func[P, R]]:
         ...
 
     def function(
         self,
-        func: Func[P, F] | None = None,
+        func: Func[P, R] | None = None,
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Function[P, F] | Callable[[Func[P, F]], Function[P, F]]:
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
         """Exposes a Python function as a :py:class:`dagger.Function`.
 
         Example usage:
@@ -417,7 +417,7 @@ class Module:
             docstring for other purposes.
         """
 
-        def wrapper(func: Func[P, F]) -> Function[P, F]:
+        def wrapper(func: Func[P, R]) -> Func[P, R]:
             if not callable(func):
                 msg = f"Expected a callable, got {type(func)}."
                 raise UserError(msg)
