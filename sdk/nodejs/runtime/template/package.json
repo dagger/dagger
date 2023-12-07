@@ -1,8 +1,7 @@
 {
   "name": "template",
   "version": "1.0.0",
-  "main": "index.js",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "dependencies": {
     "tsx": "^4.6.2",
     "typescript": "^5.3.2"
