@@ -67,6 +67,10 @@ export type FunctionTypedef = {
   returnType: TypeDef<TypeDefKind>
 }
 
+export type ConstructorTypeDef = {
+  args: FunctionArg[]
+}
+
 /**
  * A type of Class.
  */
@@ -74,6 +78,6 @@ export type ClassTypeDef = {
   name: string
   description: string
   fields: FieldTypeDef[]
-  constructor?: FunctionTypedef
+  constructor?: ConstructorTypeDef
   methods: FunctionTypedef[]
 }

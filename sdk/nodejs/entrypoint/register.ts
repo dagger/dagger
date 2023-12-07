@@ -8,6 +8,7 @@ import {
 } from "../api/client.gen"
 import { scan } from "../introspector/scanner/scan.js"
 import {
+  ConstructorTypeDef,
   FunctionArg,
   FunctionTypedef,
   ListTypeDef,
@@ -44,6 +45,10 @@ export async function register(files: string[]): Promise<ModuleID> {
       })
     })
 
+    if (modClass.constructor) {
+      typeDef.withConstructor(addConstructor(modClass.constructor, typeDef))
+    }
+
     // Add it to the module object
     mod = mod.withObject(typeDef)
   })
@@ -53,7 +58,17 @@ export async function register(files: string[]): Promise<ModuleID> {
 }
 
 /**
- * Create a function in the Dagger API
+ * Bind a constructor to the given object.
+ */
+function addConstructor(
+  constructor: ConstructorTypeDef,
+  owner: TypeDef
+): Function_ {
+  return dag.function_("", owner).with(addArg(constructor.args))
+}
+
+/**
+ * Create a function in the Dagger API.
  */
 function addFunction(fct: FunctionTypedef): Function_ {
   return dag
@@ -63,7 +78,7 @@ function addFunction(fct: FunctionTypedef): Function_ {
 }
 
 /**
- * Register all arguments in the function
+ * Register all arguments in the function.
  */
 function addArg(args: FunctionArg[]): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {

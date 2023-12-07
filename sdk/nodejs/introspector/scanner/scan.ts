@@ -2,10 +2,17 @@ import ts from "typescript"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 import { serializeSignature, serializeSymbol } from "./serialize.js"
-import { ClassTypeDef, FieldTypeDef, FunctionTypedef } from "./typeDefs"
+import {
+  ClassTypeDef,
+  ConstructorTypeDef,
+  FieldTypeDef,
+  FunctionArg,
+  FunctionTypedef,
+} from "./typeDefs.js"
 import {
   isFunction,
   isObject,
+  isOptional,
   isPublicProperty,
   typeNameToTypedef,
 } from "./utils.js"
@@ -99,8 +106,9 @@ function introspectClass(
 
   // Loop through all members in the class to get their metadata.
   node.members.forEach((member) => {
-    if (!member.name) {
-      return
+    // Handle constructor
+    if (ts.isConstructorDeclaration(member)) {
+      metadata.constructor = introspectConstructor(checker, member)
     }
 
     // Handle method from the class.
@@ -144,6 +152,40 @@ function introspectProperty(
   )
 
   return { name, description, typeDef: typeNameToTypedef(typeName) }
+}
+
+/**
+ * Introspect the constructor of the class and return its metadata.
+ */
+function introspectConstructor(
+  checker: ts.TypeChecker,
+  constructor: ts.ConstructorDeclaration
+): ConstructorTypeDef {
+  const args = constructor.parameters.map((param): FunctionArg => {
+    const paramSymbol = checker.getSymbolAtLocation(param.name)
+    if (!paramSymbol) {
+      throw new UnknownDaggerError(
+        `could not get constructor param: ${param.name.getText()}`,
+        {}
+      )
+    }
+
+    const { name, typeName, description } = serializeSymbol(
+      checker,
+      paramSymbol
+    )
+    const { optional, defaultValue } = isOptional(paramSymbol)
+
+    return {
+      name,
+      description,
+      typeDef: typeNameToTypedef(typeName),
+      optional,
+      defaultValue,
+    }
+  })
+
+  return { args }
 }
 
 /**

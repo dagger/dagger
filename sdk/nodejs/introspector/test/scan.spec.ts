@@ -382,4 +382,51 @@ describe("scan static Typescript", function () {
 
     assert.deepEqual(result, expected)
   })
+
+  it("Should introspect constructor", async function () {
+    const files = await listFiles(`${rootDirectory}/constructor`)
+
+    const result = scan(files)
+    const expected: ScanResult = {
+      classes: [
+        {
+          name: "HelloWorld",
+          description: "HelloWorld class",
+          fields: [],
+          constructor: {
+            args: [
+              {
+                name: "name",
+                typeDef: { kind: TypeDefKind.Stringkind },
+                description: "",
+                defaultValue: '"world"',
+                optional: true,
+              },
+            ],
+          },
+          methods: [
+            {
+              name: "sayHello",
+              returnType: {
+                kind: TypeDefKind.Stringkind,
+              },
+              description: "",
+              args: [
+                {
+                  name: "name",
+                  typeDef: { kind: TypeDefKind.Stringkind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      functions: [],
+    }
+
+    assert.deepEqual(result, expected)
+  })
 })
