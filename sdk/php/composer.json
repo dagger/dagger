@@ -14,10 +14,12 @@
         "psr-4": {
             "DaggerIo\\": "src/",
             "DaggerIo\\Gen\\": "generated/"
-        },
-        "exclude-from-classmap": [
-            "src/Tests/"
-        ]
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "DaggerIo\\Tests\\": "tests/"
+        }
     },
     "require-dev": {
         "phpunit/phpunit": "^10.4",
