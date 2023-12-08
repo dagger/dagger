@@ -1,10 +1,10 @@
 # Archiving Documentation
 
-Current and next versions of documentation live at https://docs.dagger.io.
+Current and next versions of documentation live at [https://docs.dagger.io](https://docs.dagger.io).
 
-All previous versions of documentation are stored in the Dagger documentation archive at https://archive.docs.dagger.io.
+All previous versions of documentation are stored in the Dagger documentation archive at [https://archive.docs.dagger.io](https://archive.docs.dagger.io).
 
-https://archive.docs.dagger.io is a statically-built site, with individual sub-sites for each documentation version and a single index page to direct users.
+[https://archive.docs.dagger.io](https://archive.docs.dagger.io) is a statically-built site, with individual sub-sites for each documentation version and a single index page to direct users.
 
 This document explains how to build the top-level site and the individual sub-sites.
 

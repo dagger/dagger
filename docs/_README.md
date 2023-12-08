@@ -7,6 +7,7 @@ The intent behind this README is to answer contributor questions regarding [docs
 The documentation website (source code, assets and content) live in the `/docs` directory.
 
 Within this directory, the content is separated into:
+
 - `/current_docs`: the current docs shown on docs.dagger.io
 - `/versioned_docs`: the next version(s) of the docs
 - `/archived_docs`: the site template for the docs archive. Related instructions are in [ARCHIVING.md](./ARCHIVING.md)
