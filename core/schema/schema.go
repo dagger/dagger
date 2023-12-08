@@ -57,6 +57,8 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
+		endpoints: map[string]http.Handler{},
+
 		buildCache:  core.NewCacheMap[uint64, *core.Container](),
 		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
 
