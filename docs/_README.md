@@ -2,6 +2,15 @@
 
 The intent behind this README is to answer contributor questions regarding [docs.dagger.io](https://docs.dagger.io).
 
+## What is the structure of the documentation in the repository?
+
+The documentation website (source code, assets and content) live in the `/docs` directory.
+
+Within this directory, the content is separated into:
+- `/current_docs`: the current docs shown on docs.dagger.io
+- `/versioned_docs`: the next version(s) of the docs
+- `/archived_docs`: the site template for the docs archive. Related instructions are in [ARCHIVING.md](./ARCHIVING.md)
+
 ## What happens to a new doc page after the PR gets merged?
 
 It gets automatically deployed to [docs.dagger.io](https://docs.dagger.io).
@@ -12,31 +21,20 @@ Given `slug: /1001/install/`, the live URL will be [docs.dagger.io/1001/install]
 
 ## How can I run docs locally?
 
-You will need to have `yarn` and Node.js v18 installed.
+You will need to have `npm` and Node.js v18 installed.
 
-From the root of the repo run the following command: `make web`
+From the `/docs` directory, run the following command: `npm install && npm start`
 
 This will install all dependencies, start the docs web server locally and open [localhost:3000](http://localhost:3000/) in your browser.
 
 ## How can I add a new doc page?
 
-```bash
-.
-├── docs/
-│   └── new.sh            1. $ ./new.sh my-doc-title
-├── Makefile (repo root)  2. $ make web
-└── website/              3. $ npx docusaurus build
-```
-
-1. From the `docs` dir, run `./new.sh my-doc-title`
+1. From the `/docs` dir, run `./new.sh my-doc-title`
    This will create a new Markdown file for the new doc page with a random ID, e.g `docs/f1a2c-my-doc-title.md`
 
-2. After executing the `./new.sh` command, make sure to previsualize the new doc by running the `make web` command from the root directory. This will trigger `docusaurus start`, [creating a local dev server](https://docusaurus.io/docs/cli#docusaurus-start-sitedir).
-   `make web` **is required** when creating a new doc because it exports a new `_redirects` file, located in `/website/static/_redirects`. This is a configuration file that maps the docs ID with their respective filename, so every doc can also be reached with only the UUID in the URL.
-   Try it out and you'll see how `https://docs.dagger.io/1247` redirects to `https://docs.dagger.io/1247/dagger-fs`
-   Don't worry if the redirection doesn't work in your new doc, as it's a server-side implementation that will only take effect in production. Just make sure it has the same format as the rest of the mappings in the `_redirects` file.
+2. After executing the `./new.sh` command, make sure to previsualize the new doc by running the `npm start` command from the root directory. This will trigger `docusaurus start`, [creating a local dev server](https://docusaurus.io/docs/cli#docusaurus-start-sitedir).
 
-3. Once created and previsualized, run `npx docusaurus build` from the `/website` directory. This command verifies no links are broken when parsing markdown, among other things, so it's a good way to "test" your new doc.
+3. Once created and previsualized, run `npm run build` from the `/docs` directory. This command verifies no links are broken when parsing markdown, among other things, so it's a good way to "test" your new doc.
 
 This new doc will not be added to the navigation.
 We prefer to keep the organisation of doc pages, and writing them separate.

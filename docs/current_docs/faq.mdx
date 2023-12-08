@@ -2,16 +2,13 @@
 slug: /faq
 pagination_next: null
 pagination_prev: null
-displayed_sidebar: "zenith"
+displayed_sidebar: "current"
 ---
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
-import PartialExperimentalDocs from './partials/_experimental.mdx';
 
 # FAQ
-
-<PartialExperimentalDocs />
 
 ## General
 
@@ -21,7 +18,7 @@ We're building the devops operating system, an integrated platform to orchestrat
 
 ### How do I install Dagger?
 
-Refer to the documentation for information on how to install the [Dagger CLI](./user/329058-install.mdx).
+Refer to the documentation for information on how to install the [Dagger CLI](./cli/465058-install.mdx) and the Dagger [Go](./sdk/go/371491-install.mdx), [Node.js](./sdk/nodejs/835948-install.mdx) and [Python](./sdk/python/866944-install.mdx) SDKs.
 
 ### How do I update Dagger?
 
@@ -170,7 +167,7 @@ Dagger is able to cache:
 - Operations, such as copying files or directories to a container, running tests, compiling code, etc.
 - Volumes, such as data caches or package manager caches
 
-Operations are automatically cached every time a Dagger pipeline runs. Cache volumes must be explicity defined and used in your Dagger pipeline code.
+Operations are automatically cached every time a Dagger pipeline runs. [Cache volumes](./quickstart/635927-caching.mdx) must be explicity defined and used in your Dagger pipeline code.
 
 ### Can I run the Dagger Engine as a "rootless" container?
 
@@ -226,6 +223,10 @@ Dagger Cloud features a global data storage service spanning 26 regions across 3
 
 The ability to "bring your own storage" is coming soon. Please reach out to us if this capability is needed for your organization.
 
+### How do I connect my pipelines to Dagger Cloud?
+
+Refer to our [getting started guide](./cloud/572923-get-started.mdx) for detailed information on connecting Dagger Cloud with your CI provider or CI tool.
+
 ## Dagger SDKs
 
 ### What language SDKs are available for Dagger?
@@ -236,7 +237,7 @@ We currently offer a [Go SDK](/sdk/go), a [Node.js SDK](/sdk/nodejs) and a [Pyth
 
 There are two options available:
 
-1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK.
+1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK ([example](./guides/723462-use-secrets.mdx#use-secrets-with-dagger-sdk-methods)).
 1. Dagger SDKs can use your existing Docker credentials without requiring separate authentication. Simply execute `docker login` against your container registry on the host where your Dagger pipelines are running.
 
 ## Dagger API
@@ -251,4 +252,4 @@ No. You only need to know one of Dagger's supported SDKs languages to use Dagger
 
 ### There's no SDK for &lt;language&gt; yet. Can I still use Dagger?
 
-Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/)  or from the [Dagger CLI](./user/329058-install.mdx).
+Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/) ([example](./api/254103-build-custom-client.mdx)) or from the [Dagger CLI](./cli/index.mdx).

@@ -42,7 +42,7 @@ const config = {
       {
         docs: {
           breadcrumbs: false,
-          path: "./content",
+          path: "./current_docs",
           routeBasePath: '/',
           sidebarPath: './sidebars.js',
           editUrl: 'https://github.com/dagger/dagger/edit/main/website',
@@ -90,7 +90,7 @@ const config = {
         {
           entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts', '../sdk/nodejs/common/errors/index.ts'],
           tsconfig: '../sdk/nodejs/tsconfig.json',
-          out: '../content/sdk/nodejs/reference/',
+          out: '../current_docs/sdk/nodejs/reference/',
           excludeProtected: true,
           skipErrorChecking: true,
           disableSources: true,
