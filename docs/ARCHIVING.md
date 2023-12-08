@@ -93,7 +93,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
 ## Build top-level site (archive.docs.dagger.io)
 
-- Obtain the index page template from archived_docs/site_template/index.html.tmpl and modify as needed.
+- Obtain the index page template from archived_docs/index.html.tmpl and modify as needed.
 - Create and upload this filesystem structure to the Netlify site
   site/
     0.1/
