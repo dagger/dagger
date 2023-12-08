@@ -13,11 +13,13 @@ Within this directory, the content is separated into:
 
 ## What happens to a new doc page after the PR gets merged?
 
-It gets automatically deployed to [docs.dagger.io](https://docs.dagger.io).
+It gets automatically deployed to [devel.docs.dagger.io](https://devel.docs.dagger.io).
 
 The doc URL will use the `slug` property from the doc markdown metadata.
 
-Given `slug: /1001/install/`, the live URL will be [docs.dagger.io/1001/install](https://docs.dagger.io/1001/install)
+Given `slug: /1001/install/`, the live URL will be [devel.docs.dagger.io/1001/install](https://devel.docs.dagger.io/1001/install)
+
+It must be manually deployed to [docs.dagger.io](https://docs.dagger.io).
 
 ## How can I run docs locally?
 
