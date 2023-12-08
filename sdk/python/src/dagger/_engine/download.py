@@ -129,7 +129,7 @@ class Downloader:
     def _create_url(self, file_name: str):
         return httpx.URL(
             self.CLI_BASE_URL,
-            path=f"/{self.version}/dagger/releases/{file_name}",
+            path=f"/dagger/releases/{self.version}/{file_name}",
         )
 
     @property
