@@ -108,24 +108,16 @@ Here is an example module using the Go SDK:
 
 ```
 
-And here is an example query for this module:
+And here is an example call for this module:
 
-```graphql
-{
-  helloWorld(greeting: "Bonjour") {
-    message
-  }
-}
+```console
+dagger call --name=Foo message
 ```
 
 The result will be:
 
-```json
-{
-  "helloWorld": {
-    "message": "Bonjour, World!"
-  }
-}
+```console
+Hello, Foo!
 ```
 
 ## Miscellanea
