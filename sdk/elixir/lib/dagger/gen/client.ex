@@ -298,6 +298,26 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a git ref from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_git_ref_from_id(t(), Dagger.GitRef.t()) :: Dagger.GitRef.t()
+    def load_git_ref_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadGitRefFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.GitRef{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a git repository from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_git_repository_from_id(t(), Dagger.GitRepository.t()) :: Dagger.GitRepository.t()
+    def load_git_repository_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadGitRepositoryFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.GitRepository{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a module by ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_module_from_id(t(), Dagger.Module.t()) :: Dagger.Module.t()
     def load_module_from_id(%__MODULE__{} = query, id) do

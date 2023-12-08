@@ -114,9 +114,9 @@ Your module functions can accept and return multiple different types, not just b
   ```go file=./snippets/quickstart/step3a/main.go
   ```
 
-  The optional parameters are specified using the special `Optional` helper type, which represents optional values. Any method arguments that use this type will be set as optional in the generated API. These optional parameters can be set using `dagger call` or `dagger query` (exactly as if they'd been specified as top-level options).
+  The optional parameters are specified using the special `// +optional` comment, which dagger uses to set these as optional in the generated API. These comments must appear in the comment block before the parameter.
 
-  In this example, the optional parameters assigned default values, and `GetOr()` returns either the internal value of the optional or the given default value if the value was not explicitly set by the caller.
+  You can also use the `Optional` generic helper type, which has helper methods, like `GetOr` to easily get the underlying value.
 
   Here's an example of calling the function with optional parameters:
 

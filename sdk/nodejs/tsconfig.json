@@ -1,7 +1,7 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
   "include": ["./**/*"],
-  "exclude": ["./**/*.spec.ts", "./dist/**/*", "./**/testdata/*"],
+  "exclude": ["./**/*.spec.ts", "./dist/**/*", "./**/testdata/*", "runtime/template"],
   "compilerOptions": {
     "target": "ES2022",
     "strict": true,

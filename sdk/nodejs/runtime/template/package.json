@@ -1,0 +1,20 @@
+{
+  "name": "template",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "typescript": "^5.3.2"
+  },
+  "devDependencies": {
+    "@lifeomic/axios-fetch": "^3.0.1",
+    "adm-zip": "^0.5.10",
+    "env-paths": "^3.0.0",
+    "execa": "^8.0.1",
+    "graphql": "^16.8.0",
+    "graphql-request": "^6.1.0",
+    "graphql-tag": "^2.12.6",
+    "node-color-log": "^10.0.2",
+    "node-fetch": "^3.3.1",
+    "tar": "^6.1.13"
+  }
+}

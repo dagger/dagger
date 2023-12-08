@@ -184,10 +184,11 @@ func (fn *UserModFunction) Schema(ctx context.Context) (*ast.FieldDefinition, gr
 }
 
 type CallOpts struct {
-	Inputs    []*core.CallInput
-	ParentVal any
-	Cache     bool
-	Pipeline  pipeline.Path
+	Inputs         []*core.CallInput
+	ParentVal      any
+	Cache          bool
+	Pipeline       pipeline.Path
+	SkipSelfSchema bool
 }
 
 func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error) {
@@ -279,7 +280,23 @@ func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error
 		callMeta.ParentName = fn.obj.typeDef.AsObject.OriginalName
 	}
 
-	err = fn.api.RegisterFunctionCall(callerDigest, fn.mod, callMeta)
+	var deps *ModDeps
+	if opts.SkipSelfSchema {
+		// Only serve the APIs of the deps of this module. This is currently only needed for the special
+		// case of the function used to get the definition of the module itself (which can't obviously
+		// be served the API its returning the definition of).
+		deps = fn.mod.deps
+	} else {
+		// by default, serve both deps and the module's own API to itself
+		depMods := append([]Mod{fn.mod}, fn.mod.deps.mods...)
+		var err error
+		deps, err = newModDeps(fn.api, depMods)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get deps: %w", err)
+		}
+	}
+
+	err = fn.api.RegisterFunctionCall(callerDigest, deps, fn.mod, callMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
 	}

@@ -582,6 +582,16 @@ export type GitRefTreeOpts = {
   sshAuthSocket?: Socket
 }
 
+/**
+ * A git reference identifier.
+ */
+export type GitRefID = string & { __GitRefID: never }
+
+/**
+ * A git repository identifier.
+ */
+export type GitRepositoryID = string & { __GitRepositoryID: never }
+
 export type HostDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3700,6 +3710,7 @@ export class GeneratedCode extends BaseClient {
  * A git ref (tag, branch or commit).
  */
 export class GitRef extends BaseClient {
+  private readonly _id?: GitRefID = undefined
   private readonly _commit?: string = undefined
 
   /**
@@ -3707,11 +3718,34 @@ export class GitRef extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GitRefID,
     _commit?: string
   ) {
     super(parent)
 
+    this._id = _id
     this._commit = _commit
+  }
+
+  /**
+   * Retrieves the content-addressed identifier of the git ref.
+   */
+  id = async (): Promise<GitRefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<GitRefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
   }
 
   /**
@@ -3756,11 +3790,39 @@ export class GitRef extends BaseClient {
  * A git repository.
  */
 export class GitRepository extends BaseClient {
+  private readonly _id?: GitRepositoryID = undefined
+
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GitRepositoryID
+  ) {
     super(parent)
+
+    this._id = _id
+  }
+
+  /**
+   * Retrieves the content-addressed identifier of the git repository.
+   */
+  id = async (): Promise<GitRepositoryID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<GitRepositoryID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
   }
 
   /**
@@ -5072,6 +5134,38 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a git ref from its ID.
+   */
+  loadGitRefFromID = (id: GitRefID): GitRef => {
+    return new GitRef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadGitRefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a git repository from its ID.
+   */
+  loadGitRepositoryFromID = (id: GitRepositoryID): GitRepository => {
+    return new GitRepository({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadGitRepositoryFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a module by ID.
    */
   loadModuleFromID = (id: ModuleID): Module_ => {
@@ -5678,7 +5772,9 @@ export class TypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "withConstructor",
-          args: { function_ },
+          args: {
+            function: function_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -5717,7 +5813,9 @@ export class TypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "withFunction",
-          args: { function_ },
+          args: {
+            function: function_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -5728,12 +5826,16 @@ export class TypeDef extends BaseClient {
    * Sets the kind of the type.
    */
   withKind = (kind: TypeDefKind): TypeDef => {
+    const metadata: Metadata = {
+      kind: { is_enum: true },
+    }
+
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withKind",
-          args: { kind },
+          args: { kind, __metadata: metadata },
         },
       ],
       ctx: this._ctx,

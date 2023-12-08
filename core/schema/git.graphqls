@@ -22,10 +22,26 @@ extend type Query {
     "A service which must be started before the repo is fetched."
     experimentalServiceHost: ServiceID
   ): GitRepository!
+
+  """
+  Load a git repository from its ID.
+  """
+  loadGitRepositoryFromID(id: GitRepositoryID!): GitRepository!
+
+  """
+  Load a git ref from its ID.
+  """
+  loadGitRefFromID(id: GitRefID!): GitRef!
 }
+
+"A git repository identifier."
+scalar GitRepositoryID
 
 "A git repository."
 type GitRepository {
+  "Retrieves the content-addressed identifier of the git repository."
+  id: GitRepositoryID!
+
   """
   Returns details on one branch.
   """
@@ -57,8 +73,14 @@ type GitRepository {
   ): GitRef!
 }
 
+"A git reference identifier."
+scalar GitRefID
+
 "A git ref (tag, branch or commit)."
 type GitRef {
+  "Retrieves the content-addressed identifier of the git ref."
+  id: GitRefID!
+
   "The filesystem tree at this ref."
   tree(
     sshKnownHosts: String @deprecated(reason: "This option should be passed to `git` instead.")

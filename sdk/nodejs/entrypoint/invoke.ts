@@ -1,4 +1,4 @@
-import { registry, State } from "../registry/registry.js"
+import { Args, registry, State } from "../introspector/registry/registry.js"
 
 /**
  * A wrapper around the registry to invoke a function.
@@ -12,7 +12,7 @@ export async function invoke(
   objectName: string,
   methodName: string,
   state: State,
-  inputs: unknown[]
+  inputs: Args
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   return await registry.getResult(objectName, methodName, state, inputs)

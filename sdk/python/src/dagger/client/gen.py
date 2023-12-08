@@ -38,6 +38,14 @@ class GeneratedCodeID(Scalar):
     """A reference to GeneratedCode."""
 
 
+class GitRefID(Scalar):
+    """A git reference identifier."""
+
+
+class GitRepositoryID(Scalar):
+    """A git repository identifier."""
+
+
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
@@ -2957,6 +2965,30 @@ class GitRef(Type):
         return await _ctx.execute(str)
 
     @typecheck
+    async def id(self) -> GitRefID:
+        """Retrieves the content-addressed identifier of the git ref.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        GitRefID
+            A git reference identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(GitRefID)
+
+    @typecheck
     def tree(
         self,
         *,
@@ -3005,6 +3037,30 @@ class GitRepository(Type):
         ]
         _ctx = self._select("commit", _args)
         return GitRef(_ctx)
+
+    @typecheck
+    async def id(self) -> GitRepositoryID:
+        """Retrieves the content-addressed identifier of the git repository.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        GitRepositoryID
+            A git repository identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(GitRepositoryID)
 
     @typecheck
     def tag(self, name: str) -> GitRef:
@@ -4076,6 +4132,24 @@ class Client(Root):
         return GeneratedCode(_ctx)
 
     @typecheck
+    def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
+        """Load a git ref from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGitRefFromID", _args)
+        return GitRef(_ctx)
+
+    @typecheck
+    def load_git_repository_from_id(self, id: GitRepositoryID) -> GitRepository:
+        """Load a git repository from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGitRepositoryFromID", _args)
+        return GitRepository(_ctx)
+
+    @typecheck
     def load_module_from_id(self, id: ModuleID) -> Module:
         """Load a module by ID."""
         _args = [
@@ -4689,7 +4763,9 @@ __all__ = [
     "GeneratedCode",
     "GeneratedCodeID",
     "GitRef",
+    "GitRefID",
     "GitRepository",
+    "GitRepositoryID",
     "Host",
     "ImageLayerCompression",
     "ImageMediaTypes",

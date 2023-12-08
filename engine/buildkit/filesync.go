@@ -63,8 +63,13 @@ func (c *Client) LocalImport(
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 	localLLB := llb.Local(srcPath, localOpts...)
 
-	// We still need to do a copy here for now because buildkit's cache calls Finalize on refs when getting their blobs
-	// which makes the cache ref for the local ref unable to be reused.
+	// We still need to do a copy here for now because buildkit's cache calls
+	// Finalize on refs when getting their blobs which makes the cache ref for the
+	// local ref unable to be reused.
+	//
+	// TODO: we should ensure that this doesn't create a new cache entry, without
+	// this the entire local directory is uploaded to the cache. See also
+	// blobSource.CacheKey for more context
 	copyLLB := llb.Scratch().File(
 		llb.Copy(localLLB, "/", "/"),
 		llb.WithCustomNamef(localName),

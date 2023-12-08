@@ -101,14 +101,14 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", m.Name(), err)
 	}
-	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true})
+	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true, SkipSelfSchema: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call module %q to get functions: %w", m.Name(), err)
 	}
 
 	modMeta, ok := result.(*core.Module)
 	if !ok {
-		return nil, fmt.Errorf("expected ModuleMetadata result, got %T", result)
+		return nil, fmt.Errorf("expected Module result, got %T", result)
 	}
 
 	objs := make([]*UserModObject, 0, len(modMeta.Objects))

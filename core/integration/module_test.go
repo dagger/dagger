@@ -12,14 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 func TestModuleGoInit(t *testing.T) {
@@ -695,6 +696,14 @@ func TestModuleGoSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi!hi!"}}`, out)
 	})
+
+	t.Run("func EchoOptsPragmas(string, string, int) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptsPragmas(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptsPragmas":"hi...hi...hi..."}}`, out)
+	})
 }
 
 func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {
@@ -901,13 +910,19 @@ query {
         objects {
           asObject {
             name
+            description
             functions {
               name
               description
               args {
                 name
                 description
+                defaultValue
               }
+            }
+            fields {
+              name
+              description
             }
           }
         }
@@ -965,6 +980,19 @@ func TestModuleGoDocs(t *testing.T) {
 	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
 	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
 	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+
+	// test the arg-based form (with pragmas)
+	echoOpts = obj.Get(`functions.#(name="echoOptsPragmas")`)
+	require.Equal(t, "echoOptsPragmas", echoOpts.Get("name").String())
+	require.Len(t, echoOpts.Get("args").Array(), 3)
+	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "", echoOpts.Get("args.0.defaultValue").String())
+	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+	require.Equal(t, "\"...\"", echoOpts.Get("args.1.defaultValue").String())
+	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "3", echoOpts.Get("args.2.defaultValue").String())
+	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
 }
 
 func TestModuleGoDocsEdgeCases(t *testing.T) {
@@ -979,8 +1007,10 @@ func TestModuleGoDocsEdgeCases(t *testing.T) {
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
+// Minimal is a thing
 type Minimal struct {
-	X, Y string
+	// X is this
+	X, Y string  // Y is not this
 }
 
 // some docs
@@ -1028,6 +1058,7 @@ func (m *Minimal) HelloFinal(
 	require.NoError(t, err)
 	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
 	require.Equal(t, "Minimal", obj.Get("name").String())
+	require.Equal(t, "Minimal is a thing", obj.Get("description").String())
 
 	hello := obj.Get(`functions.#(name="hello")`)
 	require.Equal(t, "hello", hello.Get("name").String())
@@ -1074,6 +1105,74 @@ func (m *Minimal) HelloFinal(
 	require.Len(t, hello.Get("args").Array(), 1)
 	require.Equal(t, "foo", hello.Get("args.0.name").String())
 	require.Equal(t, "", hello.Get("args.0.description").String())
+
+	prop := obj.Get(`fields.#(name="x")`)
+	require.Equal(t, "x", prop.Get("name").String())
+	require.Equal(t, "X is this", prop.Get("description").String())
+	prop = obj.Get(`fields.#(name="y")`)
+	require.Equal(t, "y", prop.Get("name").String())
+	require.Equal(t, "", prop.Get("description").String())
+}
+
+func TestModuleGoOptionalMustBeNil(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {}
+
+func (m *Minimal) Foo(x *Optional[*string]) string {
+	if v, _ := x.Get(); v != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+
+func (m *Minimal) Bar(opts struct {
+	x *Optional[*string]
+}) string {
+	if v, _ := opts.x.Get(); v != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+
+func (m *Minimal) Baz(
+	// +optional
+	x *string,
+) string {
+	if x != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+
+func (m *Minimal) Qux(opts struct {
+	// +optional
+	x *string
+}) string {
+	if opts.x != nil {
+		panic("uh oh")
+	}
+	return ""
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	for _, name := range []string{"foo", "bar", "baz", "qux"} {
+		out, err := modGen.With(daggerQuery(`{minimal{%s}}`, name)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": ""}}`, name), out)
+	}
 }
 
 //go:embed testdata/modules/go/extend/main.go
@@ -1270,6 +1369,8 @@ func (m *Playground) MySlice() []*Container {
 
 type Foo struct {
 	Con *Container
+	// verify fields can remain nil w/out error too
+	UnsetFile *File
 }
 
 func (m *Playground) MyStruct() *Foo {
@@ -1668,6 +1769,48 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 	require.Nil(t, types.Get("B"))
 	require.Nil(t, types.Get("C"))
 	require.Nil(t, types.Get("D"))
+}
+
+func TestModuleSelfAPICall(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Test struct{}
+
+func (m *Test) FnA(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.c.MakeRequest(ctx, &graphql.Request{
+		Query: "{test{fnB}}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["test"].(map[string]any)["fnB"].(string), nil
+}
+
+func (m *Test) FnB() string {
+	return "hi from b"
+}
+`,
+		}).
+		With(daggerQuery(`{test{fnA}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"fnA": "hi from b"}}`, out)
 }
 
 func TestModuleWithOtherModuleTypes(t *testing.T) {
@@ -2134,6 +2277,7 @@ type Test struct {
 	Bar int
 	Baz []string
 	Dir *Directory
+	NeverSetDir *Directory
 }
 
 func (m *Test) GimmeFoo() string {
@@ -2164,6 +2308,7 @@ class Test:
     dir: dagger.Directory = field()
     bar: int = field(default=42)
     baz: list[str] = field(default=list)
+    never_set_dir: dagger.Directory | None = field(default=None)
 
     @function
     def gimme_foo(self) -> str:
@@ -2563,6 +2708,48 @@ class Foo:
 	out, err := modGen.With(daggerQuery(`{foo{bar{message}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"foo":{"bar":{"message":"foobar"}}}`, out)
+}
+
+func TestModuleTypescriptInit(t *testing.T) {
+	t.Skip("unstable because of a typescript error")
+
+	t.Run("from scratch", func(t *testing.T) {
+		t.Skip("unstable because of a typescript error")
+
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("with different root", func(t *testing.T) {
+		t.Skip("unstable because of a typescript error")
+
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/child").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript", "--root=.."))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
 }
 
 func TestModuleLotsOfFunctions(t *testing.T) {

@@ -126,6 +126,40 @@ impl GeneratedCodeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GitRefId(pub String);
+impl Into<GitRefId> for &str {
+    fn into(self) -> GitRefId {
+        GitRefId(self.to_string())
+    }
+}
+impl Into<GitRefId> for String {
+    fn into(self) -> GitRefId {
+        GitRefId(self.clone())
+    }
+}
+impl GitRefId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GitRepositoryId(pub String);
+impl Into<GitRepositoryId> for &str {
+    fn into(self) -> GitRepositoryId {
+        GitRepositoryId(self.to_string())
+    }
+}
+impl Into<GitRepositoryId> for String {
+    fn into(self) -> GitRepositoryId {
+        GitRepositoryId(self.clone())
+    }
+}
+impl GitRepositoryId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Json(pub String);
 impl Into<Json> for &str {
     fn into(self) -> Json {
@@ -2874,6 +2908,11 @@ impl GitRef {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Retrieves the content-addressed identifier of the git ref.
+    pub async fn id(&self) -> Result<GitRefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The filesystem tree at this ref.
     ///
     /// # Arguments
@@ -2941,6 +2980,11 @@ impl GitRepository {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// Retrieves the content-addressed identifier of the git repository.
+    pub async fn id(&self) -> Result<GitRepositoryId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
     }
     /// Returns details on one tag.
     ///
@@ -3832,6 +3876,38 @@ impl Query {
             }),
         );
         return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a git ref from its ID.
+    pub fn load_git_ref_from_id(&self, id: GitRef) -> GitRef {
+        let mut query = self.selection.select("loadGitRefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a git repository from its ID.
+    pub fn load_git_repository_from_id(&self, id: GitRepository) -> GitRepository {
+        let mut query = self.selection.select("loadGitRepositoryFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return GitRepository {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
