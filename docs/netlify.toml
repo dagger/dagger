@@ -197,7 +197,19 @@ status = 302
 # redirect temporary zenith labs page to temporary zenith docs
 from = "/labs/project-zenith"
 to = "/zenith"
-status = 302
+status = 301
+
+# redirect v0.1 docs to archive.docs.dagger.io/0.1/
+[[redirects]]
+  from = "/0.1/*"
+  to = "https://archive.docs.dagger.io/0.1/:splat"
+  status = 301
+
+# redirect v0.2 docs to archive.docs.dagger.io/0.2/
+[[redirects]]
+  from = "/0.2/*"
+  to = "https://archive.docs.dagger.io/0.2/:splat"
+  status = 301
 
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
