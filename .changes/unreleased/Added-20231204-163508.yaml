@@ -1,5 +1,5 @@
 kind: Added
-body: engine: add option to skip heathcheck on exposed ports.
+body: engine: add option to skip healthcheck on exposed ports.
 time: 2023-12-04T16:35:08.949707777-08:00
 custom:
   Author: KGB33
