@@ -2,7 +2,6 @@
 
 namespace DaggerIo\Tests\GraphQl;
 
-use DaggerIo\DaggerConnection;
 use DaggerIo\GraphQl\QueryBuilderChain;
 use GraphQL\QueryBuilder\QueryBuilder;
 use PHPUnit\Framework\TestCase;
@@ -11,9 +10,6 @@ class QueryBuilderChainTest extends TestCase
 {
     public function testChain(): void
     {
-        $connection = DaggerConnection::newEnvSession();
-        $graphQlClient = $connection->getGraphQlClient();
-
         $queryChain = new QueryBuilderChain();
         $queryChainContainer = $queryChain->chain(new QueryBuilder('container'));
         $queryChainContainerId = $queryChainContainer->chain(new QueryBuilder('id'));
@@ -27,15 +23,29 @@ class QueryBuilderChainTest extends TestCase
             new QueryBuilder('id')
         );
 
-        $queryFromId = $queryChainContainerFromId->getFullQuery();
-        $resultFromId = $graphQlClient->runQuery($queryFromId)->getData();
+        $queryFromId = $queryChainContainerFromId->getFullQuery()->__toString();
+        $queryId = $queryChainContainerId->getFullQuery()->__toString();
 
-        $queryId = $queryChainContainerId->getFullQuery();
-        $resultId = $graphQlClient->runQuery($queryId)->getData();
+        // language=graphql
+        $expectedQueryFromId = <<<'GQL'
+query {
+container {
+from(address: "alpine:latest") {
+id
+}
+}
+}
+GQL;
+        // language=graphql
+        $expectedQueryId = <<<'GQL'
+query {
+container {
+id
+}
+}
+GQL;
 
-        $this->assertObjectNotHasProperty('from', $resultId->container);
-        $this->assertObjectNotHasProperty('id', $resultFromId->container);
-        $this->assertStringStartsWith('core.Container', $resultFromId->container->from->id);
-        $this->assertStringStartsWith('core.Container', $resultId->container->id);
+        self::assertEquals(trim($expectedQueryFromId), trim($queryFromId));
+        self::assertEquals(trim($expectedQueryId), trim($queryId));
     }
 }
