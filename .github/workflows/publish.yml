@@ -28,10 +28,6 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
-      - uses: cachix/install-nix-action@v23
-        with:
-          extra_nix_config: |
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
       - name: "Publish Engine & CLI"
         run: |
           ./hack/make dagger:publish ${{ github.ref_name }}
