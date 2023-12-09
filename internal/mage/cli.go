@@ -46,7 +46,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 	_, err = c.Container().
 		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
 		WithEntrypoint([]string{}).
-		WithExec([]string{"apk", "add", "aws-cli"}).
+		WithExec([]string{"apk", "add", "aws-cli", "nix"}).
 		WithWorkdir("/app").
 		WithMountedDirectory("/app", wd).
 		With(util.HostSecretVar(c, "GITHUB_TOKEN")).
