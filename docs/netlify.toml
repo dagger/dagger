@@ -189,13 +189,13 @@
   to = "/zenith"
   status = 301
 
-  # redirect v0.1 docs to archive.docs.dagger.io/0.1/
 [[redirects]]
+  # redirect v0.1 docs to archive.docs.dagger.io/0.1/
   from = "/0.1/*"
   to = "https://archive.docs.dagger.io/0.1/:splat"
   status = 301
 
-  # start: specific redirects for v0.1 docs
+# start: specific redirects for v0.1 docs
 [[redirects]]
   from = "/1001/install"
   to = "https://archive.docs.dagger.io/0.1/1001/install"
@@ -251,14 +251,14 @@
   to = "https://archive.docs.dagger.io/0.1/1011/package-manager"
   status = 301
 
-  # see https://github.com/dagger/dagger/commit/c8e42af05abda5a0e6bf7c485b52208a87dd038e
 [[redirects]]
+  # see https://github.com/dagger/dagger/commit/c8e42af05abda5a0e6bf7c485b52208a87dd038e
   from = "/1011/operator-manual"
   to = "https://archive.docs.dagger.io/0.1/1011/operator-manual"
   status = 301
 
-  # see https://github.com/dagger/dagger/commit/c8e42af05abda5a0e6bf7c485b52208a87dd038e
 [[redirects]]
+  # see https://github.com/dagger/dagger/commit/c8e42af05abda5a0e6bf7c485b52208a87dd038e
   from = "/1013/operator-manual"
   to = "https://archive.docs.dagger.io/0.1/1011/operator-manual"
   status = 301
@@ -272,15 +272,15 @@
   from = "/v0.1/reference""
   to = "https://archive.docs.dagger.io/0.1/reference""
   status = 301
-  # end: specific redirects for v0.1 docs
+# end: specific redirects for v0.1 docs
 
-  # redirect v0.2 docs to archive.docs.dagger.io/0.2/
 [[redirects]]
+  # redirect v0.2 docs to archive.docs.dagger.io/0.2/
   from = "/0.2/*"
   to = "https://archive.docs.dagger.io/0.2/:splat"
   status = 301
 
-  # start: specific redirects for v0.2 docs
+# start: specific redirects for v0.2 docs
 [[redirects]]
   from = "/dgr18/overview"
   to = "https://archive.docs.dagger.io/0.2/dgr18/overview"
@@ -520,16 +520,16 @@
   from = "/1248/aws-sam"
   to = "https://archive.docs.dagger.io/0.2/1248/aws-sam"
   status = 301
-  # end: specific redirects for v0.2 docs
+# end: specific redirects for v0.2 docs
 
-  # redirect to the playground's embed to maintain same origin
-  # see https://github.com/dagger/dagger/pull/4753
+# redirect to the playground's embed to maintain same origin
+# see https://github.com/dagger/dagger/pull/4753
 [[redirects]]
     from = "/embed/*"
     to = "https://play.dagger.cloud/embed/:splat"
     status = 200
 
-  # redirect to the playground's Next.js build artifacts
+# redirect to the playground's Next.js build artifacts
 [[redirects]]
     from = "/_next/*"
     to = "https://play.dagger.cloud/_next/:splat"
