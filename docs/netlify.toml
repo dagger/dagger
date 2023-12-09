@@ -195,6 +195,7 @@
   to = "https://archive.docs.dagger.io/0.1/:splat"
   status = 301
 
+# start: specific redirects for v0.1 docs
 [[redirects]]
   from = "/1001/install"
   to = "https://archive.docs.dagger.io/0.1/1001/install"
@@ -269,8 +270,9 @@
 
 [[redirects]]
   from = "/v0.1/reference""
-  to = "https://archive.docs.dagger.io/0.1/reference""
+  to = "https://archive.docs.dagger.io/0.1/reference"
   status = 301
+# end: specific redirects for v0.1 docs
 
 [[redirects]]
   # redirect v0.2 docs to archive.docs.dagger.io/0.2/
@@ -518,6 +520,7 @@
   from = "/1248/aws-sam"
   to = "https://archive.docs.dagger.io/0.2/1248/aws-sam"
   status = 301
+# end: specific redirects for v0.2 docs
 
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
