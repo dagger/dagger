@@ -1,27 +1,30 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/dagger/dagql/idproto"
-	"github.com/opencontainers/go-digest"
+	"github.com/iancoleman/strcase"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Resolver interface {
-	Field(string) (FieldSpec, bool)
-	Resolve(context.Context, Selector) (any, error)
+	Resolve(context.Context, *ast.FieldDefinition, map[string]Literal) (any, error)
 }
 
 type FieldSpec struct {
 	// Name is the name of the field.
-	Name string
+	// Name string
 
 	// Args is the list of arguments that the field accepts.
 	Args []ArgSpec
 
 	// Type is the type of the field's result.
-	Type Type
+	Type *ast.Type
 
 	// Meta indicates that the field has no impact on the field's result.
 	Meta bool
@@ -35,20 +38,30 @@ type ArgSpec struct {
 	// Name is the name of the argument.
 	Name string
 	// Type is the type of the argument.
-	Type Type
-}
-
-type Type struct {
-	// Named is the name of the type, if it is a named type.
-	Named string // TODO likely not exhaustive
-	// ListOf is the type of the elements of the list, if it is a list type.
-	ListOf *Type
-	// NonNull indicates that the type is non-null.
-	NonNull bool
+	Type *ast.Type
+	// Default is the default value of the argument.
+	Default *Literal
 }
 
 type Literal struct {
 	*idproto.Literal
+}
+
+func (lit Literal) ToAST() *ast.Value {
+	switch x := lit.Value.(type) {
+	case *idproto.Literal_Int:
+		return &ast.Value{
+			Kind: ast.IntValue,
+			Raw:  fmt.Sprintf("%d", lit.GetInt()),
+		}
+	case *idproto.Literal_String_:
+		return &ast.Value{
+			Kind: ast.IntValue,
+			Raw:  fmt.Sprintf("%d", lit.GetInt()),
+		}
+	default:
+		panic(fmt.Errorf("cannot convert %T to *ast.Value", x))
+	}
 }
 
 type Selector struct {
@@ -58,152 +71,251 @@ type Selector struct {
 
 // Per the GraphQL spec, a Node always has an ID.
 type Node interface {
-	Resolver
-
 	ID() *idproto.ID
+
+	Typed
+	Resolver
 }
 
-type Query struct {
-	Selections []Selection
+type TypeResolver interface {
+	isType()
 }
 
-type Selection struct {
-	Alias         string
-	Selector      Selector
-	Subselections []Selection
+// var IDResolver = ScalarResolver[*idproto.ID]{
+// 	ToResponse: func(value *idproto.ID) (any, error) {
+// 		proto, err := proto.Marshal(value)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		compressed := new(bytes.Buffer)
+// 		lw := lz4.NewWriter(compressed)
+// 		if _, err := lw.Write(proto); err != nil {
+// 			return nil, err
+// 		}
+// 		if err := lw.Close(); err != nil {
+// 			return nil, err
+// 		}
+// 		log.Printf("compressed: %q", compressed.String())
+// 		uncompressed := new(bytes.Buffer)
+// 		lz4.NewReader(bytes.NewBuffer(compressed.Bytes())).WriteTo(uncompressed)
+// 		log.Printf("uncompressed: %q", uncompressed.String())
+// 		return base64.URLEncoding.EncodeToString(compressed.Bytes()), nil
+// 	},
+// 	FromQuery: func(lit ast.Value) (*idproto.ID, error) {
+// 		switch x := lit.(type) {
+// 		case *ast.StringValue:
+// 			bytes, err := base64.URLEncoding.DecodeString(x.Value)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			var idproto idproto.ID
+// 			if err := proto.Unmarshal(bytes, &idproto); err != nil {
+// 				return nil, err
+// 			}
+// 			return &idproto, nil
+// 		default:
+// 			return nil, fmt.Errorf("cannot convert %T to *idproto.ID", x)
+// 		}
+// 	},
+// }
+
+type Nullable interface {
+	NullableValue() any
 }
 
-func (sel Selection) Name() string {
-	if sel.Alias != "" {
-		return sel.Alias
-	}
-	return sel.Selector.Field
+type Optional[T any] struct {
+	Value T
+	Valid bool
 }
 
-type Server struct {
-	Resolvers map[string]func(*idproto.ID, any) (Node, error)
-
-	cache *CacheMap[digest.Digest, any]
+func (n Optional[T]) NullableValue() any {
+	return n.Value
 }
 
-func (s Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any, error) {
-	results := make(map[string]any, len(q.Selections))
-
-	for _, sel := range q.Selections {
-		args := make([]*idproto.Argument, 0, len(sel.Selector.Args))
-		for name, val := range sel.Selector.Args {
-			args = append(args, &idproto.Argument{
-				Name:  name,
-				Value: val.Literal,
-			})
+func Func[T any, A any, R Typed](fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+	var argSpecs []ArgSpec
+	var zeroArgs A
+	argsType := reflect.TypeOf(zeroArgs)
+	if argsType != nil {
+		if argsType.Kind() != reflect.Struct {
+			panic(fmt.Sprintf("args must be a struct, got %T", zeroArgs))
 		}
 
-		field, ok := root.Field(sel.Selector.Field)
-		if !ok {
-			// TODO better error
-			return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
-		}
-
-		chain := root.ID().Clone()
-		chain.Constructor = append(chain.Constructor, &idproto.Selector{
-			Field:   sel.Selector.Field,
-			Args:    args,
-			Tainted: !field.Pure,
-			Meta:    field.Meta,
-		})
-
-		// TODO: should this be a full Type? feels odd to just have a TypeName...
-		// i've definitely thought about this before already tho
-		chain.TypeName = field.Type.Named
-
-		digest, err := chain.Canonical().Digest()
-		if err != nil {
-			return nil, err
-		}
-
-		var val any
-		if field.Pure && !chain.Tainted() { // TODO test !chain.Tainted(); intent is to not cache any queries that depend on a tainted input
-			val, err = s.cache.GetOrInitialize(ctx, digest, func(ctx context.Context) (any, error) {
-				return root.Resolve(ctx, sel.Selector)
-			})
-		} else {
-			val, err = root.Resolve(ctx, sel.Selector)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if len(sel.Subselections) > 0 {
-			if field.Type.Named == "" {
-				// TODO better error
-				return nil, fmt.Errorf("cannot select from non-node")
+		for i := 0; i < argsType.NumField(); i++ {
+			field := argsType.Field(i)
+			argName := field.Tag.Get("arg")
+			if argName == "" {
+				argName = strcase.ToLowerCamel(field.Name)
 			}
 
-			create, ok := s.Resolvers[field.Type.Named]
-			if !ok {
-				// TODO better error
-				return nil, fmt.Errorf("unknown type %q", field.Type.Named)
+			var argDefault *Literal
+			defaultJSON := []byte(field.Tag.Get("default")) // TODO: would make more sense to GraphQL-Unmarshal this
+			if len(defaultJSON) > 0 {
+				dec := json.NewDecoder(bytes.NewReader(defaultJSON))
+				dec.UseNumber()
+
+				var defaultAny any
+				if err := dec.Decode(&defaultAny); err != nil {
+					panic(err)
+				}
+
+				argDefault = &Literal{idproto.LiteralValue(defaultAny)}
 			}
 
-			resolver, err := create(chain, val)
+			argType, err := TypeOf(reflect.New(field.Type).Interface())
 			if err != nil {
-				// TODO better error
-				return nil, err
+				panic(err)
 			}
 
-			val, err = s.Resolve(ctx, resolver, Query{
-				Selections: sel.Subselections,
+			argSpecs = append(argSpecs, ArgSpec{
+				Name:    argName,
+				Type:    argType,
+				Default: argDefault,
 			})
-			if err != nil {
-				return nil, err
-			}
 		}
-
-		results[sel.Name()] = val
 	}
 
-	return results, nil
+	var zeroRet R
+	retType, err := TypeOf(zeroRet)
+	if err != nil {
+		panic(err)
+	}
+
+	return Field[T]{
+		Spec: FieldSpec{
+			Args: argSpecs,
+			Type: retType,
+		},
+		Func: func(ctx context.Context, self T, argVals map[string]Literal) (any, error) {
+			var args A
+
+			argsVal := reflect.ValueOf(&args)
+
+			for i, arg := range argSpecs {
+				argVal, ok := argVals[arg.Name]
+				if !ok {
+					if arg.Default != nil {
+						argVal = *arg.Default
+					} else {
+						return nil, fmt.Errorf("missing required argument: %q", arg.Name)
+					}
+				}
+				field := argsType.Field(i)
+				arg := reflect.New(field.Type).Interface()
+
+				if um, ok := arg.(Unmarshaler); ok {
+					if err := um.UnmarshalLiteral(argVal.Literal); err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("cannot unmarshal %T", arg)
+				}
+
+				argsVal.Elem().Field(i).Set(reflect.ValueOf(arg).Elem())
+			}
+
+			return fn(ctx, self, args)
+		},
+	}
 }
 
-type ObjectResolver[T any] struct {
+type Marshaler interface {
+	MarshalLiteral() (*idproto.Literal, error)
+}
+
+type Unmarshaler interface {
+	UnmarshalLiteral(*idproto.Literal) error
+}
+
+type ScalarResolver[T Marshaler] struct{}
+
+func (ScalarResolver[T]) isType() {}
+
+// Class creates Nodes (a.k.a. "objects").
+//
+// (The metaphor is a bit of a stretch, but it's accurate enough and odd enough
+// to distignuish itself.)
+// type Class interface {
+// 	Instantiate(*idproto.ID, any) (Node, error)
+// 	Call(context.Context, Node, string, map[string]Literal) (any, error)
+// }
+
+type Class[T Typed] struct {
+	Fields ObjectFields[T]
+}
+
+func (r Class[T]) isType() {}
+
+type ClassType interface {
+	Instantiate(*idproto.ID, any) (Node, error)
+}
+
+var _ ClassType = Class[Typed]{}
+
+func (cls Class[T]) Instantiate(id *idproto.ID, val any) (Node, error) {
+	return ObjectNode[T]{
+		Constructor: id,
+		Self:        val.(T), // TODO error
+		Class:       cls,
+	}, nil
+}
+
+func (cls Class[T]) Call(ctx context.Context, node ObjectNode[T], fieldName string, args map[string]Literal) (any, error) {
+	field, ok := cls.Fields[fieldName]
+	if !ok {
+		return nil, fmt.Errorf("no such field: %q", fieldName)
+	}
+	if field.NodeFunc != nil {
+		return field.NodeFunc(ctx, node, args)
+	}
+	return field.Func(ctx, node.Self, args)
+}
+
+type ObjectNode[T Typed] struct {
 	Constructor *idproto.ID
 	Self        T
-	Fields      map[string]Field[T]
+	Class       Class[T]
 }
 
-var _ Node = ObjectResolver[any]{}
+var _ Node = ObjectNode[Typed]{}
 
-func (r ObjectResolver[T]) ID() *idproto.ID {
+func (o ObjectNode[T]) TypeName() string {
+	return o.Self.TypeName()
+}
+
+type ObjectFields[T Typed] map[string]Field[T]
+
+type Field[T any] struct {
+	Spec     FieldSpec
+	Func     func(ctx context.Context, self T, args map[string]Literal) (any, error)
+	NodeFunc func(ctx context.Context, self Node, args map[string]Literal) (any, error)
+}
+
+var _ Node = ObjectNode[Typed]{}
+
+func (r ObjectNode[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
-type Field[T any] struct {
-	Spec FieldSpec
-	Func func(ctx context.Context, self T, args map[string]Literal) (any, error)
-}
+var _ Resolver = ObjectNode[Typed]{}
 
-func (r ObjectResolver[T]) Register(name string) (FieldSpec, bool) {
-	field, ok := r.Fields[name]
-	if !ok {
-		return FieldSpec{}, false
+func (r ObjectNode[T]) Resolve(ctx context.Context, field *ast.FieldDefinition, givenArgs map[string]Literal) (any, error) {
+	args := make(map[string]Literal, len(field.Arguments))
+	for _, arg := range field.Arguments {
+		val, ok := givenArgs[arg.Name]
+		if ok {
+			args[arg.Name] = val
+		} else {
+			if arg.DefaultValue != nil {
+				val, err := arg.DefaultValue.Value(nil)
+				if err != nil {
+					return nil, err
+				}
+				args[arg.Name] = Literal{idproto.LiteralValue(val)}
+			} else if arg.Type.NonNull {
+				return nil, fmt.Errorf("missing required argument: %q", arg.Name)
+			}
+		}
 	}
-	return field.Spec, true
-}
-
-var _ Resolver = ObjectResolver[any]{}
-
-func (r ObjectResolver[T]) Field(name string) (FieldSpec, bool) {
-	field, ok := r.Fields[name]
-	if !ok {
-		return FieldSpec{}, false
-	}
-	return field.Spec, true
-}
-
-func (r ObjectResolver[T]) Resolve(ctx context.Context, sel Selector) (any, error) {
-	field, ok := r.Fields[sel.Field]
-	if !ok {
-		return nil, fmt.Errorf("unknown field: %q", sel.Field)
-	}
-	return field.Func(ctx, r.Self, sel.Args)
+	return r.Class.Call(ctx, r, field.Name, args)
 }

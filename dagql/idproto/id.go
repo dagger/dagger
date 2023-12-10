@@ -1,8 +1,10 @@
 package idproto
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
@@ -70,6 +72,19 @@ func LiteralValue(value any) *Literal {
 		return v.Literal()
 	case specs.Platform: // XXX(vito): maybe just have our own type alias that implements Literate
 		return LiteralValue(platforms.Format(v))
+	case json.Number:
+		if strings.Contains(v.String(), ".") {
+			f, err := v.Float64()
+			if err != nil {
+				panic(err)
+			}
+			return LiteralValue(f)
+		}
+		i, err := v.Int64()
+		if err != nil {
+			panic(err)
+		}
+		return LiteralValue(i)
 	default:
 		panic(fmt.Sprintf("unsupported literal type %T", v))
 	}

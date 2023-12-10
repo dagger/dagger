@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
+	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestCacheMapConcurrent(t *testing.T) {
@@ -27,15 +28,15 @@ func TestCacheMapConcurrent(t *testing.T) {
 				initialized[i] = true
 				return i, nil
 			})
-			require.NoError(t, err)
-			require.True(t, initialized[val])
+			assert.NilError(t, err)
+			assert.Assert(t, initialized[val])
 		}()
 	}
 
 	wg.Wait()
 
 	// only one of them should have initialized
-	require.Len(t, initialized, 1)
+	assert.Assert(t, is.Len(initialized, 1))
 }
 
 func TestCacheMapErrors(t *testing.T) {
@@ -49,25 +50,25 @@ func TestCacheMapErrors(t *testing.T) {
 	_, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 0, myErr
 	})
-	require.Equal(t, myErr, err)
+	assert.Assert(t, is.ErrorIs(err, myErr))
 
 	otherErr := errors.New("nope 2")
 	_, err = c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 0, otherErr
 	})
-	require.Equal(t, otherErr, err)
+	assert.Assert(t, is.ErrorIs(err, otherErr))
 
 	res, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 1, nil
 	})
-	require.NoError(t, err)
-	require.Equal(t, 1, res)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, res)
 
 	res, err = c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 0, errors.New("ignored")
 	})
-	require.NoError(t, err)
-	require.Equal(t, 1, res)
+	assert.NilError(t, err)
+	assert.Equal(t, 1, res)
 }
 
 func TestCacheMapRecursiveCall(t *testing.T) {
@@ -81,7 +82,7 @@ func TestCacheMapRecursiveCall(t *testing.T) {
 			return 2, nil
 		})
 	})
-	require.ErrorIs(t, err, ErrCacheMapRecursiveCall)
+	assert.Assert(t, is.ErrorIs(err, ErrCacheMapRecursiveCall))
 
 	// verify same cachemap can be called recursively w/ different keys
 	v, err := c.GetOrInitialize(ctx, 10, func(ctx context.Context) (int, error) {
@@ -89,8 +90,8 @@ func TestCacheMapRecursiveCall(t *testing.T) {
 			return 12, nil
 		})
 	})
-	require.NoError(t, err)
-	require.Equal(t, 12, v)
+	assert.NilError(t, err)
+	assert.Equal(t, 12, v)
 
 	// verify other cachemaps can be called w/ same keys
 	c2 := NewCacheMap[int, int]()
@@ -99,6 +100,6 @@ func TestCacheMapRecursiveCall(t *testing.T) {
 			return 101, nil
 		})
 	})
-	require.NoError(t, err)
-	require.Equal(t, 101, v)
+	assert.NilError(t, err)
+	assert.Equal(t, 101, v)
 }

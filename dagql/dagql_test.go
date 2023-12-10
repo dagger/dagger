@@ -1,122 +1,158 @@
-package dagql
+package dagql_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagql"
 	"github.com/dagger/dagql/idproto"
-	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
+	"gotest.tools/v3/assert"
 )
+
+type Point struct {
+	X int
+	Y int
+}
+
+func (Point) TypeName() string {
+	return "Point"
+}
+
+type Query struct {
+}
+
+func (Query) TypeName() string {
+	return "Query"
+}
 
 func TestBasic(t *testing.T) {
 	ctx := context.Background()
 
-	type Point struct {
-		X int
-		Y int
-	}
+	srv := dagql.NewServer(Query{})
 
-	queryFields := map[string]Field[*Query]{
-		"point": {
-			Spec: FieldSpec{
-				Name: "point",
-				Args: []ArgSpec{
-					{"x", Type{Named: "Int"}},
-					{"y", Type{Named: "Int"}},
-				},
-				Type: Type{
-					Named: "Point",
-				},
-			},
-			Func: func(ctx context.Context, self *Query, args map[string]Literal) (any, error) {
-				return &Point{
-					X: int(args["x"].GetInt()),
-					Y: int(args["y"].GetInt()),
-				}, nil
-			},
-		},
-	}
+	dagql.Install(srv, dagql.ObjectFields[Query]{
+		"point": dagql.Func(func(ctx context.Context, self Query, args struct {
+			X dagql.Int `default:"0"`
+			Y dagql.Int `default:"0"`
+		}) (Point, error) {
+			return Point{
+				X: int(args.X.Value),
+				Y: int(args.Y.Value),
+			}, nil
+		}),
+	})
 
-	pointFields := map[string]Field[*Point]{
-		"x": {
-			Spec: FieldSpec{
-				Name: "x",
-				Type: Type{
-					Named: "Int",
-				},
-			},
-			Func: func(ctx context.Context, self *Point, args map[string]Literal) (any, error) {
-				return self.X, nil
-			},
-		},
-		"y": {
-			Spec: FieldSpec{
-				Name: "y",
-				Type: Type{
-					Named: "Int",
-				},
-			},
-			Func: func(ctx context.Context, self *Point, args map[string]Literal) (any, error) {
-				return self.Y, nil
-			},
-		},
-	}
+	// TODO: error handling would be nice.
+	//
+	// maybe dagql.Install() should just take a type and go over its public methods?
 
-	srv := Server{
-		Resolvers: map[string]func(*idproto.ID, any) (Node, error){
-			"Query": func(id *idproto.ID, val any) (Node, error) {
-				return ObjectResolver[*Query]{
-					Constructor: id,
-					Self:        val.(*Query),
-					Fields:      queryFields,
-				}, nil
-			},
-			"Point": func(id *idproto.ID, val any) (Node, error) {
-				return ObjectResolver[*Point]{
-					Constructor: id,
-					Self:        val.(*Point),
-					Fields:      pointFields,
-				}, nil
-			},
-		},
-	}
+	dagql.Install(srv, dagql.ObjectFields[Point]{
+		"x": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
+			return dagql.Int{self.X}, nil
+		}),
+		"y": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
+			return dagql.Int{self.Y}, nil
+		}),
+		"self": dagql.Func(func(ctx context.Context, self Point, _ any) (Point, error) {
+			return self, nil
+		}),
+		"shiftLeft": dagql.Func(func(ctx context.Context, self Point, args struct {
+			Amount dagql.Int `default:"2"`
+		}) (Point, error) {
+			self.X -= args.Amount.Value
+			return self, nil
+		}),
+	})
 
-	res, err := srv.Resolve(ctx, ObjectResolver[*Query]{
-		Constructor: idproto.New("Query"),
-		Self:        &Query{},
-		Fields:      queryFields,
-	}, Query{
-		Selections: []Selection{
+	res, err := srv.Resolve(ctx, srv.Root, dagql.Query{
+		Selections: []dagql.Selection{
 			{
-				Selector: Selector{
+				Selector: dagql.Selector{
 					Field: "point",
-					Args: map[string]Literal{
-						"x": {idproto.LiteralValue(1)},
-						"y": {idproto.LiteralValue(2)},
+					Args: map[string]dagql.Literal{
+						"x": {idproto.LiteralValue(6)},
+						"y": {idproto.LiteralValue(7)},
 					},
 				},
-				Subselections: []Selection{
+				Subselections: []dagql.Selection{
 					{
-						Alias: "ecks",
-						Selector: Selector{
-							Field: "x",
+						Selector: dagql.Selector{
+							Field: "shiftLeft",
+							Args: map[string]dagql.Literal{
+								"amount": {idproto.LiteralValue(2)},
+							},
 						},
-					},
-					{
-						Alias: "why",
-						Selector: Selector{
-							Field: "y",
+						Subselections: []dagql.Selection{
+							{
+								Alias: "ecks",
+								Selector: dagql.Selector{
+									Field: "x",
+								},
+							},
+							{
+								Alias: "why",
+								Selector: dagql.Selector{
+									Field: "y",
+								},
+							},
 						},
 					},
 				},
 			},
 		},
 	})
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{
+	assert.NilError(t, err)
+	assert.DeepEqual(t, map[string]any{
 		"point": map[string]any{
-			"ecks": 1,
-			"why":  2,
+			"shiftLeft": map[string]any{
+				"ecks": dagql.Int{Value: 4},
+				"why":  dagql.Int{Value: 7},
+			},
 		},
 	}, res)
+
+	res, err = srv.Resolve(ctx, srv.Root, dagql.Query{
+		Selections: []dagql.Selection{
+			{
+				Selector: dagql.Selector{
+					Field: "point",
+					Args: map[string]dagql.Literal{
+						"x": {idproto.LiteralValue(6)},
+						"y": {idproto.LiteralValue(7)},
+					},
+				},
+				Subselections: []dagql.Selection{
+					{
+						Selector: dagql.Selector{
+							Field: "shiftLeft",
+							Args: map[string]dagql.Literal{
+								"amount": {idproto.LiteralValue(2)},
+							},
+						},
+						Subselections: []dagql.Selection{
+							{
+								Selector: dagql.Selector{
+									Field: "id",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	expectedID := idproto.New("Point")
+	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
+	expectedID.Append("shiftLeft", idproto.Arg("amount", 2))
+
+	assert.NilError(t, err)
+	assert.DeepEqual(t, map[string]any{
+		"point": map[string]any{
+			"shiftLeft": map[string]any{
+				"id": expectedID,
+			},
+		},
+	}, res, protocmp.Transform())
 }
