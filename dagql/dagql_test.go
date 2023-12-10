@@ -58,7 +58,7 @@ func TestBasic(t *testing.T) {
 			return self, nil
 		}),
 		"shiftLeft": dagql.Func(func(ctx context.Context, self Point, args struct {
-			Amount dagql.Int `default:"2"`
+			Amount dagql.Int `default:"1"`
 		}) (Point, error) {
 			self.X -= args.Amount.Value
 			return self, nil
