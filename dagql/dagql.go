@@ -13,7 +13,7 @@ import (
 )
 
 type Resolver interface {
-	Resolve(context.Context, *ast.FieldDefinition, map[string]Literal) (any, error)
+	Resolve(context.Context, *ast.FieldDefinition, map[string]Literal) (Typed, error)
 }
 
 type FieldSpec struct {
@@ -184,7 +184,7 @@ func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) 
 			Args: argSpecs,
 			Type: retType,
 		},
-		Func: func(ctx context.Context, self T, argVals map[string]Literal) (any, error) {
+		Func: func(ctx context.Context, self T, argVals map[string]Literal) (Typed, error) {
 			var args A
 			if err := ArgsToType(argSpecs, argVals, &args); err != nil {
 				return nil, err
@@ -206,15 +206,6 @@ type ScalarResolver[T Marshaler] struct{}
 
 func (ScalarResolver[T]) isType() {}
 
-// Class creates Nodes (a.k.a. "objects").
-//
-// (The metaphor is a bit of a stretch, but it's accurate enough and odd enough
-// to distignuish itself.)
-// type Class interface {
-// 	Instantiate(*idproto.ID, any) (Node, error)
-// 	Call(context.Context, Node, string, map[string]Literal) (any, error)
-// }
-
 type Class[T Typed] struct {
 	Fields Fields[T]
 }
@@ -222,20 +213,24 @@ type Class[T Typed] struct {
 func (r Class[T]) isType() {}
 
 type ClassType interface {
-	Instantiate(*idproto.ID, any) (Node, error)
+	Instantiate(*idproto.ID, Typed) (Node, error)
 }
 
 var _ ClassType = Class[Typed]{}
 
-func (cls Class[T]) Instantiate(id *idproto.ID, val any) (Node, error) {
+func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Node, error) {
+	self, ok := val.(T)
+	if !ok {
+		return nil, fmt.Errorf("cannot instantiate %T with %T", cls, val)
+	}
 	return ObjectNode[T]{
 		Constructor: id,
-		Self:        val.(T), // TODO error
+		Self:        self,
 		Class:       cls,
 	}, nil
 }
 
-func (cls Class[T]) Call(ctx context.Context, node ObjectNode[T], fieldName string, args map[string]Literal) (any, error) {
+func (cls Class[T]) Call(ctx context.Context, node ObjectNode[T], fieldName string, args map[string]Literal) (Typed, error) {
 	field, ok := cls.Fields[fieldName]
 	if !ok {
 		return nil, fmt.Errorf("no such field: %q", fieldName)
@@ -262,8 +257,8 @@ type Fields[T Typed] map[string]Field[T]
 
 type Field[T any] struct {
 	Spec     FieldSpec
-	Func     func(ctx context.Context, self T, args map[string]Literal) (any, error)
-	NodeFunc func(ctx context.Context, self Node, args map[string]Literal) (any, error)
+	Func     func(ctx context.Context, self T, args map[string]Literal) (Typed, error)
+	NodeFunc func(ctx context.Context, self Node, args map[string]Literal) (Typed, error)
 }
 
 var _ Node = ObjectNode[Typed]{}
@@ -274,7 +269,7 @@ func (r ObjectNode[T]) ID() *idproto.ID {
 
 var _ Resolver = ObjectNode[Typed]{}
 
-func (r ObjectNode[T]) Resolve(ctx context.Context, field *ast.FieldDefinition, givenArgs map[string]Literal) (any, error) {
+func (r ObjectNode[T]) Resolve(ctx context.Context, field *ast.FieldDefinition, givenArgs map[string]Literal) (Typed, error) {
 	args := make(map[string]Literal, len(field.Arguments))
 	for _, arg := range field.Arguments {
 		val, ok := givenArgs[arg.Name]

@@ -131,99 +131,88 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 	}
 }
 
-func (s *Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any, error) {
+func (sel Selector) Chain(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
+	chain := id.Clone()
+	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
+	for name, val := range sel.Args {
+		idArgs = append(idArgs, &idproto.Argument{
+			Name:  name,
+			Value: val.Literal,
+		})
+	}
+	sort.Slice(idArgs, func(i, j int) bool { // TODO load-bearing! helper?
+		return idArgs[i].Name < idArgs[j].Name
+	})
+	chain.Constructor = append(chain.Constructor, &idproto.Selector{
+		Field:   sel.Field,
+		Args:    idArgs,
+		Tainted: field.Directives.ForName("tainted") != nil, // TODO
+		Meta:    field.Directives.ForName("meta") != nil,    // TODO
+	})
+	chain.TypeName = field.Type.Name()
+	return chain
+}
+
+func (s *Server) Resolve(ctx context.Context, self Node, q Query) (map[string]any, error) {
 	results := make(map[string]any, len(q.Selections))
 
 	for _, sel := range q.Selections {
-		typeDef, ok := s.schema.Types[root.TypeName()]
+		typeDef, ok := s.schema.Types[self.TypeName()]
 		if !ok {
-			// TODO better error
-			return nil, fmt.Errorf("unknown type %q", root.TypeName())
+			return nil, fmt.Errorf("unknown type: %q", self.TypeName())
 		}
 
 		field := typeDef.Fields.ForName(sel.Selector.Field)
 		if field == nil {
-			// TODO better error
 			return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
 		}
 
-		chain := root.ID().Clone()
-		idArgs := make([]*idproto.Argument, 0, len(sel.Selector.Args))
-		for name, val := range sel.Selector.Args {
-			idArgs = append(idArgs, &idproto.Argument{
-				Name:  name,
-				Value: val.Literal,
-			})
-		}
-		sort.Slice(idArgs, func(i, j int) bool { // TODO load-bearing! helper?
-			return idArgs[i].Name < idArgs[j].Name
-		})
-		chain.Constructor = append(chain.Constructor, &idproto.Selector{
-			Field:   sel.Selector.Field,
-			Args:    idArgs,
-			Tainted: field.Directives.ForName("tainted") != nil, // TODO
-			Meta:    field.Directives.ForName("meta") != nil,    // TODO
-		})
-
-		// TODO: should this be a full Type? feels odd to just have a TypeName...
-		// i've definitely thought about this before already tho
-		if field.Type == nil {
-			panic("nil type: " + field.Name)
-		}
-
-		chain.TypeName = field.Type.Name()
+		chainedID := sel.Selector.Chain(self.ID(), field)
 
 		// digest, err := chain.Canonical().Digest()
 		// if err != nil {
 		// 	return nil, err
 		// }
 
-		var val any
-		var err error
 		// if field.Pure && !chain.Tainted() { // TODO test !chain.Tainted(); intent is to not cache any queries that depend on a tainted input
 		// 	val, err = s.cache.GetOrInitialize(ctx, digest, func(ctx context.Context) (any, error) {
 		// 		return root.Resolve(ctx, sel.Selector)
 		// 	})
 		// } else {
-		val, err = root.Resolve(ctx, field, sel.Selector.Args)
+		val, err := self.Resolve(ctx, field, sel.Selector.Args)
 		// }
 		if err != nil {
 			return nil, err
 		}
 
+		var res any
 		if len(sel.Subselections) > 0 {
 			if field.Type.NamedType == "" {
-				// TODO better error
 				return nil, fmt.Errorf("cannot select from non-node")
 			}
-
 			resolver, ok := s.types[field.Type.Name()]
 			if !ok {
-				// TODO better error
 				return nil, fmt.Errorf("unknown type %q", field.Type.Name())
 			}
-
 			obj, ok := resolver.(ClassType)
 			if !ok {
-				// TODO better error
 				return nil, fmt.Errorf("cannot select from type %s: expected %T, got %T", field.Type.Name(), obj, resolver)
 			}
-
-			node, err := obj.Instantiate(chain, val)
+			node, err := obj.Instantiate(chainedID, val)
 			if err != nil {
-				// TODO better error
-				return nil, err
+				return nil, fmt.Errorf("instantiate: %w", err)
 			}
-
-			val, err = s.Resolve(ctx, node, Query{
+			res, err = s.Resolve(ctx, node, Query{
 				Selections: sel.Subselections,
 			})
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			res = val
 		}
 
-		results[sel.Name()] = val
+		results[sel.Name()] = res
 	}
 
 	return results, nil
@@ -253,7 +242,7 @@ func (fields Fields[T]) Install(server *Server) *ast.Definition {
 					NonNull:   true,
 				},
 			},
-			NodeFunc: func(ctx context.Context, self Node, args map[string]Literal) (any, error) {
+			NodeFunc: func(ctx context.Context, self Node, args map[string]Literal) (Typed, error) {
 				return ID[T]{ID: self.ID()}, nil
 			},
 		}
