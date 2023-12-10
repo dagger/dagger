@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/99designs/gqlgen/client"
+	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/dagger/dagql"
 	"github.com/dagger/dagql/idproto"
-	"google.golang.org/protobuf/testing/protocmp"
 	"gotest.tools/v3/assert"
 )
 
@@ -27,8 +28,6 @@ func (Query) TypeName() string {
 }
 
 func TestBasic(t *testing.T) {
-	ctx := context.Background()
-
 	srv := dagql.NewServer(Query{})
 
 	dagql.Install(srv, dagql.ObjectFields[Query]{
@@ -65,94 +64,49 @@ func TestBasic(t *testing.T) {
 		}),
 	})
 
-	res, err := srv.Resolve(ctx, srv.Root, dagql.Query{
-		Selections: []dagql.Selection{
-			{
-				Selector: dagql.Selector{
-					Field: "point",
-					Args: map[string]dagql.Literal{
-						"x": {idproto.LiteralValue(6)},
-						"y": {idproto.LiteralValue(7)},
-					},
-				},
-				Subselections: []dagql.Selection{
-					{
-						Selector: dagql.Selector{
-							Field: "shiftLeft",
-							Args: map[string]dagql.Literal{
-								"amount": {idproto.LiteralValue(2)},
-							},
-						},
-						Subselections: []dagql.Selection{
-							{
-								Alias: "ecks",
-								Selector: dagql.Selector{
-									Field: "x",
-								},
-							},
-							{
-								Alias: "why",
-								Selector: dagql.Selector{
-									Field: "y",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-	assert.NilError(t, err)
-	assert.DeepEqual(t, map[string]any{
-		"point": map[string]any{
-			"shiftLeft": map[string]any{
-				"ecks": dagql.Int{Value: 4},
-				"why":  dagql.Int{Value: 7},
-			},
-		},
-	}, res)
+	gql := client.New(handler.NewDefaultServer(srv))
 
-	res, err = srv.Resolve(ctx, srv.Root, dagql.Query{
-		Selections: []dagql.Selection{
-			{
-				Selector: dagql.Selector{
-					Field: "point",
-					Args: map[string]dagql.Literal{
-						"x": {idproto.LiteralValue(6)},
-						"y": {idproto.LiteralValue(7)},
-					},
-				},
-				Subselections: []dagql.Selection{
-					{
-						Selector: dagql.Selector{
-							Field: "shiftLeft",
-							Args: map[string]dagql.Literal{
-								"amount": {idproto.LiteralValue(2)},
-							},
-						},
-						Subselections: []dagql.Selection{
-							{
-								Selector: dagql.Selector{
-									Field: "id",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+	t.Run("aliases", func(t *testing.T) {
+		var res struct {
+			Point struct {
+				ShiftLeft struct {
+					Ecks int
+					Why  int
+				}
+			}
+		}
+		gql.MustPost(`query {
+			point(x: 6, y: 7) {
+				shiftLeft(amount: 2) {
+					ecks: x
+					why: y
+				}
+			}
+		}`, &res)
+		assert.Equal(t, 4, res.Point.ShiftLeft.Ecks)
+		assert.Equal(t, 7, res.Point.ShiftLeft.Why)
 	})
 
-	expectedID := idproto.New("Point")
-	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
-	expectedID.Append("shiftLeft", idproto.Arg("amount", 2))
-
-	assert.NilError(t, err)
-	assert.DeepEqual(t, map[string]any{
-		"point": map[string]any{
-			"shiftLeft": map[string]any{
-				"id": expectedID,
-			},
-		},
-	}, res, protocmp.Transform())
+	t.Run("IDs", func(t *testing.T) {
+		var res struct {
+			Point struct {
+				ShiftLeft struct {
+					Id string
+				}
+			}
+		}
+		gql.MustPost(`query {
+			point(x: 6, y: 7) {
+				shiftLeft(amount: 2) {
+					id
+				}
+			}
+		}`, &res)
+		expectedID := idproto.New("Point")
+		expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
+		expectedID.Append("shiftLeft", idproto.Arg("amount", 2))
+		expectedEnc, err := dagql.ID[Point]{ID: expectedID}.Encode()
+		assert.NilError(t, err)
+		assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
+	})
 }

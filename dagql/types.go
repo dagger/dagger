@@ -79,20 +79,16 @@ func (i ID[T]) TypeName() string {
 	return i.expected.TypeName() + "ID"
 }
 
-func (i ID[T]) MarshalJSON() ([]byte, error) {
+func (i ID[T]) Encode() (string, error) {
 	proto, err := proto.Marshal(i.ID)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	enc := base64.URLEncoding.EncodeToString(proto)
-	return json.Marshal(enc)
+	return enc, nil
 }
 
-func (i *ID[T]) UnmarshalJSON(p []byte) error {
-	var str string
-	if err := json.Unmarshal(p, &str); err != nil {
-		return err
-	}
+func (i *ID[T]) Decode(str string) error {
 	bytes, err := base64.URLEncoding.DecodeString(str)
 	if err != nil {
 		return err
@@ -101,8 +97,27 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	if err := proto.Unmarshal(bytes, &idproto); err != nil {
 		return err
 	}
+	if idproto.TypeName != i.expected.TypeName() {
+		return fmt.Errorf("expected %q ID, got %q ID", i.expected.TypeName(), idproto.TypeName)
+	}
 	i.ID = &idproto
 	return nil
+}
+
+func (i ID[T]) MarshalJSON() ([]byte, error) {
+	enc, err := i.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(enc)
+}
+
+func (i *ID[T]) UnmarshalJSON(p []byte) error {
+	var str string
+	if err := json.Unmarshal(p, &str); err != nil {
+		return err
+	}
+	return i.Decode(str)
 }
 
 func (i ID[T]) MarshalLiteral() (*idproto.Literal, error) {
