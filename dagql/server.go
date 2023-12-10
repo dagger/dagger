@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/dagger/dagql/idproto"
@@ -13,7 +14,7 @@ import (
 )
 
 type Server struct {
-	Root Node
+	rootNode Node
 
 	schema *ast.Schema
 
@@ -23,27 +24,29 @@ type Server struct {
 }
 
 func NewServer[T Typed](root T) *Server {
-	queryFields := ObjectFields[T]{}
-
+	queryClass := Class[T]{
+		Fields: ObjectFields[T]{},
+	}
+	rootNode := ObjectNode[T]{
+		Constructor: idproto.New(root.TypeName()),
+		Self:        root,
+		Class:       queryClass,
+	}
 	srv := &Server{
-		schema: gqlparser.MustLoadSchema(),
-		Root: ObjectNode[T]{
-			Constructor: idproto.New(root.TypeName()),
-			Self:        root,
-			Class: Class[T]{
-				Fields: queryFields,
-			},
-		},
-		types: map[string]TypeResolver{
+		schema:   gqlparser.MustLoadSchema(),
+		rootNode: rootNode,
+		types:    map[string]TypeResolver{
 			// TODO what makes these needed?
 			// "Int": ScalarResolver[Int]{},
 		},
 		cache: NewCacheMap[digest.Digest, any](),
 	}
-
-	Install(srv, queryFields)
-
+	srv.schema.Query = Install(srv, queryClass.Fields)
 	return srv
+}
+
+func (s *Server) Root() Node {
+	return s.rootNode
 }
 
 var _ graphql.ExecutableSchema = (*Server)(nil)
@@ -57,7 +60,7 @@ func (s *Server) Schema() *ast.Schema {
 	return s.schema
 }
 
-func ToQuery(sels ast.SelectionSet) Query {
+func ToQuery(vars map[string]any, sels ast.SelectionSet) Query {
 	query := Query{}
 
 	for _, sel := range sels {
@@ -65,7 +68,12 @@ func ToQuery(sels ast.SelectionSet) Query {
 		case *ast.Field:
 			args := make(map[string]Literal, len(x.Arguments))
 			for _, arg := range x.Arguments {
-				args[arg.Name] = Literal{idproto.LiteralValue(arg.Value)}
+				val, err := arg.Value.Value(vars)
+				if err != nil {
+					// TODO
+					panic(err)
+				}
+				args[arg.Name] = Literal{idproto.LiteralValue(val)}
 			}
 			query.Selections = append(query.Selections, Selection{
 				Alias: x.Alias,
@@ -73,7 +81,7 @@ func ToQuery(sels ast.SelectionSet) Query {
 					Field: x.Name,
 					Args:  args,
 				},
-				Subselections: ToQuery(x.SelectionSet).Selections,
+				Subselections: ToQuery(vars, x.SelectionSet).Selections,
 			})
 		}
 	}
@@ -93,8 +101,12 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 		for _, op := range gqlOp.Doc.Operations {
 			switch op.Operation {
 			case ast.Query:
+				// TODO prospective
+				if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
+					continue
+				}
 				var err error
-				results, err = s.Resolve(ctx, s.Root, ToQuery(op.SelectionSet))
+				results, err = s.Resolve(ctx, s.rootNode, ToQuery(gqlOp.Variables, op.SelectionSet))
 				if err != nil {
 					return graphql.ErrorResponse(ctx, "resolve: %s", err)
 				}
@@ -143,6 +155,9 @@ func (s *Server) Resolve(ctx context.Context, root Node, q Query) (map[string]an
 				Value: val.Literal,
 			})
 		}
+		sort.Slice(idArgs, func(i, j int) bool { // TODO load-bearing! helper?
+			return idArgs[i].Name < idArgs[j].Name
+		})
 		chain.Constructor = append(chain.Constructor, &idproto.Selector{
 			Field:   sel.Selector.Field,
 			Args:    idArgs,
@@ -214,7 +229,7 @@ func (s *Server) Resolve(ctx context.Context, root Node, q Query) (map[string]an
 	return results, nil
 }
 
-func Install[T Typed](server *Server, fields ObjectFields[T]) {
+func Install[T Typed](server *Server, fields ObjectFields[T]) *ast.Definition {
 	var t T
 	typeName := t.TypeName()
 
@@ -235,7 +250,7 @@ func Install[T Typed](server *Server, fields ObjectFields[T]) {
 				},
 			},
 			NodeFunc: func(ctx context.Context, self Node, args map[string]Literal) (any, error) {
-				return self.ID(), nil
+				return ID[T]{ID: self.ID()}, nil
 			},
 		}
 	}
@@ -289,6 +304,8 @@ func Install[T Typed](server *Server, fields ObjectFields[T]) {
 	if _, ok := server.types[typeName+"ID"]; !ok {
 		server.types[typeName+"ID"] = ScalarResolver[*ID[T]]{}
 	}
+
+	return schemaType
 }
 
 type Query struct {
