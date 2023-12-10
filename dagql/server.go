@@ -25,7 +25,7 @@ type Server struct {
 
 func NewServer[T Typed](root T) *Server {
 	queryClass := Class[T]{
-		Fields: ObjectFields[T]{},
+		Fields: Fields[T]{},
 	}
 	rootNode := ObjectNode[T]{
 		Constructor: idproto.New(root.TypeName()),
@@ -41,7 +41,7 @@ func NewServer[T Typed](root T) *Server {
 		},
 		cache: NewCacheMap[digest.Digest, any](),
 	}
-	srv.schema.Query = Install(srv, queryClass.Fields)
+	srv.schema.Query = queryClass.Fields.Install(srv)
 	return srv
 }
 
@@ -229,7 +229,7 @@ func (s *Server) Resolve(ctx context.Context, root Node, q Query) (map[string]an
 	return results, nil
 }
 
-func Install[T Typed](server *Server, fields ObjectFields[T]) *ast.Definition {
+func (fields Fields[T]) Install(server *Server) *ast.Definition {
 	var t T
 	typeName := t.TypeName()
 
@@ -241,6 +241,10 @@ func Install[T Typed](server *Server, fields ObjectFields[T]) *ast.Definition {
 			Name:        typeName,
 		}
 		server.schema.Types[typeName] = schemaType
+
+		if _, ok := server.types[typeName+"ID"]; !ok {
+			server.types[typeName+"ID"] = ScalarResolver[ID[T]]{}
+		}
 
 		fields["id"] = Field[T]{
 			Spec: FieldSpec{
@@ -299,10 +303,6 @@ func Install[T Typed](server *Server, fields ObjectFields[T]) *ast.Definition {
 		server.types[typeName] = Class[T]{
 			Fields: fields,
 		}
-	}
-
-	if _, ok := server.types[typeName+"ID"]; !ok {
-		server.types[typeName+"ID"] = ScalarResolver[*ID[T]]{}
 	}
 
 	return schemaType
