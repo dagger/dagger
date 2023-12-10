@@ -30,7 +30,7 @@ func (Query) TypeName() string {
 func TestBasic(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
-	dagql.Install(srv, dagql.ObjectFields[Query]{
+	dagql.Fields[Query]{
 		"point": dagql.Func(func(ctx context.Context, self Query, args struct {
 			X dagql.Int `default:"0"`
 			Y dagql.Int `default:"0"`
@@ -40,13 +40,9 @@ func TestBasic(t *testing.T) {
 				Y: int(args.Y.Value),
 			}, nil
 		}),
-	})
+	}.Install(srv)
 
-	// TODO: error handling would be nice.
-	//
-	// maybe dagql.Install() should just take a type and go over its public methods?
-
-	dagql.Install(srv, dagql.ObjectFields[Point]{
+	dagql.Fields[Point]{
 		"x": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
 			return dagql.Int{self.X}, nil
 		}),
@@ -62,51 +58,34 @@ func TestBasic(t *testing.T) {
 			self.X -= args.Amount.Value
 			return self, nil
 		}),
-	})
+	}.Install(srv)
 
 	gql := client.New(handler.NewDefaultServer(srv))
 
-	t.Run("aliases", func(t *testing.T) {
-		var res struct {
-			Point struct {
-				ShiftLeft struct {
-					Ecks int
-					Why  int
-				}
+	var res struct {
+		Point struct {
+			ShiftLeft struct {
+				Id   string
+				Ecks int
+				Why  int
 			}
 		}
-		gql.MustPost(`query {
-			point(x: 6, y: 7) {
-				shiftLeft(amount: 2) {
-					ecks: x
-					why: y
-				}
-			}
-		}`, &res)
-		assert.Equal(t, 4, res.Point.ShiftLeft.Ecks)
-		assert.Equal(t, 7, res.Point.ShiftLeft.Why)
-	})
-
-	t.Run("IDs", func(t *testing.T) {
-		var res struct {
-			Point struct {
-				ShiftLeft struct {
-					Id string
-				}
+	}
+	gql.MustPost(`query {
+		point(x: 6, y: 7) {
+			shiftLeft {
+				id
+				ecks: x
+				why: y
 			}
 		}
-		gql.MustPost(`query {
-			point(x: 6, y: 7) {
-				shiftLeft(amount: 2) {
-					id
-				}
-			}
-		}`, &res)
-		expectedID := idproto.New("Point")
-		expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
-		expectedID.Append("shiftLeft", idproto.Arg("amount", 2))
-		expectedEnc, err := dagql.ID[Point]{ID: expectedID}.Encode()
-		assert.NilError(t, err)
-		assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
-	})
+	}`, &res)
+	expectedID := idproto.New("Point")
+	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
+	expectedID.Append("shiftLeft")
+	expectedEnc, err := dagql.ID[Point]{ID: expectedID}.Encode()
+	assert.NilError(t, err)
+	assert.Equal(t, 5, res.Point.ShiftLeft.Ecks)
+	assert.Equal(t, 7, res.Point.ShiftLeft.Why)
+	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
 }

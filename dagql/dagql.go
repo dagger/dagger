@@ -94,13 +94,12 @@ func (n Optional[T]) NullableValue() any {
 	return n.Value
 }
 
-func Func[T any, A any, R Typed](fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func ArgSpecs(args any) ([]ArgSpec, error) {
 	var argSpecs []ArgSpec
-	var zeroArgs A
-	argsType := reflect.TypeOf(zeroArgs)
+	argsType := reflect.TypeOf(args)
 	if argsType != nil {
 		if argsType.Kind() != reflect.Struct {
-			panic(fmt.Sprintf("args must be a struct, got %T", zeroArgs))
+			return nil, fmt.Errorf("args must be a struct, got %T", args)
 		}
 
 		for i := 0; i < argsType.NumField(); i++ {
@@ -118,7 +117,7 @@ func Func[T any, A any, R Typed](fn func(ctx context.Context, self T, args A) (R
 
 				var defaultAny any
 				if err := dec.Decode(&defaultAny); err != nil {
-					panic(err)
+					return nil, fmt.Errorf("decode default value for arg %s: %w", argName, err)
 				}
 
 				argDefault = &Literal{idproto.LiteralValue(defaultAny)}
@@ -126,7 +125,7 @@ func Func[T any, A any, R Typed](fn func(ctx context.Context, self T, args A) (R
 
 			argType, err := TypeOf(reflect.New(field.Type).Interface())
 			if err != nil {
-				panic(err)
+				return nil, fmt.Errorf("get type of arg %s: %w", argName, err)
 			}
 
 			argSpecs = append(argSpecs, ArgSpec{
@@ -135,6 +134,43 @@ func Func[T any, A any, R Typed](fn func(ctx context.Context, self T, args A) (R
 				Default: argDefault,
 			})
 		}
+	}
+	return argSpecs, nil
+}
+
+func ArgsToType(argSpecs []ArgSpec, argVals map[string]Literal, dest any) error {
+	argsVal := reflect.ValueOf(dest)
+
+	for i, arg := range argSpecs {
+		argVal, ok := argVals[arg.Name]
+		if !ok {
+			return fmt.Errorf("missing required argument: %q", arg.Name)
+		}
+
+		field := argsVal.Elem().Field(i)
+		arg := reflect.New(field.Type()).Interface()
+		if um, ok := arg.(Unmarshaler); ok {
+			if err := um.UnmarshalLiteral(argVal.Literal); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("cannot unmarshal %T", arg)
+		}
+
+		field.Set(reflect.ValueOf(arg).Elem())
+	}
+
+	return nil
+}
+
+// Func is a helper for statically defining fields. It panics if anything goes
+// wrong, as dev-time errors are preferable to runtime errors, so it shouldn't
+// be used for anything dynamic.
+func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+	var zeroArgs A
+	argSpecs, err := ArgSpecs(zeroArgs)
+	if err != nil {
+		panic(err)
 	}
 
 	var zeroRet R
@@ -150,32 +186,9 @@ func Func[T any, A any, R Typed](fn func(ctx context.Context, self T, args A) (R
 		},
 		Func: func(ctx context.Context, self T, argVals map[string]Literal) (any, error) {
 			var args A
-
-			argsVal := reflect.ValueOf(&args)
-
-			for i, arg := range argSpecs {
-				argVal, ok := argVals[arg.Name]
-				if !ok {
-					if arg.Default != nil {
-						argVal = *arg.Default
-					} else {
-						return nil, fmt.Errorf("missing required argument: %q", arg.Name)
-					}
-				}
-				field := argsType.Field(i)
-				arg := reflect.New(field.Type).Interface()
-
-				if um, ok := arg.(Unmarshaler); ok {
-					if err := um.UnmarshalLiteral(argVal.Literal); err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("cannot unmarshal %T", arg)
-				}
-
-				argsVal.Elem().Field(i).Set(reflect.ValueOf(arg).Elem())
+			if err := ArgsToType(argSpecs, argVals, &args); err != nil {
+				return nil, err
 			}
-
 			return fn(ctx, self, args)
 		},
 	}
@@ -203,7 +216,7 @@ func (ScalarResolver[T]) isType() {}
 // }
 
 type Class[T Typed] struct {
-	Fields ObjectFields[T]
+	Fields Fields[T]
 }
 
 func (r Class[T]) isType() {}
@@ -245,7 +258,7 @@ func (o ObjectNode[T]) TypeName() string {
 	return o.Self.TypeName()
 }
 
-type ObjectFields[T Typed] map[string]Field[T]
+type Fields[T Typed] map[string]Field[T]
 
 type Field[T any] struct {
 	Spec     FieldSpec
