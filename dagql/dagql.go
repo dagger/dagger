@@ -81,44 +81,6 @@ type TypeResolver interface {
 	isType()
 }
 
-// var IDResolver = ScalarResolver[*idproto.ID]{
-// 	ToResponse: func(value *idproto.ID) (any, error) {
-// 		proto, err := proto.Marshal(value)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		compressed := new(bytes.Buffer)
-// 		lw := lz4.NewWriter(compressed)
-// 		if _, err := lw.Write(proto); err != nil {
-// 			return nil, err
-// 		}
-// 		if err := lw.Close(); err != nil {
-// 			return nil, err
-// 		}
-// 		log.Printf("compressed: %q", compressed.String())
-// 		uncompressed := new(bytes.Buffer)
-// 		lz4.NewReader(bytes.NewBuffer(compressed.Bytes())).WriteTo(uncompressed)
-// 		log.Printf("uncompressed: %q", uncompressed.String())
-// 		return base64.URLEncoding.EncodeToString(compressed.Bytes()), nil
-// 	},
-// 	FromQuery: func(lit ast.Value) (*idproto.ID, error) {
-// 		switch x := lit.(type) {
-// 		case *ast.StringValue:
-// 			bytes, err := base64.URLEncoding.DecodeString(x.Value)
-// 			if err != nil {
-// 				return nil, err
-// 			}
-// 			var idproto idproto.ID
-// 			if err := proto.Unmarshal(bytes, &idproto); err != nil {
-// 				return nil, err
-// 			}
-// 			return &idproto, nil
-// 		default:
-// 			return nil, fmt.Errorf("cannot convert %T to *idproto.ID", x)
-// 		}
-// 	},
-// }
-
 type Nullable interface {
 	NullableValue() any
 }

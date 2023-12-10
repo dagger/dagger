@@ -2,8 +2,10 @@ package dagql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/dagger/dagql/idproto"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2"
@@ -11,8 +13,9 @@ import (
 )
 
 type Server struct {
-	Root   Node
-	Schema *ast.Schema
+	Root Node
+
+	schema *ast.Schema
 
 	types map[string]TypeResolver
 
@@ -23,7 +26,7 @@ func NewServer[T Typed](root T) *Server {
 	queryFields := ObjectFields[T]{}
 
 	srv := &Server{
-		Schema: gqlparser.MustLoadSchema(),
+		schema: gqlparser.MustLoadSchema(),
 		Root: ObjectNode[T]{
 			Constructor: idproto.New(root.TypeName()),
 			Self:        root,
@@ -32,6 +35,7 @@ func NewServer[T Typed](root T) *Server {
 			},
 		},
 		types: map[string]TypeResolver{
+			// TODO what makes these needed?
 			// "Int": ScalarResolver[Int]{},
 		},
 		cache: NewCacheMap[digest.Digest, any](),
@@ -42,11 +46,84 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-func (s Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any, error) {
+var _ graphql.ExecutableSchema = (*Server)(nil)
+
+func (s *Server) Complexity(typeName, field string, childComplexity int, args map[string]interface{}) (int, bool) {
+	// TODO
+	return 1, false
+}
+
+func (s *Server) Schema() *ast.Schema {
+	return s.schema
+}
+
+func ToQuery(sels ast.SelectionSet) Query {
+	query := Query{}
+
+	for _, sel := range sels {
+		switch x := sel.(type) {
+		case *ast.Field:
+			args := make(map[string]Literal, len(x.Arguments))
+			for _, arg := range x.Arguments {
+				args[arg.Name] = Literal{idproto.LiteralValue(arg.Value)}
+			}
+			query.Selections = append(query.Selections, Selection{
+				Alias: x.Alias,
+				Selector: Selector{
+					Field: x.Name,
+					Args:  args,
+				},
+				Subselections: ToQuery(x.SelectionSet).Selections,
+			})
+		}
+	}
+
+	return query
+}
+
+func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
+	return func(ctx context.Context) *graphql.Response {
+		gqlOp := graphql.GetOperationContext(ctx)
+
+		if err := gqlOp.Validate(ctx); err != nil {
+			return graphql.ErrorResponse(ctx, "validate: %s", err)
+		}
+
+		results := make(map[string]any)
+		for _, op := range gqlOp.Doc.Operations {
+			switch op.Operation {
+			case ast.Query:
+				var err error
+				results, err = s.Resolve(ctx, s.Root, ToQuery(op.SelectionSet))
+				if err != nil {
+					return graphql.ErrorResponse(ctx, "resolve: %s", err)
+				}
+			case ast.Mutation:
+				// TODO
+				return graphql.ErrorResponse(ctx, "mutations not supported")
+			case ast.Subscription:
+				// TODO
+				return graphql.ErrorResponse(ctx, "subscriptions not supported")
+			}
+		}
+
+		data, err := json.Marshal(results)
+		if err != nil {
+			gqlOp.Error(ctx, err)
+			return graphql.ErrorResponse(ctx, "marshal: %s", err)
+		}
+
+		return &graphql.Response{
+			Data: json.RawMessage(data),
+		}
+	}
+}
+
+func (s *Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any, error) {
 	results := make(map[string]any, len(q.Selections))
 
 	for _, sel := range q.Selections {
-		typeDef, ok := s.Schema.Types[root.TypeName()]
+		typeDef, ok := s.schema.Types[root.TypeName()]
 		if !ok {
 			// TODO better error
 			return nil, fmt.Errorf("unknown type %q", root.TypeName())
@@ -67,11 +144,10 @@ func (s Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any
 			})
 		}
 		chain.Constructor = append(chain.Constructor, &idproto.Selector{
-			Field: sel.Selector.Field,
-			Args:  idArgs,
-			// TODO: how is this conveyed?
-			// Tainted: !field.Pure,
-			// Meta:    field.Meta,
+			Field:   sel.Selector.Field,
+			Args:    idArgs,
+			Tainted: field.Directives.ForName("tainted") != nil, // TODO
+			Meta:    field.Directives.ForName("meta") != nil,    // TODO
 		})
 
 		// TODO: should this be a full Type? feels odd to just have a TypeName...
@@ -79,6 +155,7 @@ func (s Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any
 		if field.Type == nil {
 			panic("nil type: " + field.Name)
 		}
+
 		chain.TypeName = field.Type.Name()
 
 		// digest, err := chain.Canonical().Digest()
@@ -129,18 +206,6 @@ func (s Server) Resolve(ctx context.Context, root Node, q Query) (map[string]any
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			// scalar, ok := resolver.(ScalarType)
-			// if !ok {
-			// 	// TODO better error
-			// 	return nil, fmt.Errorf("cannot convert %T to scalar", resolver)
-			// }
-
-			// val, err = scalar.ConvertToResponse(val)
-			// if err != nil {
-			// 	// TODO better error
-			// 	return nil, err
-			// }
 		}
 
 		results[sel.Name()] = val
@@ -153,14 +218,14 @@ func Install[T Typed](server *Server, fields ObjectFields[T]) {
 	var t T
 	typeName := t.TypeName()
 
-	schemaType, ok := server.Schema.Types[typeName]
+	schemaType, ok := server.schema.Types[typeName]
 	if !ok {
 		schemaType = &ast.Definition{
 			Kind:        ast.Object,
 			Description: "TODO", // t.Description()
 			Name:        typeName,
 		}
-		server.Schema.Types[typeName] = schemaType
+		server.schema.Types[typeName] = schemaType
 
 		fields["id"] = Field[T]{
 			Spec: FieldSpec{
@@ -179,7 +244,6 @@ func Install[T Typed](server *Server, fields ObjectFields[T]) {
 		schemaField := schemaType.Fields.ForName(fieldName)
 		if schemaField != nil {
 			panic(fmt.Sprintf("field %s.%q already defined", typeName, fieldName))
-			panic("TODO: decide how to handle field already defined")
 		}
 
 		schemaArgs := ast.ArgumentDefinitionList{}

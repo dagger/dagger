@@ -1,10 +1,13 @@
 package dagql
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagql/idproto"
 	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/protobuf/proto"
 )
 
 type Typed interface {
@@ -39,6 +42,19 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
+func (i Int) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.Value)
+}
+
+func (i *Int) UnmarshalJSON(p []byte) error {
+	var num int
+	if err := json.Unmarshal(p, &num); err != nil {
+		return err
+	}
+	i.Value = num
+	return nil
+}
+
 func (i Int) MarshalLiteral() (*idproto.Literal, error) {
 	return idproto.LiteralValue(i.Value), nil
 }
@@ -61,6 +77,32 @@ type ID[T Typed] struct {
 
 func (i ID[T]) TypeName() string {
 	return i.expected.TypeName() + "ID"
+}
+
+func (i ID[T]) MarshalJSON() ([]byte, error) {
+	proto, err := proto.Marshal(i.ID)
+	if err != nil {
+		return nil, err
+	}
+	enc := base64.URLEncoding.EncodeToString(proto)
+	return json.Marshal(enc)
+}
+
+func (i *ID[T]) UnmarshalJSON(p []byte) error {
+	var str string
+	if err := json.Unmarshal(p, &str); err != nil {
+		return err
+	}
+	bytes, err := base64.URLEncoding.DecodeString(str)
+	if err != nil {
+		return err
+	}
+	var idproto idproto.ID
+	if err := proto.Unmarshal(bytes, &idproto); err != nil {
+		return err
+	}
+	i.ID = &idproto
+	return nil
 }
 
 func (i ID[T]) MarshalLiteral() (*idproto.Literal, error) {
