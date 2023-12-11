@@ -25,12 +25,6 @@ func (Point) Type() *ast.Type {
 	}
 }
 
-// func (p Point) ID() *idproto.ID {
-// 	id := idproto.New("Point")
-// 	id.Append("point", idproto.Arg("x", p.X), idproto.Arg("y", p.Y))
-// 	return id
-// }
-
 type Query struct {
 }
 

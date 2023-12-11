@@ -52,6 +52,44 @@ func (i *Int) UnmarshalLiteral(lit *idproto.Literal) error {
 	return nil
 }
 
+type String struct {
+	Value string
+}
+
+func (String) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+}
+
+func (i String) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.Value)
+}
+
+func (i *String) UnmarshalJSON(p []byte) error {
+	var str string
+	if err := json.Unmarshal(p, &str); err != nil {
+		return err
+	}
+	i.Value = str
+	return nil
+}
+
+func (i String) MarshalLiteral() (*idproto.Literal, error) {
+	return idproto.LiteralValue(i.Value), nil
+}
+
+func (i *String) UnmarshalLiteral(lit *idproto.Literal) error {
+	switch x := lit.Value.(type) {
+	case *idproto.Literal_String_:
+		i.Value = lit.GetString_()
+	default:
+		return fmt.Errorf("cannot convert %T to String", x)
+	}
+	return nil
+}
+
 type ID[T Typed] struct {
 	*idproto.ID
 
@@ -215,10 +253,66 @@ type Optional[T Typed] struct {
 	Valid bool
 }
 
+type Nullable interface {
+	Unwrap() (Typed, bool)
+}
+
 var _ Typed = Optional[Typed]{}
 
 func (n Optional[T]) Type() *ast.Type {
 	t := n.Value.Type()
 	t.NonNull = false
 	return t
+}
+
+var _ Nullable = Optional[Typed]{}
+
+func (n Optional[T]) Unwrap() (Typed, bool) {
+	return n.Value, n.Valid
+}
+
+type Enum struct {
+	Enum  *ast.Type
+	Value string
+}
+
+var _ Typed = Enum{}
+
+func (n Enum) Type() *ast.Type {
+	return n.Enum
+}
+
+type EnumSpec struct {
+	Name        string
+	Description string
+	Values      []*ast.EnumValueDefinition
+}
+
+func (n EnumSpec) Install(srv *Server) *ast.Definition {
+	def := &ast.Definition{
+		Kind:        ast.Enum,
+		Name:        n.Name,
+		Description: n.Description,
+		EnumValues:  n.Values,
+	}
+	srv.schema.AddTypes(def)
+	return def
+}
+
+func (n EnumSpec) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: n.Name,
+		NonNull:   true,
+	}
+}
+
+func Opt[T Typed](v T) Optional[T] {
+	return Optional[T]{
+		Value: v,
+		Valid: true,
+	}
+}
+
+func NoOpt[T Typed]() Optional[T] {
+	return Optional[T]{}
 }
