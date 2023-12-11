@@ -90,6 +90,12 @@ func LiteralValue(value any) *Literal {
 	}
 }
 
+func (id *ID) Nth(i int) *ID {
+	cp := id.Clone()
+	cp.Constructor[len(cp.Constructor)-1].Nth = int64(i)
+	return cp
+}
+
 func (id *ID) Append(field string, args ...*Argument) {
 	var tainted bool
 	for _, arg := range args {

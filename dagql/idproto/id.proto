@@ -51,6 +51,15 @@ message Selector {
   // continue to force metadata to be set via GraphQL queries. It makes IDs
   // always easy to evaluate.
   bool meta = 4;
+
+  // If the field returns a list, this is the index of the element to select.
+  // Note that this defaults to zero, as IDs always refer to
+  //
+  // Here we're teetering dangerously close to full blown attribute path
+  // selection, but we're intentionally limiting ourselves instead to cover
+  // only the common case of returning a list of objects. The only case not
+  // handled is a nested list. Don't do that; have a type instead.
+  int64 nth = 5;
 }
 
 // A named value passed to a GraphQL field or contained in an input object.

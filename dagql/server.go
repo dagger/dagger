@@ -14,28 +14,26 @@ import (
 )
 
 type Server struct {
-	rootNode Node
-
+	root   Resolver
 	schema *ast.Schema
-
-	types map[string]TypeResolver
-
-	cache *CacheMap[digest.Digest, any]
+	types  map[string]TypeResolver
+	cache  *CacheMap[digest.Digest, any]
 }
 
 func NewServer[T Typed](root T) *Server {
+	schema := gqlparser.MustLoadSchema()
 	queryClass := Class[T]{
 		Fields: Fields[T]{},
 	}
-	rootNode := ObjectNode[T]{
-		Constructor: idproto.New(root.TypeName()),
+	rootNode := Object[T]{
+		Constructor: idproto.New(root.Type().Name()),
 		Self:        root,
 		Class:       queryClass,
 	}
 	srv := &Server{
-		schema:   gqlparser.MustLoadSchema(),
-		rootNode: rootNode,
-		types:    map[string]TypeResolver{
+		schema: schema,
+		root:   rootNode,
+		types:  map[string]TypeResolver{
 			// TODO what makes these needed?
 			// "Int": ScalarResolver[Int]{},
 		},
@@ -45,8 +43,8 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-func (s *Server) Root() Node {
-	return s.rootNode
+func (s *Server) Root() Resolver {
+	return s.root
 }
 
 var _ graphql.ExecutableSchema = (*Server)(nil)
@@ -89,6 +87,31 @@ func ToQuery(vars map[string]any, sels ast.SelectionSet) Query {
 	return query
 }
 
+func ConstructorToQuery(sels []*idproto.Selector) Query {
+	query := Query{}
+
+	if len(sels) == 0 {
+		return query
+	}
+
+	sel := sels[0]
+
+	args := make(map[string]Literal, len(sel.Args))
+	for _, arg := range sel.Args {
+		args[arg.Name] = Literal{arg.Value}
+	}
+	query.Selections = append(query.Selections, Selection{
+		Selector: Selector{
+			Field: sel.Field,
+			Args:  args,
+			Nth:   int(sel.Nth),
+		},
+		Subselections: ConstructorToQuery(sels[1:]).Selections,
+	})
+
+	return query
+}
+
 func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 	return func(ctx context.Context) *graphql.Response {
 		gqlOp := graphql.GetOperationContext(ctx)
@@ -106,7 +129,7 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 					continue
 				}
 				var err error
-				results, err = s.Resolve(ctx, s.rootNode, ToQuery(gqlOp.Variables, op.SelectionSet))
+				results, err = s.Resolve(ctx, s.root, ToQuery(gqlOp.Variables, op.SelectionSet))
 				if err != nil {
 					return graphql.ErrorResponse(ctx, "resolve: %s", err)
 				}
@@ -140,7 +163,7 @@ func (sel Selector) Chain(id *idproto.ID, field *ast.FieldDefinition) *idproto.I
 			Value: val.Literal,
 		})
 	}
-	sort.Slice(idArgs, func(i, j int) bool { // TODO load-bearing! helper?
+	sort.Slice(idArgs, func(i, j int) bool {
 		return idArgs[i].Name < idArgs[j].Name
 	})
 	chain.Constructor = append(chain.Constructor, &idproto.Selector{
@@ -153,13 +176,13 @@ func (sel Selector) Chain(id *idproto.ID, field *ast.FieldDefinition) *idproto.I
 	return chain
 }
 
-func (s *Server) Resolve(ctx context.Context, self Node, q Query) (map[string]any, error) {
+func (s *Server) Resolve(ctx context.Context, self Resolver, q Query) (map[string]any, error) {
 	results := make(map[string]any, len(q.Selections))
 
 	for _, sel := range q.Selections {
-		typeDef, ok := s.schema.Types[self.TypeName()]
+		typeDef, ok := s.schema.Types[self.Type().Name()]
 		if !ok {
-			return nil, fmt.Errorf("unknown type: %q", self.TypeName())
+			return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
 		}
 
 		field := typeDef.Fields.ForName(sel.Selector.Field)
@@ -187,29 +210,68 @@ func (s *Server) Resolve(ctx context.Context, self Node, q Query) (map[string]an
 
 		var res any
 		if len(sel.Subselections) > 0 {
-			if field.Type.NamedType == "" {
-				return nil, fmt.Errorf("cannot select from non-node")
-			}
 			resolver, ok := s.types[field.Type.Name()]
 			if !ok {
 				return nil, fmt.Errorf("unknown type %q", field.Type.Name())
 			}
-			obj, ok := resolver.(ClassType)
+			class, ok := resolver.(Instantiator)
 			if !ok {
-				return nil, fmt.Errorf("cannot select from type %s: expected %T, got %T", field.Type.Name(), obj, resolver)
+				return nil, fmt.Errorf("cannot select from type %s: expected %T, got %T", field.Type.Name(), class, resolver)
 			}
-			node, err := obj.Instantiate(chainedID, val)
-			if err != nil {
-				return nil, fmt.Errorf("instantiate: %w", err)
-			}
-			res, err = s.Resolve(ctx, node, Query{
-				Selections: sel.Subselections,
-			})
-			if err != nil {
-				return nil, err
+			switch {
+			case field.Type.NamedType != "":
+				node, err := class.Instantiate(chainedID, val)
+				if err != nil {
+					return nil, fmt.Errorf("instantiate: %w", err)
+				}
+				res, err = s.Resolve(ctx, node, Query{
+					Selections: sel.Subselections,
+				})
+				if err != nil {
+					return nil, err
+				}
+			case field.Type.Elem != nil:
+				enum, ok := val.(Enumerable)
+				if !ok {
+					return nil, fmt.Errorf("cannot sub-select %T", val)
+				}
+				// TODO arrays of arrays
+				var results []any
+				for nth := 1; nth <= enum.Len(); nth++ {
+					indexedID := chainedID.Nth(nth)
+					val, err := enum.Nth(nth)
+					if err != nil {
+						return nil, err
+					}
+					node, err := class.Instantiate(indexedID, val)
+					if err != nil {
+						return nil, fmt.Errorf("instantiate: %w", err)
+					}
+					res, err := s.Resolve(ctx, node, Query{
+						Selections: sel.Subselections,
+					})
+					if err != nil {
+						return nil, err
+					}
+					results = append(results, res)
+				}
+				res = results
+			default:
+				return nil, fmt.Errorf("cannot sub-select %T", val)
 			}
 		} else {
 			res = val
+		}
+
+		if sel.Selector.Nth != 0 {
+			enum, ok := res.(Enumerable)
+			if !ok {
+				return nil, fmt.Errorf("cannot sub-select %T", val)
+			}
+			res, err = enum.Nth(sel.Selector.Nth)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		results[sel.Name()] = res
@@ -218,9 +280,40 @@ func (s *Server) Resolve(ctx context.Context, self Node, q Query) (map[string]an
 	return results, nil
 }
 
+func (i ID[T]) Load(ctx context.Context, server *Server) (T, error) {
+	var res T
+	// TODO check cache
+	results, err := server.Resolve(ctx, server.Root(), i.Query())
+	if err != nil {
+		return res, err
+	}
+	val := unpack(results)
+	obj, ok := val.(T)
+	if !ok {
+		return res, fmt.Errorf("load: expected %T, got %T", res, val)
+	}
+	return obj, nil
+}
+
+func unpack(vals any) any {
+	switch x := vals.(type) {
+	case map[string]any:
+		for _, val := range x {
+			return unpack(val)
+		}
+		return x
+	default:
+		return x
+	}
+}
+
+func (i ID[T]) Query() Query {
+	return ConstructorToQuery(i.ID.Constructor)
+}
+
 func (fields Fields[T]) Install(server *Server) *ast.Definition {
 	var t T
-	typeName := t.TypeName()
+	typeName := t.Type().Name()
 
 	schemaType, ok := server.schema.Types[typeName]
 	if !ok {

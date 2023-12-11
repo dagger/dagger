@@ -13,6 +13,7 @@ import (
 )
 
 type Resolver interface {
+	Node
 	Resolve(context.Context, *ast.FieldDefinition, map[string]Literal) (Typed, error)
 }
 
@@ -67,31 +68,21 @@ func (lit Literal) ToAST() *ast.Value {
 type Selector struct {
 	Field string
 	Args  map[string]Literal
+	Nth   int
+}
+
+type Instantiator interface {
+	Instantiate(*idproto.ID, Typed) (Resolver, error)
 }
 
 // Per the GraphQL spec, a Node always has an ID.
 type Node interface {
-	ID() *idproto.ID
-
 	Typed
-	Resolver
+	ID() *idproto.ID
 }
 
 type TypeResolver interface {
 	isType()
-}
-
-type Nullable interface {
-	NullableValue() any
-}
-
-type Optional[T any] struct {
-	Value T
-	Valid bool
-}
-
-func (n Optional[T]) NullableValue() any {
-	return n.Value
 }
 
 func ArgSpecs(args any) ([]ArgSpec, error) {
@@ -123,14 +114,15 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 				argDefault = &Literal{idproto.LiteralValue(defaultAny)}
 			}
 
-			argType, err := TypeOf(reflect.New(field.Type).Interface())
-			if err != nil {
-				return nil, fmt.Errorf("get type of arg %s: %w", argName, err)
+			argVal := reflect.New(field.Type).Interface()
+			typedArg, ok := argVal.(Typed)
+			if !ok {
+				return nil, fmt.Errorf("arg %s must be a dagql.Typed, got %T", argName, argVal)
 			}
 
 			argSpecs = append(argSpecs, ArgSpec{
 				Name:    argName,
-				Type:    argType,
+				Type:    typedArg.Type(),
 				Default: argDefault,
 			})
 		}
@@ -174,15 +166,10 @@ func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) 
 	}
 
 	var zeroRet R
-	retType, err := TypeOf(zeroRet)
-	if err != nil {
-		panic(err)
-	}
-
 	return Field[T]{
 		Spec: FieldSpec{
 			Args: argSpecs,
-			Type: retType,
+			Type: zeroRet.Type(),
 		},
 		Func: func(ctx context.Context, self T, argVals map[string]Literal) (Typed, error) {
 			var args A
@@ -212,25 +199,21 @@ type Class[T Typed] struct {
 
 func (r Class[T]) isType() {}
 
-type ClassType interface {
-	Instantiate(*idproto.ID, Typed) (Node, error)
-}
+var _ Instantiator = Class[Typed]{}
 
-var _ ClassType = Class[Typed]{}
-
-func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Node, error) {
+func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Resolver, error) {
 	self, ok := val.(T)
 	if !ok {
 		return nil, fmt.Errorf("cannot instantiate %T with %T", cls, val)
 	}
-	return ObjectNode[T]{
+	return Object[T]{
 		Constructor: id,
 		Self:        self,
 		Class:       cls,
 	}, nil
 }
 
-func (cls Class[T]) Call(ctx context.Context, node ObjectNode[T], fieldName string, args map[string]Literal) (Typed, error) {
+func (cls Class[T]) Call(ctx context.Context, node Object[T], fieldName string, args map[string]Literal) (Typed, error) {
 	field, ok := cls.Fields[fieldName]
 	if !ok {
 		return nil, fmt.Errorf("no such field: %q", fieldName)
@@ -241,16 +224,16 @@ func (cls Class[T]) Call(ctx context.Context, node ObjectNode[T], fieldName stri
 	return field.Func(ctx, node.Self, args)
 }
 
-type ObjectNode[T Typed] struct {
+type Object[T Typed] struct {
 	Constructor *idproto.ID
 	Self        T
 	Class       Class[T]
 }
 
-var _ Node = ObjectNode[Typed]{}
+var _ Node = Object[Typed]{}
 
-func (o ObjectNode[T]) TypeName() string {
-	return o.Self.TypeName()
+func (o Object[T]) Type() *ast.Type {
+	return o.Self.Type()
 }
 
 type Fields[T Typed] map[string]Field[T]
@@ -261,15 +244,15 @@ type Field[T any] struct {
 	NodeFunc func(ctx context.Context, self Node, args map[string]Literal) (Typed, error)
 }
 
-var _ Node = ObjectNode[Typed]{}
+var _ Node = Object[Typed]{}
 
-func (r ObjectNode[T]) ID() *idproto.ID {
+func (r Object[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
-var _ Resolver = ObjectNode[Typed]{}
+var _ Resolver = Object[Typed]{}
 
-func (r ObjectNode[T]) Resolve(ctx context.Context, field *ast.FieldDefinition, givenArgs map[string]Literal) (Typed, error) {
+func (r Object[T]) Resolve(ctx context.Context, field *ast.FieldDefinition, givenArgs map[string]Literal) (Typed, error) {
 	args := make(map[string]Literal, len(field.Arguments))
 	for _, arg := range field.Arguments {
 		val, ok := givenArgs[arg.Name]

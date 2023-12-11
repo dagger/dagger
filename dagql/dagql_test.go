@@ -8,7 +8,9 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/dagger/dagql"
 	"github.com/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
+	"gotest.tools/v3/assert/cmp"
 )
 
 type Point struct {
@@ -16,15 +18,27 @@ type Point struct {
 	Y int
 }
 
-func (Point) TypeName() string {
-	return "Point"
+func (Point) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Point",
+		NonNull:   true,
+	}
 }
+
+// func (p Point) ID() *idproto.ID {
+// 	id := idproto.New("Point")
+// 	id.Append("point", idproto.Arg("x", p.X), idproto.Arg("y", p.Y))
+// 	return id
+// }
 
 type Query struct {
 }
 
-func (Query) TypeName() string {
-	return "Query"
+func (Query) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Query",
+		NonNull:   true,
+	}
 }
 
 func TestBasic(t *testing.T) {
@@ -39,6 +53,11 @@ func TestBasic(t *testing.T) {
 				X: int(args.X.Value),
 				Y: int(args.Y.Value),
 			}, nil
+		}),
+		"loadPointFromID": dagql.Func(func(ctx context.Context, self Query, args struct {
+			ID dagql.ID[Point]
+		}) (Point, error) {
+			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)
 
@@ -58,6 +77,14 @@ func TestBasic(t *testing.T) {
 			self.X -= args.Amount.Value
 			return self, nil
 		}),
+		"neighbors": dagql.Func[Point](func(ctx context.Context, self Point, _ any) (dagql.Array[Point], error) {
+			return []Point{
+				{X: self.X - 1, Y: self.Y},
+				{X: self.X + 1, Y: self.Y},
+				{X: self.X, Y: self.Y - 1},
+				{X: self.X, Y: self.Y + 1},
+			}, nil
+		}),
 	}.Install(srv)
 
 	gql := client.New(handler.NewDefaultServer(srv))
@@ -65,9 +92,14 @@ func TestBasic(t *testing.T) {
 	var res struct {
 		Point struct {
 			ShiftLeft struct {
-				Id   string
-				Ecks int
-				Why  int
+				Id        string
+				Ecks      int
+				Why       int
+				Neighbors []struct {
+					Id string
+					X  int
+					Y  int
+				}
 			}
 		}
 	}
@@ -77,6 +109,11 @@ func TestBasic(t *testing.T) {
 				id
 				ecks: x
 				why: y
+				neighbors {
+					id
+					x
+					y
+				}
 			}
 		}
 	}`, &res)
@@ -88,4 +125,45 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 5, res.Point.ShiftLeft.Ecks)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Why)
 	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
+	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[0].Id)
+	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
+	assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[0].X)
+	assert.Equal(t, 7, res.Point.ShiftLeft.Neighbors[0].Y)
+	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[1].Id)
+	assert.Equal(t, 6, res.Point.ShiftLeft.Neighbors[1].X)
+	assert.Equal(t, 7, res.Point.ShiftLeft.Neighbors[1].Y)
+	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[2].Id)
+	assert.Equal(t, 5, res.Point.ShiftLeft.Neighbors[2].X)
+	assert.Equal(t, 6, res.Point.ShiftLeft.Neighbors[2].Y)
+	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[3].Id)
+	assert.Equal(t, 5, res.Point.ShiftLeft.Neighbors[3].X)
+	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
+
+	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
+		var res struct {
+			LoadPointFromID Point
+		}
+		gql.MustPost(`query {
+			loadPointFromID(id: "`+neighbor.Id+`") {
+				x
+				y
+			}
+		}`, &res)
+		assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
+		assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
+		switch i {
+		case 0:
+			assert.Equal(t, res.LoadPointFromID.X, 4)
+			assert.Equal(t, res.LoadPointFromID.Y, 7)
+		case 1:
+			assert.Equal(t, res.LoadPointFromID.X, 6)
+			assert.Equal(t, res.LoadPointFromID.Y, 7)
+		case 2:
+			assert.Equal(t, res.LoadPointFromID.X, 5)
+			assert.Equal(t, res.LoadPointFromID.Y, 6)
+		case 3:
+			assert.Equal(t, res.LoadPointFromID.X, 5)
+			assert.Equal(t, res.LoadPointFromID.Y, 8)
+		}
+	}
 }
