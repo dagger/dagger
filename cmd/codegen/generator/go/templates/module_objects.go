@@ -14,7 +14,9 @@ import (
 )
 
 func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {
-	spec := &parsedObjectType{}
+	spec := &parsedObjectType{
+		goType: t,
+	}
 
 	if named == nil {
 		return nil, fmt.Errorf("struct types must be named")
@@ -152,6 +154,8 @@ type parsedObjectType struct {
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
 	constructor *funcTypeSpec
+
+	goType *types.Struct
 }
 
 func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
@@ -203,6 +207,10 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedObjectType) GoType() types.Type {
+	return spec.goType
 }
 
 func (spec *parsedObjectType) GoSubTypes() []types.Type {

@@ -33,6 +33,7 @@ func (ps *parseState) parseGoFunc(receiverTypeName string, fn *types.Func) (*fun
 	if !ok {
 		return nil, fmt.Errorf("expected method to be a func, got %T", fn.Type())
 	}
+	spec.goType = sig
 
 	spec.argSpecs, err = ps.parseParamSpecs(fn)
 	if err != nil {
@@ -81,6 +82,8 @@ type funcTypeSpec struct {
 
 	returnSpec   ParsedType // nil if void return
 	returnsError bool
+
+	goType *types.Signature
 }
 
 var _ ParsedType = &funcTypeSpec{}
@@ -123,7 +126,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		}
 		if argSpec.defaultValue != "" {
 			var jsonEnc string
-			if argSpec.baseType.String() == "string" {
+			if argSpec.typeSpec.GoType().String() == "string" {
 				enc, err := json.Marshal(argSpec.defaultValue)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal default value: %w", err)
@@ -144,6 +147,10 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	}
 
 	return fnTypeDefCode, nil
+}
+
+func (spec *funcTypeSpec) GoType() types.Type {
+	return spec.goType
 }
 
 func (spec *funcTypeSpec) GoSubTypes() []types.Type {
@@ -200,7 +207,6 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 			parent := &paramSpec{
 				name:      params.At(i).Name(),
 				paramType: param.Type(),
-				baseType:  param.Type(),
 			}
 
 			paramFields := unpackASTFields(stype.Fields)
@@ -302,7 +308,6 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	return paramSpec{
 		name:         field.Name(),
 		paramType:    paramType,
-		baseType:     baseType,
 		typeSpec:     typeSpec,
 		optional:     optional,
 		defaultValue: defaultValue,
@@ -322,9 +327,8 @@ type paramSpec struct {
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, Optional, etc
 	paramType types.Type
-	// baseType is the simplified base type derived from the function signature
-	baseType types.Type
-	// typeSpec is the parsed TypeSpec of the argument's baseType
+	// typeSpec is the parsed TypeSpec of the argument's "base type", which doesn't
+	// include pointers, Optional, etc
 	typeSpec ParsedType
 
 	// parent is set if this paramSpec is nested inside a parent inline struct,

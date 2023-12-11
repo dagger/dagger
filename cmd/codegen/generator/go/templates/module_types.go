@@ -12,13 +12,18 @@ type ParsedType interface {
 	// Generated code for registering the type with the dagger API
 	TypeDefCode() (*Statement, error)
 
-	// Go type referred to by this type
+	// The underlying go type that ParsedType wraps
+	GoType() types.Type
+
+	// Go types referred to by this type
 	GoSubTypes() []types.Type
 }
 
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
 // So if the type is a struct or interface, the returned TypeSpec will not have all the fields,
 // only the type name and kind.
+// This is so that that the typedef can be referenced as the type of a an arg, return value or
+// field without needing to duplicate the full type definition every time it occurs.
 func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (ParsedType, error) {
 	switch t := typ.(type) {
 	case *types.Named:
@@ -41,7 +46,10 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse slice element type: %w", err)
 		}
-		return &parsedSliceType{elemTypeSpec}, nil
+		return &parsedSliceType{
+			goType:     t,
+			underlying: elemTypeSpec,
+		}, nil
 
 	case *types.Basic:
 		if t.Kind() == types.Invalid {
@@ -58,8 +66,8 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 			return nil, fmt.Errorf("struct types must be named")
 		}
 		return &parsedObjectTypeReference{
-			name:           typeName,
-			referencedType: named,
+			name:   typeName,
+			goType: named,
 		}, nil
 
 	default:
@@ -91,12 +99,17 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	), nil
 }
 
+func (spec *parsedPrimitiveType) GoType() types.Type {
+	return spec.goType
+}
+
 func (spec *parsedPrimitiveType) GoSubTypes() []types.Type {
 	return nil
 }
 
 // parsedSliceType is a parsed type that is a slice of other types
 type parsedSliceType struct {
+	goType     *types.Slice
 	underlying ParsedType // the element TypeSpec
 }
 
@@ -110,6 +123,10 @@ func (spec *parsedSliceType) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(underlyingCode), nil
 }
 
+func (spec *parsedSliceType) GoType() types.Type {
+	return spec.goType
+}
+
 func (spec *parsedSliceType) GoSubTypes() []types.Type {
 	return spec.underlying.GoSubTypes()
 }
@@ -117,8 +134,8 @@ func (spec *parsedSliceType) GoSubTypes() []types.Type {
 // parsedObjectTypeReference is a parsed object type that is referred to just by name rather
 // than with the full type definition
 type parsedObjectTypeReference struct {
-	name           string
-	referencedType types.Type
+	name   string
+	goType types.Type
 }
 
 var _ ParsedType = &parsedObjectTypeReference{}
@@ -129,6 +146,11 @@ func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
 	), nil
 }
 
+func (spec *parsedObjectTypeReference) GoType() types.Type {
+	return spec.goType
+}
+
 func (spec *parsedObjectTypeReference) GoSubTypes() []types.Type {
-	return []types.Type{spec.referencedType}
+	// because this is a *reference* to a named type, we return the goType itself as a subtype too
+	return []types.Type{spec.goType}
 }
