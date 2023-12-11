@@ -18,6 +18,10 @@ type Int struct {
 	Value int
 }
 
+func NewInt(val int) Int {
+	return Int{Value: val}
+}
+
 func (Int) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Int",
@@ -52,8 +56,54 @@ func (i *Int) UnmarshalLiteral(lit *idproto.Literal) error {
 	return nil
 }
 
+type Boolean struct {
+	Value bool
+}
+
+func NewBoolean(val bool) Boolean {
+	return Boolean{Value: val}
+}
+
+func (Boolean) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Bool",
+		NonNull:   true,
+	}
+}
+
+func (i Boolean) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.Value)
+}
+
+func (i *Boolean) UnmarshalJSON(p []byte) error {
+	var num bool
+	if err := json.Unmarshal(p, &num); err != nil {
+		return err
+	}
+	i.Value = num
+	return nil
+}
+
+func (i Boolean) MarshalLiteral() (*idproto.Literal, error) {
+	return idproto.LiteralValue(i.Value), nil
+}
+
+func (i *Boolean) UnmarshalLiteral(lit *idproto.Literal) error {
+	switch x := lit.Value.(type) {
+	case *idproto.Literal_Bool:
+		i.Value = bool(lit.GetBool())
+	default:
+		return fmt.Errorf("cannot convert %T to Bool", x)
+	}
+	return nil
+}
+
 type String struct {
 	Value string
+}
+
+func NewString(val string) String {
+	return String{Value: val}
 }
 
 func (String) Type() *ast.Type {
@@ -95,6 +145,8 @@ type ID[T Typed] struct {
 
 	expected T
 }
+
+var _ Typed = ID[Typed]{}
 
 func (i ID[T]) Type() *ast.Type {
 	return &ast.Type{
@@ -271,6 +323,20 @@ func (n Optional[T]) Unwrap() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
+func (i Optional[T]) MarshalJSON() ([]byte, error) {
+	if !i.Valid {
+		return json.Marshal(nil)
+	}
+	return json.Marshal(i.Value)
+}
+
+func (i *Optional[T]) UnmarshalJSON(p []byte) error {
+	if err := json.Unmarshal(p, &i.Value); err != nil {
+		return err
+	}
+	return nil
+}
+
 type Enum struct {
 	Enum  *ast.Type
 	Value string
@@ -280,6 +346,17 @@ var _ Typed = Enum{}
 
 func (n Enum) Type() *ast.Type {
 	return n.Enum
+}
+
+func (i Enum) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.Value)
+}
+
+func (i *Enum) UnmarshalJSON(p []byte) error {
+	if err := json.Unmarshal(p, &i.Value); err != nil {
+		return err
+	}
+	return nil
 }
 
 type EnumSpec struct {

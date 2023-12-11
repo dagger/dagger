@@ -57,10 +57,10 @@ func TestBasic(t *testing.T) {
 
 	dagql.Fields[Point]{
 		"x": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
-			return dagql.Int{self.X}, nil
+			return dagql.NewInt(self.X), nil
 		}),
 		"y": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
-			return dagql.Int{self.Y}, nil
+			return dagql.NewInt(self.Y), nil
 		}),
 		"self": dagql.Func(func(ctx context.Context, self Point, _ any) (Point, error) {
 			return self, nil
