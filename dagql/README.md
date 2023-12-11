@@ -22,5 +22,21 @@ Below are a set of assertions that build on one another.
 * An *impure* query or ID may return an Object with a *pure* ID.
 * All data may be kept in-memory with LRU-like caching semantics.
 * All Arrays returned by Objects have deterministic order.
-* An ID may refer to an Object returned in an Array by specify the *nth* index.
+* An ID may refer to an Object returned in an Array by specifing the *nth* index (starting at 1).
 * All Objects in Arrays have IDs: either an ID of their own, or the field's ID with *nth* set.
+
+[Node]: https://graphql.org/learn/global-object-identification/
+
+## context
+
+This repository might be re-integrated into Dagger, but for now is just a
+personal experiment.
+
+It should replace our use of the following forks:
+
+* `github.com/dagger/graphql`
+* `github.com/dagger/graphql-go-tools`
+
+I think it may make sense to leave as its own repo just to make sure there's a
+clear boundary between the theory and the practice. But it should probably move
+into the Dagger account.
