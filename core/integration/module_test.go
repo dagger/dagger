@@ -1011,6 +1011,9 @@ func TestModuleGoDocsEdgeCases(t *testing.T) {
 type Minimal struct {
 	// X is this
 	X, Y string  // Y is not this
+
+	// +private
+	// Z string
 }
 
 // some docs
@@ -1106,6 +1109,7 @@ func (m *Minimal) HelloFinal(
 	require.Equal(t, "foo", hello.Get("args.0.name").String())
 	require.Equal(t, "", hello.Get("args.0.description").String())
 
+	require.Len(t, obj.Get(`fields`).Array(), 2)
 	prop := obj.Get(`fields.#(name="x")`)
 	require.Equal(t, "x", prop.Get("name").String())
 	require.Equal(t, "X is this", prop.Get("description").String())
@@ -1173,6 +1177,58 @@ func (m *Minimal) Qux(opts struct {
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": ""}}`, name), out)
 	}
+}
+
+func TestModuleGoPrivateField(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {
+	Foo string
+
+	Bar string // +private
+}
+
+func (m *Minimal) Set(foo string, bar string) *Minimal {
+	m.Foo = foo
+	m.Bar = bar
+	return m
+}
+
+func (m *Minimal) Hello() string {
+	return m.Foo + m.Bar
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	require.Equal(t, "Minimal", obj.Get("name").String())
+	require.Len(t, obj.Get(`fields`).Array(), 1)
+	prop := obj.Get(`fields.#(name="foo")`)
+	require.Equal(t, "foo", prop.Get("name").String())
+
+	out, err = modGen.With(daggerQuery(`{minimal{set(foo: "abc", bar: "xyz"){hello}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal":{"set":{"hello": "abcxyz"}}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{minimal{set(foo: "abc", bar: "xyz"){foo}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal":{"set":{"foo": "abc"}}}`, out)
+
+	_, err = modGen.With(daggerQuery(`{minimal{set(foo: "abc", bar: "xyz"){bar}}}`)).Stdout(ctx)
+	require.ErrorContains(t, err, `Cannot query field "bar"`)
 }
 
 //go:embed testdata/modules/go/extend/main.go

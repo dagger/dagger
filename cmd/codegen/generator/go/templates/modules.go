@@ -726,6 +726,29 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		if !field.Exported() {
 			continue
 		}
+		name := field.Name()
+
+		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
+		linePragmas, lineComment := parsePragmaComment(astFields[i].Comment.Text())
+		comment := strings.TrimSpace(docComment)
+		if comment == "" {
+			comment = strings.TrimSpace(lineComment)
+		}
+		pragmas := make(map[string]string)
+		maps.Copy(pragmas, docPragmas)
+		maps.Copy(pragmas, linePragmas)
+		if v, ok := pragmas["private"]; ok {
+			private := false
+			if v == "" {
+				private = true
+			} else {
+				private, _ = strconv.ParseBool(v)
+			}
+			if private {
+				// don't generate WithField for private fields
+				continue
+			}
+		}
 
 		fieldTypeDef, subType, err := ps.goTypeToAPIType(field.Type(), nil)
 		if err != nil {
@@ -734,14 +757,6 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 		if subType != nil {
 			subTypes = append(subTypes, subType)
 		}
-
-		description := astFields[i].Doc.Text()
-		if description == "" {
-			description = astFields[i].Comment.Text()
-		}
-		description = strings.TrimSpace(description)
-
-		name := field.Name()
 
 		// override the name with the json tag if it was set - otherwise, we
 		// end up asking for a name that we won't unmarshal correctly
@@ -759,10 +774,10 @@ func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*S
 			fieldTypeDef,
 		}
 
-		if description != "" {
+		if comment != "" {
 			withFieldArgs = append(withFieldArgs,
 				Id("TypeDefWithFieldOpts").Values(
-					Id("Description").Op(":").Lit(description),
+					Id("Description").Op(":").Lit(comment),
 				))
 		}
 
