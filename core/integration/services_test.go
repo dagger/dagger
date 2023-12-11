@@ -203,6 +203,47 @@ func TestServicePorts(t *testing.T) {
 	}
 }
 
+func TestServicePortsSkipHealthCheck(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Healthchecks pass when all ports are skipped", func(t *testing.T) {
+		c, ctx := connect(t)
+
+		srv := c.Container().
+			From("python").
+			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
+				SkipHealthCheck: true,
+			}).
+			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
+				SkipHealthCheck: true,
+			}).
+			WithExec([]string{"python", "-m", "http.server"}).
+			AsService()
+
+		_, err := srv.Start(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("Healthchecks pass when some ports are skipped", func(t *testing.T) {
+		c, ctx := connect(t)
+
+		srv := c.Container().
+			From("python").
+			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
+				SkipHealthCheck: true,
+			}).
+			WithExposedPort(8000).
+			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
+				SkipHealthCheck: true,
+			}).
+			WithExec([]string{"python", "-m", "http.server", "8000"}).
+			AsService()
+
+		_, err := srv.Start(ctx)
+		require.NoError(t, err)
+	})
+}
+
 func TestContainerPortLifecycle(t *testing.T) {
 	t.Parallel()
 
