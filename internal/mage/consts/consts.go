@@ -7,6 +7,10 @@
 package consts
 
 const (
+	EngineShimPath = "/usr/local/bin/dagger-shim"
+
+	EngineDefaultStateDir = "/var/lib/dagger"
+
 	GoSDKEngineContainerTarballPath        = "/usr/local/share/dagger/go-module-sdk-image.tar"
 	PythonSDKEngineContainerModulePath     = "/usr/local/share/dagger/python-sdk/runtime"
 	TypescriptSDKEngineContainerModulePath = "/usr/local/share/dagger/typescript-sdk/runtime"

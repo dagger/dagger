@@ -1,22 +1,17 @@
 package main
 
 import (
+	"github.com/dagger/dagger/internal/mage/consts"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 )
 
-// engineDefaultStateDir is the directory that we map to a volume by default.
-const engineDefaultStateDir = "/var/lib/dagger"
-
-// engineDefaultShimBin is the path to the shim binary we use as our oci runtime.
-const engineDefaultShimBin = "/usr/local/bin/dagger-shim"
-
 func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 	if cfg.Root == "" {
-		cfg.Root = engineDefaultStateDir
+		cfg.Root = consts.EngineDefaultStateDir
 	}
 
 	if cfg.Workers.OCI.Binary == "" {
-		cfg.Workers.OCI.Binary = engineDefaultShimBin
+		cfg.Workers.OCI.Binary = consts.EngineShimPath
 	}
 
 	if cfg.DNS == nil {
