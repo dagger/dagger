@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/99designs/gqlgen/graphql"
-	"github.com/dagger/dagql/idproto"
+	"github.com/vito/dagql/idproto"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"

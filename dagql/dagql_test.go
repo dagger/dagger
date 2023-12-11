@@ -6,8 +6,8 @@ import (
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/dagger/dagql"
-	"github.com/dagger/dagql/idproto"
+	"github.com/vito/dagql"
+	"github.com/vito/dagql/idproto"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
