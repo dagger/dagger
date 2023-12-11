@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/99designs/gqlgen/graphql/introspection"
-	"github.com/vito/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vito/dagql"
 )
 
 func Install[T dagql.Typed](srv *dagql.Server) {

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/vito/dagql/idproto"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vito/dagql/idproto"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -220,33 +220,32 @@ type Enumerable interface {
 	Nth(int) (Typed, error)
 }
 
-func BasicArray[T Typed](arrayID *idproto.ID, vals ...T) Array[Identified[T]] {
-	var arr Array[Identified[T]]
-	for _, val := range vals {
-		arr = append(arr, Identified[T]{
-			ValueID: ID[T]{
-				ID:       arrayID,
-				expected: val,
-			},
-			Value: val,
-		})
-	}
-	return arr
+type Identified[T Typed] struct {
+	id    ID[T]
+	value T
 }
 
-type Identified[T Typed] struct {
-	ValueID ID[T]
-	Value   T
+func NewNode[T Typed](id ID[T], val T) Identified[T] {
+	return Identified[T]{
+		id:    id,
+		value: val,
+	}
+}
+
+var _ Typed = Identified[Typed]{}
+
+func (i Identified[T]) Type() *ast.Type {
+	return i.value.Type()
 }
 
 var _ Node = Identified[Typed]{}
 
-func (i Identified[T]) Type() *ast.Type {
-	return i.Value.Type()
+func (i Identified[T]) Value() Typed {
+	return i.value
 }
 
 func (i Identified[T]) ID() *idproto.ID {
-	return i.ValueID.ID
+	return i.id.ID
 }
 
 type Array[T Typed] []T
@@ -259,7 +258,7 @@ func (i Array[T]) Type() *ast.Type {
 	}
 }
 
-var _ Enumerable = Array[Node]{}
+var _ Enumerable = Array[Typed]{}
 
 func (arr Array[T]) Len() int {
 	return len(arr)

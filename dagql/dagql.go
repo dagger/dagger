@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/vito/dagql/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vito/dagql/idproto"
 )
 
 type Selectable interface {
@@ -79,6 +79,7 @@ type Instantiator interface {
 type Node interface {
 	Typed
 	ID() *idproto.ID
+	Value() Typed
 }
 
 type TypeResolver interface {
@@ -202,8 +203,14 @@ func (r Class[T]) isType() {}
 var _ Instantiator = Class[Typed]{}
 
 func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Selectable, error) {
+	if ided, ok := val.(Node); ok {
+		// If the value is already a Node, preserve its ID.
+		id = ided.ID()
+		val = ided.Value()
+	}
 	self, ok := val.(T)
 	if !ok {
+		// NB: Nullable values should already be unwrapped by now.
 		return nil, fmt.Errorf("cannot instantiate %T with %T", cls, val)
 	}
 	return Object[T]{
@@ -237,9 +244,13 @@ func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
+func (o Object[T]) Value() Typed {
+	return o.Self
+}
+
 type Fields[T Typed] map[string]Field[T]
 
-type Field[T any] struct {
+type Field[T Typed] struct {
 	Spec     FieldSpec
 	Func     func(ctx context.Context, self T, args map[string]Literal) (Typed, error)
 	NodeFunc func(ctx context.Context, self Node, args map[string]Literal) (Typed, error)
