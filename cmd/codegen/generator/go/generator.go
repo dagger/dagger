@@ -319,6 +319,8 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 			packages.NeedSyntax |
 			packages.NeedTypesInfo |
 			packages.NeedModule |
+			// NOTE: packages.NeedDeps | packages.NeedImports analyzes and typechecks all
+			// deps - this might be kinda expensive long-term
 			packages.NeedDeps |
 			packages.NeedImports,
 	}, ".")
