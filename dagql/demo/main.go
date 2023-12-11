@@ -8,8 +8,8 @@ import (
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
-	"github.com/dagger/dagql"
-	"github.com/dagger/dagql/introspection"
+	"github.com/vito/dagql"
+	"github.com/vito/dagql/introspection"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 

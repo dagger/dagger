@@ -1,4 +1,4 @@
-module github.com/dagger/dagql
+module github.com/vito/dagql
 
 go 1.21.3
 

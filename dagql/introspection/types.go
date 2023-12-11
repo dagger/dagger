@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/99designs/gqlgen/graphql/introspection"
-	"github.com/dagger/dagql"
+	"github.com/vito/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
