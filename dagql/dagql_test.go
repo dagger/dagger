@@ -6,9 +6,9 @@ import (
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
 	"github.com/vito/dagql/idproto"
-	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 )
@@ -50,7 +50,7 @@ func TestBasic(t *testing.T) {
 		}),
 		"loadPointFromID": dagql.Func(func(ctx context.Context, self Query, args struct {
 			ID dagql.ID[Point]
-		}) (Point, error) {
+		}) (dagql.Identified[Point], error) {
 			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)
@@ -135,14 +135,20 @@ func TestBasic(t *testing.T) {
 
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
-			LoadPointFromID Point
+			LoadPointFromID struct {
+				Id string
+				X  int
+				Y  int
+			}
 		}
 		gql.MustPost(`query {
 			loadPointFromID(id: "`+neighbor.Id+`") {
+				id
 				x
 				y
 			}
 		}`, &res)
+		assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
 		assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
 		assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
 		switch i {

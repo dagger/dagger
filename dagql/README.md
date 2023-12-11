@@ -40,3 +40,11 @@ It should replace our use of the following forks:
 I think it may make sense to leave as its own repo just to make sure there's a
 clear boundary between the theory and the practice. But it should probably move
 into the Dagger account.
+
+## TODO
+
+* [ ] parallel query execution
+* [ ] figure out whether constructor patterns are enshrined or ad-hoc
+* [x] figure out how to return objects that already have an ID (e.g. `loadFooFromID` should not have itself in the returned ID)
+* [ ] implement caching semantics, including `@impure` and `@meta`
+* [ ] figure out telemetry

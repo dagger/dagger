@@ -8,9 +8,9 @@ import (
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
 	"github.com/vito/dagql/introspection"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Point struct {
@@ -50,7 +50,7 @@ func main() {
 		}),
 		"loadPointFromID": dagql.Func(func(ctx context.Context, self Query, args struct {
 			ID dagql.ID[Point]
-		}) (Point, error) {
+		}) (dagql.Identified[Point], error) {
 			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)
