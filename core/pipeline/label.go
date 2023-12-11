@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-github/v50/github"
 	"github.com/sirupsen/logrus"
 )
@@ -139,12 +140,29 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
+	// Check if the commit is a merge commit (GitHub context)
+	if commit.NumParents() > 1 {
+		// Get the parent commits
+		parents, err := commit.Parents().Next()
+		if err != nil {
+			return nil, err
+		}
+
+		// Skip the first parent and use the second parent as the previous commit
+		parents, err = parents.Parents().Next()
+		if err != nil {
+			return nil, err
+		}
+
+		commit = parents
+	}
+
 	title, _, _ := strings.Cut(commit.Message, "\n")
 
 	labels = append(labels,
 		Label{
 			Name:  "dagger.io/git.ref",
-			Value: head.Hash().String(),
+			Value: commit.Hash.String(),
 		},
 		Label{
 			Name:  "dagger.io/git.author.name",
@@ -168,18 +186,27 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		},
 	)
 
-	if head.Name().IsTag() {
-		labels = append(labels, Label{
-			Name:  "dagger.io/git.tag",
-			Value: head.Name().Short(),
-		})
-	}
-
-	if head.Name().IsBranch() {
-		labels = append(labels, Label{
-			Name:  "dagger.io/git.branch",
-			Value: head.Name().Short(),
-		})
+	// check if ref is a tag or branch
+	refs, _ := repo.References()
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Hash() == commit.Hash {
+			if ref.Name().IsTag() {
+				labels = append(labels, Label{
+					Name:  "dagger.io/git.tag",
+					Value: ref.Name().Short(),
+				})
+			}
+			if ref.Name().IsBranch() {
+				labels = append(labels, Label{
+					Name:  "dagger.io/git.branch",
+					Value: ref.Name().Short(),
+				})
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return labels, nil
