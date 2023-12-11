@@ -44,15 +44,6 @@ struct Selector {
   # in-memory query cache key. But the query cache might be made per-session
   # or even per-client instead anyway! What buys us the most?
 
-  nth @3 :Int32;
-  # If the field returns a list, this is the index of the element to select.
-  # Note that this defaults to zero, as IDs always refer to
-  #
-  # Here we're teetering dangerously close to full blown attribute path
-  # selection, but we're intentionally limiting ourselves instead to cover only
-  # the common case of returning a list of objects. The only case not handled
-  # is a nested list. Don't do that; have a type instead.
-
   meta @3 :Bool;
   # If true, this Selector may be omitted from the pipeline without changing
   # the ultimate result.
@@ -63,6 +54,15 @@ struct Selector {
   # It is worth noting that we don't store meta information at this level and
   # continue to force metadata to be set via GraphQL queries. It makes IDs
   # always easy to evaluate.
+
+  nth @3 :Int32;
+  # If the field returns a list, this is the index of the element to select.
+  # Note that this defaults to zero, as IDs always refer to
+  #
+  # Here we're teetering dangerously close to full blown attribute path
+  # selection, but we're intentionally limiting ourselves instead to cover only
+  # the common case of returning a list of objects. The only case not handled
+  # is a nested list. Don't do that; have a type instead.
 }
 
 struct Argument {
