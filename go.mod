@@ -4,8 +4,6 @@ go 1.21
 
 replace dagger.io/dagger => ./sdk/go
 
-replace github.com/dagger/dagger/internal/mage => ./internal/mage
-
 require (
 	dagger.io/dagger v0.9.4
 	github.com/99designs/gqlgen v0.17.34 // indirect
@@ -62,7 +60,6 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/charmbracelet/lipgloss v0.9.1
 	github.com/creack/pty v1.1.18
-	github.com/dagger/dagger/internal/mage v0.0.0-00010101000000-000000000000
 	github.com/dave/jennifer v1.7.0
 	github.com/dschmidt/go-layerfs v0.1.0
 	github.com/go-git/go-git/v5 v5.9.0

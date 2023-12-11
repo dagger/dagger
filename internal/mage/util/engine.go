@@ -16,14 +16,14 @@ import (
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/exp/maps"
 
-	"github.com/dagger/dagger/internal/mage/consts"
+	"github.com/dagger/dagger/internal/distconsts"
 )
 
 const (
 	engineClientPath    = "/usr/local/bin/dagger"
 	engineServerPath    = "/usr/local/bin/dagger-engine"
 	engineDialStdioPath = "/usr/local/bin/dial-stdio"
-	engineShimPath      = consts.EngineShimPath
+	engineShimPath      = distconsts.EngineShimPath
 
 	golangVersion = "1.21.3"
 	alpineVersion = "3.18"
@@ -182,7 +182,7 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 	devEngine := devEngineContainer(c, runtime.GOARCH, "", engineOpts...)
 
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithMountedCache(consts.EngineDefaultStateDir, c.CacheVolume(cacheVolumeName)).
+		WithMountedCache(distconsts.EngineDefaultStateDir, c.CacheVolume(cacheVolumeName)).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities:      true,
 			ExperimentalPrivilegedNesting: true,
@@ -236,13 +236,13 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile(engineShimPath, shimBin(c, arch)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
 		WithFile(engineClientPath, daggerBin(c, arch, version)).
-		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
-		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
-		WithDirectory(filepath.Dir(consts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
+		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, false)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
-		WithDirectory(consts.EngineDefaultStateDir, c.Directory()).
+		WithDirectory(distconsts.EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
 			Permissions: 0o600,
@@ -282,13 +282,13 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 		WithFile(engineShimPath, shimBin(c, arch)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
 		WithFile(engineClientPath, daggerBin(c, arch, version)).
-		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
-		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
-		WithDirectory(filepath.Dir(consts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
+		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
+		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, true)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
-		WithDirectory(consts.EngineDefaultStateDir, c.Directory()).
+		WithDirectory(distconsts.EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
 			Permissions: 0o600,
@@ -372,7 +372,7 @@ func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
 		panic(err)
 	}
 	defer os.RemoveAll(tmpDir)
-	tarballPath := filepath.Join(tmpDir, filepath.Base(consts.GoSDKEngineContainerTarballPath))
+	tarballPath := filepath.Join(tmpDir, filepath.Base(distconsts.GoSDKEngineContainerTarballPath))
 
 	_, err = c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).

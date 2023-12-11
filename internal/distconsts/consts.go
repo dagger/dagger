@@ -4,7 +4,7 @@
 // These are kept separate from all other code to avoid breakage from
 // backwards-incompatible changes (internal/mage/ uses stable SDK, core/ uses
 // dev).
-package consts
+package distconsts
 
 const (
 	EngineShimPath = "/usr/local/bin/dagger-shim"

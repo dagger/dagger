@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dagger/dagger/internal/mage/consts"
+	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -147,7 +147,7 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 		"--restart", "always",
 		"-e", cloudToken,
 		"-e", GPUSupportEnvName,
-		"-v", consts.EngineDefaultStateDir,
+		"-v", distconsts.EngineDefaultStateDir,
 		"--privileged",
 	}
 	if gpuIsEnabled {

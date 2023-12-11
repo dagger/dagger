@@ -1,17 +1,17 @@
 package main
 
 import (
-	"github.com/dagger/dagger/internal/mage/consts"
+	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 )
 
 func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 	if cfg.Root == "" {
-		cfg.Root = consts.EngineDefaultStateDir
+		cfg.Root = distconsts.EngineDefaultStateDir
 	}
 
 	if cfg.Workers.OCI.Binary == "" {
-		cfg.Workers.OCI.Binary = consts.EngineShimPath
+		cfg.Workers.OCI.Binary = distconsts.EngineShimPath
 	}
 
 	if cfg.DNS == nil {
