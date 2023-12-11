@@ -216,7 +216,8 @@ func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Resolver, error) {
 func (cls Class[T]) Call(ctx context.Context, node Object[T], fieldName string, args map[string]Literal) (Typed, error) {
 	field, ok := cls.Fields[fieldName]
 	if !ok {
-		return nil, fmt.Errorf("no such field: %q", fieldName)
+		var zero T
+		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), fieldName)
 	}
 	if field.NodeFunc != nil {
 		return field.NodeFunc(ctx, node, args)

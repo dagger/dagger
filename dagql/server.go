@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/dagger/dagql/idproto"
+	"github.com/dagger/dagql/introspection"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -23,7 +25,20 @@ type Server struct {
 func NewServer[T Typed](root T) *Server {
 	schema := gqlparser.MustLoadSchema()
 	queryClass := Class[T]{
-		Fields: Fields[T]{},
+		Fields: Fields[T]{
+			"__schema": Func(func(ctx context.Context, self T, args struct{}) (introspection.Schema, error) {
+				return introspection.WrapSchema(schema), nil
+			}),
+			"__type": Func(func(ctx context.Context, self T, args struct {
+				Name String
+			}) (introspection.Type, error) {
+				def, ok := schema.Types[args.Name.Value]
+				if !ok {
+					return introspection.Type{}, fmt.Errorf("unknown type: %q", args.Name)
+				}
+				return introspection.WrapTypeFromDef(schema, def), nil
+			}),
+		},
 	}
 	rootNode := Object[T]{
 		Constructor: idproto.New(root.Type().Name()),
@@ -40,6 +55,126 @@ func NewServer[T Typed](root T) *Server {
 		cache: NewCacheMap[digest.Digest, any](),
 	}
 	srv.schema.Query = queryClass.Fields.Install(srv)
+
+	typeKind := EnumSpec{
+		Name: "__TypeKind",
+		Values: []*ast.EnumValueDefinition{
+			{Name: "SCALAR"},
+			{Name: "OBJECT"},
+			{Name: "INTERFACE"},
+			{Name: "UNION"},
+			{Name: "ENUM"},
+			{Name: "INPUT_OBJECT"},
+			{Name: "LIST"},
+			{Name: "NON_NULL"},
+		},
+	}
+	typeKind.Install(srv)
+
+	directiveLocation := EnumSpec{
+		Name: "__DirectiveLocation",
+		Values: []*ast.EnumValueDefinition{
+			{Name: "QUERY"},
+			{Name: "MUTATION"},
+			{Name: "SUBSCRIPTION"},
+			{Name: "FIELD"},
+			{Name: "FRAGMENT_DEFINITION"},
+			{Name: "FRAGMENT_SPREAD"},
+			{Name: "INLINE_FRAGMENT"},
+			{Name: "VARIABLE_DEFINITION"},
+			{Name: "SCHEMA"},
+			{Name: "SCALAR"},
+			{Name: "OBJECT"},
+			{Name: "FIELD_DEFINITION"},
+			{Name: "ARGUMENT_DEFINITION"},
+			{Name: "INTERFACE"},
+			{Name: "UNION"},
+			{Name: "ENUM"},
+			{Name: "ENUM_VALUE"},
+			{Name: "INPUT_OBJECT"},
+			{Name: "INPUT_FIELD_DEFINITION"},
+		},
+	}
+	directiveLocation.Install(srv)
+
+	Fields[introspection.Schema]{
+		"queryType": Func(func(ctx context.Context, self introspection.Schema, args struct{}) (introspection.Type, error) {
+			return introspection.NewType(*self.QueryType()), nil
+		}),
+		"mutationType": Func(func(ctx context.Context, self introspection.Schema, args struct{}) (Optional[introspection.Type], error) {
+			if self.MutationType() == nil {
+				return Optional[introspection.Type]{}, nil
+			}
+			return Opt(introspection.NewType(*self.MutationType())), nil
+		}),
+		"subscriptionType": Func(func(ctx context.Context, self introspection.Schema, args struct{}) (Optional[introspection.Type], error) {
+			if self.SubscriptionType() == nil {
+				return Optional[introspection.Type]{}, nil
+			}
+			return Opt(introspection.NewType(*self.SubscriptionType())), nil
+		}),
+		"types": Func(func(ctx context.Context, self introspection.Schema, args struct{}) (Array[introspection.Type], error) {
+			var types []introspection.Type
+			for _, def := range self.Types() {
+				types = append(types, introspection.NewType(def))
+			}
+			return types, nil
+		}),
+		"directives": Func(func(ctx context.Context, self introspection.Schema, args struct{}) (Array[introspection.Directive], error) {
+			var directives []introspection.Directive
+			for _, dir := range self.Directives() {
+				directives = append(directives, introspection.NewDirective(dir))
+			}
+			return directives, nil
+		}),
+	}.Install(srv)
+
+	Fields[introspection.Type]{
+		"name": Func(func(ctx context.Context, self introspection.Type, args struct{}) (Optional[String], error) {
+			if self.Name() == nil {
+				return NoOpt[String](), nil
+			} else {
+				return Opt(String{*self.Name()}), nil
+			}
+		}),
+		"kind": Func(func(ctx context.Context, self introspection.Type, args struct{}) (Enum, error) {
+			return Enum{
+				Enum:  typeKind.Type(),
+				Value: self.Kind(),
+			}, nil
+		}),
+	}.Install(srv)
+
+	Fields[introspection.Directive]{
+		"name": Func(func(ctx context.Context, self introspection.Directive, args struct{}) (String, error) {
+			return String{self.Name}, nil
+		}),
+		"description": Func(func(ctx context.Context, self introspection.Directive, args struct{}) (Optional[String], error) {
+			if self.Description() == nil {
+				return NoOpt[String](), nil
+			} else {
+				return Opt(String{*self.Description()}), nil
+			}
+		}),
+		"locations": Func(func(ctx context.Context, self introspection.Directive, args struct{}) (Array[Enum], error) {
+			var locations []Enum
+			for _, loc := range self.Locations {
+				locations = append(locations, Enum{
+					Enum:  directiveLocation.Type(),
+					Value: loc,
+				})
+			}
+			return locations, nil
+		}),
+		"args": Func(func(ctx context.Context, self introspection.Directive, _ struct{}) (Array[introspection.InputValue], error) {
+			var args []introspection.InputValue
+			for _, arg := range self.Args {
+				args = append(args, introspection.NewInputValue(arg))
+			}
+			return args, nil
+		}),
+	}.Install(srv)
+
 	return srv
 }
 
@@ -208,8 +343,16 @@ func (s *Server) Resolve(ctx context.Context, self Resolver, q Query) (map[strin
 			return nil, err
 		}
 
+		var isNull bool
+		if n, ok := val.(Nullable); ok {
+			val, ok = n.Unwrap()
+			isNull = !ok
+		}
+
 		var res any
-		if len(sel.Subselections) > 0 {
+		if isNull || len(sel.Subselections) == 0 {
+			res = val
+		} else if len(sel.Subselections) > 0 {
 			resolver, ok := s.types[field.Type.Name()]
 			if !ok {
 				return nil, fmt.Errorf("unknown type %q", field.Type.Name())
@@ -259,8 +402,6 @@ func (s *Server) Resolve(ctx context.Context, self Resolver, q Query) (map[strin
 			default:
 				return nil, fmt.Errorf("cannot sub-select %T", val)
 			}
-		} else {
-			res = val
 		}
 
 		if sel.Selector.Nth != 0 {
@@ -322,7 +463,7 @@ func (fields Fields[T]) Install(server *Server) *ast.Definition {
 			Description: "TODO", // t.Description()
 			Name:        typeName,
 		}
-		server.schema.Types[typeName] = schemaType
+		server.schema.AddTypes(schemaType)
 
 		if _, ok := server.types[typeName+"ID"]; !ok {
 			server.types[typeName+"ID"] = ScalarResolver[ID[T]]{}
@@ -344,7 +485,9 @@ func (fields Fields[T]) Install(server *Server) *ast.Definition {
 	for fieldName, field := range fields {
 		schemaField := schemaType.Fields.ForName(fieldName)
 		if schemaField != nil {
-			panic(fmt.Sprintf("field %s.%q already defined", typeName, fieldName))
+			// TODO
+			log.Printf("field %s.%q redefined", typeName, fieldName)
+			continue
 		}
 
 		schemaArgs := ast.ArgumentDefinitionList{}
