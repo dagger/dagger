@@ -48,3 +48,8 @@ into the Dagger account.
 * [x] figure out how to return objects that already have an ID (e.g. `loadFooFromID` should not have itself in the returned ID)
 * [ ] implement caching semantics, including `@impure` and `@meta`
 * [ ] figure out telemetry
+* [ ] support schema docs for everything (types, fields, args, enum values, etc)
+* [ ] figure out how interfaces work
+* [ ] IDs should also contain module info
+* [ ] IDs should also contain digest of result (stretch goal, this is higher
+  level, e.g. we want literal file checksums for objects that represent a file)
