@@ -9,6 +9,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/dagger/dagql"
+	"github.com/dagger/dagql/introspection"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -33,6 +34,7 @@ func (Query) Type() *ast.Type {
 		NonNull:   true,
 	}
 }
+
 func main() {
 	srv := dagql.NewServer(Query{})
 
@@ -55,10 +57,10 @@ func main() {
 
 	dagql.Fields[Point]{
 		"x": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
-			return dagql.Int{self.X}, nil
+			return dagql.NewInt(self.X), nil
 		}),
 		"y": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
-			return dagql.Int{self.Y}, nil
+			return dagql.NewInt(self.Y), nil
 		}),
 		"self": dagql.Func(func(ctx context.Context, self Point, _ any) (Point, error) {
 			return self, nil
@@ -78,6 +80,8 @@ func main() {
 			}, nil
 		}),
 	}.Install(srv)
+
+	introspection.Install[Query](srv)
 
 	port := os.Getenv("PORT")
 	if port == "" {
