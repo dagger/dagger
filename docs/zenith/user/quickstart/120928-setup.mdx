@@ -1,24 +1,19 @@
 ---
 slug: /zenith/user/quickstart/120928/setup
 hide_table_of_contents: true
-title: "Set up the example module"
+title: "Create the example application"
 ---
 
 # Quickstart
 
-## Set up the example module
+## Create the example application
 
-The example module used in this tutorial contains all the code necessary to test, build, and publish a simple React application.
+The example application used in this tutorial is a simple TypeScript application created with the Vue framework.
 
-Begin by cloning the module repository into your local development environment:
-
-```shell
-git clone https://github.com/dagger/hello-dagger.git
-cd hello-dagger
-```
-
-Cloning the repository locally makes it easy to explore and/or modify the module code, and is the recommended approach for this quickstart. However, if you prefer not to do this, you can instead use the following command, which exports the module location to an environment variable so that Dagger automatically uses it in all subsequent CLI commands:
+Create the application using the command below, answering "Yes" to all the prompts:
 
 ```shell
-export DAGGER_MODULE=github.com/dagger/hello-dagger`
+npm create vue@latest myapp
 ```
+
+The example application will be created in the `myapp/` directory.

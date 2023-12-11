@@ -271,7 +271,10 @@ module.exports = {
           label: "Quickstart",
           items: [
             "zenith/user/quickstart/index",
+            "zenith/user/quickstart/cli",
             "zenith/user/quickstart/setup",
+            "zenith/user/quickstart/hello",
+            "zenith/user/quickstart/test",
             "zenith/user/quickstart/functions",
             "zenith/user/quickstart/call",
             "zenith/user/quickstart/download",
