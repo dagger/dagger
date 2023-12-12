@@ -12,11 +12,6 @@ import (
 	"github.com/vito/dagql/idproto"
 )
 
-type Selectable interface {
-	Node
-	Select(context.Context, *ast.FieldDefinition, map[string]Literal) (Typed, error)
-}
-
 type FieldSpec struct {
 	// Name is the name of the field.
 	// Name string
@@ -41,38 +36,23 @@ type ArgSpec struct {
 	// Type is the type of the argument.
 	Type *ast.Type
 	// Default is the default value of the argument.
-	Default *Literal
-}
-
-type Literal struct {
-	*idproto.Literal
-}
-
-func (lit Literal) ToAST() *ast.Value {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_Int:
-		return &ast.Value{
-			Kind: ast.IntValue,
-			Raw:  fmt.Sprintf("%d", lit.GetInt()),
-		}
-	case *idproto.Literal_String_:
-		return &ast.Value{
-			Kind: ast.IntValue,
-			Raw:  fmt.Sprintf("%d", lit.GetInt()),
-		}
-	default:
-		panic(fmt.Errorf("cannot convert %T to *ast.Value", x))
-	}
+	Default Scalar
 }
 
 type Selector struct {
 	Field string
-	Args  map[string]Literal
+	Args  map[string]Typed
 	Nth   int
 }
 
 type Instantiator interface {
+	ID(*idproto.ID) Typed
 	Instantiate(*idproto.ID, Typed) (Selectable, error)
+}
+
+type Selectable interface {
+	Node
+	Select(context.Context, Selector) (Typed, error)
 }
 
 // Per the GraphQL spec, a Node always has an ID.
@@ -80,10 +60,6 @@ type Node interface {
 	Typed
 	ID() *idproto.ID
 	Value() Typed
-}
-
-type TypeResolver interface {
-	isType()
 }
 
 func ArgSpecs(args any) ([]ArgSpec, error) {
@@ -101,24 +77,26 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 				argName = strcase.ToLowerCamel(field.Name)
 			}
 
-			var argDefault *Literal
-			defaultJSON := []byte(field.Tag.Get("default")) // TODO: would make more sense to GraphQL-Unmarshal this
+			argVal := reflect.New(field.Type).Elem().Interface()
+			typedArg, ok := argVal.(Scalar)
+			if !ok {
+				return nil, fmt.Errorf("arg %q (%T) is not a Scalar", field.Name, argVal)
+			}
+
+			var argDefault Scalar
+			defaultJSON := []byte(field.Tag.Get("default"))
 			if len(defaultJSON) > 0 {
 				dec := json.NewDecoder(bytes.NewReader(defaultJSON))
 				dec.UseNumber()
-
-				var defaultAny any
-				if err := dec.Decode(&defaultAny); err != nil {
+				var val any
+				if err := dec.Decode(&val); err != nil {
 					return nil, fmt.Errorf("decode default value for arg %s: %w", argName, err)
 				}
-
-				argDefault = &Literal{idproto.LiteralValue(defaultAny)}
-			}
-
-			argVal := reflect.New(field.Type).Interface()
-			typedArg, ok := argVal.(Typed)
-			if !ok {
-				return nil, fmt.Errorf("arg %s must be a dagql.Typed, got %T", argName, argVal)
+				var err error
+				argDefault, err = typedArg.New(val)
+				if err != nil {
+					return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
+				}
 			}
 
 			argSpecs = append(argSpecs, ArgSpec{
@@ -129,31 +107,6 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 		}
 	}
 	return argSpecs, nil
-}
-
-func ArgsToType(argSpecs []ArgSpec, argVals map[string]Literal, dest any) error {
-	argsVal := reflect.ValueOf(dest)
-
-	for i, arg := range argSpecs {
-		argVal, ok := argVals[arg.Name]
-		if !ok {
-			return fmt.Errorf("missing required argument: %q", arg.Name)
-		}
-
-		field := argsVal.Elem().Field(i)
-		arg := reflect.New(field.Type()).Interface()
-		if um, ok := arg.(Unmarshaler); ok {
-			if err := um.UnmarshalLiteral(argVal.Literal); err != nil {
-				return err
-			}
-		} else {
-			return fmt.Errorf("cannot unmarshal %T", arg)
-		}
-
-		field.Set(reflect.ValueOf(arg).Elem())
-	}
-
-	return nil
 }
 
 // Func is a helper for statically defining fields. It panics if anything goes
@@ -172,9 +125,9 @@ func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) 
 			Args: argSpecs,
 			Type: zeroRet.Type(),
 		},
-		Func: func(ctx context.Context, self T, argVals map[string]Literal) (Typed, error) {
+		Func: func(ctx context.Context, self T, argVals map[string]Typed) (Typed, error) {
 			var args A
-			if err := ArgsToType(argSpecs, argVals, &args); err != nil {
+			if err := setArgFields(argSpecs, argVals, &args); err != nil {
 				return nil, err
 			}
 			return fn(ctx, self, args)
@@ -182,25 +135,27 @@ func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) 
 	}
 }
 
-type Marshaler interface {
-	MarshalLiteral() (*idproto.Literal, error)
+func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error {
+	destV := reflect.ValueOf(dest)
+	for i, arg := range argSpecs {
+		val, ok := argVals[arg.Name]
+		if !ok {
+			return fmt.Errorf("missing required argument: %q", arg.Name)
+		}
+		destV.Elem().Field(i).Set(reflect.ValueOf(val))
+	}
+	return nil
 }
-
-type Unmarshaler interface {
-	UnmarshalLiteral(*idproto.Literal) error
-}
-
-type ScalarResolver[T Marshaler] struct{}
-
-func (ScalarResolver[T]) isType() {}
 
 type Class[T Typed] struct {
 	Fields Fields[T]
 }
 
-func (r Class[T]) isType() {}
-
 var _ Instantiator = Class[Typed]{}
+
+func (cls Class[T]) ID(id *idproto.ID) Typed {
+	return ID[T]{ID: id}
+}
 
 func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Selectable, error) {
 	if ided, ok := val.(Node); ok {
@@ -220,7 +175,7 @@ func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Selectable, error) {
 	}, nil
 }
 
-func (cls Class[T]) Call(ctx context.Context, node Object[T], fieldName string, args map[string]Literal) (Typed, error) {
+func (cls Class[T]) Call(ctx context.Context, node Object[T], fieldName string, args map[string]Typed) (Typed, error) {
 	field, ok := cls.Fields[fieldName]
 	if !ok {
 		var zero T
@@ -244,6 +199,10 @@ func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
+func (o Object[T]) Kind() ast.ValueKind {
+	return ast.ObjectValue
+}
+
 func (o Object[T]) Value() Typed {
 	return o.Self
 }
@@ -252,8 +211,8 @@ type Fields[T Typed] map[string]Field[T]
 
 type Field[T Typed] struct {
 	Spec     FieldSpec
-	Func     func(ctx context.Context, self T, args map[string]Literal) (Typed, error)
-	NodeFunc func(ctx context.Context, self Node, args map[string]Literal) (Typed, error)
+	Func     func(ctx context.Context, self T, args map[string]Typed) (Typed, error)
+	NodeFunc func(ctx context.Context, self Node, args map[string]Typed) (Typed, error)
 }
 
 var _ Node = Object[Typed]{}
@@ -264,35 +223,34 @@ func (r Object[T]) ID() *idproto.ID {
 
 var _ Selectable = Object[Typed]{}
 
-func (r Object[T]) Select(ctx context.Context, field *ast.FieldDefinition, givenArgs map[string]Literal) (res Typed, err error) {
-	args, err := FieldArgs(field, givenArgs)
-	if err != nil {
-		return nil, err
+func (r Object[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
+	field, ok := r.Class.Fields[sel.Field]
+	if !ok {
+		var zero T
+		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
 	}
 	defer func() {
 		if err := recover(); err != nil {
-			panic(fmt.Errorf("panic in %s.%s: %v", r.Type().Name(), field.Name, err))
+			panic(fmt.Errorf("panic in %s.%s: %v", r.Type().Name(), sel.Field, err))
 		}
 	}()
-	return r.Class.Call(ctx, r, field.Name, args)
+	args, err := FieldArgs(field.Spec, sel.Args)
+	if err != nil {
+		return nil, err
+	}
+	return r.Class.Call(ctx, r, sel.Field, args)
 }
 
-func FieldArgs(field *ast.FieldDefinition, givenArgs map[string]Literal) (map[string]Literal, error) {
-	args := make(map[string]Literal, len(field.Arguments))
-	for _, arg := range field.Arguments {
+func FieldArgs(field FieldSpec, givenArgs map[string]Typed) (map[string]Typed, error) {
+	args := make(map[string]Typed, len(field.Args))
+	for _, arg := range field.Args {
 		val, ok := givenArgs[arg.Name]
 		if ok {
 			args[arg.Name] = val
-		} else {
-			if arg.DefaultValue != nil {
-				val, err := arg.DefaultValue.Value(nil)
-				if err != nil {
-					return nil, err
-				}
-				args[arg.Name] = Literal{idproto.LiteralValue(val)}
-			} else if arg.Type.NonNull {
-				return nil, fmt.Errorf("missing required argument: %q", arg.Name)
-			}
+		} else if arg.Default != nil {
+			args[arg.Name] = arg.Default
+		} else if arg.Type.NonNull {
+			return nil, fmt.Errorf("missing required argument: %q", arg.Name)
 		}
 	}
 	return args, nil

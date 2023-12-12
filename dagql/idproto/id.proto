@@ -76,7 +76,7 @@ message Literal {
     bool bool = 3;
     string enum = 4;
     int64 int = 5;
-    float float = 6;
+    double float = 6;
     string string = 7;
     List list = 8;
     Object object = 9;
