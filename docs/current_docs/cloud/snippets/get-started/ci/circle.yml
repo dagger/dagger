@@ -29,6 +29,7 @@ jobs:
       - run:
           name: Stop Dagger Engine
           command: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
+          when: always
 workflows:
       // highlight-end
   dagger:
