@@ -191,7 +191,7 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 				if err != nil {
 					return graphql.ErrorResponse(ctx, "selections: %s", err)
 				}
-				results, err = s.Resolve(ctx, s.root, Query{sels})
+				results, err = s.Resolve(ctx, s.root, sels...)
 				if err != nil {
 					return graphql.ErrorResponse(ctx, "resolve: %s", err)
 				}
@@ -249,10 +249,10 @@ func (sel Selector) AppendToID(id *idproto.ID, field *ast.FieldDefinition) *idpr
 	return cp
 }
 
-func (s *Server) Resolve(ctx context.Context, self Selectable, q Query) (map[string]any, error) {
-	results := make(map[string]any, len(q.Selections))
+func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection) (map[string]any, error) {
+	results := make(map[string]any, len(sels))
 
-	for _, sel := range q.Selections {
+	for _, sel := range sels {
 		res, err := s.resolvePath(ctx, self, sel)
 		if err != nil {
 			return nil, err
@@ -310,9 +310,7 @@ func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection
 			if err != nil {
 				return nil, fmt.Errorf("instantiate: %w", err)
 			}
-			res, err = s.Resolve(ctx, node, Query{
-				Selections: sel.Subselections,
-			})
+			res, err = s.Resolve(ctx, node, sel.Subselections...)
 			if err != nil {
 				return nil, err
 			}
@@ -332,9 +330,7 @@ func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}
-				res, err := s.Resolve(ctx, node, Query{
-					Selections: sel.Subselections,
-				})
+				res, err := s.Resolve(ctx, node, sel.Subselections...)
 				if err != nil {
 					return nil, err
 				}
@@ -414,10 +410,6 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Selectable, err
 		return nil, fmt.Errorf("unknown type %q", val.Type().Name())
 	}
 	return class.New(chainedID, val)
-}
-
-type Query struct {
-	Selections []Selection
 }
 
 type Selection struct {
