@@ -6,9 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -70,8 +68,6 @@ func LiteralValue(value any) *Literal {
 		return &Literal{Value: &Literal_Object{Object: &Object{Values: args}}}
 	case Literate:
 		return v.Literal()
-	case specs.Platform: // XXX(vito): maybe just have our own type alias that implements Literate
-		return LiteralValue(platforms.Format(v))
 	case json.Number:
 		if strings.Contains(v.String(), ".") {
 			f, err := v.Float64()
