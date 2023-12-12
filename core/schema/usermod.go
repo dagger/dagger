@@ -401,7 +401,7 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 				continue
 			}
 
-			value[k], err = field.modType.ConvertToSDKInput(ctx, v)
+			value[field.metadata.Name], err = field.modType.ConvertToSDKInput(ctx, v)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert field %q: %w", k, err)
 			}
