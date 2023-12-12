@@ -25,9 +25,9 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}),
 	}.Install(srv)
 
-	dagql.EnumSpec[TypeKind]{}.Install(srv)
+	TypeKinds.Install(srv)
 
-	dagql.EnumSpec[DirectiveLocation]{}.Install(srv)
+	DirectiveLocations.Install(srv)
 
 	dagql.Fields[Schema]{
 		"queryType": dagql.Func(func(ctx context.Context, self Schema, args struct{}) (Type, error) {
@@ -340,18 +340,16 @@ func (s EnumValue) Type() *ast.Type {
 
 type TypeKind string
 
-const (
-	TypeKindScalar      = "SCALAR"
-	TypeKindObject      = "OBJECT"
-	TypeKindInterface   = "INTERFACE"
-	TypeKindUnion       = "UNION"
-	TypeKindEnum        = "ENUM"
-	TypeKindInputObject = "INPUT_OBJECT"
-	TypeKindList        = "LIST"
-	TypeKindNonNull     = "NON_NULL"
-)
-
-var _ dagql.Enum = TypeKind("")
+var TypeKinds = dagql.EnumValues[TypeKind]{
+	"SCALAR",
+	"OBJECT",
+	"INTERFACE",
+	"UNION",
+	"ENUM",
+	"INPUT_OBJECT",
+	"LIST",
+	"NON_NULL",
+}
 
 func (k TypeKind) Type() *ast.Type {
 	return &ast.Type{
@@ -360,50 +358,33 @@ func (k TypeKind) Type() *ast.Type {
 	}
 }
 
-func (k TypeKind) PossibleValues() ast.EnumValueList {
-	return ast.EnumValueList{
-		{Name: TypeKindScalar},
-		{Name: TypeKindObject},
-		{Name: TypeKindInterface},
-		{Name: TypeKindUnion},
-		{Name: TypeKindEnum},
-		{Name: TypeKindInputObject},
-		{Name: TypeKindList},
-		{Name: TypeKindNonNull},
-	}
-}
-
 type DirectiveLocation string
 
-var _ dagql.Enum = DirectiveLocation("")
+var DirectiveLocations = dagql.EnumValues[DirectiveLocation]{
+	"QUERY",
+	"MUTATION",
+	"SUBSCRIPTION",
+	"FIELD",
+	"FRAGMENT_DEFINITION",
+	"FRAGMENT_SPREAD",
+	"INLINE_FRAGMENT",
+	"VARIABLE_DEFINITION",
+	"SCHEMA",
+	"SCALAR",
+	"OBJECT",
+	"FIELD_DEFINITION",
+	"ARGUMENT_DEFINITION",
+	"INTERFACE",
+	"UNION",
+	"ENUM",
+	"ENUM_VALUE",
+	"INPUT_OBJECT",
+	"INPUT_FIELD_DEFINITION",
+}
 
 func (k DirectiveLocation) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__DirectiveLocation",
 		NonNull:   true,
-	}
-}
-
-func (k DirectiveLocation) PossibleValues() ast.EnumValueList {
-	return ast.EnumValueList{
-		{Name: "QUERY"},
-		{Name: "MUTATION"},
-		{Name: "SUBSCRIPTION"},
-		{Name: "FIELD"},
-		{Name: "FRAGMENT_DEFINITION"},
-		{Name: "FRAGMENT_SPREAD"},
-		{Name: "INLINE_FRAGMENT"},
-		{Name: "VARIABLE_DEFINITION"},
-		{Name: "SCHEMA"},
-		{Name: "SCALAR"},
-		{Name: "OBJECT"},
-		{Name: "FIELD_DEFINITION"},
-		{Name: "ARGUMENT_DEFINITION"},
-		{Name: "INTERFACE"},
-		{Name: "UNION"},
-		{Name: "ENUM"},
-		{Name: "ENUM_VALUE"},
-		{Name: "INPUT_OBJECT"},
-		{Name: "INPUT_FIELD_DEFINITION"},
 	}
 }
