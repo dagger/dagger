@@ -36,20 +36,6 @@ type Direction struct {
 	dagql.Scalar
 }
 
-var _ dagql.Scalar = Direction{}
-
-func (d Direction) As(value dagql.Scalar) Direction {
-	d.Scalar = value
-	return d
-}
-
-func (Direction) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Direction",
-		NonNull:   true,
-	}
-}
-
 var Directions = dagql.NewEnum[Direction]()
 
 var (
@@ -59,6 +45,24 @@ var (
 	DirectionRight = Directions.Register("RIGHT")
 	DirectionInert = Directions.Register("INERT")
 )
+
+var _ dagql.Scalar = Direction{}
+
+func (d Direction) As(value dagql.Scalar) Direction {
+	d.Scalar = value
+	return d
+}
+
+func (Direction) Class() dagql.ScalarClass {
+	return Directions
+}
+
+func (Direction) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Direction",
+		NonNull:   true,
+	}
+}
 
 func Install[R dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[R]{

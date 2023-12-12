@@ -40,13 +40,13 @@ type Node interface {
 type Scalar interface {
 	// All Scalars are typed.
 	Typed
-	// All Scalars are also a ScalarClass, mostly as convenience. This allows us
-	// to instantiate a value
-	ScalarClass
 	// All Scalars are able to be represented as a Literal.
 	idproto.Literate
 	// All Scalars are able to be represented as JSON.
 	json.Marshaler
+	// All Scalars have a ScalarClass. This reference is used to initialize
+	// default values, among other conveniences.
+	Class() ScalarClass
 }
 
 type Int struct {
@@ -56,6 +56,14 @@ type Int struct {
 func NewInt(val int) Int {
 	return Int{Value: val}
 }
+
+var _ ScalarClass = Int{}
+
+func (Int) Class() ScalarClass {
+	return Int{}
+}
+
+var _ Scalar = Int{}
 
 func (Int) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -71,6 +79,12 @@ func (Int) New(val any) (Scalar, error) {
 			return nil, err
 		}
 		return NewInt(int(i)), nil
+	case string: // default struct tags
+		i, err := strconv.Atoi(x)
+		if err != nil {
+			return nil, err
+		}
+		return NewInt(i), nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to Int", x)
 	}
@@ -112,7 +126,7 @@ func NewFloat(val float64) Float {
 	return Float{Value: val}
 }
 
-var _ Scalar = Float{}
+var _ ScalarClass = Float{}
 
 func (Float) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -126,9 +140,21 @@ func (Float) New(val any) (Scalar, error) {
 			return nil, err
 		}
 		return NewFloat(i), nil
+	case string: // default struct tags
+		i, err := strconv.ParseFloat(x, 64)
+		if err != nil {
+			return nil, err
+		}
+		return NewFloat(i), nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to Float", x)
 	}
+}
+
+var _ Scalar = Float{}
+
+func (Float) Class() ScalarClass {
+	return Float{}
 }
 
 func (i Float) Literal() *idproto.Literal {
@@ -176,31 +202,43 @@ func (Boolean) Type() *ast.Type {
 	}
 }
 
-var _ Scalar = Boolean{}
+var _ ScalarClass = Boolean{}
 
 func (Boolean) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case bool:
 		return NewBoolean(x), nil
+	case string: // from default
+		b, err := strconv.ParseBool(x)
+		if err != nil {
+			return nil, err
+		}
+		return NewBoolean(b), nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to Boolean", x)
 	}
 }
 
-func (i Boolean) Literal() *idproto.Literal {
-	return idproto.LiteralValue(i.Value)
+var _ Scalar = Boolean{}
+
+func (Boolean) Class() ScalarClass {
+	return Boolean{}
 }
 
-func (i Boolean) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Value)
+func (b Boolean) Literal() *idproto.Literal {
+	return idproto.LiteralValue(b.Value)
 }
 
-func (i *Boolean) UnmarshalJSON(p []byte) error {
+func (b Boolean) MarshalJSON() ([]byte, error) {
+	return json.Marshal(b.Value)
+}
+
+func (b *Boolean) UnmarshalJSON(p []byte) error {
 	var num bool
 	if err := json.Unmarshal(p, &num); err != nil {
 		return err
 	}
-	i.Value = num
+	b.Value = num
 	return nil
 }
 
@@ -221,7 +259,7 @@ func (String) Type() *ast.Type {
 	}
 }
 
-var _ Scalar = String{}
+var _ ScalarClass = String{}
 
 func (String) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -230,6 +268,12 @@ func (String) New(val any) (Scalar, error) {
 	default:
 		return nil, fmt.Errorf("cannot convert %T to String", x)
 	}
+}
+
+var _ Scalar = String{}
+
+func (String) Class() ScalarClass {
+	return String{}
 }
 
 func (i String) Literal() *idproto.Literal {
@@ -264,8 +308,7 @@ func (i ID[T]) Type() *ast.Type {
 	}
 }
 
-// For parsing string IDs provided in queries.
-var _ Scalar = ID[Typed]{}
+var _ ScalarClass = ID[Typed]{}
 
 func (ID[T]) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -280,6 +323,13 @@ func (ID[T]) New(val any) (Scalar, error) {
 	default:
 		return nil, fmt.Errorf("cannot convert %T to Int", x)
 	}
+}
+
+// For parsing string IDs provided in queries.
+var _ Scalar = ID[Typed]{}
+
+func (i ID[T]) Class() ScalarClass {
+	return ID[T]{expected: i.expected}
 }
 
 func (i ID[T]) Literal() *idproto.Literal {
@@ -479,19 +529,14 @@ type EnumSetter[T Typed] interface {
 
 type EnumValues[T EnumSetter[T]] []string
 
-func NewEnum[T EnumSetter[T]](vals ...string) EnumValues[T] {
-	return EnumValues[T](vals)
+func NewEnum[T EnumSetter[T]](vals ...string) *EnumValues[T] {
+	return (*EnumValues[T])(&vals)
 }
 
 func (e *EnumValues[T]) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case string:
-		for _, possible := range *e {
-			if x == string(possible) {
-				return e.Register(x), nil
-			}
-		}
-		return nil, fmt.Errorf("invalid enum value %q", x)
+		return e.Lookup(x)
 	default:
 		return nil, fmt.Errorf("cannot convert %T to Enum", x)
 	}
@@ -546,7 +591,9 @@ type Enum[T EnumSetter[T]] struct {
 	Value string
 }
 
-// var _ Scalar = Enum[EnumSetter[Scalar]]{}
+func (e Enum[T]) Class() ScalarClass {
+	return e.Enum
+}
 
 func (e Enum[T]) New(val any) (Scalar, error) {
 	return e.Enum.New(val)
