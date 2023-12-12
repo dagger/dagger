@@ -225,32 +225,97 @@ func TestEnums(t *testing.T) {
 
 	gql := client.New(handler.NewDefaultServer(srv))
 
-	var res struct {
-		Point struct {
-			Id string
-		}
-	}
-	gql.MustPost(`query {
-		point(x: 6, y: 7) {
-			id
-		}
-	}`, &res)
-
-	id67 := res.Point.Id
-
-	var res2 struct {
-		Point struct {
-			Line struct {
-				Direction string
+	t.Run("outputs", func(t *testing.T) {
+		var res struct {
+			Point struct {
+				Id string
 			}
 		}
-	}
-	gql.MustPost(`query {
-		point(x: -6, y: -7) {
-			line(to: "`+id67+`") {
-				direction
+		gql.MustPost(`query {
+			point(x: 6, y: 7) {
+				id
+			}
+		}`, &res)
+
+		id67 := res.Point.Id
+
+		var res2 struct {
+			Point struct {
+				Line struct {
+					Direction string
+				}
 			}
 		}
-	}`, &res2)
-	assert.Equal(t, res2.Point.Line.Direction, "RIGHT")
+		gql.MustPost(`query {
+			point(x: -6, y: -7) {
+				line(to: "`+id67+`") {
+					direction
+				}
+			}
+		}`, &res2)
+		assert.Equal(t, res2.Point.Line.Direction, "RIGHT")
+	})
+
+	t.Run("inputs", func(t *testing.T) {
+		var res struct {
+			Point struct {
+				Inert points.Point
+				Up    points.Point
+				Down  points.Point
+				Left  points.Point
+				Right points.Point
+			}
+		}
+		gql.MustPost(`query {
+			point(x: 6, y: 7) {
+				inert: shift(direction: INERT) {
+					x
+					y
+				}
+				up: shift(direction: UP) {
+					x
+					y
+				}
+				down: shift(direction: DOWN) {
+					x
+					y
+				}
+				left: shift(direction: LEFT) {
+					x
+					y
+				}
+				right: shift(direction: RIGHT) {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.Equal(t, res.Point.Inert.X, 6)
+		assert.Equal(t, res.Point.Inert.Y, 7)
+		assert.Equal(t, res.Point.Up.X, 6)
+		assert.Equal(t, res.Point.Up.Y, 8)
+		assert.Equal(t, res.Point.Down.X, 6)
+		assert.Equal(t, res.Point.Down.Y, 6)
+		assert.Equal(t, res.Point.Left.X, 5)
+		assert.Equal(t, res.Point.Left.Y, 7)
+		assert.Equal(t, res.Point.Right.X, 7)
+		assert.Equal(t, res.Point.Right.Y, 7)
+	})
+
+	t.Run("invalid inputs", func(t *testing.T) {
+		var res struct {
+			Point struct {
+				Inert points.Point
+			}
+		}
+		err := gql.Post(`query {
+			point(x: 6, y: 7) {
+				shift(direction: BOGUS) {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.ErrorContains(t, err, "BOGUS")
+	})
 }

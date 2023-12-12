@@ -70,7 +70,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			}
 		}),
 		"kind": dagql.Func(func(ctx context.Context, self Type, args struct{}) (TypeKind, error) {
-			return TypeKind(self.Kind()), nil
+			return TypeKinds.Lookup(self.Kind())
 		}),
 		"description": dagql.Func(func(ctx context.Context, self Type, args struct{}) (dagql.Optional[dagql.String], error) {
 			if self.Description() == nil {
@@ -140,7 +140,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		"locations": dagql.Func(func(ctx context.Context, self Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
 			var locations []DirectiveLocation
 			for _, loc := range self.Locations {
-				locations = append(locations, DirectiveLocation(loc))
+				enum, err := DirectiveLocations.Lookup(loc)
+				if err != nil {
+					return nil, err
+				}
+				locations = append(locations, enum)
 			}
 			return locations, nil
 		}),
@@ -338,7 +342,9 @@ func (s EnumValue) Type() *ast.Type {
 	}
 }
 
-type TypeKind string
+type TypeKind struct {
+	dagql.Scalar
+}
 
 var TypeKinds = dagql.EnumValues[TypeKind]{
 	"SCALAR",
@@ -351,6 +357,11 @@ var TypeKinds = dagql.EnumValues[TypeKind]{
 	"NON_NULL",
 }
 
+func (k TypeKind) As(val dagql.Scalar) TypeKind {
+	k.Scalar = val
+	return k
+}
+
 func (k TypeKind) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__TypeKind",
@@ -358,7 +369,9 @@ func (k TypeKind) Type() *ast.Type {
 	}
 }
 
-type DirectiveLocation string
+type DirectiveLocation struct {
+	dagql.Scalar
+}
 
 var DirectiveLocations = dagql.EnumValues[DirectiveLocation]{
 	"QUERY",
@@ -380,6 +393,11 @@ var DirectiveLocations = dagql.EnumValues[DirectiveLocation]{
 	"ENUM_VALUE",
 	"INPUT_OBJECT",
 	"INPUT_FIELD_DEFINITION",
+}
+
+func (k DirectiveLocation) As(val dagql.Scalar) DirectiveLocation {
+	k.Scalar = val
+	return k
 }
 
 func (k DirectiveLocation) Type() *ast.Type {

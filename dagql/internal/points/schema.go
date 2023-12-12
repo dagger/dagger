@@ -32,13 +32,15 @@ func (Line) Type() *ast.Type {
 	}
 }
 
-type Direction string
+type Direction struct {
+	dagql.Scalar
+}
 
-var Directions = dagql.EnumValues[Direction]{
-	"UP",
-	"DOWN",
-	"LEFT",
-	"RIGHT",
+var _ dagql.Scalar = Direction{}
+
+func (d Direction) As(value dagql.Scalar) Direction {
+	d.Scalar = value
+	return d
 }
 
 func (Direction) Type() *ast.Type {
@@ -47,6 +49,16 @@ func (Direction) Type() *ast.Type {
 		NonNull:   true,
 	}
 }
+
+var Directions = dagql.NewEnum[Direction]()
+
+var (
+	DirectionUp    = Directions.Register("UP")
+	DirectionDown  = Directions.Register("DOWN")
+	DirectionLeft  = Directions.Register("LEFT")
+	DirectionRight = Directions.Register("RIGHT")
+	DirectionInert = Directions.Register("INERT")
+)
 
 func Install[R dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[R]{
@@ -80,6 +92,22 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 			Amount dagql.Int `default:"1"`
 		}) (Point, error) {
 			self.X -= args.Amount.Value
+			return self, nil
+		}), // TODO @deprecate
+		"shift": dagql.Func(func(ctx context.Context, self Point, args struct {
+			Direction Direction
+			Amount    dagql.Int `default:"1"`
+		}) (Point, error) {
+			switch args.Direction {
+			case DirectionUp:
+				self.Y += args.Amount.Value
+			case DirectionDown:
+				self.Y -= args.Amount.Value
+			case DirectionLeft:
+				self.X -= args.Amount.Value
+			case DirectionRight:
+				self.X += args.Amount.Value
+			}
 			return self, nil
 		}),
 		"neighbors": dagql.Func[Point](func(ctx context.Context, self Point, _ any) (dagql.Array[Point], error) {
@@ -116,15 +144,15 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		"direction": dagql.Func(func(ctx context.Context, self Line, _ any) (Direction, error) {
 			switch {
 			case self.From.X < self.To.X:
-				return "RIGHT", nil
+				return DirectionRight, nil
 			case self.From.X > self.To.X:
-				return "LEFT", nil
+				return DirectionLeft, nil
 			case self.From.Y < self.To.Y:
-				return "DOWN", nil
+				return DirectionDown, nil
 			case self.From.Y > self.To.Y:
-				return "UP", nil
+				return DirectionUp, nil
 			default:
-				return "", nil
+				return DirectionInert, nil
 			}
 		}),
 	}.Install(srv)
