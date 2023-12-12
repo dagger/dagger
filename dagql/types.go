@@ -16,10 +16,37 @@ type Typed interface {
 	Type() *ast.Type
 }
 
-type Scalar interface {
-	Typed
-	idproto.Literate
+type ObjectClass interface {
+	ID(*idproto.ID) Typed
+	New(*idproto.ID, Typed) (Selectable, error)
+}
+
+type ScalarClass interface {
 	New(any) (Scalar, error)
+}
+
+type Selectable interface {
+	Node
+	Select(context.Context, Selector) (Typed, error)
+}
+
+// Per the GraphQL spec, a Node always has an ID.
+type Node interface {
+	Typed
+	ID() *idproto.ID
+	Value() Typed
+}
+
+type Scalar interface {
+	// All Scalars are typed.
+	Typed
+	// All Scalars are also a ScalarClass, mostly as convenience. This allows us
+	// to instantiate a value
+	ScalarClass
+	// All Scalars are able to be represented as a Literal.
+	idproto.Literate
+	// All Scalars are able to be represented as JSON.
+	json.Marshaler
 }
 
 type Int struct {
@@ -445,47 +472,23 @@ func (i *Optional[T]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-type TypedString interface {
-	Typed
-	~string
+type EnumSetter[T Typed] interface {
+	Scalar
+	As(Scalar) T
 }
 
-type EnumValue[T TypedString] struct {
-	EnumValues[T]
-	Value T
+type EnumValues[T EnumSetter[T]] []string
+
+func NewEnum[T EnumSetter[T]](vals ...string) EnumValues[T] {
+	return EnumValues[T](vals)
 }
 
-func (e EnumValue[T]) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: e.EnumValues[0].Type().Name(),
-		NonNull:   true,
-	}
-}
-
-func (e EnumValue[T]) Literal() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Enum{
-			Enum: string(e.Value),
-		},
-	}
-}
-
-type EnumValues[T TypedString] []T
-
-func (EnumValues[T]) Type() *ast.Type {
-	var zero T
-	return zero.Type()
-}
-
-func (e EnumValues[T]) New(val any) (Scalar, error) {
+func (e *EnumValues[T]) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case string:
-		for _, possible := range e {
+		for _, possible := range *e {
 			if x == string(possible) {
-				return EnumValue[T]{
-					EnumValues: e,
-					Value:      possible,
-				}, nil
+				return e.Register(x), nil
 			}
 		}
 		return nil, fmt.Errorf("invalid enum value %q", x)
@@ -494,9 +497,9 @@ func (e EnumValues[T]) New(val any) (Scalar, error) {
 	}
 }
 
-func (e EnumValues[T]) PossibleValues() ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
-	for _, val := range e {
+	for _, val := range *e {
 		values = append(values, &ast.EnumValueDefinition{
 			Name: string(val),
 		})
@@ -504,7 +507,29 @@ func (e EnumValues[T]) PossibleValues() ast.EnumValueList {
 	return values
 }
 
-func (e EnumValues[T]) Install(srv *Server) *ast.Definition {
+func (e *EnumValues[T]) Lookup(val string) (T, error) {
+	var zero T
+	for _, possible := range *e {
+		if val == string(possible) {
+			return zero.As(Enum[T]{
+				Enum:  e,
+				Value: val,
+			}), nil
+		}
+	}
+	return zero, fmt.Errorf("invalid enum value %q", val)
+}
+
+func (e *EnumValues[T]) Register(val string) T {
+	*e = append(*e, val)
+	var zero T
+	return zero.As(Enum[T]{
+		Enum:  e,
+		Value: val,
+	})
+}
+
+func (e *EnumValues[T]) Install(srv *Server) *ast.Definition {
 	var zero T
 	def := &ast.Definition{
 		Kind:       ast.Enum,
@@ -512,17 +537,36 @@ func (e EnumValues[T]) Install(srv *Server) *ast.Definition {
 		EnumValues: e.PossibleValues(),
 	}
 	srv.schema.AddTypes(def)
+	srv.scalars[zero.Type().Name()] = e
 	return def
 }
 
-func (e EnumValues[T]) Literal() *idproto.Literal {
-	return idproto.LiteralValue(e[0])
+type Enum[T EnumSetter[T]] struct {
+	Enum  *EnumValues[T]
+	Value string
 }
 
-type Enum interface {
-	Typed
-	Scalar
-	PossibleValues() ast.EnumValueList
+// var _ Scalar = Enum[EnumSetter[Scalar]]{}
+
+func (e Enum[T]) New(val any) (Scalar, error) {
+	return e.Enum.New(val)
+}
+
+func (e Enum[T]) Literal() *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Enum{
+			Enum: e.Value,
+		},
+	}
+}
+
+func (e Enum[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.Value)
+}
+
+func (e Enum[T]) Type() *ast.Type {
+	var zero T
+	return zero.Type()
 }
 
 func Opt[T Typed](v T) Optional[T] {

@@ -17,8 +17,8 @@ import (
 type Server struct {
 	root    Selectable
 	schema  *ast.Schema
-	classes map[string]Instantiator
-	scalars map[string]Scalar
+	classes map[string]ObjectClass
+	scalars map[string]ScalarClass
 	cache   *CacheMap[digest.Digest, any]
 }
 
@@ -35,8 +35,8 @@ func NewServer[T Typed](root T) *Server {
 	srv := &Server{
 		schema:  schema,
 		root:    rootNode,
-		classes: map[string]Instantiator{},
-		scalars: map[string]Scalar{
+		classes: map[string]ObjectClass{},
+		scalars: map[string]ScalarClass{
 			"Int":     Int{},
 			"Float":   Float{},
 			"String":  String{},
@@ -143,7 +143,7 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Typed, error) {
 		stepID := id.Clone()
 		stepID.Constructor = id.Constructor[:i+1]
 		stepID.TypeName = fieldDef.Type.Name()
-		obj, err := class.Instantiate(stepID, res)
+		obj, err := class.New(stepID, res)
 		if err != nil {
 			return nil, fmt.Errorf("instantiate from id: %w", err)
 		}
@@ -352,7 +352,7 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 		}
 		switch {
 		case field.Type.NamedType != "":
-			node, err := class.Instantiate(chainedID, val)
+			node, err := class.New(chainedID, val)
 			if err != nil {
 				return nil, fmt.Errorf("instantiate: %w", err)
 			}
@@ -375,7 +375,7 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 				if err != nil {
 					return nil, err
 				}
-				node, err := class.Instantiate(indexedID, val)
+				node, err := class.New(indexedID, val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}

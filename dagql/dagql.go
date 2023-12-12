@@ -15,13 +15,10 @@ import (
 type FieldSpec struct {
 	// Args is the list of arguments that the field accepts.
 	Args []ArgSpec
-
 	// Type is the type of the field's result.
 	Type *ast.Type
-
 	// Meta indicates that the field has no impact on the field's result.
 	Meta bool
-
 	// Pure indicates that the field is a pure function of its arguments, and
 	// thus can be cached indefinitely.
 	Pure bool
@@ -40,23 +37,6 @@ type Selector struct {
 	Field string
 	Args  map[string]Typed
 	Nth   int
-}
-
-type Instantiator interface {
-	ID(*idproto.ID) Typed
-	Instantiate(*idproto.ID, Typed) (Selectable, error)
-}
-
-type Selectable interface {
-	Node
-	Select(context.Context, Selector) (Typed, error)
-}
-
-// Per the GraphQL spec, a Node always has an ID.
-type Node interface {
-	Typed
-	ID() *idproto.ID
-	Value() Typed
 }
 
 func ArgSpecs(args any) ([]ArgSpec, error) {
@@ -148,13 +128,13 @@ type Class[T Typed] struct {
 	Fields Fields[T]
 }
 
-var _ Instantiator = Class[Typed]{}
+var _ ObjectClass = Class[Typed]{}
 
 func (cls Class[T]) ID(id *idproto.ID) Typed {
 	return ID[T]{ID: id}
 }
 
-func (cls Class[T]) Instantiate(id *idproto.ID, val Typed) (Selectable, error) {
+func (cls Class[T]) New(id *idproto.ID, val Typed) (Selectable, error) {
 	if ided, ok := val.(Node); ok {
 		// If the value is already a Node, preserve its ID.
 		id = ided.ID()
