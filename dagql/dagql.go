@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 
 	"github.com/iancoleman/strcase"
@@ -128,11 +129,6 @@ func (cls Class[T]) ID(id *idproto.ID) Typed {
 }
 
 func (cls Class[T]) New(id *idproto.ID, val Typed) (Selectable, error) {
-	if ided, ok := val.(Node); ok {
-		// If the value is already a Node, preserve its ID.
-		id = ided.ID()
-		val = ided.Value()
-	}
 	self, ok := val.(T)
 	if !ok {
 		// NB: Nullable values should already be unwrapped by now.
@@ -169,11 +165,93 @@ func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
-func (o Object[T]) Value() Typed {
-	return o.Self
-}
-
 type Fields[T Typed] map[string]Field[T]
+
+func (fields Fields[T]) Install(server *Server) *ast.Definition {
+	var t T
+	typeName := t.Type().Name()
+
+	schemaType, ok := server.schema.Types[typeName]
+	if !ok {
+		schemaType = &ast.Definition{
+			Kind:        ast.Object,
+			Description: "TODO", // t.Description()
+			Name:        typeName,
+		}
+		server.schema.AddTypes(schemaType)
+
+		if _, ok := server.scalars[typeName+"ID"]; !ok {
+			idType := &ast.Definition{
+				Kind: ast.Scalar,
+				Name: typeName + "ID",
+			}
+			server.schema.AddTypes(idType)
+			server.scalars[typeName+"ID"] = ID[T]{}
+		}
+
+		fields["id"] = Field[T]{
+			Spec: FieldSpec{
+				Type: &ast.Type{
+					NamedType: typeName + "ID",
+					NonNull:   true,
+				},
+			},
+			NodeFunc: func(ctx context.Context, self Node, args map[string]Typed) (Typed, error) {
+				return ID[T]{ID: self.ID()}, nil
+			},
+		}
+	}
+
+	for fieldName, field := range fields {
+		schemaField := schemaType.Fields.ForName(fieldName)
+		if schemaField != nil {
+			// TODO
+			log.Printf("field %s.%q redefined", typeName, fieldName)
+			continue
+		}
+
+		schemaArgs := ast.ArgumentDefinitionList{}
+		for _, arg := range field.Spec.Args {
+			schemaArg := &ast.ArgumentDefinition{
+				Name: arg.Name,
+				Type: arg.Type,
+			}
+			if arg.Default != nil {
+				schemaArg.DefaultValue = LiteralToAST(arg.Default.Literal())
+			}
+			schemaArgs = append(schemaArgs, schemaArg)
+		}
+
+		schemaField = &ast.FieldDefinition{
+			Name: fieldName,
+			// Description  string
+			Arguments: schemaArgs,
+			// DefaultValue *Value                 // only for input objects
+			Type: field.Spec.Type,
+			// Directives   DirectiveList
+		}
+
+		// intentionally mutates
+		schemaType.Fields = append(schemaType.Fields, schemaField)
+	}
+
+	if orig, stitch := server.classes[typeName]; stitch {
+		switch cls := orig.(type) {
+		case Class[T]:
+			for fieldName, field := range fields {
+				cls.Fields[fieldName] = field
+			}
+		default:
+			panic(fmt.Errorf("cannot stitch type %q: not an object", typeName))
+		}
+	} else {
+		server.classes[typeName] = Class[T]{
+			Fields: fields,
+		}
+	}
+
+	return schemaType
+}
 
 type Field[T Typed] struct {
 	Spec     FieldSpec

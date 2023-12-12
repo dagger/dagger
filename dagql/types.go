@@ -34,7 +34,6 @@ type Selectable interface {
 type Node interface {
 	Typed
 	ID() *idproto.ID
-	Value() Typed
 }
 
 type Scalar interface {
@@ -389,62 +388,21 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	return i.Decode(str)
 }
 
-func (i ID[T]) Load(ctx context.Context, server *Server) (Identified[T], error) {
-	// TODO check cache
+func (i ID[T]) Load(ctx context.Context, server *Server) (Object[T], error) {
 	val, err := server.Load(ctx, i.ID)
 	if err != nil {
-		return Identified[T]{}, err
+		return Object[T]{}, err
 	}
-	if ided, ok := val.(Identified[T]); ok {
-		// TODO so far I only ran into this by loading an ID that itself calls
-		// loadFooFromID, which is mostly a historical artifact (it used to return
-		// an ID of its own making instead of the ID given).
-		//
-		// but there are most likely real world scenarios where this could happen,
-		// so we should handle it and have a test
-		return ided, nil
-	}
-	obj, ok := val.(T)
+	obj, ok := val.(Object[T])
 	if !ok {
-		return Identified[T]{}, fmt.Errorf("load: expected %T, got %T", obj, val)
+		return Object[T]{}, fmt.Errorf("load: expected %T, got %T", obj, val)
 	}
-	return NewNode(i, obj), nil
+	return obj, nil
 }
 
 type Enumerable interface {
 	Len() int
 	Nth(int) (Typed, error)
-}
-
-type Identified[T Typed] struct {
-	id    ID[T]
-	value T
-}
-
-func NewNode[T Typed](id ID[T], val T) Identified[T] {
-	return Identified[T]{
-		id:    id,
-		value: val,
-	}
-}
-
-var _ Typed = Identified[Typed]{}
-
-func (i Identified[T]) Type() *ast.Type {
-	// NB: Identified will always have a Type, but never have a Kind, since we'll
-	// always be identifying an Object by definition, and those don't have a
-	// Kind.
-	return i.value.Type()
-}
-
-var _ Node = Identified[Typed]{}
-
-func (i Identified[T]) Value() Typed {
-	return i.value
-}
-
-func (i Identified[T]) ID() *idproto.ID {
-	return i.id.ID
 }
 
 type Array[T Typed] []T
