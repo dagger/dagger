@@ -127,16 +127,11 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Selectable, error) {
 	for i, idSel := range id.Constructor {
 		stepID := id.Clone()
 		stepID.Constructor = id.Constructor[:i+1]
-
 		// TODO: kind of annoying but technically correct; for the ID to match, the
 		// return type at this point in time also has to match.
-		schemaType, ok := s.schema.Types[res.Type().Name()]
-		if !ok {
-			return nil, fmt.Errorf("unknown type: %q", res.Type().Name())
-		}
-		fieldDef := schemaType.Fields.ForName(idSel.Field)
-		if fieldDef == nil {
-			return nil, fmt.Errorf("unknown field: %q", idSel.Field)
+		fieldDef, err := s.field(res.Type().Name(), idSel.Field)
+		if err != nil {
+			return nil, err
 		}
 		stepID.TypeName = fieldDef.Type.Name()
 
@@ -258,7 +253,7 @@ func (s *Server) Resolve(ctx context.Context, self Selectable, q Query) (map[str
 	results := make(map[string]any, len(q.Selections))
 
 	for _, sel := range q.Selections {
-		res, err := s.Select(ctx, self, sel)
+		res, err := s.resolvePath(ctx, self, sel)
 		if err != nil {
 			return nil, err
 		}
@@ -268,7 +263,7 @@ func (s *Server) Resolve(ctx context.Context, self Selectable, q Query) (map[str
 	return results, nil
 }
 
-func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (any, error) {
+func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection) (any, error) {
 	typeDef, ok := s.schema.Types[self.Type().Name()]
 	if !ok {
 		return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
@@ -329,12 +324,11 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 			// TODO arrays of arrays
 			results := []any{} // TODO subtle: favor [] over null result
 			for nth := 1; nth <= enum.Len(); nth++ {
-				indexedID := chainedID.Nth(nth)
 				val, err := enum.Nth(nth)
 				if err != nil {
 					return nil, err
 				}
-				node, err := s.toSelectable(indexedID, val)
+				node, err := s.toSelectable(chainedID.Nth(nth), val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}
@@ -361,6 +355,18 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 	}
 
 	return res, nil
+}
+
+func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error) {
+	schemaType, ok := s.schema.Types[typeName]
+	if !ok {
+		return nil, fmt.Errorf("unknown type: %q", typeName)
+	}
+	fieldDef := schemaType.Fields.ForName(fieldName)
+	if fieldDef == nil {
+		return nil, fmt.Errorf("unknown field: %q", fieldName)
+	}
+	return fieldDef, nil
 }
 
 func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, error) {
