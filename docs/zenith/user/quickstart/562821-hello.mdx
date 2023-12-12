@@ -12,7 +12,7 @@ You're now ready to dive into Dagger and write your first module!
 
 This first example is fairly simple: it creates a Dagger module that initializes a Node.js container, executes a command in that container, and prints the output.
 
-Begin by running `dagger mod init` in your application directory to bootstrap a new module:
+Begin by running `dagger mod init` in your application directory to bootstrap a new module using the Dagger Go SDK:
 
 ```shell
 cd myapp
@@ -34,7 +34,7 @@ This module defines a function named `Hello()` which returns a string. This func
 - It returns a message interpolating the variable (the Node version number) into a longer string.
 
 :::info
-`dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+`dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared. Exhaustive documentation is available for core types and methods in the [Go SDK reference](https://pkg.go.dev/dagger.io/dagger).
 :::
 
 Call the new function using the Dagger CLI:

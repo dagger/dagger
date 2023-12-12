@@ -22,7 +22,7 @@ Begin by adding the `node` module as a dependency:
 dagger mod install github.com/quartz-technology/daggerverse/node
 ```
 
-Then, update the generated `main.go` file with a new `Test()` function, which runs the application's unit test suite:
+Then, add a new `Test()` function to `main.go`, which runs the application's unit test suite:
 
 ```go file=snippets/test/main.go
 ```
@@ -42,7 +42,7 @@ Call the new function using the Dagger CLI:
 dagger call test
 ```
 
-Here's an example of the output you should see:
+Here's an example of the output you will see:
 
 ```shell
 ✔ dagger call test [1m20.7s]
