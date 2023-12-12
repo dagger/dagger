@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
@@ -17,7 +18,6 @@ type Typed interface {
 type Scalar interface {
 	Typed
 	idproto.Literate
-	Kind() ast.ValueKind
 	New(any) (Scalar, error)
 }
 
@@ -63,10 +63,6 @@ func (Int) Type() *ast.Type {
 	}
 }
 
-func (Int) Kind() ast.ValueKind {
-	return ast.IntValue
-}
-
 func (i Int) MarshalJSON() ([]byte, error) {
 	return json.Marshal(i.Value)
 }
@@ -87,6 +83,8 @@ type Float struct {
 func NewFloat(val float64) Float {
 	return Float{Value: val}
 }
+
+var _ Scalar = Float{}
 
 func (Float) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -120,10 +118,6 @@ func (Float) Type() *ast.Type {
 	}
 }
 
-func (Float) Kind() ast.ValueKind {
-	return ast.FloatValue
-}
-
 func (i Float) MarshalJSON() ([]byte, error) {
 	return json.Marshal(i.Value)
 }
@@ -155,10 +149,6 @@ func (Boolean) Type() *ast.Type {
 }
 
 var _ Scalar = Boolean{}
-
-func (Boolean) Kind() ast.ValueKind {
-	return ast.BooleanValue
-}
 
 func (Boolean) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -205,10 +195,6 @@ func (String) Type() *ast.Type {
 
 var _ Scalar = String{}
 
-func (String) Kind() ast.ValueKind {
-	return ast.StringValue
-}
-
 func (String) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case string:
@@ -239,10 +225,6 @@ type ID[T Typed] struct {
 	*idproto.ID
 
 	expected T
-}
-
-func IDType(val Typed) *ast.Type {
-	return ID[Typed]{expected: val}.Type()
 }
 
 var _ Typed = ID[Typed]{}
@@ -278,10 +260,6 @@ func (i ID[T]) Literal() *idproto.Literal {
 			Id: i.ID,
 		},
 	}
-}
-
-func (i ID[T]) Kind() ast.ValueKind {
-	return ast.StringValue
 }
 
 func (i ID[T]) Encode() (string, error) {
@@ -381,10 +359,6 @@ func (i Array[T]) Type() *ast.Type {
 	}
 }
 
-func (i Array[T]) Kind() ast.ValueKind {
-	return ast.ListValue
-}
-
 var _ Enumerable = Array[Typed]{}
 
 func (arr Array[T]) Len() int {
@@ -428,17 +402,6 @@ func (n Optional[T]) Type() *ast.Type {
 	return &nullable
 }
 
-func (n Optional[T]) Kind() ast.ValueKind {
-	if !n.Valid {
-		return ast.NullValue
-	}
-	// XXX: eek, wrappers + interface checks are going to blow up soon
-	if scalar, ok := any(n.Value).(Scalar); ok {
-		return scalar.Kind()
-	}
-	return ast.ObjectValue
-}
-
 var _ Nullable = Optional[Typed]{}
 
 func (n Optional[T]) Unwrap() (Typed, bool) {
@@ -468,10 +431,6 @@ var _ Typed = Enum{}
 
 func (n Enum) Type() *ast.Type {
 	return n.Enum
-}
-
-func (n Enum) Kind() ast.ValueKind {
-	return ast.EnumValue
 }
 
 func (i Enum) MarshalJSON() ([]byte, error) {
@@ -518,4 +477,71 @@ func Opt[T Typed](v T) Optional[T] {
 
 func NoOpt[T Typed]() Optional[T] {
 	return Optional[T]{}
+}
+
+func LiteralToAST(lit *idproto.Literal) *ast.Value {
+	switch x := lit.GetValue().(type) {
+	case *idproto.Literal_Id:
+		enc, err := ID[Typed]{ID: x.Id}.Encode()
+		if err != nil {
+			panic(err) // TODO
+		}
+		return &ast.Value{
+			Raw:  enc,
+			Kind: ast.StringValue,
+		}
+	case *idproto.Literal_Null:
+		return &ast.Value{
+			Raw:  "null",
+			Kind: ast.NullValue,
+		}
+	case *idproto.Literal_Bool:
+		return &ast.Value{
+			Raw:  strconv.FormatBool(x.Bool),
+			Kind: ast.BooleanValue,
+		}
+	case *idproto.Literal_Enum:
+		return &ast.Value{
+			Raw:  x.Enum,
+			Kind: ast.EnumValue,
+		}
+	case *idproto.Literal_Int:
+		return &ast.Value{
+			Raw:  fmt.Sprintf("%d", x.Int),
+			Kind: ast.IntValue,
+		}
+	case *idproto.Literal_Float:
+		return &ast.Value{
+			Raw:  strconv.FormatFloat(x.Float, 'f', -1, 64),
+			Kind: ast.FloatValue,
+		}
+	case *idproto.Literal_String_:
+		return &ast.Value{
+			Raw:  x.String_,
+			Kind: ast.StringValue,
+		}
+	case *idproto.Literal_List:
+		list := &ast.Value{
+			Kind: ast.ListValue,
+		}
+		for _, val := range x.List.Values {
+			list.Children = append(list.Children, &ast.ChildValue{
+				Value: LiteralToAST(val),
+			})
+		}
+		return list
+	case *idproto.Literal_Object:
+		obj := &ast.Value{
+			Kind: ast.ObjectValue,
+		}
+		for _, field := range x.Object.Values {
+			obj.Children = append(obj.Children, &ast.ChildValue{
+				Name:  field.Name,
+				Value: LiteralToAST(field.Value),
+			})
+		}
+		return obj
+	default:
+		panic(fmt.Sprintf("unsupported literal type %T", x))
+	}
 }
