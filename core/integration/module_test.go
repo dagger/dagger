@@ -3015,7 +3015,7 @@ func TestModuleNamespacing(t *testing.T) {
 		With(daggerQuery(`{test{fn(s:"yo")}}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"fn":"1:yo 2:yo"}}`, out)
+	require.JSONEq(t, `{"test":{"fn":["*main.Sub1Obj made 1:yo", "*main.Sub2Obj made 2:yo"]}}`, out)
 }
 
 func TestModuleRoots(t *testing.T) {
