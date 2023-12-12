@@ -14,6 +14,13 @@ type Typed interface {
 	Type() *ast.Type
 }
 
+type Scalar interface {
+	Typed
+	idproto.Literate
+	Kind() ast.ValueKind
+	New(any) (Scalar, error)
+}
+
 type Int struct {
 	Value int
 }
@@ -22,11 +29,42 @@ func NewInt(val int) Int {
 	return Int{Value: val}
 }
 
+func (Int) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case int:
+		return NewInt(x), nil
+	case int32:
+		return NewInt(int(x)), nil
+	case int64:
+		return NewInt(int(x)), nil
+	case json.Number:
+		i, err := x.Int64()
+		if err != nil {
+			return nil, err
+		}
+		return NewInt(int(i)), nil
+	default:
+		return nil, fmt.Errorf("cannot convert %T to Int", x)
+	}
+}
+
+func (i Int) Literal() *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Int{
+			Int: int64(i.Value),
+		},
+	}
+}
+
 func (Int) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Int",
 		NonNull:   true,
 	}
+}
+
+func (Int) Kind() ast.ValueKind {
+	return ast.IntValue
 }
 
 func (i Int) MarshalJSON() ([]byte, error) {
@@ -42,17 +80,60 @@ func (i *Int) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func (i Int) MarshalLiteral() (*idproto.Literal, error) {
-	return idproto.LiteralValue(i.Value), nil
+type Float struct {
+	Value float64
 }
 
-func (i *Int) UnmarshalLiteral(lit *idproto.Literal) error {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_Int:
-		i.Value = int(lit.GetInt())
+func NewFloat(val float64) Float {
+	return Float{Value: val}
+}
+
+func (Float) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case float32:
+		return NewFloat(float64(x)), nil
+	case float64:
+		return NewFloat(float64(x)), nil
+	case json.Number:
+		i, err := x.Float64()
+		if err != nil {
+			return nil, err
+		}
+		return NewFloat(i), nil
 	default:
-		return fmt.Errorf("cannot convert %T to Int", x)
+		return nil, fmt.Errorf("cannot convert %T to Float", x)
 	}
+}
+
+func (i Float) Literal() *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Float{
+			Float: i.Value,
+		},
+	}
+}
+
+func (Float) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Float",
+		NonNull:   true,
+	}
+}
+
+func (Float) Kind() ast.ValueKind {
+	return ast.FloatValue
+}
+
+func (i Float) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.Value)
+}
+
+func (i *Float) UnmarshalJSON(p []byte) error {
+	var num float64
+	if err := json.Unmarshal(p, &num); err != nil {
+		return err
+	}
+	i.Value = num
 	return nil
 }
 
@@ -64,11 +145,32 @@ func NewBoolean(val bool) Boolean {
 	return Boolean{Value: val}
 }
 
+var _ Typed = Boolean{}
+
 func (Boolean) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "Bool",
+		NamedType: "Boolean",
 		NonNull:   true,
 	}
+}
+
+var _ Scalar = Boolean{}
+
+func (Boolean) Kind() ast.ValueKind {
+	return ast.BooleanValue
+}
+
+func (Boolean) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case bool:
+		return NewBoolean(x), nil
+	default:
+		return nil, fmt.Errorf("cannot convert %T to Boolean", x)
+	}
+}
+
+func (i Boolean) Literal() *idproto.Literal {
+	return idproto.LiteralValue(i.Value)
 }
 
 func (i Boolean) MarshalJSON() ([]byte, error) {
@@ -84,20 +186,6 @@ func (i *Boolean) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func (i Boolean) MarshalLiteral() (*idproto.Literal, error) {
-	return idproto.LiteralValue(i.Value), nil
-}
-
-func (i *Boolean) UnmarshalLiteral(lit *idproto.Literal) error {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_Bool:
-		i.Value = bool(lit.GetBool())
-	default:
-		return fmt.Errorf("cannot convert %T to Bool", x)
-	}
-	return nil
-}
-
 type String struct {
 	Value string
 }
@@ -106,11 +194,32 @@ func NewString(val string) String {
 	return String{Value: val}
 }
 
+var _ Typed = String{}
+
 func (String) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "String",
 		NonNull:   true,
 	}
+}
+
+var _ Scalar = String{}
+
+func (String) Kind() ast.ValueKind {
+	return ast.StringValue
+}
+
+func (String) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case string:
+		return NewString(x), nil
+	default:
+		return nil, fmt.Errorf("cannot convert %T to String", x)
+	}
+}
+
+func (i String) Literal() *idproto.Literal {
+	return idproto.LiteralValue(i.Value)
 }
 
 func (i String) MarshalJSON() ([]byte, error) {
@@ -126,24 +235,14 @@ func (i *String) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func (i String) MarshalLiteral() (*idproto.Literal, error) {
-	return idproto.LiteralValue(i.Value), nil
-}
-
-func (i *String) UnmarshalLiteral(lit *idproto.Literal) error {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_String_:
-		i.Value = lit.GetString_()
-	default:
-		return fmt.Errorf("cannot convert %T to String", x)
-	}
-	return nil
-}
-
 type ID[T Typed] struct {
 	*idproto.ID
 
 	expected T
+}
+
+func IDType(val Typed) *ast.Type {
+	return ID[Typed]{expected: val}.Type()
 }
 
 var _ Typed = ID[Typed]{}
@@ -153,6 +252,36 @@ func (i ID[T]) Type() *ast.Type {
 		NamedType: i.expected.Type().Name() + "ID",
 		NonNull:   true,
 	}
+}
+
+// For parsing string IDs provided in queries.
+var _ Scalar = ID[Typed]{}
+
+func (ID[T]) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case *idproto.ID:
+		return ID[T]{ID: x}, nil
+	case string:
+		i := ID[T]{}
+		if err := (&i).Decode(x); err != nil {
+			return nil, err
+		}
+		return i, nil
+	default:
+		return nil, fmt.Errorf("cannot convert %T to Int", x)
+	}
+}
+
+func (i ID[T]) Literal() *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Id{
+			Id: i.ID,
+		},
+	}
+}
+
+func (i ID[T]) Kind() ast.ValueKind {
+	return ast.StringValue
 }
 
 func (i ID[T]) Encode() (string, error) {
@@ -180,6 +309,9 @@ func (i *ID[T]) Decode(str string) error {
 	return nil
 }
 
+// For returning responses.
+var _ json.Marshaler = ID[Typed]{}
+
 func (i ID[T]) MarshalJSON() ([]byte, error) {
 	enc, err := i.Encode()
 	if err != nil {
@@ -188,31 +320,17 @@ func (i ID[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(enc)
 }
 
+// Not actually used, but implemented for completeness.
+//
+// FromValue is what's used in practice.
+var _ json.Unmarshaler = (*ID[Typed])(nil)
+
 func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	var str string
 	if err := json.Unmarshal(p, &str); err != nil {
 		return err
 	}
 	return i.Decode(str)
-}
-
-func (i ID[T]) MarshalLiteral() (*idproto.Literal, error) {
-	return idproto.LiteralValue(i.ID), nil
-}
-
-func (i *ID[T]) UnmarshalLiteral(lit *idproto.Literal) error {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_Id:
-		if x.Id.TypeName != i.expected.Type().Name() {
-			return fmt.Errorf("expected %q, got %q", i.expected.Type().Name(), x.Id.TypeName)
-		}
-		i.ID = x.Id
-	case *idproto.Literal_String_:
-		return i.Decode(x.String_)
-	default:
-		return fmt.Errorf("cannot convert %T to ID", x)
-	}
-	return nil
 }
 
 type Enumerable interface {
@@ -235,6 +353,9 @@ func NewNode[T Typed](id ID[T], val T) Identified[T] {
 var _ Typed = Identified[Typed]{}
 
 func (i Identified[T]) Type() *ast.Type {
+	// NB: Identified will always have a Type, but never have a Kind, since we'll
+	// always be identifying an Object by definition, and those don't have a
+	// Kind.
 	return i.value.Type()
 }
 
@@ -250,12 +371,18 @@ func (i Identified[T]) ID() *idproto.ID {
 
 type Array[T Typed] []T
 
+var _ Typed = Array[Typed]{}
+
 func (i Array[T]) Type() *ast.Type {
 	var t T
 	return &ast.Type{
 		Elem:    t.Type(),
 		NonNull: true,
 	}
+}
+
+func (i Array[T]) Kind() ast.ValueKind {
+	return ast.ListValue
 }
 
 var _ Enumerable = Array[Typed]{}
@@ -284,21 +411,6 @@ func (i *Array[T]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-// TODO
-func (i *Array[T]) UnmarshalLiteral(lit *idproto.Literal) error {
-	// switch x := lit.Value.(type) {
-	// case *idproto.Literal_List:
-	// 	var ts []T
-	// 	for _, val := range x.List.Values {
-	// 		ts = append(ts, Literal{val}.ToTyped())
-	// 	}
-	// 	*i = ts
-	// default:
-	// 	return fmt.Errorf("cannot convert %T to BasicArray", x)
-	// }
-	return nil
-}
-
 type Optional[T Typed] struct {
 	Value T
 	Valid bool
@@ -311,9 +423,20 @@ type Nullable interface {
 var _ Typed = Optional[Typed]{}
 
 func (n Optional[T]) Type() *ast.Type {
-	t := n.Value.Type()
-	t.NonNull = false
-	return t
+	nullable := *n.Value.Type()
+	nullable.NonNull = false
+	return &nullable
+}
+
+func (n Optional[T]) Kind() ast.ValueKind {
+	if !n.Valid {
+		return ast.NullValue
+	}
+	// XXX: eek, wrappers + interface checks are going to blow up soon
+	if scalar, ok := any(n.Value).(Scalar); ok {
+		return scalar.Kind()
+	}
+	return ast.ObjectValue
 }
 
 var _ Nullable = Optional[Typed]{}
@@ -345,6 +468,10 @@ var _ Typed = Enum{}
 
 func (n Enum) Type() *ast.Type {
 	return n.Enum
+}
+
+func (n Enum) Kind() ast.ValueKind {
+	return ast.EnumValue
 }
 
 func (i Enum) MarshalJSON() ([]byte, error) {

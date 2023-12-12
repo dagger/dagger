@@ -7,7 +7,7 @@ DagQL is a strongly opinionated implementation of a GraphQL server.
 Below are a set of assertions that build on one another.
 
 * All Objects are immutable.
-* All Objects are [Node]s, i.e. all objects have an `id`.
+* All Objects are [Nodes][Node], i.e. all objects have an `id`.
 * All Objects have their own ID type, e.g. `PointID`.
 * All Objects have a top-level constructor named after the object, e.g. `point`.
 * All Objects may be loaded from an ID, which will create the Object if needed.
@@ -24,6 +24,8 @@ Below are a set of assertions that build on one another.
 * All Arrays returned by Objects have deterministic order.
 * An ID may refer to an Object returned in an Array by specifing the *nth* index (starting at 1).
 * All Objects in Arrays have IDs: either an ID of their own, or the field's ID with *nth* set.
+* At the GraphQL API layer, Objects are passed to each other by ID.
+* At the code layer, Objects received as arguments are automatically loaded from a given ID.
 
 [Node]: https://graphql.org/learn/global-object-identification/
 
@@ -53,3 +55,17 @@ into the Dagger account.
 * [ ] IDs should also contain module info
 * [ ] IDs should also contain digest of result (stretch goal, this is higher
   level, e.g. we want literal file checksums for objects that represent a file)
+* [ ] get rid of Identified in favor of Object? (see interfaces + wrapping concern below)
+
+## minor things to reconsider
+
+* Right now pointers are avoided basically everywhere in favor of just using
+  structs, which results in copying values all over the place. This is pretty
+  opinionated, as it helps with the immutability goal. But it would be nice to
+  have the _option_ of using pointers.
+* Interfaces + wrapping = recipe for inscrutable failures. I'm leaning really
+  hard on Go's type system with generics and interfaces. Interfaces are defined
+  for lots of high-level concepts, which is needed in some cases because once
+  you have a generic you need some way to refer to it without making its type
+  concrete. The problem is if we also wrap types, because as we all know a
+  wrapper can't know what interfaces are implemented by the underlying type.

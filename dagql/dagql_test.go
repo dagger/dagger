@@ -50,7 +50,7 @@ func TestBasic(t *testing.T) {
 		}),
 		"loadPointFromID": dagql.Func(func(ctx context.Context, self Query, args struct {
 			ID dagql.ID[Point]
-		}) (dagql.Identified[Point], error) {
+		}) (dagql.Identified[Point], error) { // TODO Object instead of just Identified?
 			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)

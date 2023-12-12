@@ -41,9 +41,9 @@ func LiteralValue(value any) *Literal {
 	case int64:
 		return &Literal{Value: &Literal_Int{Int: v}}
 	case float32:
-		return &Literal{Value: &Literal_Float{Float: v}}
+		return &Literal{Value: &Literal_Float{Float: float64(v)}}
 	case float64:
-		return &Literal{Value: &Literal_Float{Float: float32(v)}}
+		return &Literal{Value: &Literal_Float{Float: v}}
 	case string:
 		return &Literal{Value: &Literal_String_{String_: v}}
 	case bool:
