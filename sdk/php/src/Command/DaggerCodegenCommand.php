@@ -1,10 +1,10 @@
 <?php
 
-namespace DaggerIo\Command;
+namespace Dagger\Command;
 
-use DaggerIo\Codegen\DaggerCodegen;
-use DaggerIo\Codegen\SchemaGenerator;
-use DaggerIo\Connection;
+use Dagger\Codegen\DaggerCodegen;
+use Dagger\Codegen\SchemaGenerator;
+use Dagger\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

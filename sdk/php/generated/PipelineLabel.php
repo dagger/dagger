@@ -6,12 +6,12 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * Key value object that represents a Pipeline label.
  */
-class PipelineLabel extends \DaggerIo\Client\AbstractDaggerInputObject
+class PipelineLabel extends \Dagger\Client\AbstractDaggerInputObject
 {
     public function __construct(
         public string $name,

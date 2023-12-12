@@ -1,9 +1,9 @@
 <?php
 
-namespace DaggerIo\Codegen;
+namespace Dagger\Codegen;
 
-use DaggerIo\Codegen\Introspection\CodegenVisitor;
-use DaggerIo\Codegen\Introspection\Helpers;
+use Dagger\Codegen\Introspection\CodegenVisitor;
+use Dagger\Codegen\Introspection\Helpers;
 use GraphQL\Type\Definition\CustomScalarType;
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;

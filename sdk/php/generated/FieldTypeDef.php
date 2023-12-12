@@ -6,21 +6,21 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A definition of a field on a custom object defined in a Module.
  * A field on an object has a static value, as opposed to a function on an
  * object whose value is computed by invoking code (and can accept arguments).
  */
-class FieldTypeDef extends \DaggerIo\Client\AbstractDaggerObject
+class FieldTypeDef extends \Dagger\Client\AbstractDaggerObject
 {
     /**
      * A doc string for the field, if any
      */
     public function description(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
@@ -29,7 +29,7 @@ class FieldTypeDef extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -38,7 +38,7 @@ class FieldTypeDef extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function typeDef(): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('typeDef');
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('typeDef');
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

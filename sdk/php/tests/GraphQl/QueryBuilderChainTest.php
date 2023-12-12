@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Tests\GraphQl;
+namespace Dagger\Tests\GraphQl;
 
-use DaggerIo\GraphQl\QueryBuilderChain;
+use Dagger\GraphQl\QueryBuilderChain;
 use GraphQL\QueryBuilder\QueryBuilder;
 use PHPUnit\Framework\TestCase;
 

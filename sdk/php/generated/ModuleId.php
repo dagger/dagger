@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A reference to a Module.
  */
-readonly class ModuleId extends \DaggerIo\Client\DaggerId
+readonly class ModuleId extends \Dagger\Client\DaggerId
 {
 }

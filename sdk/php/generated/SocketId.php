@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A content-addressed socket identifier.
  */
-readonly class SocketId extends \DaggerIo\Client\DaggerId
+readonly class SocketId extends \Dagger\Client\DaggerId
 {
 }

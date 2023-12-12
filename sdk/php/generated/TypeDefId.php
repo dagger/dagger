@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A reference to a TypeDef.
  */
-readonly class TypeDefId extends \DaggerIo\Client\DaggerId
+readonly class TypeDefId extends \Dagger\Client\DaggerId
 {
 }

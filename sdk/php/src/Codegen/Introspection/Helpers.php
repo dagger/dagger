@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Codegen\Introspection;
+namespace Dagger\Codegen\Introspection;
 
-use DaggerIo\Codegen\CodeWriter;
+use Dagger\Codegen\CodeWriter;
 use DateTimeImmutable;
 use GraphQL\Type\Definition\CustomScalarType;
 use GraphQL\Type\Definition\EnumType;

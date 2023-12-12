@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A reference to a Function.
  */
-readonly class FunctionId extends \DaggerIo\Client\DaggerId
+readonly class FunctionId extends \Dagger\Client\DaggerId
 {
 }

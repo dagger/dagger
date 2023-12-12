@@ -1,10 +1,10 @@
 <?php
 
-namespace DaggerIo;
+namespace Dagger;
 
-use DaggerIo\Connection\CliDownloader;
-use DaggerIo\Connection\EnvSessionConnection;
-use DaggerIo\Connection\ProcessSessionConnection;
+use Dagger\Connection\CliDownloader;
+use Dagger\Connection\EnvSessionConnection;
+use Dagger\Connection\ProcessSessionConnection;
 use GraphQL\Client;
 use InvalidArgumentException;
 

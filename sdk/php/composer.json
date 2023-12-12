@@ -12,13 +12,13 @@
     "license": "Apache-2.0",
     "autoload": {
         "psr-4": {
-            "DaggerIo\\": "src/",
-            "DaggerIo\\Gen\\": "generated/"
+            "Dagger\\": "src/",
+            "Dagger\\Dagger\\": "generated/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "DaggerIo\\Tests\\": "tests/"
+            "Dagger\\Tests\\": "tests/"
         }
     },
     "require-dev": {

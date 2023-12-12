@@ -1,10 +1,10 @@
 <?php
 
-namespace DaggerIo\Client;
+namespace Dagger\Client;
 
-use DaggerIo\Connection;
-use DaggerIo\Gen\DaggerClient;
-use DaggerIo\GraphQl\QueryBuilderChain;
+use Dagger\Connection;
+use Dagger\Dagger\DaggerClient;
+use Dagger\GraphQl\QueryBuilderChain;
 use GraphQL\Client;
 use GraphQL\Query;
 use GraphQL\QueryBuilder\QueryBuilder;

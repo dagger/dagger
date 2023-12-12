@@ -1,9 +1,9 @@
 <?php
 
-namespace DaggerIo\Tests\Connection;
+namespace Dagger\Tests\Connection;
 
-use DaggerIo\Connection\CliDownloader;
-use DaggerIo\Connection\Provisioning;
+use Dagger\Connection\CliDownloader;
+use Dagger\Connection\Provisioning;
 use PHPUnit\Framework\TestCase;
 
 class CliDownloaderTest extends TestCase

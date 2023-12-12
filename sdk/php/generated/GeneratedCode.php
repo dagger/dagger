@@ -6,23 +6,23 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
-class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Client\IdAble
+class GeneratedCode extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
 {
     /**
      * The directory containing the generated code
      */
     public function code(): Directory
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('code');
-        return new \DaggerIo\Gen\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('code');
+        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     public function id(): GeneratedCodeId
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return new \DaggerIo\Gen\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
+        return new \Dagger\Dagger\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -30,7 +30,7 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
      */
     public function vcsGeneratedPaths(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('vcsGeneratedPaths');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('vcsGeneratedPaths');
         return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
     }
 
@@ -39,7 +39,7 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
      */
     public function vcsIgnoredPaths(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('vcsIgnoredPaths');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('vcsIgnoredPaths');
         return (array)$this->queryLeaf($leafQueryBuilder, 'vcsIgnoredPaths');
     }
 
@@ -48,9 +48,9 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
      */
     public function withVCSGeneratedPaths(array $paths): GeneratedCode
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withVCSGeneratedPaths');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withVCSGeneratedPaths');
         $innerQueryBuilder->setArgument('paths', $paths);
-        return new \DaggerIo\Gen\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -58,8 +58,8 @@ class GeneratedCode extends \DaggerIo\Client\AbstractDaggerObject implements \Da
      */
     public function withVCSIgnoredPaths(array $paths): GeneratedCode
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withVCSIgnoredPaths');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withVCSIgnoredPaths');
         $innerQueryBuilder->setArgument('paths', $paths);
-        return new \DaggerIo\Gen\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

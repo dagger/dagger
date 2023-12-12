@@ -6,16 +6,16 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
-class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Client\IdAble
+class Module extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
 {
     /**
      * Modules used by this module
      */
     public function dependencies(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('dependencies');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('dependencies');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
@@ -24,7 +24,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function dependencyConfig(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('dependencyConfig');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('dependencyConfig');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencyConfig');
     }
 
@@ -33,7 +33,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function description(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
@@ -42,8 +42,8 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function generatedCode(): GeneratedCode
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('generatedCode');
-        return new \DaggerIo\Gen\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('generatedCode');
+        return new \Dagger\Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -51,8 +51,8 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function id(): ModuleId
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return new \DaggerIo\Gen\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
+        return new \Dagger\Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -60,7 +60,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -69,7 +69,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function objects(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('objects');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('objects');
         return (array)$this->queryLeaf($leafQueryBuilder, 'objects');
     }
 
@@ -78,7 +78,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function sdk(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sdk');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('sdk');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
     }
 
@@ -89,7 +89,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function serve(): void
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('serve');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('serve');
         $this->queryLeaf($leafQueryBuilder, 'serve');
     }
 
@@ -98,8 +98,8 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function sourceDirectory(): Directory
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sourceDirectory');
-        return new \DaggerIo\Gen\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('sourceDirectory');
+        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -107,7 +107,7 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function sourceDirectorySubPath(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('sourceDirectorySubPath');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('sourceDirectorySubPath');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceDirectorySubPath');
     }
 
@@ -116,8 +116,8 @@ class Module extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\
      */
     public function withObject(TypeDefId|TypeDef $object): Module
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withObject');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withObject');
         $innerQueryBuilder->setArgument('object', $object);
-        return new \DaggerIo\Gen\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

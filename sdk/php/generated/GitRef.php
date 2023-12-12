@@ -6,19 +6,19 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A git ref (tag, branch or commit).
  */
-class GitRef extends \DaggerIo\Client\AbstractDaggerObject
+class GitRef extends \Dagger\Client\AbstractDaggerObject
 {
     /**
      * The resolved commit id at this ref.
      */
     public function commit(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('commit');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('commit');
         return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
     }
 
@@ -27,13 +27,13 @@ class GitRef extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function tree(?string $sshKnownHosts = null, SocketId|Socket|null $sshAuthSocket = null): Directory
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('tree');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('tree');
         if (null !== $sshKnownHosts) {
         $innerQueryBuilder->setArgument('sshKnownHosts', $sshKnownHosts);
         }
         if (null !== $sshAuthSocket) {
         $innerQueryBuilder->setArgument('sshAuthSocket', $sshAuthSocket);
         }
-        return new \DaggerIo\Gen\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

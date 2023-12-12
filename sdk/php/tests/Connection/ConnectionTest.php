@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Tests\Connection;
+namespace Dagger\Tests\Connection;
 
-use DaggerIo\Connection;
+use Dagger\Connection;
 use PHPUnit\Framework\TestCase;
 
 class ConnectionTest extends TestCase

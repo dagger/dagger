@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Client;
+namespace Dagger\Client;
 
-use DaggerIo\GraphQl\QueryBuilderChain;
+use Dagger\GraphQl\QueryBuilderChain;
 use GraphQL\QueryBuilder\QueryBuilder;
 
 abstract class AbstractDaggerObject

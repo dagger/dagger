@@ -1,6 +1,6 @@
 <?php
 
-namespace DaggerIo\GraphQl;
+namespace Dagger\GraphQl;
 
 use GraphQL\Query;
 use GraphQL\QueryBuilder\QueryBuilder;

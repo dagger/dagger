@@ -6,12 +6,12 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A definition of a parameter or return type in a Module.
  */
-class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Client\IdAble
+class TypeDef extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
 {
     /**
      * If kind is LIST, the list-specific type definition.
@@ -19,8 +19,8 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function asList(): ListTypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('asList');
-        return new \DaggerIo\Gen\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('asList');
+        return new \Dagger\Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -29,14 +29,14 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function asObject(): ObjectTypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('asObject');
-        return new \DaggerIo\Gen\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('asObject');
+        return new \Dagger\Dagger\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     public function id(): TypeDefId
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return new \DaggerIo\Gen\TypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
+        return new \Dagger\Dagger\TypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -44,8 +44,8 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function kind(): TypeDefKind
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('kind');
-        return \DaggerIo\Gen\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('kind');
+        return \Dagger\Dagger\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 
     /**
@@ -53,8 +53,18 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function optional(): bool
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('optional');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('optional');
         return (bool)$this->queryLeaf($leafQueryBuilder, 'optional');
+    }
+
+    /**
+     * Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
+     */
+    public function withConstructor(FunctionId|Function_ $function): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withConstructor');
+        $innerQueryBuilder->setArgument('function', $function);
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -62,13 +72,13 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function withField(string $name, TypeDefId|TypeDef $typeDef, ?string $description = null): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withField');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withField');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('typeDef', $typeDef);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
         }
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -76,9 +86,9 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function withFunction(FunctionId|Function_ $function): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withFunction');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withFunction');
         $innerQueryBuilder->setArgument('function', $function);
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -86,9 +96,9 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function withKind(TypeDefKind $kind): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withKind');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withKind');
         $innerQueryBuilder->setArgument('kind', $kind);
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -96,9 +106,9 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function withListOf(TypeDefId|TypeDef $elementType): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withListOf');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withListOf');
         $innerQueryBuilder->setArgument('elementType', $elementType);
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -110,12 +120,12 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function withObject(string $name, ?string $description = null): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withObject');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withObject');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
         }
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -123,8 +133,8 @@ class TypeDef extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo
      */
     public function withOptional(bool $optional): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('withOptional');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withOptional');
         $innerQueryBuilder->setArgument('optional', $optional);
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -1,9 +1,9 @@
 <?php
 
-namespace DaggerIo\Tests;
+namespace Dagger\Tests;
 
-use DaggerIo\Dagger;
-use DaggerIo\Gen\DaggerClient;
+use Dagger\Dagger;
+use Dagger\Dagger\DaggerClient;
 use GraphQL\QueryBuilder\QueryBuilder;
 use PHPUnit\Framework\TestCase;
 

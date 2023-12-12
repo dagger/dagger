@@ -1,10 +1,10 @@
 <?php
 
-namespace DaggerIo\Codegen\Introspection;
+namespace Dagger\Codegen\Introspection;
 
-use DaggerIo\Client\AbstractDaggerClient;
-use DaggerIo\Client\AbstractDaggerObject;
-use DaggerIo\Client\IdAble;
+use Dagger\Client\AbstractDaggerClient;
+use Dagger\Client\AbstractDaggerObject;
+use Dagger\Client\IdAble;
 use GraphQL\Type\Definition\Argument;
 use GraphQL\Type\Definition\FieldDefinition;
 use GraphQL\Type\Definition\ListOfType;
@@ -60,7 +60,7 @@ class ObjectVisitor extends AbstractVisitor
             // @TODO refactor
 
             if (Helpers::isScalar($returnType) || Helpers::isList($returnType) || Helpers::isEnumType($returnType)) {
-                $method->addBody('$leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder(?);', [$fieldName]);
+                $method->addBody('$leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder(?);', [$fieldName]);
                 $this->generateMethodArgumentsBody($method, $field->args, 'leafQueryBuilder');
                 if (Helpers::isCustomScalar($returnType) && !Helpers::isVoidType($returnType)) {
                     $method->addBody(
@@ -85,7 +85,7 @@ class ObjectVisitor extends AbstractVisitor
                     );
                 }
             } else {
-                $method->addBody('$innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder(?);', [$fieldName]);
+                $method->addBody('$innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder(?);', [$fieldName]);
                 $this->generateMethodArgumentsBody($method, $field->args, 'innerQueryBuilder');
                 $method->addBody(
                     'return new '.

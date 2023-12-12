@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * An argument accepted by a function.
@@ -14,15 +14,15 @@ namespace DaggerIo\Gen;
  * This is a specification for an argument at function definition time, not an
  * argument passed at function call time.
  */
-class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \DaggerIo\Client\IdAble
+class FunctionArg extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
 {
     /**
      * A default value to use for this argument when not explicitly set by the caller, if any
      */
     public function defaultValue(): Json
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('defaultValue');
-        return new \DaggerIo\Gen\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('defaultValue');
+        return new \Dagger\Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
     }
 
     /**
@@ -30,7 +30,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
      */
     public function description(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
@@ -39,8 +39,8 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
      */
     public function id(): FunctionArgId
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('id');
-        return new \DaggerIo\Gen\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
+        return new \Dagger\Dagger\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -48,7 +48,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -57,7 +57,7 @@ class FunctionArg extends \DaggerIo\Client\AbstractDaggerObject implements \Dagg
      */
     public function typeDef(): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('typeDef');
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('typeDef');
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

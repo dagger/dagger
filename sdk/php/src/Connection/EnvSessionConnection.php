@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Connection;
+namespace Dagger\Connection;
 
-use DaggerIo\Connection;
+use Dagger\Connection;
 use GraphQL\Client;
 
 class EnvSessionConnection extends Connection

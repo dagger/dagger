@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Connection;
+namespace Dagger\Connection;
 
-use DaggerIo\Connection;
+use Dagger\Connection;
 use GraphQL\Client;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;

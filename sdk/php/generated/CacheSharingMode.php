@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * Sharing mode of the cache volume.

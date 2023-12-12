@@ -6,16 +6,16 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
-class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
+class FunctionCall extends \Dagger\Client\AbstractDaggerObject
 {
     /**
      * The argument values the function is being invoked with.
      */
     public function inputArgs(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('inputArgs');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('inputArgs');
         return (array)$this->queryLeaf($leafQueryBuilder, 'inputArgs');
     }
 
@@ -24,7 +24,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -34,8 +34,8 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function parent(): Json
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('parent');
-        return new \DaggerIo\Gen\Json((string)$this->queryLeaf($leafQueryBuilder, 'parent'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('parent');
+        return new \Dagger\Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'parent'));
     }
 
     /**
@@ -44,7 +44,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function parentName(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('parentName');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('parentName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'parentName');
     }
 
@@ -54,7 +54,7 @@ class FunctionCall extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function returnValue(Json $value): void
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('returnValue');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('returnValue');
         $leafQueryBuilder->setArgument('value', $value);
         $this->queryLeaf($leafQueryBuilder, 'returnValue');
     }

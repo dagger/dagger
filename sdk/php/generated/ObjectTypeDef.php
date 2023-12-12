@@ -6,19 +6,28 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A definition of a custom object defined in a Module.
  */
-class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
+class ObjectTypeDef extends \Dagger\Client\AbstractDaggerObject
 {
+    /**
+     * The function used to construct new instances of this object, if any
+     */
+    public function constructor(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('constructor');
+        return new \Dagger\Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * The doc string for the object, if any
      */
     public function description(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
@@ -27,7 +36,7 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function fields(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('fields');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('fields');
         return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
     }
 
@@ -36,7 +45,7 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function functions(): array
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('functions');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('functions');
         return (array)$this->queryLeaf($leafQueryBuilder, 'functions');
     }
 
@@ -45,7 +54,7 @@ class ObjectTypeDef extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 }

@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Codegen\Introspection;
+namespace Dagger\Codegen\Introspection;
 
-use DaggerIo\Client\AbstractDaggerInputObject;
+use Dagger\Client\AbstractDaggerInputObject;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\Type;
 use Nette\PhpGenerator\ClassType;

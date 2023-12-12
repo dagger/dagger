@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A content-addressed directory identifier.
  */
-readonly class DirectoryId extends \DaggerIo\Client\DaggerId
+readonly class DirectoryId extends \Dagger\Client\DaggerId
 {
 }

@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A unique identifier for a secret.
  */
-readonly class SecretId extends \DaggerIo\Client\DaggerId
+readonly class SecretId extends \Dagger\Client\DaggerId
 {
 }

@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A unique service identifier.
  */
-readonly class ServiceId extends \DaggerIo\Client\DaggerId
+readonly class ServiceId extends \Dagger\Client\DaggerId
 {
 }

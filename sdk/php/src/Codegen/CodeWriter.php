@@ -1,6 +1,6 @@
 <?php
 
-namespace DaggerIo\Codegen;
+namespace Dagger\Codegen;
 
 use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\EnumType;
@@ -9,7 +9,7 @@ use Nette\PhpGenerator\PsrPrinter;
 
 class CodeWriter
 {
-    public const NAMESPACE = 'DaggerIo\\Gen';
+    public const NAMESPACE = 'Dagger\\Dagger';
 
     public function __construct(private readonly string $targetDirectory)
     {

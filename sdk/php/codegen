@@ -1,9 +1,9 @@
 #!/usr/bin/env php
 <?php declare(strict_types=1);
 
-use DaggerIo\Command\DaggerSchemaGeneratorCommand;
+use Dagger\Command\DaggerSchemaGeneratorCommand;
 use Symfony\Component\Console\Application;
-use DaggerIo\Command\DaggerCodegenCommand;
+use Dagger\Command\DaggerCodegenCommand;
 
 if (file_exists(__DIR__.'/../../autoload.php')) {
     // The usual location, since this file will reside in vendor/bin

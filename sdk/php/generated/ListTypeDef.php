@@ -6,19 +6,19 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A definition of a list type in a Module.
  */
-class ListTypeDef extends \DaggerIo\Client\AbstractDaggerObject
+class ListTypeDef extends \Dagger\Client\AbstractDaggerObject
 {
     /**
      * The type of the elements in the list
      */
     public function elementTypeDef(): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('elementTypeDef');
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('elementTypeDef');
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

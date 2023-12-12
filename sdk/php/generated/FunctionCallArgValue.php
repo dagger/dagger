@@ -6,16 +6,16 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
-class FunctionCallArgValue extends \DaggerIo\Client\AbstractDaggerObject
+class FunctionCallArgValue extends \Dagger\Client\AbstractDaggerObject
 {
     /**
      * The name of the argument.
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -24,7 +24,7 @@ class FunctionCallArgValue extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function value(): Json
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('value');
-        return new \DaggerIo\Gen\Json((string)$this->queryLeaf($leafQueryBuilder, 'value'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('value');
+        return new \Dagger\Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'value'));
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace DaggerIo\Codegen;
+namespace Dagger\Codegen;
 
 use GraphQL\Client;
 use GraphQL\Type\Schema;

@@ -1,6 +1,6 @@
 <?php
 
-namespace DaggerIo\Connection;
+namespace Dagger\Connection;
 
 use Composer\InstalledVersions;
 use Exception;

@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * Distinguishes the different kinds of TypeDefs.

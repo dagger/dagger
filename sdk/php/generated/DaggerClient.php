@@ -6,18 +6,18 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
-class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
+class DaggerClient extends \Dagger\Client\AbstractDaggerClient
 {
     /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key): CacheVolume
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('cacheVolume');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
-        return new \DaggerIo\Gen\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -25,7 +25,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function checkVersionCompatibility(string $version): bool
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('checkVersionCompatibility');
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('checkVersionCompatibility');
         $leafQueryBuilder->setArgument('version', $version);
         return (bool)$this->queryLeaf($leafQueryBuilder, 'checkVersionCompatibility');
     }
@@ -38,14 +38,14 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function container(ContainerId|Container|null $id = null, ?Platform $platform = null): Container
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('container');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('container');
         if (null !== $id) {
         $innerQueryBuilder->setArgument('id', $id);
         }
         if (null !== $platform) {
         $innerQueryBuilder->setArgument('platform', $platform);
         }
-        return new \DaggerIo\Gen\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -55,8 +55,8 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function currentFunctionCall(): FunctionCall
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('currentFunctionCall');
-        return new \DaggerIo\Gen\FunctionCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('currentFunctionCall');
+        return new \Dagger\Dagger\FunctionCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -64,8 +64,8 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function currentModule(): Module
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('currentModule');
-        return new \DaggerIo\Gen\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('currentModule');
+        return new \Dagger\Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -73,8 +73,8 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function defaultPlatform(): Platform
     {
-        $leafQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('defaultPlatform');
-        return new \DaggerIo\Gen\Platform((string)$this->queryLeaf($leafQueryBuilder, 'defaultPlatform'));
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('defaultPlatform');
+        return new \Dagger\Dagger\Platform((string)$this->queryLeaf($leafQueryBuilder, 'defaultPlatform'));
     }
 
     /**
@@ -82,11 +82,11 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function directory(DirectoryId|Directory|null $id = null): Directory
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('directory');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('directory');
         if (null !== $id) {
         $innerQueryBuilder->setArgument('id', $id);
         }
-        return new \DaggerIo\Gen\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -94,9 +94,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function file(FileId|File $id): File
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('file');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('file');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -104,10 +104,10 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function function(string $name, TypeDefId|TypeDef $returnType): Function_
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('function');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('function');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('returnType', $returnType);
-        return new \DaggerIo\Gen\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -116,9 +116,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function generatedCode(DirectoryId|Directory $code): GeneratedCode
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('generatedCode');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('generatedCode');
         $innerQueryBuilder->setArgument('code', $code);
-        return new \DaggerIo\Gen\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -132,7 +132,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
         ServiceId|Service|null $experimentalServiceHost = null,
     ): GitRepository
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('git');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('git');
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $keepGitDir) {
         $innerQueryBuilder->setArgument('keepGitDir', $keepGitDir);
@@ -146,7 +146,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
-        return new \DaggerIo\Gen\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -154,8 +154,8 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function host(): Host
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('host');
-        return new \DaggerIo\Gen\Host($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('host');
+        return new \Dagger\Dagger\Host($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -163,12 +163,12 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function http(string $url, ServiceId|Service|null $experimentalServiceHost = null): File
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('http');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('http');
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
-        return new \DaggerIo\Gen\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -176,9 +176,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadCacheVolumeFromID(CacheVolumeId|CacheVolume $id): CacheVolume
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadCacheVolumeFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadCacheVolumeFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -186,9 +186,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadContainerFromID(ContainerId|Container $id): Container
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadContainerFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadContainerFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -196,9 +196,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadDirectoryFromID(DirectoryId|Directory $id): Directory
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadDirectoryFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadDirectoryFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -206,9 +206,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadFileFromID(FileId|File $id): File
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadFileFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadFileFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -216,9 +216,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadFunctionArgFromID(FunctionArgId|FunctionArg $id): FunctionArg
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadFunctionArgFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadFunctionArgFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\FunctionArg($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\FunctionArg($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -226,9 +226,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadFunctionFromID(FunctionId|Function_ $id): Function_
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadFunctionFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadFunctionFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -236,9 +236,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadGeneratedCodeFromID(GeneratedCodeId|GeneratedCode $id): GeneratedCode
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadGeneratedCodeFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadGeneratedCodeFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -246,9 +246,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadModuleFromID(ModuleId|Module $id): Module
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadModuleFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadModuleFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -256,9 +256,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadSecretFromID(SecretId|Secret $id): Secret
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadSecretFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadSecretFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -266,9 +266,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadServiceFromID(ServiceId|Service $id): Service
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadServiceFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadServiceFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -276,9 +276,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadSocketFromID(SocketId|Socket $id): Socket
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadSocketFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadSocketFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -286,9 +286,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function loadTypeDefFromID(TypeDefId|TypeDef $id): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('loadTypeDefFromID');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -296,8 +296,8 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function module(): Module
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('module');
-        return new \DaggerIo\Gen\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('module');
+        return new \Dagger\Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -305,12 +305,12 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function moduleConfig(DirectoryId|Directory $sourceDirectory, ?string $subpath = null): ModuleConfig
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('moduleConfig');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('moduleConfig');
         $innerQueryBuilder->setArgument('sourceDirectory', $sourceDirectory);
         if (null !== $subpath) {
         $innerQueryBuilder->setArgument('subpath', $subpath);
         }
-        return new \DaggerIo\Gen\ModuleConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\ModuleConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -318,7 +318,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function pipeline(string $name, ?string $description = null, ?array $labels = null): DaggerClient
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('pipeline');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('pipeline');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
@@ -326,7 +326,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
         if (null !== $labels) {
         $innerQueryBuilder->setArgument('labels', $labels);
         }
-        return new \DaggerIo\Gen\DaggerClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\DaggerClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -334,9 +334,9 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function secret(SecretId|Secret $id): Secret
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('secret');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('secret');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -345,10 +345,10 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function setSecret(string $name, string $plaintext): Secret
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('setSecret');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('setSecret');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('plaintext', $plaintext);
-        return new \DaggerIo\Gen\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -356,11 +356,11 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function socket(SocketId|Socket|null $id = null): Socket
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('socket');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('socket');
         if (null !== $id) {
         $innerQueryBuilder->setArgument('id', $id);
         }
-        return new \DaggerIo\Gen\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -368,7 +368,7 @@ class DaggerClient extends \DaggerIo\Client\AbstractDaggerClient
      */
     public function typeDef(): TypeDef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('typeDef');
-        return new \DaggerIo\Gen\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('typeDef');
+        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace DaggerIo\Codegen\Introspection;
+namespace Dagger\Codegen\Introspection;
 
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;

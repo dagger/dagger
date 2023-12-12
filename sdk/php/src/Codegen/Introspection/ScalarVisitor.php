@@ -1,9 +1,9 @@
 <?php
 
-namespace DaggerIo\Codegen\Introspection;
+namespace Dagger\Codegen\Introspection;
 
-use DaggerIo\Client\DaggerId;
-use DaggerIo\Client\DaggerScalar;
+use Dagger\Client\DaggerId;
+use Dagger\Client\DaggerScalar;
 use GraphQL\Type\Definition\ScalarType;
 use GraphQL\Type\Definition\Type;
 use Nette\PhpGenerator\ClassType;

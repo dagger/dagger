@@ -6,21 +6,21 @@
 
 declare(strict_types=1);
 
-namespace DaggerIo\Gen;
+namespace Dagger\Dagger;
 
 /**
  * A git repository.
  */
-class GitRepository extends \DaggerIo\Client\AbstractDaggerObject
+class GitRepository extends \Dagger\Client\AbstractDaggerObject
 {
     /**
      * Returns details on one branch.
      */
     public function branch(string $name): GitRef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('branch');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('branch');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \DaggerIo\Gen\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -28,9 +28,9 @@ class GitRepository extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function commit(string $id): GitRef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('commit');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('commit');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \DaggerIo\Gen\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -38,8 +38,8 @@ class GitRepository extends \DaggerIo\Client\AbstractDaggerObject
      */
     public function tag(string $name): GitRef
     {
-        $innerQueryBuilder = new \DaggerIo\Client\DaggerQueryBuilder('tag');
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('tag');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \DaggerIo\Gen\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

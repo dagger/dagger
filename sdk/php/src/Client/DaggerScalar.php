@@ -1,6 +1,6 @@
 <?php
 
-namespace DaggerIo\Client;
+namespace Dagger\Client;
 
 use Stringable;
 

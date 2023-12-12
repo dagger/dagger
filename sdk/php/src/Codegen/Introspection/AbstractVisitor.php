@@ -1,8 +1,8 @@
 <?php
 
-namespace DaggerIo\Codegen\Introspection;
+namespace Dagger\Codegen\Introspection;
 
-use DaggerIo\Codegen\CodeWriter;
+use Dagger\Codegen\CodeWriter;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
 use Nette\PhpGenerator\ClassType;
