@@ -1,14 +1,26 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
-import {
-  ClassMetadata,
-  FunctionMetadata,
-  Metadata,
-  PropertyMetadata,
-} from "./metadata.js"
 import { serializeSignature, serializeSymbol } from "./serialize.js"
-import { isFunction, isObject, isPublicProperty } from "./utils.js"
+import {
+  ClassTypeDef,
+  ConstructorTypeDef,
+  FieldTypeDef,
+  FunctionArg,
+  FunctionTypedef,
+} from "./typeDefs.js"
+import {
+  isFunction,
+  isObject,
+  isOptional,
+  isPublicProperty,
+  typeNameToTypedef,
+} from "./utils.js"
+
+export type ScanResult = {
+  classes: ClassTypeDef[]
+  functions: FunctionTypedef[]
+}
 
 /**
  * Scan the list of Typescript File using the Typescript compiler API.
@@ -20,7 +32,7 @@ import { isFunction, isObject, isPublicProperty } from "./utils.js"
  *
  * @param files List of Typescript files to introspect.
  */
-export function scan(files: string[]): Metadata {
+export function scan(files: string[]): ScanResult {
   if (files.length === 0) {
     throw new UnknownDaggerError("no files to introspect found", {})
   }
@@ -29,7 +41,7 @@ export function scan(files: string[]): Metadata {
   const program = ts.createProgram(files, { experimentalDecorators: true })
   const checker = program.getTypeChecker()
 
-  const metadata: Metadata = {
+  const metadata: ScanResult = {
     classes: [],
     functions: [],
   }
@@ -65,7 +77,7 @@ export function scan(files: string[]): Metadata {
 function introspectClass(
   checker: ts.TypeChecker,
   node: ts.ClassDeclaration
-): ClassMetadata {
+): ClassTypeDef {
   // Throw error if node.name is undefined because we cannot scan its symbol.
   if (!node.name) {
     throw new UnknownDaggerError(`could not introspect class: ${node}`, {})
@@ -81,20 +93,22 @@ function introspectClass(
   }
 
   // Serialize class symbol to extract name and doc.
-  const { name, doc } = serializeSymbol(checker, classSymbol)
+  const { name, description } = serializeSymbol(checker, classSymbol)
 
   // Create metadata object.
-  const metadata: ClassMetadata = {
+  const metadata: ClassTypeDef = {
     name,
-    doc,
-    properties: [],
+    description,
+    constructor: undefined,
+    fields: [],
     methods: [],
   }
 
   // Loop through all members in the class to get their metadata.
   node.members.forEach((member) => {
-    if (!member.name) {
-      return
+    // Handle constructor
+    if (ts.isConstructorDeclaration(member)) {
+      metadata.constructor = introspectConstructor(checker, member)
     }
 
     // Handle method from the class.
@@ -105,7 +119,7 @@ function introspectClass(
     // Handle public properties from the class.
     if (ts.isPropertyDeclaration(member) && isPublicProperty(member)) {
       // Handle properties
-      metadata.properties.push(introspectProperty(checker, member))
+      metadata.fields.push(introspectProperty(checker, member))
     }
   })
 
@@ -123,7 +137,7 @@ function introspectClass(
 function introspectProperty(
   checker: ts.TypeChecker,
   property: ts.PropertyDeclaration
-): PropertyMetadata {
+): FieldTypeDef {
   const propertySymbol = checker.getSymbolAtLocation(property.name)
   if (!propertySymbol) {
     throw new UnknownDaggerError(
@@ -132,9 +146,46 @@ function introspectProperty(
     )
   }
 
-  const { name, typeName, doc } = serializeSymbol(checker, propertySymbol)
+  const { name, typeName, description } = serializeSymbol(
+    checker,
+    propertySymbol
+  )
 
-  return { name, typeName, doc }
+  return { name, description, typeDef: typeNameToTypedef(typeName) }
+}
+
+/**
+ * Introspect the constructor of the class and return its metadata.
+ */
+function introspectConstructor(
+  checker: ts.TypeChecker,
+  constructor: ts.ConstructorDeclaration
+): ConstructorTypeDef {
+  const args = constructor.parameters.map((param): FunctionArg => {
+    const paramSymbol = checker.getSymbolAtLocation(param.name)
+    if (!paramSymbol) {
+      throw new UnknownDaggerError(
+        `could not get constructor param: ${param.name.getText()}`,
+        {}
+      )
+    }
+
+    const { name, typeName, description } = serializeSymbol(
+      checker,
+      paramSymbol
+    )
+    const { optional, defaultValue } = isOptional(paramSymbol)
+
+    return {
+      name,
+      description,
+      typeDef: typeNameToTypedef(typeName),
+      optional,
+      defaultValue,
+    }
+  })
+
+  return { args }
 }
 
 /**
@@ -151,7 +202,7 @@ function introspectProperty(
 function introspectMethod(
   checker: ts.TypeChecker,
   method: ts.MethodDeclaration | ts.ArrowFunction
-): FunctionMetadata {
+): FunctionTypedef {
   const methodSymbol = checker.getSymbolAtLocation(method.name)
   if (!methodSymbol) {
     throw new UnknownDaggerError(
@@ -167,16 +218,16 @@ function introspectMethod(
 
   return {
     name: methodMetadata.name,
-    doc: methodMetadata.doc,
-    params: methodSignature.params.map(
-      ({ name, typeName, doc, optional, defaultValue }) => ({
+    description: methodMetadata.description,
+    args: methodSignature.params.map(
+      ({ name, typeName, description, optional, defaultValue }) => ({
         name,
-        typeName,
-        doc,
+        typeDef: typeNameToTypedef(typeName),
+        description,
         optional,
         defaultValue,
       })
     ),
-    returnType: methodSignature.returnType,
+    returnType: typeNameToTypedef(methodSignature.returnType),
   }
 }

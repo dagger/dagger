@@ -1,5 +1,8 @@
 import ts from "typescript"
 
+import { TypeDefKind } from "../../api/client.gen.js"
+import { TypeDef } from "./typeDefs.js"
+
 /**
  * Return true if the given class declaration has the decorator @obj on
  * top of its declaration.
@@ -111,4 +114,34 @@ export function isOptional(param: ts.Symbol): OptionalValue {
   }
 
   return result
+}
+
+/**
+ * Convert a typename into a Dagger Typedef using dynamic typing.
+ */
+export function typeNameToTypedef(typeName: string): TypeDef<TypeDefKind> {
+  // If it's a list, remove the '[]' and recall the function to get
+  // the type of list
+  if (typeName.endsWith("[]")) {
+    return {
+      kind: TypeDefKind.Listkind,
+      typeDef: typeNameToTypedef(typeName.slice(0, typeName.length - 2)),
+    }
+  }
+
+  switch (typeName) {
+    case "string":
+      return { kind: TypeDefKind.Stringkind }
+    case "number":
+      return { kind: TypeDefKind.Integerkind }
+    case "boolean":
+      return { kind: TypeDefKind.Booleankind }
+    case "void":
+      return { kind: TypeDefKind.Voidkind }
+    default:
+      return {
+        kind: TypeDefKind.Objectkind,
+        name: typeName,
+      }
+  }
 }

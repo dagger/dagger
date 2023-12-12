@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix `Container.with_service_binding` not convert `Service` into id
-time: 2023-11-13T21:51:35.279258+07:00
-custom:
-  Author: wingyplus
-  PR: "6099"

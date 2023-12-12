@@ -126,16 +126,18 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledS
 	}()
 
 	var schemas []SchemaResolvers
+	modNames := make([]string, 0, len(d.mods)) // for debugging+error messages
 	for _, mod := range d.mods {
 		modSchemas, err := mod.Schema(ctx)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 		schemas = append(schemas, modSchemas...)
+		modNames = append(modNames, mod.Name())
 	}
 	schema, err := mergeSchemaResolvers(schemas...)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to merge schemas: %w", err)
+		return nil, "", fmt.Errorf("failed to merge schemas of %+v: %w", modNames, err)
 	}
 	introspectionJSON, err := schemaIntrospectionJSON(ctx, *schema.Compiled)
 	if err != nil {

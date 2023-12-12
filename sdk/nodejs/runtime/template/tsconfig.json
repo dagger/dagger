@@ -1,0 +1,11 @@
+// Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "Node",
+    "experimentalDecorators": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk"]
+    }
+  },
+}

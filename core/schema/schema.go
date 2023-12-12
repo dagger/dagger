@@ -57,6 +57,8 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		services:     svcs,
 		host:         core.NewHost(),
 
+		endpoints: map[string]http.Handler{},
+
 		buildCache:  core.NewCacheMap[uint64, *core.Container](),
 		importCache: core.NewCacheMap[uint64, *specs.Descriptor](),
 
@@ -100,7 +102,7 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		return nil, err
 	}
 
-	// the main client caller starts out the core API loaded
+	// the main client caller starts out with the core API loaded
 	api.clientCallContext[""] = &clientCallContext{
 		deps: api.defaultDeps,
 	}
@@ -351,7 +353,7 @@ func (s *APIServer) ServeModuleToMainClient(ctx context.Context, modMeta *core.M
 	return nil
 }
 
-func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, mod *UserMod, call *core.FunctionCall) error {
+func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, deps *ModDeps, mod *UserMod, call *core.FunctionCall) error {
 	if dgst == "" {
 		return fmt.Errorf("cannot register function call with empty digest")
 	}
@@ -363,7 +365,7 @@ func (s *APIServer) RegisterFunctionCall(dgst digest.Digest, mod *UserMod, call 
 		return nil
 	}
 	s.clientCallContext[dgst] = &clientCallContext{
-		deps:   mod.deps,
+		deps:   deps,
 		mod:    mod,
 		fnCall: call,
 	}
@@ -445,37 +447,37 @@ func mergeSchemaResolvers(newSchemas ...SchemaResolvers) (*CompiledSchema, error
 	mergedSchema := StaticSchemaParams{Resolvers: make(Resolvers)}
 	for _, newSchema := range newSchemas {
 		mergedSchema.Schema += newSchema.Schema() + "\n"
-		for name, resolver := range newSchema.Resolvers() {
-			switch resolver := resolver.(type) {
+		for typeName, newResolver := range newSchema.Resolvers() {
+			switch newResolver := newResolver.(type) {
 			case FieldResolvers:
-				existing, alreadyExisted := mergedSchema.Resolvers[name]
-				if !alreadyExisted {
-					existing = resolver
+				existingResolver, typeResolverAlreadyExisted := mergedSchema.Resolvers[typeName]
+				if !typeResolverAlreadyExisted {
+					existingResolver = newResolver.Clone()
 				}
-				existingObject, ok := existing.(FieldResolvers)
+				existingObject, ok := existingResolver.(FieldResolvers)
 				if !ok {
-					return nil, fmt.Errorf("unexpected resolver type %T", existing)
+					return nil, fmt.Errorf("unexpected resolver type %T", existingResolver)
 				}
-				for fieldName, fieldResolveFn := range resolver.Fields() {
-					if alreadyExisted {
+				for fieldName, fieldResolveFn := range newResolver.Fields() {
+					if typeResolverAlreadyExisted {
 						// check for field conflicts if we are merging more fields into the existing object
 						if _, ok := existingObject.Fields()[fieldName]; ok {
-							return nil, fmt.Errorf("conflict on type %q field %q: %w", name, fieldName, ErrMergeFieldConflict)
+							return nil, fmt.Errorf("conflict on type %q field %q: %w", typeName, fieldName, ErrMergeFieldConflict)
 						}
 					}
 					existingObject.SetField(fieldName, fieldResolveFn)
 				}
-				mergedSchema.Resolvers[name] = existingObject
+				mergedSchema.Resolvers[typeName] = existingObject
 			case ScalarResolver:
-				if existing, ok := mergedSchema.Resolvers[name]; ok {
+				if existing, ok := mergedSchema.Resolvers[typeName]; ok {
 					if _, ok := existing.(ScalarResolver); !ok {
-						return nil, fmt.Errorf("conflict on type %q: %w", name, ErrMergeTypeConflict)
+						return nil, fmt.Errorf("conflict on type %q: %w", typeName, ErrMergeTypeConflict)
 					}
-					return nil, fmt.Errorf("conflict on type %q: %w", name, ErrMergeScalarConflict)
+					return nil, fmt.Errorf("conflict on type %q: %w", typeName, ErrMergeScalarConflict)
 				}
-				mergedSchema.Resolvers[name] = resolver
+				mergedSchema.Resolvers[typeName] = newResolver
 			default:
-				return nil, fmt.Errorf("unexpected resolver type %T", resolver)
+				return nil, fmt.Errorf("unexpected resolver type %T", newResolver)
 			}
 		}
 	}

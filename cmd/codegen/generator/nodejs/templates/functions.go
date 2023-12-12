@@ -30,6 +30,7 @@ var (
 		"IsArgOptional":       isArgOptional,
 		"IsCustomScalar":      isCustomScalar,
 		"IsEnum":              isEnum,
+		"IsKeyword":           isKeyword,
 		"ArgsHaveDescription": argsHaveDescription,
 		"SortInputFields":     sortInputFields,
 		"SortEnumFields":      sortEnumFields,
@@ -104,6 +105,12 @@ func isEnum(t *introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
 		!strings.HasPrefix(t.Name, "__")
+}
+
+func isKeyword(s string) bool {
+	_, isKeyword := jsKeywords[strings.ToLower(s)]
+
+	return isKeyword
 }
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a TS
@@ -226,6 +233,11 @@ func getEnumValues(values introspection.InputValues) introspection.InputValues {
 
 	for _, v := range values {
 		if v.TypeRef != nil && v.TypeRef.Kind == introspection.TypeKindEnum {
+			enums = append(enums, v)
+		}
+
+		// Check parent if the parent is an enum (for instance with TypeDefKind)
+		if v.TypeRef.OfType != nil && v.TypeRef.OfType.Kind == introspection.TypeKindEnum {
 			enums = append(enums, v)
 		}
 	}

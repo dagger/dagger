@@ -11,7 +11,6 @@ from typing import (
     Generic,
     ParamSpec,
     TypeAlias,
-    TypeVar,
     cast,
     get_type_hints,
     overload,
@@ -19,7 +18,7 @@ from typing import (
 
 import cattrs
 from graphql.pyutils import camel_to_snake
-from typing_extensions import Self, override
+from typing_extensions import Self, TypeVar, override
 
 import dagger
 from dagger import dag
@@ -39,10 +38,10 @@ from ._utils import (
 
 logger = logging.getLogger(__name__)
 
-F = TypeVar("F")
+R = TypeVar("R", infer_variance=True)
 P = ParamSpec("P")
 
-Func: TypeAlias = Callable[P, F]
+Func: TypeAlias = Callable[P, R]
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
@@ -113,10 +112,10 @@ class FieldResolver(Resolver):
 
 # Can't use slots because of @cached_property.
 @dataclasses.dataclass(kw_only=True)
-class FunctionResolver(Resolver, Generic[P, F]):
+class FunctionResolver(Resolver, Generic[P, R]):
     """Base class for wrapping user-defined functions."""
 
-    wrapped_func: Func[P, F]
+    wrapped_func: Func[P, R]
 
     def __str__(self):
         return repr(self.sig_func)
@@ -333,10 +332,10 @@ class FunctionResolver(Resolver, Generic[P, F]):
 
 
 @dataclasses.dataclass(slots=True)
-class Function(Generic[P, F]):
+class Function(Generic[P, R]):
     """Descriptor for wrapping user-defined functions."""
 
-    func: Func[P, F]
+    func: Func[P, R]
     name: APIName | None = None
     doc: str | None = None
     resolver: FunctionResolver = dataclasses.field(init=False)
@@ -367,21 +366,21 @@ class Function(Generic[P, F]):
         self.resolver.origin = owner
 
     @overload
-    def __get__(self, instance: None, owner=None) -> Self:
+    def __get__(self, instance: None, owner: None = None) -> Self:
         ...
 
     @overload
-    def __get__(self, instance: object, owner=None) -> Func[P, F]:
+    def __get__(self, instance: object, owner: None = None) -> Func[P, R]:
         ...
 
-    def __get__(self, instance, owner=None) -> Func[P, F] | Self:
+    def __get__(self, instance: object | None, owner: None = None) -> Func[P, R] | Self:
         if instance is None:
             return self
         if inspect.isclass(self.func):
-            return cast(Func[P, F], self.func)
-        return cast(Func[P, F], types.MethodType(self.func, instance))
+            return cast(Func[P, R], self.func)
+        return cast(Func[P, R], types.MethodType(self.func, instance))
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> F:
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         # NB: This is only needed for top-level functions because only
         # class attributes can access descriptors via `__get__`. For
         # the top-level functions, you'll get this `Function` instance

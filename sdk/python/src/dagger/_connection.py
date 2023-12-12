@@ -11,7 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 class Connection(ResourceManager):
-    """Connect to a Dagger Engine with an isolated client.
+    """Connect to a Dagger Engine with an isolated client (legacy).
+
+    This is an older version of :py:func:`dagger.connection` that uses an isolated
+    client instance. Should no longer be used in newer projects unless there's
+    a specific reason to do so.
 
     Example::
 
@@ -62,7 +66,8 @@ async def connection(config: Config | None = None):
     """Connect to a Dagger Engine using the global client.
 
     This is similar to :py:class:`dagger.Connection` but uses a global client
-    (:py:attr:`dag`) so there's no need to pass around a client instance with this.
+    (:py:attr:`dagger.dag`) so there's no need to pass around a client instance
+    with this.
 
     Example::
 

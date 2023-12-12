@@ -3,8 +3,8 @@ import * as path from "path"
 import { fileURLToPath } from "url"
 
 import { connection } from "../../connect.js"
-import { invoke } from "../entrypoint/invoke.js"
-import { load } from "../entrypoint/load.js"
+import { invoke } from "../../entrypoint/invoke.js"
+import { load } from "../../entrypoint/load.js"
 import { listFiles } from "../utils/files.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -29,7 +29,7 @@ describe("Invoke typescript function", function () {
       objectName: "HelloWorld",
       methodName: "helloWorld",
       state: {},
-      inputs: ["world"],
+      inputs: { name: "world" },
     }
 
     const result = await invoke(
@@ -56,10 +56,10 @@ describe("Invoke typescript function", function () {
       objectName: "Bar",
       methodName: "exec",
       state: {},
-      inputs: [
+      inputs: {
         // string[]
-        ["echo", "-n", "hello world"],
-      ],
+        cmd: ["echo", "-n", "hello world"],
+      },
     }
 
     // We wrap the execution into a Dagger connection
@@ -92,7 +92,7 @@ describe("Invoke typescript function", function () {
           objectName: "Alpine",
           methodName: "base",
           state: {},
-          inputs: ["3.16.0"],
+          inputs: { version: ["3.16.0"] },
         }
 
         const inputBaseResult = await invoke(
@@ -107,7 +107,9 @@ describe("Invoke typescript function", function () {
           methodName: "install",
           // Would be fetched from dagger and loaded from the container ID
           state: inputBaseResult,
-          inputs: [["jq"]],
+          inputs: {
+            pkgs: ["jq"],
+          },
         }
 
         const inputInstallResult = await invoke(
@@ -123,7 +125,9 @@ describe("Invoke typescript function", function () {
           methodName: "exec",
           // Would be fetched from dagger and loaded from the container ID
           state: inputInstallResult,
-          inputs: [["jq", "-h"]],
+          inputs: {
+            cmd: ["jq", "-h"],
+          },
         }
 
         const result = await invoke(

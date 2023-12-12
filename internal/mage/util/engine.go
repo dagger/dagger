@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/consts"
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/exp/maps"
+
+	"github.com/dagger/dagger/internal/mage/consts"
 )
 
 const (
@@ -221,7 +222,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
 		// modules that fix this problem and always result in the latest apk packages for the given alpine
 		// version being used (with optimal caching).
-		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24 * time.Hour).Unix())).
+		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
 		WithExec([]string{"apk", "upgrade"}).
 		WithExec([]string{
 			"apk", "add", "--no-cache",
@@ -239,6 +240,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
 		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithDirectory(filepath.Dir(consts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, false)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
@@ -284,6 +286,7 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 		WithFile("/usr/local/bin/"+daggerBinName, daggerBin(c, arch, version)).
 		WithFile(consts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(consts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
+		WithDirectory(filepath.Dir(consts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, true)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
@@ -344,6 +347,23 @@ func pythonSDK(c *dagger.Client) *dagger.Directory {
 			"README.md",
 		},
 	})
+}
+
+func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
+	return c.Host().Directory("sdk/nodejs", dagger.HostDirectoryOpts{
+		Include: []string{
+			"**/*.ts",
+			"LICENSE",
+			"README.md",
+			"runtime",
+		},
+		Exclude: []string{
+			"node_modules",
+			"dist",
+			"**/test",
+			"**/*.spec.ts",
+		},
+	}).WithFile("/codegen", goSDKCodegenBin(c, arch))
 }
 
 func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {

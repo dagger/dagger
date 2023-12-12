@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -13,9 +14,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-type GitRef struct {
+type GitRepository struct {
 	URL string `json:"url"`
-	Ref string `json:"ref"`
 
 	KeepGitDir bool `json:"keepGitDir"`
 
@@ -27,22 +27,22 @@ type GitRef struct {
 	Platform specs.Platform  `json:"platform,omitempty"`
 }
 
-func (ref *GitRef) clone() *GitRef {
-	r := *ref
-	r.Services = cloneSlice(r.Services)
-	r.Pipeline = cloneSlice(r.Pipeline)
-	return &r
+func (repo *GitRepository) ID() (GitRepositoryID, error) {
+	return resourceid.Encode(repo)
 }
 
-func (ref *GitRef) WithRef(name string) *GitRef {
-	ref = ref.clone()
-	ref.Ref = name
-	return ref
+type GitRef struct {
+	Ref  string         `json:"ref"`
+	Repo *GitRepository `json:"repository"`
+}
+
+func (ref *GitRef) ID() (GitRefID, error) {
+	return resourceid.Encode(ref)
 }
 
 func (ref *GitRef) Tree(ctx context.Context, bk *buildkit.Client) (*Directory, error) {
 	st := ref.getState(ctx, bk)
-	return NewDirectorySt(ctx, *st, "", ref.Pipeline, ref.Platform, ref.Services)
+	return NewDirectorySt(ctx, *st, "", ref.Repo.Pipeline, ref.Repo.Platform, ref.Repo.Services)
 }
 
 func (ref *GitRef) Commit(ctx context.Context, bk *buildkit.Client) (string, error) {
@@ -60,17 +60,17 @@ func (ref *GitRef) Commit(ctx context.Context, bk *buildkit.Client) (string, err
 func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State {
 	opts := []llb.GitOption{}
 
-	if ref.KeepGitDir {
+	if ref.Repo.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
-	if ref.SSHKnownHosts != "" {
-		opts = append(opts, llb.KnownSSHHosts(ref.SSHKnownHosts))
+	if ref.Repo.SSHKnownHosts != "" {
+		opts = append(opts, llb.KnownSSHHosts(ref.Repo.SSHKnownHosts))
 	}
-	if ref.SSHAuthSocket != "" {
-		opts = append(opts, llb.MountSSHSock(string(ref.SSHAuthSocket)))
+	if ref.Repo.SSHAuthSocket != "" {
+		opts = append(opts, llb.MountSSHSock(string(ref.Repo.SSHAuthSocket)))
 	}
 
-	useDNS := len(ref.Services) > 0
+	useDNS := len(ref.Repo.Services) > 0
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err == nil && !useDNS {
@@ -87,9 +87,9 @@ func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State
 		// networks API cap.
 		//
 		// TODO: add API cap
-		st = gitdns.State(ref.URL, ref.Ref, clientMetadata.ClientIDs(), opts...)
+		st = gitdns.State(ref.Repo.URL, ref.Ref, clientMetadata.ClientIDs(), opts...)
 	} else {
-		st = llb.Git(ref.URL, ref.Ref, opts...)
+		st = llb.Git(ref.Repo.URL, ref.Ref, opts...)
 	}
 	return &st
 }

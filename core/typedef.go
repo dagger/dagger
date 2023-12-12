@@ -215,6 +215,7 @@ func NewObjectTypeDef(name, description string) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
+		Description:  description,
 	}
 }
 
