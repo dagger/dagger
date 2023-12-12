@@ -433,6 +433,28 @@ func (n Enum) Type() *ast.Type {
 	return n.Enum
 }
 
+var _ Scalar = Enum{}
+
+func (e Enum) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case string:
+		return Enum{
+			Enum:  e.Enum,
+			Value: x,
+		}, nil
+	default:
+		return nil, fmt.Errorf("cannot convert %T to Enum", x)
+	}
+}
+
+func (i Enum) Literal() *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Enum{
+			Enum: i.Value,
+		},
+	}
+}
+
 func (i Enum) MarshalJSON() ([]byte, error) {
 	return json.Marshal(i.Value)
 }
