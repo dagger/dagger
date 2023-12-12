@@ -34,6 +34,8 @@ func TestBasic(t *testing.T) {
 
 	var res struct {
 		Point struct {
+			X         int
+			Y         int
 			ShiftLeft struct {
 				Id        string
 				Ecks      int
@@ -48,6 +50,8 @@ func TestBasic(t *testing.T) {
 	}
 	gql.MustPost(`query {
 		point(x: 6, y: 7) {
+			x
+			y
 			shiftLeft {
 				id
 				ecks: x
@@ -65,6 +69,8 @@ func TestBasic(t *testing.T) {
 	expectedID.Append("shiftLeft")
 	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
+	assert.Equal(t, 6, res.Point.X)
+	assert.Equal(t, 7, res.Point.Y)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Ecks)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Why)
 	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
@@ -81,7 +87,47 @@ func TestBasic(t *testing.T) {
 	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[3].Id)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Neighbors[3].X)
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
+}
 
+func TestLoadingByID(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	var res struct {
+		Point struct {
+			X         int
+			Y         int
+			ShiftLeft struct {
+				Id        string
+				Ecks      int
+				Why       int
+				Neighbors []struct {
+					Id string
+					X  int
+					Y  int
+				}
+			}
+		}
+	}
+	gql.MustPost(`query {
+		point(x: 6, y: 7) {
+			x
+			y
+			shiftLeft {
+				id
+				ecks: x
+				why: y
+				neighbors {
+					id
+					x
+					y
+				}
+			}
+		}
+	}`, &res)
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
 			LoadPointFromID struct {
