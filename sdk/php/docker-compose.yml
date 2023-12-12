@@ -8,16 +8,18 @@ services:
       args:
         UID: ${UID:-1000}
         GID: ${GID:-33}
-        DAGGER_VERSION: ${DAGGER_VERSION:-0.9.3}
     depends_on:
-      - dev-dagger-engine
+      dev-dagger-engine:
+        condition: service_completed_successfully
     environment:
-      DOCKER_HOST: 'tcp://docker:2375'
+        _EXPERIMENTAL_DAGGER_RUNNER_HOST: 'docker-container://dagger-engine.dev'
+        _EXPERIMENTAL_DAGGER_CLI_BIN: '/usr/local/bin/dagger'
+        DOCKER_HOST: 'tcp://docker:2375'
     tty: true
     working_dir: /srv
     volumes:
       - .:/srv
-      - .dagger:/var/www/dagger
+      - ../../bin/dagger:/usr/local/bin/dagger
 
   docker:
     build:
@@ -35,18 +37,20 @@ services:
     build:
       context: ./docker
       dockerfile: dev.Dockerfile
-      target: php-dagger
+      target: dev-dagger-engine
       args:
-        DAGGER_VERSION: ${DAGGER_VERSION:-0.9.3}
+        UID: ${UID:-1000}
+    command:
+      - ./hack/dev
+    container_name: dev-dagger-engine
+    privileged: true
     depends_on:
       - docker
     environment:
-      DAGGER_SESSION_TOKEN: dev
       DOCKER_HOST: 'tcp://docker:2375'
-    expose:
-      - 8080
-    entrypoint: ['/usr/local/bin/dagger']
-    command: ['listen', '--listen', '0.0.0.0:8080', '--focus=false', '--workdir', '/var/www/dagger']
     volumes:
-      - .:/srv
-      - .dagger:/var/www/dagger
+      - ../../:/srv
+      - go-cache:/home/dagger/.cache
+
+volumes:
+  go-cache:

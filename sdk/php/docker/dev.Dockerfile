@@ -1,30 +1,22 @@
-FROM php:8.2-zts-bookworm as php-base
+FROM golang:1.20.0-alpine AS golang-base
+FROM php:8.2-zts-bookworm AS php-base
 FROM composer/composer:2-bin AS composer_upstream
-FROM docker:20.10.17-cli-alpine3.16 as docker-cli
+FROM docker:20.10.17-cli-alpine3.16 AS docker-cli
 
-# Daggger CLI
-FROM php-base as dagger-base
-ARG DAGGER_VERSION=0.9.3
+# Dagger Engine Dev
+FROM golang-base AS dev-dagger-engine
+WORKDIR /srv
+RUN apk add --no-cache file git bash
+COPY --link --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+ARG UID=1000
+RUN adduser -u $UID dagger -D && mkdir /home/dagger/.cache && chown -R $UID /srv /home/dagger/.cache
+USER dagger
+VOLUME /home/dagger/.cache
 
-RUN apt-get update && \
-    apt-get -y --no-install-recommends install \
-    curl \
-    && \
-    apt-get clean
-
-RUN curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=$DAGGER_VERSION sh
-
-
-# PHP with docker and dagger CLIs
-FROM php-base as php-dagger
+# Base PHP image with docker cli
+FROM php-base AS base
 
 COPY --link --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
-COPY --link --from=dagger-base /bin/dagger /usr/local/bin/dagger
-
-
-# Base image
-FROM php-dagger as base
-
 COPY --from=composer_upstream --link /composer /usr/bin/composer
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
@@ -48,11 +40,9 @@ RUN set -eux; \
 
 ARG UID=1000
 ARG GID=100
-RUN mkdir /var/www/dagger && usermod -u $UID -g $GID www-data && chown -R www-data:www-data /var/www
-
+RUN usermod -u $UID -g $GID www-data && chown -R www-data:www-data /var/www
 USER www-data
-VOLUME /var/www/dagger/
 
-FROM base as dev
+FROM base AS dev
 RUN composer global require vimeo/psalm friendsofphp/php-cs-fixer phpunit/phpunit
 RUN echo "export PATH=$PATH:/var/www/.composer/vendor/bin/" >> /var/www/.bashrc
