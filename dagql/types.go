@@ -445,26 +445,84 @@ func (i *Optional[T]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+type TypedString interface {
+	Typed
+	~string
+}
+
+type EnumValue[T TypedString] struct {
+	EnumValues[T]
+	Value T
+}
+
+func (e EnumValue[T]) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: e.EnumValues[0].Type().Name(),
+		NonNull:   true,
+	}
+}
+
+func (e EnumValue[T]) Literal() *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Enum{
+			Enum: string(e.Value),
+		},
+	}
+}
+
+type EnumValues[T TypedString] []T
+
+func (EnumValues[T]) Type() *ast.Type {
+	var zero T
+	return zero.Type()
+}
+
+func (e EnumValues[T]) New(val any) (Scalar, error) {
+	switch x := val.(type) {
+	case string:
+		for _, possible := range e {
+			if x == string(possible) {
+				return EnumValue[T]{
+					EnumValues: e,
+					Value:      possible,
+				}, nil
+			}
+		}
+		return nil, fmt.Errorf("invalid enum value %q", x)
+	default:
+		return nil, fmt.Errorf("cannot convert %T to Enum", x)
+	}
+}
+
+func (e EnumValues[T]) PossibleValues() ast.EnumValueList {
+	var values ast.EnumValueList
+	for _, val := range e {
+		values = append(values, &ast.EnumValueDefinition{
+			Name: string(val),
+		})
+	}
+	return values
+}
+
+func (e EnumValues[T]) Install(srv *Server) *ast.Definition {
+	var zero T
+	def := &ast.Definition{
+		Kind:       ast.Enum,
+		Name:       zero.Type().Name(),
+		EnumValues: e.PossibleValues(),
+	}
+	srv.schema.AddTypes(def)
+	return def
+}
+
+func (e EnumValues[T]) Literal() *idproto.Literal {
+	return idproto.LiteralValue(e[0])
+}
+
 type Enum interface {
 	Typed
 	Scalar
 	PossibleValues() ast.EnumValueList
-}
-
-type EnumSpec[T Enum] struct {
-	Description string
-}
-
-func (n EnumSpec[T]) Install(srv *Server) *ast.Definition {
-	var zero T
-	def := &ast.Definition{
-		Kind:        ast.Enum,
-		Name:        zero.Type().Name(),
-		Description: n.Description,
-		EnumValues:  zero.PossibleValues(),
-	}
-	srv.schema.AddTypes(def)
-	return def
 }
 
 func Opt[T Typed](v T) Optional[T] {

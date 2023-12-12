@@ -2,12 +2,10 @@ package points
 
 import (
 	"context"
-	"fmt"
 	"math"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
-	"github.com/vito/dagql/idproto"
 )
 
 type Point struct {
@@ -36,49 +34,17 @@ func (Line) Type() *ast.Type {
 
 type Direction string
 
-const (
-	DirectionUp    = "UP"
-	DirectionDown  = "DOWN"
-	DirectionLeft  = "LEFT"
-	DirectionRight = "RIGHT"
-)
-
-var _ dagql.Enum = Direction("")
+var Directions = dagql.EnumValues[Direction]{
+	"UP",
+	"DOWN",
+	"LEFT",
+	"RIGHT",
+}
 
 func (Direction) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Direction",
 		NonNull:   true,
-	}
-}
-
-func (Direction) PossibleValues() ast.EnumValueList {
-	return ast.EnumValueList{
-		{Name: DirectionUp},
-		{Name: DirectionDown},
-		{Name: DirectionLeft},
-		{Name: DirectionRight},
-	}
-}
-
-func (Direction) New(val any) (dagql.Scalar, error) {
-	str, ok := val.(string)
-	if !ok {
-		return nil, fmt.Errorf("expected string, got %T", val)
-	}
-	switch str {
-	case DirectionUp, DirectionDown, DirectionLeft, DirectionRight:
-		return Direction(str), nil
-	default:
-		return nil, fmt.Errorf("invalid direction: %q", str)
-	}
-}
-
-func (dir Direction) Literal() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Enum{
-			Enum: string(dir),
-		},
 	}
 }
 
@@ -135,7 +101,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		}),
 	}.Install(srv)
 
-	dagql.EnumSpec[Direction]{}.Install(srv)
+	Directions.Install(srv)
 
 	dagql.Fields[Line]{
 		"length": dagql.Func(func(ctx context.Context, self Line, _ any) (dagql.Float, error) {
@@ -150,13 +116,13 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		"direction": dagql.Func(func(ctx context.Context, self Line, _ any) (Direction, error) {
 			switch {
 			case self.From.X < self.To.X:
-				return DirectionRight, nil
+				return "RIGHT", nil
 			case self.From.X > self.To.X:
-				return DirectionLeft, nil
+				return "LEFT", nil
 			case self.From.Y < self.To.Y:
-				return DirectionDown, nil
+				return "DOWN", nil
 			case self.From.Y > self.To.Y:
-				return DirectionUp, nil
+				return "UP", nil
 			default:
 				return "", nil
 			}
