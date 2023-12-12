@@ -23,7 +23,6 @@ func Arg(name string, value any) *Argument {
 	}
 }
 
-// TODO rename to Marshaler-like?
 type Literate interface {
 	Literal() *Literal
 }

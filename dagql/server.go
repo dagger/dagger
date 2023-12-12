@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/opencontainers/go-digest"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
@@ -189,11 +191,11 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 				}
 				sels, err := s.selections(gqlOp, op.SelectionSet)
 				if err != nil {
-					return graphql.ErrorResponse(ctx, "selections: %s", err)
+					return graphql.ErrorResponse(ctx, "failed to convert selections: %s", err)
 				}
 				results, err = s.Resolve(ctx, s.root, sels...)
 				if err != nil {
-					return graphql.ErrorResponse(ctx, "resolve: %s", err)
+					return graphql.ErrorResponse(ctx, "failed to resolve: %s", err)
 				}
 			case ast.Mutation:
 				// TODO
@@ -250,17 +252,32 @@ func (sel Selector) AppendToID(id *idproto.ID, field *ast.FieldDefinition) *idpr
 }
 
 func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection) (map[string]any, error) {
-	results := make(map[string]any, len(sels))
+	results := new(sync.Map)
+
+	pool := new(pool.ErrorPool)
 
 	for _, sel := range sels {
-		res, err := s.resolvePath(ctx, self, sel)
-		if err != nil {
-			return nil, err
-		}
-		results[sel.Name()] = res
+		sel := sel
+		pool.Go(func() error {
+			res, err := s.resolvePath(ctx, self, sel)
+			if err != nil {
+				return fmt.Errorf("%s: %w", sel.Name(), err)
+			}
+			results.Store(sel.Name(), res)
+			return nil
+		})
 	}
 
-	return results, nil
+	if err := pool.Wait(); err != nil {
+		return nil, err
+	}
+
+	resultsMap := make(map[string]any)
+	results.Range(func(key, value any) bool {
+		resultsMap[key.(string)] = value
+		return true
+	})
+	return resultsMap, nil
 }
 
 func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection) (any, error) {
@@ -377,7 +394,7 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, 
 	case *idproto.Literal_Int:
 		return NewInt(int(v.Int)), nil
 	case *idproto.Literal_Float:
-		return nil, fmt.Errorf("TODO: floats")
+		return NewFloat(v.Float), nil
 	case *idproto.Literal_String_:
 		return NewString(v.String_), nil
 	case *idproto.Literal_Bool:

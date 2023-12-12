@@ -394,10 +394,10 @@ func TestEnums(t *testing.T) {
 }
 
 type Defaults struct {
-	Boolean bool
-	Int     int
-	String  string
-	Float   float64
+	Boolean dagql.Boolean `default:"true"`
+	Int     dagql.Int     `default:"42"`
+	String  dagql.String  `default:"hello, world!"`
+	Float   dagql.Float   `default:"3.14"`
 }
 
 func (Defaults) Type() *ast.Type {
@@ -409,44 +409,37 @@ func (Defaults) Type() *ast.Type {
 
 func TestDefaults(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	points.Install[Query](srv)
-
 	gql := client.New(handler.NewDefaultServer(srv))
 
 	dagql.Fields[Defaults]{
 		"boolean": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Boolean, error) {
-			return dagql.NewBoolean(self.Boolean), nil
+			return self.Boolean, nil
 		}),
 		"int": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Int, error) {
-			return dagql.NewInt(self.Int), nil
+			return self.Int, nil
 		}),
 		"string": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.String, error) {
-			return dagql.NewString(self.String), nil
+			return self.String, nil
 		}),
 		"float": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Float, error) {
-			return dagql.NewFloat(self.Float), nil
+			return self.Float, nil
 		}),
 	}.Install(srv)
 
-	t.Run("invalid defaults", func(t *testing.T) {
+	t.Run("builtin scalar types", func(t *testing.T) {
 		dagql.Fields[Query]{
-			"defaults": dagql.Func(func(ctx context.Context, self Query, args struct {
-				Boolean dagql.Boolean `default:"true"`
-				Int     dagql.Int     `default:"42"`
-				String  dagql.String  `default:"hello, world!"`
-				Float   dagql.Float   `default:"3.14"`
-			}) (Defaults, error) {
-				return Defaults{
-					Boolean: args.Boolean.Value,
-					Int:     args.Int.Value,
-					String:  args.String.Value,
-					Float:   args.Float.Value,
-				}, nil
+			"defaults": dagql.Func(func(ctx context.Context, self Query, args Defaults) (Defaults, error) {
+				return args, nil // cute
 			}),
 		}.Install(srv)
 
 		var res struct {
-			Defaults
+			Defaults struct {
+				Boolean bool
+				Int     int
+				String  string
+				Float   float64
+			}
 		}
 		gql.MustPost(`query {
 			defaults {
@@ -456,9 +449,137 @@ func TestDefaults(t *testing.T) {
 				float
 			}
 		}`, &res)
-		assert.Equal(t, true, res.Boolean)
-		assert.Equal(t, 42, res.Int)
-		assert.Equal(t, "hello, world!", res.String)
-		assert.Equal(t, 3.14, res.Float)
+		assert.Equal(t, true, res.Defaults.Boolean)
+		assert.Equal(t, 42, res.Defaults.Int)
+		assert.Equal(t, "hello, world!", res.Defaults.String)
+		assert.Equal(t, 3.14, res.Defaults.Float)
+	})
+
+	t.Run("invalid defaults", func(t *testing.T) {
+		dagql.Fields[Query]{
+			"badBool": dagql.Func(func(ctx context.Context, self Query, args struct {
+				Boolean dagql.Boolean `default:"yessir"`
+			}) (Defaults, error) {
+				panic("should not be called")
+			}),
+			"badInt": dagql.Func(func(ctx context.Context, self Query, args struct {
+				Int dagql.Int `default:"forty-two"`
+			}) (Defaults, error) {
+				panic("should not be called")
+			}),
+			"badFloat": dagql.Func(func(ctx context.Context, self Query, args struct {
+				Float dagql.Float `default:"float on"`
+			}) (Defaults, error) {
+				panic("should not be called")
+			}),
+		}.Install(srv)
+
+		var res struct {
+			Defaults struct {
+				Boolean bool
+				Int     int
+				String  string
+				Float   float64
+			}
+		}
+		err := gql.Post(`query {
+			badBool {
+				boolean
+			}
+			badInt {
+				int
+			}
+			badFloat {
+				float
+			}
+		}`, &res)
+		t.Logf("error (expected): %s", err)
+		assert.ErrorContains(t, err, "yessir")
+		assert.ErrorContains(t, err, "forty-two")
+		assert.ErrorContains(t, err, "float on")
+	})
+}
+
+type Pipe struct {
+	Channel chan dagql.String
+}
+
+func (Pipe) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Pipe",
+		NonNull:   true,
+	}
+}
+
+func TestParallelism(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	dagql.Fields[Query]{
+		"pipe": dagql.Func(func(ctx context.Context, self Query, args struct {
+			Buffer dagql.Int `default:"0"`
+		}) (Pipe, error) {
+			return Pipe{
+				Channel: make(chan dagql.String, args.Buffer.Value),
+			}, nil
+		}),
+	}.Install(srv)
+
+	dagql.Fields[Pipe]{
+		"read": dagql.Func(func(ctx context.Context, self Pipe, _ any) (dagql.String, error) {
+			return <-self.Channel, nil
+		}),
+		"write": dagql.Func(func(ctx context.Context, self Pipe, args struct {
+			Message dagql.String
+		}) (Pipe, error) {
+			self.Channel <- args.Message
+			return self, nil
+		}),
+	}.Install(srv)
+
+	t.Run("simple synchronous case", func(t *testing.T) {
+		var res struct {
+			Pipe struct {
+				Write any
+				Read  string
+			}
+		}
+		gql.MustPost(`query {
+			pipe {
+				write(message: "hello, world!") {
+					id
+				}
+				read
+			}
+		}`, &res)
+		assert.Equal(t, res.Pipe.Read, "hello, world!")
+	})
+
+	// I'm not sure if this is actually necessary to define, but...
+	t.Run("parallel at each level", func(t *testing.T) {
+		var res struct {
+			Pipe struct {
+				Write struct {
+					Write struct {
+						Id string
+					}
+					Read string
+				}
+				Read string
+			}
+		}
+		gql.MustPost(`query {
+			pipe {
+				write(message: "one") {
+					write(message: "two") {
+						id
+					}
+					read
+				}
+				read
+			}
+		}`, &res)
+		assert.Equal(t, res.Pipe.Read, "one")
+		assert.Equal(t, res.Pipe.Write.Read, "two")
 	})
 }

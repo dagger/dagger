@@ -273,19 +273,14 @@ func (r Object[T]) Select(ctx context.Context, sel Selector) (res Typed, err err
 		var zero T
 		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
 	}
-	defer func() {
-		if err := recover(); err != nil {
-			panic(fmt.Errorf("panic in %s.%s: %v", r.Type().Name(), sel.Field, err))
-		}
-	}()
-	args, err := FieldArgs(field.Spec, sel.Args)
+	args, err := applyDefaults(field.Spec, sel.Args)
 	if err != nil {
 		return nil, err
 	}
 	return r.Class.Call(ctx, r, sel.Field, args)
 }
 
-func FieldArgs(field FieldSpec, givenArgs map[string]Typed) (map[string]Typed, error) {
+func applyDefaults(field FieldSpec, givenArgs map[string]Typed) (map[string]Typed, error) {
 	args := make(map[string]Typed, len(field.Args))
 	for _, arg := range field.Args {
 		val, ok := givenArgs[arg.Name]
