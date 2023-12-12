@@ -88,6 +88,7 @@ const config = {
           tsconfig: '../sdk/nodejs/tsconfig.json',
           out: '../current_docs/sdk/nodejs/reference/',
           excludeProtected: true,
+          exclude: '../sdk/nodejs/node_modules/**',
           skipErrorChecking: true,
           disableSources: true,
           sidebar: {

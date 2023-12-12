@@ -67,7 +67,7 @@ ___
 
 ### requestContext
 
- **requestContext**: `GraphQLRequestContext`
+ **requestContext**: `GraphQLRequestContext`\<`Variables`\>
 
 The query and variables, which caused the error.
 
@@ -75,7 +75,7 @@ ___
 
 ### response
 
- **response**: `GraphQLResponse`
+ **response**: `GraphQLResponse`\<`unknown`\>
 
 the GraphQL response containing the error.
 
@@ -88,47 +88,6 @@ ___
 #### Inherited from
 
 [DaggerSDKError](common_errors.DaggerSDKError.md).[stack](common_errors.DaggerSDKError.md#stack)
-
-___
-
-### prepareStackTrace
-
- `Static` `Optional` **prepareStackTrace**: (`err`: `Error`, `stackTraces`: `CallSite`[]) => `any`
-
-#### Type declaration
-
-(`err`, `stackTraces`): `any`
-
-Optional override for formatting stack traces
-
-##### Parameters
-
-| Name | Type |
-| :------ | :------ |
-| `err` | `Error` |
-| `stackTraces` | `CallSite`[] |
-
-##### Returns
-
-`any`
-
-**`See`**
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-#### Inherited from
-
-[DaggerSDKError](common_errors.DaggerSDKError.md).[prepareStackTrace](common_errors.DaggerSDKError.md#preparestacktrace)
-
-___
-
-### stackTraceLimit
-
- `Static` **stackTraceLimit**: `number`
-
-#### Inherited from
-
-[DaggerSDKError](common_errors.DaggerSDKError.md).[stackTraceLimit](common_errors.DaggerSDKError.md#stacktracelimit)
 
 ## Methods
 
@@ -145,26 +104,3 @@ Pretty prints the error
 #### Inherited from
 
 [DaggerSDKError](common_errors.DaggerSDKError.md).[printStackTrace](common_errors.DaggerSDKError.md#printstacktrace)
-
-___
-
-### captureStackTrace
-
-**captureStackTrace**(`targetObject`, `constructorOpt?`): `void`
-
-Create .stack property on a target object
-
-#### Parameters
-
-| Name | Type |
-| :------ | :------ |
-| `targetObject` | `object` |
-| `constructorOpt?` | `Function` |
-
-#### Returns
-
-`void`
-
-#### Inherited from
-
-[DaggerSDKError](common_errors.DaggerSDKError.md).[captureStackTrace](common_errors.DaggerSDKError.md#capturestacktrace)

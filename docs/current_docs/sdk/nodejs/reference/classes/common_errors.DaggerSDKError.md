@@ -89,47 +89,6 @@ ___
 
 Error.stack
 
-___
-
-### prepareStackTrace
-
- `Static` `Optional` **prepareStackTrace**: (`err`: `Error`, `stackTraces`: `CallSite`[]) => `any`
-
-#### Type declaration
-
-(`err`, `stackTraces`): `any`
-
-Optional override for formatting stack traces
-
-##### Parameters
-
-| Name | Type |
-| :------ | :------ |
-| `err` | `Error` |
-| `stackTraces` | `CallSite`[] |
-
-##### Returns
-
-`any`
-
-**`See`**
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-#### Inherited from
-
-Error.prepareStackTrace
-
-___
-
-### stackTraceLimit
-
- `Static` **stackTraceLimit**: `number`
-
-#### Inherited from
-
-Error.stackTraceLimit
-
 ## Methods
 
 ### printStackTrace
@@ -141,26 +100,3 @@ Pretty prints the error
 #### Returns
 
 `void`
-
-___
-
-### captureStackTrace
-
-**captureStackTrace**(`targetObject`, `constructorOpt?`): `void`
-
-Create .stack property on a target object
-
-#### Parameters
-
-| Name | Type |
-| :------ | :------ |
-| `targetObject` | `object` |
-| `constructorOpt?` | `Function` |
-
-#### Returns
-
-`void`
-
-#### Inherited from
-
-Error.captureStackTrace

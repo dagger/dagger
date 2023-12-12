@@ -105,47 +105,6 @@ ___
 
 The stdout of the command.
 
-___
-
-### prepareStackTrace
-
- `Static` `Optional` **prepareStackTrace**: (`err`: `Error`, `stackTraces`: `CallSite`[]) => `any`
-
-#### Type declaration
-
-(`err`, `stackTraces`): `any`
-
-Optional override for formatting stack traces
-
-##### Parameters
-
-| Name | Type |
-| :------ | :------ |
-| `err` | `Error` |
-| `stackTraces` | `CallSite`[] |
-
-##### Returns
-
-`any`
-
-**`See`**
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-#### Inherited from
-
-[DaggerSDKError](common_errors.DaggerSDKError.md).[prepareStackTrace](common_errors.DaggerSDKError.md#preparestacktrace)
-
-___
-
-### stackTraceLimit
-
- `Static` **stackTraceLimit**: `number`
-
-#### Inherited from
-
-[DaggerSDKError](common_errors.DaggerSDKError.md).[stackTraceLimit](common_errors.DaggerSDKError.md#stacktracelimit)
-
 ## Methods
 
 ### printStackTrace
@@ -171,26 +130,3 @@ ___
 #### Returns
 
 `string`
-
-___
-
-### captureStackTrace
-
-**captureStackTrace**(`targetObject`, `constructorOpt?`): `void`
-
-Create .stack property on a target object
-
-#### Parameters
-
-| Name | Type |
-| :------ | :------ |
-| `targetObject` | `object` |
-| `constructorOpt?` | `Function` |
-
-#### Returns
-
-`void`
-
-#### Inherited from
-
-[DaggerSDKError](common_errors.DaggerSDKError.md).[captureStackTrace](common_errors.DaggerSDKError.md#capturestacktrace)
