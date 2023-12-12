@@ -97,11 +97,11 @@ The result will be:
 }
 ```
 
-## Write an async module constructor function
+## Write an asynchronous module constructor function
 
-Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, enable use of async calls while initializing the object.
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, enable use of asynchronous calls while initializing the object.
 
-Here is an example module using the Python SDK with a custom async constructor, which must be named `create`:
+Here is an example module using the Python SDK with a custom asynchronous constructor, which must be named `create`:
 
 ```python file=./snippets/advanced-programming/constructor/main.py
 
