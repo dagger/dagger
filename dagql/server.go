@@ -476,14 +476,7 @@ func (fields Fields[T]) Install(server *Server) *ast.Definition {
 				Type: arg.Type,
 			}
 			if arg.Default != nil {
-				payload, err := json.Marshal(arg.Default)
-				if err != nil {
-					panic(err)
-				}
-				schemaArg.DefaultValue = &ast.Value{
-					Raw:  string(payload),
-					Kind: ast.ValueKind(arg.Default.Kind()),
-				}
+				schemaArg.DefaultValue = LiteralToAST(arg.Default.Literal())
 			}
 			schemaArgs = append(schemaArgs, schemaArg)
 		}

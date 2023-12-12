@@ -199,10 +199,6 @@ func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
-func (o Object[T]) Kind() ast.ValueKind {
-	return ast.ObjectValue
-}
-
 func (o Object[T]) Value() Typed {
 	return o.Self
 }
