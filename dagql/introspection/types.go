@@ -25,46 +25,9 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}),
 	}.Install(srv)
 
-	typeKind := dagql.EnumSpec{
-		Name: "__TypeKind",
-		Values: []*ast.EnumValueDefinition{
-			{Name: "SCALAR"},
-			{Name: "OBJECT"},
-			{Name: "INTERFACE"},
-			{Name: "UNION"},
-			{Name: "ENUM"},
-			{Name: "INPUT_OBJECT"},
-			{Name: "LIST"},
-			{Name: "NON_NULL"},
-		},
-	}
-	typeKind.Install(srv)
+	dagql.EnumSpec[TypeKind]{}.Install(srv)
 
-	directiveLocation := dagql.EnumSpec{
-		Name: "__DirectiveLocation",
-		Values: []*ast.EnumValueDefinition{
-			{Name: "QUERY"},
-			{Name: "MUTATION"},
-			{Name: "SUBSCRIPTION"},
-			{Name: "FIELD"},
-			{Name: "FRAGMENT_DEFINITION"},
-			{Name: "FRAGMENT_SPREAD"},
-			{Name: "INLINE_FRAGMENT"},
-			{Name: "VARIABLE_DEFINITION"},
-			{Name: "SCHEMA"},
-			{Name: "SCALAR"},
-			{Name: "OBJECT"},
-			{Name: "FIELD_DEFINITION"},
-			{Name: "ARGUMENT_DEFINITION"},
-			{Name: "INTERFACE"},
-			{Name: "UNION"},
-			{Name: "ENUM"},
-			{Name: "ENUM_VALUE"},
-			{Name: "INPUT_OBJECT"},
-			{Name: "INPUT_FIELD_DEFINITION"},
-		},
-	}
-	directiveLocation.Install(srv)
+	dagql.EnumSpec[DirectiveLocation]{}.Install(srv)
 
 	dagql.Fields[Schema]{
 		"queryType": dagql.Func(func(ctx context.Context, self Schema, args struct{}) (Type, error) {
@@ -106,11 +69,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return dagql.Opt(dagql.NewString(*self.Name())), nil
 			}
 		}),
-		"kind": dagql.Func(func(ctx context.Context, self Type, args struct{}) (dagql.Enum, error) {
-			return dagql.Enum{
-				Enum:  typeKind.Type(),
-				Value: self.Kind(),
-			}, nil
+		"kind": dagql.Func(func(ctx context.Context, self Type, args struct{}) (TypeKind, error) {
+			return TypeKind(self.Kind()), nil
 		}),
 		"description": dagql.Func(func(ctx context.Context, self Type, args struct{}) (dagql.Optional[dagql.String], error) {
 			if self.Description() == nil {
@@ -177,13 +137,10 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return dagql.Opt(dagql.NewString(*self.Description())), nil
 			}
 		}),
-		"locations": dagql.Func(func(ctx context.Context, self Directive, args struct{}) (dagql.Array[dagql.Enum], error) {
-			var locations []dagql.Enum
+		"locations": dagql.Func(func(ctx context.Context, self Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
+			var locations []DirectiveLocation
 			for _, loc := range self.Locations {
-				locations = append(locations, dagql.Enum{
-					Enum:  directiveLocation.Type(),
-					Value: loc,
-				})
+				locations = append(locations, DirectiveLocation(loc))
 			}
 			return locations, nil
 		}),
@@ -378,5 +335,75 @@ func (s EnumValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__EnumValue",
 		NonNull:   true,
+	}
+}
+
+type TypeKind string
+
+const (
+	TypeKindScalar      = "SCALAR"
+	TypeKindObject      = "OBJECT"
+	TypeKindInterface   = "INTERFACE"
+	TypeKindUnion       = "UNION"
+	TypeKindEnum        = "ENUM"
+	TypeKindInputObject = "INPUT_OBJECT"
+	TypeKindList        = "LIST"
+	TypeKindNonNull     = "NON_NULL"
+)
+
+var _ dagql.Enum = TypeKind("")
+
+func (k TypeKind) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "__TypeKind",
+		NonNull:   true,
+	}
+}
+
+func (k TypeKind) PossibleValues() ast.EnumValueList {
+	return ast.EnumValueList{
+		{Name: TypeKindScalar},
+		{Name: TypeKindObject},
+		{Name: TypeKindInterface},
+		{Name: TypeKindUnion},
+		{Name: TypeKindEnum},
+		{Name: TypeKindInputObject},
+		{Name: TypeKindList},
+		{Name: TypeKindNonNull},
+	}
+}
+
+type DirectiveLocation string
+
+var _ dagql.Enum = DirectiveLocation("")
+
+func (k DirectiveLocation) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "__DirectiveLocation",
+		NonNull:   true,
+	}
+}
+
+func (k DirectiveLocation) PossibleValues() ast.EnumValueList {
+	return ast.EnumValueList{
+		{Name: "QUERY"},
+		{Name: "MUTATION"},
+		{Name: "SUBSCRIPTION"},
+		{Name: "FIELD"},
+		{Name: "FRAGMENT_DEFINITION"},
+		{Name: "FRAGMENT_SPREAD"},
+		{Name: "INLINE_FRAGMENT"},
+		{Name: "VARIABLE_DEFINITION"},
+		{Name: "SCHEMA"},
+		{Name: "SCALAR"},
+		{Name: "OBJECT"},
+		{Name: "FIELD_DEFINITION"},
+		{Name: "ARGUMENT_DEFINITION"},
+		{Name: "INTERFACE"},
+		{Name: "UNION"},
+		{Name: "ENUM"},
+		{Name: "ENUM_VALUE"},
+		{Name: "INPUT_OBJECT"},
+		{Name: "INPUT_FIELD_DEFINITION"},
 	}
 }
