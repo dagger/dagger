@@ -3,16 +3,19 @@
 namespace DaggerIo\Tests\Connection;
 
 use DaggerIo\Connection\CliDownloader;
-use DaggerIo\Dagger;
+use DaggerIo\Connection\Provisioning;
 use PHPUnit\Framework\TestCase;
 
 class CliDownloaderTest extends TestCase
 {
-    public function testCliDownload()
+    /**
+     * @group functional
+     */
+    public function testRealCliDownload(): void
     {
-        $versionToDownload = Dagger::DEFAULT_CLI_VERSION;
-        $cliDownloader = new CliDownloader($versionToDownload);
-        $path = $cliDownloader->download();
+        $versionToDownload = Provisioning::getCliVersion();
+        $cliDownloader = new CliDownloader();
+        $path = $cliDownloader->download($versionToDownload);
 
         $this->assertNotNull($path);
 

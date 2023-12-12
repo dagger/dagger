@@ -2,7 +2,10 @@
 
 $finder = (new PhpCsFixer\Finder())
     ->in(__DIR__)
-    ->exclude('generated')
+    ->notPath('src/Connection/version.php')
+    ->exclude([
+        'generated'
+    ])
 ;
 
 return (new PhpCsFixer\Config())

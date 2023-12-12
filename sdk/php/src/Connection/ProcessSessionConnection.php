@@ -2,19 +2,17 @@
 
 namespace DaggerIo\Connection;
 
-use Composer\InstalledVersions;
-use DaggerIo\DaggerConnection;
-use Exception;
+use DaggerIo\Connection;
 use GraphQL\Client;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use RuntimeException;
 use Symfony\Component\Process\Process;
 
-class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerAwareInterface
+class ProcessSessionConnection extends Connection implements LoggerAwareInterface
 {
     private ?Process $sessionProcess;
-    private ?Client $client;
     private LoggerInterface $logger;
 
     public function __construct(
@@ -24,14 +22,14 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
         $this->logger = new NullLogger();
     }
 
-    public function getGraphQlClient(): Client
+    public function connect(): Client
     {
         if (isset($this->client)) {
             return $this->client;
         }
 
         $cliBinPath = $this->getCliPath();
-        $sdkVersion = $this->getSdkVersion();
+        $sdkVersion = Provisioning::getSdkVersion();
 
         $sessionInformation = null;
         $process = new Process([
@@ -43,11 +41,7 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
             'dagger.io/sdk.name:php',
             '--label',
             "dagger.io/sdk.version:{$sdkVersion}",
-        ], env: [
-                'DAGGER_SESSION_TOKEN' => false,
-                'DAGGER_SESSION_PORT' => false,
-        ]
-        );
+        ]);
 
         $process->setTimeout(null);
         $process->setPty(true);
@@ -82,7 +76,7 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
         });
 
         if (null === $sessionInformation) {
-            throw new \RuntimeException('Cannot fetch informations from process session');
+            throw new RuntimeException('Cannot fetch informations from process session');
         }
 
         $port = $sessionInformation->port;
@@ -95,15 +89,6 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
         $this->sessionProcess = $process;
 
         return $this->client;
-    }
-
-    public function getVersion(): string
-    {
-        $cliBinPath = $this->getCliPath();
-        $process = new Process([$cliBinPath, 'version']);
-        $process->mustRun();
-
-        return $process->getOutput();
     }
 
     /**
@@ -122,7 +107,7 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
     public function close(): void
     {
         if (isset($this->sessionProcess)) {
-            $this->sessionProcess->stop();
+            $this->sessionProcess->stop(signal: 15); // SIGTERM
         }
         $this->client = null;
     }
@@ -140,18 +125,5 @@ class ProcessSessionDaggerConnection extends DaggerConnection implements LoggerA
         }
 
         return $cliBinPath;
-    }
-
-    private function getSdkVersion(): string
-    {
-        $projectDir = dirname(__DIR__, 2);
-
-        try {
-            $version = InstalledVersions::getVersion('dagger.io/dagger-php-sdk') ?? 'dev';
-        } catch (Exception) {
-            $version = 'dev';
-        }
-
-        return $version;
     }
 }

@@ -41,6 +41,6 @@ You can launch a basic development environment by using the provided docker-comp
 1. Launch the cli : `docker compose up -d cli`
 2. Spawn a shell inside : `docker compose exec cli bash`
 3. Install dependencies : `composer install`
-4. Run the tests : phpunit
+4. Run the tests : `phpunit`
 
-You can regenerate the files by using the `codegen` command
+You can regenerate the files by using the `./codegen` command

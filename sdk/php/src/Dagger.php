@@ -3,33 +3,17 @@
 namespace DaggerIo;
 
 use CompileError;
-use DaggerIo\Connection\CliDownloader;
-use DaggerIo\Connection\ProcessSessionDaggerConnection;
 use DaggerIo\Gen\DaggerClient;
 
 class Dagger
 {
-    public const DEFAULT_CLI_VERSION = '0.9.3';
-
-    public static function connect(string $workingDir = null): DaggerClient
+    public static function connect(string $workingDir = ''): DaggerClient
     {
-        $connection = null;
-
         if (!class_exists('DaggerIo\\Gen\\DaggerClient')) {
             throw new CompileError('Missing code generated dagger client');
         }
 
-        $port = getenv('DAGGER_SESSION_PORT');
-        $token = getenv('DAGGER_SESSION_TOKEN');
-
-        if (false !== $port || false !== $token) {
-            $connection = DaggerConnection::newEnvSession();
-        }
-
-        if (null === $connection) {
-            $cliDownloader = new CliDownloader(self::DEFAULT_CLI_VERSION);
-            $connection = new ProcessSessionDaggerConnection($workingDir, $cliDownloader);
-        }
+        $connection = Connection::get($workingDir);
 
         return new DaggerClient($connection);
     }

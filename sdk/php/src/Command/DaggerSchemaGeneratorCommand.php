@@ -3,9 +3,7 @@
 namespace DaggerIo\Command;
 
 use DaggerIo\Codegen\SchemaGenerator;
-use DaggerIo\Connection\DevDaggerConnection;
-use DaggerIo\Dagger;
-use DaggerIo\DaggerConnection;
+use DaggerIo\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -23,18 +21,18 @@ class DaggerSchemaGeneratorCommand extends Command
         DIRECTORY_SEPARATOR.
         'generated';
 
-    private DaggerConnection $daggerConnection;
+    private Connection $daggerConnection;
 
     public function __construct()
     {
         parent::__construct();
-        $this->daggerConnection = DaggerConnection::newProcessSession('.', Dagger::DEFAULT_CLI_VERSION);
+        $this->daggerConnection = Connection::get();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        $client = $this->daggerConnection->getGraphQlClient();
+        $client = $this->daggerConnection->connect();
         $generator = new SchemaGenerator($client);
 
         file_put_contents('schema.json', $generator->getJson());

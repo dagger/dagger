@@ -2,7 +2,7 @@
 
 namespace DaggerIo\Client;
 
-use DaggerIo\DaggerConnection;
+use DaggerIo\Connection;
 use DaggerIo\Gen\DaggerClient;
 use DaggerIo\GraphQl\QueryBuilderChain;
 use GraphQL\Client;
@@ -18,11 +18,11 @@ abstract class AbstractDaggerClient
     protected Client $graphQlClient;
 
     public function __construct(
-        DaggerConnection|DaggerClient $clientOrConnection,
+        Connection|DaggerClient $clientOrConnection,
         protected readonly QueryBuilderChain $queryBuilderChain = new QueryBuilderChain()
     ) {
-        if ($clientOrConnection instanceof DaggerConnection) {
-            $this->graphQlClient = $clientOrConnection->getGraphQlClient();
+        if ($clientOrConnection instanceof Connection) {
+            $this->graphQlClient = $clientOrConnection->connect();
         } else {
             $this->graphQlClient = $clientOrConnection->graphQlClient;
         }

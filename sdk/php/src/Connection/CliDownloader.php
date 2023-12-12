@@ -13,7 +13,7 @@ class CliDownloader implements LoggerAwareInterface
 
     private NullLogger $logger;
 
-    public function __construct(private readonly string $daggerVersion)
+    public function __construct()
     {
         $this->logger = new NullLogger();
     }
@@ -22,14 +22,18 @@ class CliDownloader implements LoggerAwareInterface
     {
     }
 
-    public function download(): string
+    public function download(string $version = null): string
     {
+        if (null === $version) {
+            $version = Provisioning::getCliVersion();
+        }
+
         $cacheDir = $this->getCacheDir();
         if (!file_exists($cacheDir)) {
             mkdir($cacheDir);
         }
 
-        $binName = self::DAGGER_CLI_BIN_PREFIX.$this->daggerVersion;
+        $binName = self::DAGGER_CLI_BIN_PREFIX.$version;
         if ($this->isWindows()) {
             $binName .= '.exe';
         }
@@ -41,9 +45,9 @@ class CliDownloader implements LoggerAwareInterface
         }
 
         $tmpFile = tempnam($cacheDir, 'tmp-');
-        $archiveName = $this->getDefaultCliArchiveName($this->daggerVersion);
-        $expectedChecksum = $this->getExpectedChecksum($this->daggerVersion, $archiveName);
-        $actualChecksum = $this->extractCli($archiveName, $this->daggerVersion, $tmpFile);
+        $archiveName = $this->getDefaultCliArchiveName($version);
+        $expectedChecksum = $this->getExpectedChecksum($version, $archiveName);
+        $actualChecksum = $this->extractCli($archiveName, $version, $tmpFile);
 
         if ($expectedChecksum === $actualChecksum) {
             rename($tmpFile, $binPath);
