@@ -55,7 +55,7 @@ into the Dagger account.
 * [ ] IDs should also contain module info
 * [ ] IDs should also contain digest of result (stretch goal, this is higher
   level, e.g. we want literal file checksums for objects that represent a file)
-* [ ] get rid of Identified in favor of Object? (see interfaces + wrapping concern below)
+* [x] get rid of Identified in favor of Object? (see interfaces + wrapping concern below)
 
 ## minor things to reconsider
 

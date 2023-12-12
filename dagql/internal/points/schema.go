@@ -77,7 +77,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		}),
 		"loadPointFromID": dagql.Func(func(ctx context.Context, self R, args struct {
 			ID dagql.ID[Point]
-		}) (dagql.Identified[Point], error) { // TODO Object instead of just Identified?
+		}) (dagql.Object[Point], error) {
 			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)
@@ -129,7 +129,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 			if err != nil {
 				return Line{}, err
 			}
-			return Line{self, to.Value().(Point)}, nil // TODO
+			return Line{self, to.Self}, nil
 		}),
 	}.Install(srv)
 

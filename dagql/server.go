@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -123,9 +122,14 @@ func (s *Server) selections(gqlOp *graphql.OperationContext, astSels ast.Selecti
 	return sels, nil
 }
 
-func (s *Server) Load(ctx context.Context, id *idproto.ID) (Typed, error) {
+func (s *Server) Load(ctx context.Context, id *idproto.ID) (Selectable, error) {
 	var res Typed = s.root
 	for i, idSel := range id.Constructor {
+		stepID := id.Clone()
+		stepID.Constructor = id.Constructor[:i+1]
+
+		// TODO: kind of annoying but technically correct; for the ID to match, the
+		// return type at this point in time also has to match.
 		schemaType, ok := s.schema.Types[res.Type().Name()]
 		if !ok {
 			return nil, fmt.Errorf("unknown type: %q", res.Type().Name())
@@ -134,16 +138,9 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Typed, error) {
 		if fieldDef == nil {
 			return nil, fmt.Errorf("unknown field: %q", idSel.Field)
 		}
-		class, ok := s.classes[res.Type().Name()]
-		if !ok {
-			return nil, fmt.Errorf("undefined class: %q", fieldDef.Type.Name())
-		}
-		// TODO: kind of annoying but technically correct; for the ID to match, the
-		// return type at this point in time also has to match.
-		stepID := id.Clone()
-		stepID.Constructor = id.Constructor[:i+1]
 		stepID.TypeName = fieldDef.Type.Name()
-		obj, err := class.New(stepID, res)
+
+		obj, err := s.toSelectable(stepID, res)
 		if err != nil {
 			return nil, fmt.Errorf("instantiate from id: %w", err)
 		}
@@ -174,41 +171,7 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Typed, error) {
 			}
 		}
 	}
-	return res, nil
-}
-
-func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, error) {
-	switch v := lit.Value.(type) {
-	case *idproto.Literal_Id:
-		id := v.Id
-		class, ok := s.classes[id.TypeName]
-		if !ok {
-			return nil, fmt.Errorf("unknown class: %q", id.TypeName)
-		}
-		return class.ID(id), nil
-	case *idproto.Literal_Int:
-		return NewInt(int(v.Int)), nil
-	case *idproto.Literal_Float:
-		return nil, fmt.Errorf("TODO: floats")
-	case *idproto.Literal_String_:
-		return NewString(v.String_), nil
-	case *idproto.Literal_Bool:
-		return NewBoolean(v.Bool), nil
-	case *idproto.Literal_List:
-		list := make(Array[Typed], len(v.List.Values))
-		for i, val := range v.List.Values {
-			typed, err := s.fromLiteral(ctx, val)
-			if err != nil {
-				return nil, err
-			}
-			list[i] = typed
-		}
-		return list, nil
-	case *idproto.Literal_Object:
-		return nil, fmt.Errorf("TODO: objects")
-	default:
-		panic(fmt.Sprintf("unsupported literal type %T", v))
-	}
+	return s.toSelectable(id, res)
 }
 
 func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
@@ -346,13 +309,9 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 	} else if len(sel.Subselections) == 0 {
 		res = val
 	} else if len(sel.Subselections) > 0 {
-		class, ok := s.classes[field.Type.Name()]
-		if !ok {
-			return nil, fmt.Errorf("unknown type %q", field.Type.Name())
-		}
 		switch {
 		case field.Type.NamedType != "":
-			node, err := class.New(chainedID, val)
+			node, err := s.toSelectable(chainedID, val)
 			if err != nil {
 				return nil, fmt.Errorf("instantiate: %w", err)
 			}
@@ -375,7 +334,7 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 				if err != nil {
 					return nil, err
 				}
-				node, err := class.New(indexedID, val)
+				node, err := s.toSelectable(indexedID, val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 				}
@@ -404,90 +363,51 @@ func (s *Server) Select(ctx context.Context, self Selectable, sel Selection) (an
 	return res, nil
 }
 
-func (fields Fields[T]) Install(server *Server) *ast.Definition {
-	var t T
-	typeName := t.Type().Name()
+func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, error) {
+	switch v := lit.Value.(type) {
+	case *idproto.Literal_Id:
+		id := v.Id
+		class, ok := s.classes[id.TypeName]
+		if !ok {
+			return nil, fmt.Errorf("unknown class: %q", id.TypeName)
+		}
+		return class.ID(id), nil
+	case *idproto.Literal_Int:
+		return NewInt(int(v.Int)), nil
+	case *idproto.Literal_Float:
+		return nil, fmt.Errorf("TODO: floats")
+	case *idproto.Literal_String_:
+		return NewString(v.String_), nil
+	case *idproto.Literal_Bool:
+		return NewBoolean(v.Bool), nil
+	case *idproto.Literal_List:
+		list := make(Array[Typed], len(v.List.Values))
+		for i, val := range v.List.Values {
+			typed, err := s.fromLiteral(ctx, val)
+			if err != nil {
+				return nil, err
+			}
+			list[i] = typed
+		}
+		return list, nil
+	case *idproto.Literal_Object:
+		return nil, fmt.Errorf("TODO: objects")
+	default:
+		panic(fmt.Sprintf("unsupported literal type %T", v))
+	}
+}
 
-	schemaType, ok := server.schema.Types[typeName]
+func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Selectable, error) {
+	if sel, ok := val.(Selectable); ok {
+		// We always support returning something that's already Selectable, e.g. an
+		// object loaded from its ID.
+		return sel, nil
+	}
+	class, ok := s.classes[val.Type().Name()]
 	if !ok {
-		schemaType = &ast.Definition{
-			Kind:        ast.Object,
-			Description: "TODO", // t.Description()
-			Name:        typeName,
-		}
-		server.schema.AddTypes(schemaType)
-
-		if _, ok := server.scalars[typeName+"ID"]; !ok {
-			idType := &ast.Definition{
-				Kind: ast.Scalar,
-				Name: typeName + "ID",
-			}
-			server.schema.AddTypes(idType)
-			server.scalars[typeName+"ID"] = ID[T]{}
-		}
-
-		fields["id"] = Field[T]{
-			Spec: FieldSpec{
-				Type: &ast.Type{
-					NamedType: typeName + "ID",
-					NonNull:   true,
-				},
-			},
-			NodeFunc: func(ctx context.Context, self Node, args map[string]Typed) (Typed, error) {
-				return ID[T]{ID: self.ID()}, nil
-			},
-		}
+		return nil, fmt.Errorf("unknown type %q", val.Type().Name())
 	}
-
-	for fieldName, field := range fields {
-		schemaField := schemaType.Fields.ForName(fieldName)
-		if schemaField != nil {
-			// TODO
-			log.Printf("field %s.%q redefined", typeName, fieldName)
-			continue
-		}
-
-		schemaArgs := ast.ArgumentDefinitionList{}
-		for _, arg := range field.Spec.Args {
-			schemaArg := &ast.ArgumentDefinition{
-				Name: arg.Name,
-				Type: arg.Type,
-			}
-			if arg.Default != nil {
-				schemaArg.DefaultValue = LiteralToAST(arg.Default.Literal())
-			}
-			schemaArgs = append(schemaArgs, schemaArg)
-		}
-
-		schemaField = &ast.FieldDefinition{
-			Name: fieldName,
-			// Description  string
-			Arguments: schemaArgs,
-			// DefaultValue *Value                 // only for input objects
-			Type: field.Spec.Type,
-			// Directives   DirectiveList
-		}
-
-		// intentionally mutates
-		schemaType.Fields = append(schemaType.Fields, schemaField)
-	}
-
-	if orig, stitch := server.classes[typeName]; stitch {
-		switch cls := orig.(type) {
-		case Class[T]:
-			for fieldName, field := range fields {
-				cls.Fields[fieldName] = field
-			}
-		default:
-			panic(fmt.Errorf("cannot stitch type %q: not an object", typeName))
-		}
-	} else {
-		server.classes[typeName] = Class[T]{
-			Fields: fields,
-		}
-	}
-
-	return schemaType
+	return class.New(chainedID, val)
 }
 
 type Query struct {
