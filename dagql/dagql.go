@@ -1,9 +1,7 @@
 package dagql
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -61,16 +59,9 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 			}
 
 			var argDefault Scalar
-			defaultJSON := []byte(field.Tag.Get("default"))
-			if len(defaultJSON) > 0 {
-				dec := json.NewDecoder(bytes.NewReader(defaultJSON))
-				dec.UseNumber()
-				var val any
-				if err := dec.Decode(&val); err != nil {
-					return nil, fmt.Errorf("decode default value for arg %s: %w", argName, err)
-				}
+			if defaultVal := field.Tag.Get("default"); len(defaultVal) > 0 {
 				var err error
-				argDefault, err = typedArg.New(val)
+				argDefault, err = typedArg.Class().New(defaultVal)
 				if err != nil {
 					return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
 				}
@@ -91,10 +82,7 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 // be used for anything dynamic.
 func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
 	var zeroArgs A
-	argSpecs, err := ArgSpecs(zeroArgs)
-	if err != nil {
-		panic(err)
-	}
+	argSpecs, argsErr := ArgSpecs(zeroArgs)
 
 	var zeroRet R
 	return Field[T]{
@@ -103,6 +91,11 @@ func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) 
 			Type: zeroRet.Type(),
 		},
 		Func: func(ctx context.Context, self T, argVals map[string]Typed) (Typed, error) {
+			if argsErr != nil {
+				// this error is deferred until runtime, since it's better (at least
+				// more testable) than panicking
+				return nil, argsErr
+			}
 			var args A
 			if err := setArgFields(argSpecs, argVals, &args); err != nil {
 				return nil, err

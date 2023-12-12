@@ -1,6 +1,8 @@
 package dagql_test
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
@@ -317,5 +319,100 @@ func TestEnums(t *testing.T) {
 			}
 		}`, &res)
 		assert.ErrorContains(t, err, "BOGUS")
+	})
+
+	t.Run("invalid defaults", func(t *testing.T) {
+		dagql.Fields[points.Point]{
+			"badShift": dagql.Func(func(ctx context.Context, self points.Point, args struct {
+				Direction points.Direction `default:"BOGUS"`
+				Amount    dagql.Int        `default:"1"`
+			}) (points.Point, error) {
+				return points.Point{}, fmt.Errorf("should not be called")
+			}),
+		}.Install(srv)
+		var res struct {
+			Point struct {
+				Inert points.Point
+			}
+		}
+		err := gql.Post(`query {
+			point(x: 6, y: 7) {
+				badShift {
+					x
+					y
+				}
+			}
+		}`, &res)
+		assert.ErrorContains(t, err, "BOGUS")
+	})
+}
+
+type Defaults struct {
+	Boolean bool
+	Int     int
+	String  string
+	Float   float64
+}
+
+func (Defaults) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Defaults",
+		NonNull:   true,
+	}
+}
+
+func TestDefaults(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	dagql.Fields[Defaults]{
+		"boolean": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Boolean, error) {
+			return dagql.NewBoolean(self.Boolean), nil
+		}),
+		"int": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Int, error) {
+			return dagql.NewInt(self.Int), nil
+		}),
+		"string": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.String, error) {
+			return dagql.NewString(self.String), nil
+		}),
+		"float": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Float, error) {
+			return dagql.NewFloat(self.Float), nil
+		}),
+	}.Install(srv)
+
+	t.Run("invalid defaults", func(t *testing.T) {
+		dagql.Fields[Query]{
+			"defaults": dagql.Func(func(ctx context.Context, self Query, args struct {
+				Boolean dagql.Boolean `default:"true"`
+				Int     dagql.Int     `default:"42"`
+				String  dagql.String  `default:"hello, world!"`
+				Float   dagql.Float   `default:"3.14"`
+			}) (Defaults, error) {
+				return Defaults{
+					Boolean: args.Boolean.Value,
+					Int:     args.Int.Value,
+					String:  args.String.Value,
+					Float:   args.Float.Value,
+				}, nil
+			}),
+		}.Install(srv)
+
+		var res struct {
+			Defaults
+		}
+		gql.MustPost(`query {
+			defaults {
+				boolean
+				int
+				string
+				float
+			}
+		}`, &res)
+		assert.Equal(t, true, res.Boolean)
+		assert.Equal(t, 42, res.Int)
+		assert.Equal(t, "hello, world!", res.String)
+		assert.Equal(t, 3.14, res.Float)
 	})
 }
