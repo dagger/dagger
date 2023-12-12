@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -311,6 +312,28 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	return i.Decode(str)
 }
 
+func (i ID[T]) Load(ctx context.Context, server *Server) (Identified[T], error) {
+	// TODO check cache
+	val, err := server.Load(ctx, i.ID)
+	if err != nil {
+		return Identified[T]{}, err
+	}
+	if ided, ok := val.(Identified[T]); ok {
+		// TODO so far I only ran into this by loading an ID that itself calls
+		// loadFooFromID, which is mostly a historical artifact (it used to return
+		// an ID of its own making instead of the ID given).
+		//
+		// but there are most likely real world scenarios where this could happen,
+		// so we should handle it and have a test
+		return ided, nil
+	}
+	obj, ok := val.(T)
+	if !ok {
+		return Identified[T]{}, fmt.Errorf("load: expected %T, got %T", obj, val)
+	}
+	return NewNode(i, obj), nil
+}
+
 type Enumerable interface {
 	Len() int
 	Nth(int) (Typed, error)
@@ -422,72 +445,26 @@ func (i *Optional[T]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-type Enum struct {
-	Enum  *ast.Type
-	Value string
+type Enum interface {
+	Typed
+	Scalar
+	PossibleValues() ast.EnumValueList
 }
 
-var _ Typed = Enum{}
-
-func (n Enum) Type() *ast.Type {
-	return n.Enum
-}
-
-var _ Scalar = Enum{}
-
-func (e Enum) New(val any) (Scalar, error) {
-	switch x := val.(type) {
-	case string:
-		return Enum{
-			Enum:  e.Enum,
-			Value: x,
-		}, nil
-	default:
-		return nil, fmt.Errorf("cannot convert %T to Enum", x)
-	}
-}
-
-func (i Enum) Literal() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Enum{
-			Enum: i.Value,
-		},
-	}
-}
-
-func (i Enum) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Value)
-}
-
-func (i *Enum) UnmarshalJSON(p []byte) error {
-	if err := json.Unmarshal(p, &i.Value); err != nil {
-		return err
-	}
-	return nil
-}
-
-type EnumSpec struct {
-	Name        string
+type EnumSpec[T Enum] struct {
 	Description string
-	Values      []*ast.EnumValueDefinition
 }
 
-func (n EnumSpec) Install(srv *Server) *ast.Definition {
+func (n EnumSpec[T]) Install(srv *Server) *ast.Definition {
+	var zero T
 	def := &ast.Definition{
 		Kind:        ast.Enum,
-		Name:        n.Name,
+		Name:        zero.Type().Name(),
 		Description: n.Description,
-		EnumValues:  n.Values,
+		EnumValues:  zero.PossibleValues(),
 	}
 	srv.schema.AddTypes(def)
 	return def
-}
-
-func (n EnumSpec) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: n.Name,
-		NonNull:   true,
-	}
 }
 
 func Opt[T Typed](v T) Optional[T] {

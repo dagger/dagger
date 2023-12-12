@@ -13,9 +13,6 @@ import (
 )
 
 type FieldSpec struct {
-	// Name is the name of the field.
-	// Name string
-
 	// Args is the list of arguments that the field accepts.
 	Args []ArgSpec
 

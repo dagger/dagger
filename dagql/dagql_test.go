@@ -1,7 +1,6 @@
 package dagql_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
@@ -9,21 +8,10 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
 	"github.com/vito/dagql/idproto"
+	"github.com/vito/dagql/internal/points"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 )
-
-type Point struct {
-	X int
-	Y int
-}
-
-func (Point) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Point",
-		NonNull:   true,
-	}
-}
 
 type Query struct {
 }
@@ -38,48 +26,7 @@ func (Query) Type() *ast.Type {
 func TestBasic(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
-	dagql.Fields[Query]{
-		"point": dagql.Func(func(ctx context.Context, self Query, args struct {
-			X dagql.Int `default:"0"`
-			Y dagql.Int `default:"0"`
-		}) (Point, error) {
-			return Point{
-				X: int(args.X.Value),
-				Y: int(args.Y.Value),
-			}, nil
-		}),
-		"loadPointFromID": dagql.Func(func(ctx context.Context, self Query, args struct {
-			ID dagql.ID[Point]
-		}) (dagql.Identified[Point], error) { // TODO Object instead of just Identified?
-			return args.ID.Load(ctx, srv)
-		}),
-	}.Install(srv)
-
-	dagql.Fields[Point]{
-		"x": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
-			return dagql.NewInt(self.X), nil
-		}),
-		"y": dagql.Func(func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
-			return dagql.NewInt(self.Y), nil
-		}),
-		"self": dagql.Func(func(ctx context.Context, self Point, _ any) (Point, error) {
-			return self, nil
-		}),
-		"shiftLeft": dagql.Func(func(ctx context.Context, self Point, args struct {
-			Amount dagql.Int `default:"1"`
-		}) (Point, error) {
-			self.X -= args.Amount.Value
-			return self, nil
-		}),
-		"neighbors": dagql.Func[Point](func(ctx context.Context, self Point, _ any) (dagql.Array[Point], error) {
-			return []Point{
-				{X: self.X - 1, Y: self.Y},
-				{X: self.X + 1, Y: self.Y},
-				{X: self.X, Y: self.Y - 1},
-				{X: self.X, Y: self.Y + 1},
-			}, nil
-		}),
-	}.Install(srv)
+	points.Install[Query](srv)
 
 	gql := client.New(handler.NewDefaultServer(srv))
 
@@ -114,7 +61,7 @@ func TestBasic(t *testing.T) {
 	expectedID := idproto.New("Point")
 	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
 	expectedID.Append("shiftLeft")
-	expectedEnc, err := dagql.ID[Point]{ID: expectedID}.Encode()
+	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Ecks)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Why)
@@ -166,4 +113,144 @@ func TestBasic(t *testing.T) {
 			assert.Equal(t, res.LoadPointFromID.Y, 8)
 		}
 	}
+}
+
+func TestIDsReflectQuery(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	var res struct {
+		Point struct {
+			ShiftLeft struct {
+				Id        string
+				Neighbors []struct {
+					Id string
+				}
+			}
+		}
+	}
+	gql.MustPost(`query {
+		point(x: 6, y: 7) {
+			shiftLeft {
+				id
+				neighbors {
+					id
+				}
+			}
+		}
+	}`, &res)
+
+	expectedID := idproto.New("Point")
+	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
+	expectedID.Append("shiftLeft")
+	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
+	assert.NilError(t, err)
+	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
+
+	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
+	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
+		var res struct {
+			LoadPointFromID struct {
+				Id string
+				X  int
+				Y  int
+			}
+		}
+		gql.MustPost(`query {
+			loadPointFromID(id: "`+neighbor.Id+`") {
+				id
+				x
+				y
+			}
+		}`, &res)
+		assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
+		switch i {
+		case 0:
+			assert.Equal(t, res.LoadPointFromID.X, 4)
+			assert.Equal(t, res.LoadPointFromID.Y, 7)
+		case 1:
+			assert.Equal(t, res.LoadPointFromID.X, 6)
+			assert.Equal(t, res.LoadPointFromID.Y, 7)
+		case 2:
+			assert.Equal(t, res.LoadPointFromID.X, 5)
+			assert.Equal(t, res.LoadPointFromID.Y, 6)
+		case 3:
+			assert.Equal(t, res.LoadPointFromID.X, 5)
+			assert.Equal(t, res.LoadPointFromID.Y, 8)
+		}
+	}
+}
+
+func TestPassingObjectsAround(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	var res struct {
+		Point struct {
+			Id string
+		}
+	}
+	gql.MustPost(`query {
+		point(x: 6, y: 7) {
+			id
+		}
+	}`, &res)
+
+	id67 := res.Point.Id
+
+	var res2 struct {
+		Point struct {
+			Line struct {
+				Length int
+			}
+		}
+	}
+	gql.MustPost(`query {
+		point(x: -6, y: -7) {
+			line(to: "`+id67+`") {
+				length
+			}
+		}
+	}`, &res2)
+	assert.Equal(t, res2.Point.Line.Length, 18)
+}
+
+func TestEnums(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	var res struct {
+		Point struct {
+			Id string
+		}
+	}
+	gql.MustPost(`query {
+		point(x: 6, y: 7) {
+			id
+		}
+	}`, &res)
+
+	id67 := res.Point.Id
+
+	var res2 struct {
+		Point struct {
+			Line struct {
+				Direction string
+			}
+		}
+	}
+	gql.MustPost(`query {
+		point(x: -6, y: -7) {
+			line(to: "`+id67+`") {
+				direction
+			}
+		}
+	}`, &res2)
+	assert.Equal(t, res2.Point.Line.Direction, "RIGHT")
 }
