@@ -78,12 +78,12 @@ dependencies = [
 
 [tool.hatch.envs.default.scripts]
 fmt = [
-    "ruff --fix-only -e {args:. ../../docs/current}",
-    "black {args:. ../../docs/current}",
+    "ruff --fix-only -e {args:. ../../docs/current_docs}",
+    "black {args:. ../../docs/current_docs}",
 ]
 lint = [
-    "ruff check --diff {args:. ../../docs/current}",
-    "black --check --diff {args:. ../../docs/current}",
+    "ruff check --diff {args:. ../../docs/current_docs}",
+    "black --check --diff {args:. ../../docs/current_docs}",
 ]
 test = "pytest -W default"
 testunit = "pytest -m 'not slow'"
