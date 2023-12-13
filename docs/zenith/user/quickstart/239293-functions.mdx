@@ -8,9 +8,9 @@ title: "List available functions in a module"
 
 ## List available functions in a module
 
-You're now ready to dive into Dagger and start exploring the Dagger CLI!
+So far, you've been working exclusively with one sub-command of the Dagger CLI: the `dagger call` sub-command. However, the Dagger CLI includes a number of other sub-commands as well.
 
-This first example is fairly simple. Use the `dagger functions` command to display the functions exposed by a module.
+Let's start with `dagger functions`, which lists the functions available in a module. Try it with the module you just created:
 
 ```shell
 dagger functions
@@ -20,11 +20,12 @@ Here's an example of the output:
 
 ```shell
 ✔ dagger functions [0.00s]
-┃ object name   function name      description      return type
-┃ *Example      appContainer                        Container!
-┃ *Example      service                             Service!
-┃ *Example      debug                               Container!
-┃ *Example      build                               Directory!
-┃ *Example      test                                String!
-┃ *Example      publishContainer                    String!
+┃ object name   function name    description                 return type
+┃ *Mymodule     hello            say hello                   String!
+┃ *Mymodule     test             run unit tests              String!
+┃ *Mymodule     build            create a production build   Directory!
+┃ *Mymodule     package          create a production image   Container!
+┃ *Mymodule     publish          publish an image            String!
+• Engine: 378cfbb9549c (version v0.9.3)
+⧗ 40.57s ✔ 60 ∅ 12
 ```

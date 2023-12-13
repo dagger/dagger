@@ -15,7 +15,7 @@ This first example is fairly simple: it creates a Dagger module that initializes
 Begin by running `dagger mod init` in your application directory to bootstrap a new module using the Dagger Go SDK:
 
 ```shell
-cd myapp
+cd hello-dagger
 dagger mod init --name=mymodule --sdk=go
 ```
 
@@ -42,6 +42,10 @@ Call the new function using the Dagger CLI:
 ```shell
 dagger call hello
 ```
+
+:::info
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style.
+:::
 
 Dagger performs the operations defined in the function and outputs the message below:
 

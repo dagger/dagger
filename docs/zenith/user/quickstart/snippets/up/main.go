@@ -42,6 +42,12 @@ func (m *Mymodule) Publish(ctx context.Context) (string, error) {
 	return dag.Ttlsh().Publish(ctx, m.Package())
 }
 
+// create a service from the production image
+func (m *Mymodule) PackageService() *Service {
+	return m.Package().
+		AsService()
+}
+
 // build a base image
 func (m *Mymodule) buildBaseImage() *Node {
 	return dag.Node().

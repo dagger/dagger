@@ -275,11 +275,12 @@ module.exports = {
             "zenith/user/quickstart/setup",
             "zenith/user/quickstart/hello",
             "zenith/user/quickstart/test",
+            "zenith/user/quickstart/build",
+            "zenith/user/quickstart/publish",
             "zenith/user/quickstart/functions",
-            "zenith/user/quickstart/call",
-            "zenith/user/quickstart/download",
             "zenith/user/quickstart/shell",
             "zenith/user/quickstart/up",
+            "zenith/user/quickstart/daggerverse",
             "zenith/user/quickstart/conclusion",
           ]
         },
@@ -304,10 +305,6 @@ module.exports = {
             {
               type: "doc",
               id: "zenith/developer/go/quickstart",
-            },
-            {
-              type: "doc",
-              id: "zenith/developer/go/test-build-publish",
             },
             {
               type: "doc",

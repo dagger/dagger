@@ -6,6 +6,7 @@ import (
 
 type Mymodule struct{}
 
+// say hello
 func (m *Mymodule) Hello(ctx context.Context) string {
 	version, err := dag.Container().From("node:18-slim").WithExec([]string{"node", "-v"}).Stdout(ctx)
 	if err != nil {
@@ -14,6 +15,7 @@ func (m *Mymodule) Hello(ctx context.Context) string {
 	return ("Hello from Dagger and Node " + version)
 }
 
+// run unit tests
 func (m *Mymodule) Test(ctx context.Context) (string, error) {
 	return dag.Node().
 		WithVersion("18").
