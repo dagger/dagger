@@ -46,8 +46,10 @@ type ManagerConfig struct {
 	EngineID     string
 }
 
+const LocalCacheID = "local"
+
 func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, error) {
-	localCache := solver.NewCacheManager(ctx, "local", managerConfig.KeyStore, managerConfig.ResultStore)
+	localCache := solver.NewCacheManager(ctx, LocalCacheID, managerConfig.KeyStore, managerConfig.ResultStore)
 	m := &manager{
 		ManagerConfig: managerConfig,
 		localCache:    localCache,
