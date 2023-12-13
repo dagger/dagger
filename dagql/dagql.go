@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -12,9 +11,56 @@ import (
 	"github.com/vito/dagql/idproto"
 )
 
+// Func is a helper for defining a field resolver and schema.
+//
+// The function must accept a context.Context, the receiver, and a struct of
+// arguments. All fields of the arguments struct must be Typed so that the
+// schema may be derived, and Scalar to ensure a default value may be provided.
+//
+// Arguments use struct tags to further configure the schema:
+//
+//   - `arg:"bar"` sets the name of the argument. By default this is the
+//     toLowerCamel'd field name.
+//   - `default:"foo"` sets the default value of the argument. The Scalar type
+//     determines how this value is parsed.
+//   - `doc:"..."` sets the description of the argument.
+//
+// The function must return a Typed value, and an error.
+//
+// To configure a description for the field in the schema, call .Doc on the
+// result.
+func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+	var zeroArgs A
+	argSpecs, argsErr := argSpecs(zeroArgs)
+
+	var zeroRet R
+	return Field[T]{
+		Spec: FieldSpec{
+			Name: name,
+			Args: argSpecs,
+			Type: zeroRet.Type(),
+		},
+		Func: func(ctx context.Context, self T, argVals map[string]Typed) (Typed, error) {
+			if argsErr != nil {
+				// this error is deferred until runtime, since it's better (at least
+				// more testable) than panicking
+				return nil, argsErr
+			}
+			var args A
+			if err := setArgFields(argSpecs, argVals, &args); err != nil {
+				return nil, err
+			}
+			return fn(ctx, self, args)
+		},
+	}
+}
+
+// FieldSpec is a specification for a field.
 type FieldSpec struct {
 	// Name is the name of the field.
 	Name string
+	// Description is the description of the field.
+	Description string
 	// Args is the list of arguments that the field accepts.
 	Args []ArgSpec
 	// Type is the type of the field's result.
@@ -26,44 +72,19 @@ type FieldSpec struct {
 	Pure bool
 }
 
+// ArgSpec is a specification for an argument to a field.
 type ArgSpec struct {
 	// Name is the name of the argument.
 	Name string
+	// Description is the description of the argument.
+	Description string
 	// Type is the type of the argument.
 	Type *ast.Type
 	// Default is the default value of the argument.
 	Default Scalar
 }
 
-type Selector struct {
-	Field string
-	Args  map[string]Typed
-	Nth   int
-}
-
-func (sel Selector) AppendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
-	cp := id.Clone()
-	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
-	for name, val := range sel.Args {
-		idArgs = append(idArgs, &idproto.Argument{
-			Name:  name,
-			Value: ToLiteral(val),
-		})
-	}
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name < idArgs[j].Name
-	})
-	cp.Constructor = append(cp.Constructor, &idproto.Selector{
-		Field:   sel.Field,
-		Args:    idArgs,
-		Tainted: field.Directives.ForName("tainted") != nil, // TODO
-		Meta:    field.Directives.ForName("meta") != nil,    // TODO
-	})
-	cp.TypeName = field.Type.Name()
-	return cp
-}
-
-func ArgSpecs(args any) ([]ArgSpec, error) {
+func argSpecs(args any) ([]ArgSpec, error) {
 	var argSpecs []ArgSpec
 	argsType := reflect.TypeOf(args)
 	if argsType != nil {
@@ -94,42 +115,14 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 			}
 
 			argSpecs = append(argSpecs, ArgSpec{
-				Name:    argName,
-				Type:    typedArg.Type(),
-				Default: argDefault,
+				Name:        argName,
+				Description: field.Tag.Get("doc"),
+				Type:        typedArg.Type(),
+				Default:     argDefault,
 			})
 		}
 	}
 	return argSpecs, nil
-}
-
-// Func is a helper for statically defining fields. It panics if anything goes
-// wrong, as dev-time errors are preferable to runtime errors, so it shouldn't
-// be used for anything dynamic.
-func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
-	var zeroArgs A
-	argSpecs, argsErr := ArgSpecs(zeroArgs)
-
-	var zeroRet R
-	return Field[T]{
-		Spec: FieldSpec{
-			Name: name,
-			Args: argSpecs,
-			Type: zeroRet.Type(),
-		},
-		Func: func(ctx context.Context, self T, argVals map[string]Typed) (Typed, error) {
-			if argsErr != nil {
-				// this error is deferred until runtime, since it's better (at least
-				// more testable) than panicking
-				return nil, argsErr
-			}
-			var args A
-			if err := setArgFields(argSpecs, argVals, &args); err != nil {
-				return nil, err
-			}
-			return fn(ctx, self, args)
-		},
-	}
 }
 
 func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error {
@@ -144,10 +137,28 @@ func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error 
 	return nil
 }
 
+// Descriptive is an interface for types that have a description.
+//
+// The description is used in the schema. To provide a full definition,
+// implement Definitive instead.
+type Descriptive interface {
+	Description() string
+}
+
+// Definitive is a type that knows how to define itself in the schema.
+type Definitive interface {
+	Definition() *ast.Definition
+}
+
+// Class is a class of Object types.
+//
+// The class is defined by a set of fields, which are installed into the class
+// dynamically at runtime.
 type Class[T Typed] struct {
 	Fields map[string]*Field[T]
 }
 
+// NewClass returns a new empty class for a given type.
 func NewClass[T Typed]() Class[T] {
 	return Class[T]{
 		Fields: map[string]*Field[T]{},
@@ -156,14 +167,12 @@ func NewClass[T Typed]() Class[T] {
 
 var _ ObjectType = Class[Typed]{}
 
-type Descriptive interface {
-	Description() string
-}
-
-type Definitive interface {
-	Definition() *ast.Definition
-}
-
+// Definition returns the schema definition of the class.
+//
+// The definition is derived from the type name, description, and fields. The
+// type may implement Definitive or Descriptive to provide more information.
+//
+// Each currently defined field is installed on the returned definition.
 func (cls Class[T]) Definition() *ast.Definition {
 	var zero T
 	name := zero.Type().Name()
@@ -185,6 +194,7 @@ func (cls Class[T]) Definition() *ast.Definition {
 	return def
 }
 
+// FieldDefinition returns the schema definition of a field, if present.
 func (cls Class[T]) FieldDefinition(name string) (*ast.FieldDefinition, bool) {
 	field, found := cls.Fields[name]
 	if !found {
@@ -193,10 +203,12 @@ func (cls Class[T]) FieldDefinition(name string) (*ast.FieldDefinition, bool) {
 	return field.Definition(), true
 }
 
+// NewID returns a typed ID for the class.
 func (cls Class[T]) NewID(id *idproto.ID) Typed {
 	return ID[T]{ID: id}
 }
 
+// New returns a new instance of the class.
 func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
 	self, ok := val.(T)
 	if !ok {
@@ -210,6 +222,7 @@ func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
 	}, nil
 }
 
+// Call calls a field on the class against an instance.
 func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Typed) (Typed, error) {
 	field, ok := cls.Fields[fieldName]
 	if !ok {
@@ -222,6 +235,7 @@ func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string
 	return field.Func(ctx, node.Self, args)
 }
 
+// Instance is an instance of an Object type.
 type Instance[T Typed] struct {
 	Constructor *idproto.ID
 	Self        T
@@ -230,11 +244,46 @@ type Instance[T Typed] struct {
 
 var _ Object = Instance[Typed]{}
 
+// Type returns the type of the instance.
 func (o Instance[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
+var _ Object = Instance[Typed]{}
+
+// ID returns the ID of the instance.
+func (r Instance[T]) ID() *idproto.ID {
+	return r.Constructor
+}
+
+// Select calls a field on the instance.
+func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
+	field, ok := r.Class.Fields[sel.Field]
+	if !ok {
+		var zero T
+		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
+	}
+	args, err := applyDefaults(field.Spec, sel.Args)
+	if err != nil {
+		return nil, err
+	}
+	return r.Class.Call(ctx, r, sel.Field, args)
+}
+
+// Fields defines a set of fields for an Object type.
 type Fields[T Typed] []Field[T]
+
+// Install installs the field's Object type if needed, and installs all fields
+// into the type.
+func (fields Fields[T]) Install(server *Server) {
+	var t T
+	typeName := t.Type().Name()
+	class := fields.findOrInitializeType(server, typeName)
+	for _, field := range fields {
+		field := field
+		class.Fields[field.Spec.Name] = &field
+	}
+}
 
 func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Class[T] {
 	var classT Class[T]
@@ -268,26 +317,27 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 	return classT
 }
 
-func (fields Fields[T]) Install(server *Server) {
-	var t T
-	typeName := t.Type().Name()
-	class := fields.findOrInitializeType(server, typeName)
-	for _, field := range fields {
-		field := field
-		class.Fields[field.Spec.Name] = &field
-	}
-}
-
+// Field defines a field of an Object type.
 type Field[T Typed] struct {
 	Spec     FieldSpec
 	Func     func(ctx context.Context, self T, args map[string]Typed) (Typed, error)
 	NodeFunc func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error)
 }
 
+// Install installs the field into a class.
 func (field Field[T]) Install(class Class[T]) {
+	// TODO data race
 	class.Fields[field.Spec.Name] = &field
 }
 
+// Doc sets the description of the field. Each argument is joined by two empty
+// lines.
+func (field Field[T]) Doc(paras ...string) Field[T] {
+	field.Spec.Description = strings.Join(paras, "\n\n")
+	return field
+}
+
+// Definition returns the schema definition of the field.
 func (field Field[T]) Definition() *ast.FieldDefinition {
 	fieldName := field.Spec.Name
 
@@ -304,32 +354,11 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 	}
 
 	return &ast.FieldDefinition{
-		Name: fieldName,
-		// Description  string
-		Arguments: schemaArgs,
-		// DefaultValue *Value                 // only for input objects
-		Type: field.Spec.Type,
-		// Directives   DirectiveList
+		Name:        fieldName,
+		Description: field.Spec.Description,
+		Arguments:   schemaArgs,
+		Type:        field.Spec.Type,
 	}
-}
-
-var _ Object = Instance[Typed]{}
-
-func (r Instance[T]) ID() *idproto.ID {
-	return r.Constructor
-}
-
-func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
-	field, ok := r.Class.Fields[sel.Field]
-	if !ok {
-		var zero T
-		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
-	}
-	args, err := applyDefaults(field.Spec, sel.Args)
-	if err != nil {
-		return nil, err
-	}
-	return r.Class.Call(ctx, r, sel.Field, args)
 }
 
 func applyDefaults(field FieldSpec, givenArgs map[string]Typed) (map[string]Typed, error) {
