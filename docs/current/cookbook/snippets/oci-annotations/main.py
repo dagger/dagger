@@ -10,7 +10,7 @@ async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # publish app on alpine base
-        addr = await (
+        ctr = (
             client.container()
             .from_("alpine")
             .with_label("org.opencontainers.image.title", "my-alpine")
@@ -24,8 +24,13 @@ async def main():
                 "https://github.com/alpinelinux/docker-alpine",
             )
             .with_label("org.opencontainers.image.licenses", "MIT")
-            .publish("ttl.sh/my-alpine")
         )
+
+        addr = await ctr.publish("ttl.sh/my-alpine")
+
+        # note: some registries (e.g. ghcr.io) may require explicit use
+        # of Docker mediatypes rather than the default OCI mediatypes
+        # addr = await ctr.publish("ttl.sh/my-alpine", media_types="DockerMediaTypes")
 
     print(addr)
 
