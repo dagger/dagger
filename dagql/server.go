@@ -25,18 +25,18 @@ type Server struct {
 
 func NewServer[T Typed](root T) *Server {
 	schema := gqlparser.MustLoadSchema()
-	queryClass := Class[T]{
-		Fields: Fields[T]{},
-	}
+	queryClass := NewClass[T]()
 	rootNode := Object[T]{
 		Constructor: idproto.New(root.Type().Name()),
 		Self:        root,
 		Class:       queryClass,
 	}
 	srv := &Server{
-		schema:  schema,
-		root:    rootNode,
-		classes: map[string]ObjectClass{},
+		schema: schema,
+		root:   rootNode,
+		classes: map[string]ObjectClass{
+			root.Type().Name(): queryClass,
+		},
 		scalars: map[string]ScalarClass{
 			"Boolean": Boolean{},
 			"Int":     Int{},
@@ -47,8 +47,7 @@ func NewServer[T Typed](root T) *Server {
 		},
 		cache: NewCacheMap[digest.Digest, any](),
 	}
-	srv.schema.Query = queryClass.Fields.Install(srv)
-
+	srv.schema.Query = Fields[T]{}.Install(srv)
 	return srv
 }
 
@@ -255,7 +254,6 @@ func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection
 	results := new(sync.Map)
 
 	pool := new(pool.ErrorPool)
-
 	for _, sel := range sels {
 		sel := sel
 		pool.Go(func() error {
@@ -267,7 +265,6 @@ func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection
 			return nil
 		})
 	}
-
 	if err := pool.Wait(); err != nil {
 		return nil, err
 	}

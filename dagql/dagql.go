@@ -12,6 +12,8 @@ import (
 )
 
 type FieldSpec struct {
+	// Name is the name of the field.
+	Name string
 	// Args is the list of arguments that the field accepts.
 	Args []ArgSpec
 	// Type is the type of the field's result.
@@ -81,13 +83,14 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 // Func is a helper for statically defining fields. It panics if anything goes
 // wrong, as dev-time errors are preferable to runtime errors, so it shouldn't
 // be used for anything dynamic.
-func Func[T Typed, A any, R Typed](fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
 	var zeroArgs A
 	argSpecs, argsErr := ArgSpecs(zeroArgs)
 
 	var zeroRet R
 	return Field[T]{
 		Spec: FieldSpec{
+			Name: name,
 			Args: argSpecs,
 			Type: zeroRet.Type(),
 		},
@@ -119,7 +122,13 @@ func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error 
 }
 
 type Class[T Typed] struct {
-	Fields Fields[T]
+	Fields map[string]Field[T]
+}
+
+func NewClass[T Typed]() Class[T] {
+	return Class[T]{
+		Fields: map[string]Field[T]{},
+	}
 }
 
 var _ ObjectClass = Class[Typed]{}
@@ -165,12 +174,9 @@ func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
-type Fields[T Typed] map[string]Field[T]
+type Fields[T Typed] []Field[T]
 
-func (fields Fields[T]) Install(server *Server) *ast.Definition {
-	var t T
-	typeName := t.Type().Name()
-
+func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) (Class[T], *ast.Definition) {
 	schemaType, ok := server.schema.Types[typeName]
 	if !ok {
 		schemaType = &ast.Definition{
@@ -179,6 +185,13 @@ func (fields Fields[T]) Install(server *Server) *ast.Definition {
 			Name:        typeName,
 		}
 		server.schema.AddTypes(schemaType)
+	}
+
+	var classT Class[T]
+	class, ok := server.classes[typeName]
+	if !ok {
+		classT = NewClass[T]()
+		server.classes[typeName] = classT
 
 		if _, ok := server.scalars[typeName+"ID"]; !ok {
 			idType := &ast.Definition{
@@ -189,65 +202,72 @@ func (fields Fields[T]) Install(server *Server) *ast.Definition {
 			server.scalars[typeName+"ID"] = ID[T]{}
 		}
 
-		fields["id"] = Field[T]{
+		Field[T]{
 			Spec: FieldSpec{
+				Name: "id",
 				Type: &ast.Type{
 					NamedType: typeName + "ID",
 					NonNull:   true,
 				},
 			},
+			// TODO there might be a better way to do this. maybe just pass Object[T] to the function?
 			NodeFunc: func(ctx context.Context, self Node, args map[string]Typed) (Typed, error) {
 				return ID[T]{ID: self.ID()}, nil
 			},
-		}
-	}
-
-	for fieldName, field := range fields {
-		schemaField := schemaType.Fields.ForName(fieldName)
-		if schemaField != nil {
-			// TODO
-			log.Printf("field %s.%q redefined", typeName, fieldName)
-			continue
-		}
-
-		schemaArgs := ast.ArgumentDefinitionList{}
-		for _, arg := range field.Spec.Args {
-			schemaArg := &ast.ArgumentDefinition{
-				Name: arg.Name,
-				Type: arg.Type,
-			}
-			if arg.Default != nil {
-				schemaArg.DefaultValue = LiteralToAST(arg.Default.Literal())
-			}
-			schemaArgs = append(schemaArgs, schemaArg)
-		}
-
-		schemaField = &ast.FieldDefinition{
-			Name: fieldName,
-			// Description  string
-			Arguments: schemaArgs,
-			// DefaultValue *Value                 // only for input objects
-			Type: field.Spec.Type,
-			// Directives   DirectiveList
-		}
-
-		// intentionally mutates
-		schemaType.Fields = append(schemaType.Fields, schemaField)
-	}
-
-	if orig, stitch := server.classes[typeName]; stitch {
-		switch cls := orig.(type) {
-		case Class[T]:
-			for fieldName, field := range fields {
-				cls.Fields[fieldName] = field
-			}
-		default:
-			panic(fmt.Errorf("cannot stitch type %q: not an object", typeName))
-		}
+		}.install(server, classT, schemaType)
 	} else {
-		server.classes[typeName] = Class[T]{
-			Fields: fields,
+		classT = class.(Class[T])
+	}
+
+	return classT, schemaType
+}
+
+func (field Field[T]) install(server *Server, class Class[T], schemaType *ast.Definition) {
+	var zero T
+	// TODO
+	fieldName := field.Spec.Name
+	schemaField := schemaType.Fields.ForName(fieldName)
+	if schemaField != nil {
+		// TODO
+		log.Printf("field %s.%q redefined", zero.Type().Name(), fieldName)
+		return
+	}
+
+	schemaArgs := ast.ArgumentDefinitionList{}
+	for _, arg := range field.Spec.Args {
+		schemaArg := &ast.ArgumentDefinition{
+			Name: arg.Name,
+			Type: arg.Type,
 		}
+		if arg.Default != nil {
+			schemaArg.DefaultValue = LiteralToAST(arg.Default.Literal())
+		}
+		schemaArgs = append(schemaArgs, schemaArg)
+	}
+
+	schemaField = &ast.FieldDefinition{
+		Name: fieldName,
+		// Description  string
+		Arguments: schemaArgs,
+		// DefaultValue *Value                 // only for input objects
+		Type: field.Spec.Type,
+		// Directives   DirectiveList
+	}
+
+	// TODO: intentionally mutates schema type, but need locking
+	schemaType.Fields = append(schemaType.Fields, schemaField)
+
+	class.Fields[fieldName] = field
+}
+
+func (fields Fields[T]) Install(server *Server) *ast.Definition {
+	var t T
+	typeName := t.Type().Name()
+
+	class, schemaType := fields.findOrInitializeType(server, typeName)
+
+	for _, field := range fields {
+		field.install(server, class, schemaType)
 	}
 
 	return schemaType
