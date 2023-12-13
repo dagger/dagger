@@ -119,6 +119,8 @@ function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
       return dag.typeDef().withObject((type as ObjectTypeDef).name)
     case TypeDefKind.Listkind:
       return dag.typeDef().withListOf(addTypeDef((type as ListTypeDef).typeDef))
+    case TypeDefKind.Voidkind:
+      return dag.typeDef().withKind(type.kind).withOptional(true)
     default:
       return dag.typeDef().withKind(type.kind)
   }

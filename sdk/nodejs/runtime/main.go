@@ -28,9 +28,19 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 		return nil, err
 	}
 
+	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
+		Exclude: []string{
+			"node_modules",
+			"dist",
+			"codegen",
+			"**/test",
+			"runtime",
+		},
+	})
+
 	return ctr.
 		// Install dependencies
-		WithExec([]string{"yarn", "install", "--network-concurrency", "1"}).
+		WithExec([]string{"npm", "install"}).
 		// Add tsx to execute the entrypoint
 		WithExec([]string{"yarn", "global", "add", "tsx"}).
 		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
@@ -102,7 +112,6 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			SkipEntrypoint:                true,
 		}).
 		// If it's an init, add the template and replace the QuickStart class name
 		// with the user's module name
@@ -120,7 +129,9 @@ func (t *TypescriptSdk) Base(version string) *Container {
 
 	return dag.Container().
 		From(fmt.Sprintf("node:%s", version)).
-		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("mod-yarn-cache-"+version))
+		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("mod-yarn-cache-"+version)).
+		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version)).
+		WithEntrypoint(nil)
 }
 
 // TODO: fix .. restriction

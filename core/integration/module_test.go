@@ -525,6 +525,13 @@ func TestModuleGit(t *testing.T) {
 				"/sdk\n",
 			},
 		},
+		{
+			sdk: "typescript",
+			gitignores: []string{
+				"/sdk\n",
+				"/node_modules\n",
+			},
+		},
 	} {
 		tc := tc
 		t.Run(fmt.Sprintf("module %s git", tc.sdk), func(t *testing.T) {
@@ -604,6 +611,28 @@ func TestModulePythonGitRemovesIgnored(t *testing.T) {
 	t.Logf("changed after sync:\n%s", changedAfterSync)
 	require.Contains(t, changedAfterSync, "D  sdk/pyproject.toml\n")
 	require.Contains(t, changedAfterSync, "D  sdk/src/dagger/__init__.py\n")
+}
+
+func TestModuleTypescriptGitRemovesIgnored(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	committedModGen := goGitBase(t, c).
+		With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript")).
+		WithExec([]string{"rm", ".gitignore"}).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "init with generated files"})
+
+	changedAfterSync, err := committedModGen.
+		With(daggerExec("mod", "sync")).
+		WithExec([]string{"git", "diff"}). // for debugging
+		WithExec([]string{"git", "status", "--short"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	t.Logf("changed after sync:\n%s", changedAfterSync)
+	require.Contains(t, changedAfterSync, "D  sdk/index.ts\n")
+	require.Contains(t, changedAfterSync, "D  sdk/entrypoint/entrypoint.ts\n")
 }
 
 //go:embed testdata/modules/go/minimal/main.go
@@ -797,6 +826,117 @@ func TestModuleGoSignatures(t *testing.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsPragmas(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsPragmas":"hi...hi...hi..."}}`, out)
+	})
+}
+
+//go:embed testdata/modules/typescript/minimal/index.ts
+var tsSignatures string
+
+func TestModuleTypescriptSignatures(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=typescript")).
+		WithNewFile("src/index.ts", dagger.ContainerWithNewFileOpts{
+			Contents: tsSignatures,
+		})
+
+	t.Run("func Hello() string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
+	})
+
+	t.Run("func Echoes([]string) []string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
+	})
+
+	t.Run("func EchoOptional(string) string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptional":"hello...hello...hello..."}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptional}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
+	})
+
+	t.Run("func EchoesVariadic(...string) string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: "hello")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
+	})
+
+	t.Run("func Echo(string) string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
+	})
+
+	t.Run("func EchoOptionalSlice([]string) string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"hello+there...hello+there...hello+there..."}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOptionalSlice}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"foobar...foobar...foobar..."}}`, out)
+	})
+
+	t.Run("func Echoes([]string) []string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
+	})
+
+	t.Run("func HelloVoid()", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
+	})
+
+	t.Run("func EchoOpts(string, string, int) error", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 	})
 }
 
@@ -3582,11 +3722,7 @@ func TestModuleConfigAPI(t *testing.T) {
 }
 
 func TestModuleTypescriptInit(t *testing.T) {
-	t.Skip("unstable because of a typescript error")
-
 	t.Run("from scratch", func(t *testing.T) {
-		t.Skip("unstable because of a typescript error")
-
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -3604,8 +3740,6 @@ func TestModuleTypescriptInit(t *testing.T) {
 	})
 
 	t.Run("with different root", func(t *testing.T) {
-		t.Skip("unstable because of a typescript error")
-
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -3620,6 +3754,25 @@ func TestModuleTypescriptInit(t *testing.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("camel-cases Dagger module name", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=My-Module", "--sdk=go"))
+
+		logGen(ctx, t, modGen.Directory("."))
+
+		out, err := modGen.
+			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 }
 
