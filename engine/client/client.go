@@ -31,12 +31,14 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
+	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
@@ -481,6 +483,125 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 	return conn, nil
 }
 
+func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel, err := c.withClientCloseCancel(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("client has closed: " + err.Error()))
+		return
+	}
+	r = r.WithContext(ctx)
+	defer cancel()
+
+	if c.SecretToken != "" {
+		username, _, ok := r.BasicAuth()
+		if !ok || username != c.SecretToken {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
+	proxyReq := &http.Request{
+		Method: r.Method,
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "dagger",
+			Path:   r.URL.Path,
+		},
+		Header: r.Header,
+		Body:   r.Body,
+	}
+	proxyReq = proxyReq.WithContext(ctx)
+
+	// handle the case of dagger shell websocket, which hijacks the connection and uses it as a raw net.Conn
+	if proxyReq.Header["Upgrade"] != nil && proxyReq.Header["Upgrade"][0] == "websocket" {
+		c.serveHijackedHTTP(ctx, cancel, w, proxyReq)
+		return
+	}
+
+	resp, err := c.httpClient.Do(proxyReq)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("http do: " + err.Error()))
+		return
+	}
+	defer resp.Body.Close()
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		panic(err) // don't write header because we already wrote to the body, which isn't allowed
+	}
+}
+
+func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFunc, w http.ResponseWriter, r *http.Request) {
+	serverConn, err := c.DialContext(ctx, "", "")
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("dial server: " + err.Error()))
+		return
+	}
+	// DialContext handles closing returned conn when Client is closed
+
+	// Hijack the client conn so we can use it as a raw net.Conn and proxy that w/ the server.
+	// Note that after hijacking no more headers can be written, we can only panic (which will
+	// get caught by the http server that called ServeHTTP)
+	hij, ok := w.(http.Hijacker)
+	if !ok {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("not a hijacker"))
+		return
+	}
+	clientConn, _, err := hij.Hijack()
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("hijack: " + err.Error()))
+		return
+	}
+	go func() {
+		<-c.closeCtx.Done()
+		cancel()
+		clientConn.Close()
+	}()
+
+	// send the initial client http upgrade request to the server
+	if err := r.Write(serverConn); err != nil {
+		panic(fmt.Errorf("write upgrade request: %w", err))
+	}
+
+	// proxy the connections both directions
+	var eg errgroup.Group
+	eg.Go(func() error {
+		defer serverConn.Close()
+		defer clientConn.Close()
+		_, err := io.Copy(serverConn, clientConn)
+		if errors.Is(err, io.EOF) || grpcerrors.Code(err) == codes.Canceled {
+			err = nil
+		}
+		if err != nil {
+			return fmt.Errorf("copy client to server: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		defer serverConn.Close()
+		defer clientConn.Close()
+		_, err := io.Copy(clientConn, serverConn)
+		if errors.Is(err, io.EOF) || grpcerrors.Code(err) == codes.Canceled {
+			err = nil
+		}
+		if err != nil {
+			return fmt.Errorf("copy server to client: %w", err)
+		}
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		panic(err)
+	}
+}
+
 func (c *Client) Do(
 	ctx context.Context,
 	query string,
@@ -531,52 +652,6 @@ func (c *Client) Do(
 		}
 	}
 	return nil
-}
-
-func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel, err := c.withClientCloseCancel(r.Context())
-	if err != nil {
-		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("client has closed: " + err.Error()))
-		return
-	}
-	r = r.WithContext(ctx)
-	defer cancel()
-
-	if c.SecretToken != "" {
-		username, _, ok := r.BasicAuth()
-		if !ok || username != c.SecretToken {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-	}
-	proxyReq := &http.Request{
-		Method: r.Method,
-		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   r.URL.Path,
-		},
-		Header: r.Header,
-		Body:   r.Body,
-	}
-	proxyReq = proxyReq.WithContext(ctx)
-	resp, err := c.httpClient.Do(proxyReq)
-	if err != nil {
-		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("http do: " + err.Error()))
-		return
-	}
-	defer resp.Body.Close()
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		panic(err) // don't write header because we already wrote to the body, which isn't allowed
-	}
 }
 
 // A client to the Dagger API hooked up directly with this engine client.

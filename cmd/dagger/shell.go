@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -94,10 +96,20 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	dialer := &websocket.Dialer{
 		NetDialContext: engineClient.DialContext,
 	}
-	wsconn, errResp, err := dialer.DialContext(ctx, shellEndpoint, nil)
-	if err != nil {
-		return err
+
+	reqHeader := http.Header{}
+	if engineClient.SecretToken != "" {
+		reqHeader["Authorization"] = []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(engineClient.SecretToken+":"))}
 	}
+
+	wsconn, errResp, err := dialer.DialContext(ctx, shellEndpoint, reqHeader)
+	if err != nil {
+		if errors.Is(err, websocket.ErrBadHandshake) {
+			return fmt.Errorf("dial error %d: %w", errResp.StatusCode, err)
+		}
+		return fmt.Errorf("dial: %w", err)
+	}
+
 	// wsconn is closed as part of the caller closing engineClient
 	if errResp != nil {
 		defer errResp.Body.Close()

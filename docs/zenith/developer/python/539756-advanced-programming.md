@@ -6,7 +6,7 @@ date: "2023-11-06"
 
 # Advanced Programming
 
-{@include: ../../partials/_experimental.md}
+{@include: ../../partials/\_experimental.md}
 
 ## Introduction
 
@@ -64,6 +64,7 @@ So long as your object can be JSON-serialized by your SDK, its state will be pre
 Here is an example module using the Python SDK:
 
 ```python file=./snippets/advanced-programming/chaining/main.py
+
 ```
 
 And here is an example query for this module:
@@ -94,6 +95,22 @@ The result will be:
     }
   }
 }
+```
+
+## Write an asynchronous module constructor function
+
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, enable use of asynchronous calls while initializing the object.
+
+Here is an example module using the Python SDK with a custom asynchronous constructor, which must be named `create`:
+
+```python file=./snippets/advanced-programming/constructor/main.py
+
+```
+
+And here is an example call for this module:
+
+```console
+dagger call grep --pattern dagger
 ```
 
 ## Miscellanea

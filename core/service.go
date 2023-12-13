@@ -416,7 +416,19 @@ func (svc *Service) startContainer(
 
 	exited := make(chan error, 1)
 	go func() {
-		defer close(exited)
+		defer func() {
+			if stdinClient != nil {
+				stdinClient.Close()
+			}
+			if stdoutClient != nil {
+				stdoutClient.Close()
+			}
+			if stderrClient != nil {
+				stderrClient.Close()
+			}
+			close(exited)
+		}()
+
 		exited <- svcProc.Wait()
 
 		// detach dependent services when process exits

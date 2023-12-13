@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/format"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -3477,6 +3478,25 @@ func daggerFunctions(args ...string) dagger.WithContainerFunc {
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
+}
+
+// command for a dagger cli call direct on the host
+func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, daggerCliPath(t), args...)
+	cmd.Dir = workdir
+	return cmd
+}
+
+// runs a dagger cli command directly on the host, rather than in an exec
+func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
+	t.Helper()
+	cmd := hostDaggerCommand(ctx, t, workdir, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("%s: %w", string(output), err)
+	}
+	return output, err
 }
 
 func sdkSource(sdk, contents string) dagger.WithContainerFunc {
