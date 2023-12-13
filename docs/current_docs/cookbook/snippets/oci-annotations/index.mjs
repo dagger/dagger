@@ -18,6 +18,12 @@ connect(
 
     const addr = await container.publish("ttl.sh/my-alpine")
 
+    // note: some registries (e.g. ghcr.io) may require explicit use
+    // of Docker mediatypes rather than the default OCI mediatypes
+    // const addr = await container.publish("ttl.sh/my-alpine", {
+    //   mediaTypes: "Dockermediatypes",
+    // })
+
     console.log(addr)
   },
   { LogOutput: process.stderr }

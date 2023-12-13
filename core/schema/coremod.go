@@ -91,6 +91,9 @@ func (obj *CoreModObject) ConvertFromSDKResult(_ context.Context, value any) (an
 }
 
 func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
 	return obj.resolver.ToID(value)
 }
 

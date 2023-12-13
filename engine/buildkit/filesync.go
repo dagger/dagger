@@ -72,7 +72,7 @@ func (c *Client) LocalImport(
 	// blobSource.CacheKey for more context
 	copyLLB := llb.Scratch().File(
 		llb.Copy(localLLB, "/", "/"),
-		llb.WithCustomNamef(localName),
+		llb.WithCustomNamef("%scopy %s", InternalPrefix, localName),
 	)
 
 	copyDef, err := copyLLB.Marshal(ctx, llb.Platform(platform))
