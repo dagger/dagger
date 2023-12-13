@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -273,7 +274,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (a
 	if fieldDef == nil {
 		return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
 	}
-	chainedID := sel.Selector.AppendToID(self.ID(), fieldDef)
+	chainedID := sel.Selector.appendToID(self.ID(), fieldDef)
 
 	// digest, err := chain.Canonical().Digest()
 	// if err != nil {
@@ -425,4 +426,33 @@ func (sel Selection) Name() string {
 		return sel.Alias
 	}
 	return sel.Selector.Field
+}
+
+// Selector specifies how to retrieve a value from an Instance.
+type Selector struct {
+	Field string
+	Args  map[string]Typed
+	Nth   int
+}
+
+func (sel Selector) appendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
+	cp := id.Clone()
+	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
+	for name, val := range sel.Args {
+		idArgs = append(idArgs, &idproto.Argument{
+			Name:  name,
+			Value: ToLiteral(val),
+		})
+	}
+	sort.Slice(idArgs, func(i, j int) bool {
+		return idArgs[i].Name < idArgs[j].Name
+	})
+	cp.Constructor = append(cp.Constructor, &idproto.Selector{
+		Field:   sel.Field,
+		Args:    idArgs,
+		Tainted: field.Directives.ForName("tainted") != nil, // TODO
+		Meta:    field.Directives.ForName("meta") != nil,    // TODO
+	})
+	cp.TypeName = field.Type.Name()
+	return cp
 }
