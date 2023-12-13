@@ -40,7 +40,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 			Args: argSpecs,
 			Type: zeroRet.Type(),
 		},
-		Func: func(ctx context.Context, self T, argVals map[string]Typed) (Typed, error) {
+		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -50,7 +50,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 			if err := setArgFields(argSpecs, argVals, &args); err != nil {
 				return nil, err
 			}
-			return fn(ctx, self, args)
+			return fn(ctx, self.Self, args)
 		},
 	}
 }
@@ -229,10 +229,7 @@ func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string
 		var zero T
 		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), fieldName)
 	}
-	if field.NodeFunc != nil {
-		return field.NodeFunc(ctx, node, args)
-	}
-	return field.Func(ctx, node.Self, args)
+	return field.Func(ctx, node, args)
 }
 
 // Instance is an instance of an Object type.
@@ -305,8 +302,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 						NonNull:   true,
 					},
 				},
-				// TODO there might be a better way to do this. maybe just pass Object[T] to the function?
-				NodeFunc: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
 					return ID[T]{ID: self.ID()}, nil
 				},
 			}.Install(classT)
@@ -319,9 +315,8 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec     FieldSpec
-	Func     func(ctx context.Context, self T, args map[string]Typed) (Typed, error)
-	NodeFunc func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error)
+	Spec FieldSpec
+	Func func(context.Context, Instance[T], map[string]Typed) (Typed, error)
 }
 
 // Install installs the field into a class.
