@@ -1,19 +1,15 @@
 package templates
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"maps"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"runtime/debug"
 	"sort"
-	"strconv"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
@@ -112,6 +108,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			if !isNamed {
 				continue
 			}
+
 			obj := named.Obj()
 			if obj.Pkg() != funcs.modulePkg.Types {
 				// the type must be created in the target package
@@ -136,13 +133,11 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				continue
 			}
 
-			// TODO(vito): hacky: need to run this before fillObjectFunctionCases so it
-			// collects all the methods
-			objType, extraTypes, err := ps.goStructToAPIType(strct, named)
+			objTypeSpec, err := ps.parseGoStruct(strct, named)
 			if err != nil {
 				return "", err
 			}
-			if objType == nil {
+			if objTypeSpec == nil {
 				// not including in module schema, skip it
 				continue
 			}
@@ -152,24 +147,22 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
 			}
 
-			if len(objFunctionCases[obj.Name()]) == 0 && !ps.isMainModuleObject(obj.Name()) {
-				if topLevel {
-					// no functions on this top-level object, so don't add it to the module
-					continue
-				}
-				if ps.isDaggerGenerated(named.Obj()) {
-					// skip objects from outside this module
-					continue
-				}
+			if !ps.isMainModuleObject(obj.Name()) && len(objTypeSpec.fields) == 0 && len(objTypeSpec.methods) == 0 {
+				// nothing to define, skip it
+				continue
 			}
 
 			// Add the object to the module
-			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objType))
+			objTypeDefCode, err := objTypeSpec.TypeDefCode()
+			if err != nil {
+				return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+			}
+			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
 			added[obj.Name()] = struct{}{}
 
 			// If the object has any extra sub-types (e.g. for function return
 			// values), add them to the list of types to process
-			nextTps = append(nextTps, extraTypes...)
+			nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
 		}
 
 		tps, nextTps = nextTps, nil
@@ -579,484 +572,10 @@ type method struct {
 	paramSpecs []paramSpec
 }
 
-func (ps *parseState) goTypeToAPIType(typ types.Type, named *types.Named) (*Statement, *types.Named, error) {
-	switch t := typ.(type) {
-	case *types.Named:
-		// Named types are any types declared like `type Foo <...>`
-		typeDef, _, err := ps.goTypeToAPIType(t.Underlying(), t)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert named type: %w", err)
-		}
-		return typeDef, t, nil
-	case *types.Pointer:
-		return ps.goTypeToAPIType(t.Elem(), named)
-	case *types.Slice:
-		elemTypeDef, underlying, err := ps.goTypeToAPIType(t.Elem(), nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert slice element type: %w", err)
-		}
-		return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(
-			elemTypeDef,
-		), underlying, nil
-	case *types.Basic:
-		if t.Kind() == types.Invalid {
-			return nil, nil, fmt.Errorf("invalid type: %+v", t)
-		}
-		var kind Code
-		switch t.Info() {
-		case types.IsString:
-			kind = Id("Stringkind")
-		case types.IsInteger:
-			kind = Id("Integerkind")
-		case types.IsBoolean:
-			kind = Id("Booleankind")
-		default:
-			return nil, nil, fmt.Errorf("unsupported basic type: %+v", t)
-		}
-		return Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
-			kind,
-		), named, nil
-	case *types.Struct:
-		if named == nil {
-			return nil, nil, fmt.Errorf("struct types must be named")
-		}
-		typeName := named.Obj().Name()
-		if typeName == "" {
-			return nil, nil, fmt.Errorf("struct types must be named")
-		}
-		return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
-			Lit(typeName),
-		), named, nil
-	default:
-		return nil, nil, fmt.Errorf("unsupported type %T", t)
-	}
-}
-
-const errorTypeName = "error"
-
-func (ps *parseState) goStructToAPIType(t *types.Struct, named *types.Named) (*Statement, []types.Type, error) {
-	if named == nil {
-		return nil, nil, fmt.Errorf("struct types must be named")
-	}
-	typeName := named.Obj().Name()
-	if typeName == "" {
-		return nil, nil, fmt.Errorf("struct types must be named")
-	}
-
-	// We don't support extending objects from outside this module, so we will
-	// be skipping it. But first we want to verify the user isn't adding methods
-	// to it (in which case we error out).
-	objectIsDaggerGenerated := ps.isDaggerGenerated(named.Obj())
-
-	methods := []*types.Func{}
-	methodSet := types.NewMethodSet(types.NewPointer(named))
-	// Fill out any Functions on the object, which are methods on the struct
-	// TODO: support methods defined on non-pointer receivers
-	for i := 0; i < methodSet.Len(); i++ {
-		methodObj := methodSet.At(i).Obj()
-
-		if ps.isDaggerGenerated(methodObj) {
-			// We don't care about pre-existing methods on core types or objects from dependency modules.
-			continue
-		}
-		if objectIsDaggerGenerated {
-			return nil, nil, fmt.Errorf("cannot define methods on objects from outside this module")
-		}
-
-		method, ok := methodObj.(*types.Func)
-		if !ok {
-			return nil, nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
-		}
-
-		if !method.Exported() {
-			continue
-		}
-
-		methods = append(methods, method)
-	}
-	if objectIsDaggerGenerated {
-		return nil, nil, nil
-	}
-
-	sort.Slice(methods, func(i, j int) bool {
-		return methods[i].Pos() < methods[j].Pos()
-	})
-
-	// args for WithObject
-	withObjectArgs := []Code{
-		Lit(typeName),
-	}
-	withObjectOpts := []Code{}
-
-	// Fill out the Description with the comment above the struct (if any)
-	typeSpec, err := ps.typeSpecForNamedType(named)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to find decl for named type %s: %w", typeName, err)
-	}
-	if comment := typeSpec.Doc.Text(); comment != "" {
-		withObjectOpts = append(withObjectOpts, Id("Description").Op(":").Lit(strings.TrimSpace(comment)))
-	}
-	if len(withObjectOpts) > 0 {
-		withObjectArgs = append(withObjectArgs, Id("TypeDefWithObjectOpts").Values(withObjectOpts...))
-	}
-
-	typeDef := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgs...)
-
-	var subTypes []types.Type
-
-	for _, method := range methods {
-		fnTypeDef, functionSubTypes, err := ps.goFuncToAPIFunctionDef(typeName, method)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert method %s to function def: %w", method.Name(), err)
-		}
-		subTypes = append(subTypes, functionSubTypes...)
-
-		typeDef = dotLine(typeDef, "WithFunction").Call(Add(Line(), fnTypeDef))
-	}
-
-	astStructType, ok := typeSpec.Type.(*ast.StructType)
-	if !ok {
-		return nil, nil, fmt.Errorf("expected type spec to be a struct, got %T", typeSpec.Type)
-	}
-
-	// Fill out the static fields of the struct (if any)
-	astFields := unpackASTFields(astStructType.Fields)
-	for i := 0; i < t.NumFields(); i++ {
-		field := t.Field(i)
-		if !field.Exported() {
-			continue
-		}
-
-		fieldTypeDef, subType, err := ps.goTypeToAPIType(field.Type(), nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert field type: %w", err)
-		}
-		if subType != nil {
-			subTypes = append(subTypes, subType)
-		}
-
-		description := astFields[i].Doc.Text()
-		if description == "" {
-			description = astFields[i].Comment.Text()
-		}
-		description = strings.TrimSpace(description)
-
-		name := field.Name()
-
-		// override the name with the json tag if it was set - otherwise, we
-		// end up asking for a name that we won't unmarshal correctly
-		tag := reflect.StructTag(t.Tag(i))
-		if dt := tag.Get("json"); dt != "" {
-			dt, _, _ = strings.Cut(dt, ",")
-			if dt == "-" {
-				continue
-			}
-			name = dt
-		}
-
-		withFieldArgs := []Code{
-			Lit(name),
-			fieldTypeDef,
-		}
-
-		if description != "" {
-			withFieldArgs = append(withFieldArgs,
-				Id("TypeDefWithFieldOpts").Values(
-					Id("Description").Op(":").Lit(description),
-				))
-		}
-
-		typeDef = dotLine(typeDef, "WithField").Call(withFieldArgs...)
-	}
-
-	if ps.isMainModuleObject(typeName) && ps.constructor != nil {
-		fnTypeDef, _, err := ps.goFuncToAPIFunctionDef("", ps.constructor)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
-		}
-		typeDef = dotLine(typeDef, "WithConstructor").Call(Add(Line(), fnTypeDef))
-	}
-
-	return typeDef, subTypes, nil
-}
-
-var voidDef = Qual("dag", "TypeDef").Call().
-	Dot("WithKind").Call(Id("Voidkind")).
-	Dot("WithOptional").Call(Lit(true))
-
-func (ps *parseState) goFuncToAPIFunctionDef(receiverTypeName string, fn *types.Func) (*Statement, []types.Type, error) {
-	sig, ok := fn.Type().(*types.Signature)
-	if !ok {
-		return nil, nil, fmt.Errorf("expected method to be a func, got %T", fn.Type())
-	}
-
-	// stash away the method signature so we can remember details on how it's
-	// invoked (e.g. no error return, no ctx arg, error-only return, etc)
-	specs, err := ps.parseParamSpecs(fn)
-	if err != nil {
-		return nil, nil, err
-	}
-	if receiverTypeName != "" {
-		ps.methods[receiverTypeName] = append(ps.methods[receiverTypeName], method{fn: fn, paramSpecs: specs})
-	}
-
-	var fnReturnType *Statement
-
-	var subTypes []types.Type
-
-	results := sig.Results()
-	var returnSubType *types.Named
-	switch results.Len() {
-	case 0:
-		fnReturnType = voidDef
-	case 1:
-		result := results.At(0).Type()
-		if result.String() == errorTypeName {
-			fnReturnType = voidDef
-		} else {
-			fnReturnType, returnSubType, err = ps.goTypeToAPIType(result, nil)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to convert result type: %w", err)
-			}
-		}
-	case 2:
-		result := results.At(0).Type()
-		subTypes = append(subTypes, result)
-		fnReturnType, returnSubType, err = ps.goTypeToAPIType(result, nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert result type: %w", err)
-		}
-	default:
-		return nil, nil, fmt.Errorf("method %s has too many return values", fn.Name())
-	}
-	if returnSubType != nil {
-		subTypes = append(subTypes, returnSubType)
-	}
-
-	fnDef := Qual("dag", "Function").Call(Lit(fn.Name()), Add(Line(), fnReturnType))
-
-	funcDecl, err := ps.declForFunc(fn)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
-	}
-	if comment := funcDecl.Doc.Text(); comment != "" {
-		fnDef = dotLine(fnDef, "WithDescription").Call(Lit(strings.TrimSpace(comment)))
-	}
-
-	for i, spec := range specs {
-		if i == 0 && spec.paramType.String() == contextTypename {
-			// ignore ctx arg
-			continue
-		}
-
-		typeDef, subType, err := ps.goTypeToAPIType(spec.baseType, nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert param type: %w", err)
-		}
-		if subType != nil {
-			subTypes = append(subTypes, subType)
-		}
-
-		if spec.optional {
-			typeDef = typeDef.Dot("WithOptional").Call(Lit(true))
-		}
-
-		// arguments to WithArg
-		args := []Code{Lit(spec.graphqlName()), typeDef}
-
-		argOpts := []Code{}
-		if spec.description != "" {
-			argOpts = append(argOpts, Id("Description").Op(":").Lit(spec.description))
-		}
-		if spec.defaultValue != "" {
-			var jsonEnc string
-			if spec.baseType.String() == "string" {
-				enc, err := json.Marshal(spec.defaultValue)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to marshal default value: %w", err)
-				}
-				jsonEnc = string(enc)
-			} else {
-				jsonEnc = spec.defaultValue
-			}
-			argOpts = append(argOpts, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(jsonEnc)))
-		}
-		if len(argOpts) > 0 {
-			args = append(args, Id("FunctionWithArgOpts").Values(argOpts...))
-		}
-
-		fnDef = dotLine(fnDef, "WithArg").Call(args...)
-	}
-
-	return fnDef, subTypes, nil
-}
-
-func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
-	sig := fn.Type().(*types.Signature)
-	params := sig.Params()
-	if params.Len() == 0 {
-		return nil, nil
-	}
-
-	specs := make([]paramSpec, 0, params.Len())
-
-	i := 0
-	if params.At(i).Type().String() == contextTypename {
-		spec, err := ps.parseParamSpecVar(params.At(i), "", "")
-		if err != nil {
-			return nil, err
-		}
-		specs = append(specs, spec)
-
-		i++
-	}
-
-	fnDecl, err := ps.declForFunc(fn)
-	if err != nil {
-		return nil, err
-	}
-
-	// is the first data param an inline struct? if so, process each field of
-	// the struct as a top-level param
-	if i+1 == params.Len() {
-		param := params.At(i)
-		paramType, ok := asInlineStruct(param.Type())
-		if ok {
-			stype, ok := asInlineStructAst(fnDecl.Type.Params.List[i].Type)
-			if !ok {
-				return nil, fmt.Errorf("expected struct type for %s", param.Name())
-			}
-
-			parent := &paramSpec{
-				name:      params.At(i).Name(),
-				paramType: param.Type(),
-				baseType:  param.Type(),
-			}
-
-			paramFields := unpackASTFields(stype.Fields)
-			for f := 0; f < paramType.NumFields(); f++ {
-				spec, err := ps.parseParamSpecVar(paramType.Field(f), paramFields[f].Doc.Text(), paramFields[f].Comment.Text())
-				if err != nil {
-					return nil, err
-				}
-				spec.parent = parent
-				specs = append(specs, spec)
-			}
-			return specs, nil
-		}
-	}
-
-	// if other parameter passing schemes fail, just treat each remaining arg
-	// as a top-level param
-	paramFields := unpackASTFields(fnDecl.Type.Params)
-	for ; i < params.Len(); i++ {
-		docComment, lineComment := ps.commentForFuncField(fnDecl, paramFields, i)
-		spec, err := ps.parseParamSpecVar(params.At(i), docComment.Text(), lineComment.Text())
-		if err != nil {
-			return nil, err
-		}
-		if sig.Variadic() && i == params.Len()-1 {
-			spec.variadic = true
-		}
-		specs = append(specs, spec)
-	}
-	return specs, nil
-}
-
-func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lineComment string) (paramSpec, error) {
-	if _, ok := field.Type().(*types.Struct); ok {
-		return paramSpec{}, fmt.Errorf("nested structs are not supported")
-	}
-
-	paramType := field.Type()
-	baseType := paramType
-	for {
-		ptr, ok := baseType.(*types.Pointer)
-		if !ok {
-			break
-		}
-		baseType = ptr.Elem()
-	}
-
-	optional := false
-	defaultValue := ""
-
-	if named, ok := ps.isOptionalWrapper(baseType); ok {
-		typeArgs := named.TypeArgs()
-		if typeArgs.Len() != 1 {
-			return paramSpec{}, fmt.Errorf("optional type must have exactly one type argument")
-		}
-		optional = true
-
-		baseType = typeArgs.At(0)
-		for {
-			ptr, ok := baseType.(*types.Pointer)
-			if !ok {
-				break
-			}
-			baseType = ptr.Elem()
-		}
-	}
-
-	docPragmas, docComment := parsePragmaComment(docComment)
-	linePragmas, lineComment := parsePragmaComment(lineComment)
-	comment := strings.TrimSpace(docComment)
-	if comment == "" {
-		comment = strings.TrimSpace(lineComment)
-	}
-
-	pragmas := make(map[string]string)
-	maps.Copy(pragmas, docPragmas)
-	maps.Copy(pragmas, linePragmas)
-	if v, ok := pragmas["default"]; ok {
-		defaultValue = v
-	}
-	if v, ok := pragmas["optional"]; ok {
-		if v == "" {
-			optional = true
-		} else {
-			optional, _ = strconv.ParseBool(v)
-		}
-	}
-
-	return paramSpec{
-		name:         field.Name(),
-		paramType:    paramType,
-		baseType:     baseType,
-		optional:     optional,
-		defaultValue: defaultValue,
-		description:  comment,
-	}, nil
-}
-
-type paramSpec struct {
-	name        string
-	description string
-
-	optional bool
-	variadic bool
-
-	defaultValue string
-
-	// paramType is the full type declared in the function signature, which may
-	// include pointer types, Optional, etc
-	paramType types.Type
-	// baseType is the simplified base type derived from the function signature
-	baseType types.Type
-
-	// parent is set if this paramSpec is nested inside a parent inline struct,
-	// and is used to create a declaration of the entire inline struct
-	parent *paramSpec
-}
-
-func (spec *paramSpec) graphqlName() string {
-	return strcase.ToLowerCamel(spec.name)
-}
-
-// typeSpecForNamedType returns the *ast* type spec for the given Named type. This is needed
+// astSpecForNamedType returns the *ast* type spec for the given Named type. This is needed
 // because the types.Named object does not have the comments associated with the type, which
 // we want to parse.
-func (ps *parseState) typeSpecForNamedType(namedType *types.Named) (*ast.TypeSpec, error) {
+func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec, error) {
 	tokenFile := ps.fset.File(namedType.Obj().Pos())
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", namedType.Obj().Name())

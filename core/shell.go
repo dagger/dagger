@@ -39,6 +39,7 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string, 
 		defer ws.Close()
 
 		bklog.G(r.Context()).Debugf("shell handler for %s has been upgraded", endpoint)
+		defer bklog.G(context.Background()).Debugf("shell handler for %s finished", endpoint)
 
 		if err := container.runShell(r.Context(), ws, bk, progSock, clientMetadata, svcs); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
