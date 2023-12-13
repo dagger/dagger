@@ -1,5 +1,4 @@
 [build]
-  base = "docs"
   command = "yarn run graphql-docs && yarn run docusaurus build"
 
 [context.production]
