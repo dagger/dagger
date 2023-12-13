@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -40,6 +41,28 @@ type Selector struct {
 	Nth   int
 }
 
+func (sel Selector) AppendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
+	cp := id.Clone()
+	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
+	for name, val := range sel.Args {
+		idArgs = append(idArgs, &idproto.Argument{
+			Name:  name,
+			Value: ToLiteral(val),
+		})
+	}
+	sort.Slice(idArgs, func(i, j int) bool {
+		return idArgs[i].Name < idArgs[j].Name
+	})
+	cp.Constructor = append(cp.Constructor, &idproto.Selector{
+		Field:   sel.Field,
+		Args:    idArgs,
+		Tainted: field.Directives.ForName("tainted") != nil, // TODO
+		Meta:    field.Directives.ForName("meta") != nil,    // TODO
+	})
+	cp.TypeName = field.Type.Name()
+	return cp
+}
+
 func ArgSpecs(args any) ([]ArgSpec, error) {
 	var argSpecs []ArgSpec
 	argsType := reflect.TypeOf(args)
@@ -64,7 +87,7 @@ func ArgSpecs(args any) ([]ArgSpec, error) {
 			var argDefault Scalar
 			if defaultVal := field.Tag.Get("default"); len(defaultVal) > 0 {
 				var err error
-				argDefault, err = typedArg.Class().New(defaultVal)
+				argDefault, err = typedArg.ScalarType().New(defaultVal)
 				if err != nil {
 					return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
 				}
@@ -131,7 +154,7 @@ func NewClass[T Typed]() Class[T] {
 	}
 }
 
-var _ ObjectClass = Class[Typed]{}
+var _ ObjectType = Class[Typed]{}
 
 type Descriptive interface {
 	Description() string
@@ -162,7 +185,7 @@ func (cls Class[T]) Definition() *ast.Definition {
 	return def
 }
 
-func (cls Class[T]) Field(name string) (*ast.FieldDefinition, bool) {
+func (cls Class[T]) FieldDefinition(name string) (*ast.FieldDefinition, bool) {
 	field, found := cls.Fields[name]
 	if !found {
 		return nil, false
@@ -170,24 +193,24 @@ func (cls Class[T]) Field(name string) (*ast.FieldDefinition, bool) {
 	return field.Definition(), true
 }
 
-func (cls Class[T]) ID(id *idproto.ID) Typed {
+func (cls Class[T]) NewID(id *idproto.ID) Typed {
 	return ID[T]{ID: id}
 }
 
-func (cls Class[T]) New(id *idproto.ID, val Typed) (Selectable, error) {
+func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
 	self, ok := val.(T)
 	if !ok {
 		// NB: Nullable values should already be unwrapped by now.
 		return nil, fmt.Errorf("cannot instantiate %T with %T", cls, val)
 	}
-	return Object[T]{
+	return Instance[T]{
 		Constructor: id,
 		Self:        self,
 		Class:       cls,
 	}, nil
 }
 
-func (cls Class[T]) Call(ctx context.Context, node Object[T], fieldName string, args map[string]Typed) (Typed, error) {
+func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Typed) (Typed, error) {
 	field, ok := cls.Fields[fieldName]
 	if !ok {
 		var zero T
@@ -199,15 +222,15 @@ func (cls Class[T]) Call(ctx context.Context, node Object[T], fieldName string, 
 	return field.Func(ctx, node.Self, args)
 }
 
-type Object[T Typed] struct {
+type Instance[T Typed] struct {
 	Constructor *idproto.ID
 	Self        T
 	Class       Class[T]
 }
 
-var _ Node = Object[Typed]{}
+var _ Object = Instance[Typed]{}
 
-func (o Object[T]) Type() *ast.Type {
+func (o Instance[T]) Type() *ast.Type {
 	return o.Self.Type()
 }
 
@@ -234,7 +257,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 					},
 				},
 				// TODO there might be a better way to do this. maybe just pass Object[T] to the function?
-				NodeFunc: func(ctx context.Context, self Node, args map[string]Typed) (Typed, error) {
+				NodeFunc: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
 					return ID[T]{ID: self.ID()}, nil
 				},
 			}.Install(classT)
@@ -258,7 +281,7 @@ func (fields Fields[T]) Install(server *Server) {
 type Field[T Typed] struct {
 	Spec     FieldSpec
 	Func     func(ctx context.Context, self T, args map[string]Typed) (Typed, error)
-	NodeFunc func(ctx context.Context, self Node, args map[string]Typed) (Typed, error)
+	NodeFunc func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error)
 }
 
 func (field Field[T]) Install(class Class[T]) {
@@ -290,15 +313,13 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 	}
 }
 
-var _ Node = Object[Typed]{}
+var _ Object = Instance[Typed]{}
 
-func (r Object[T]) ID() *idproto.ID {
+func (r Instance[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
-var _ Selectable = Object[Typed]{}
-
-func (r Object[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
+func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
 	field, ok := r.Class.Fields[sel.Field]
 	if !ok {
 		var zero T

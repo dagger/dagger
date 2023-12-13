@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -14,27 +13,29 @@ import (
 	"github.com/vito/dagql/idproto"
 )
 
+// Server represents a GraphQL server whose schema is dynamically modified at
+// runtime.
 type Server struct {
-	root        Selectable
-	classes     map[string]ObjectClass
-	scalars     map[string]ScalarClass
+	root        Object
+	classes     map[string]ObjectType
+	scalars     map[string]ScalarType
 	cache       *CacheMap[digest.Digest, any]
 	installLock sync.Mutex
 }
 
+// NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
 	queryClass := NewClass[T]()
-	rootNode := Object[T]{
-		Constructor: idproto.New(root.Type().Name()),
-		Self:        root,
-		Class:       queryClass,
-	}
 	srv := &Server{
-		root: rootNode,
-		classes: map[string]ObjectClass{
+		root: Instance[T]{
+			Constructor: idproto.New(root.Type().Name()),
+			Self:        root,
+			Class:       queryClass,
+		},
+		classes: map[string]ObjectType{
 			root.Type().Name(): queryClass,
 		},
-		scalars: map[string]ScalarClass{
+		scalars: map[string]ScalarType{
 			"Boolean": Boolean{},
 			"Int":     Int{},
 			"Float":   Float{},
@@ -47,17 +48,15 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-func (s *Server) Root() Selectable {
+// Root returns the root object of the server. It is suitable for passing to
+// Resolve to resolve a query.
+func (s *Server) Root() Object {
 	return s.root
 }
 
 var _ graphql.ExecutableSchema = (*Server)(nil)
 
-func (s *Server) Complexity(typeName, field string, childComplexity int, args map[string]interface{}) (int, bool) {
-	// TODO
-	return 1, false
-}
-
+// Schema returns the current schema of the server.
 func (s *Server) Schema() *ast.Schema {
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
@@ -75,53 +74,13 @@ func (s *Server) Schema() *ast.Schema {
 	return schema
 }
 
-func (s *Server) Load(ctx context.Context, id *idproto.ID) (Selectable, error) {
-	var res Typed = s.root
-	for i, idSel := range id.Constructor {
-		stepID := id.Clone()
-		stepID.Constructor = id.Constructor[:i+1]
-		// TODO: kind of annoying but technically correct; for the ID to match, the
-		// return type at this point in time also has to match.
-		fieldDef, err := s.field(res.Type().Name(), idSel.Field)
-		if err != nil {
-			return nil, err
-		}
-		stepID.TypeName = fieldDef.Type.Name()
-
-		obj, err := s.toSelectable(stepID, res)
-		if err != nil {
-			return nil, fmt.Errorf("instantiate from id: %w", err)
-		}
-		sel := Selector{
-			Field: idSel.Field,
-			Args:  make(map[string]Typed, len(idSel.Args)),
-			Nth:   int(idSel.Nth),
-		}
-		for _, arg := range idSel.Args {
-			val, err := s.fromLiteral(ctx, arg.Value)
-			if err != nil {
-				return nil, err
-			}
-			sel.Args[arg.Name] = val
-		}
-		res, err = obj.Select(ctx, sel)
-		if err != nil {
-			return nil, err
-		}
-		if sel.Nth != 0 {
-			enum, ok := res.(Enumerable)
-			if !ok {
-				return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, res)
-			}
-			res, err = enum.Nth(sel.Nth)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return s.toSelectable(id, res)
+// Complexity returns the complexity of the given field.
+func (s *Server) Complexity(typeName, field string, childComplexity int, args map[string]interface{}) (int, bool) {
+	// TODO
+	return 1, false
 }
 
+// Exec implements graphql.ExecutableSchema.
 func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 	return func(ctx context.Context) *graphql.Response {
 		gqlOp := graphql.GetOperationContext(ctx)
@@ -169,40 +128,11 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 	}
 }
 
-func ToLiteral(typed Typed) *idproto.Literal {
-	switch x := typed.(type) {
-	case Scalar:
-		return x.Literal()
-	case Node:
-		return idproto.LiteralValue(x.ID())
-	default:
-		panic(fmt.Sprintf("cannot convert %T to Literal", x))
-	}
-}
-
-func (sel Selector) AppendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
-	cp := id.Clone()
-	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
-	for name, val := range sel.Args {
-		idArgs = append(idArgs, &idproto.Argument{
-			Name:  name,
-			Value: ToLiteral(val),
-		})
-	}
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name < idArgs[j].Name
-	})
-	cp.Constructor = append(cp.Constructor, &idproto.Selector{
-		Field:   sel.Field,
-		Args:    idArgs,
-		Tainted: field.Directives.ForName("tainted") != nil, // TODO
-		Meta:    field.Directives.ForName("meta") != nil,    // TODO
-	})
-	cp.TypeName = field.Type.Name()
-	return cp
-}
-
-func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection) (map[string]any, error) {
+// Resolve resolves the given selections on the given object.
+//
+// Each selection is resolved in parallel, and the results are returned in a
+// map whose keys correspond to the selection's field name or alias.
+func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (map[string]any, error) {
 	results := new(sync.Map)
 
 	pool := new(pool.ErrorPool)
@@ -227,6 +157,54 @@ func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection
 		return true
 	})
 	return resultsMap, nil
+}
+
+// Load loads the object with the given ID.
+func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
+	var res Typed = s.root
+	for i, idSel := range id.Constructor {
+		stepID := id.Clone()
+		stepID.Constructor = id.Constructor[:i+1]
+		// TODO: kind of annoying but technically correct; for the ID to match, the
+		// return type at this point in time also has to match.
+		fieldDef, err := s.field(res.Type().Name(), idSel.Field)
+		if err != nil {
+			return nil, err
+		}
+		stepID.TypeName = fieldDef.Type.Name()
+
+		obj, err := s.toSelectable(stepID, res)
+		if err != nil {
+			return nil, fmt.Errorf("instantiate from id: %w", err)
+		}
+		sel := Selector{
+			Field: idSel.Field,
+			Args:  make(map[string]Typed, len(idSel.Args)),
+			Nth:   int(idSel.Nth),
+		}
+		for _, arg := range idSel.Args {
+			val, err := s.fromLiteral(ctx, arg.Value)
+			if err != nil {
+				return nil, err
+			}
+			sel.Args[arg.Name] = val
+		}
+		res, err = obj.Select(ctx, sel)
+		if err != nil {
+			return nil, err
+		}
+		if sel.Nth != 0 {
+			enum, ok := res.(Enumerable)
+			if !ok {
+				return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, res)
+			}
+			res, err = enum.Nth(sel.Nth)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return s.toSelectable(id, res)
 }
 
 func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
@@ -286,12 +264,12 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast
 	return sels, nil
 }
 
-func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection) (any, error) {
+func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (any, error) {
 	class, ok := s.classes[self.Type().Name()]
 	if !ok {
 		return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
 	}
-	fieldDef, ok := class.Field(sel.Selector.Field)
+	fieldDef, ok := class.FieldDefinition(sel.Selector.Field)
 	if fieldDef == nil {
 		return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
 	}
@@ -379,7 +357,7 @@ func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error)
 	if !ok {
 		return nil, fmt.Errorf("unknown type: %q", typeName)
 	}
-	fieldDef, ok := classes.Field(fieldName)
+	fieldDef, ok := classes.FieldDefinition(fieldName)
 	if !ok {
 		return nil, fmt.Errorf("unknown field: %q", fieldName)
 	}
@@ -394,7 +372,7 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, 
 		if !ok {
 			return nil, fmt.Errorf("unknown class: %q", id.TypeName)
 		}
-		return class.ID(id), nil
+		return class.NewID(id), nil
 	case *idproto.Literal_Int:
 		return NewInt(int(v.Int)), nil
 	case *idproto.Literal_Float:
@@ -420,8 +398,8 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, 
 	}
 }
 
-func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Selectable, error) {
-	if sel, ok := val.(Selectable); ok {
+func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) {
+	if sel, ok := val.(Object); ok {
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.
 		return sel, nil
@@ -433,12 +411,15 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Selectable, err
 	return class.New(chainedID, val)
 }
 
+// Selection represents a selection of a field on an object.
 type Selection struct {
 	Alias         string
 	Selector      Selector
 	Subselections []Selection
 }
 
+// Name returns the name of the selection, which is either the alias or the
+// field name.
 func (sel Selection) Name() string {
 	if sel.Alias != "" {
 		return sel.Alias
