@@ -369,7 +369,7 @@ func TestEnums(t *testing.T) {
 
 	t.Run("invalid defaults", func(t *testing.T) {
 		dagql.Fields[points.Point]{
-			"badShift": dagql.Func(func(ctx context.Context, self points.Point, args struct {
+			dagql.Func("badShift", func(ctx context.Context, self points.Point, args struct {
 				Direction points.Direction `default:"BOGUS"`
 				Amount    dagql.Int        `default:"1"`
 			}) (points.Point, error) {
@@ -412,23 +412,23 @@ func TestDefaults(t *testing.T) {
 	gql := client.New(handler.NewDefaultServer(srv))
 
 	dagql.Fields[Defaults]{
-		"boolean": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Boolean, error) {
+		dagql.Func("boolean", func(ctx context.Context, self Defaults, _ any) (dagql.Boolean, error) {
 			return self.Boolean, nil
 		}),
-		"int": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Int, error) {
+		dagql.Func("int", func(ctx context.Context, self Defaults, _ any) (dagql.Int, error) {
 			return self.Int, nil
 		}),
-		"string": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.String, error) {
+		dagql.Func("string", func(ctx context.Context, self Defaults, _ any) (dagql.String, error) {
 			return self.String, nil
 		}),
-		"float": dagql.Func(func(ctx context.Context, self Defaults, _ any) (dagql.Float, error) {
+		dagql.Func("float", func(ctx context.Context, self Defaults, _ any) (dagql.Float, error) {
 			return self.Float, nil
 		}),
 	}.Install(srv)
 
 	t.Run("builtin scalar types", func(t *testing.T) {
 		dagql.Fields[Query]{
-			"defaults": dagql.Func(func(ctx context.Context, self Query, args Defaults) (Defaults, error) {
+			dagql.Func("defaults", func(ctx context.Context, self Query, args Defaults) (Defaults, error) {
 				return args, nil // cute
 			}),
 		}.Install(srv)
@@ -457,17 +457,17 @@ func TestDefaults(t *testing.T) {
 
 	t.Run("invalid defaults", func(t *testing.T) {
 		dagql.Fields[Query]{
-			"badBool": dagql.Func(func(ctx context.Context, self Query, args struct {
+			dagql.Func("badBool", func(ctx context.Context, self Query, args struct {
 				Boolean dagql.Boolean `default:"yessir"`
 			}) (Defaults, error) {
 				panic("should not be called")
 			}),
-			"badInt": dagql.Func(func(ctx context.Context, self Query, args struct {
+			dagql.Func("badInt", func(ctx context.Context, self Query, args struct {
 				Int dagql.Int `default:"forty-two"`
 			}) (Defaults, error) {
 				panic("should not be called")
 			}),
-			"badFloat": dagql.Func(func(ctx context.Context, self Query, args struct {
+			dagql.Func("badFloat", func(ctx context.Context, self Query, args struct {
 				Float dagql.Float `default:"float on"`
 			}) (Defaults, error) {
 				panic("should not be called")
@@ -516,7 +516,7 @@ func TestParallelism(t *testing.T) {
 	gql := client.New(handler.NewDefaultServer(srv))
 
 	dagql.Fields[Query]{
-		"pipe": dagql.Func(func(ctx context.Context, self Query, args struct {
+		dagql.Func("pipe", func(ctx context.Context, self Query, args struct {
 			Buffer dagql.Int `default:"0"`
 		}) (Pipe, error) {
 			return Pipe{
@@ -526,10 +526,10 @@ func TestParallelism(t *testing.T) {
 	}.Install(srv)
 
 	dagql.Fields[Pipe]{
-		"read": dagql.Func(func(ctx context.Context, self Pipe, _ any) (dagql.String, error) {
+		dagql.Func("read", func(ctx context.Context, self Pipe, _ any) (dagql.String, error) {
 			return <-self.Channel, nil
 		}),
-		"write": dagql.Func(func(ctx context.Context, self Pipe, args struct {
+		dagql.Func("write", func(ctx context.Context, self Pipe, args struct {
 			Message dagql.String
 		}) (Pipe, error) {
 			self.Channel <- args.Message
