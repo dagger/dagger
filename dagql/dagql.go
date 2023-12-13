@@ -3,8 +3,8 @@ package dagql
 import (
 	"context"
 	"fmt"
-	"log"
 	"reflect"
+	"strings"
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -121,17 +121,59 @@ func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error 
 	return nil
 }
 
+type Type interface {
+	Typed
+	Definition() *ast.Definition
+}
+
 type Class[T Typed] struct {
-	Fields map[string]Field[T]
+	Fields map[string]*Field[T]
 }
 
 func NewClass[T Typed]() Class[T] {
 	return Class[T]{
-		Fields: map[string]Field[T]{},
+		Fields: map[string]*Field[T]{},
 	}
 }
 
-var _ ObjectClass = Class[Typed]{}
+var _ ObjectClass = Class[Type]{}
+
+type Descriptive interface {
+	Description() string
+}
+
+type Definitive interface {
+	Definition() *ast.Definition
+}
+
+func (cls Class[T]) Definition() *ast.Definition {
+	var zero T
+	name := zero.Type().Name()
+	var def *ast.Definition
+	if isType, ok := any(zero).(Definitive); ok {
+		def = isType.Definition()
+	} else {
+		def = &ast.Definition{
+			Kind: ast.Object,
+			Name: name,
+		}
+	}
+	if isType, ok := any(zero).(Descriptive); ok {
+		def.Description = isType.Description()
+	}
+	for _, field := range cls.Fields { // TODO sort, or preserve order
+		def.Fields = append(def.Fields, field.Definition())
+	}
+	return def
+}
+
+func (cls Class[T]) Field(name string) (*ast.FieldDefinition, bool) {
+	field, found := cls.Fields[name]
+	if !found {
+		return nil, false
+	}
+	return field.Definition(), true
+}
 
 func (cls Class[T]) ID(id *idproto.ID) Typed {
 	return ID[T]{ID: id}
@@ -168,7 +210,7 @@ type Object[T Typed] struct {
 	Class       Class[T]
 }
 
-var _ Node = Object[Typed]{}
+var _ Node = Object[Type]{}
 
 func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
@@ -176,62 +218,60 @@ func (o Object[T]) Type() *ast.Type {
 
 type Fields[T Typed] []Field[T]
 
-func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) (Class[T], *ast.Definition) {
-	schemaType, ok := server.schema.Types[typeName]
-	if !ok {
-		schemaType = &ast.Definition{
-			Kind:        ast.Object,
-			Description: "TODO", // t.Description()
-			Name:        typeName,
-		}
-		server.schema.AddTypes(schemaType)
-	}
-
+func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Class[T] {
 	var classT Class[T]
 	class, ok := server.classes[typeName]
 	if !ok {
 		classT = NewClass[T]()
 		server.classes[typeName] = classT
 
-		if _, ok := server.scalars[typeName+"ID"]; !ok {
-			idType := &ast.Definition{
-				Kind: ast.Scalar,
-				Name: typeName + "ID",
-			}
-			server.schema.AddTypes(idType)
-			server.scalars[typeName+"ID"] = ID[T]{}
-		}
-
-		Field[T]{
-			Spec: FieldSpec{
-				Name: "id",
-				Type: &ast.Type{
-					NamedType: typeName + "ID",
-					NonNull:   true,
+		// TODO: better way to avoid registering IDs for schema introspection
+		// builtins
+		if !strings.HasPrefix(typeName, "__") {
+			idScalar := ID[T]{}
+			server.scalars[idScalar.TypeName()] = idScalar
+			Field[T]{
+				Spec: FieldSpec{
+					Name: "id",
+					Type: &ast.Type{
+						NamedType: idScalar.TypeName(),
+						NonNull:   true,
+					},
 				},
-			},
-			// TODO there might be a better way to do this. maybe just pass Object[T] to the function?
-			NodeFunc: func(ctx context.Context, self Node, args map[string]Typed) (Typed, error) {
-				return ID[T]{ID: self.ID()}, nil
-			},
-		}.install(server, classT, schemaType)
+				// TODO there might be a better way to do this. maybe just pass Object[T] to the function?
+				NodeFunc: func(ctx context.Context, self Node, args map[string]Typed) (Typed, error) {
+					return ID[T]{ID: self.ID()}, nil
+				},
+			}.Install(classT)
+		}
 	} else {
 		classT = class.(Class[T])
 	}
-
-	return classT, schemaType
+	return classT
 }
 
-func (field Field[T]) install(server *Server, class Class[T], schemaType *ast.Definition) {
-	var zero T
-	// TODO
-	fieldName := field.Spec.Name
-	schemaField := schemaType.Fields.ForName(fieldName)
-	if schemaField != nil {
-		// TODO
-		log.Printf("field %s.%q redefined", zero.Type().Name(), fieldName)
-		return
+func (fields Fields[T]) Install(server *Server) {
+	var t T
+	typeName := t.Type().Name()
+	class := fields.findOrInitializeType(server, typeName)
+	for _, field := range fields {
+		field := field
+		class.Fields[field.Spec.Name] = &field
 	}
+}
+
+type Field[T Typed] struct {
+	Spec     FieldSpec
+	Func     func(ctx context.Context, self T, args map[string]Typed) (Typed, error)
+	NodeFunc func(ctx context.Context, self Node, args map[string]Typed) (Typed, error)
+}
+
+func (field Field[T]) Install(class Class[T]) {
+	class.Fields[field.Spec.Name] = &field
+}
+
+func (field Field[T]) Definition() *ast.FieldDefinition {
+	fieldName := field.Spec.Name
 
 	schemaArgs := ast.ArgumentDefinitionList{}
 	for _, arg := range field.Spec.Args {
@@ -245,7 +285,7 @@ func (field Field[T]) install(server *Server, class Class[T], schemaType *ast.De
 		schemaArgs = append(schemaArgs, schemaArg)
 	}
 
-	schemaField = &ast.FieldDefinition{
+	return &ast.FieldDefinition{
 		Name: fieldName,
 		// Description  string
 		Arguments: schemaArgs,
@@ -253,39 +293,15 @@ func (field Field[T]) install(server *Server, class Class[T], schemaType *ast.De
 		Type: field.Spec.Type,
 		// Directives   DirectiveList
 	}
-
-	// TODO: intentionally mutates schema type, but need locking
-	schemaType.Fields = append(schemaType.Fields, schemaField)
-
-	class.Fields[fieldName] = field
 }
 
-func (fields Fields[T]) Install(server *Server) *ast.Definition {
-	var t T
-	typeName := t.Type().Name()
-
-	class, schemaType := fields.findOrInitializeType(server, typeName)
-
-	for _, field := range fields {
-		field.install(server, class, schemaType)
-	}
-
-	return schemaType
-}
-
-type Field[T Typed] struct {
-	Spec     FieldSpec
-	Func     func(ctx context.Context, self T, args map[string]Typed) (Typed, error)
-	NodeFunc func(ctx context.Context, self Node, args map[string]Typed) (Typed, error)
-}
-
-var _ Node = Object[Typed]{}
+var _ Node = Object[Type]{}
 
 func (r Object[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
-var _ Selectable = Object[Typed]{}
+var _ Selectable = Object[Type]{}
 
 func (r Object[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
 	field, ok := r.Class.Fields[sel.Field]

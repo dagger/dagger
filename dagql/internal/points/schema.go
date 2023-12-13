@@ -20,6 +20,10 @@ func (Point) Type() *ast.Type {
 	}
 }
 
+func (Point) Description() string {
+	return "A point in 2D space."
+}
+
 type Line struct {
 	From Point
 	To   Point
@@ -30,6 +34,10 @@ func (Line) Type() *ast.Type {
 		NamedType: "Line",
 		NonNull:   true,
 	}
+}
+
+func (Line) Description() string {
+	return "A line connecting two points."
 }
 
 type Direction struct {

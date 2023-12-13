@@ -10,21 +10,19 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
 )
 
 type Server struct {
-	root    Selectable
-	schema  *ast.Schema
-	classes map[string]ObjectClass
-	scalars map[string]ScalarClass
-	cache   *CacheMap[digest.Digest, any]
+	root        Selectable
+	classes     map[string]ObjectClass
+	scalars     map[string]ScalarClass
+	cache       *CacheMap[digest.Digest, any]
+	installLock sync.Mutex
 }
 
 func NewServer[T Typed](root T) *Server {
-	schema := gqlparser.MustLoadSchema()
 	queryClass := NewClass[T]()
 	rootNode := Object[T]{
 		Constructor: idproto.New(root.Type().Name()),
@@ -32,8 +30,7 @@ func NewServer[T Typed](root T) *Server {
 		Class:       queryClass,
 	}
 	srv := &Server{
-		schema: schema,
-		root:   rootNode,
+		root: rootNode,
 		classes: map[string]ObjectClass{
 			root.Type().Name(): queryClass,
 		},
@@ -47,7 +44,6 @@ func NewServer[T Typed](root T) *Server {
 		},
 		cache: NewCacheMap[digest.Digest, any](),
 	}
-	srv.schema.Query = Fields[T]{}.Install(srv)
 	return srv
 }
 
@@ -63,64 +59,20 @@ func (s *Server) Complexity(typeName, field string, childComplexity int, args ma
 }
 
 func (s *Server) Schema() *ast.Schema {
-	return s.schema
-}
-
-func (s *Server) selections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
-	vars := gqlOp.Variables
-
-	sels := []Selection{}
-	for _, sel := range astSels {
-		switch x := sel.(type) {
-		case *ast.Field:
-			args := make(map[string]Typed, len(x.Arguments))
-			for _, arg := range x.Arguments {
-				val, err := arg.Value.Value(vars)
-				if err != nil {
-					return nil, err
-				}
-				arg := x.Definition.Arguments.ForName(arg.Name)
-				if arg == nil {
-					return nil, fmt.Errorf("unknown argument: %q", arg.Name)
-				}
-				scalar, ok := s.scalars[arg.Type.Name()]
-				if !ok {
-					return nil, fmt.Errorf("unknown scalar: %q", arg.Type.Name())
-				}
-				typed, err := scalar.New(val)
-				if err != nil {
-					return nil, err
-				}
-				args[arg.Name] = typed
-			}
-			subsels, err := s.selections(gqlOp, x.SelectionSet)
-			if err != nil {
-				return nil, err
-			}
-			sels = append(sels, Selection{
-				Alias: x.Alias,
-				Selector: Selector{
-					Field: x.Name,
-					Args:  args,
-				},
-				Subselections: subsels,
-			})
-		case *ast.FragmentSpread:
-			fragment := gqlOp.Doc.Fragments.ForName(x.Name)
-			if fragment == nil {
-				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
-			}
-			subsels, err := s.selections(gqlOp, fragment.SelectionSet)
-			if err != nil {
-				return nil, err
-			}
-			sels = append(sels, subsels...)
-		default:
-			return nil, fmt.Errorf("unknown field type: %T", x)
+	// TODO track when the schema changes, cache until it changes again
+	queryType := s.Root().Type().Name()
+	schema := &ast.Schema{}
+	for _, t := range s.classes {
+		def := t.Definition()
+		if def.Name == queryType {
+			schema.Query = def
 		}
+		schema.AddTypes(def)
 	}
-
-	return sels, nil
+	for _, t := range s.scalars {
+		schema.AddTypes(t.Definition())
+	}
+	return schema
 }
 
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Selectable, error) {
@@ -188,7 +140,7 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 				if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 					continue
 				}
-				sels, err := s.selections(gqlOp, op.SelectionSet)
+				sels, err := s.parseASTSelections(gqlOp, op.SelectionSet)
 				if err != nil {
 					return graphql.ErrorResponse(ctx, "failed to convert selections: %s", err)
 				}
@@ -277,18 +229,73 @@ func (s *Server) Resolve(ctx context.Context, self Selectable, sels ...Selection
 	return resultsMap, nil
 }
 
+func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
+	vars := gqlOp.Variables
+
+	sels := []Selection{}
+	for _, sel := range astSels {
+		switch x := sel.(type) {
+		case *ast.Field:
+			args := make(map[string]Typed, len(x.Arguments))
+			for _, arg := range x.Arguments {
+				val, err := arg.Value.Value(vars)
+				if err != nil {
+					return nil, err
+				}
+				arg := x.Definition.Arguments.ForName(arg.Name)
+				if arg == nil {
+					return nil, fmt.Errorf("unknown argument: %q", arg.Name)
+				}
+				scalar, ok := s.scalars[arg.Type.Name()]
+				if !ok {
+					return nil, fmt.Errorf("unknown scalar: %q", arg.Type.Name())
+				}
+				typed, err := scalar.New(val)
+				if err != nil {
+					return nil, err
+				}
+				args[arg.Name] = typed
+			}
+			subsels, err := s.parseASTSelections(gqlOp, x.SelectionSet)
+			if err != nil {
+				return nil, err
+			}
+			sels = append(sels, Selection{
+				Alias: x.Alias,
+				Selector: Selector{
+					Field: x.Name,
+					Args:  args,
+				},
+				Subselections: subsels,
+			})
+		case *ast.FragmentSpread:
+			fragment := gqlOp.Doc.Fragments.ForName(x.Name)
+			if fragment == nil {
+				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
+			}
+			subsels, err := s.parseASTSelections(gqlOp, fragment.SelectionSet)
+			if err != nil {
+				return nil, err
+			}
+			sels = append(sels, subsels...)
+		default:
+			return nil, fmt.Errorf("unknown field type: %T", x)
+		}
+	}
+
+	return sels, nil
+}
+
 func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection) (any, error) {
-	typeDef, ok := s.schema.Types[self.Type().Name()]
+	class, ok := s.classes[self.Type().Name()]
 	if !ok {
 		return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
 	}
-
-	field := typeDef.Fields.ForName(sel.Selector.Field)
-	if field == nil {
+	fieldDef, ok := class.Field(sel.Selector.Field)
+	if fieldDef == nil {
 		return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
 	}
-
-	chainedID := sel.Selector.AppendToID(self.ID(), field)
+	chainedID := sel.Selector.AppendToID(self.ID(), fieldDef)
 
 	// digest, err := chain.Canonical().Digest()
 	// if err != nil {
@@ -319,7 +326,7 @@ func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection
 		res = val
 	} else if len(sel.Subselections) > 0 {
 		switch {
-		case field.Type.NamedType != "":
+		case fieldDef.Type.NamedType != "":
 			node, err := s.toSelectable(chainedID, val)
 			if err != nil {
 				return nil, fmt.Errorf("instantiate: %w", err)
@@ -328,7 +335,7 @@ func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection
 			if err != nil {
 				return nil, err
 			}
-		case field.Type.Elem != nil:
+		case fieldDef.Type.Elem != nil:
 			enum, ok := val.(Enumerable)
 			if !ok {
 				return nil, fmt.Errorf("cannot sub-select %T", val)
@@ -368,12 +375,12 @@ func (s *Server) resolvePath(ctx context.Context, self Selectable, sel Selection
 }
 
 func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error) {
-	schemaType, ok := s.schema.Types[typeName]
+	classes, ok := s.classes[typeName]
 	if !ok {
 		return nil, fmt.Errorf("unknown type: %q", typeName)
 	}
-	fieldDef := schemaType.Fields.ForName(fieldName)
-	if fieldDef == nil {
+	fieldDef, ok := classes.Field(fieldName)
+	if !ok {
 		return nil, fmt.Errorf("unknown field: %q", fieldName)
 	}
 	return fieldDef, nil

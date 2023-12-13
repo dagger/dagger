@@ -23,6 +23,13 @@ func (Query) Type() *ast.Type {
 	}
 }
 
+func (Query) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind: ast.Object,
+		Name: "Query",
+	}
+}
+
 func main() {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
