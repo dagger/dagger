@@ -1180,6 +1180,46 @@ func (m *Minimal) Qux(opts struct {
 	}
 }
 
+func TestModuleGoFieldMustBeNil(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+			
+import "fmt"
+
+type Minimal struct {
+	Src *Directory
+	Name *string
+}
+
+func New() *Minimal {
+	return &Minimal{}
+}
+
+func (m *Minimal) IsEmpty() bool {
+	if m.Name != nil {
+		panic(fmt.Sprintf("name should be nil but is %v", m.Name))
+	}
+	if m.Src != nil {
+		panic(fmt.Sprintf("src should be nil but is %v", m.Src))
+	}
+	return true
+}
+`,
+		})
+
+	out, err := modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
+}
+
 func TestModuleGoPrivateField(t *testing.T) {
 	t.Parallel()
 
