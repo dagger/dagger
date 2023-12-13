@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
@@ -140,23 +141,34 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
-	// Check if the commit is a merge commit in the context of PR / MR
-	if (os.Getenv("GITHUB_EVENT_NAME") == "pull_request" ||
-		os.Getenv("CI_PIPELINE_SOURCE") == "merge_request_event") &&
-		commit.NumParents() > 1 {
-		// Get the parent commits
-		parents, err := commit.Parents().Next()
+	// Checks if the commit is a merge commit in the context of pull request
+	// Only GitHub needs to be handled, as GitLab doesn't detach the head in MR context
+	if os.Getenv("GITHUB_EVENT_NAME") == "pull_request" && commit.NumParents() > 1 {
+		// Get the pull request's origin branch name
+		branch := os.Getenv("GITHUB_HEAD_REF")
+
+		// Execute git fetch using git CLI because GitHub Action adds the GITHUB_TOKEN
+		// to any git client operation automatically. With go-git, user have to add it
+		cmd := exec.Command("git", "fetch", "origin", branch)
+		err = cmd.Run()
 		if err != nil {
-			return nil, err
+			fmt.Printf("Error fetching branch: %s", err.Error())
 		}
 
-		// Skip the first parent and use the second parent as the previous commit
-		parents, err = parents.Parents().Next()
+		// Get the reference of the fetched branch
+		refName := plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", branch))
+		ref, err := repo.Reference(refName, true)
 		if err != nil {
-			return nil, err
+			fmt.Printf("Error getting reference: %s", err.Error())
+		} else {
+			// Get the commit object of the fetched branch
+			branchCommit, err := repo.CommitObject(ref.Hash())
+			if err != nil {
+				fmt.Printf("Error getting commit: %s", err.Error())
+			} else {
+				commit = branchCommit
+			}
 		}
-
-		commit = parents
 	}
 
 	title, _, _ := strings.Cut(commit.Message, "\n")
