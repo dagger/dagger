@@ -774,10 +774,22 @@ func gqlObjectName(name string) string {
 }
 
 func namespaceObject(objName, namespace string) string {
-	// don't namespace the main module object itself (already is named after the module)
-	if gqlObjectName(objName) == gqlObjectName(namespace) {
-		return objName
+	gqlObjName := gqlObjectName(objName)
+	if rest := strings.TrimPrefix(gqlObjName, gqlObjectName(namespace)); rest != gqlObjName {
+		if len(rest) == 0 {
+			// objName equals namespace, don't namespace this
+			return gqlObjName
+		}
+		// we have this case check here to check for a boundary
+		// e.g. if objName="Postman" and namespace="Post", then we should still namespace
+		// this to "PostPostman" instead of just going for "Postman" (but we should do that
+		// if objName="PostMan")
+		if 'A' <= rest[0] && rest[0] <= 'Z' {
+			// objName has namespace prefixed, don't namespace this
+			return gqlObjName
+		}
 	}
+
 	return gqlObjectName(namespace + "_" + objName)
 }
 

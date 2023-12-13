@@ -6,14 +6,14 @@ import (
 
 type Sub2 struct{}
 
-func (m *Sub2) Fn(ctx context.Context, s string) *Obj {
-	return &Obj{Bar: "2:" + s}
+func (m *Sub2) Fn(ctx context.Context, s string) *Sub2Obj {
+	return &Sub2Obj{Bar: "2:" + s}
 }
 
-type Obj struct {
+type Sub2Obj struct {
 	Bar string `json:"bar"`
 }
 
-func (m *Obj) GetBar(ctx context.Context) (string, error) {
+func (m *Sub2Obj) GetBar(ctx context.Context) (string, error) {
 	return m.Bar, nil
 }
