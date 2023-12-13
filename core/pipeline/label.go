@@ -140,8 +140,10 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
-	// Check if the commit is a merge commit (GitHub context)
-	if commit.NumParents() > 1 {
+	// Check if the commit is a merge commit in the context of PR / MR
+	if (os.Getenv("GITHUB_EVENT_NAME") == "pull_request" ||
+		os.Getenv("CI_PIPELINE_SOURCE") == "merge_request_event") &&
+		commit.NumParents() > 1 {
 		// Get the parent commits
 		parents, err := commit.Parents().Next()
 		if err != nil {
