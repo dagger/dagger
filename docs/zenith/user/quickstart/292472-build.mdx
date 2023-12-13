@@ -16,7 +16,7 @@ Add a new `Build()` function that creates a production build of the example appl
 ```go file=snippets/build/main.go
 ```
 
-This function does the following:
+This new function does the following:
 
 - It starts off like the previous `Test()` function and obtains a `Node` object with the application source code, Node.js runtime and cache volumes.
 - It calls the module's `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image.
