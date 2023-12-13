@@ -45,7 +45,7 @@ const config = {
           path: "./current_docs",
           routeBasePath: '/',
           sidebarPath: './sidebars.js',
-          editUrl: 'https://github.com/dagger/dagger/edit/main/website',
+          editUrl: 'https://github.com/dagger/dagger/edit/main/docs',
           remarkPlugins: [
             [remarkCodeImport, { allowImportingFromOutside: true }],
           ],
