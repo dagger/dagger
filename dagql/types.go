@@ -19,9 +19,12 @@ type Typed interface {
 type ObjectClass interface {
 	ID(*idproto.ID) Typed
 	New(*idproto.ID, Typed) (Selectable, error)
+	Definition() *ast.Definition
+	Field(string) (*ast.FieldDefinition, bool)
 }
 
 type ScalarClass interface {
+	Definition() *ast.Definition
 	New(any) (Scalar, error)
 }
 
@@ -60,6 +63,15 @@ var _ ScalarClass = Int{}
 
 func (Int) Class() ScalarClass {
 	return Int{}
+}
+
+func (Int) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "Int",
+		Description: "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.",
+		BuiltIn:     true,
+	}
 }
 
 var _ Scalar = Int{}
@@ -126,6 +138,15 @@ func NewFloat(val float64) Float {
 }
 
 var _ ScalarClass = Float{}
+
+func (Float) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "Float",
+		Description: "The `Float` scalar type represents signed double-precision fractional values as specified by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).",
+		BuiltIn:     true,
+	}
+}
 
 func (Float) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -203,6 +224,15 @@ func (Boolean) Type() *ast.Type {
 
 var _ ScalarClass = Boolean{}
 
+func (Boolean) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "Boolean",
+		Description: "The `Boolean` scalar type represents `true` or `false`.",
+		BuiltIn:     true,
+	}
+}
+
 func (Boolean) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case bool:
@@ -260,6 +290,15 @@ func (String) Type() *ast.Type {
 
 var _ ScalarClass = String{}
 
+func (String) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.Scalar,
+		Name:        "String",
+		Description: "The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.",
+		BuiltIn:     true,
+	}
+}
+
 func (String) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case string:
@@ -298,16 +337,33 @@ type ID[T Typed] struct {
 	expected T
 }
 
-var _ Typed = ID[Typed]{}
+func (i ID[T]) TypeName() string {
+	return i.expected.Type().Name() + "ID"
+}
+
+var _ Typed = ID[Type]{}
 
 func (i ID[T]) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: i.expected.Type().Name() + "ID",
+		NamedType: i.TypeName(),
 		NonNull:   true,
 	}
 }
 
-var _ ScalarClass = ID[Typed]{}
+var _ ScalarClass = ID[Type]{}
+
+func (i ID[T]) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind: ast.Scalar,
+		Name: i.TypeName(),
+		Description: fmt.Sprintf(
+			"The `%s` scalar type represents an identifier for an object of type %s.",
+			i.TypeName(),
+			i.expected.Type().Name(),
+		),
+		BuiltIn: true,
+	}
+}
 
 func (ID[T]) New(val any) (Scalar, error) {
 	switch x := val.(type) {
@@ -325,7 +381,7 @@ func (ID[T]) New(val any) (Scalar, error) {
 }
 
 // For parsing string IDs provided in queries.
-var _ Scalar = ID[Typed]{}
+var _ Scalar = ID[Type]{}
 
 func (i ID[T]) Class() ScalarClass {
 	return ID[T]{expected: i.expected}
@@ -357,15 +413,16 @@ func (i *ID[T]) Decode(str string) error {
 	if err := proto.Unmarshal(bytes, &idproto); err != nil {
 		return err
 	}
-	if idproto.TypeName != i.expected.Type().Name() {
-		return fmt.Errorf("expected %q ID, got %q ID", i.expected.Type().Name(), idproto.TypeName)
+	expectedName := i.expected.Type().Name()
+	if idproto.TypeName != expectedName {
+		return fmt.Errorf("expected %q ID, got %q ID", expectedName, idproto.TypeName)
 	}
 	i.ID = &idproto
 	return nil
 }
 
 // For returning responses.
-var _ json.Marshaler = ID[Typed]{}
+var _ json.Marshaler = ID[Type]{}
 
 func (i ID[T]) MarshalJSON() ([]byte, error) {
 	enc, err := i.Encode()
@@ -378,7 +435,7 @@ func (i ID[T]) MarshalJSON() ([]byte, error) {
 // Not actually used, but implemented for completeness.
 //
 // FromValue is what's used in practice.
-var _ json.Unmarshaler = (*ID[Typed])(nil)
+var _ json.Unmarshaler = (*ID[Type])(nil)
 
 func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	var str string
@@ -491,6 +548,15 @@ func NewEnum[T EnumSetter[T]](vals ...string) *EnumValues[T] {
 	return (*EnumValues[T])(&vals)
 }
 
+func (e *EnumValues[T]) Definition() *ast.Definition {
+	var zero T
+	return &ast.Definition{
+		Kind:       ast.Enum,
+		Name:       zero.Type().Name(),
+		EnumValues: e.PossibleValues(),
+	}
+}
+
 func (e *EnumValues[T]) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case string:
@@ -532,16 +598,9 @@ func (e *EnumValues[T]) Register(val string) T {
 	})
 }
 
-func (e *EnumValues[T]) Install(srv *Server) *ast.Definition {
+func (e *EnumValues[T]) Install(srv *Server) {
 	var zero T
-	def := &ast.Definition{
-		Kind:       ast.Enum,
-		Name:       zero.Type().Name(),
-		EnumValues: e.PossibleValues(),
-	}
-	srv.schema.AddTypes(def)
 	srv.scalars[zero.Type().Name()] = e
-	return def
 }
 
 type Enum[T EnumSetter[T]] struct {
@@ -588,7 +647,7 @@ func NoOpt[T Typed]() Optional[T] {
 func LiteralToAST(lit *idproto.Literal) *ast.Value {
 	switch x := lit.GetValue().(type) {
 	case *idproto.Literal_Id:
-		enc, err := ID[Typed]{ID: x.Id}.Encode()
+		enc, err := ID[Type]{ID: x.Id}.Encode()
 		if err != nil {
 			panic(err) // TODO
 		}
