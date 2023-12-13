@@ -1,6 +1,6 @@
 [build]
-  base = "/docs"
-  publish = "build/"
+  base = "docs/"
+  publish = "docs/build/"
   command = "yarn run graphql-docs && yarn run docusaurus build"
 
 [context.production]
