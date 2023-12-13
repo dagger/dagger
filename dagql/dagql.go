@@ -121,11 +121,6 @@ func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error 
 	return nil
 }
 
-type Type interface {
-	Typed
-	Definition() *ast.Definition
-}
-
 type Class[T Typed] struct {
 	Fields map[string]*Field[T]
 }
@@ -136,7 +131,7 @@ func NewClass[T Typed]() Class[T] {
 	}
 }
 
-var _ ObjectClass = Class[Type]{}
+var _ ObjectClass = Class[Typed]{}
 
 type Descriptive interface {
 	Description() string
@@ -210,7 +205,7 @@ type Object[T Typed] struct {
 	Class       Class[T]
 }
 
-var _ Node = Object[Type]{}
+var _ Node = Object[Typed]{}
 
 func (o Object[T]) Type() *ast.Type {
 	return o.Self.Type()
@@ -295,13 +290,13 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 	}
 }
 
-var _ Node = Object[Type]{}
+var _ Node = Object[Typed]{}
 
 func (r Object[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
-var _ Selectable = Object[Type]{}
+var _ Selectable = Object[Typed]{}
 
 func (r Object[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
 	field, ok := r.Class.Fields[sel.Field]

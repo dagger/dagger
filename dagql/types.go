@@ -341,7 +341,7 @@ func (i ID[T]) TypeName() string {
 	return i.expected.Type().Name() + "ID"
 }
 
-var _ Typed = ID[Type]{}
+var _ Typed = ID[Typed]{}
 
 func (i ID[T]) Type() *ast.Type {
 	return &ast.Type{
@@ -350,7 +350,7 @@ func (i ID[T]) Type() *ast.Type {
 	}
 }
 
-var _ ScalarClass = ID[Type]{}
+var _ ScalarClass = ID[Typed]{}
 
 func (i ID[T]) Definition() *ast.Definition {
 	return &ast.Definition{
@@ -381,7 +381,7 @@ func (ID[T]) New(val any) (Scalar, error) {
 }
 
 // For parsing string IDs provided in queries.
-var _ Scalar = ID[Type]{}
+var _ Scalar = ID[Typed]{}
 
 func (i ID[T]) Class() ScalarClass {
 	return ID[T]{expected: i.expected}
@@ -422,7 +422,7 @@ func (i *ID[T]) Decode(str string) error {
 }
 
 // For returning responses.
-var _ json.Marshaler = ID[Type]{}
+var _ json.Marshaler = ID[Typed]{}
 
 func (i ID[T]) MarshalJSON() ([]byte, error) {
 	enc, err := i.Encode()
@@ -435,7 +435,7 @@ func (i ID[T]) MarshalJSON() ([]byte, error) {
 // Not actually used, but implemented for completeness.
 //
 // FromValue is what's used in practice.
-var _ json.Unmarshaler = (*ID[Type])(nil)
+var _ json.Unmarshaler = (*ID[Typed])(nil)
 
 func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	var str string
@@ -647,7 +647,7 @@ func NoOpt[T Typed]() Optional[T] {
 func LiteralToAST(lit *idproto.Literal) *ast.Value {
 	switch x := lit.GetValue().(type) {
 	case *idproto.Literal_Id:
-		enc, err := ID[Type]{ID: x.Id}.Encode()
+		enc, err := ID[Typed]{ID: x.Id}.Encode()
 		if err != nil {
 			panic(err) // TODO
 		}
