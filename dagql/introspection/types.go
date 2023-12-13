@@ -369,7 +369,7 @@ var TypeKinds = dagql.EnumValues[TypeKind]{
 	"NON_NULL",
 }
 
-func (k TypeKind) As(val dagql.Scalar) TypeKind {
+func (k TypeKind) New(val dagql.Scalar) TypeKind {
 	k.Scalar = val
 	return k
 }
@@ -409,7 +409,7 @@ var DirectiveLocations = dagql.EnumValues[DirectiveLocation]{
 	"INPUT_FIELD_DEFINITION",
 }
 
-func (k DirectiveLocation) As(val dagql.Scalar) DirectiveLocation {
+func (k DirectiveLocation) New(val dagql.Scalar) DirectiveLocation {
 	k.Scalar = val
 	return k
 }

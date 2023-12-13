@@ -56,12 +56,12 @@ var (
 
 var _ dagql.Scalar = Direction{}
 
-func (d Direction) As(value dagql.Scalar) Direction {
+func (d Direction) New(value dagql.Scalar) Direction {
 	d.Scalar = value
 	return d
 }
 
-func (Direction) Class() dagql.ScalarClass {
+func (Direction) ScalarType() dagql.ScalarType {
 	return Directions
 }
 
@@ -85,7 +85,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		}),
 		dagql.Func("loadPointFromID", func(ctx context.Context, self R, args struct {
 			ID dagql.ID[Point]
-		}) (dagql.Object[Point], error) {
+		}) (dagql.Instance[Point], error) {
 			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)

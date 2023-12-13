@@ -12,33 +12,70 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Typed is any value that knows its GraphQL type.
 type Typed interface {
+	// Type returns the GraphQL type of the value.
 	Type() *ast.Type
 }
 
-type ObjectClass interface {
-	ID(*idproto.ID) Typed
-	New(*idproto.ID, Typed) (Selectable, error)
+// ObjectType represents a GraphQL Object type.
+type ObjectType interface {
+	// New creates a new instance of the type.
+	New(*idproto.ID, Typed) (Object, error)
+	// NewID creates an ID annotated with the type.
+	NewID(*idproto.ID) Typed
+	// Definition returns the GraphQL definition of the type.
 	Definition() *ast.Definition
-	Field(string) (*ast.FieldDefinition, bool)
+	// FieldDefinition returns the GraphQL definition of the field with the given
+	// name, or false if it is not defined.
+	FieldDefinition(string) (*ast.FieldDefinition, bool)
 }
 
-type ScalarClass interface {
-	Definition() *ast.Definition
+// ScalarType represents a GraphQL Scalar type.
+type ScalarType interface {
+	// New converts a value to the Scalar type, if possible.
 	New(any) (Scalar, error)
+	// Definition returns the GraphQL definition of the type.
+	Definition() *ast.Definition
 }
 
-type Selectable interface {
-	Node
+// EnumType represents a GraphQL Enum type.
+//
+// This interface is a little awkward to explain, but it lets you implement
+// Enums pretty succinctly by re-using a common underlying Enum implementation,
+// passed to this function as a Scalar.
+//
+// For example:
+//
+//	type Direction struct {
+//		dagql.Scalar
+//	}
+//
+//	var Directions = dagql.NewEnum[Direction]()
+//
+//	var (
+//		DirectionUp    = Directions.Register("UP")
+//		DirectionDown  = Directions.Register("DOWN")
+//		DirectionLeft  = Directions.Register("LEFT")
+//		DirectionRight = Directions.Register("RIGHT")
+//		DirectionInert = Directions.Register("INERT")
+//	)
+type EnumType[T Typed] interface {
+	Scalar
+	// New populates the Enum with the given Scalar value.
+	New(Scalar) T
+}
+
+// Object represents an Object in the graph which has an ID and can have
+// sub-selections.
+type Object interface {
+	Typed
+	ID() *idproto.ID
 	Select(context.Context, Selector) (Typed, error)
 }
 
-// Per the GraphQL spec, a Node always has an ID.
-type Node interface {
-	Typed
-	ID() *idproto.ID
-}
-
+// Scalar represents a leaf node of the graph, i.e. a simple scalar value that
+// cannot have any sub-selections.
 type Scalar interface {
 	// All Scalars are typed.
 	Typed
@@ -48,9 +85,10 @@ type Scalar interface {
 	json.Marshaler
 	// All Scalars have a ScalarClass. This reference is used to initialize
 	// default values, among other conveniences.
-	Class() ScalarClass
+	ScalarType() ScalarType
 }
 
+// Int is a GraphQL Int scalar.
 type Int struct {
 	Value int
 }
@@ -59,9 +97,9 @@ func NewInt(val int) Int {
 	return Int{Value: val}
 }
 
-var _ ScalarClass = Int{}
+var _ ScalarType = Int{}
 
-func (Int) Class() ScalarClass {
+func (Int) ScalarType() ScalarType {
 	return Int{}
 }
 
@@ -129,6 +167,7 @@ func (i *Int) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+// Float is a GraphQL Float scalar.
 type Float struct {
 	Value float64
 }
@@ -137,7 +176,7 @@ func NewFloat(val float64) Float {
 	return Float{Value: val}
 }
 
-var _ ScalarClass = Float{}
+var _ ScalarType = Float{}
 
 func (Float) Definition() *ast.Definition {
 	return &ast.Definition{
@@ -173,7 +212,7 @@ func (Float) New(val any) (Scalar, error) {
 
 var _ Scalar = Float{}
 
-func (Float) Class() ScalarClass {
+func (Float) ScalarType() ScalarType {
 	return Float{}
 }
 
@@ -205,6 +244,7 @@ func (i *Float) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+// Boolean is a GraphQL Boolean scalar.
 type Boolean struct {
 	Value bool
 }
@@ -222,7 +262,7 @@ func (Boolean) Type() *ast.Type {
 	}
 }
 
-var _ ScalarClass = Boolean{}
+var _ ScalarType = Boolean{}
 
 func (Boolean) Definition() *ast.Definition {
 	return &ast.Definition{
@@ -250,7 +290,7 @@ func (Boolean) New(val any) (Scalar, error) {
 
 var _ Scalar = Boolean{}
 
-func (Boolean) Class() ScalarClass {
+func (Boolean) ScalarType() ScalarType {
 	return Boolean{}
 }
 
@@ -271,6 +311,7 @@ func (b *Boolean) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+// String is a GraphQL String scalar.
 type String struct {
 	Value string
 }
@@ -288,7 +329,7 @@ func (String) Type() *ast.Type {
 	}
 }
 
-var _ ScalarClass = String{}
+var _ ScalarType = String{}
 
 func (String) Definition() *ast.Definition {
 	return &ast.Definition{
@@ -310,7 +351,7 @@ func (String) New(val any) (Scalar, error) {
 
 var _ Scalar = String{}
 
-func (String) Class() ScalarClass {
+func (String) ScalarType() ScalarType {
 	return String{}
 }
 
@@ -331,12 +372,13 @@ func (i *String) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+// ID is a type-checked ID scalar.
 type ID[T Typed] struct {
 	*idproto.ID
-
 	expected T
 }
 
+// TypeName returns the name of the type with "ID" appended, e.g. `FooID`.
 func (i ID[T]) TypeName() string {
 	return i.expected.Type().Name() + "ID"
 }
@@ -350,7 +392,7 @@ func (i ID[T]) Type() *ast.Type {
 	}
 }
 
-var _ ScalarClass = ID[Typed]{}
+var _ ScalarType = ID[Typed]{}
 
 func (i ID[T]) Definition() *ast.Definition {
 	return &ast.Definition{
@@ -383,7 +425,7 @@ func (ID[T]) New(val any) (Scalar, error) {
 // For parsing string IDs provided in queries.
 var _ Scalar = ID[Typed]{}
 
-func (i ID[T]) Class() ScalarClass {
+func (i ID[T]) ScalarType() ScalarType {
 	return ID[T]{expected: i.expected}
 }
 
@@ -445,23 +487,29 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 	return i.Decode(str)
 }
 
-func (i ID[T]) Load(ctx context.Context, server *Server) (Object[T], error) {
+// Load loads the instance with the given ID from the server.
+func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
 	val, err := server.Load(ctx, i.ID)
 	if err != nil {
-		return Object[T]{}, err
+		return Instance[T]{}, err
 	}
-	obj, ok := val.(Object[T])
+	obj, ok := val.(Instance[T])
 	if !ok {
-		return Object[T]{}, fmt.Errorf("load: expected %T, got %T", obj, val)
+		return Instance[T]{}, fmt.Errorf("load: expected %T, got %T", obj, val)
 	}
 	return obj, nil
 }
 
+// Enumerable is a value that has a length and allows indexing.
 type Enumerable interface {
+	// Len returns the number of elements in the Enumerable.
 	Len() int
+	// Nth returns the Nth element of the Enumerable, with 1 representing the
+	// first entry.
 	Nth(int) (Typed, error)
 }
 
+// Array is an array of GraphQL values.
 type Array[T Typed] []T
 
 var _ Typed = Array[Typed]{}
@@ -500,6 +548,9 @@ func (i *Array[T]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+// Optional wraps a type and allows it to be null.
+//
+// This is used for optional arguments and return values.
 type Optional[T Typed] struct {
 	Value T
 	Valid bool
@@ -537,22 +588,20 @@ func (i *Optional[T]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-type EnumSetter[T Typed] interface {
-	Scalar
-	As(Scalar) T
-}
+// EnumValues is a list of possible values for an Enum.
+type EnumValues[T EnumType[T]] []string
 
-type EnumValues[T EnumSetter[T]] []string
-
-func NewEnum[T EnumSetter[T]](vals ...string) *EnumValues[T] {
+// NewEnum creates a new EnumType with the given possible values.
+func NewEnum[T EnumType[T]](vals ...string) *EnumValues[T] {
 	return (*EnumValues[T])(&vals)
 }
 
 func (e *EnumValues[T]) Definition() *ast.Definition {
 	var zero T
 	return &ast.Definition{
-		Kind:       ast.Enum,
-		Name:       zero.Type().Name(),
+		Kind: ast.Enum,
+		Name: zero.Type().Name(),
+		// Description: "TODO",
 		EnumValues: e.PossibleValues(),
 	}
 }
@@ -577,22 +626,22 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
-	var zero T
+	var enum T
 	for _, possible := range *e {
 		if val == string(possible) {
-			return zero.As(Enum[T]{
+			return enum.New(Enum[T]{
 				Enum:  e,
 				Value: val,
 			}), nil
 		}
 	}
-	return zero, fmt.Errorf("invalid enum value %q", val)
+	return enum, fmt.Errorf("invalid enum value %q", val)
 }
 
 func (e *EnumValues[T]) Register(val string) T {
+	var enum T
 	*e = append(*e, val)
-	var zero T
-	return zero.As(Enum[T]{
+	return enum.New(Enum[T]{
 		Enum:  e,
 		Value: val,
 	})
@@ -603,17 +652,15 @@ func (e *EnumValues[T]) Install(srv *Server) {
 	srv.scalars[zero.Type().Name()] = e
 }
 
-type Enum[T EnumSetter[T]] struct {
+// Enum is the common underlying implementation for all Enum values.
+type Enum[T EnumType[T]] struct {
 	Enum  *EnumValues[T]
 	Value string
 }
 
-func (e Enum[T]) Class() ScalarClass {
+// ScalarType returns the underlying EnumValues type.
+func (e Enum[T]) ScalarType() ScalarType {
 	return e.Enum
-}
-
-func (e Enum[T]) New(val any) (Scalar, error) {
-	return e.Enum.New(val)
 }
 
 func (e Enum[T]) Literal() *idproto.Literal {
@@ -640,6 +687,7 @@ func Opt[T Typed](v T) Optional[T] {
 	}
 }
 
+// NoOpt returns an empty Optional value.
 func NoOpt[T Typed]() Optional[T] {
 	return Optional[T]{}
 }
@@ -708,5 +756,24 @@ func LiteralToAST(lit *idproto.Literal) *ast.Value {
 		return obj
 	default:
 		panic(fmt.Sprintf("unsupported literal type %T", x))
+	}
+}
+
+// ToLiteral converts a Typed value to a Literal.
+//
+// A Scalar value is converted to a Literal. An Object value is converted to
+// its ID, which is a Literal.
+func ToLiteral(typed Typed) *idproto.Literal {
+	switch x := typed.(type) {
+	case Scalar:
+		return x.Literal()
+	case Object:
+		return &idproto.Literal{
+			Value: &idproto.Literal_Id{
+				Id: x.ID(),
+			},
+		}
+	default:
+		panic(fmt.Sprintf("cannot convert %T to Literal", x))
 	}
 }
