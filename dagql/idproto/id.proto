@@ -3,16 +3,17 @@ package dagger;
 
 option go_package = "./idproto";
 
-// ID represents a GraphQL object of a certain type, constructed by evaluating
+// ID represents a GraphQL value of a certain type, constructed by evaluating
 // its contained pipeline. In other words, it represents a
-// constructor-addressed object.
+// constructor-addressed value, which may be an object, an array, or a scalar
+// value.
 //
-// It may be binary=>base64-encoded to be used as a GraphQL ID value.
-// Alternatively it may be stored in a database and referred to via an RFC-6920
-// ni://sha-256;... URI.
+// It may be binary=>base64-encoded to be used as a GraphQL ID value for
+// objects. Alternatively it may be stored in a database and referred to via an
+// RFC-6920 ni://sha-256;... URI.
 message ID {
-  // The GraphQL __typename of the object.
-  string typeName = 1;
+  // The GraphQL type of the value.
+  Type type = 1;
 
   // Chain of GraphQL field selections that construct the object, starting from
   // Query.
@@ -91,4 +92,11 @@ message List {
 // A series of named values.
 message Object {
   repeated Argument values = 1;
+}
+
+// A GraphQL type.
+message Type {
+  string namedType = 1;
+  Type elem = 2;
+  bool nonNull = 3;
 }

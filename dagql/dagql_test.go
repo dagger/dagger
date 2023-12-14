@@ -25,6 +25,12 @@ func (Query) Type() *ast.Type {
 	}
 }
 
+func req(t *testing.T, gql *client.Client, query string, res any) {
+	t.Helper()
+	err := gql.Post(query, res)
+	assert.NilError(t, err)
+}
+
 func TestBasic(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
@@ -48,7 +54,7 @@ func TestBasic(t *testing.T) {
 			}
 		}
 	}
-	gql.MustPost(`query {
+	req(t, gql, `query {
 		point(x: 6, y: 7) {
 			x
 			y
@@ -64,7 +70,8 @@ func TestBasic(t *testing.T) {
 			}
 		}
 	}`, &res)
-	expectedID := idproto.New("Point")
+
+	expectedID := idproto.New(points.Point{}.Type())
 	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
 	expectedID.Append("shiftLeft")
 	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
@@ -112,7 +119,7 @@ func TestLoadingByID(t *testing.T) {
 			}
 		}
 	}
-	gql.MustPost(`query {
+	req(t, gql, `query {
 		point(x: 6, y: 7) {
 			x
 			y
@@ -128,6 +135,7 @@ func TestLoadingByID(t *testing.T) {
 			}
 		}
 	}`, &res)
+
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
 			LoadPointFromID struct {
@@ -136,13 +144,14 @@ func TestLoadingByID(t *testing.T) {
 				Y  int
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			loadPointFromID(id: "`+neighbor.Id+`") {
 				id
 				x
 				y
 			}
 		}`, &res)
+
 		assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
 		assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
 		assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
@@ -179,7 +188,7 @@ func TestIDsReflectQuery(t *testing.T) {
 			}
 		}
 	}
-	gql.MustPost(`query {
+	req(t, gql, `query {
 		point(x: 6, y: 7) {
 			shiftLeft {
 				id
@@ -190,7 +199,7 @@ func TestIDsReflectQuery(t *testing.T) {
 		}
 	}`, &res)
 
-	expectedID := idproto.New("Point")
+	expectedID := idproto.New(points.Point{}.Type())
 	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
 	expectedID.Append("shiftLeft")
 	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
@@ -206,13 +215,14 @@ func TestIDsReflectQuery(t *testing.T) {
 				Y  int
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			loadPointFromID(id: "`+neighbor.Id+`") {
 				id
 				x
 				y
 			}
 		}`, &res)
+
 		assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
 		switch i {
 		case 0:
@@ -242,7 +252,7 @@ func TestPassingObjectsAround(t *testing.T) {
 			Id string
 		}
 	}
-	gql.MustPost(`query {
+	req(t, gql, `query {
 		point(x: 6, y: 7) {
 			id
 		}
@@ -257,13 +267,14 @@ func TestPassingObjectsAround(t *testing.T) {
 			}
 		}
 	}
-	gql.MustPost(`query {
+	req(t, gql, `query {
 		point(x: -6, y: -7) {
 			line(to: "`+id67+`") {
 				length
 			}
 		}
 	}`, &res2)
+
 	assert.Equal(t, res2.Point.Line.Length, 18)
 }
 
@@ -279,7 +290,7 @@ func TestEnums(t *testing.T) {
 				Id string
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			point(x: 6, y: 7) {
 				id
 			}
@@ -294,13 +305,14 @@ func TestEnums(t *testing.T) {
 				}
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			point(x: -6, y: -7) {
 				line(to: "`+id67+`") {
 					direction
 				}
 			}
 		}`, &res2)
+
 		assert.Equal(t, res2.Point.Line.Direction, "RIGHT")
 	})
 
@@ -314,7 +326,7 @@ func TestEnums(t *testing.T) {
 				Right points.Point
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			point(x: 6, y: 7) {
 				inert: shift(direction: INERT) {
 					x
@@ -338,6 +350,7 @@ func TestEnums(t *testing.T) {
 				}
 			}
 		}`, &res)
+
 		assert.Equal(t, res.Point.Inert.X, 6)
 		assert.Equal(t, res.Point.Inert.Y, 7)
 		assert.Equal(t, res.Point.Up.X, 6)
@@ -441,7 +454,7 @@ func TestDefaults(t *testing.T) {
 				Float   float64
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			defaults {
 				boolean
 				int
@@ -449,6 +462,7 @@ func TestDefaults(t *testing.T) {
 				float
 			}
 		}`, &res)
+
 		assert.Equal(t, true, res.Defaults.Boolean)
 		assert.Equal(t, 42, res.Defaults.Int)
 		assert.Equal(t, "hello, world!", res.Defaults.String)
@@ -544,7 +558,7 @@ func TestParallelism(t *testing.T) {
 				Read  string
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			pipe {
 				write(message: "hello, world!") {
 					id
@@ -552,6 +566,7 @@ func TestParallelism(t *testing.T) {
 				read
 			}
 		}`, &res)
+
 		assert.Equal(t, res.Pipe.Read, "hello, world!")
 	})
 
@@ -568,7 +583,7 @@ func TestParallelism(t *testing.T) {
 				Read string
 			}
 		}
-		gql.MustPost(`query {
+		req(t, gql, `query {
 			pipe {
 				write(message: "one") {
 					write(message: "two") {
@@ -579,6 +594,7 @@ func TestParallelism(t *testing.T) {
 				read
 			}
 		}`, &res)
+
 		assert.Equal(t, res.Pipe.Read, "one")
 		assert.Equal(t, res.Pipe.Write.Read, "two")
 	})
