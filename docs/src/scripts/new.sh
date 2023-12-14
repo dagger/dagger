@@ -12,7 +12,7 @@ function new() {
 	local next
 	next=$(LC_ALL=C tr -dc '0-9' < /dev/urandom | head -c6)
 
-	local filename="$next-$name.md"
+	local filename="$next-$name.mdx"
 	echo "Creating $filename"
 	cat <<- EOF > "$filename"
 		---
