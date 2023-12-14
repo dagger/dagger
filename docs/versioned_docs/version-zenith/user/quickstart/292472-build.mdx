@@ -1,0 +1,64 @@
+---
+slug: /user/quickstart/292472/build
+hide_table_of_contents: true
+title: "Add a function to build the application"
+---
+
+# Quickstart
+
+## Add a function to build the application
+
+If your application passes all its tests, the typical next step is to build it.
+
+Add a new `Build()` function that creates a production build of the example application by running `npm run build`:
+
+
+```go file=snippets/build/main.go
+```
+
+This new function does the following:
+
+- It starts off like the previous `Test()` function and obtains a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image.
+- It obtains a reference to the `dist/` directory in the container with the `Container.Directory()` function. This function returns a `Directory` object.
+
+:::note
+The `npm run build` command is appropriate for a Vue application, but other applications are likely to use different commands. Modify your function code accordingly. Remember that you can use the module's `Node.Run()` function to customize the command to be run.
+:::
+
+Call the new function using the Dagger CLI:
+
+```shell
+dagger call build
+```
+
+Here's an example of the output you will see:
+
+```shell
+✔ dagger call build [1m32.7s]
+┃ assets
+┃ favicon.ico
+┃ index.html
+• Engine: 378cfbb9549c (version v0.9.3)
+⧗ 2m21.4s ✔ 121 ∅ 13
+```
+
+A quick aside: did you notice that the `Build()` and `Test()` functions share a lot of the same code? To make your module more reusable and maintainable, it's a good idea move this common code into a separate function, which you can invoke as needed.
+
+Update your module with a new, private `buildBaseImage()` function that performs the basic operations needed by the `Test()` and `Build()` functions, and then update the `Test()` and `Build()` functions to use it:
+
+```go file=snippets/build/main-improved.go
+```
+
+:::info
+The `buildBaseImage()` function uses the `node` module and returns a custom `Node` object representing a container image with the application source code, Node.js runtime and cache volumes. This `Node` object can then be "chained" into other functions, in the same style as the [core Dagger API](https://docs.dagger.io/api/reference).
+:::
+
+After updating the module, test and build the application again:
+
+```shell
+dagger call test
+dagger call build
+```
+
+You will see the same results as before.

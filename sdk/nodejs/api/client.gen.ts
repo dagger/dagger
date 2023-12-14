@@ -236,7 +236,7 @@ export type ContainerWithDirectoryOpts = {
 
 export type ContainerWithEnvVariableOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value according to the current environment
+   * Replace `${VAR}` or $VAR in the value according to the current environment
    * variables defined in the container (e.g., "/opt/bin:$PATH").
    */
   expand?: boolean
@@ -1728,7 +1728,7 @@ export class Container extends BaseClient {
    * Retrieves this container plus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    * @param value The value of the environment variable. (e.g., "localhost").
-   * @param opts.expand Replace ${VAR} or $VAR in the value according to the current environment
+   * @param opts.expand Replace `${VAR}` or $VAR in the value according to the current environment
    * variables defined in the container (e.g., "/opt/bin:$PATH").
    */
   withEnvVariable = (
@@ -1783,8 +1783,9 @@ export class Container extends BaseClient {
    * Expose a network port.
    *
    * Exposed ports serve two purposes:
-   *   - For health checks and introspection, when running services
-   *   - For setting the EXPOSE OCI field when publishing the container
+   *
+   * - For health checks and introspection, when running services
+   * - For setting the EXPOSE OCI field when publishing the container
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
@@ -4967,7 +4968,7 @@ export class Client extends BaseClient {
   /**
    * Queries a git repository.
    * @param url Url of the git repository.
-   * Can be formatted as https://{host}/{owner}/{repo}, git@{host}:{owner}/{repo}
+   * Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`
    * Suffix ".git" is optional.
    * @param opts.keepGitDir Set to true to keep .git directory.
    * @param opts.sshKnownHosts Set SSH known hosts

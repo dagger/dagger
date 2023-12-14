@@ -38,7 +38,7 @@ func (t Python) Lint(ctx context.Context) error {
 	base := pythonBase(c, pythonDefaultVersion)
 
 	eg.Go(func() error {
-		path := "docs/current"
+		path := "docs/current_docs"
 		_, err = base.
 			WithDirectory(
 				fmt.Sprintf("/%s", path),
@@ -50,7 +50,8 @@ func (t Python) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"hatch", "run", "lint"}).
+			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current_docs"}).
+			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current_docs"}).
 			Sync(gctx)
 		return err
 	})
@@ -94,7 +95,7 @@ func (t Python) Test(ctx context.Context) error {
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-				WithExec([]string{"hatch", "run", "test", "--exitfirst"}).
+				WithExec([]string{"pytest", "-Wd", "--exitfirst"}).
 				Sync(gctx)
 			return err
 		})
@@ -233,8 +234,7 @@ func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 // added and dependencies installed.
 func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	var (
-		appDir  = "sdk/python"
-		reqFile = "requirements.txt"
+		appDir = "sdk/python"
 	)
 
 	src := util.Repository(c).Directory(appDir)
@@ -242,11 +242,14 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	// Mirror the same dir structure from the repo because of the
 	// relative paths in ruff (for docs linting).
 	mountPath := fmt.Sprintf("/%s", appDir)
-	reqPath := fmt.Sprintf("%s/%s", appDir, reqFile)
+
+	reqPath := fmt.Sprintf("%s/requirements", appDir)
+	reqFile := fmt.Sprintf("%s.txt", reqPath)
 
 	return pythonBaseEnv(c, version).
-		WithFile(reqPath, src.File(reqFile)).
-		WithExec([]string{"pip", "install", "-r", reqPath}).
+		WithDirectory(reqPath, src.Directory("requirements")).
+		WithFile(reqFile, src.File("requirements.txt")).
+		WithExec([]string{"pip", "install", "-r", reqFile}).
 		WithDirectory(mountPath, src).
 		WithWorkdir(mountPath).
 		WithExec([]string{"pip", "install", "."})

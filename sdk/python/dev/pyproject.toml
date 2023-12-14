@@ -1,0 +1,14 @@
+[project]
+name = "main"
+version = "0.0.0"
+description = "Dagger module for developing the Dagger Python SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Using hatch to manage the development virtual environment
+# and installing the sdk from direct reference:
+# https://peps.python.org/pep-0440/#direct-references
+[tool.hatch.envs.dev]
+pre-install-commands = [
+    "pip install -e ./sdk"
+]
