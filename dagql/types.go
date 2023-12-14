@@ -385,6 +385,7 @@ func (i ID[T]) TypeName() string {
 
 var _ Typed = ID[Typed]{}
 
+// Type returns the GraphQL type of the value.
 func (i ID[T]) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: i.TypeName(),
@@ -394,6 +395,7 @@ func (i ID[T]) Type() *ast.Type {
 
 var _ ScalarType = ID[Typed]{}
 
+// Definition returns the GraphQL definition of the type.
 func (i ID[T]) Definition() *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,
@@ -407,6 +409,10 @@ func (i ID[T]) Definition() *ast.Definition {
 	}
 }
 
+// New creates a new ID with the given value.
+//
+// It accepts either an *idproto.ID or a string. The string is expected to be
+// the base64-encoded representation of an *idproto.ID.
 func (ID[T]) New(val any) (Scalar, error) {
 	switch x := val.(type) {
 	case *idproto.ID:
@@ -451,15 +457,15 @@ func (i *ID[T]) Decode(str string) error {
 	if err != nil {
 		return err
 	}
-	var idproto idproto.ID
-	if err := proto.Unmarshal(bytes, &idproto); err != nil {
+	var idp idproto.ID
+	if err := proto.Unmarshal(bytes, &idp); err != nil {
 		return err
 	}
 	expectedName := i.expected.Type().Name()
-	if idproto.TypeName != expectedName {
-		return fmt.Errorf("expected %q ID, got %q ID", expectedName, idproto.TypeName)
+	if idp.Type.NamedType != expectedName {
+		return fmt.Errorf("expected %q ID, got %q ID", expectedName, idp.Type)
 	}
-	i.ID = &idproto
+	i.ID = &idp
 	return nil
 }
 

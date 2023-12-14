@@ -7,13 +7,25 @@ import (
 	"strings"
 
 	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/protobuf/proto"
 )
 
-func New(typeName string) *ID {
+func New(gqlType *ast.Type) *ID {
 	return &ID{
-		TypeName: typeName,
+		Type: NewType(gqlType),
 	}
+}
+
+func NewType(gqlType *ast.Type) *Type {
+	t := &Type{
+		NamedType: gqlType.NamedType,
+		NonNull:   gqlType.NonNull,
+	}
+	if gqlType.Elem != nil {
+		t.Elem = NewType(gqlType.Elem)
+	}
+	return t
 }
 
 func Arg(name string, value any) *Argument {
@@ -88,6 +100,7 @@ func LiteralValue(value any) *Literal {
 func (id *ID) Nth(i int) *ID {
 	cp := id.Clone()
 	cp.Constructor[len(cp.Constructor)-1].Nth = int64(i)
+	cp.Type = cp.Type.Elem
 	return cp
 }
 
@@ -126,7 +139,7 @@ func (id *ID) Canonical() *ID {
 		}
 	}
 	return &ID{
-		TypeName:    id.TypeName,
+		Type:        id.Type,
 		Constructor: noMeta,
 	}
 }

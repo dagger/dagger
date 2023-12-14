@@ -29,7 +29,7 @@ func NewServer[T Typed](root T) *Server {
 	queryClass := NewClass[T]()
 	srv := &Server{
 		root: Instance[T]{
-			Constructor: idproto.New(root.Type().Name()),
+			Constructor: idproto.New(root.Type()),
 			Self:        root,
 			Class:       queryClass,
 		},
@@ -160,52 +160,76 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 	return resultsMap, nil
 }
 
+func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type, first *idproto.Selector, rest ...*idproto.Selector) (Selection, error) {
+	sel := Selection{
+		Selector: Selector{
+			Field: first.Field,
+			Nth:   int(first.Nth),
+		},
+	}
+	class, ok := s.classes[selfType.Name()]
+	if !ok {
+		return Selection{}, fmt.Errorf("unknown type: %q", selfType.Name())
+	}
+	fieldDef, ok := class.FieldDefinition(first.Field)
+	if !ok {
+		return Selection{}, fmt.Errorf("unknown field: %q", first.Field)
+	}
+	resType := fieldDef.Type
+
+	for _, arg := range first.Args {
+		argDef := fieldDef.Arguments.ForName(arg.Name)
+		if argDef == nil {
+			return Selection{}, fmt.Errorf("unknown argument: %q", arg.Name)
+		}
+		val, err := s.fromLiteral(ctx, arg.Value, argDef)
+		if err != nil {
+			return Selection{}, err
+		}
+		sel.Selector.Args = append(sel.Selector.Args, Arg{
+			Name:  arg.Name,
+			Value: val,
+		})
+	}
+
+	if len(rest) > 0 {
+		subsel, err := s.constructorToSelection(ctx, resType, rest[0], rest[1:]...)
+		if err != nil {
+			return Selection{}, err
+		}
+		sel.Subselections = append(sel.Subselections, subsel)
+	}
+
+	return sel, nil
+}
+
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
-	var res Typed = s.root
-	for i, idSel := range id.Constructor {
-		stepID := id.Clone()
-		stepID.Constructor = id.Constructor[:i+1]
-		// TODO: kind of annoying but technically correct; for the ID to match, the
-		// return type at this point in time also has to match.
-		fieldDef, err := s.field(res.Type().Name(), idSel.Field)
-		if err != nil {
-			return nil, err
-		}
-		stepID.TypeName = fieldDef.Type.Name()
-
-		obj, err := s.toSelectable(stepID, res)
-		if err != nil {
-			return nil, fmt.Errorf("instantiate from id: %w", err)
-		}
-		sel := Selector{
-			Field: idSel.Field,
-			Args:  make(map[string]Typed, len(idSel.Args)),
-			Nth:   int(idSel.Nth),
-		}
-		for _, arg := range idSel.Args {
-			val, err := s.fromLiteral(ctx, arg.Value)
-			if err != nil {
-				return nil, err
-			}
-			sel.Args[arg.Name] = val
-		}
-		res, err = obj.Select(ctx, sel)
-		if err != nil {
-			return nil, err
-		}
-		if sel.Nth != 0 {
-			enum, ok := res.(Enumerable)
-			if !ok {
-				return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, res)
-			}
-			res, err = enum.Nth(sel.Nth)
-			if err != nil {
-				return nil, err
-			}
+	if len(id.Constructor) == 0 {
+		return s.root, nil
+	}
+	sel, err := s.constructorToSelection(ctx, s.root.Type(), id.Constructor[0], id.Constructor[1:]...)
+	if err != nil {
+		return nil, err
+	}
+	var res any
+	res, err = s.Resolve(ctx, s.root, sel)
+	if err != nil {
+		return nil, err
+	}
+	for _, sel := range id.Constructor {
+		switch x := res.(type) {
+		case map[string]any:
+			res = res.(map[string]any)[sel.Field]
+		default:
+			return nil, fmt.Errorf("unexpected result type %T", x)
 		}
 	}
-	return s.toSelectable(id, res)
+	val, ok := res.(Typed)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type %T", res)
+	}
+	return s.toSelectable(id, val)
 }
 
 func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
@@ -365,13 +389,16 @@ func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error)
 	return fieldDef, nil
 }
 
-func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, error) {
+func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal, argDef *ast.ArgumentDefinition) (Typed, error) {
 	switch v := lit.Value.(type) {
 	case *idproto.Literal_Id:
+		if v.Id.Type.NamedType == "" {
+			return nil, fmt.Errorf("invalid ID: %q", v.Id)
+		}
 		id := v.Id
-		class, ok := s.classes[id.TypeName]
+		class, ok := s.classes[id.Type.NamedType]
 		if !ok {
-			return nil, fmt.Errorf("unknown class: %q", id.TypeName)
+			return nil, fmt.Errorf("unknown class: %q", id.Type.NamedType)
 		}
 		return class.NewID(id), nil
 	case *idproto.Literal_Int:
@@ -385,7 +412,7 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, 
 	case *idproto.Literal_List:
 		list := make(Array[Typed], len(v.List.Values))
 		for i, val := range v.List.Values {
-			typed, err := s.fromLiteral(ctx, val)
+			typed, err := s.fromLiteral(ctx, val, argDef)
 			if err != nil {
 				return nil, err
 			}
@@ -394,8 +421,15 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal) (Typed, 
 		return list, nil
 	case *idproto.Literal_Object:
 		return nil, fmt.Errorf("TODO: objects")
+	case *idproto.Literal_Enum:
+		typeName := argDef.Type.Name()
+		scalar, ok := s.scalars[typeName]
+		if !ok {
+			return nil, fmt.Errorf("unknown scalar: %q", typeName)
+		}
+		return scalar.New(v.Enum)
 	default:
-		panic(fmt.Sprintf("unsupported literal type %T", v))
+		panic(fmt.Sprintf("fromLiteral: unsupported literal type %T", v))
 	}
 }
 
@@ -453,6 +487,6 @@ func (sel Selector) appendToID(id *idproto.ID, field *ast.FieldDefinition) *idpr
 		Tainted: field.Directives.ForName("tainted") != nil, // TODO
 		Meta:    field.Directives.ForName("meta") != nil,    // TODO
 	})
-	cp.TypeName = field.Type.Name()
+	cp.Type = idproto.NewType(field.Type)
 	return cp
 }
