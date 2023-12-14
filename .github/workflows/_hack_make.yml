@@ -16,6 +16,11 @@ on:
         type: string
         default: "dagger-runner-2c-8g"
         required: false
+      setup-tmate:
+        description: "Whether to setup a tmate session for debugging"
+        type: boolean
+        default: false
+        required: false
 
 jobs:
   # Use a free GitHub Actions runner when
@@ -53,6 +58,9 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
+      - name: Setup tmate session
+        if: ${{ inputs.setup-tmate }}
+        uses: mxschmitt/action-tmate@v3
       - name: ${{ inputs.mage-targets }}
         run: |
           if [ "${{ inputs.dev-engine }}" == "true" ]

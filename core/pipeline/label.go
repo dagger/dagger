@@ -148,7 +148,8 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		branch := os.Getenv("GITHUB_HEAD_REF")
 
 		// Execute git fetch using git CLI because GitHub Action adds the GITHUB_TOKEN
-		// to any git client operation automatically. With go-git, user have to add it
+		// to any git client operation automatically. With go-git, would have to
+		// add the GITHUB_TOKEN secret to their pipeline
 		cmd := exec.Command("git", "fetch", "origin", branch)
 		err = cmd.Run()
 		if err != nil {
