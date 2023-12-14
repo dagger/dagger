@@ -10,7 +10,10 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
 	"github.com/vito/dagql/idproto"
+	"github.com/vito/dagql/internal/pipes"
 	"github.com/vito/dagql/internal/points"
+	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 )
@@ -112,9 +115,14 @@ func TestLoadingByID(t *testing.T) {
 				Ecks      int
 				Why       int
 				Neighbors []struct {
-					Id string
-					X  int
-					Y  int
+					Id        string
+					X         int
+					Y         int
+					Neighbors []struct {
+						Id string
+						X  int
+						Y  int
+					}
 				}
 			}
 		}
@@ -131,6 +139,11 @@ func TestLoadingByID(t *testing.T) {
 					id
 					x
 					y
+					neighbors {
+						id
+						x
+						y
+					}
 				}
 			}
 		}
@@ -168,6 +181,27 @@ func TestLoadingByID(t *testing.T) {
 		case 3:
 			assert.Equal(t, res.LoadPointFromID.X, 5)
 			assert.Equal(t, res.LoadPointFromID.Y, 8)
+		}
+
+		for _, neighbor := range neighbor.Neighbors {
+			var res struct {
+				LoadPointFromID struct {
+					Id string
+					X  int
+					Y  int
+				}
+			}
+			req(t, gql, `query {
+				loadPointFromID(id: "`+neighbor.Id+`") {
+					id
+					x
+					y
+				}
+			}`, &res)
+
+			assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
+			assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
+			assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
 		}
 	}
 }
@@ -514,42 +548,13 @@ func TestDefaults(t *testing.T) {
 	})
 }
 
-type Pipe struct {
-	Channel chan dagql.String
-}
-
-func (Pipe) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Pipe",
-		NonNull:   true,
-	}
-}
-
 func TestParallelism(t *testing.T) {
 	srv := dagql.NewServer(Query{})
+	cons := console.NewWriter(newTWriter(t))
+	srv.RecordTo(progrock.NewRecorder(cons))
 	gql := client.New(handler.NewDefaultServer(srv))
 
-	dagql.Fields[Query]{
-		dagql.Func("pipe", func(ctx context.Context, self Query, args struct {
-			Buffer dagql.Int `default:"0"`
-		}) (Pipe, error) {
-			return Pipe{
-				Channel: make(chan dagql.String, args.Buffer.Value),
-			}, nil
-		}),
-	}.Install(srv)
-
-	dagql.Fields[Pipe]{
-		dagql.Func("read", func(ctx context.Context, self Pipe, _ any) (dagql.String, error) {
-			return <-self.Channel, nil
-		}),
-		dagql.Func("write", func(ctx context.Context, self Pipe, args struct {
-			Message dagql.String
-		}) (Pipe, error) {
-			self.Channel <- args.Message
-			return self, nil
-		}),
-	}.Install(srv)
+	pipes.Install[Query](srv)
 
 	t.Run("simple synchronous case", func(t *testing.T) {
 		var res struct {

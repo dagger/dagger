@@ -1,10 +1,9 @@
 package idproto
 
 import (
-	"encoding/json"
+	"bytes"
+	"encoding/base64"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -17,17 +16,6 @@ func New(gqlType *ast.Type) *ID {
 	}
 }
 
-func NewType(gqlType *ast.Type) *Type {
-	t := &Type{
-		NamedType: gqlType.NamedType,
-		NonNull:   gqlType.NonNull,
-	}
-	if gqlType.Elem != nil {
-		t.Elem = NewType(gqlType.Elem)
-	}
-	return t
-}
-
 func Arg(name string, value any) *Argument {
 	return &Argument{
 		Name:  name,
@@ -35,66 +23,30 @@ func Arg(name string, value any) *Argument {
 	}
 }
 
-type Literate interface {
-	Literal() *Literal
-}
-
-func LiteralValue(value any) *Literal {
-	switch v := value.(type) {
-	case *ID:
-		return &Literal{Value: &Literal_Id{Id: v}}
-	case int:
-		return &Literal{Value: &Literal_Int{Int: int64(v)}}
-	case int32:
-		return &Literal{Value: &Literal_Int{Int: int64(v)}}
-	case int64:
-		return &Literal{Value: &Literal_Int{Int: v}}
-	case float32:
-		return &Literal{Value: &Literal_Float{Float: float64(v)}}
-	case float64:
-		return &Literal{Value: &Literal_Float{Float: v}}
-	case string:
-		return &Literal{Value: &Literal_String_{String_: v}}
-	case bool:
-		return &Literal{Value: &Literal_Bool{Bool: v}}
-	case []any:
-		list := make([]*Literal, len(v))
-		for i, val := range v {
-			list[i] = LiteralValue(val)
+func (id *ID) Display() string {
+	buf := new(bytes.Buffer)
+	for si, sel := range id.Constructor {
+		if si > 0 {
+			fmt.Fprintf(buf, ".")
 		}
-		return &Literal{Value: &Literal_List{List: &List{Values: list}}}
-	case map[string]any:
-		args := make([]*Argument, len(v))
-		i := 0
-		for name, val := range v {
-			args[i] = &Argument{
-				Name:  name,
-				Value: LiteralValue(val),
+		fmt.Fprintf(buf, "%s", sel.Field)
+		for ai, arg := range sel.Args {
+			if ai == 0 {
+				fmt.Fprintf(buf, "(")
+			} else {
+				fmt.Fprintf(buf, ", ")
 			}
-			i++
-		}
-		sort.SliceStable(args, func(i, j int) bool {
-			return args[i].Name < args[j].Name
-		})
-		return &Literal{Value: &Literal_Object{Object: &Object{Values: args}}}
-	case Literate:
-		return v.Literal()
-	case json.Number:
-		if strings.Contains(v.String(), ".") {
-			f, err := v.Float64()
-			if err != nil {
-				panic(err)
+			fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST())
+			if ai == len(sel.Args)-1 {
+				fmt.Fprintf(buf, ")")
 			}
-			return LiteralValue(f)
 		}
-		i, err := v.Int64()
-		if err != nil {
-			panic(err)
+		if sel.Nth != 0 {
+			fmt.Fprintf(buf, "#%d", sel.Nth)
 		}
-		return LiteralValue(i)
-	default:
-		panic(fmt.Sprintf("unsupported literal type %T", v))
 	}
+	fmt.Fprintf(buf, ": %s", id.Type.ToAST())
+	return buf.String()
 }
 
 func (id *ID) Nth(i int) *ID {
@@ -132,6 +84,7 @@ func (id *ID) Tainted() bool {
 
 // Canonical returns the ID with any contained IDs canonicalized.
 func (id *ID) Canonical() *ID {
+	// TODO sort args...? is it worth preserving them in the first place? (default answer no)
 	noMeta := []*Selector{}
 	for _, sel := range id.Constructor {
 		if !sel.Meta {
@@ -156,6 +109,23 @@ func (id *ID) Digest() (digest.Digest, error) {
 
 func (id *ID) Clone() *ID {
 	return proto.Clone(id).(*ID)
+}
+
+func (id *ID) Encode() (string, error) {
+	proto, err := proto.Marshal(id)
+	if err != nil {
+		return "", err
+	}
+	enc := base64.URLEncoding.EncodeToString(proto)
+	return enc, nil
+}
+
+func (id *ID) Decode(str string) error {
+	bytes, err := base64.URLEncoding.DecodeString(str)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(bytes, id)
 }
 
 // Canonical returns the selector with any contained IDs canonicalized.
