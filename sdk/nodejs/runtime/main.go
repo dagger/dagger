@@ -42,7 +42,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 		// Install dependencies
 		WithExec([]string{"npm", "install"}).
 		// Add tsx to execute the entrypoint
-		WithExec([]string{"yarn", "global", "add", "tsx"}).
+		WithExec([]string{"npm", "install", "-g", "tsx"}).
 		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
 		WithDefaultArgs(), nil
 }
