@@ -12,15 +12,18 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
+	"github.com/vito/dagql/ioctx"
+	"github.com/vito/progrock"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
 	root        Object
+	rec         *progrock.Recorder
 	classes     map[string]ObjectType
 	scalars     map[string]ScalarType
-	cache       *CacheMap[digest.Digest, any]
+	cache       *CacheMap[digest.Digest, Typed]
 	installLock sync.Mutex
 }
 
@@ -44,9 +47,13 @@ func NewServer[T Typed](root T) *Server {
 			// instead of a single ID type, each object has its own ID type
 			// "ID": ID{},
 		},
-		cache: NewCacheMap[digest.Digest, any](),
+		cache: NewCacheMap[digest.Digest, Typed](),
 	}
 	return srv
+}
+
+func (s *Server) RecordTo(rec *progrock.Recorder) {
+	s.rec = rec
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -82,7 +89,7 @@ func (s *Server) Complexity(typeName, field string, childComplexity int, args ma
 }
 
 // Exec implements graphql.ExecutableSchema.
-func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
+func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	return func(ctx context.Context) *graphql.Response {
 		gqlOp := graphql.GetOperationContext(ctx)
 
@@ -129,6 +136,30 @@ func (s *Server) Exec(ctx context.Context) graphql.ResponseHandler {
 	}
 }
 
+// resolveContext stores data in context.Context for use by Resolve.
+//
+// We might want to just turn this into args for the usual reasons, but it's
+// for telemetry related things, which feels as appropriate a reason as any.
+type resolveContext struct {
+	Parent digest.Digest
+}
+
+type resolveContextKey struct{}
+
+func parentFrom(ctx context.Context) (digest.Digest, bool) {
+	val := ctx.Value(resolveContextKey{})
+	if val == nil {
+		return "", false
+	}
+	return val.(resolveContext).Parent, true
+}
+
+func withParent(ctx context.Context, parent digest.Digest) context.Context {
+	cp, _ := ctx.Value(resolveContextKey{}).(resolveContext)
+	cp.Parent = parent
+	return context.WithValue(ctx, resolveContextKey{}, cp)
+}
+
 // Resolve resolves the given selections on the given object.
 //
 // Each selection is resolved in parallel, and the results are returned in a
@@ -158,6 +189,123 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 		return true
 	})
 	return resultsMap, nil
+}
+
+// Load loads the object with the given ID.
+func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
+	if len(id.Constructor) == 0 {
+		return s.root, nil
+	}
+	sel, err := s.constructorToSelection(ctx, s.root.Type(), id.Constructor[0], id.Constructor[1:]...)
+	if err != nil {
+		return nil, err
+	}
+	var res any
+	res, err = s.Resolve(ctx, s.root, sel)
+	if err != nil {
+		return nil, err
+	}
+	for _, sel := range id.Constructor {
+		switch x := res.(type) {
+		case map[string]any:
+			res = x[sel.Field]
+		default:
+			return nil, fmt.Errorf("unexpected result type %T", x)
+		}
+	}
+	val, ok := res.(Typed)
+	if !ok {
+		// should be impossible, since Instance.Select returns a Typed
+		return nil, fmt.Errorf("unexpected result type %T", res)
+	}
+	return s.toSelectable(id, val)
+}
+
+func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
+	class, ok := s.classes[self.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
+	}
+	fieldDef, ok := class.FieldDefinition(sel.Selector.Field)
+	if fieldDef == nil {
+		return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
+	}
+
+	chainedID := sel.Selector.appendToID(self.ID(), fieldDef)
+
+	dig, err := chainedID.Canonical().Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	if s.rec != nil {
+		// TODO: I actually don't think we even need this. When we visualize the ID
+		// you can just take the digest of each input ID and correlate events that
+		// way. The relationships are already expressed.
+		inputs := []digest.Digest{}
+		if parent, ok := parentFrom(ctx); ok {
+			inputs = append(inputs, parent)
+		}
+		for _, arg := range sel.Selector.Args {
+			if obj, ok := arg.Value.(Object); ok {
+				argDig, err := obj.ID().Digest()
+				if err != nil {
+					return nil, err
+				}
+				inputs = append(inputs, argDig)
+			}
+		}
+		vtx := s.rec.Vertex(dig, chainedID.Display(), progrock.WithInputs(inputs...))
+		defer vtx.Done(rerr)
+		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
+		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
+	}
+
+	ctx = withParent(ctx, dig)
+
+	val, err := self.Select(ctx, sel.Selector)
+	if err != nil {
+		return nil, err
+	}
+
+	if val == nil {
+		res = nil
+	} else if len(sel.Subselections) == 0 {
+		res = val
+	} else if len(sel.Subselections) > 0 {
+		enum, ok := val.(Enumerable)
+		if !ok {
+			node, err := s.toSelectable(chainedID, val)
+			if err != nil {
+				return nil, fmt.Errorf("instantiate: %w", err)
+			}
+			res, err = s.Resolve(ctx, node, sel.Subselections...)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// TODO arrays of arrays
+			results := []any{} // TODO subtle: favor [] over null result
+			for nth := 1; nth <= enum.Len(); nth++ {
+				val, err := enum.Nth(nth)
+				if err != nil {
+					return nil, err
+				}
+				node, err := s.toSelectable(chainedID.Nth(nth), val)
+				if err != nil {
+					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
+				}
+				res, err := s.Resolve(ctx, node, sel.Subselections...)
+				if err != nil {
+					return nil, err
+				}
+				results = append(results, res)
+			}
+			res = results
+		}
+	}
+
+	return res, nil
 }
 
 func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type, first *idproto.Selector, rest ...*idproto.Selector) (Selection, error) {
@@ -201,180 +349,6 @@ func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type,
 	}
 
 	return sel, nil
-}
-
-// Load loads the object with the given ID.
-func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
-	if len(id.Constructor) == 0 {
-		return s.root, nil
-	}
-	sel, err := s.constructorToSelection(ctx, s.root.Type(), id.Constructor[0], id.Constructor[1:]...)
-	if err != nil {
-		return nil, err
-	}
-	var res any
-	res, err = s.Resolve(ctx, s.root, sel)
-	if err != nil {
-		return nil, err
-	}
-	for _, sel := range id.Constructor {
-		switch x := res.(type) {
-		case map[string]any:
-			res = res.(map[string]any)[sel.Field]
-		default:
-			return nil, fmt.Errorf("unexpected result type %T", x)
-		}
-	}
-	val, ok := res.(Typed)
-	if !ok {
-		return nil, fmt.Errorf("unexpected result type %T", res)
-	}
-	return s.toSelectable(id, val)
-}
-
-func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
-	vars := gqlOp.Variables
-
-	sels := []Selection{}
-	for _, sel := range astSels {
-		switch x := sel.(type) {
-		case *ast.Field:
-			args := make(map[string]Typed, len(x.Arguments))
-			for _, arg := range x.Arguments {
-				val, err := arg.Value.Value(vars)
-				if err != nil {
-					return nil, err
-				}
-				arg := x.Definition.Arguments.ForName(arg.Name)
-				if arg == nil {
-					return nil, fmt.Errorf("unknown argument: %q", arg.Name)
-				}
-				scalar, ok := s.scalars[arg.Type.Name()]
-				if !ok {
-					return nil, fmt.Errorf("unknown scalar: %q", arg.Type.Name())
-				}
-				typed, err := scalar.New(val)
-				if err != nil {
-					return nil, err
-				}
-				args[arg.Name] = typed
-			}
-			subsels, err := s.parseASTSelections(gqlOp, x.SelectionSet)
-			if err != nil {
-				return nil, err
-			}
-			sels = append(sels, Selection{
-				Alias: x.Alias,
-				Selector: Selector{
-					Field: x.Name,
-					Args:  args,
-				},
-				Subselections: subsels,
-			})
-		case *ast.FragmentSpread:
-			fragment := gqlOp.Doc.Fragments.ForName(x.Name)
-			if fragment == nil {
-				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
-			}
-			subsels, err := s.parseASTSelections(gqlOp, fragment.SelectionSet)
-			if err != nil {
-				return nil, err
-			}
-			sels = append(sels, subsels...)
-		default:
-			return nil, fmt.Errorf("unknown field type: %T", x)
-		}
-	}
-
-	return sels, nil
-}
-
-func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (any, error) {
-	class, ok := s.classes[self.Type().Name()]
-	if !ok {
-		return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
-	}
-	fieldDef, ok := class.FieldDefinition(sel.Selector.Field)
-	if fieldDef == nil {
-		return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
-	}
-	chainedID := sel.Selector.appendToID(self.ID(), fieldDef)
-
-	// digest, err := chain.Canonical().Digest()
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// if field.Pure && !chain.Tainted() { // TODO test !chain.Tainted(); intent is to not cache any queries that depend on a tainted input
-	// 	val, err = s.cache.GetOrInitialize(ctx, digest, func(ctx context.Context) (any, error) {
-	// 		return root.Resolve(ctx, sel.Selector)
-	// 	})
-	// } else {
-	val, err := self.Select(ctx, sel.Selector)
-	// }
-	if err != nil {
-		return nil, err
-	}
-
-	var isNull bool
-	if n, ok := val.(Nullable); ok {
-		val, ok = n.Unwrap()
-		isNull = !ok
-	}
-
-	var res any
-	if isNull {
-		res = nil
-	} else if len(sel.Subselections) == 0 {
-		res = val
-	} else if len(sel.Subselections) > 0 {
-		switch {
-		case fieldDef.Type.NamedType != "":
-			node, err := s.toSelectable(chainedID, val)
-			if err != nil {
-				return nil, fmt.Errorf("instantiate: %w", err)
-			}
-			res, err = s.Resolve(ctx, node, sel.Subselections...)
-			if err != nil {
-				return nil, err
-			}
-		case fieldDef.Type.Elem != nil:
-			enum, ok := val.(Enumerable)
-			if !ok {
-				return nil, fmt.Errorf("cannot sub-select %T", val)
-			}
-			// TODO arrays of arrays
-			results := []any{} // TODO subtle: favor [] over null result
-			for nth := 1; nth <= enum.Len(); nth++ {
-				val, err := enum.Nth(nth)
-				if err != nil {
-					return nil, err
-				}
-				node, err := s.toSelectable(chainedID.Nth(nth), val)
-				if err != nil {
-					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
-				}
-				res, err := s.Resolve(ctx, node, sel.Subselections...)
-				if err != nil {
-					return nil, err
-				}
-				results = append(results, res)
-			}
-			res = results
-		default:
-			return nil, fmt.Errorf("cannot sub-select %T", val)
-		}
-	}
-
-	if sel.Selector.Nth != 0 {
-		enum, ok := res.(Enumerable)
-		if !ok {
-			return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Selector.Nth, val)
-		}
-		return enum.Nth(sel.Selector.Nth)
-	}
-
-	return res, nil
 }
 
 func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error) {
@@ -446,6 +420,66 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 	return class.New(chainedID, val)
 }
 
+func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
+	vars := gqlOp.Variables
+
+	sels := []Selection{}
+	for _, sel := range astSels {
+		switch x := sel.(type) {
+		case *ast.Field:
+			args := make([]Arg, len(x.Arguments))
+			for i, arg := range x.Arguments {
+				val, err := arg.Value.Value(vars)
+				if err != nil {
+					return nil, err
+				}
+				arg := x.Definition.Arguments.ForName(arg.Name)
+				if arg == nil {
+					return nil, fmt.Errorf("unknown argument: %q", arg.Name)
+				}
+				scalar, ok := s.scalars[arg.Type.Name()]
+				if !ok {
+					return nil, fmt.Errorf("unknown scalar: %q", arg.Type.Name())
+				}
+				typed, err := scalar.New(val)
+				if err != nil {
+					return nil, err
+				}
+				args[i] = Arg{
+					Name:  arg.Name,
+					Value: typed,
+				}
+			}
+			subsels, err := s.parseASTSelections(gqlOp, x.SelectionSet)
+			if err != nil {
+				return nil, err
+			}
+			sels = append(sels, Selection{
+				Alias: x.Alias,
+				Selector: Selector{
+					Field: x.Name,
+					Args:  args,
+				},
+				Subselections: subsels,
+			})
+		case *ast.FragmentSpread:
+			fragment := gqlOp.Doc.Fragments.ForName(x.Name)
+			if fragment == nil {
+				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
+			}
+			subsels, err := s.parseASTSelections(gqlOp, fragment.SelectionSet)
+			if err != nil {
+				return nil, err
+			}
+			sels = append(sels, subsels...)
+		default:
+			return nil, fmt.Errorf("unknown field type: %T", x)
+		}
+	}
+
+	return sels, nil
+}
+
 // Selection represents a selection of a field on an object.
 type Selection struct {
 	Alias         string
@@ -465,17 +499,56 @@ func (sel Selection) Name() string {
 // Selector specifies how to retrieve a value from an Instance.
 type Selector struct {
 	Field string
-	Args  map[string]Typed
+	Args  []Arg
 	Nth   int
+}
+
+func (sel Selector) String() string {
+	str := sel.Field
+	if len(sel.Args) > 0 {
+		str += "("
+		for i, arg := range sel.Args {
+			if i > 0 {
+				str += ", "
+			}
+			str += arg.String()
+		}
+		str += ")"
+	}
+	if sel.Nth != 0 {
+		str += fmt.Sprintf("[%d]", sel.Nth)
+	}
+	return str
+}
+
+type Args []Arg
+
+func (args Args) Lookup(name string) (Typed, bool) {
+	for _, arg := range args {
+		if arg.Name == name {
+			return arg.Value, true
+		}
+	}
+	return nil, false
+}
+
+type Arg struct {
+	Name  string
+	Value Typed
+}
+
+func (arg Arg) String() string {
+	ast := ToLiteral(arg.Value).ToAST()
+	return fmt.Sprintf("%s: %v", arg.Name, ast.Raw)
 }
 
 func (sel Selector) appendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
 	cp := id.Clone()
 	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
-	for name, val := range sel.Args {
+	for _, arg := range sel.Args {
 		idArgs = append(idArgs, &idproto.Argument{
-			Name:  name,
-			Value: ToLiteral(val),
+			Name:  arg.Name,
+			Value: ToLiteral(arg.Value),
 		})
 	}
 	sort.Slice(idArgs, func(i, j int) bool {

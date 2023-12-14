@@ -253,6 +253,15 @@ func (r Instance[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
+// String returns the instance in Class@sha256:... format.
+func (r Instance[T]) String() string {
+	dig, err := r.Constructor.Digest()
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s@%s", r.Type().Name(), dig)
+}
+
 // Select calls a field on the instance.
 func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
 	field, ok := r.Class.Fields[sel.Field]
@@ -264,7 +273,24 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err e
 	if err != nil {
 		return nil, err
 	}
-	return r.Class.Call(ctx, r, sel.Field, args)
+	val, err := r.Class.Call(ctx, r, sel.Field, args)
+	if err != nil {
+		return nil, err
+	}
+	if n, ok := val.(Nullable); ok {
+		res, ok = n.Unwrap()
+		if !ok {
+			return nil, nil
+		}
+	}
+	if sel.Nth != 0 {
+		enum, ok := val.(Enumerable)
+		if !ok {
+			return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, val)
+		}
+		return enum.Nth(sel.Nth)
+	}
+	return val, nil
 }
 
 // Fields defines a set of fields for an Object type.
@@ -343,7 +369,7 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 			Type: arg.Type,
 		}
 		if arg.Default != nil {
-			schemaArg.DefaultValue = LiteralToAST(arg.Default.Literal())
+			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
 		}
 		schemaArgs = append(schemaArgs, schemaArg)
 	}
@@ -356,10 +382,10 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 	}
 }
 
-func applyDefaults(field FieldSpec, givenArgs map[string]Typed) (map[string]Typed, error) {
+func applyDefaults(field FieldSpec, givenArgs Args) (map[string]Typed, error) {
 	args := make(map[string]Typed, len(field.Args))
 	for _, arg := range field.Args {
-		val, ok := givenArgs[arg.Name]
+		val, ok := givenArgs.Lookup(arg.Name)
 		if ok {
 			args[arg.Name] = val
 		} else if arg.Default != nil {
