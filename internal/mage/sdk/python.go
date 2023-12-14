@@ -50,8 +50,8 @@ func (t Python) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current"}).
+			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current_docs"}).
+			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current_docs"}).
 			Sync(gctx)
 		return err
 	})
