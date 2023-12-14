@@ -144,7 +144,7 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 	// Checks if the commit is a merge commit in the context of pull request
 	// Only GitHub needs to be handled, as GitLab doesn't detach the head in MR context
 	if os.Getenv("GITHUB_EVENT_NAME") == "pull_request" && commit.NumParents() > 1 {
-		// Get the pull request's origin branch name
+		// Get the pull request's origin branch name.
 		branch := os.Getenv("GITHUB_HEAD_REF")
 
 		// Execute git fetch using git CLI because GitHub Action adds the GITHUB_TOKEN
