@@ -1014,7 +1014,7 @@ type Minimal struct {
 	X, Y string  // Y is not this
 
 	// +private
-	// Z string
+	Z string
 }
 
 // some docs
