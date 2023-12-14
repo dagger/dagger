@@ -792,6 +792,10 @@ func asInlineStructAst(t ast.Node) (*ast.StructType, bool) {
 func unpackASTFields(fields *ast.FieldList) []*ast.Field {
 	var unpacked []*ast.Field
 	for _, field := range fields.List {
+		if len(field.Names) == 0 {
+			unpacked = append(unpacked, field)
+			continue
+		}
 		for i, name := range field.Names {
 			field := *field
 			field.Names = []*ast.Ident{name}
