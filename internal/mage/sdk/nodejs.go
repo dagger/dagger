@@ -39,7 +39,7 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		path := "docs/current"
+		path := "docs/current_docs"
 		_, err = base.
 			WithDirectory(
 				fmt.Sprintf("/%s", path),

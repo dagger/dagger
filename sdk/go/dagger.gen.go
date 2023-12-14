@@ -941,7 +941,7 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 
 // ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
 type ContainerWithEnvVariableOpts struct {
-	// Replace ${VAR} or $VAR in the value according to the current environment
+	// Replace `${VAR}` or $VAR in the value according to the current environment
 	// variables defined in the container (e.g., "/opt/bin:$PATH").
 	Expand bool
 }
@@ -1034,8 +1034,9 @@ type ContainerWithExposedPortOpts struct {
 // Expose a network port.
 //
 // Exposed ports serve two purposes:
-//   - For health checks and introspection, when running services
-//   - For setting the EXPOSE OCI field when publishing the container
+//
+// - For health checks and introspection, when running services
+// - For setting the EXPOSE OCI field when publishing the container
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {

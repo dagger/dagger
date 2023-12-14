@@ -62,9 +62,9 @@ If there are code changes in the SDKs, run `changie new` in the corresponding di
 
 Remember to add & commit the release notes fragment.
 This will be used at release time, in the changelog.
-Here is an example of the end-result for all release notes fragments: <https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md>
+Here is an example of the end-result for all release notes fragments: [https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md](https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md)
 
-You can find an asciinema of how `changie` works on <https://changie.dev>
+You can find an asciinema of how `changie` works on [https://changie.dev](https://changie.dev)
 
 ### 4. Update your pull request with latest changes
 
@@ -289,49 +289,3 @@ Go:
 
 - In your Go project, run `go mod edit -replace dagger.io/dagger=<PATH TO DAGGER FORK>/sdk/go`
 - Then `go mod tidy`
-
-### How to re-generate SDKs locally?
-
-SDKs need to be re-generated after changes to the GraphQL schemas, or after changes
-to the SDK code generation - the changes to the SDK should be included in the same
-PR that modified the schemas/SDKs.
-
-To list all available generators:
-
-```shell
-> ./hack/make -l | grep generate
-  sdk:all:generate        re-generates all SDK APIs
-  sdk:elixir:generate     re-generates the SDK API
-  sdk:go:generate         re-generates the SDK API
-  sdk:java:generate       re-generates the SDK API
-  sdk:nodejs:generate     re-generates the SDK API
-  sdk:python:generate     re-generates the SDK API
-  sdk:rust:generate       re-generates the SDK API
-```
-
-To re-generate all SDKs:
-
-```shell
-./hack/make sdk:all:generate
-```
-
-To re-generate just a single SDK (e.g. Go):
-
-```shell
-./hack/make sdk:go:generate
-```
-
-### How to re-run all GitHub Actions jobs?
-
-There isn't a button that Dagger contributors can click in their fork that will
-re-run all GitHub Actions jobs. See issue
-[#1169](https://github.com/dagger/dagger/issues/1169) for more context.
-
-The current workaround is to re-create the last commit:
-
-```shell
-git commit --amend -s
-
-# Force push the new commit to re-run all GitHub Actions jobs:
-git push -f mybranch
-```

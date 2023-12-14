@@ -3,6 +3,7 @@
 ## Files
 
 - Filenames for standalone articles (not list or index pages) should be prefixed with random 6-digit identifier generated via `new.sh` script
+- Use `.mdx` for all files
 - URLs for SDK-specific pages should be in the form `/sdk/[language]/[number]/[label]`
 - URLs for API- or CLI-specific pages should be in the form `/[api|cli]/[number]/[label]`
 

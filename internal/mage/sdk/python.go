@@ -38,7 +38,7 @@ func (t Python) Lint(ctx context.Context) error {
 	base := pythonBase(c, pythonDefaultVersion)
 
 	eg.Go(func() error {
-		path := "docs/current"
+		path := "docs/current_docs"
 		_, err = base.
 			WithDirectory(
 				fmt.Sprintf("/%s", path),
@@ -50,8 +50,8 @@ func (t Python) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current"}).
+			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current_docs"}).
+			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current_docs"}).
 			Sync(gctx)
 		return err
 	})
