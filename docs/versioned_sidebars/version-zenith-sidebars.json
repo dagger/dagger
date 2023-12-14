@@ -21,12 +21,16 @@
           "label": "Quickstart",
           "items": [
             "user/quickstart/index",
+            "user/quickstart/cli",
             "user/quickstart/setup",
+            "user/quickstart/hello",
+            "user/quickstart/test",
+            "user/quickstart/build",
+            "user/quickstart/publish",
             "user/quickstart/functions",
-            "user/quickstart/call",
-            "user/quickstart/download",
             "user/quickstart/shell",
             "user/quickstart/up",
+            "user/quickstart/daggerverse",
             "user/quickstart/conclusion"
           ]
         }
@@ -51,10 +55,6 @@
             {
               "type": "doc",
               "id": "developer/go/quickstart"
-            },
-            {
-              "type": "doc",
-              "id": "developer/go/test-build-publish"
             },
             {
               "type": "doc",
