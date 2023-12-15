@@ -1974,6 +1974,26 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Retrieves this container with an unset command user.
+    /// Should default to root.
+    pub fn without_user(&self) -> Container {
+        let query = self.selection.select("withoutUser");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset working directory.
+    /// Should default to "/".
+    pub fn without_workdir(&self) -> Container {
+        let query = self.selection.select("withoutWorkdir");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Retrieves the working directory for all commands.
     pub async fn workdir(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("workdir");

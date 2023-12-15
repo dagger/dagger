@@ -1662,6 +1662,26 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def without_user(self) -> "Container":
+        """Retrieves this container with an unset command user.
+
+        Should default to root.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutUser", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_workdir(self) -> "Container":
+        """Retrieves this container with an unset working directory.
+
+        Should default to "/".
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutWorkdir", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def workdir(self) -> str | None:
         """Retrieves the working directory for all commands.
 

@@ -1029,6 +1029,24 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Retrieves this container with an unset command user.\n\nShould default to root."
+    @spec without_user(t()) :: Dagger.Container.t()
+    def without_user(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutUser")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with an unset working directory.\n\nShould default to \"/\"."
+    @spec without_workdir(t()) :: Dagger.Container.t()
+    def without_workdir(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutWorkdir")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Retrieves the working directory for all commands."
     @spec workdir(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def workdir(%__MODULE__{} = container) do

@@ -1531,6 +1531,30 @@ func (r *Container) WithoutUnixSocket(path string) *Container {
 	}
 }
 
+// Retrieves this container with an unset command user.
+//
+// Should default to root.
+func (r *Container) WithoutUser() *Container {
+	q := r.q.Select("withoutUser")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset working directory.
+//
+// Should default to "/".
+func (r *Container) WithoutWorkdir() *Container {
+	q := r.q.Select("withoutWorkdir")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves the working directory for all commands.
 func (r *Container) Workdir(ctx context.Context) (string, error) {
 	if r.workdir != nil {

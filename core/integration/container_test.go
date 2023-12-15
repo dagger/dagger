@@ -493,6 +493,21 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithWorkdir.WithExec.Stdout, "/usr\n")
 }
 
+func TestContainerExecWithoutWorkdir(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		WithWorkdir("/usr").
+		WithoutWorkdir().
+		WithExec([]string{"pwd"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "/\n", res)
+}
+
 func TestContainerExecWithUser(t *testing.T) {
 	t.Parallel()
 
@@ -594,6 +609,21 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "2:11", res.Container.From.WithUser.User)
 		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
+}
+
+func TestContainerExecWithoutUser(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		WithUser("daemon").
+		WithoutUser().
+		WithExec([]string{"whoami"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "root\n", res)
 }
 
 func TestContainerExecWithEntrypoint(t *testing.T) {

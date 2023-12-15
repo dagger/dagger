@@ -2343,6 +2343,40 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with an unset command user.
+   *
+   * Should default to root.
+   */
+  withoutUser = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutUser",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container with an unset working directory.
+   *
+   * Should default to "/".
+   */
+  withoutWorkdir = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutWorkdir",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves the working directory for all commands.
    */
   workdir = async (): Promise<string> => {
