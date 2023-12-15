@@ -32,7 +32,7 @@ type ObjectType interface {
 	// New creates a new instance of the type.
 	New(*idproto.ID, Typed) (Object, error)
 	// NewID creates an ID annotated with the type.
-	NewID(*idproto.ID) Typed
+	NewID(*idproto.ID) Input
 	// Definition returns the GraphQL definition of the type.
 	Definition() *ast.Definition
 	// FieldDefinition returns the GraphQL definition of the field with the given
@@ -584,23 +584,6 @@ func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
 	}
 }
 
-// func (i ArrayInput[S]) MarshalJSON() ([]byte, error) {
-// 	return json.Marshal([]S(i))
-// }
-
-// var _ Enumerable = ArrayInput[Scalar]{}
-
-// func (arr ArrayInput[T]) Len() int {
-// 	return len(arr)
-// }
-
-// func (arr ArrayInput[T]) Nth(i int) (Typed, error) {
-// 	if i < 1 || i > len(arr) {
-// 		return nil, fmt.Errorf("index %d out of bounds", i)
-// 	}
-// 	return arr[i-1], nil
-// }
-
 // Array is an array of GraphQL values.
 type Array[T Typed] []T
 
@@ -626,19 +609,6 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	}
 	return arr[i-1], nil
 }
-
-// func (i Array[T]) MarshalJSON() ([]byte, error) {
-// 	return json.Marshal([]T(i))
-// }
-
-// func (i *Array[T]) UnmarshalJSON(p []byte) error {
-// 	var arr []T
-// 	if err := json.Unmarshal(p, &arr); err != nil {
-// 		return err
-// 	}
-// 	*i = arr
-// 	return nil
-// }
 
 // NullableWrapper is a type that wraps another type.
 //
@@ -868,41 +838,4 @@ func (e *EnumValues[T]) Register(val T) T {
 func (e *EnumValues[T]) Install(srv *Server) {
 	var zero T
 	srv.scalars[zero.Type().Name()] = e
-}
-
-// ToLiteral converts a Typed value to a Literal.
-//
-// A Scalar value is converted to a Literal. An Object value is converted to
-// its ID, which is a Literal.
-func ToLiteral(typed Typed) *idproto.Literal {
-	switch x := typed.(type) {
-	case Input:
-		return x.ToLiteral()
-	case Object:
-		return &idproto.Literal{
-			Value: &idproto.Literal_Id{
-				Id: x.ID(),
-			},
-		}
-	case Enumerable:
-		list := &idproto.List{}
-		for i := 1; i <= x.Len(); i++ {
-			elem, err := x.Nth(i)
-			if err != nil {
-				panic(err)
-			}
-			list.Values = append(list.Values, ToLiteral(elem))
-		}
-		return &idproto.Literal{
-			Value: &idproto.Literal_List{
-				List: list,
-			},
-		}
-	case nil: // explicit null arg provided. TODO just remove? this will bust caches
-		return &idproto.Literal{
-			Value: &idproto.Literal_Null{Null: true},
-		}
-	default:
-		panic(fmt.Sprintf("cannot create Literal from %T", x))
-	}
 }

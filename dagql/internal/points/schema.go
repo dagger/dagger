@@ -63,10 +63,6 @@ func (d Direction) ToLiteral() *idproto.Literal {
 	return Directions.Literal(d)
 }
 
-// func (d Direction) MarshalJSON() ([]byte, error) {
-// 	return json.Marshal(string(d))
-// }
-
 func (Direction) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Direction",
