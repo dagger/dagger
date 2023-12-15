@@ -67,6 +67,8 @@ func LiteralValue(value any) *Literal {
 			panic(err)
 		}
 		return LiteralValue(i)
+	case nil:
+		return &Literal{Value: &Literal_Null{Null: true}}
 	default:
 		panic(fmt.Sprintf("unsupported literal type %T", v))
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
+	"golang.org/x/exp/slog"
 )
 
 // Func is a helper for defining a field resolver and schema.
@@ -31,14 +32,17 @@ import (
 // result.
 func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
 	var zeroArgs A
-	argSpecs, argsErr := argSpecs(zeroArgs)
-
+	argSpecs, argsErr := argSpecsForType(name, zeroArgs)
+	if argsErr != nil {
+		var zeroSelf T
+		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
+	}
 	var zeroRet R
 	return Field[T]{
 		Spec: FieldSpec{
 			Name: name,
 			Args: argSpecs,
-			Type: zeroRet.Type(),
+			Type: zeroRet,
 		},
 		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
 			if argsErr != nil {
@@ -62,9 +66,9 @@ type FieldSpec struct {
 	// Description is the description of the field.
 	Description string
 	// Args is the list of arguments that the field accepts.
-	Args []ArgSpec
+	Args ArgSpecs
 	// Type is the type of the field's result.
-	Type *ast.Type
+	Type Typed
 	// Meta indicates that the field has no impact on the field's result.
 	Meta bool
 	// Pure indicates that the field is a pure function of its arguments, and
@@ -79,48 +83,59 @@ type ArgSpec struct {
 	// Description is the description of the argument.
 	Description string
 	// Type is the type of the argument.
-	Type *ast.Type
+	Type Scalar
 	// Default is the default value of the argument.
 	Default Scalar
 }
 
-func argSpecs(args any) ([]ArgSpec, error) {
+type ArgSpecs []ArgSpec
+
+func (specs ArgSpecs) Lookup(name string) (ArgSpec, bool) {
+	for _, spec := range specs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	return ArgSpec{}, false
+}
+
+func argSpecsForType(fn string, args any) ([]ArgSpec, error) {
 	var argSpecs []ArgSpec
 	argsType := reflect.TypeOf(args)
-	if argsType != nil {
-		if argsType.Kind() != reflect.Struct {
-			return nil, fmt.Errorf("args must be a struct, got %T", args)
+	if argsType == nil {
+		return nil, nil
+	}
+	if argsType.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("args must be a struct, got %T", args)
+	}
+	for i := 0; i < argsType.NumField(); i++ {
+		field := argsType.Field(i)
+		argName := field.Tag.Get("arg")
+		if argName == "" {
+			argName = strcase.ToLowerCamel(field.Name)
 		}
-
-		for i := 0; i < argsType.NumField(); i++ {
-			field := argsType.Field(i)
-			argName := field.Tag.Get("arg")
-			if argName == "" {
-				argName = strcase.ToLowerCamel(field.Name)
+		argVal := reflect.New(field.Type).Elem().Interface()
+		argTyped, ok := argVal.(Scalar)
+		if !ok {
+			return nil, fmt.Errorf("arg %q (%T) cannot be passed as an Argument", field.Name, argVal)
+		}
+		var argDefault Scalar
+		if defaultVal := field.Tag.Get("default"); len(defaultVal) > 0 {
+			val, err := argTyped.ScalarType().New(defaultVal)
+			if err != nil {
+				return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
 			}
-
-			argVal := reflect.New(field.Type).Elem().Interface()
-			typedArg, ok := argVal.(Scalar)
+			argDefault, ok = val.(Scalar) // TODO make New return a Scalar again?
 			if !ok {
-				return nil, fmt.Errorf("arg %q (%T) is not a Scalar", field.Name, argVal)
+				return nil, fmt.Errorf("default value for arg %s is not a Scalar", argName)
 			}
-
-			var argDefault Scalar
-			if defaultVal := field.Tag.Get("default"); len(defaultVal) > 0 {
-				var err error
-				argDefault, err = typedArg.ScalarType().New(defaultVal)
-				if err != nil {
-					return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
-				}
-			}
-
-			argSpecs = append(argSpecs, ArgSpec{
-				Name:        argName,
-				Description: field.Tag.Get("doc"),
-				Type:        typedArg.Type(),
-				Default:     argDefault,
-			})
 		}
+		argSpecs = append(argSpecs, ArgSpec{
+			Name:        argName,
+			Description: field.Tag.Get("doc"),
+			Type:        argTyped,
+			Default:     argDefault,
+		})
 	}
 	return argSpecs, nil
 }
@@ -128,8 +143,14 @@ func argSpecs(args any) ([]ArgSpec, error) {
 func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error {
 	destV := reflect.ValueOf(dest)
 	for i, arg := range argSpecs {
-		val, ok := argVals[arg.Name]
-		if !ok {
+		val, isProvided := argVals[arg.Name]
+		isNullable := !arg.Type.Type().NonNull
+		if !isProvided {
+			if isNullable {
+				// defaults are applied before we get here, so if it's still not here,
+				// it's really not set
+				continue
+			}
 			return fmt.Errorf("missing required argument: %q", arg.Name)
 		}
 		destV.Elem().Field(i).Set(reflect.ValueOf(val))
@@ -167,6 +188,11 @@ func NewClass[T Typed]() Class[T] {
 
 var _ ObjectType = Class[Typed]{}
 
+func (cls Class[T]) TypeName() string {
+	var zero T
+	return zero.Type().Name()
+}
+
 // Definition returns the schema definition of the class.
 //
 // The definition is derived from the type name, description, and fields. The
@@ -175,17 +201,17 @@ var _ ObjectType = Class[Typed]{}
 // Each currently defined field is installed on the returned definition.
 func (cls Class[T]) Definition() *ast.Definition {
 	var zero T
-	name := zero.Type().Name()
+	var val any = zero
 	var def *ast.Definition
-	if isType, ok := any(zero).(Definitive); ok {
+	if isType, ok := val.(Definitive); ok {
 		def = isType.Definition()
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
-			Name: name,
+			Name: zero.Type().Name(),
 		}
 	}
-	if isType, ok := any(zero).(Descriptive); ok {
+	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.Description()
 	}
 	for _, field := range cls.Fields { // TODO sort, or preserve order
@@ -201,6 +227,40 @@ func (cls Class[T]) FieldDefinition(name string) (*ast.FieldDefinition, bool) {
 		return nil, false
 	}
 	return field.Definition(), true
+}
+
+func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, error) {
+	field := cls.Fields[x.Name]
+	if field == nil {
+		return Selector{}, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, x.Name)
+	}
+
+	args := make([]Arg, len(x.Arguments))
+	for i, arg := range x.Arguments {
+		argSpec, ok := field.Spec.Args.Lookup(arg.Name)
+		if !ok {
+			return Selector{}, fmt.Errorf("%s has no such argument: %q", field.Spec.Name, arg.Name)
+		}
+		val, err := arg.Value.Value(vars)
+		if err != nil {
+			return Selector{}, err
+		}
+		if val == nil {
+			continue
+		}
+		typed, err := argSpec.Type.ScalarType().New(val)
+		if err != nil {
+			return Selector{}, fmt.Errorf("init arg %q value: %w", arg.Name, err)
+		}
+		args[i] = Arg{
+			Name:  arg.Name,
+			Value: typed,
+		}
+	}
+	return Selector{
+		Field: x.Name,
+		Args:  args,
+	}, nil
 }
 
 // NewID returns a typed ID for the class.
@@ -263,7 +323,7 @@ func (r Instance[T]) String() string {
 }
 
 // Select calls a field on the instance.
-func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err error) {
+func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err error) {
 	field, ok := r.Class.Fields[sel.Field]
 	if !ok {
 		var zero T
@@ -273,12 +333,12 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err e
 	if err != nil {
 		return nil, err
 	}
-	val, err := r.Class.Call(ctx, r, sel.Field, args)
+	val, err = r.Class.Call(ctx, r, sel.Field, args)
 	if err != nil {
 		return nil, err
 	}
-	if n, ok := val.(Nullable); ok {
-		res, ok = n.Unwrap()
+	if n, ok := val.(NullableWrapper); ok {
+		val, ok = n.Unwrap()
 		if !ok {
 			return nil, nil
 		}
@@ -288,7 +348,16 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (res Typed, err e
 		if !ok {
 			return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, val)
 		}
-		return enum.Nth(sel.Nth)
+		val, err = enum.Nth(sel.Nth)
+		if err != nil {
+			return nil, err
+		}
+		if n, ok := val.(NullableWrapper); ok {
+			val, ok = n.Unwrap()
+			if !ok {
+				return nil, nil
+			}
+		}
 	}
 	return val, nil
 }
@@ -323,10 +392,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 			Field[T]{
 				Spec: FieldSpec{
 					Name: "id",
-					Type: &ast.Type{
-						NamedType: idScalar.TypeName(),
-						NonNull:   true,
-					},
+					Type: idScalar,
 				},
 				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
 					return ID[T]{ID: self.ID()}, nil
@@ -366,7 +432,7 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 	for _, arg := range field.Spec.Args {
 		schemaArg := &ast.ArgumentDefinition{
 			Name: arg.Name,
-			Type: arg.Type,
+			Type: arg.Type.Type(),
 		}
 		if arg.Default != nil {
 			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
@@ -378,7 +444,7 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 		Name:        fieldName,
 		Description: field.Spec.Description,
 		Arguments:   schemaArgs,
-		Type:        field.Spec.Type,
+		Type:        field.Spec.Type.Type(),
 	}
 }
 
@@ -390,9 +456,25 @@ func applyDefaults(field FieldSpec, givenArgs Args) (map[string]Typed, error) {
 			args[arg.Name] = val
 		} else if arg.Default != nil {
 			args[arg.Name] = arg.Default
-		} else if arg.Type.NonNull {
+		} else if arg.Type.Type().NonNull {
 			return nil, fmt.Errorf("missing required argument: %q", arg.Name)
 		}
 	}
 	return args, nil
+}
+
+func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
+	var def *ast.Definition
+	if isType, ok := val.(Definitive); ok {
+		def = isType.Definition()
+	} else {
+		def = &ast.Definition{
+			Kind: kind,
+			Name: val.TypeName(),
+		}
+	}
+	if isType, ok := val.(Descriptive); ok {
+		def.Description = isType.Description()
+	}
+	return def
 }

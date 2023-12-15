@@ -16,8 +16,15 @@ type Typed interface {
 	Type() *ast.Type
 }
 
+// Type is an object that defines a new GraphQL type.
+type Type interface {
+	// TypeName returns the name of the type.
+	TypeName() string
+}
+
 // ObjectType represents a GraphQL Object type.
 type ObjectType interface {
+	Type
 	// New creates a new instance of the type.
 	New(*idproto.ID, Typed) (Object, error)
 	// NewID creates an ID annotated with the type.
@@ -27,41 +34,8 @@ type ObjectType interface {
 	// FieldDefinition returns the GraphQL definition of the field with the given
 	// name, or false if it is not defined.
 	FieldDefinition(string) (*ast.FieldDefinition, bool)
-}
-
-// ScalarType represents a GraphQL Scalar type.
-type ScalarType interface {
-	// New converts a value to the Scalar type, if possible.
-	New(any) (Scalar, error)
-	// Definition returns the GraphQL definition of the type.
-	Definition() *ast.Definition
-}
-
-// EnumType represents a GraphQL Enum type.
-//
-// This interface is a little awkward to explain, but it lets you implement
-// Enums pretty succinctly by re-using a common underlying Enum implementation,
-// passed to this function as a Scalar.
-//
-// For example:
-//
-//	type Direction struct {
-//		dagql.Scalar
-//	}
-//
-//	var Directions = dagql.NewEnum[Direction]()
-//
-//	var (
-//		DirectionUp    = Directions.Register("UP")
-//		DirectionDown  = Directions.Register("DOWN")
-//		DirectionLeft  = Directions.Register("LEFT")
-//		DirectionRight = Directions.Register("RIGHT")
-//		DirectionInert = Directions.Register("INERT")
-//	)
-type EnumType[T Typed] interface {
-	Scalar
-	// New populates the Enum with the given Scalar value.
-	New(Scalar) T
+	// ParseField parses the given field and returns a Selector.
+	ParseField(*ast.Field, map[string]any) (Selector, error)
 }
 
 // Object represents an Object in the graph which has an ID and can have
@@ -72,18 +46,30 @@ type Object interface {
 	Select(context.Context, Selector) (Typed, error)
 }
 
+// ScalarType represents a GraphQL Scalar type.
+type ScalarType interface {
+	Type
+	ScalarFactory
+}
+
+// TODO rename. maybe Input related?
+type ScalarFactory interface {
+	// New converts a value to the Scalar type, if possible.
+	New(any) (Typed, error)
+}
+
 // Scalar represents a leaf node of the graph, i.e. a simple scalar value that
 // cannot have any sub-selections.
 type Scalar interface {
 	// All Scalars are typed.
 	Typed
+	// All Scalars have a ScalarType. This reference is used to initialize
+	// default values, among other conveniences.
+	ScalarType() ScalarFactory
 	// All Scalars are able to be represented as a Literal.
 	idproto.Literate
 	// All Scalars are able to be represented as JSON.
-	json.Marshaler
-	// All Scalars have a ScalarClass. This reference is used to initialize
-	// default values, among other conveniences.
-	ScalarType() ScalarType
+	// json.Marshaler
 }
 
 // Int is a GraphQL Int scalar.
@@ -97,22 +83,20 @@ func NewInt(val int) Int {
 
 var _ ScalarType = Int{}
 
-func (Int) ScalarType() ScalarType {
-	return Int{}
+func (Int) TypeName() string {
+	return "Int"
 }
 
-func (Int) Definition() *ast.Definition {
+func (i Int) Definition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
-		Name:        "Int",
+		Name:        i.TypeName(),
 		Description: "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.",
 		BuiltIn:     true,
 	}
 }
 
-var _ Scalar = Int{}
-
-func (Int) New(val any) (Scalar, error) {
+func (Int) New(val any) (Typed, error) {
 	switch x := val.(type) {
 	case int:
 		return NewInt(x), nil
@@ -133,8 +117,14 @@ func (Int) New(val any) (Scalar, error) {
 		}
 		return NewInt(i), nil
 	default:
-		return nil, fmt.Errorf("cannot convert %T to Int", x)
+		return nil, fmt.Errorf("cannot create Int from %T", x)
 	}
+}
+
+var _ Scalar = Int{}
+
+func (Int) ScalarType() ScalarFactory {
+	return Int{}
 }
 
 func (i Int) ToLiteral() *idproto.Literal {
@@ -176,16 +166,20 @@ func NewFloat(val float64) Float {
 
 var _ ScalarType = Float{}
 
-func (Float) Definition() *ast.Definition {
+func (Float) TypeName() string {
+	return "Float"
+}
+
+func (f Float) Definition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
-		Name:        "Float",
+		Name:        f.TypeName(),
 		Description: "The `Float` scalar type represents signed double-precision fractional values as specified by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).",
 		BuiltIn:     true,
 	}
 }
 
-func (Float) New(val any) (Scalar, error) {
+func (Float) New(val any) (Typed, error) {
 	switch x := val.(type) {
 	case float32:
 		return NewFloat(float64(x)), nil
@@ -204,13 +198,13 @@ func (Float) New(val any) (Scalar, error) {
 		}
 		return NewFloat(i), nil
 	default:
-		return nil, fmt.Errorf("cannot convert %T to Float", x)
+		return nil, fmt.Errorf("cannot create Float from %T", x)
 	}
 }
 
 var _ Scalar = Float{}
 
-func (Float) ScalarType() ScalarType {
+func (Float) ScalarType() ScalarFactory {
 	return Float{}
 }
 
@@ -262,16 +256,20 @@ func (Boolean) Type() *ast.Type {
 
 var _ ScalarType = Boolean{}
 
-func (Boolean) Definition() *ast.Definition {
+func (Boolean) TypeName() string {
+	return "Boolean"
+}
+
+func (b Boolean) Definition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
-		Name:        "Boolean",
+		Name:        b.TypeName(),
 		Description: "The `Boolean` scalar type represents `true` or `false`.",
 		BuiltIn:     true,
 	}
 }
 
-func (Boolean) New(val any) (Scalar, error) {
+func (Boolean) New(val any) (Typed, error) {
 	switch x := val.(type) {
 	case bool:
 		return NewBoolean(x), nil
@@ -282,13 +280,13 @@ func (Boolean) New(val any) (Scalar, error) {
 		}
 		return NewBoolean(b), nil
 	default:
-		return nil, fmt.Errorf("cannot convert %T to Boolean", x)
+		return nil, fmt.Errorf("cannot create Boolean from %T", x)
 	}
 }
 
 var _ Scalar = Boolean{}
 
-func (Boolean) ScalarType() ScalarType {
+func (Boolean) ScalarType() ScalarFactory {
 	return Boolean{}
 }
 
@@ -329,27 +327,31 @@ func (String) Type() *ast.Type {
 
 var _ ScalarType = String{}
 
-func (String) Definition() *ast.Definition {
+func (String) TypeName() string {
+	return "String"
+}
+
+func (s String) Definition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
-		Name:        "String",
+		Name:        s.TypeName(),
 		Description: "The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.",
 		BuiltIn:     true,
 	}
 }
 
-func (String) New(val any) (Scalar, error) {
+func (String) New(val any) (Typed, error) {
 	switch x := val.(type) {
 	case string:
 		return NewString(x), nil
 	default:
-		return nil, fmt.Errorf("cannot convert %T to String", x)
+		return nil, fmt.Errorf("cannot create String from %T", x)
 	}
 }
 
 var _ Scalar = String{}
 
-func (String) ScalarType() ScalarType {
+func (String) ScalarType() ScalarFactory {
 	return String{}
 }
 
@@ -411,7 +413,7 @@ func (i ID[T]) Definition() *ast.Definition {
 //
 // It accepts either an *idproto.ID or a string. The string is expected to be
 // the base64-encoded representation of an *idproto.ID.
-func (ID[T]) New(val any) (Scalar, error) {
+func (ID[T]) New(val any) (Typed, error) {
 	switch x := val.(type) {
 	case *idproto.ID:
 		return ID[T]{ID: x}, nil
@@ -422,7 +424,7 @@ func (ID[T]) New(val any) (Scalar, error) {
 		}
 		return i, nil
 	default:
-		return nil, fmt.Errorf("cannot convert %T to Int", x)
+		return nil, fmt.Errorf("cannot create Int from %T", x)
 	}
 }
 
@@ -439,7 +441,7 @@ func (i ID[T]) String() string {
 // For parsing string IDs provided in queries.
 var _ Scalar = ID[Typed]{}
 
-func (i ID[T]) ScalarType() ScalarType {
+func (i ID[T]) ScalarType() ScalarFactory {
 	return ID[T]{expected: i.expected}
 }
 
@@ -511,6 +513,91 @@ type Enumerable interface {
 }
 
 // Array is an array of GraphQL values.
+type ArrayInput[S Scalar] []S
+
+func MapArrayInput[T Scalar, R Typed](opt ArrayInput[T], fn func(T) (R, error)) (Array[R], error) {
+	r := make(Array[R], len(opt))
+	for i, val := range opt {
+		var err error
+		r[i], err = fn(val)
+		if err != nil {
+			return nil, fmt.Errorf("map array[%d]: %w", i, err)
+		}
+	}
+	return r, nil
+}
+
+func (a ArrayInput[S]) ToArray() Array[S] {
+	return Array[S](a)
+}
+
+var _ Typed = ArrayInput[Scalar]{}
+
+func (a ArrayInput[S]) Type() *ast.Type {
+	var elem S
+	return &ast.Type{
+		Elem:    elem.Type(),
+		NonNull: true,
+	}
+}
+
+var _ Scalar = ArrayInput[Scalar]{}
+
+func (a ArrayInput[S]) ScalarType() ScalarFactory {
+	return a
+}
+
+var _ ScalarFactory = ArrayInput[Scalar]{}
+
+func (ArrayInput[S]) New(val any) (Typed, error) {
+	var zero S
+	scalar := zero.ScalarType()
+	switch x := val.(type) {
+	case []any:
+		arr := make(ArrayInput[S], len(x))
+		for i, val := range x {
+			elem, err := scalar.New(val)
+			if err != nil {
+				return nil, fmt.Errorf("ArrayInput.New[%d]: %w", i, err)
+			}
+			arr[i] = elem.(S)
+		}
+		return arr, nil
+	default:
+		return nil, fmt.Errorf("cannot create Int from %T", x)
+	}
+}
+
+func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
+	list := &idproto.List{}
+	for _, elem := range i {
+		list.Values = append(list.Values, elem.ToLiteral())
+	}
+	return &idproto.Literal{
+		Value: &idproto.Literal_List{
+			List: list,
+		},
+	}
+}
+
+// func (i ArrayInput[S]) MarshalJSON() ([]byte, error) {
+// 	return json.Marshal([]S(i))
+// }
+
+// var _ Enumerable = ArrayInput[Scalar]{}
+
+// func (arr ArrayInput[T]) Len() int {
+// 	return len(arr)
+// }
+
+// func (arr ArrayInput[T]) Nth(i int) (Typed, error) {
+// 	if i < 1 || i > len(arr) {
+// 		return nil, fmt.Errorf("index %d out of bounds", i)
+// 	}
+// 	return arr[i-1], nil
+// }
+
+// Array is an array of GraphQL values.
 type Array[T Typed] []T
 
 var _ Typed = Array[Typed]{}
@@ -536,83 +623,207 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr[i-1], nil
 }
 
-func (i Array[T]) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]T(i))
-}
+// func (i Array[T]) MarshalJSON() ([]byte, error) {
+// 	return json.Marshal([]T(i))
+// }
 
-func (i *Array[T]) UnmarshalJSON(p []byte) error {
-	var arr []T
-	if err := json.Unmarshal(p, &arr); err != nil {
-		return err
-	}
-	*i = arr
-	return nil
+// func (i *Array[T]) UnmarshalJSON(p []byte) error {
+// 	var arr []T
+// 	if err := json.Unmarshal(p, &arr); err != nil {
+// 		return err
+// 	}
+// 	*i = arr
+// 	return nil
+// }
+
+// NullableWrapper is a type that wraps another type.
+//
+// In practice this is only used for Optional and Nullable. It should be used
+// sparingly, since wrapping interfaces explodes very quickly.
+type NullableWrapper interface {
+	Unwrap() (Typed, bool)
 }
 
 // Optional wraps a type and allows it to be null.
 //
 // This is used for optional arguments and return values.
-type Optional[T Typed] struct {
-	Value T
+type Optional[S Scalar] struct {
+	Value S
 	Valid bool
 }
 
-type Nullable interface {
-	Unwrap() (Typed, bool)
+var _ Scalar = Optional[Scalar]{}
+
+func MapOpt[T Scalar, R Typed](opt Optional[T], fn func(T) (R, error)) (Nullable[R], error) {
+	if !opt.Valid {
+		return Nullable[R]{}, nil
+	}
+	r, err := fn(opt.Value)
+	if err != nil {
+		return Nullable[R]{}, err
+	}
+	return Nullable[R]{
+		Value: r,
+		Valid: true,
+	}, nil
 }
 
-var _ Typed = Optional[Typed]{}
-
-func (n Optional[T]) Type() *ast.Type {
-	nullable := *n.Value.Type()
-	nullable.NonNull = false
-	return &nullable
+func Opt[T Scalar](v T) Optional[T] {
+	return Optional[T]{
+		Value: v,
+		Valid: true,
+	}
 }
 
-var _ Nullable = Optional[Typed]{}
-
-func (n Optional[T]) Unwrap() (Typed, bool) {
-	return n.Value, n.Valid
+// NoOpt returns an empty Optional value.
+func NoOpt[T Scalar]() Optional[T] {
+	return Optional[T]{}
+}
+func (n Optional[S]) ToNullable() Nullable[S] {
+	return Nullable[S]{
+		Value: n.Value,
+		Valid: n.Valid,
+	}
 }
 
-func (i Optional[T]) MarshalJSON() ([]byte, error) {
+func (n Optional[S]) ScalarType() ScalarFactory {
+	return n
+}
+
+func (i Optional[S]) ToLiteral() *idproto.Literal {
+	if !i.Valid {
+		return &idproto.Literal{
+			Value: &idproto.Literal_Null{
+				Null: true,
+			},
+		}
+	}
+	return i.Value.ToLiteral()
+}
+
+func (i Optional[S]) MarshalJSON() ([]byte, error) {
 	if !i.Valid {
 		return json.Marshal(nil)
 	}
 	return json.Marshal(i.Value)
 }
 
-func (i *Optional[T]) UnmarshalJSON(p []byte) error {
+var _ Typed = Optional[Scalar]{}
+
+func (n Optional[S]) Type() *ast.Type {
+	nullable := *n.Value.Type()
+	nullable.NonNull = false
+	return &nullable
+}
+
+var _ NullableWrapper = Optional[Scalar]{}
+
+func (n Optional[S]) New(val any) (Typed, error) { // TODO this should return Scalar?
+	if val == nil {
+		return Optional[S]{}, nil
+	}
+	var zero S
+	val, err := zero.ScalarType().New(val)
+	if err != nil {
+		return nil, err
+	}
+	return Optional[S]{
+		Value: val.(S), // TODO would be nice to not have to cast
+		Valid: true,
+	}, nil
+}
+
+func (n Optional[S]) Unwrap() (Typed, bool) {
+	return n.Value, n.Valid
+}
+
+func (i *Optional[S]) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &i.Value); err != nil {
 		return err
 	}
 	return nil
 }
 
+// Nullable wraps a type and allows it to be null.
+//
+// This is used for optional arguments and return values.
+type Nullable[T Typed] struct {
+	Value T
+	Valid bool
+}
+
+func Null[T Typed]() Nullable[T] {
+	return Nullable[T]{}
+}
+
+func NonNull[T Typed](val T) Nullable[T] {
+	return Nullable[T]{
+		Value: val,
+		Valid: true,
+	}
+}
+
+var _ Typed = Nullable[Typed]{}
+
+func (n Nullable[T]) Type() *ast.Type {
+	nullable := *n.Value.Type()
+	nullable.NonNull = false
+	return &nullable
+}
+
+var _ NullableWrapper = Nullable[Typed]{}
+
+func (n Nullable[T]) Unwrap() (Typed, bool) {
+	return n.Value, n.Valid
+}
+
+func (i Nullable[T]) MarshalJSON() ([]byte, error) {
+	if !i.Valid {
+		return json.Marshal(nil)
+	}
+	return json.Marshal(i.Value)
+}
+
+func (i *Nullable[T]) UnmarshalJSON(p []byte) error {
+	if err := json.Unmarshal(p, &i.Value); err != nil {
+		return err
+	}
+	return nil
+}
+
+type EnumValue interface {
+	Typed
+	~string
+}
+
 // EnumValues is a list of possible values for an Enum.
-type EnumValues[T EnumType[T]] []string
+type EnumValues[T EnumValue] []T
 
 // NewEnum creates a new EnumType with the given possible values.
-func NewEnum[T EnumType[T]](vals ...string) *EnumValues[T] {
+func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
 	return (*EnumValues[T])(&vals)
 }
 
-func (e *EnumValues[T]) Definition() *ast.Definition {
+func (e *EnumValues[T]) TypeName() string {
 	var zero T
+	return zero.Type().Name()
+}
+
+func (e *EnumValues[T]) Definition() *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Enum,
-		Name: zero.Type().Name(),
+		Name: e.TypeName(),
 		// Description: "TODO",
 		EnumValues: e.PossibleValues(),
 	}
 }
 
-func (e *EnumValues[T]) New(val any) (Scalar, error) {
+func (e *EnumValues[T]) New(val any) (Typed, error) {
 	switch x := val.(type) {
 	case string:
 		return e.Lookup(x)
 	default:
-		return nil, fmt.Errorf("cannot convert %T to Enum", x)
+		return nil, fmt.Errorf("cannot create Enum from %T", x)
 	}
 }
 
@@ -626,71 +837,32 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 	return values
 }
 
+func (e *EnumValues[T]) Literal(val T) *idproto.Literal {
+	return &idproto.Literal{
+		Value: &idproto.Literal_Enum{
+			Enum: string(val),
+		},
+	}
+}
+
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
 	var enum T
 	for _, possible := range *e {
 		if val == string(possible) {
-			return enum.New(Enum[T]{
-				Enum:  e,
-				Value: val,
-			}), nil
+			return possible, nil
 		}
 	}
 	return enum, fmt.Errorf("invalid enum value %q", val)
 }
 
-func (e *EnumValues[T]) Register(val string) T {
-	var enum T
+func (e *EnumValues[T]) Register(val T) T {
 	*e = append(*e, val)
-	return enum.New(Enum[T]{
-		Enum:  e,
-		Value: val,
-	})
+	return val
 }
 
 func (e *EnumValues[T]) Install(srv *Server) {
 	var zero T
 	srv.scalars[zero.Type().Name()] = e
-}
-
-// Enum is the common underlying implementation for all Enum values.
-type Enum[T EnumType[T]] struct {
-	Enum  *EnumValues[T]
-	Value string
-}
-
-// ScalarType returns the underlying EnumValues type.
-func (e Enum[T]) ScalarType() ScalarType {
-	return e.Enum
-}
-
-func (e Enum[T]) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Enum{
-			Enum: e.Value,
-		},
-	}
-}
-
-func (e Enum[T]) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.Value)
-}
-
-func (e Enum[T]) Type() *ast.Type {
-	var zero T
-	return zero.Type()
-}
-
-func Opt[T Typed](v T) Optional[T] {
-	return Optional[T]{
-		Value: v,
-		Valid: true,
-	}
-}
-
-// NoOpt returns an empty Optional value.
-func NoOpt[T Typed]() Optional[T] {
-	return Optional[T]{}
 }
 
 // ToLiteral converts a Typed value to a Literal.
@@ -707,7 +879,25 @@ func ToLiteral(typed Typed) *idproto.Literal {
 				Id: x.ID(),
 			},
 		}
+	case Enumerable:
+		list := &idproto.List{}
+		for i := 1; i <= x.Len(); i++ {
+			elem, err := x.Nth(i)
+			if err != nil {
+				panic(err)
+			}
+			list.Values = append(list.Values, ToLiteral(elem))
+		}
+		return &idproto.Literal{
+			Value: &idproto.Literal_List{
+				List: list,
+			},
+		}
+	case nil: // explicit null arg provided. TODO just remove? this will bust caches
+		return &idproto.Literal{
+			Value: &idproto.Literal_Null{Null: true},
+		}
 	default:
-		panic(fmt.Sprintf("cannot convert %T to Literal", x))
+		panic(fmt.Sprintf("cannot create Literal from %T", x))
 	}
 }
