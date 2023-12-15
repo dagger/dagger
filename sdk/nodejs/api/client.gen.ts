@@ -206,13 +206,6 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerWithDefaultArgsOpts = {
-  /**
-   * Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-   */
-  args?: string[]
-}
-
 export type ContainerWithDirectoryOpts = {
   /**
    * Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
@@ -1688,15 +1681,15 @@ export class Container extends BaseClient {
 
   /**
    * Configures default arguments for future commands.
-   * @param opts.args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+   * @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */
-  withDefaultArgs = (opts?: ContainerWithDefaultArgsOpts): Container => {
+  withDefaultArgs = (args: string[]): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withDefaultArgs",
-          args: { ...opts },
+          args: { args },
         },
       ],
       ctx: this._ctx,

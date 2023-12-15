@@ -938,11 +938,7 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     @typecheck
-    def with_default_args(
-        self,
-        *,
-        args: Sequence[str] | None = None,
-    ) -> "Container":
+    def with_default_args(self, args: Sequence[str]) -> "Container":
         """Configures default arguments for future commands.
 
         Parameters
@@ -952,7 +948,7 @@ class Container(Type):
             cache"]).
         """
         _args = [
-            Arg("args", args, None),
+            Arg("args", args),
         ]
         _ctx = self._select("withDefaultArgs", _args)
         return Container(_ctx)

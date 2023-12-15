@@ -270,7 +270,7 @@ func (s *containerSchema) entrypoint(ctx context.Context, parent *core.Container
 }
 
 type containerWithDefaultArgs struct {
-	Args *[]string
+	Args []string
 }
 
 func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
@@ -280,7 +280,7 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Cont
 			return cfg
 		}
 
-		cfg.Cmd = *args.Args
+		cfg.Cmd = args.Args
 		return cfg
 	})
 }

@@ -443,9 +443,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 		From(alpineImage).
 		WithExposedPort(8080).
 		// using error to compare hostname after WithServiceBinding
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-			Args: []string{"sh", "-c", "echo nope; exit 42"},
-		}).
+		WithDefaultArgs([]string{"sh", "-c", "echo nope; exit 42"}).
 		AsService()
 
 	host, err := srv.Hostname(ctx)
