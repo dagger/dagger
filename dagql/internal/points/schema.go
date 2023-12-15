@@ -53,9 +53,9 @@ var (
 	DirectionInert = Directions.Register("INERT")
 )
 
-var _ dagql.Scalar = Direction("")
+var _ dagql.Input = Direction("")
 
-func (Direction) ScalarType() dagql.ScalarFactory {
+func (Direction) Decoder() dagql.InputDecoder {
 	return Directions
 }
 

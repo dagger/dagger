@@ -83,9 +83,9 @@ type ArgSpec struct {
 	// Description is the description of the argument.
 	Description string
 	// Type is the type of the argument.
-	Type Scalar
+	Type Input
 	// Default is the default value of the argument.
-	Default Scalar
+	Default Input
 }
 
 type ArgSpecs []ArgSpec
@@ -115,19 +115,16 @@ func argSpecsForType(fn string, args any) ([]ArgSpec, error) {
 			argName = strcase.ToLowerCamel(field.Name)
 		}
 		argVal := reflect.New(field.Type).Elem().Interface()
-		argTyped, ok := argVal.(Scalar)
+		argTyped, ok := argVal.(Input)
 		if !ok {
-			return nil, fmt.Errorf("arg %q (%T) cannot be passed as an Argument", field.Name, argVal)
+			return nil, fmt.Errorf("arg %q (%T) cannot be passed as an input", field.Name, argVal)
 		}
-		var argDefault Scalar
+		var argDefault Input
 		if defaultVal := field.Tag.Get("default"); len(defaultVal) > 0 {
-			val, err := argTyped.ScalarType().New(defaultVal)
+			var err error
+			argDefault, err = argTyped.Decoder().DecodeInput(defaultVal)
 			if err != nil {
 				return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
-			}
-			argDefault, ok = val.(Scalar) // TODO make New return a Scalar again?
-			if !ok {
-				return nil, fmt.Errorf("default value for arg %s is not a Scalar", argName)
 			}
 		}
 		argSpecs = append(argSpecs, ArgSpec{
@@ -248,13 +245,13 @@ func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, err
 		if val == nil {
 			continue
 		}
-		typed, err := argSpec.Type.ScalarType().New(val)
+		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
 			return Selector{}, fmt.Errorf("init arg %q value: %w", arg.Name, err)
 		}
 		args[i] = Arg{
 			Name:  arg.Name,
-			Value: typed,
+			Value: input,
 		}
 	}
 	return Selector{
