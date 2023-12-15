@@ -6,6 +6,7 @@ import (
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
+	"github.com/vito/dagql/idproto"
 )
 
 type Point struct {
@@ -40,9 +41,7 @@ func (Line) Description() string {
 	return "A line connecting two points."
 }
 
-type Direction struct {
-	dagql.Scalar
-}
+type Direction string
 
 var Directions = dagql.NewEnum[Direction]()
 
@@ -54,16 +53,19 @@ var (
 	DirectionInert = Directions.Register("INERT")
 )
 
-var _ dagql.Scalar = Direction{}
+var _ dagql.Scalar = Direction("")
 
-func (d Direction) New(value dagql.Scalar) Direction {
-	d.Scalar = value
-	return d
-}
-
-func (Direction) ScalarType() dagql.ScalarType {
+func (Direction) ScalarType() dagql.ScalarFactory {
 	return Directions
 }
+
+func (d Direction) ToLiteral() *idproto.Literal {
+	return Directions.Literal(d)
+}
+
+// func (d Direction) MarshalJSON() ([]byte, error) {
+// 	return json.Marshal(string(d))
+// }
 
 func (Direction) Type() *ast.Type {
 	return &ast.Type{

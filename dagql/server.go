@@ -69,15 +69,15 @@ func (s *Server) Schema() *ast.Schema {
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
-	for _, t := range s.classes {
-		def := t.Definition()
+	for _, t := range s.classes { // TODO stable order
+		def := definition(ast.Object, t)
 		if def.Name == queryType {
 			schema.Query = def
 		}
 		schema.AddTypes(def)
 	}
 	for _, t := range s.scalars {
-		schema.AddTypes(t.Definition())
+		schema.AddTypes(definition(ast.Scalar, t))
 	}
 	return schema
 }
@@ -107,7 +107,7 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 				if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 					continue
 				}
-				sels, err := s.parseASTSelections(gqlOp, op.SelectionSet)
+				sels, err := s.parseASTSelections(gqlOp, s.root.Type(), op.SelectionSet)
 				if err != nil {
 					return graphql.ErrorResponse(ctx, "failed to convert selections: %s", err)
 				}
@@ -224,11 +224,11 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
 	class, ok := s.classes[self.Type().Name()]
 	if !ok {
-		return nil, fmt.Errorf("unknown type: %q", self.Type().Name())
+		return nil, fmt.Errorf("resolvePath: unknown type: %q", self.Type().Name())
 	}
 	fieldDef, ok := class.FieldDefinition(sel.Selector.Field)
 	if fieldDef == nil {
-		return nil, fmt.Errorf("unknown field: %q", sel.Selector.Field)
+		return nil, fmt.Errorf("resolvePath: unknown field: %q", sel.Selector.Field)
 	}
 
 	chainedID := sel.Selector.appendToID(self.ID(), fieldDef)
@@ -290,6 +290,13 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 				val, err := enum.Nth(nth)
 				if err != nil {
 					return nil, err
+				}
+				if wrapped, ok := val.(NullableWrapper); ok { // TODO unfortunate that we need this here too
+					val, ok = wrapped.Unwrap()
+					if !ok {
+						results = append(results, nil)
+						continue
+					}
 				}
 				node, err := s.toSelectable(chainedID.Nth(nth), val)
 				if err != nil {
@@ -420,46 +427,37 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 	return class.New(chainedID, val)
 }
 
-func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast.SelectionSet) ([]Selection, error) {
+func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
+
+	class := s.classes[self.Name()]
+	if class == nil {
+		return nil, fmt.Errorf("parseASTSelections: unknown type: %q", self.Name())
+	}
 
 	sels := []Selection{}
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			args := make([]Arg, len(x.Arguments))
-			for i, arg := range x.Arguments {
-				val, err := arg.Value.Value(vars)
-				if err != nil {
-					return nil, err
-				}
-				arg := x.Definition.Arguments.ForName(arg.Name)
-				if arg == nil {
-					return nil, fmt.Errorf("unknown argument: %q", arg.Name)
-				}
-				scalar, ok := s.scalars[arg.Type.Name()]
-				if !ok {
-					return nil, fmt.Errorf("unknown scalar: %q", arg.Type.Name())
-				}
-				typed, err := scalar.New(val)
-				if err != nil {
-					return nil, err
-				}
-				args[i] = Arg{
-					Name:  arg.Name,
-					Value: typed,
-				}
+			if x.Definition == nil {
+				// surprisingly, this is a thing that can happen, even though most
+				// validations should have happened by now.
+				return nil, fmt.Errorf("unknown field: %q", x.Name)
 			}
-			subsels, err := s.parseASTSelections(gqlOp, x.SelectionSet)
+			sel, err := class.ParseField(x, vars)
 			if err != nil {
 				return nil, err
 			}
+			var subsels []Selection
+			if len(x.SelectionSet) > 0 {
+				subsels, err = s.parseASTSelections(gqlOp, x.Definition.Type, x.SelectionSet)
+				if err != nil {
+					return nil, err
+				}
+			}
 			sels = append(sels, Selection{
-				Alias: x.Alias,
-				Selector: Selector{
-					Field: x.Name,
-					Args:  args,
-				},
+				Alias:         x.Alias,
+				Selector:      sel,
 				Subselections: subsels,
 			})
 		case *ast.FragmentSpread:
@@ -467,11 +465,13 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, astSels ast
 			if fragment == nil {
 				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
 			}
-			subsels, err := s.parseASTSelections(gqlOp, fragment.SelectionSet)
-			if err != nil {
-				return nil, err
+			if len(fragment.SelectionSet) > 0 {
+				subsels, err := s.parseASTSelections(gqlOp, self, fragment.SelectionSet)
+				if err != nil {
+					return nil, err
+				}
+				sels = append(sels, subsels...)
 			}
-			sels = append(sels, subsels...)
 		default:
 			return nil, fmt.Errorf("unknown field type: %T", x)
 		}
