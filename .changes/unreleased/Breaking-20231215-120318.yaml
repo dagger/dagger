@@ -1,0 +1,6 @@
+kind: Breaking
+body: Argument to `withDefaultArgs` is now required
+time: 2023-12-15T12:03:18.896065-01:00
+custom:
+  Author: helderco
+  PR: "6281"
