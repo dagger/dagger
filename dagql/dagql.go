@@ -261,7 +261,7 @@ func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, err
 }
 
 // NewID returns a typed ID for the class.
-func (cls Class[T]) NewID(id *idproto.ID) Typed {
+func (cls Class[T]) NewID(id *idproto.ID) Input {
 	return ID[T]{ID: id}
 }
 

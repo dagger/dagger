@@ -370,7 +370,7 @@ func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error)
 	return fieldDef, nil
 }
 
-func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal, argDef *ast.ArgumentDefinition) (Typed, error) {
+func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal, argDef *ast.ArgumentDefinition) (Input, error) {
 	switch v := lit.Value.(type) {
 	case *idproto.Literal_Id:
 		if v.Id.Type.NamedType == "" {
@@ -391,7 +391,7 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal, argDef *
 	case *idproto.Literal_Bool:
 		return NewBoolean(v.Bool), nil
 	case *idproto.Literal_List:
-		list := make(Array[Typed], len(v.List.Values))
+		list := make(ArrayInput[Input], len(v.List.Values))
 		for i, val := range v.List.Values {
 			typed, err := s.fromLiteral(ctx, val, argDef)
 			if err != nil {
@@ -534,21 +534,24 @@ func (args Args) Lookup(name string) (Typed, bool) {
 
 type Arg struct {
 	Name  string
-	Value Typed
+	Value Input
 }
 
 func (arg Arg) String() string {
-	ast := ToLiteral(arg.Value).ToAST()
-	return fmt.Sprintf("%s: %v", arg.Name, ast.Raw)
+	return fmt.Sprintf("%s: %v", arg.Name, arg.Value.ToLiteral().ToAST())
 }
 
 func (sel Selector) appendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
 	cp := id.Clone()
 	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
 	for _, arg := range sel.Args {
+		if arg.Value == nil {
+			// we don't include null arguments, since they would needlessly bust caches
+			continue
+		}
 		idArgs = append(idArgs, &idproto.Argument{
 			Name:  arg.Name,
-			Value: ToLiteral(arg.Value),
+			Value: arg.Value.ToLiteral(),
 		})
 	}
 	sort.Slice(idArgs, func(i, j int) bool {
