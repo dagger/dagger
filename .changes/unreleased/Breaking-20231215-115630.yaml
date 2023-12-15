@@ -1,0 +1,6 @@
+kind: Breaking
+body: Clear `defaultArgs` on `withEntrypoint` by default
+time: 2023-12-15T11:56:30.455923-01:00
+custom:
+  Author: helderco
+  PR: "6280"
