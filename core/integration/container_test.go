@@ -630,6 +630,22 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	require.Empty(t, removed)
 }
 
+func TestContainerExecWithoutEntrypoint(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		// if not unset this would return an error
+		WithEntrypoint([]string{"foo"}).
+		WithoutEntrypoint().
+		WithExec([]string{"echo", "-n", "foobar"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "foobar", res)
+}
+
 func TestContainerWithDefaultArgs(t *testing.T) {
 	t.Parallel()
 
@@ -720,6 +736,24 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 
 		require.Equal(t, "uid=0(root) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)\n", res.Container.From.WithEntrypoint.WithDefaultArgs.WithExec.Stdout)
 	})
+}
+
+func TestContainerExecWithoutDefaultArgs(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		WithEntrypoint([]string{"echo", "-n"}).
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: []string{"foo"},
+		}).
+		WithoutDefaultArgs().
+		WithExec([]string{}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "", res)
 }
 
 func TestContainerExecWithEnvVariable(t *testing.T) {

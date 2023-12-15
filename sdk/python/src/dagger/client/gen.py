@@ -1531,6 +1531,22 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def without_default_args(self) -> "Container":
+        """Retrieves this container with unset default arguments for future
+        commands.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDefaultArgs", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_entrypoint(self) -> "Container":
+        """Retrieves this container with an unset command entrypoint."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutEntrypoint", _args)
+        return Container(_ctx)
+
+    @typecheck
     def without_env_variable(self, name: str) -> "Container":
         """Retrieves this container minus the given environment variable.
 

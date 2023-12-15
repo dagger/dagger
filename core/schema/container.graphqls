@@ -249,6 +249,11 @@ type Container {
     args: [String!]!
   ): Container!
 
+  """
+  Retrieves this container with an unset command entrypoint.
+  """
+  withoutEntrypoint: Container!
+
   "Retrieves default arguments for future commands."
   defaultArgs: [String!]
 
@@ -261,6 +266,11 @@ type Container {
     """
     args: [String!]
   ): Container!
+
+  """
+  Retrieves this container with unset default arguments for future commands.
+  """
+  withoutDefaultArgs: Container!
 
   "Retrieves the list of paths where a directory is mounted."
   mounts: [String!]!

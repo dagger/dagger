@@ -2184,6 +2184,36 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with unset default arguments for future commands.
+   */
+  withoutDefaultArgs = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutDefaultArgs",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container with an unset command entrypoint.
+   */
+  withoutEntrypoint = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutEntrypoint",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves this container minus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    */

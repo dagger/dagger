@@ -72,8 +72,10 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withoutLabel":            ToResolver(s.withoutLabel),
 		"entrypoint":              ToResolver(s.entrypoint),
 		"withEntrypoint":          ToResolver(s.withEntrypoint),
+		"withoutEntrypoint":       ToResolver(s.withoutEntrypoint),
 		"defaultArgs":             ToResolver(s.defaultArgs),
 		"withDefaultArgs":         ToResolver(s.withDefaultArgs),
+		"withoutDefaultArgs":      ToResolver(s.withoutDefaultArgs),
 		"mounts":                  ToResolver(s.mounts),
 		"withMountedDirectory":    ToResolver(s.withMountedDirectory),
 		"withMountedFile":         ToResolver(s.withMountedFile),
@@ -238,6 +240,13 @@ func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Conta
 	})
 }
 
+func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Entrypoint = nil
+		return cfg
+	})
+}
+
 func (s *containerSchema) entrypoint(ctx context.Context, parent *core.Container, args containerWithVariableArgs) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
@@ -259,6 +268,13 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Cont
 		}
 
 		cfg.Cmd = *args.Args
+		return cfg
+	})
+}
+
+func (s *containerSchema) withoutDefaultArgs(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Cmd = nil
 		return cfg
 	})
 }

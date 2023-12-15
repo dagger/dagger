@@ -934,6 +934,24 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Retrieves this container with unset default arguments for future commands."
+    @spec without_default_args(t()) :: Dagger.Container.t()
+    def without_default_args(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutDefaultArgs")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with an unset command entrypoint."
+    @spec without_entrypoint(t()) :: Dagger.Container.t()
+    def without_entrypoint(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutEntrypoint")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Retrieves this container minus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\")."
     @spec without_env_variable(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_env_variable(%__MODULE__{} = container, name) do

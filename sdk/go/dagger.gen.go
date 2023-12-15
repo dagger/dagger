@@ -1420,6 +1420,26 @@ func (r *Container) WithWorkdir(path string) *Container {
 	}
 }
 
+// Retrieves this container with unset default arguments for future commands.
+func (r *Container) WithoutDefaultArgs() *Container {
+	q := r.q.Select("withoutDefaultArgs")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset command entrypoint.
+func (r *Container) WithoutEntrypoint() *Container {
+	q := r.q.Select("withoutEntrypoint")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")

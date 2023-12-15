@@ -1837,6 +1837,24 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Retrieves this container with unset default arguments for future commands.
+    pub fn without_default_args(&self) -> Container {
+        let query = self.selection.select("withoutDefaultArgs");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command entrypoint.
+    pub fn without_entrypoint(&self) -> Container {
+        let query = self.selection.select("withoutEntrypoint");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Retrieves this container minus the given environment variable.
     ///
     /// # Arguments
