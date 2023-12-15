@@ -273,20 +273,40 @@ var modulePublishCmd = &cobra.Command{
 
 			refStr := fmt.Sprintf("%s@%s", path.Join(refPath, pathFromRoot), commit)
 
-			cmd.Println("publishing", refStr, "to", daDaggerverse)
+			crawlURL, err := url.JoinPath(daDaggerverse, "crawl")
+			if err != nil {
+				return fmt.Errorf("failed to get module URL: %w", err)
+			}
+
+			data := url.Values{}
+			data.Add("ref", refStr)
+			req, err := http.NewRequest(http.MethodPut, crawlURL, strings.NewReader(data.Encode())) // nolint: gosec
+			if err != nil {
+				return fmt.Errorf("failed to create request: %w", err)
+			}
+
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("failed to get module: %w", err)
+			}
+
+			// TODO(vito): inspect response and/or poll, would be nice to surface errors here
+
+			cmd.Println("Publishing", refStr, "to", daDaggerverse+"...")
+			cmd.Println()
+			cmd.Println("You can check on the crawling status here:")
+			cmd.Println()
+			cmd.Println("    " + res.Request.URL.String())
 
 			modURL, err := url.JoinPath(daDaggerverse, "mod", refStr)
 			if err != nil {
 				return fmt.Errorf("failed to get module URL: %w", err)
 			}
-
-			res, err := http.Get(modURL) // nolint: gosec
-			if err != nil {
-				return fmt.Errorf("failed to get module: %w", err)
-			}
-
-			// TODO(vito): inspect response, would be nice to surface errors here
-			cmd.Printf("published to %s", modURL)
+			cmd.Println()
+			cmd.Println("Once the crawl is complete, you can view your module here:")
+			cmd.Println()
+			cmd.Println("    " + modURL)
 
 			return res.Body.Close()
 		})
