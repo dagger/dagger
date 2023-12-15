@@ -139,7 +139,7 @@ func daggerCLI() *File {
 func devEngineContainer() *Container {
 	return dag.Container().
 		From("alpine:"+alpineVersion).
-		WithDefaultArgs().
+		WithoutDefaultArgs().
 		WithExec([]string{
 			"apk", "add",
 			// for Buildkit

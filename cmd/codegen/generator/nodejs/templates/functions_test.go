@@ -40,7 +40,7 @@ func TestSplitRequiredOptionalArgs(t *testing.T) {
 	t.Run("container withDefaultArgs", func(t *testing.T) {
 		container := currentSchema.Types.Get("Container")
 		require.NotNil(t, container)
-		execField := getField(container, "withDefaultArgs")
+		execField := getField(container, "asTarball")
 
 		t.Log(container)
 		required, optional := splitRequiredOptionalArgs(execField.Args)

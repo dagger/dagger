@@ -448,18 +448,11 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Configures default arguments for future commands.\n\n\n\n## Optional Arguments\n\n* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."
-    @spec with_default_args(t(), keyword()) :: Dagger.Container.t()
-    def with_default_args(%__MODULE__{} = container, optional_args \\ []) do
+    @doc "Configures default arguments for future commands.\n\n## Required Arguments\n\n* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."
+    @spec with_default_args(t(), [Dagger.String.t()]) :: Dagger.Container.t()
+    def with_default_args(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withDefaultArgs")
-
-      selection =
-        if is_nil(optional_args[:args]) do
-          selection
-        else
-          arg(selection, "args", optional_args[:args])
-        end
-
+      selection = arg(selection, "args", args)
       %Dagger.Container{selection: selection, client: container.client}
     end
   )

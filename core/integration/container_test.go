@@ -674,9 +674,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	t.Run("unset default args", func(t *testing.T) {
 		t.Parallel()
 		removed, err := base.
-			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-				Args: []string{"foobar"},
-			}).
+			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -686,9 +684,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	t.Run("kept default args", func(t *testing.T) {
 		t.Parallel()
 		kept, err := base.
-			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-				Args: []string{"foobar"},
-			}).
+			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}, dagger.ContainerWithEntrypointOpts{
 				KeepDefaultArgs: true,
 			}).
@@ -761,7 +757,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 				from(address: "`+alpineImage+`") {
 					entrypoint
 					defaultArgs
-					withDefaultArgs {
+					withDefaultArgs(args: []) {
 						entrypoint
 						defaultArgs
 					}
@@ -821,9 +817,7 @@ func TestContainerExecWithoutDefaultArgs(t *testing.T) {
 	res, err := c.Container().
 		From(alpineImage).
 		WithEntrypoint([]string{"echo", "-n"}).
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-			Args: []string{"foo"},
-		}).
+		WithDefaultArgs([]string{"foo"}).
 		WithoutDefaultArgs().
 		WithExec([]string{}).
 		Stdout(ctx)
@@ -3317,9 +3311,7 @@ func TestContainerNoExec(t *testing.T) {
 
 	_, err = c.Container().
 		From(alpineImage).
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-			Args: nil,
-		}).
+		WithoutDefaultArgs().
 		Stdout(ctx)
 
 	require.Error(t, err)
