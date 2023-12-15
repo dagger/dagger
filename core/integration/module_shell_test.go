@@ -56,7 +56,7 @@ type Test struct {
 	// We want the size to be big enough to fit the output we're expecting, but increasing
 	// the size also eventually slows down the tests due to more output being generated and
 	// needing parsing.
-	err = pty.Setsize(tty, &pty.Winsize{Rows: 32, Cols: 32})
+	err = pty.Setsize(tty, &pty.Winsize{Rows: 8, Cols: 16})
 	require.NoError(t, err)
 
 	cmd := hostDaggerCommand(ctx, t, modDir, "shell", "ctr")
