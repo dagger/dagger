@@ -106,7 +106,7 @@ type fetchFunc func(repo *git.Repository, branch string) (*object.Commit, error)
 // Function to fetch from the origin remote
 func fetchFromOrigin(repo *git.Repository, branch string) (*object.Commit, error) {
 	// Fetch from the origin remote
-	cmd := exec.Command("git", "fetch", "origin", branch)
+	cmd := exec.Command("git", "fetch", "--depth", "1", "origin", branch)
 	err := cmd.Run()
 	if err != nil {
 		return nil, fmt.Errorf("error fetching branch from origin: %w", err)
@@ -150,7 +150,7 @@ func fetchFromFork(repo *git.Repository, branch string) (*object.Commit, error) 
 		return nil, fmt.Errorf("error adding fork as remote: %w", err)
 	}
 
-	cmd = exec.Command("git", "fetch", "fork", branch)
+	cmd = exec.Command("git", "fetch", "--depth", "1", "fork", branch)
 	err = cmd.Run()
 	if err != nil {
 		return nil, fmt.Errorf("error fetching branch from fork: %w", err)
