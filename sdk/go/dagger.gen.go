@@ -928,9 +928,21 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	}
 }
 
+// ContainerWithEntrypointOpts contains options for Container.WithEntrypoint
+type ContainerWithEntrypointOpts struct {
+	// Don't remove the default arguments when setting the entrypoint.
+	KeepDefaultArgs bool
+}
+
 // Retrieves this container but with a different command entrypoint.
-func (r *Container) WithEntrypoint(args []string) *Container {
+func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypointOpts) *Container {
 	q := r.q.Select("withEntrypoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `keepDefaultArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KeepDefaultArgs) {
+			q = q.Arg("keepDefaultArgs", opts[i].KeepDefaultArgs)
+		}
+	}
 	q = q.Arg("args", args)
 
 	return &Container{

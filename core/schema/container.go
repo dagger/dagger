@@ -232,12 +232,16 @@ func (s *containerSchema) withAllGPUs(ctx context.Context, parent *core.Containe
 }
 
 type containerWithEntrypointArgs struct {
-	Args []string
+	Args            []string
+	KeepDefaultArgs bool
 }
 
 func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.Entrypoint = args.Args
+		if !args.KeepDefaultArgs {
+			cfg.Cmd = nil
+		}
 		return cfg
 	})
 }

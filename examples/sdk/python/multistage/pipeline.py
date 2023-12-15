@@ -19,7 +19,6 @@ async def pipeline():
         prod_image = (
             client.container()
             .from_("cgr.dev/chainguard/wolfi-base:latest")
-            .with_default_args() # Set CMD to []
             .with_file("/bin/dagger", build.file("/src/dagger"))
             .with_entrypoint(["/bin/dagger"])
         )

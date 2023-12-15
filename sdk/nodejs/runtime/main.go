@@ -33,8 +33,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 		WithExec([]string{"npm", "install"}).
 		// Add tsx to execute the entrypoint
 		WithExec([]string{"npm", "install", "-g", "tsx"}).
-		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
-		WithDefaultArgs(), nil
+		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}), nil
 }
 
 // Codegen returns the generated API client based on user's module

@@ -443,6 +443,12 @@ pub struct ContainerWithDirectoryOpts<'a> {
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithEntrypointOpts {
+    /// Don't remove the default arguments when setting the entrypoint.
+    #[builder(setter(into, strip_option), default)]
+    pub keep_default_args: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
     /// Replace `${VAR}` or $VAR in the value according to the current environment
     /// variables defined in the container (e.g., "/opt/bin:$PATH").
@@ -1127,12 +1133,38 @@ impl Container {
     /// # Arguments
     ///
     /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_entrypoint(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withEntrypoint");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container but with a different command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_entrypoint_opts(
+        &self,
+        args: Vec<impl Into<String>>,
+        opts: ContainerWithEntrypointOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withEntrypoint");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(keep_default_args) = opts.keep_default_args {
+            query = query.arg("keepDefaultArgs", keep_default_args);
+        }
         return Container {
             proc: self.proc.clone(),
             selection: query,
