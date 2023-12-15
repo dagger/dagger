@@ -20,8 +20,6 @@ import (
 // into a container for driving it.
 
 func TestModuleDaggerShell(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -42,6 +40,10 @@ type Test struct {
 	require.NoError(t, err)
 
 	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "mod", "init", "--name=test", "--sdk=go")
+	require.NoError(t, err)
+
+	// cache the module load itself so there's less to wait for in the shell invocation below
+	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
 	require.NoError(t, err)
 
 	// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
