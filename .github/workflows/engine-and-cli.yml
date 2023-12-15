@@ -40,7 +40,6 @@ jobs:
       mage-targets: engine:testimportant
       size: dagger-runner-16c-64g
       dev-engine: true
-      setup-tmate: false
 
 
   test-publish-cli:
