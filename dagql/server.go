@@ -408,7 +408,7 @@ func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal, argDef *
 		if !ok {
 			return nil, fmt.Errorf("unknown scalar: %q", typeName)
 		}
-		return scalar.New(v.Enum)
+		return scalar.DecodeInput(v.Enum)
 	default:
 		panic(fmt.Sprintf("fromLiteral: unsupported literal type %T", v))
 	}

@@ -20,6 +20,10 @@ type Typed interface {
 type Type interface {
 	// TypeName returns the name of the type.
 	TypeName() string
+
+	// Typically a Type will optionally define either of the two interfaces:
+	// Descriptive
+	// Definitive
 }
 
 // ObjectType represents a GraphQL Object type.
@@ -49,27 +53,27 @@ type Object interface {
 // ScalarType represents a GraphQL Scalar type.
 type ScalarType interface {
 	Type
-	ScalarFactory
+	InputDecoder
 }
 
-// TODO rename. maybe Input related?
-type ScalarFactory interface {
-	// New converts a value to the Scalar type, if possible.
-	New(any) (Typed, error)
-}
-
-// Scalar represents a leaf node of the graph, i.e. a simple scalar value that
-// cannot have any sub-selections.
-type Scalar interface {
-	// All Scalars are typed.
+// Input represents any value which may be passed as an input.
+type Input interface {
+	// All Inputs are typed.
 	Typed
-	// All Scalars have a ScalarType. This reference is used to initialize
-	// default values, among other conveniences.
-	ScalarType() ScalarFactory
-	// All Scalars are able to be represented as a Literal.
+	// All Inputs are able to be represented as a Literal.
 	idproto.Literate
-	// All Scalars are able to be represented as JSON.
+	// All Inputs now how to decode new instances of themselves.
+	Decoder() InputDecoder
+	// In principle all Inputs are able to be represented as JSON, but we don't
+	// require the interface to be implemented since basic values like strings
+	// (Enums) and arrays (...Arrays) already marshal appropriately.
 	// json.Marshaler
+}
+
+// InputDecoder is a type that knows how to decode values into Inputs.
+type InputDecoder interface {
+	// Decode converts a value to the Input type, if possible.
+	DecodeInput(any) (Input, error)
 }
 
 // Int is a GraphQL Int scalar.
@@ -96,7 +100,7 @@ func (i Int) Definition() *ast.Definition {
 	}
 }
 
-func (Int) New(val any) (Typed, error) {
+func (Int) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case int:
 		return NewInt(x), nil
@@ -121,9 +125,9 @@ func (Int) New(val any) (Typed, error) {
 	}
 }
 
-var _ Scalar = Int{}
+var _ Input = Int{}
 
-func (Int) ScalarType() ScalarFactory {
+func (Int) Decoder() InputDecoder {
 	return Int{}
 }
 
@@ -179,7 +183,7 @@ func (f Float) Definition() *ast.Definition {
 	}
 }
 
-func (Float) New(val any) (Typed, error) {
+func (Float) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case float32:
 		return NewFloat(float64(x)), nil
@@ -202,9 +206,9 @@ func (Float) New(val any) (Typed, error) {
 	}
 }
 
-var _ Scalar = Float{}
+var _ Input = Float{}
 
-func (Float) ScalarType() ScalarFactory {
+func (Float) Decoder() InputDecoder {
 	return Float{}
 }
 
@@ -269,7 +273,7 @@ func (b Boolean) Definition() *ast.Definition {
 	}
 }
 
-func (Boolean) New(val any) (Typed, error) {
+func (Boolean) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case bool:
 		return NewBoolean(x), nil
@@ -284,9 +288,9 @@ func (Boolean) New(val any) (Typed, error) {
 	}
 }
 
-var _ Scalar = Boolean{}
+var _ Input = Boolean{}
 
-func (Boolean) ScalarType() ScalarFactory {
+func (Boolean) Decoder() InputDecoder {
 	return Boolean{}
 }
 
@@ -340,7 +344,7 @@ func (s String) Definition() *ast.Definition {
 	}
 }
 
-func (String) New(val any) (Typed, error) {
+func (String) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case string:
 		return NewString(x), nil
@@ -349,9 +353,9 @@ func (String) New(val any) (Typed, error) {
 	}
 }
 
-var _ Scalar = String{}
+var _ Input = String{}
 
-func (String) ScalarType() ScalarFactory {
+func (String) Decoder() InputDecoder {
 	return String{}
 }
 
@@ -413,7 +417,7 @@ func (i ID[T]) Definition() *ast.Definition {
 //
 // It accepts either an *idproto.ID or a string. The string is expected to be
 // the base64-encoded representation of an *idproto.ID.
-func (ID[T]) New(val any) (Typed, error) {
+func (ID[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case *idproto.ID:
 		return ID[T]{ID: x}, nil
@@ -439,9 +443,9 @@ func (i ID[T]) String() string {
 }
 
 // For parsing string IDs provided in queries.
-var _ Scalar = ID[Typed]{}
+var _ Input = ID[Typed]{}
 
-func (i ID[T]) ScalarType() ScalarFactory {
+func (i ID[T]) Decoder() InputDecoder {
 	return ID[T]{expected: i.expected}
 }
 
@@ -513,9 +517,9 @@ type Enumerable interface {
 }
 
 // Array is an array of GraphQL values.
-type ArrayInput[S Scalar] []S
+type ArrayInput[I Input] []I
 
-func MapArrayInput[T Scalar, R Typed](opt ArrayInput[T], fn func(T) (R, error)) (Array[R], error) {
+func MapArrayInput[T Input, R Typed](opt ArrayInput[T], fn func(T) (R, error)) (Array[R], error) {
 	r := make(Array[R], len(opt))
 	for i, val := range opt {
 		var err error
@@ -531,7 +535,7 @@ func (a ArrayInput[S]) ToArray() Array[S] {
 	return Array[S](a)
 }
 
-var _ Typed = ArrayInput[Scalar]{}
+var _ Typed = ArrayInput[Input]{}
 
 func (a ArrayInput[S]) Type() *ast.Type {
 	var elem S
@@ -541,26 +545,26 @@ func (a ArrayInput[S]) Type() *ast.Type {
 	}
 }
 
-var _ Scalar = ArrayInput[Scalar]{}
+var _ Input = ArrayInput[Input]{}
 
-func (a ArrayInput[S]) ScalarType() ScalarFactory {
+func (a ArrayInput[S]) Decoder() InputDecoder {
 	return a
 }
 
-var _ ScalarFactory = ArrayInput[Scalar]{}
+var _ InputDecoder = ArrayInput[Input]{}
 
-func (ArrayInput[S]) New(val any) (Typed, error) {
-	var zero S
-	scalar := zero.ScalarType()
+func (ArrayInput[I]) DecodeInput(val any) (Input, error) {
+	var zero I
+	decoder := zero.Decoder()
 	switch x := val.(type) {
 	case []any:
-		arr := make(ArrayInput[S], len(x))
+		arr := make(ArrayInput[I], len(x))
 		for i, val := range x {
-			elem, err := scalar.New(val)
+			elem, err := decoder.DecodeInput(val)
 			if err != nil {
 				return nil, fmt.Errorf("ArrayInput.New[%d]: %w", i, err)
 			}
-			arr[i] = elem.(S)
+			arr[i] = elem.(I) // TODO sus
 		}
 		return arr, nil
 	default:
@@ -647,14 +651,14 @@ type NullableWrapper interface {
 // Optional wraps a type and allows it to be null.
 //
 // This is used for optional arguments and return values.
-type Optional[S Scalar] struct {
-	Value S
+type Optional[I Input] struct {
+	Value I
 	Valid bool
 }
 
-var _ Scalar = Optional[Scalar]{}
+var _ Input = Optional[Input]{}
 
-func MapOpt[T Scalar, R Typed](opt Optional[T], fn func(T) (R, error)) (Nullable[R], error) {
+func MapOpt[I Input, R Typed](opt Optional[I], fn func(I) (R, error)) (Nullable[R], error) {
 	if !opt.Valid {
 		return Nullable[R]{}, nil
 	}
@@ -668,29 +672,30 @@ func MapOpt[T Scalar, R Typed](opt Optional[T], fn func(T) (R, error)) (Nullable
 	}, nil
 }
 
-func Opt[T Scalar](v T) Optional[T] {
-	return Optional[T]{
+func Opt[I Input](v I) Optional[I] {
+	return Optional[I]{
 		Value: v,
 		Valid: true,
 	}
 }
 
 // NoOpt returns an empty Optional value.
-func NoOpt[T Scalar]() Optional[T] {
-	return Optional[T]{}
+func NoOpt[I Input]() Optional[I] {
+	return Optional[I]{}
 }
-func (n Optional[S]) ToNullable() Nullable[S] {
-	return Nullable[S]{
+
+func (n Optional[I]) ToNullable() Nullable[I] {
+	return Nullable[I]{
 		Value: n.Value,
 		Valid: n.Valid,
 	}
 }
 
-func (n Optional[S]) ScalarType() ScalarFactory {
+func (n Optional[I]) Decoder() InputDecoder {
 	return n
 }
 
-func (i Optional[S]) ToLiteral() *idproto.Literal {
+func (i Optional[I]) ToLiteral() *idproto.Literal {
 	if !i.Valid {
 		return &idproto.Literal{
 			Value: &idproto.Literal_Null{
@@ -701,34 +706,34 @@ func (i Optional[S]) ToLiteral() *idproto.Literal {
 	return i.Value.ToLiteral()
 }
 
-func (i Optional[S]) MarshalJSON() ([]byte, error) {
+func (i Optional[I]) MarshalJSON() ([]byte, error) {
 	if !i.Valid {
 		return json.Marshal(nil)
 	}
 	return json.Marshal(i.Value)
 }
 
-var _ Typed = Optional[Scalar]{}
+var _ Typed = Optional[Input]{}
 
-func (n Optional[S]) Type() *ast.Type {
+func (n Optional[I]) Type() *ast.Type {
 	nullable := *n.Value.Type()
 	nullable.NonNull = false
 	return &nullable
 }
 
-var _ NullableWrapper = Optional[Scalar]{}
+var _ NullableWrapper = Optional[Input]{}
 
-func (n Optional[S]) New(val any) (Typed, error) { // TODO this should return Scalar?
+func (n Optional[I]) DecodeInput(val any) (Input, error) { // TODO this should return Scalar?
 	if val == nil {
-		return Optional[S]{}, nil
+		return Optional[I]{}, nil
 	}
-	var zero S
-	val, err := zero.ScalarType().New(val)
+	var zero I
+	val, err := zero.Decoder().DecodeInput(val)
 	if err != nil {
 		return nil, err
 	}
-	return Optional[S]{
-		Value: val.(S), // TODO would be nice to not have to cast
+	return Optional[I]{
+		Value: val.(I), // TODO would be nice to not have to cast
 		Valid: true,
 	}, nil
 }
@@ -792,7 +797,7 @@ func (i *Nullable[T]) UnmarshalJSON(p []byte) error {
 }
 
 type EnumValue interface {
-	Typed
+	Input
 	~string
 }
 
@@ -818,7 +823,7 @@ func (e *EnumValues[T]) Definition() *ast.Definition {
 	}
 }
 
-func (e *EnumValues[T]) New(val any) (Typed, error) {
+func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case string:
 		return e.Lookup(x)
@@ -871,7 +876,7 @@ func (e *EnumValues[T]) Install(srv *Server) {
 // its ID, which is a Literal.
 func ToLiteral(typed Typed) *idproto.Literal {
 	switch x := typed.(type) {
-	case Scalar:
+	case Input:
 		return x.ToLiteral()
 	case Object:
 		return &idproto.Literal{
