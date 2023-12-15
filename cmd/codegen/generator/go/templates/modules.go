@@ -147,8 +147,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
 			}
 
-			if !ps.isMainModuleObject(obj.Name()) && len(objTypeSpec.fields) == 0 && len(objTypeSpec.methods) == 0 {
-				// nothing to define, skip it
+			if topLevel && !ps.isMainModuleObject(obj.Name()) {
+				// don't add a non-main object at the top-level (wait till it comes up as a sub-object)
 				continue
 			}
 
