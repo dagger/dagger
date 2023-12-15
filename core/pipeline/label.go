@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/go-github/v50/github"
 	"github.com/sirupsen/logrus"
 )
@@ -99,6 +100,78 @@ func LoadVCSLabels(workdir string) []Label {
 	return labels
 }
 
+// Define a type for functions that fetch a branch commit
+type fetchFunc func(repo *git.Repository, branch string) (*object.Commit, error)
+
+// Function to fetch from the origin remote
+func fetchFromOrigin(repo *git.Repository, branch string) (*object.Commit, error) {
+	// Fetch from the origin remote
+	cmd := exec.Command("git", "fetch", "origin", branch)
+	err := cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching branch from origin: %w", err)
+	}
+
+	// Get the reference of the fetched branch
+	refName := plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", branch))
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return nil, fmt.Errorf("error getting reference: %w", err)
+	}
+
+	// Get the commit object of the fetched branch
+	branchCommit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("error getting commit: %w", err)
+	}
+
+	return branchCommit, nil
+}
+
+// Function to fetch from the fork remote
+// GitHub forks are not added as remotes by default, so we need to guess the fork URL
+// This is a heuristic approach, as the fork might not exist from the information we have
+func fetchFromFork(repo *git.Repository, branch string) (*object.Commit, error) {
+	// Get the username of the person who initiated the workflow run
+	username := os.Getenv("GITHUB_ACTOR")
+
+	// Get the repository name (owner/repo)
+	repository := os.Getenv("GITHUB_REPOSITORY")
+	parts := strings.Split(repository, "/")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid repository format: %s", repository)
+	}
+
+	forkURL := "https://github.com/" + username + "/" + parts[1]
+
+	cmd := exec.Command("git", "remote", "add", "fork", forkURL)
+	err := cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("error adding fork as remote: %w", err)
+	}
+
+	cmd = exec.Command("git", "fetch", "fork", branch)
+	err = cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("error fetching branch from fork: %w", err)
+	}
+
+	// Get the reference of the fetched branch
+	refName := plumbing.ReferenceName(fmt.Sprintf("refs/remotes/fork/%s", branch))
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return nil, fmt.Errorf("error getting reference: %w", err)
+	}
+
+	// Get the commit object of the fetched branch
+	branchCommit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("error getting commit: %w", err)
+	}
+
+	return branchCommit, nil
+}
+
 func LoadGitLabels(workdir string) ([]Label, error) {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
 		DetectDotGit: true,
@@ -144,30 +217,22 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 	// Checks if the commit is a merge commit in the context of pull request
 	// Only GitHub needs to be handled, as GitLab doesn't detach the head in MR context
 	if os.Getenv("GITHUB_EVENT_NAME") == "pull_request" && commit.NumParents() > 1 {
-		// Get the pull request's origin branch name.
+		// Get the pull request's origin branch name
 		branch := os.Getenv("GITHUB_HEAD_REF")
 
-		// Execute git fetch using git CLI because GitHub Action adds the GITHUB_TOKEN
-		// to any git client operation automatically. With go-git, would have to
-		// add the GITHUB_TOKEN secret to their pipeline
-		cmd := exec.Command("git", "fetch", "origin", branch)
-		err = cmd.Run()
-		if err != nil {
-			fmt.Printf("Error fetching branch: %s", err.Error())
-		}
+		// List of remotes function to try fetching from: origin and fork
+		fetchFuncs := []fetchFunc{fetchFromOrigin, fetchFromFork}
 
-		// Get the reference of the fetched branch
-		refName := plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", branch))
-		ref, err := repo.Reference(refName, true)
-		if err != nil {
-			fmt.Printf("Error getting reference: %s", err.Error())
-		} else {
-			// Get the commit object of the fetched branch
-			branchCommit, err := repo.CommitObject(ref.Hash())
-			if err != nil {
-				fmt.Printf("Error getting commit: %s", err.Error())
-			} else {
+		var branchCommit *object.Commit
+		var err error
+
+		for _, fetch := range fetchFuncs {
+			branchCommit, err = fetch(repo, branch)
+			if err == nil {
 				commit = branchCommit
+				break
+			} else {
+				fmt.Fprintf(os.Stderr, "Error fetching branch: %s", err.Error())
 			}
 		}
 	}
