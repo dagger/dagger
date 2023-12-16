@@ -16,13 +16,6 @@ func New(gqlType *ast.Type) *ID {
 	}
 }
 
-func Arg(name string, value any) *Argument {
-	return &Argument{
-		Name:  name,
-		Value: LiteralValue(value),
-	}
-}
-
 func (id *ID) Display() string {
 	buf := new(bytes.Buffer)
 	for si, sel := range id.Constructor {
