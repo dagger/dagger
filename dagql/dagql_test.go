@@ -619,6 +619,113 @@ func TestEnums(t *testing.T) {
 	})
 }
 
+type MyInput struct {
+	Boolean dagql.Boolean `default:"true"`
+	Int     dagql.Int     `default:"42"`
+	String  dagql.String  `default:"hello, world!"`
+	Float   dagql.Float   `default:"3.14"`
+}
+
+func (MyInput) TypeName() string {
+	return "MyInput"
+}
+
+func TestInputObjects(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	dagql.MustInputSpec(MyInput{}).Install(srv)
+
+	InstallDefaults(srv)
+
+	dagql.Fields[Query]{
+		dagql.Func("myInput", func(ctx context.Context, self Query, args struct {
+			Input dagql.InputObject[MyInput]
+		}) (Defaults, error) {
+			return Defaults(args.Input.Value), nil
+		}),
+	}.Install(srv)
+
+	type values struct {
+		Boolean bool
+		Int     int
+		String  string
+		Float   float64
+	}
+
+	t.Run("inputs and defaults", func(t *testing.T) {
+		var res struct {
+			NotDefaults values
+			Defaults    values
+		}
+		req(t, gql, `query {
+			defaults: myInput(input: {}) {
+				boolean
+				int
+				string
+				float
+			}
+			notDefaults: myInput(input: {boolean: false, int: 21, string: "goodbye, world!", float: 6.28}) {
+				boolean
+				int
+				string
+				float
+			}
+		}`, &res)
+
+		assert.Equal(t, values{true, 42, "hello, world!", 3.14}, res.Defaults)
+		assert.Equal(t, values{false, 21, "goodbye, world!", 6.28}, res.NotDefaults)
+	})
+
+	t.Run("nullable inputs", func(t *testing.T) {
+		dagql.Fields[Query]{
+			dagql.Func("myOptionalInput", func(ctx context.Context, self Query, args struct {
+				Input dagql.Optional[dagql.InputObject[MyInput]]
+			}) (dagql.Nullable[dagql.Boolean], error) {
+				return dagql.MapOpt(args.Input, func(input dagql.InputObject[MyInput]) (dagql.Boolean, error) {
+					return input.Value.Boolean, nil
+				})
+			}),
+		}.Install(srv)
+
+		var res struct {
+			ProvidedFalse *bool
+			ProvidedTrue  *bool
+			NotProvided   *bool
+		}
+		req(t, gql, `query {
+			providedFalse: myOptionalInput(input: {boolean: false})
+			providedTrue: myOptionalInput(input: {boolean: true})
+			notProvided: myOptionalInput
+		}`, &res)
+
+		assert.DeepEqual(t, ptr(false), res.ProvidedFalse)
+		assert.DeepEqual(t, ptr(true), res.ProvidedTrue)
+		assert.DeepEqual(t, (*bool)(nil), res.NotProvided)
+	})
+
+	t.Run("arrays of inputs", func(t *testing.T) {
+		dagql.Fields[Query]{
+			dagql.Func("myArrayInput", func(ctx context.Context, self Query, args struct {
+				Input dagql.ArrayInput[dagql.InputObject[MyInput]]
+			}) (dagql.Array[dagql.Boolean], error) {
+				return dagql.MapArrayInput(args.Input, func(input dagql.InputObject[MyInput]) (dagql.Boolean, error) {
+					return input.Value.Boolean, nil
+				})
+			}),
+		}.Install(srv)
+
+		var res struct {
+			MyArrayInput []bool
+		}
+		req(t, gql, `query {
+			myArrayInput(input: [{boolean: false}, {boolean: true}, {}])
+		}`, &res)
+
+		assert.DeepEqual(t, []bool{false, true, true}, res.MyArrayInput)
+	})
+}
+
 type Defaults struct {
 	Boolean dagql.Boolean `default:"true"`
 	Int     dagql.Int     `default:"42"`
@@ -633,10 +740,7 @@ func (Defaults) Type() *ast.Type {
 	}
 }
 
-func TestDefaults(t *testing.T) {
-	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
-
+func InstallDefaults(srv *dagql.Server) {
 	dagql.Fields[Defaults]{
 		dagql.Func("boolean", func(ctx context.Context, self Defaults, _ any) (dagql.Boolean, error) {
 			return self.Boolean, nil
@@ -651,6 +755,13 @@ func TestDefaults(t *testing.T) {
 			return self.Float, nil
 		}),
 	}.Install(srv)
+}
+
+func TestDefaults(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	InstallDefaults(srv)
 
 	t.Run("builtin scalar types", func(t *testing.T) {
 		dagql.Fields[Query]{

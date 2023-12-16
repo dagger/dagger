@@ -7,6 +7,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/introspection"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
+	"github.com/vito/dagql/idproto"
 )
 
 func Install[T dagql.Typed](srv *dagql.Server) {
@@ -367,8 +368,12 @@ var TypeKinds = dagql.NewEnum[TypeKind](
 	"NON_NULL",
 )
 
-func (k TypeKind) ScalarType() dagql.ScalarFactory {
+func (k TypeKind) Decoder() dagql.InputDecoder {
 	return TypeKinds
+}
+
+func (k TypeKind) ToLiteral() *idproto.Literal {
+	return TypeKinds.Literal(k)
 }
 
 var _ dagql.Typed = TypeKind("")
@@ -404,8 +409,12 @@ var DirectiveLocations = dagql.NewEnum[DirectiveLocation](
 	"INPUT_FIELD_DEFINITION",
 )
 
-func (k DirectiveLocation) ScalarType() dagql.ScalarFactory {
+func (k DirectiveLocation) Decoder() dagql.InputDecoder {
 	return DirectiveLocations
+}
+
+func (k DirectiveLocation) ToLiteral() *idproto.Literal {
+	return DirectiveLocations.Literal(k)
 }
 
 var _ dagql.Typed = DirectiveLocation("")
