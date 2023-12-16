@@ -194,36 +194,28 @@ func (cls Class[T]) Definition() *ast.Definition {
 	return def
 }
 
-// FieldDefinition returns the schema definition of a field, if present.
-func (cls Class[T]) FieldDefinition(name string) (*ast.FieldDefinition, bool) {
-	field, found := cls.Fields[name]
-	if !found {
-		return nil, false
-	}
-	return field.Definition(), true
-}
-
-func (cls Class[T]) ParseField(astField *ast.Field, vars map[string]any) (Selector, error) {
+// ParseField parses a field selection into a Selector and return type.
+func (cls Class[T]) ParseField(astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field := cls.Fields[astField.Name]
 	if field == nil {
-		return Selector{}, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, astField.Name)
+		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
 		argSpec, ok := field.Spec.Args.Lookup(arg.Name)
 		if !ok {
-			return Selector{}, fmt.Errorf("%s has no such argument: %q", field.Spec.Name, arg.Name)
+			return Selector{}, nil, fmt.Errorf("%s has no such argument: %q", field.Spec.Name, arg.Name)
 		}
 		val, err := arg.Value.Value(vars)
 		if err != nil {
-			return Selector{}, err
+			return Selector{}, nil, err
 		}
 		if val == nil {
 			continue
 		}
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return Selector{}, fmt.Errorf("init arg %q value: %w", arg.Name, err)
+			return Selector{}, nil, fmt.Errorf("init arg %q value: %w", arg.Name, err)
 		}
 		args[i] = NamedInput{
 			Name:  arg.Name,
@@ -233,12 +225,7 @@ func (cls Class[T]) ParseField(astField *ast.Field, vars map[string]any) (Select
 	return Selector{
 		Field: astField.Name,
 		Args:  args,
-	}, nil
-}
-
-// NewID returns a typed ID for the class.
-func (cls Class[T]) NewID(id *idproto.ID) Input {
-	return ID[T]{ID: id}
+	}, field.Spec.Type.Type(), nil
 }
 
 // New returns a new instance of the class.

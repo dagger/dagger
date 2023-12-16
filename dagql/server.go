@@ -323,10 +323,6 @@ func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type,
 	if !ok {
 		return Selection{}, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
 	}
-	fieldDef, ok := class.FieldDefinition(first.Field)
-	if !ok {
-		return Selection{}, fmt.Errorf("constructorToSelection: unknown field: %q", first.Field)
-	}
 	astField := &ast.Field{
 		Name: first.Field,
 	}
@@ -341,11 +337,10 @@ func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type,
 			},
 		})
 	}
-	sel, err := class.ParseField(astField, vars)
+	sel, resType, err := class.ParseField(astField, vars)
 	if err != nil {
 		return Selection{}, err
 	}
-	resType := fieldDef.Type
 	if first.Nth != 0 {
 		sel.Nth = int(first.Nth)
 		resType = resType.Elem
@@ -389,18 +384,13 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.T
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			if x.Definition == nil {
-				// surprisingly, this is a thing that can happen, even though most
-				// validations should have happened by now.
-				return nil, fmt.Errorf("parseASTSelections: unknown field: %q", x.Name)
-			}
-			sel, err := class.ParseField(x, vars)
+			sel, resType, err := class.ParseField(x, vars)
 			if err != nil {
 				return nil, err
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {
-				subsels, err = s.parseASTSelections(gqlOp, x.Definition.Type, x.SelectionSet)
+				subsels, err = s.parseASTSelections(gqlOp, resType, x.SelectionSet)
 				if err != nil {
 					return nil, err
 				}
