@@ -1,77 +1,14 @@
 package idproto
 
 import (
-	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Literate interface {
 	ToLiteral() *Literal
-}
-
-func LiteralValue(value any) *Literal {
-	switch v := value.(type) {
-	case *ID:
-		return &Literal{Value: &Literal_Id{Id: v}}
-	case int:
-		return &Literal{Value: &Literal_Int{Int: int64(v)}}
-	case int32:
-		return &Literal{Value: &Literal_Int{Int: int64(v)}}
-	case int64:
-		return &Literal{Value: &Literal_Int{Int: v}}
-	case float32:
-		return &Literal{Value: &Literal_Float{Float: float64(v)}}
-	case float64:
-		return &Literal{Value: &Literal_Float{Float: v}}
-	case string:
-		return &Literal{Value: &Literal_String_{String_: v}}
-	case bool:
-		return &Literal{Value: &Literal_Bool{Bool: v}}
-	case []any:
-		list := make([]*Literal, len(v))
-		for i, val := range v {
-			list[i] = LiteralValue(val)
-		}
-		return &Literal{Value: &Literal_List{List: &List{Values: list}}}
-	case map[string]any:
-		args := make([]*Argument, len(v))
-		i := 0
-		for name, val := range v {
-			args[i] = &Argument{
-				Name:  name,
-				Value: LiteralValue(val),
-			}
-			i++
-		}
-		sort.SliceStable(args, func(i, j int) bool {
-			return args[i].Name < args[j].Name
-		})
-		return &Literal{Value: &Literal_Object{Object: &Object{Values: args}}}
-	case Literate:
-		return v.ToLiteral()
-	case json.Number:
-		if strings.Contains(v.String(), ".") {
-			f, err := v.Float64()
-			if err != nil {
-				panic(err)
-			}
-			return LiteralValue(f)
-		}
-		i, err := v.Int64()
-		if err != nil {
-			panic(err)
-		}
-		return LiteralValue(i)
-	case nil:
-		return &Literal{Value: &Literal_Null{Null: true}}
-	default:
-		panic(fmt.Sprintf("unsupported literal type %T", v))
-	}
 }
 
 func (lit *Literal) ToAST() *ast.Value {
