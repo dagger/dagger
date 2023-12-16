@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -202,14 +203,13 @@ func (cls Class[T]) FieldDefinition(name string) (*ast.FieldDefinition, bool) {
 	return field.Definition(), true
 }
 
-func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, error) {
-	field := cls.Fields[x.Name]
+func (cls Class[T]) ParseField(astField *ast.Field, vars map[string]any) (Selector, error) {
+	field := cls.Fields[astField.Name]
 	if field == nil {
-		return Selector{}, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, x.Name)
+		return Selector{}, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, astField.Name)
 	}
-
-	args := make([]NamedInput, len(x.Arguments))
-	for i, arg := range x.Arguments {
+	args := make([]NamedInput, len(astField.Arguments))
+	for i, arg := range astField.Arguments {
 		argSpec, ok := field.Spec.Args.Lookup(arg.Name)
 		if !ok {
 			return Selector{}, fmt.Errorf("%s has no such argument: %q", field.Spec.Name, arg.Name)
@@ -231,7 +231,7 @@ func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, err
 		}
 	}
 	return Selector{
-		Field: x.Name,
+		Field: astField.Name,
 		Args:  args,
 	}, nil
 }
@@ -272,7 +272,7 @@ type Instance[T Typed] struct {
 	Class       Class[T]
 }
 
-var _ Object = Instance[Typed]{}
+var _ Typed = Instance[Typed]{}
 
 // Type returns the type of the instance.
 func (o Instance[T]) Type() *ast.Type {
@@ -293,6 +293,37 @@ func (r Instance[T]) String() string {
 		panic(err)
 	}
 	return fmt.Sprintf("%s@%s", r.Type().Name(), dig)
+}
+
+func (r Instance[T]) IDFor(sel Selector) (*idproto.ID, error) {
+	field, ok := r.Class.Fields[sel.Field]
+	if !ok {
+		var zero T
+		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
+	}
+	cp := r.Constructor.Clone()
+	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
+	for _, arg := range sel.Args {
+		if arg.Value == nil {
+			// we don't include null arguments, since they would needlessly bust caches
+			continue
+		}
+		idArgs = append(idArgs, &idproto.Argument{
+			Name:  arg.Name,
+			Value: arg.Value.ToLiteral(),
+		})
+	}
+	sort.Slice(idArgs, func(i, j int) bool {
+		return idArgs[i].Name < idArgs[j].Name
+	})
+	cp.Constructor = append(cp.Constructor, &idproto.Selector{
+		Field: sel.Field,
+		Args:  idArgs,
+		// Tainted: field.Directives.ForName("tainted") != nil, // TODO
+		// Meta:    field.Directives.ForName("meta") != nil,    // TODO
+	})
+	cp.Type = idproto.NewType(field.Spec.Type.Type())
+	return cp, nil
 }
 
 // Select calls a field on the instance.

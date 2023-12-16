@@ -46,7 +46,16 @@ type ObjectType interface {
 // sub-selections.
 type Object interface {
 	Typed
+	// ID returns the ID of the object.
 	ID() *idproto.ID
+	// IDFor returns the ID representing the return value of the given field.
+	IDFor(Selector) (*idproto.ID, error)
+	// Select evaluates the selected field and returns the result.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, Selector) (Typed, error)
 }
 

@@ -85,7 +85,13 @@ func TestBasic(t *testing.T) {
 	}`, &res)
 
 	expectedID := idproto.New(points.Point{}.Type())
-	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
+	expectedID.Append("point", &idproto.Argument{
+		Name:  "x",
+		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+	}, &idproto.Argument{
+		Name:  "y",
+		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+	})
 	expectedID.Append("shiftLeft")
 	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
@@ -262,24 +268,58 @@ func TestNullableResults(t *testing.T) {
 		payload, err := json.Marshal(ids)
 		assert.NilError(t, err)
 		var res struct {
-			ArrayOfNullablePoints []*points.Point
+			ArrayOfNullablePoints []*struct {
+				Id string
+				X  int
+				Y  int
+			}
 		}
 		req(t, gql, `query {
 			arrayOfNullablePoints(array: `+string(payload)+`) {
+				id
 				x
 				y
 			}
 		}`, &res)
-		assert.DeepEqual(t, []*points.Point{
-			{X: 5, Y: 7},
-			nil,
-			{X: 7, Y: 7},
-			nil,
-			{X: 6, Y: 6},
-			nil,
-			{X: 6, Y: 8},
-			nil,
-		}, res.ArrayOfNullablePoints)
+		assert.Assert(t, cmp.Len(res.ArrayOfNullablePoints, 8))
+		for i, point := range res.ArrayOfNullablePoints {
+			switch i {
+			case 1, 3, 5, 7:
+				assert.Assert(t, point == nil)
+			case 0:
+				assert.Equal(t, point.X, 5)
+				assert.Equal(t, point.Y, 7)
+			case 2:
+				assert.Equal(t, point.X, 7)
+				assert.Equal(t, point.Y, 7)
+			case 4:
+				assert.Equal(t, point.X, 6)
+				assert.Equal(t, point.Y, 6)
+			case 6:
+				assert.Equal(t, point.X, 6)
+				assert.Equal(t, point.Y, 8)
+			}
+		}
+
+		t.Run("from ID", func(t *testing.T) {
+			for i, point := range res.ArrayOfNullablePoints {
+				if i%2 != 0 {
+					assert.Assert(t, point == nil)
+					continue
+				}
+				var res struct {
+					Loaded points.Point
+				}
+				req(t, gql, `query {
+					loaded: loadPointFromID(id: "`+point.Id+`") {
+						x
+						y
+					}
+				}`, &res)
+				assert.Equal(t, point.X, res.Loaded.X)
+				assert.Equal(t, point.Y, res.Loaded.Y)
+			}
+		})
 	})
 }
 
@@ -422,7 +462,13 @@ func TestIDsReflectQuery(t *testing.T) {
 	}`, &res)
 
 	expectedID := idproto.New(points.Point{}.Type())
-	expectedID.Append("point", idproto.Arg("x", 6), idproto.Arg("y", 7))
+	expectedID.Append("point", &idproto.Argument{
+		Name:  "x",
+		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+	}, &idproto.Argument{
+		Name:  "y",
+		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+	})
 	expectedID.Append("shiftLeft")
 	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)

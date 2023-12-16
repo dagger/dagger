@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -229,16 +228,10 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 }
 
 func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
-	class, ok := s.classes[self.Type().Name()]
-	if !ok {
-		return nil, fmt.Errorf("resolvePath: unknown type: %q", self.Type().Name())
+	chainedID, err := self.IDFor(sel.Selector)
+	if err != nil {
+		return nil, err
 	}
-	fieldDef, ok := class.FieldDefinition(sel.Selector.Field)
-	if fieldDef == nil {
-		return nil, fmt.Errorf("resolvePath: unknown field: %q", sel.Selector.Field)
-	}
-
-	chainedID := sel.Selector.appendToID(self.ID(), fieldDef)
 
 	dig, err := chainedID.Canonical().Digest()
 	if err != nil {
@@ -266,9 +259,8 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		defer vtx.Done(rerr)
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
+		ctx = withParent(ctx, dig)
 	}
-
-	ctx = withParent(ctx, dig)
 
 	val, err := self.Select(ctx, sel.Selector)
 	if err != nil {
@@ -276,149 +268,100 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 	}
 
 	if val == nil {
-		res = nil
-	} else if len(sel.Subselections) == 0 {
-		res = val
-	} else if len(sel.Subselections) > 0 {
-		enum, ok := val.(Enumerable)
-		if !ok {
-			node, err := s.toSelectable(chainedID, val)
-			if err != nil {
-				return nil, fmt.Errorf("instantiate: %w", err)
-			}
-			res, err = s.Resolve(ctx, node, sel.Subselections...)
+		// a nil value ignores all sub-selections
+		return nil, nil
+	}
+
+	if len(sel.Subselections) == 0 {
+		// there are no sub-selections; we're done
+		return val, nil
+	}
+
+	enum, ok := val.(Enumerable)
+	if ok {
+		// we're sub-selecting into an enumerable value, so we need to resolve each
+		// element
+
+		// TODO arrays of arrays
+		results := []any{} // TODO subtle: favor [] over null result
+		for nth := 1; nth <= enum.Len(); nth++ {
+			val, err := enum.Nth(nth)
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			// TODO arrays of arrays
-			results := []any{} // TODO subtle: favor [] over null result
-			for nth := 1; nth <= enum.Len(); nth++ {
-				val, err := enum.Nth(nth)
-				if err != nil {
-					return nil, err
+			if wrapped, ok := val.(NullableWrapper); ok {
+				val, ok = wrapped.Unwrap()
+				if !ok {
+					results = append(results, nil)
+					continue
 				}
-				if wrapped, ok := val.(NullableWrapper); ok { // TODO unfortunate that we need this here too
-					val, ok = wrapped.Unwrap()
-					if !ok {
-						results = append(results, nil)
-						continue
-					}
-				}
-				node, err := s.toSelectable(chainedID.Nth(nth), val)
-				if err != nil {
-					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
-				}
-				res, err := s.Resolve(ctx, node, sel.Subselections...)
-				if err != nil {
-					return nil, err
-				}
-				results = append(results, res)
 			}
-			res = results
+			node, err := s.toSelectable(chainedID.Nth(nth), val)
+			if err != nil {
+				return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
+			}
+			res, err := s.Resolve(ctx, node, sel.Subselections...)
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, res)
 		}
+		return results, nil
 	}
 
-	return res, nil
+	// instantiate the return value so we can sub-select
+	node, err := s.toSelectable(chainedID, val)
+	if err != nil {
+		return nil, fmt.Errorf("instantiate: %w", err)
+	}
+
+	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
 func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type, first *idproto.Selector, rest ...*idproto.Selector) (Selection, error) {
-	sel := Selection{
-		Selector: Selector{
-			Field: first.Field,
-			Nth:   int(first.Nth),
-		},
-	}
 	class, ok := s.classes[selfType.Name()]
 	if !ok {
-		return Selection{}, fmt.Errorf("unknown type: %q", selfType.Name())
+		return Selection{}, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
 	}
 	fieldDef, ok := class.FieldDefinition(first.Field)
 	if !ok {
-		return Selection{}, fmt.Errorf("unknown field: %q", first.Field)
+		return Selection{}, fmt.Errorf("constructorToSelection: unknown field: %q", first.Field)
 	}
-	resType := fieldDef.Type
-
+	astField := &ast.Field{
+		Name: first.Field,
+	}
+	vars := map[string]any{}
 	for _, arg := range first.Args {
-		argDef := fieldDef.Arguments.ForName(arg.Name)
-		if argDef == nil {
-			return Selection{}, fmt.Errorf("unknown argument: %q", arg.Name)
-		}
-		val, err := s.fromLiteral(ctx, arg.Value, argDef)
-		if err != nil {
-			return Selection{}, err
-		}
-		sel.Selector.Args = append(sel.Selector.Args, NamedInput{
-			Name:  arg.Name,
-			Value: val,
+		vars[arg.Name] = arg.Value.ToInput()
+		astField.Arguments = append(astField.Arguments, &ast.Argument{
+			Name: arg.Name,
+			Value: &ast.Value{
+				Kind: ast.Variable,
+				Raw:  arg.Name,
+			},
 		})
 	}
-
+	sel, err := class.ParseField(astField, vars)
+	if err != nil {
+		return Selection{}, err
+	}
+	resType := fieldDef.Type
+	if first.Nth != 0 {
+		sel.Nth = int(first.Nth)
+		resType = resType.Elem
+	}
+	var subsels []Selection
 	if len(rest) > 0 {
 		subsel, err := s.constructorToSelection(ctx, resType, rest[0], rest[1:]...)
 		if err != nil {
 			return Selection{}, err
 		}
-		sel.Subselections = append(sel.Subselections, subsel)
+		subsels = []Selection{subsel}
 	}
-
-	return sel, nil
-}
-
-func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error) {
-	classes, ok := s.classes[typeName]
-	if !ok {
-		return nil, fmt.Errorf("field(%q, %q): unknown type", typeName, fieldName)
-	}
-	fieldDef, ok := classes.FieldDefinition(fieldName)
-	if !ok {
-		return nil, fmt.Errorf("field(%q, %q): unknown field", typeName, fieldName)
-	}
-	return fieldDef, nil
-}
-
-func (s *Server) fromLiteral(ctx context.Context, lit *idproto.Literal, argDef *ast.ArgumentDefinition) (Input, error) {
-	switch v := lit.Value.(type) {
-	case *idproto.Literal_Id:
-		if v.Id.Type.NamedType == "" {
-			return nil, fmt.Errorf("invalid ID: %q", v.Id)
-		}
-		id := v.Id
-		class, ok := s.classes[id.Type.NamedType]
-		if !ok {
-			return nil, fmt.Errorf("unknown class: %q", id.Type.NamedType)
-		}
-		return class.NewID(id), nil
-	case *idproto.Literal_Int:
-		return NewInt(int(v.Int)), nil
-	case *idproto.Literal_Float:
-		return NewFloat(v.Float), nil
-	case *idproto.Literal_String_:
-		return NewString(v.String_), nil
-	case *idproto.Literal_Bool:
-		return NewBoolean(v.Bool), nil
-	case *idproto.Literal_List:
-		list := make(ArrayInput[Input], len(v.List.Values))
-		for i, val := range v.List.Values {
-			typed, err := s.fromLiteral(ctx, val, argDef)
-			if err != nil {
-				return nil, err
-			}
-			list[i] = typed
-		}
-		return list, nil
-	case *idproto.Literal_Object:
-		return nil, fmt.Errorf("TODO: objects")
-	case *idproto.Literal_Enum:
-		typeName := argDef.Type.Name()
-		scalar, ok := s.scalars[typeName]
-		if !ok {
-			return nil, fmt.Errorf("unknown scalar: %q", typeName)
-		}
-		return scalar.DecodeInput(v.Enum)
-	default:
-		panic(fmt.Sprintf("fromLiteral: unsupported literal type %T", v))
-	}
+	return Selection{
+		Selector:      sel,
+		Subselections: subsels,
+	}, nil
 }
 
 func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) {
@@ -546,32 +489,6 @@ type NamedInput struct {
 
 func (arg NamedInput) String() string {
 	return fmt.Sprintf("%s: %v", arg.Name, arg.Value.ToLiteral().ToAST())
-}
-
-func (sel Selector) appendToID(id *idproto.ID, field *ast.FieldDefinition) *idproto.ID {
-	cp := id.Clone()
-	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
-	for _, arg := range sel.Args {
-		if arg.Value == nil {
-			// we don't include null arguments, since they would needlessly bust caches
-			continue
-		}
-		idArgs = append(idArgs, &idproto.Argument{
-			Name:  arg.Name,
-			Value: arg.Value.ToLiteral(),
-		})
-	}
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name < idArgs[j].Name
-	})
-	cp.Constructor = append(cp.Constructor, &idproto.Selector{
-		Field:   sel.Field,
-		Args:    idArgs,
-		Tainted: field.Directives.ForName("tainted") != nil, // TODO
-		Meta:    field.Directives.ForName("meta") != nil,    // TODO
-	})
-	cp.Type = idproto.NewType(field.Type)
-	return cp
 }
 
 type DecoderFunc func(any) (Input, error)
