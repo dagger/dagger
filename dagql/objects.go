@@ -13,138 +13,6 @@ import (
 	"golang.org/x/exp/slog"
 )
 
-// Func is a helper for defining a field resolver and schema.
-//
-// The function must accept a context.Context, the receiver, and a struct of
-// arguments. All fields of the arguments struct must be Typed so that the
-// schema may be derived, and Scalar to ensure a default value may be provided.
-//
-// Arguments use struct tags to further configure the schema:
-//
-//   - `name:"bar"` sets the name of the argument. By default this is the
-//     toLowerCamel'd field name.
-//   - `default:"foo"` sets the default value of the argument. The Scalar type
-//     determines how this value is parsed.
-//   - `doc:"..."` sets the description of the argument.
-//
-// The function must return a Typed value, and an error.
-//
-// To configure a description for the field in the schema, call .Doc on the
-// result.
-func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
-	var zeroArgs A
-	inputs, argsErr := inputSpecsForType(zeroArgs)
-	if argsErr != nil {
-		var zeroSelf T
-		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
-	}
-	var zeroRet R
-	return Field[T]{
-		Spec: FieldSpec{
-			Name: name,
-			Args: inputs,
-			Type: zeroRet,
-		},
-		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
-			if argsErr != nil {
-				// this error is deferred until runtime, since it's better (at least
-				// more testable) than panicking
-				return nil, argsErr
-			}
-			var args A
-			if err := setInputFields(inputs, argVals, &args); err != nil {
-				return nil, err
-			}
-			return fn(ctx, self.Self, args)
-		},
-	}
-}
-
-// FieldSpec is a specification for a field.
-type FieldSpec struct {
-	// Name is the name of the field.
-	Name string
-	// Description is the description of the field.
-	Description string
-	// Args is the list of arguments that the field accepts.
-	Args InputSpecs
-	// Type is the type of the field's result.
-	Type Typed
-	// Meta indicates that the field has no impact on the field's result.
-	Meta bool
-	// Pure indicates that the field is a pure function of its arguments, and
-	// thus can be cached indefinitely.
-	Pure bool
-}
-
-// InputSpec specifies a field argument, or an input field.
-type InputSpec struct {
-	// Name is the name of the argument.
-	Name string
-	// Description is the description of the argument.
-	Description string
-	// Type is the type of the argument.
-	Type Input
-	// Default is the default value of the argument.
-	Default Input
-}
-
-type InputSpecs []InputSpec
-
-func (specs InputSpecs) Lookup(name string) (InputSpec, bool) {
-	for _, spec := range specs {
-		if spec.Name == name {
-			return spec, true
-		}
-	}
-	return InputSpec{}, false
-}
-
-func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
-	defs := make([]*ast.ArgumentDefinition, len(specs))
-	for i, arg := range specs {
-		schemaArg := &ast.ArgumentDefinition{
-			Name:        arg.Name,
-			Description: arg.Description,
-			Type:        arg.Type.Type(),
-		}
-		if arg.Default != nil {
-			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
-		}
-		defs[i] = schemaArg
-	}
-	return defs
-}
-
-func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
-	fields := make([]*ast.FieldDefinition, len(specs))
-	for i, spec := range specs {
-		field := &ast.FieldDefinition{
-			Name:        spec.Name,
-			Description: spec.Description,
-			Type:        spec.Type.Type(),
-		}
-		if spec.Default != nil {
-			field.DefaultValue = spec.Default.ToLiteral().ToAST()
-		}
-		fields[i] = field
-	}
-	return fields
-}
-
-// Descriptive is an interface for types that have a description.
-//
-// The description is used in the schema. To provide a full definition,
-// implement Definitive instead.
-type Descriptive interface {
-	Description() string
-}
-
-// Definitive is a type that knows how to define itself in the schema.
-type Definitive interface {
-	Definition() *ast.Definition
-}
-
 // Class is a class of Object types.
 //
 // The class is defined by a set of fields, which are installed into the class
@@ -351,6 +219,138 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 		}
 	}
 	return val, nil
+}
+
+// Func is a helper for defining a field resolver and schema.
+//
+// The function must accept a context.Context, the receiver, and a struct of
+// arguments. All fields of the arguments struct must be Typed so that the
+// schema may be derived, and Scalar to ensure a default value may be provided.
+//
+// Arguments use struct tags to further configure the schema:
+//
+//   - `name:"bar"` sets the name of the argument. By default this is the
+//     toLowerCamel'd field name.
+//   - `default:"foo"` sets the default value of the argument. The Scalar type
+//     determines how this value is parsed.
+//   - `doc:"..."` sets the description of the argument.
+//
+// The function must return a Typed value, and an error.
+//
+// To configure a description for the field in the schema, call .Doc on the
+// result.
+func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+	var zeroArgs A
+	inputs, argsErr := inputSpecsForType(zeroArgs)
+	if argsErr != nil {
+		var zeroSelf T
+		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
+	}
+	var zeroRet R
+	return Field[T]{
+		Spec: FieldSpec{
+			Name: name,
+			Args: inputs,
+			Type: zeroRet,
+		},
+		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
+			if argsErr != nil {
+				// this error is deferred until runtime, since it's better (at least
+				// more testable) than panicking
+				return nil, argsErr
+			}
+			var args A
+			if err := setInputFields(inputs, argVals, &args); err != nil {
+				return nil, err
+			}
+			return fn(ctx, self.Self, args)
+		},
+	}
+}
+
+// FieldSpec is a specification for a field.
+type FieldSpec struct {
+	// Name is the name of the field.
+	Name string
+	// Description is the description of the field.
+	Description string
+	// Args is the list of arguments that the field accepts.
+	Args InputSpecs
+	// Type is the type of the field's result.
+	Type Typed
+	// Meta indicates that the field has no impact on the field's result.
+	Meta bool
+	// Pure indicates that the field is a pure function of its arguments, and
+	// thus can be cached indefinitely.
+	Pure bool
+}
+
+// InputSpec specifies a field argument, or an input field.
+type InputSpec struct {
+	// Name is the name of the argument.
+	Name string
+	// Description is the description of the argument.
+	Description string
+	// Type is the type of the argument.
+	Type Input
+	// Default is the default value of the argument.
+	Default Input
+}
+
+type InputSpecs []InputSpec
+
+func (specs InputSpecs) Lookup(name string) (InputSpec, bool) {
+	for _, spec := range specs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	return InputSpec{}, false
+}
+
+func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
+	defs := make([]*ast.ArgumentDefinition, len(specs))
+	for i, arg := range specs {
+		schemaArg := &ast.ArgumentDefinition{
+			Name:        arg.Name,
+			Description: arg.Description,
+			Type:        arg.Type.Type(),
+		}
+		if arg.Default != nil {
+			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
+		}
+		defs[i] = schemaArg
+	}
+	return defs
+}
+
+func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
+	fields := make([]*ast.FieldDefinition, len(specs))
+	for i, spec := range specs {
+		field := &ast.FieldDefinition{
+			Name:        spec.Name,
+			Description: spec.Description,
+			Type:        spec.Type.Type(),
+		}
+		if spec.Default != nil {
+			field.DefaultValue = spec.Default.ToLiteral().ToAST()
+		}
+		fields[i] = field
+	}
+	return fields
+}
+
+// Descriptive is an interface for types that have a description.
+//
+// The description is used in the schema. To provide a full definition,
+// implement Definitive instead.
+type Descriptive interface {
+	Description() string
+}
+
+// Definitive is a type that knows how to define itself in the schema.
+type Definitive interface {
+	Definition() *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
