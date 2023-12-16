@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -23,6 +25,7 @@ type Server struct {
 	rec         *progrock.Recorder
 	classes     map[string]ObjectType
 	scalars     map[string]ScalarType
+	inputs      map[string]*ast.Definition
 	cache       *CacheMap[digest.Digest, Typed]
 	installLock sync.Mutex
 }
@@ -47,7 +50,8 @@ func NewServer[T Typed](root T) *Server {
 			// instead of a single ID type, each object has its own ID type
 			// "ID": ID{},
 		},
-		cache: NewCacheMap[digest.Digest, Typed](),
+		inputs: map[string]*ast.Definition{},
+		cache:  NewCacheMap[digest.Digest, Typed](),
 	}
 	return srv
 }
@@ -65,7 +69,7 @@ func (s *Server) Root() Object {
 var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
-func (s *Server) Schema() *ast.Schema {
+func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whenever something is installed, instead
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
@@ -78,6 +82,9 @@ func (s *Server) Schema() *ast.Schema {
 	}
 	for _, t := range s.scalars {
 		schema.AddTypes(definition(ast.Scalar, t))
+	}
+	for _, t := range s.inputs {
+		schema.AddTypes(t)
 	}
 	return schema
 }
@@ -341,7 +348,7 @@ func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type,
 		if err != nil {
 			return Selection{}, err
 		}
-		sel.Selector.Args = append(sel.Selector.Args, Arg{
+		sel.Selector.Args = append(sel.Selector.Args, NamedInput{
 			Name:  arg.Name,
 			Value: val,
 		})
@@ -361,11 +368,11 @@ func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type,
 func (s *Server) field(typeName, fieldName string) (*ast.FieldDefinition, error) {
 	classes, ok := s.classes[typeName]
 	if !ok {
-		return nil, fmt.Errorf("unknown type: %q", typeName)
+		return nil, fmt.Errorf("field(%q, %q): unknown type", typeName, fieldName)
 	}
 	fieldDef, ok := classes.FieldDefinition(fieldName)
 	if !ok {
-		return nil, fmt.Errorf("unknown field: %q", fieldName)
+		return nil, fmt.Errorf("field(%q, %q): unknown field", typeName, fieldName)
 	}
 	return fieldDef, nil
 }
@@ -432,7 +439,7 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.T
 
 	class := s.classes[self.Name()]
 	if class == nil {
-		return nil, fmt.Errorf("parseASTSelections: unknown type: %q", self.Name())
+		return nil, fmt.Errorf("parseASTSelections: not an Object type: %q", self.Name())
 	}
 
 	sels := []Selection{}
@@ -442,7 +449,7 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.T
 			if x.Definition == nil {
 				// surprisingly, this is a thing that can happen, even though most
 				// validations should have happened by now.
-				return nil, fmt.Errorf("unknown field: %q", x.Name)
+				return nil, fmt.Errorf("parseASTSelections: unknown field: %q", x.Name)
 			}
 			sel, err := class.ParseField(x, vars)
 			if err != nil {
@@ -499,7 +506,7 @@ func (sel Selection) Name() string {
 // Selector specifies how to retrieve a value from an Instance.
 type Selector struct {
 	Field string
-	Args  []Arg
+	Args  []NamedInput
 	Nth   int
 }
 
@@ -521,9 +528,9 @@ func (sel Selector) String() string {
 	return str
 }
 
-type Args []Arg
+type Inputs []NamedInput
 
-func (args Args) Lookup(name string) (Typed, bool) {
+func (args Inputs) Lookup(name string) (Typed, bool) {
 	for _, arg := range args {
 		if arg.Name == name {
 			return arg.Value, true
@@ -532,12 +539,12 @@ func (args Args) Lookup(name string) (Typed, bool) {
 	return nil, false
 }
 
-type Arg struct {
+type NamedInput struct {
 	Name  string
 	Value Input
 }
 
-func (arg Arg) String() string {
+func (arg NamedInput) String() string {
 	return fmt.Sprintf("%s: %v", arg.Name, arg.Value.ToLiteral().ToAST())
 }
 
@@ -565,4 +572,107 @@ func (sel Selector) appendToID(id *idproto.ID, field *ast.FieldDefinition) *idpr
 	})
 	cp.Type = idproto.NewType(field.Type)
 	return cp
+}
+
+type DecoderFunc func(any) (Input, error)
+
+var _ InputDecoder = DecoderFunc(nil)
+
+func (f DecoderFunc) DecodeInput(val any) (Input, error) {
+	return f(val)
+}
+
+type InputObject[T Type] struct {
+	Value T
+}
+
+var _ Input = InputObject[Type]{} // TODO
+
+func (InputObject[T]) Type() *ast.Type {
+	var zero T
+	return &ast.Type{
+		NamedType: zero.TypeName(),
+		NonNull:   true,
+	}
+}
+
+func (InputObject[T]) Decoder() InputDecoder {
+	return DecoderFunc(func(val any) (Input, error) {
+		vals, ok := val.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("expected map[string]any, got %T", val)
+		}
+		var obj T
+		objT := reflect.TypeOf(obj)
+		objV := reflect.ValueOf(&obj)
+		if objT.Kind() != reflect.Struct {
+			// TODO handle pointer?
+			return nil, fmt.Errorf("object must be a struct, got %T", obj)
+		}
+		for i := 0; i < objT.NumField(); i++ {
+			fieldT := objT.Field(i)
+			fieldV := objV.Elem().Field(i)
+			name := fieldT.Tag.Get("name")
+			if name == "" {
+				name = strcase.ToLowerCamel(fieldT.Name)
+			}
+			zeroInput, ok := fieldV.Interface().(Input)
+			if !ok {
+				return nil, fmt.Errorf("field %q (%T) cannot be passed as an input", fieldT.Name, val)
+			}
+			var input Input
+			if val, ok := vals[name]; ok {
+				var err error
+				input, err = zeroInput.Decoder().DecodeInput(val)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				if inputDefStr := fieldT.Tag.Get("default"); len(inputDefStr) > 0 {
+					var err error
+					input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
+					if err != nil {
+						return nil, fmt.Errorf("convert default value for arg %s: %w", name, err)
+					}
+				}
+				// TODO is required-ness checked by now at schema validation?
+			}
+			fieldV.Set(reflect.ValueOf(input))
+		}
+		return InputObject[T]{
+			Value: obj,
+		}, nil
+	})
+}
+
+func (InputObject[T]) ToLiteral() *idproto.Literal {
+	var obj T
+	objT := reflect.TypeOf(obj)
+	objV := reflect.ValueOf(obj)
+	if objV.Kind() != reflect.Struct {
+		// TODO handle pointer?
+		panic(fmt.Errorf("object must be a struct, got %T", obj))
+	}
+	lit := &idproto.Object{}
+	for i := 0; i < objV.NumField(); i++ {
+		fieldT := objT.Field(i)
+		name := fieldT.Tag.Get("name")
+		if name == "" {
+			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		val := objV.Field(i).Interface()
+		input, ok := val.(Input)
+		if !ok {
+			panic(fmt.Errorf("arg %q (%T) cannot be passed as an input", fieldT.Name, val))
+		}
+		lit.Values = append(lit.Values, &idproto.Argument{
+			Name:  name,
+			Value: input.ToLiteral(),
+		})
+	}
+	return &idproto.Literal{
+		Value: &idproto.Literal_Object{
+			Object: lit,
+		},
+	}
 }

@@ -20,7 +20,7 @@ import (
 //
 // Arguments use struct tags to further configure the schema:
 //
-//   - `arg:"bar"` sets the name of the argument. By default this is the
+//   - `name:"bar"` sets the name of the argument. By default this is the
 //     toLowerCamel'd field name.
 //   - `default:"foo"` sets the default value of the argument. The Scalar type
 //     determines how this value is parsed.
@@ -32,7 +32,7 @@ import (
 // result.
 func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
 	var zeroArgs A
-	argSpecs, argsErr := argSpecsForType(name, zeroArgs)
+	inputs, argsErr := inputSpecsForType(zeroArgs)
 	if argsErr != nil {
 		var zeroSelf T
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
@@ -41,7 +41,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 	return Field[T]{
 		Spec: FieldSpec{
 			Name: name,
-			Args: argSpecs,
+			Args: inputs,
 			Type: zeroRet,
 		},
 		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
@@ -51,7 +51,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 				return nil, argsErr
 			}
 			var args A
-			if err := setArgFields(argSpecs, argVals, &args); err != nil {
+			if err := setInputFields(inputs, argVals, &args); err != nil {
 				return nil, err
 			}
 			return fn(ctx, self.Self, args)
@@ -66,7 +66,7 @@ type FieldSpec struct {
 	// Description is the description of the field.
 	Description string
 	// Args is the list of arguments that the field accepts.
-	Args ArgSpecs
+	Args InputSpecs
 	// Type is the type of the field's result.
 	Type Typed
 	// Meta indicates that the field has no impact on the field's result.
@@ -76,8 +76,8 @@ type FieldSpec struct {
 	Pure bool
 }
 
-// ArgSpec is a specification for an argument to a field.
-type ArgSpec struct {
+// InputSpec specifies a field argument, or an input field.
+type InputSpec struct {
 	// Name is the name of the argument.
 	Name string
 	// Description is the description of the argument.
@@ -88,71 +88,47 @@ type ArgSpec struct {
 	Default Input
 }
 
-type ArgSpecs []ArgSpec
+type InputSpecs []InputSpec
 
-func (specs ArgSpecs) Lookup(name string) (ArgSpec, bool) {
+func (specs InputSpecs) Lookup(name string) (InputSpec, bool) {
 	for _, spec := range specs {
 		if spec.Name == name {
 			return spec, true
 		}
 	}
-	return ArgSpec{}, false
+	return InputSpec{}, false
 }
 
-func argSpecsForType(fn string, args any) ([]ArgSpec, error) {
-	var argSpecs []ArgSpec
-	argsType := reflect.TypeOf(args)
-	if argsType == nil {
-		return nil, nil
-	}
-	if argsType.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("args must be a struct, got %T", args)
-	}
-	for i := 0; i < argsType.NumField(); i++ {
-		field := argsType.Field(i)
-		argName := field.Tag.Get("arg")
-		if argName == "" {
-			argName = strcase.ToLowerCamel(field.Name)
+func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
+	defs := make([]*ast.ArgumentDefinition, len(specs))
+	for i, arg := range specs {
+		schemaArg := &ast.ArgumentDefinition{
+			Name:        arg.Name,
+			Description: arg.Description,
+			Type:        arg.Type.Type(),
 		}
-		argVal := reflect.New(field.Type).Elem().Interface()
-		argTyped, ok := argVal.(Input)
-		if !ok {
-			return nil, fmt.Errorf("arg %q (%T) cannot be passed as an input", field.Name, argVal)
+		if arg.Default != nil {
+			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
 		}
-		var argDefault Input
-		if defaultVal := field.Tag.Get("default"); len(defaultVal) > 0 {
-			var err error
-			argDefault, err = argTyped.Decoder().DecodeInput(defaultVal)
-			if err != nil {
-				return nil, fmt.Errorf("convert default value for arg %s: %w", argName, err)
-			}
-		}
-		argSpecs = append(argSpecs, ArgSpec{
-			Name:        argName,
-			Description: field.Tag.Get("doc"),
-			Type:        argTyped,
-			Default:     argDefault,
-		})
+		defs[i] = schemaArg
 	}
-	return argSpecs, nil
+	return defs
 }
 
-func setArgFields(argSpecs []ArgSpec, argVals map[string]Typed, dest any) error {
-	destV := reflect.ValueOf(dest)
-	for i, arg := range argSpecs {
-		val, isProvided := argVals[arg.Name]
-		isNullable := !arg.Type.Type().NonNull
-		if !isProvided {
-			if isNullable {
-				// defaults are applied before we get here, so if it's still not here,
-				// it's really not set
-				continue
-			}
-			return fmt.Errorf("missing required argument: %q", arg.Name)
+func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
+	fields := make([]*ast.FieldDefinition, len(specs))
+	for i, spec := range specs {
+		field := &ast.FieldDefinition{
+			Name:        spec.Name,
+			Description: spec.Description,
+			Type:        spec.Type.Type(),
 		}
-		destV.Elem().Field(i).Set(reflect.ValueOf(val))
+		if spec.Default != nil {
+			field.DefaultValue = spec.Default.ToLiteral().ToAST()
+		}
+		fields[i] = field
 	}
-	return nil
+	return fields
 }
 
 // Descriptive is an interface for types that have a description.
@@ -232,7 +208,7 @@ func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, err
 		return Selector{}, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, x.Name)
 	}
 
-	args := make([]Arg, len(x.Arguments))
+	args := make([]NamedInput, len(x.Arguments))
 	for i, arg := range x.Arguments {
 		argSpec, ok := field.Spec.Args.Lookup(arg.Name)
 		if !ok {
@@ -249,7 +225,7 @@ func (cls Class[T]) ParseField(x *ast.Field, vars map[string]any) (Selector, err
 		if err != nil {
 			return Selector{}, fmt.Errorf("init arg %q value: %w", arg.Name, err)
 		}
-		args[i] = Arg{
+		args[i] = NamedInput{
 			Name:  arg.Name,
 			Value: input,
 		}
@@ -423,41 +399,12 @@ func (field Field[T]) Doc(paras ...string) Field[T] {
 
 // Definition returns the schema definition of the field.
 func (field Field[T]) Definition() *ast.FieldDefinition {
-	fieldName := field.Spec.Name
-
-	schemaArgs := ast.ArgumentDefinitionList{}
-	for _, arg := range field.Spec.Args {
-		schemaArg := &ast.ArgumentDefinition{
-			Name: arg.Name,
-			Type: arg.Type.Type(),
-		}
-		if arg.Default != nil {
-			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
-		}
-		schemaArgs = append(schemaArgs, schemaArg)
-	}
-
 	return &ast.FieldDefinition{
-		Name:        fieldName,
+		Name:        field.Spec.Name,
 		Description: field.Spec.Description,
-		Arguments:   schemaArgs,
+		Arguments:   field.Spec.Args.ArgumentDefinitions(),
 		Type:        field.Spec.Type.Type(),
 	}
-}
-
-func applyDefaults(field FieldSpec, givenArgs Args) (map[string]Typed, error) {
-	args := make(map[string]Typed, len(field.Args))
-	for _, arg := range field.Args {
-		val, ok := givenArgs.Lookup(arg.Name)
-		if ok {
-			args[arg.Name] = val
-		} else if arg.Default != nil {
-			args[arg.Name] = arg.Default
-		} else if arg.Type.Type().NonNull {
-			return nil, fmt.Errorf("missing required argument: %q", arg.Name)
-		}
-	}
-	return args, nil
 }
 
 func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
@@ -474,4 +421,75 @@ func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
 		def.Description = isType.Description()
 	}
 	return def
+}
+
+func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Typed, error) {
+	args := make(map[string]Typed, len(field.Args))
+	for _, arg := range field.Args {
+		val, ok := inputs.Lookup(arg.Name)
+		if ok {
+			args[arg.Name] = val
+		} else if arg.Default != nil {
+			args[arg.Name] = arg.Default
+		} else if arg.Type.Type().NonNull {
+			return nil, fmt.Errorf("missing required argument: %q", arg.Name)
+		}
+	}
+	return args, nil
+}
+
+func inputSpecsForType(obj any) ([]InputSpec, error) {
+	var inputSpecs InputSpecs
+	objT := reflect.TypeOf(obj)
+	if objT == nil {
+		return nil, nil
+	}
+	if objT.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("inputs must be a struct, got %T", obj)
+	}
+	for i := 0; i < objT.NumField(); i++ {
+		field := objT.Field(i)
+		name := field.Tag.Get("name")
+		if name == "" {
+			name = strcase.ToLowerCamel(field.Name)
+		}
+		fieldI := reflect.New(field.Type).Elem().Interface()
+		input, ok := fieldI.(Input)
+		if !ok {
+			return nil, fmt.Errorf("arg %q (%T) cannot be passed as an input", field.Name, fieldI)
+		}
+		var inputDef Input
+		if inputDefStr := field.Tag.Get("default"); len(inputDefStr) > 0 {
+			var err error
+			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
+			if err != nil {
+				return nil, fmt.Errorf("convert default value for arg %s: %w", name, err)
+			}
+		}
+		inputSpecs = append(inputSpecs, InputSpec{
+			Name:        name,
+			Description: field.Tag.Get("doc"),
+			Type:        input,
+			Default:     inputDef,
+		})
+	}
+	return inputSpecs, nil
+}
+
+func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
+	destV := reflect.ValueOf(dest)
+	for i, spec := range specs {
+		val, isProvided := inputs[spec.Name]
+		isNullable := !spec.Type.Type().NonNull
+		if !isProvided {
+			if isNullable {
+				// defaults are applied before we get here, so if it's still not here,
+				// it's really not set
+				continue
+			}
+			return fmt.Errorf("missing required input: %q", spec.Name)
+		}
+		destV.Elem().Field(i).Set(reflect.ValueOf(val))
+	}
+	return nil
 }

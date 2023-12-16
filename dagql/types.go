@@ -839,3 +839,40 @@ func (e *EnumValues[T]) Install(srv *Server) {
 	var zero T
 	srv.scalars[zero.Type().Name()] = e
 }
+
+// InputType represents a GraphQL Input Object type.
+type InputType[T Type] struct{}
+
+func MustInputSpec(val Type) InputObjectSpec {
+	spec := InputObjectSpec{
+		Name: val.TypeName(),
+	}
+	if desc, ok := val.(Descriptive); ok {
+		spec.Description = desc.Description()
+	}
+	inputs, err := inputSpecsForType(val)
+	if err != nil {
+		panic(err)
+	}
+	spec.Fields = inputs
+	return spec
+}
+
+type InputObjectSpec struct {
+	Name        string
+	Description string
+	Fields      InputSpecs
+}
+
+func (spec InputObjectSpec) Install(srv *Server) {
+	srv.inputs[spec.Name] = spec.Definition()
+}
+
+func (spec InputObjectSpec) Definition() *ast.Definition {
+	return &ast.Definition{
+		Kind:        ast.InputObject,
+		Name:        spec.Name,
+		Description: spec.Description,
+		Fields:      spec.Fields.FieldDefinitions(),
+	}
+}
