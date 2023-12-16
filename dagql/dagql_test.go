@@ -1,9 +1,11 @@
 package dagql_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
@@ -18,6 +20,13 @@ import (
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 )
+
+var logs = new(bytes.Buffer)
+
+func init() {
+	// keep test output clean
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+}
 
 type Query struct {
 }
