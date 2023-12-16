@@ -295,7 +295,11 @@ func (Boolean) Decoder() InputDecoder {
 }
 
 func (b Boolean) ToLiteral() *idproto.Literal {
-	return idproto.LiteralValue(b.Value)
+	return &idproto.Literal{
+		Value: &idproto.Literal_Bool{
+			Bool: b.Value,
+		},
+	}
 }
 
 func (b Boolean) MarshalJSON() ([]byte, error) {
@@ -360,7 +364,11 @@ func (String) Decoder() InputDecoder {
 }
 
 func (i String) ToLiteral() *idproto.Literal {
-	return idproto.LiteralValue(i.Value)
+	return &idproto.Literal{
+		Value: &idproto.Literal_String_{
+			String_: i.Value,
+		},
+	}
 }
 
 func (i String) MarshalJSON() ([]byte, error) {
