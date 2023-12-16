@@ -31,15 +31,9 @@ type ObjectType interface {
 	Type
 	// New creates a new instance of the type.
 	New(*idproto.ID, Typed) (Object, error)
-	// NewID creates an ID annotated with the type.
-	NewID(*idproto.ID) Input
-	// Definition returns the GraphQL definition of the type.
-	Definition() *ast.Definition
-	// FieldDefinition returns the GraphQL definition of the field with the given
-	// name, or false if it is not defined.
-	FieldDefinition(string) (*ast.FieldDefinition, bool)
-	// ParseField parses the given field and returns a Selector.
-	ParseField(*ast.Field, map[string]any) (Selector, error)
+	// ParseField parses the given field and returns a Selector and an expected
+	// return type.
+	ParseField(*ast.Field, map[string]any) (Selector, *ast.Type, error)
 }
 
 // Object represents an Object in the graph which has an ID and can have
