@@ -433,6 +433,38 @@ def hello() -> str:
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasMainPy":{"hello":"Hello, world!"}}`, out)
 	})
+
+	t.Run("uses expected field casing", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=hello-world", "--sdk=python")).
+			With(sdkSource("python", `import logging
+from dagger import field, function, log, object_type
+
+log.configure_logging(level=logging.DEBUG)
+
+@object_type
+class HelloWorld:
+    my_name: str = field(default="World")
+
+    @function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			))
+
+		out, err := modGen.
+			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"helloWorld":{"message":"Hello, Monde!"}}`, out)
+	})
 }
 
 func TestModuleInitLICENSE(t *testing.T) {
