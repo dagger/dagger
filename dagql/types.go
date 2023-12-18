@@ -616,6 +616,38 @@ func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
 // Array is an array of GraphQL values.
 type Array[T Typed] []T
 
+func NewStringArray(elems ...string) Array[String] {
+	arr := make(Array[String], len(elems))
+	for i, elem := range elems {
+		arr[i] = NewString(elem)
+	}
+	return arr
+}
+
+func NewBoolArray(elems ...bool) Array[Boolean] {
+	arr := make(Array[Boolean], len(elems))
+	for i, elem := range elems {
+		arr[i] = NewBoolean(elem)
+	}
+	return arr
+}
+
+func NewIntArray(elems ...int) Array[Int] {
+	arr := make(Array[Int], len(elems))
+	for i, elem := range elems {
+		arr[i] = NewInt(elem)
+	}
+	return arr
+}
+
+func NewFloatArray(elems ...float64) Array[Float] {
+	arr := make(Array[Float], len(elems))
+	for i, elem := range elems {
+		arr[i] = NewFloat(elem)
+	}
+	return arr
+}
+
 var _ Typed = Array[Typed]{}
 
 func (i Array[T]) Type() *ast.Type {
