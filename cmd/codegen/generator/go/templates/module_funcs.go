@@ -305,8 +305,14 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		}
 	}
 
+	name := field.Name()
+	if name == "" {
+		// emulate struct behaviour, where a field with no name gets the type name
+		name = typeSpec.GoType().String()
+	}
+
 	return paramSpec{
-		name:         field.Name(),
+		name:         name,
 		paramType:    paramType,
 		typeSpec:     typeSpec,
 		optional:     optional,
