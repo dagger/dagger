@@ -42,10 +42,10 @@ func NewServer[T Typed](root T) *Server {
 			root.Type().Name(): queryClass,
 		},
 		scalars: map[string]ScalarType{
-			"Boolean": Boolean{},
-			"Int":     Int{},
-			"Float":   Float{},
-			"String":  String{},
+			"Boolean": Boolean(false),
+			"Int":     Int(0),
+			"Float":   Float(0),
+			"String":  String(""),
 			// instead of a single ID type, each object has its own ID type
 			// "ID": ID{},
 		},
