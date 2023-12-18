@@ -938,6 +938,60 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 	require.Contains(t, logs.String(), "nested structs are not supported")
 }
 
+func TestModuleGoSignaturesNameConflict(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Minimal struct {
+	Foo Foo
+	Bar Bar
+	Baz Baz
+}
+
+type Foo struct {}
+type Bar struct {}
+type Baz struct {}
+
+func (m *Foo) Hello(name string) string {
+	return name
+}
+
+func (f *Bar) Hello(name string, name2 string) string {
+	return name + name2
+}
+
+func (b *Baz) Hello() (string, error) {
+	return "", nil
+}
+`,
+		})
+	logGen(ctx, t, modGen.Directory("."))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	objs := gjson.Get(out, "host.directory.asModule.objects")
+
+	require.Equal(t, 4, len(objs.Array()))
+
+	obj := objs.Get(`0.asObject`)
+	require.Equal(t, "Minimal", obj.Get("name").String())
+	obj = objs.Get(`1.asObject`)
+	require.Equal(t, "MinimalFoo", obj.Get("name").String())
+	obj = objs.Get(`2.asObject`)
+	require.Equal(t, "MinimalBar", obj.Get("name").String())
+	obj = objs.Get(`3.asObject`)
+	require.Equal(t, "MinimalBaz", obj.Get("name").String())
+}
+
 var inspectModule = daggerQuery(`
 query {
   host {

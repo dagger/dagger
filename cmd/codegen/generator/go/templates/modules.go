@@ -610,6 +610,19 @@ func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec
 // because the types.Func object does not have the comments associated with the type, which
 // we want to parse.
 func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
+	var recv *types.Named
+	if signature, ok := fnType.Type().(*types.Signature); ok && signature.Recv() != nil {
+		tp := signature.Recv().Type()
+		for {
+			if p, ok := tp.(*types.Pointer); ok {
+				tp = p.Elem()
+				continue
+			}
+			break
+		}
+		recv, _ = tp.(*types.Named)
+	}
+
 	tokenFile := ps.fset.File(fnType.Pos())
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", fnType.Name())
@@ -620,9 +633,34 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 		}
 		for _, decl := range f.Decls {
 			fnDecl, ok := decl.(*ast.FuncDecl)
-			if ok && fnDecl.Name.Name == fnType.Name() {
-				return fnDecl, nil
+			if !ok {
+				continue
 			}
+			if fnDecl.Name.Name != fnType.Name() {
+				continue
+			}
+			if recv != nil {
+				if len(fnDecl.Recv.List) != 1 {
+					continue
+				}
+
+				tp := fnDecl.Recv.List[0].Type
+				for {
+					if star, ok := tp.(*ast.StarExpr); ok {
+						tp = star.X
+						continue
+					}
+					break
+				}
+				ident, ok := tp.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				if ident.Name != recv.Obj().Name() {
+					continue
+				}
+			}
+			return fnDecl, nil
 		}
 	}
 	return nil, fmt.Errorf("no decl for %s", fnType.Name())
