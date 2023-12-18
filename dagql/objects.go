@@ -172,8 +172,10 @@ func (r Instance[T]) IDFor(sel Selector) (*idproto.ID, error) {
 		return idArgs[i].Name < idArgs[j].Name
 	})
 	cp.Constructor = append(cp.Constructor, &idproto.Selector{
-		Field: sel.Field,
-		Args:  idArgs,
+		Field:   sel.Field,
+		Args:    idArgs,
+		Nth:     int64(sel.Nth),
+		Tainted: !field.Spec.Pure,
 		// Tainted: field.Directives.ForName("tainted") != nil, // TODO
 		// Meta:    field.Directives.ForName("meta") != nil,    // TODO
 	})
@@ -252,6 +254,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 			Name: name,
 			Args: inputs,
 			Type: zeroRet,
+			Pure: true, // default to pure
 		},
 		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
 			if argsErr != nil {
@@ -412,6 +415,13 @@ func (field Field[T]) Install(class Class[T]) {
 // lines.
 func (field Field[T]) Doc(paras ...string) Field[T] {
 	field.Spec.Description = strings.Join(paras, "\n\n")
+	return field
+}
+
+// Impure marks the field as "impure", meaning its result may change over time,
+// or it has side effects.
+func (field Field[T]) Impure() Field[T] {
+	field.Spec.Pure = false
 	return field
 }
 
