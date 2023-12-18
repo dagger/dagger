@@ -142,7 +142,11 @@ func fetchFromFork(repo *git.Repository, branch string) (*object.Commit, error) 
 		return nil, fmt.Errorf("invalid repository format: %s", repository)
 	}
 
-	forkURL := "https://github.com/" + username + "/" + parts[1]
+	// Get the server URL: "https://github.com/" in general,
+	// but can be different for GitHub Enterprise
+	serverURL := os.Getenv("GITHUB_SERVER_URL")
+
+	forkURL := fmt.Sprintf("%s/%s/%s", serverURL, username, parts[1])
 
 	cmd := exec.Command("git", "remote", "add", "fork", forkURL)
 	err := cmd.Run()
