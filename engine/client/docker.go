@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -19,8 +20,6 @@ import (
 
 const (
 	DockerImageProvider = "docker-image"
-	// NOTE: this needs to be consistent with engineDefaultStateDir in internal/mage/engine.go
-	DefaultStateDir = "/var/lib/dagger"
 
 	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 	DaggerCloudToken      = "DAGGER_CLOUD_TOKEN"
@@ -148,7 +147,7 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 		"--restart", "always",
 		"-e", cloudToken,
 		"-e", GPUSupportEnvName,
-		"-v", DefaultStateDir,
+		"-v", distconsts.EngineDefaultStateDir,
 		"--privileged",
 	}
 	if gpuIsEnabled {

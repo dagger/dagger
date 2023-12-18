@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/google/shlex"
@@ -300,7 +301,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
 		"-e", util.GPUSupportEnvName,
-		"-v", volumeName + ":" + util.EngineDefaultStateDir,
+		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
 	}...)
@@ -413,7 +414,7 @@ func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Containe
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithMountedCache(distconsts.EngineDefaultStateDir, c.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).
