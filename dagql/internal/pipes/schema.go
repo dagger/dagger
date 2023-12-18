@@ -35,14 +35,14 @@ func Install[Root dagql.Typed](srv *dagql.Server) {
 		dagql.Func("read", func(ctx context.Context, self Pipe, _ any) (dagql.String, error) {
 			fmt.Fprintln(ioctx.Stdout(ctx), "reading from", self.Channel)
 			return <-self.Channel, nil
-		}),
+		}).Impure(),
 		dagql.Func("write", func(ctx context.Context, self Pipe, args struct {
 			Message dagql.String
 		}) (Pipe, error) {
 			fmt.Fprintln(ioctx.Stdout(ctx), "writing", args.Message, "to", self.Channel)
 			self.Channel <- args.Message
 			return self, nil
-		}),
+		}).Impure(),
 	}.Install(srv)
 
 }

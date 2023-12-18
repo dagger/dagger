@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
@@ -24,8 +26,12 @@ import (
 var logs = new(bytes.Buffer)
 
 func init() {
+	var logsW io.Writer = logs
+	if os.Getenv("DEBUG") != "" {
+		logsW = io.MultiWriter(logsW, os.Stderr)
+	}
 	// keep test output clean
-	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(logsW, nil)))
 }
 
 type Query struct {
@@ -507,6 +513,112 @@ func TestIDsReflectQuery(t *testing.T) {
 			assert.Equal(t, res.LoadPointFromID.Y, 8)
 		}
 	}
+}
+
+func TestPureIDsDoNotReEvaluate(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	called := 0
+	dagql.Fields[points.Point]{
+		dagql.Func("snitch", func(ctx context.Context, self points.Point, _ any) (points.Point, error) {
+			called++
+			return self, nil
+		}),
+	}.Install(srv)
+
+	var res struct {
+		Point struct {
+			Snitch struct {
+				Id string
+			}
+		}
+	}
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			snitch {
+				id
+			}
+		}
+	}`, &res)
+
+	assert.Equal(t, called, 1)
+
+	var loaded struct {
+		LoadPointFromID struct {
+			Id string
+			X  int
+			Y  int
+		}
+	}
+	req(t, gql, `query {
+		loadPointFromID(id: "`+res.Point.Snitch.Id+`") {
+			id
+			x
+			y
+		}
+	}`, &loaded)
+
+	assert.Equal(t, loaded.LoadPointFromID.Id, res.Point.Snitch.Id)
+	assert.Equal(t, loaded.LoadPointFromID.X, 6)
+	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+
+	assert.Equal(t, called, 1)
+}
+
+func TestImpureIDsReEvaluate(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	called := 0
+	dagql.Fields[points.Point]{
+		dagql.Func("snitch", func(ctx context.Context, self points.Point, _ any) (points.Point, error) {
+			called++
+			return self, nil
+		}).Impure(),
+	}.Install(srv)
+
+	var res struct {
+		Point struct {
+			Snitch struct {
+				Id string
+			}
+		}
+	}
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			snitch {
+				id
+			}
+		}
+	}`, &res)
+
+	assert.Equal(t, called, 1)
+
+	var loaded struct {
+		LoadPointFromID struct {
+			Id string
+			X  int
+			Y  int
+		}
+	}
+	req(t, gql, `query {
+		loadPointFromID(id: "`+res.Point.Snitch.Id+`") {
+			id
+			x
+			y
+		}
+	}`, &loaded)
+
+	assert.Equal(t, loaded.LoadPointFromID.Id, res.Point.Snitch.Id)
+	assert.Equal(t, loaded.LoadPointFromID.X, 6)
+	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+
+	assert.Equal(t, called, 2)
 }
 
 func TestPassingObjectsAround(t *testing.T) {

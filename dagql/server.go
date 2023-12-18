@@ -142,30 +142,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	}
 }
 
-// resolveContext stores data in context.Context for use by Resolve.
-//
-// We might want to just turn this into args for the usual reasons, but it's
-// for telemetry related things, which feels as appropriate a reason as any.
-type resolveContext struct {
-	Parent digest.Digest
-}
-
-type resolveContextKey struct{}
-
-func parentFrom(ctx context.Context) (digest.Digest, bool) {
-	val := ctx.Value(resolveContextKey{})
-	if val == nil {
-		return "", false
-	}
-	return val.(resolveContext).Parent, true
-}
-
-func withParent(ctx context.Context, parent digest.Digest) context.Context {
-	cp, _ := ctx.Value(resolveContextKey{}).(resolveContext)
-	cp.Parent = parent
-	return context.WithValue(ctx, resolveContextKey{}, cp)
-}
-
 // Resolve resolves the given selections on the given object.
 //
 // Each selection is resolved in parallel, and the results are returned in a
@@ -238,31 +214,20 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		return nil, err
 	}
 
-	if s.rec != nil {
-		// TODO: I actually don't think we even need this. When we visualize the ID
-		// you can just take the digest of each input ID and correlate events that
-		// way. The relationships are already expressed.
-		inputs := []digest.Digest{}
-		if parent, ok := parentFrom(ctx); ok {
-			inputs = append(inputs, parent)
-		}
-		for _, arg := range sel.Selector.Args {
-			if obj, ok := arg.Value.(Object); ok {
-				argDig, err := obj.ID().Digest()
-				if err != nil {
-					return nil, err
-				}
-				inputs = append(inputs, argDig)
+	var val Typed
+	if chainedID.Tainted() {
+		val, err = self.Select(ctx, sel.Selector)
+	} else {
+		val, err = s.cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (Typed, error) {
+			if s.rec != nil {
+				vtx := s.rec.Vertex(dig, chainedID.Display())
+				defer vtx.Done(rerr)
+				ctx = ioctx.WithStdout(ctx, vtx.Stdout())
+				ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 			}
-		}
-		vtx := s.rec.Vertex(dig, chainedID.Display(), progrock.WithInputs(inputs...))
-		defer vtx.Done(rerr)
-		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
-		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
-		ctx = withParent(ctx, dig)
+			return self.Select(ctx, sel.Selector)
+		})
 	}
-
-	val, err := self.Select(ctx, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -552,8 +517,8 @@ func (InputObject[T]) Decoder() InputDecoder {
 	})
 }
 
-func (InputObject[T]) ToLiteral() *idproto.Literal {
-	var obj T
+func (input InputObject[T]) ToLiteral() *idproto.Literal {
+	obj := input.Value
 	objT := reflect.TypeOf(obj)
 	objV := reflect.ValueOf(obj)
 	if objV.Kind() != reflect.Struct {
