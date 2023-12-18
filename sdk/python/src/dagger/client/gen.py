@@ -3986,6 +3986,19 @@ class Client(Root):
         return Module(_ctx)
 
     @typecheck
+    async def current_type_defs(self) -> list["TypeDef"]:
+        """The TypeDef representations of the objects currently being served in
+        the session.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentTypeDefs", _args)
+        _ctx = TypeDef(_ctx)._select_multiple(
+            _kind="kind",
+            _optional="optional",
+        )
+        return await _ctx.execute(list[TypeDef])
+
+    @typecheck
     async def default_platform(self) -> Platform:
         """The default platform of the builder.
 

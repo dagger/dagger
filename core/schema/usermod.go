@@ -130,6 +130,18 @@ func (m *UserMod) Objects(ctx context.Context) (loadedObjects []*UserModObject, 
 	return objs, nil
 }
 
+func (m *UserMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	objs, err := m.Objects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	typeDefs := make([]*core.TypeDef, 0, len(objs))
+	for _, obj := range objs {
+		typeDefs = append(typeDefs, obj.typeDef)
+	}
+	return typeDefs, nil
+}
+
 func (m *UserMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:

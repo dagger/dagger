@@ -16,6 +16,11 @@ extend type Query {
   The module currently being served in the session, if any.
   """
   currentModule: Module
+
+  """
+  The TypeDef representations of the objects currently being served in the session.
+  """
+  currentTypeDefs: [TypeDef!]
 }
 
 type Module {

@@ -4967,6 +4967,39 @@ export class Client extends BaseClient {
   }
 
   /**
+   * The TypeDef representations of the objects currently being served in the session.
+   */
+  currentTypeDefs = async (): Promise<TypeDef[]> => {
+    type currentTypeDefs = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<currentTypeDefs[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "currentTypeDefs",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
    * The default platform of the builder.
    */
   defaultPlatform = async (): Promise<Platform> => {

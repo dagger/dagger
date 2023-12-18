@@ -3693,6 +3693,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// The TypeDef representations of the objects currently being served in the session.
+    pub fn current_type_defs(&self) -> Vec<TypeDef> {
+        let query = self.selection.select("currentTypeDefs");
+        return vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
     /// The default platform of the builder.
     pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
         let query = self.selection.select("defaultPlatform");

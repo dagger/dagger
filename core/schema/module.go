@@ -36,6 +36,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 			"typeDef":             ToResolver(s.typeDef),
 			"generatedCode":       ToResolver(s.generatedCode),
 			"moduleConfig":        ToResolver(s.moduleConfig),
+			"currentTypeDefs":     ToResolver(s.currentTypeDefs),
 		},
 		"Directory": ObjectResolver{
 			"asModule": ToResolver(s.directoryAsModule),
@@ -279,6 +280,14 @@ func (s *moduleSchema) currentModule(ctx context.Context, _, _ any) (*core.Modul
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
 	return mod.metadata, nil
+}
+
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, _, _ any) ([]*core.TypeDef, error) {
+	deps, err := s.APIServer.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current module: %w", err)
+	}
+	return deps.TypeDefs(ctx)
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, _ *core.Query, _ any) (*core.FunctionCall, error) {

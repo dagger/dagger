@@ -75,6 +75,15 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "The TypeDef representations of the objects currently being served in the session."
+    @spec current_type_defs(t()) :: {:ok, [Dagger.TypeDef.t()] | nil} | {:error, term()}
+    def current_type_defs(%__MODULE__{} = query) do
+      selection = select(query.selection, "currentTypeDefs")
+      execute(selection, query.client)
+    end
+  )
+
+  (
     @doc "The default platform of the builder."
     @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
     def default_platform(%__MODULE__{} = query) do

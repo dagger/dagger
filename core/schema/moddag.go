@@ -42,6 +42,9 @@ type Mod interface {
 	// The returned type will have any namespacing already applied.
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error)
+
+	// All the TypeDefs exposed by this module (does not include dependencies)
+	TypeDefs(ctx context.Context) ([]*core.TypeDef, error)
 }
 
 /*
@@ -162,4 +165,17 @@ func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModTyp
 		return modType, true, nil
 	}
 	return nil, false, nil
+}
+
+// All the TypeDefs exposed by this set of dependencies
+func (d *ModDeps) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	var typeDefs []*core.TypeDef
+	for _, mod := range d.mods {
+		modTypeDefs, err := mod.TypeDefs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
+		}
+		typeDefs = append(typeDefs, modTypeDefs...)
+	}
+	return typeDefs, nil
 }

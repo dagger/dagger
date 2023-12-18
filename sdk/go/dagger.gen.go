@@ -3635,6 +3635,40 @@ func (r *Client) CurrentModule() *Module {
 	}
 }
 
+// The TypeDef representations of the objects currently being served in the session.
+func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("currentTypeDefs")
+
+	q = q.Select("id")
+
+	type currentTypeDefs struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []currentTypeDefs) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []currentTypeDefs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // The default platform of the builder.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
