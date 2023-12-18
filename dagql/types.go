@@ -616,36 +616,30 @@ func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
 // Array is an array of GraphQL values.
 type Array[T Typed] []T
 
-func NewStringArray(elems ...string) Array[String] {
-	arr := make(Array[String], len(elems))
+// ToArray creates a new Array by applying the given function to each element
+// of the given slice.
+func ToArray[A any, T Typed](fn func(A) T, elems ...A) Array[T] {
+	arr := make(Array[T], len(elems))
 	for i, elem := range elems {
-		arr[i] = NewString(elem)
+		arr[i] = fn(elem)
 	}
 	return arr
+}
+
+func NewStringArray(elems ...string) Array[String] {
+	return ToArray(NewString, elems...)
 }
 
 func NewBoolArray(elems ...bool) Array[Boolean] {
-	arr := make(Array[Boolean], len(elems))
-	for i, elem := range elems {
-		arr[i] = NewBoolean(elem)
-	}
-	return arr
+	return ToArray(NewBoolean, elems...)
 }
 
 func NewIntArray(elems ...int) Array[Int] {
-	arr := make(Array[Int], len(elems))
-	for i, elem := range elems {
-		arr[i] = NewInt(elem)
-	}
-	return arr
+	return ToArray(NewInt, elems...)
 }
 
 func NewFloatArray(elems ...float64) Array[Float] {
-	arr := make(Array[Float], len(elems))
-	for i, elem := range elems {
-		arr[i] = NewFloat(elem)
-	}
-	return arr
+	return ToArray(NewFloat, elems...)
 }
 
 var _ Typed = Array[Typed]{}
