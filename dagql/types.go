@@ -80,15 +80,13 @@ type InputDecoder interface {
 }
 
 // Int is a GraphQL Int scalar.
-type Int struct {
-	Value int
-}
+type Int int
 
 func NewInt(val int) Int {
-	return Int{Value: val}
+	return Int(val)
 }
 
-var _ ScalarType = Int{}
+var _ ScalarType = Int(0)
 
 func (Int) TypeName() string {
 	return "Int"
@@ -128,16 +126,24 @@ func (Int) DecodeInput(val any) (Input, error) {
 	}
 }
 
-var _ Input = Int{}
+var _ Input = Int(0)
 
 func (Int) Decoder() InputDecoder {
-	return Int{}
+	return Int(0)
+}
+
+func (i Int) Int() int {
+	return int(i)
+}
+
+func (i Int) Int64() int64 {
+	return int64(i)
 }
 
 func (i Int) ToLiteral() *idproto.Literal {
 	return &idproto.Literal{
 		Value: &idproto.Literal_Int{
-			Int: int64(i.Value),
+			Int: i.Int64(),
 		},
 	}
 }
@@ -150,7 +156,7 @@ func (Int) Type() *ast.Type {
 }
 
 func (i Int) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Value)
+	return json.Marshal(i.Int())
 }
 
 func (i *Int) UnmarshalJSON(p []byte) error {
@@ -158,20 +164,18 @@ func (i *Int) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &num); err != nil {
 		return err
 	}
-	i.Value = num
+	*i = Int(num)
 	return nil
 }
 
 // Float is a GraphQL Float scalar.
-type Float struct {
-	Value float64
-}
+type Float float64
 
 func NewFloat(val float64) Float {
-	return Float{Value: val}
+	return Float(val)
 }
 
-var _ ScalarType = Float{}
+var _ ScalarType = Float(0)
 
 func (Float) TypeName() string {
 	return "Float"
@@ -209,18 +213,22 @@ func (Float) DecodeInput(val any) (Input, error) {
 	}
 }
 
-var _ Input = Float{}
+var _ Input = Float(0)
 
 func (Float) Decoder() InputDecoder {
-	return Float{}
+	return Float(0)
 }
 
-func (i Float) ToLiteral() *idproto.Literal {
+func (f Float) ToLiteral() *idproto.Literal {
 	return &idproto.Literal{
 		Value: &idproto.Literal_Float{
-			Float: i.Value,
+			Float: f.Float64(),
 		},
 	}
+}
+
+func (f Float) Float64() float64 {
+	return float64(f)
 }
 
 func (Float) Type() *ast.Type {
@@ -230,29 +238,27 @@ func (Float) Type() *ast.Type {
 	}
 }
 
-func (i Float) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Value)
+func (f Float) MarshalJSON() ([]byte, error) {
+	return json.Marshal(f.Float64())
 }
 
-func (i *Float) UnmarshalJSON(p []byte) error {
+func (f *Float) UnmarshalJSON(p []byte) error {
 	var num float64
 	if err := json.Unmarshal(p, &num); err != nil {
 		return err
 	}
-	i.Value = num
+	*f = Float(num)
 	return nil
 }
 
 // Boolean is a GraphQL Boolean scalar.
-type Boolean struct {
-	Value bool
-}
+type Boolean bool
 
 func NewBoolean(val bool) Boolean {
-	return Boolean{Value: val}
+	return Boolean(val)
 }
 
-var _ Typed = Boolean{}
+var _ Typed = Boolean(false)
 
 func (Boolean) Type() *ast.Type {
 	return &ast.Type{
@@ -261,7 +267,7 @@ func (Boolean) Type() *ast.Type {
 	}
 }
 
-var _ ScalarType = Boolean{}
+var _ ScalarType = Boolean(false)
 
 func (Boolean) TypeName() string {
 	return "Boolean"
@@ -291,43 +297,45 @@ func (Boolean) DecodeInput(val any) (Input, error) {
 	}
 }
 
-var _ Input = Boolean{}
+var _ Input = Boolean(false)
 
 func (Boolean) Decoder() InputDecoder {
-	return Boolean{}
+	return Boolean(false)
 }
 
 func (b Boolean) ToLiteral() *idproto.Literal {
 	return &idproto.Literal{
 		Value: &idproto.Literal_Bool{
-			Bool: b.Value,
+			Bool: b.Bool(),
 		},
 	}
 }
 
+func (b Boolean) Bool() bool {
+	return bool(b)
+}
+
 func (b Boolean) MarshalJSON() ([]byte, error) {
-	return json.Marshal(b.Value)
+	return json.Marshal(b.Bool())
 }
 
 func (b *Boolean) UnmarshalJSON(p []byte) error {
-	var num bool
-	if err := json.Unmarshal(p, &num); err != nil {
+	var val bool
+	if err := json.Unmarshal(p, &val); err != nil {
 		return err
 	}
-	b.Value = num
+	*b = Boolean(val)
 	return nil
 }
 
 // String is a GraphQL String scalar.
-type String struct {
-	Value string
-}
+type String string
 
 func NewString(val string) String {
-	return String{Value: val}
+	return String(val)
 }
 
-var _ Typed = String{}
+var _ Typed = String("")
 
 func (String) Type() *ast.Type {
 	return &ast.Type{
@@ -336,7 +344,7 @@ func (String) Type() *ast.Type {
 	}
 }
 
-var _ ScalarType = String{}
+var _ ScalarType = String("")
 
 func (String) TypeName() string {
 	return "String"
@@ -360,37 +368,47 @@ func (String) DecodeInput(val any) (Input, error) {
 	}
 }
 
-var _ Input = String{}
+var _ Input = String("")
 
 func (String) Decoder() InputDecoder {
-	return String{}
+	return String("")
 }
 
-func (i String) ToLiteral() *idproto.Literal {
+func (s String) ToLiteral() *idproto.Literal {
 	return &idproto.Literal{
 		Value: &idproto.Literal_String_{
-			String_: i.Value,
+			String_: s.String(),
 		},
 	}
 }
 
-func (i String) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i.Value)
+func (s String) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
 }
 
-func (i *String) UnmarshalJSON(p []byte) error {
+func (s *String) UnmarshalJSON(p []byte) error {
 	var str string
 	if err := json.Unmarshal(p, &str); err != nil {
 		return err
 	}
-	i.Value = str
+	*s = String(str)
 	return nil
+}
+
+func (s String) String() string {
+	return string(s)
 }
 
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
 	*idproto.ID
 	expected T
+}
+
+func NewID[T Typed](id *idproto.ID) ID[T] {
+	return ID[T]{
+		ID: id,
+	}
 }
 
 // TypeName returns the name of the type with "ID" appended, e.g. `FooID`.

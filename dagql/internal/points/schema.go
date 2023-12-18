@@ -77,8 +77,8 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 			Y dagql.Int `default:"0"`
 		}) (Point, error) {
 			return Point{
-				X: int(args.X.Value),
-				Y: int(args.Y.Value),
+				X: int(args.X.Int()),
+				Y: int(args.Y.Int()),
 			}, nil
 		}),
 		dagql.Func("loadPointFromID", func(ctx context.Context, self R, args struct {
@@ -101,7 +101,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		dagql.Func("shiftLeft", func(ctx context.Context, self Point, args struct {
 			Amount dagql.Int `default:"1"`
 		}) (Point, error) {
-			self.X -= args.Amount.Value
+			self.X -= args.Amount.Int()
 			return self, nil
 		}), // TODO @deprecate
 		dagql.Func("shift", func(ctx context.Context, self Point, args struct {
@@ -110,13 +110,13 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		}) (Point, error) {
 			switch args.Direction {
 			case DirectionUp:
-				self.Y += args.Amount.Value
+				self.Y += args.Amount.Int()
 			case DirectionDown:
-				self.Y -= args.Amount.Value
+				self.Y -= args.Amount.Int()
 			case DirectionLeft:
-				self.X -= args.Amount.Value
+				self.X -= args.Amount.Int()
 			case DirectionRight:
-				self.X += args.Amount.Value
+				self.X += args.Amount.Int()
 			}
 			return self, nil
 		}),

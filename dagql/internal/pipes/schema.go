@@ -26,7 +26,7 @@ func Install[Root dagql.Typed](srv *dagql.Server) {
 			Buffer dagql.Int `default:"0"`
 		}) (Pipe, error) {
 			return Pipe{
-				Channel: make(chan dagql.String, args.Buffer.Value),
+				Channel: make(chan dagql.String, args.Buffer.Int()),
 			}, nil
 		}),
 	}.Install(srv)
