@@ -14,30 +14,30 @@ type Point struct {
 	Y int
 }
 
-func (Point) Type() *ast.Type {
+func (*Point) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Point",
 		NonNull:   true,
 	}
 }
 
-func (Point) Description() string {
+func (*Point) Description() string {
 	return "A point in 2D space."
 }
 
 type Line struct {
-	From Point
-	To   Point
+	From *Point
+	To   *Point
 }
 
-func (Line) Type() *ast.Type {
+func (*Line) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Line",
 		NonNull:   true,
 	}
 }
 
-func (Line) Description() string {
+func (*Line) Description() string {
 	return "A line connecting two points."
 }
 
@@ -75,74 +75,76 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 		dagql.Func("point", func(ctx context.Context, self R, args struct {
 			X dagql.Int `default:"0"`
 			Y dagql.Int `default:"0"`
-		}) (Point, error) {
-			return Point{
+		}) (*Point, error) {
+			return &Point{
 				X: int(args.X.Int()),
 				Y: int(args.Y.Int()),
 			}, nil
 		}),
 		dagql.Func("loadPointFromID", func(ctx context.Context, self R, args struct {
-			ID dagql.ID[Point]
-		}) (dagql.Instance[Point], error) {
+			ID dagql.ID[*Point]
+		}) (dagql.Instance[*Point], error) {
 			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)
 
-	dagql.Fields[Point]{
-		dagql.Func("x", func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
+	dagql.Fields[*Point]{
+		dagql.Func("x", func(ctx context.Context, self *Point, _ any) (dagql.Int, error) {
 			return dagql.NewInt(self.X), nil
 		}),
-		dagql.Func("y", func(ctx context.Context, self Point, _ any) (dagql.Int, error) {
+		dagql.Func("y", func(ctx context.Context, self *Point, _ any) (dagql.Int, error) {
 			return dagql.NewInt(self.Y), nil
 		}),
-		dagql.Func("self", func(ctx context.Context, self Point, _ any) (Point, error) {
+		dagql.Func("self", func(ctx context.Context, self *Point, _ any) (*Point, error) {
 			return self, nil
 		}),
-		dagql.Func("shiftLeft", func(ctx context.Context, self Point, args struct {
+		dagql.Func("shiftLeft", func(ctx context.Context, self *Point, args struct {
 			Amount dagql.Int `default:"1"`
-		}) (Point, error) {
-			self.X -= args.Amount.Int()
-			return self, nil
+		}) (*Point, error) {
+			shifted := *self
+			shifted.X -= args.Amount.Int()
+			return &shifted, nil
 		}), // TODO @deprecate
-		dagql.Func("shift", func(ctx context.Context, self Point, args struct {
+		dagql.Func("shift", func(ctx context.Context, self *Point, args struct {
 			Direction Direction
 			Amount    dagql.Int `default:"1"`
-		}) (Point, error) {
+		}) (*Point, error) {
+			shifted := *self
 			switch args.Direction {
 			case DirectionUp:
-				self.Y += args.Amount.Int()
+				shifted.Y += args.Amount.Int()
 			case DirectionDown:
-				self.Y -= args.Amount.Int()
+				shifted.Y -= args.Amount.Int()
 			case DirectionLeft:
-				self.X -= args.Amount.Int()
+				shifted.X -= args.Amount.Int()
 			case DirectionRight:
-				self.X += args.Amount.Int()
+				shifted.X += args.Amount.Int()
 			}
-			return self, nil
+			return &shifted, nil
 		}),
-		dagql.Func("neighbors", func(ctx context.Context, self Point, _ any) (dagql.Array[Point], error) {
-			return []Point{
+		dagql.Func("neighbors", func(ctx context.Context, self *Point, _ any) (dagql.Array[*Point], error) {
+			return []*Point{
 				{X: self.X - 1, Y: self.Y},
 				{X: self.X + 1, Y: self.Y},
 				{X: self.X, Y: self.Y - 1},
 				{X: self.X, Y: self.Y + 1},
 			}, nil
 		}),
-		dagql.Func("line", func(ctx context.Context, self Point, args struct {
-			To dagql.ID[Point]
-		}) (Line, error) {
+		dagql.Func("line", func(ctx context.Context, self *Point, args struct {
+			To dagql.ID[*Point]
+		}) (*Line, error) {
 			to, err := args.To.Load(ctx, srv)
 			if err != nil {
-				return Line{}, err
+				return nil, err
 			}
-			return Line{self, to.Self}, nil
+			return &Line{self, to.Self}, nil
 		}),
 	}.Install(srv)
 
 	Directions.Install(srv)
 
-	dagql.Fields[Line]{
-		dagql.Func("length", func(ctx context.Context, self Line, _ any) (dagql.Float, error) {
+	dagql.Fields[*Line]{
+		dagql.Func("length", func(ctx context.Context, self *Line, _ any) (dagql.Float, error) {
 			// well this got more complicated than I planned
 			// √((x2 - x1)2 + (y2 - y1)2)
 			return dagql.NewFloat(
@@ -151,7 +153,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 						math.Pow(float64(self.To.Y-self.From.Y), 2)),
 			), nil
 		}),
-		dagql.Func("direction", func(ctx context.Context, self Line, _ any) (Direction, error) {
+		dagql.Func("direction", func(ctx context.Context, self *Line, _ any) (Direction, error) {
 			switch {
 			case self.From.X < self.To.X:
 				return DirectionRight, nil

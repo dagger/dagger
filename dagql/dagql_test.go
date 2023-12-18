@@ -90,7 +90,7 @@ func TestBasic(t *testing.T) {
 		}
 	}`, &res)
 
-	expectedID := idproto.New(points.Point{}.Type())
+	expectedID := idproto.New((&points.Point{}).Type())
 	expectedID.Append("point", &idproto.Argument{
 		Name:  "x",
 		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
@@ -99,7 +99,7 @@ func TestBasic(t *testing.T) {
 		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
 	})
 	expectedID.Append("shiftLeft")
-	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
+	expectedEnc, err := dagql.ID[*points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
 	assert.Equal(t, 7, res.Point.Y)
@@ -133,9 +133,9 @@ func TestNullableResults(t *testing.T) {
 			return args.Value, nil
 		}),
 		dagql.Func("nullablePoint", func(ctx context.Context, self Query, args struct {
-			Point dagql.Optional[dagql.ID[points.Point]]
-		}) (dagql.Nullable[points.Point], error) {
-			return dagql.MapOpt(args.Point, func(id dagql.ID[points.Point]) (points.Point, error) {
+			Point dagql.Optional[dagql.ID[*points.Point]]
+		}) (dagql.Nullable[*points.Point], error) {
+			return dagql.MapOpt(args.Point, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 				point, err := id.Load(ctx, srv)
 				return point.Self, err
 			})
@@ -148,10 +148,10 @@ func TestNullableResults(t *testing.T) {
 			})
 		}),
 		dagql.Func("nullableArrayOfPoints", func(ctx context.Context, self Query, args struct {
-			Array dagql.Optional[dagql.ArrayInput[dagql.ID[points.Point]]]
-		}) (dagql.Nullable[dagql.Array[points.Point]], error) {
-			return dagql.MapOpt(args.Array, func(id dagql.ArrayInput[dagql.ID[points.Point]]) (dagql.Array[points.Point], error) {
-				return dagql.MapArrayInput(id, func(id dagql.ID[points.Point]) (points.Point, error) {
+			Array dagql.Optional[dagql.ArrayInput[dagql.ID[*points.Point]]]
+		}) (dagql.Nullable[dagql.Array[*points.Point]], error) {
+			return dagql.MapOpt(args.Array, func(id dagql.ArrayInput[dagql.ID[*points.Point]]) (dagql.Array[*points.Point], error) {
+				return dagql.MapArrayInput(id, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 					point, err := id.Load(ctx, srv)
 					return point.Self, err
 				})
@@ -163,10 +163,10 @@ func TestNullableResults(t *testing.T) {
 			return args.Array.ToArray(), nil
 		}),
 		dagql.Func("arrayOfNullablePoints", func(ctx context.Context, self Query, args struct {
-			Array dagql.ArrayInput[dagql.Optional[dagql.ID[points.Point]]]
-		}) (dagql.Array[dagql.Nullable[points.Point]], error) {
-			return dagql.MapArrayInput(args.Array, func(id dagql.Optional[dagql.ID[points.Point]]) (dagql.Nullable[points.Point], error) {
-				return dagql.MapOpt(id, func(id dagql.ID[points.Point]) (points.Point, error) {
+			Array dagql.ArrayInput[dagql.Optional[dagql.ID[*points.Point]]]
+		}) (dagql.Array[dagql.Nullable[*points.Point]], error) {
+			return dagql.MapArrayInput(args.Array, func(id dagql.Optional[dagql.ID[*points.Point]]) (dagql.Nullable[*points.Point], error) {
+				return dagql.MapOpt(id, func(id dagql.ID[*points.Point]) (*points.Point, error) {
 					point, err := id.Load(ctx, srv)
 					return point.Self, err
 				})
@@ -467,7 +467,7 @@ func TestIDsReflectQuery(t *testing.T) {
 		}
 	}`, &res)
 
-	expectedID := idproto.New(points.Point{}.Type())
+	expectedID := idproto.New((&points.Point{}).Type())
 	expectedID.Append("point", &idproto.Argument{
 		Name:  "x",
 		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
@@ -476,7 +476,7 @@ func TestIDsReflectQuery(t *testing.T) {
 		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
 	})
 	expectedID.Append("shiftLeft")
-	expectedEnc, err := dagql.ID[points.Point]{ID: expectedID}.Encode()
+	expectedEnc, err := dagql.ID[*points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
 
@@ -522,8 +522,8 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	gql := client.New(handler.NewDefaultServer(srv))
 
 	called := 0
-	dagql.Fields[points.Point]{
-		dagql.Func("snitch", func(ctx context.Context, self points.Point, _ any) (points.Point, error) {
+	dagql.Fields[*points.Point]{
+		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ any) (*points.Point, error) {
 			called++
 			return self, nil
 		}),
@@ -575,8 +575,8 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	gql := client.New(handler.NewDefaultServer(srv))
 
 	called := 0
-	dagql.Fields[points.Point]{
-		dagql.Func("snitch", func(ctx context.Context, self points.Point, _ any) (points.Point, error) {
+	dagql.Fields[*points.Point]{
+		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ any) (*points.Point, error) {
 			called++
 			return self, nil
 		}).Impure(),
@@ -761,12 +761,12 @@ func TestEnums(t *testing.T) {
 	})
 
 	t.Run("invalid defaults", func(t *testing.T) {
-		dagql.Fields[points.Point]{
-			dagql.Func("badShift", func(ctx context.Context, self points.Point, args struct {
+		dagql.Fields[*points.Point]{
+			dagql.Func("badShift", func(ctx context.Context, self *points.Point, args struct {
 				Direction points.Direction `default:"BOGUS"`
 				Amount    dagql.Int        `default:"1"`
-			}) (points.Point, error) {
-				return points.Point{}, fmt.Errorf("should not be called")
+			}) (*points.Point, error) {
+				return nil, fmt.Errorf("should not be called")
 			}),
 		}.Install(srv)
 		var res struct {
