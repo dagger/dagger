@@ -44,5 +44,4 @@ func Install[Root dagql.Typed](srv *dagql.Server) {
 			return self, nil
 		}).Impure(),
 	}.Install(srv)
-
 }

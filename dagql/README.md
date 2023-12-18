@@ -45,7 +45,7 @@ into the Dagger account.
 
 ## TODO
 
-* [ ] parallel query execution
+* [x] parallel query execution
 * [ ] figure out whether constructor patterns are enshrined or ad-hoc
 * [x] figure out how to return objects that already have an ID (e.g. `loadFooFromID` should not have itself in the returned ID)
 * [ ] implement caching semantics, including `@impure` and `@meta`
@@ -56,16 +56,3 @@ into the Dagger account.
 * [ ] IDs should also contain digest of result (stretch goal, this is higher
   level, e.g. we want literal file checksums for objects that represent a file)
 * [x] get rid of Identified in favor of Object? (see interfaces + wrapping concern below)
-
-## minor things to reconsider
-
-* Right now pointers are avoided basically everywhere in favor of just using
-  structs, which results in copying values all over the place. This is pretty
-  opinionated, as it helps with the immutability goal. But it would be nice to
-  have the _option_ of using pointers.
-* Interfaces + wrapping = recipe for inscrutable failures. I'm leaning really
-  hard on Go's type system with generics and interfaces. Interfaces are defined
-  for lots of high-level concepts, which is needed in some cases because once
-  you have a generic you need some way to refer to it without making its type
-  concrete. The problem is if we also wrap types, because as we all know a
-  wrapper can't know what interfaces are implemented by the underlying type.
