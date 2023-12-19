@@ -182,7 +182,7 @@ class Downloader:
         # garbage collection of old binaries
         for file in self.cache_dir.glob(f"{self.CLI_BIN_PREFIX}*"):
             if file != cli_bin_path:
-                file.unlink()
+                file.unlink(missing_ok=True)
 
         return str(cli_bin_path.absolute())
 
