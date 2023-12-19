@@ -480,9 +480,9 @@ func (ps *parseState) fillObjectFunctionCase(
 		}
 
 		statements = append(statements,
-			If(Id(inputArgsVar).Index(Lit(spec.graphqlName())).Op("!=").Nil()).Block(
+			If(Id(inputArgsVar).Index(Lit(spec.name)).Op("!=").Nil()).Block(
 				Err().Op("=").Qual("json", "Unmarshal").Call(
-					Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.graphqlName()))),
+					Index().Byte().Parens(Id(inputArgsVar).Index(Lit(spec.name))),
 					Op("&").Add(target),
 				),
 				checkErrStatement,
