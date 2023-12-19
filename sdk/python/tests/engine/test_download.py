@@ -137,8 +137,10 @@ async def test_download_bin(cache_dir: anyio.Path):
 
     async def connect_once():
         await start.wait()
-        async with dagger.connection(dagger.Config(retry=None)):
-            assert await dagger.dag.default_platform()
+        # NB: Don't use global connection here since we want to test
+        # multiple concurrent connections.
+        async with dagger.Connection(dagger.Config(retry=None)) as client:
+            assert await client.default_platform()
 
     async with anyio.create_task_group() as tg:
         for _ in range(os.cpu_count() or 4):
