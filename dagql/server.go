@@ -210,6 +210,19 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	return s.toSelectable(id, val)
 }
 
+func LoadIDs[T Typed](ctx context.Context, srv *Server, ids ArrayInput[ID[T]]) ([]T, error) {
+	var out []T
+	for _, id := range ids {
+		// TODO(vito): parallelize, in case these IDs haven't been seen before
+		val, err := id.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, val.Self)
+	}
+	return out, nil
+}
+
 func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
 	chainedID, err := self.IDFor(sel.Selector)
 	if err != nil {
