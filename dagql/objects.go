@@ -242,6 +242,14 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 // To configure a description for the field in the schema, call .Doc on the
 // result.
 func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
+		return fn(ctx, self.Self, args)
+	})
+}
+
+// NodeFunc is the same as Func, except it passes the Instance instead of the
+// receiver so that you can access its ID.
+func NodeFunc[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
 	var zeroArgs A
 	inputs, argsErr := inputSpecsForType(zeroArgs)
 	if argsErr != nil {
@@ -266,7 +274,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 			if err := setInputFields(inputs, argVals, &args); err != nil {
 				return nil, err
 			}
-			return fn(ctx, self.Self, args)
+			return fn(ctx, self, args)
 		},
 	}
 }
