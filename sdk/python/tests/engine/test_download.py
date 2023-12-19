@@ -133,13 +133,19 @@ async def test_download_bin(cache_dir: anyio.Path):
     # and is already tested in go, skipping coverage here
 
     # run a bunch of provisions concurrently
+    start = anyio.Event()
+
     async def connect_once():
+        await start.wait()
+        # NB: Don't use global connection here since we want to test
+        # multiple concurrent connections.
         async with dagger.Connection(dagger.Config(retry=None)) as client:
             assert await client.default_platform()
 
     async with anyio.create_task_group() as tg:
         for _ in range(os.cpu_count() or 4):
             tg.start_soon(connect_once)
+        start.set()
 
     # assert that there's only one dagger binary in the cache
     i = 0
