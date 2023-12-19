@@ -1420,6 +1420,26 @@ func (r *Container) WithWorkdir(path string) *Container {
 	}
 }
 
+// Retrieves this container with unset default arguments for future commands.
+func (r *Container) WithoutDefaultArgs() *Container {
+	q := r.q.Select("withoutDefaultArgs")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset command entrypoint.
+func (r *Container) WithoutEntrypoint() *Container {
+	q := r.q.Select("withoutEntrypoint")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")
@@ -1504,6 +1524,30 @@ func (r *Container) WithoutRegistryAuth(address string) *Container {
 func (r *Container) WithoutUnixSocket(path string) *Container {
 	q := r.q.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset command user.
+//
+// Should default to root.
+func (r *Container) WithoutUser() *Container {
+	q := r.q.Select("withoutUser")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset working directory.
+//
+// Should default to "/".
+func (r *Container) WithoutWorkdir() *Container {
+	q := r.q.Select("withoutWorkdir")
 
 	return &Container{
 		q: q,

@@ -1837,6 +1837,24 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Retrieves this container with unset default arguments for future commands.
+    pub fn without_default_args(&self) -> Container {
+        let query = self.selection.select("withoutDefaultArgs");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command entrypoint.
+    pub fn without_entrypoint(&self) -> Container {
+        let query = self.selection.select("withoutEntrypoint");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Retrieves this container minus the given environment variable.
     ///
     /// # Arguments
@@ -1950,6 +1968,26 @@ impl Container {
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
         query = query.arg("path", path.into());
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command user.
+    /// Should default to root.
+    pub fn without_user(&self) -> Container {
+        let query = self.selection.select("withoutUser");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset working directory.
+    /// Should default to "/".
+    pub fn without_workdir(&self) -> Container {
+        let query = self.selection.select("withoutWorkdir");
         return Container {
             proc: self.proc.clone(),
             selection: query,

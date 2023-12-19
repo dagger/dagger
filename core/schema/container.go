@@ -59,8 +59,10 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"directory":               ToResolver(s.directory),
 		"user":                    ToResolver(s.user),
 		"withUser":                ToResolver(s.withUser),
+		"withoutUser":             ToResolver(s.withoutUser),
 		"workdir":                 ToResolver(s.workdir),
 		"withWorkdir":             ToResolver(s.withWorkdir),
+		"withoutWorkdir":          ToResolver(s.withoutWorkdir),
 		"envVariables":            ToResolver(s.envVariables),
 		"envVariable":             ToResolver(s.envVariable),
 		"withEnvVariable":         ToResolver(s.withEnvVariable),
@@ -72,8 +74,10 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"withoutLabel":            ToResolver(s.withoutLabel),
 		"entrypoint":              ToResolver(s.entrypoint),
 		"withEntrypoint":          ToResolver(s.withEntrypoint),
+		"withoutEntrypoint":       ToResolver(s.withoutEntrypoint),
 		"defaultArgs":             ToResolver(s.defaultArgs),
 		"withDefaultArgs":         ToResolver(s.withDefaultArgs),
+		"withoutDefaultArgs":      ToResolver(s.withoutDefaultArgs),
 		"mounts":                  ToResolver(s.mounts),
 		"withMountedDirectory":    ToResolver(s.withMountedDirectory),
 		"withMountedFile":         ToResolver(s.withMountedFile),
@@ -238,6 +242,13 @@ func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Conta
 	})
 }
 
+func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Entrypoint = nil
+		return cfg
+	})
+}
+
 func (s *containerSchema) entrypoint(ctx context.Context, parent *core.Container, args containerWithVariableArgs) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
@@ -263,6 +274,13 @@ func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Cont
 	})
 }
 
+func (s *containerSchema) withoutDefaultArgs(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Cmd = nil
+		return cfg
+	})
+}
+
 func (s *containerSchema) defaultArgs(ctx context.Context, parent *core.Container, args any) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
@@ -283,6 +301,13 @@ func (s *containerSchema) withUser(ctx context.Context, parent *core.Container, 
 	})
 }
 
+func (s *containerSchema) withoutUser(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.User = ""
+		return cfg
+	})
+}
+
 func (s *containerSchema) user(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
@@ -299,6 +324,13 @@ type containerWithWorkdirArgs struct {
 func (s *containerSchema) withWorkdir(ctx context.Context, parent *core.Container, args containerWithWorkdirArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, args.Path)
+		return cfg
+	})
+}
+
+func (s *containerSchema) withoutWorkdir(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = ""
 		return cfg
 	})
 }

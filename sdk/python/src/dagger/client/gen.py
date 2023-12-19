@@ -1531,6 +1531,22 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def without_default_args(self) -> "Container":
+        """Retrieves this container with unset default arguments for future
+        commands.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDefaultArgs", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_entrypoint(self) -> "Container":
+        """Retrieves this container with an unset command entrypoint."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutEntrypoint", _args)
+        return Container(_ctx)
+
+    @typecheck
     def without_env_variable(self, name: str) -> "Container":
         """Retrieves this container minus the given environment variable.
 
@@ -1643,6 +1659,26 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutUnixSocket", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_user(self) -> "Container":
+        """Retrieves this container with an unset command user.
+
+        Should default to root.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutUser", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_workdir(self) -> "Container":
+        """Retrieves this container with an unset working directory.
+
+        Should default to "/".
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutWorkdir", _args)
         return Container(_ctx)
 
     @typecheck
