@@ -704,6 +704,15 @@ func Opt[I Input](v I) Optional[I] {
 	}
 }
 
+// GetOr returns the value of the Optional, or the given value if the Optional
+// is empty.
+func (n Optional[I]) GetOr(v I) I {
+	if !n.Valid {
+		return v
+	}
+	return n.Value
+}
+
 // NoOpt returns an empty Optional value.
 func NoOpt[I Input]() Optional[I] {
 	return Optional[I]{}
