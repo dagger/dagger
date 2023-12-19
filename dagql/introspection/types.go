@@ -18,7 +18,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name dagql.String
 		}) (Type, error) {
-			def, ok := srv.Schema().Types[args.Name.Value]
+			def, ok := srv.Schema().Types[args.Name.String()]
 			if !ok {
 				return Type{}, fmt.Errorf("unknown type: %q", args.Name)
 			}
@@ -63,28 +63,28 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[Type]{
-		dagql.Func("name", func(ctx context.Context, self Type, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("name", func(ctx context.Context, self Type, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Name() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.Name())), nil
+				return dagql.NonNull(dagql.NewString(*self.Name())), nil
 			}
 		}),
 		dagql.Func("kind", func(ctx context.Context, self Type, args struct{}) (TypeKind, error) {
 			return TypeKinds.Lookup(self.Kind())
 		}),
-		dagql.Func("description", func(ctx context.Context, self Type, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self Type, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.Description())), nil
+				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
 		dagql.Func("fields", func(ctx context.Context, self Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
 		}) (dagql.Array[Field], error) {
 			var fields dagql.Array[Field]
-			for _, field := range self.Fields(args.IncludeDeprecated.Value) {
+			for _, field := range self.Fields(args.IncludeDeprecated.Bool()) {
 				fields = append(fields, NewField(field))
 			}
 			return fields, nil
@@ -114,7 +114,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			IncludeDeprecated dagql.Boolean `default:"false"`
 		}) (dagql.Array[EnumValue], error) {
 			var values []EnumValue
-			for _, val := range self.EnumValues(args.IncludeDeprecated.Value) {
+			for _, val := range self.EnumValues(args.IncludeDeprecated.Bool()) {
 				values = append(values, NewEnumValue(val))
 			}
 			return values, nil
@@ -131,11 +131,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self Directive, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self Directive, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self Directive, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.Description())), nil
+				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
 		dagql.Func("locations", func(ctx context.Context, self Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
@@ -162,11 +162,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self Field, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self Field, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self Field, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.Description())), nil
+				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
 		dagql.Func("args", func(ctx context.Context, self Field, _ struct{}) (dagql.Array[InputValue], error) {
@@ -182,11 +182,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("isDeprecated", func(ctx context.Context, self Field, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
 		}),
-		dagql.Func("deprecationReason", func(ctx context.Context, self Field, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("deprecationReason", func(ctx context.Context, self Field, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DeprecationReason() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.DeprecationReason())), nil
+				return dagql.NonNull(dagql.NewString(*self.DeprecationReason())), nil
 			}
 		}),
 	}.Install(srv)
@@ -195,21 +195,21 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self InputValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self InputValue, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.Description())), nil
+				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
 		dagql.Func("type", func(ctx context.Context, self InputValue, args struct{}) (Type, error) {
 			return NewType(*self.InputValue.Type), nil
 		}),
-		dagql.Func("defaultValue", func(ctx context.Context, self InputValue, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("defaultValue", func(ctx context.Context, self InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DefaultValue == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.DefaultValue)), nil
+				return dagql.NonNull(dagql.NewString(*self.DefaultValue)), nil
 			}
 		}),
 	}.Install(srv)
@@ -218,21 +218,21 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self EnumValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.Description())), nil
+				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
 		dagql.Func("isDeprecated", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
 		}),
-		dagql.Func("deprecationReason", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Optional[dagql.String], error) {
+		dagql.Func("deprecationReason", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DeprecationReason() == nil {
-				return dagql.NoOpt[dagql.String](), nil
+				return dagql.Null[dagql.String](), nil
 			} else {
-				return dagql.Opt(dagql.NewString(*self.DeprecationReason())), nil
+				return dagql.NonNull(dagql.NewString(*self.DeprecationReason())), nil
 			}
 		}),
 	}.Install(srv)
