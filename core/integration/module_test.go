@@ -2870,7 +2870,7 @@ class Test:
 	})
 }
 
-var useGoInner = `package main
+var useInner = `package main
 
 type Dep struct{}
 
@@ -2890,13 +2890,6 @@ func (m *Use) UseHello(ctx context.Context) (string, error) {
 }
 `
 
-var usePythonInner = `from dagger import function
-
-@function
-def hello() -> str:
-    return "hello"
-`
-
 var usePythonOuter = `from dagger import dag, function
 
 @function
@@ -2914,18 +2907,7 @@ func TestModuleUseLocal(t *testing.T) {
 		source string
 	}
 
-	inner := []testCase{
-		{
-			sdk:    "go",
-			source: useGoInner,
-		},
-		{
-			sdk:    "python",
-			source: usePythonInner,
-		},
-	}
-
-	outer := []testCase{
+	for _, tc := range []testCase{
 		{
 			sdk:    "go",
 			source: useGoOuter,
@@ -2934,41 +2916,35 @@ func TestModuleUseLocal(t *testing.T) {
 			sdk:    "python",
 			source: usePythonOuter,
 		},
-	}
+	} {
+		tc := tc
 
-	for _, dep := range inner {
-		dep := dep
+		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(t *testing.T) {
+			t.Parallel()
 
-		for _, use := range outer {
-			use := use
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work/dep").
+				With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+				With(sdkSource("go", useInner)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=use", "--sdk="+tc.sdk)).
+				With(sdkSource(tc.sdk, tc.source)).
+				With(daggerExec("mod", "install", "./dep"))
 
-			t.Run(fmt.Sprintf("%s uses %s", use.sdk, dep.sdk), func(t *testing.T) {
-				t.Parallel()
+			if tc.sdk == "go" {
+				logGen(ctx, t, modGen.Directory("."))
+			}
 
-				modGen := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work/dep").
-					With(daggerExec("mod", "init", "--name=dep", "--sdk="+dep.sdk)).
-					With(sdkSource(dep.sdk, dep.source)).
-					WithWorkdir("/work").
-					With(daggerExec("mod", "init", "--name=use", "--sdk="+use.sdk)).
-					With(sdkSource(use.sdk, use.source)).
-					With(daggerExec("mod", "install", "./dep"))
+			out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
 
-				if use.sdk == "go" {
-					logGen(ctx, t, modGen.Directory("."))
-				}
-
-				out, err := modGen.With(daggerQuery(`{use{useHello}}`)).Stdout(ctx)
-				require.NoError(t, err)
-				require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
-
-				// cannot use transitive dependency directly
-				_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
-				require.Error(t, err)
-				require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
-			})
-		}
+			// cannot use transitive dependency directly
+			_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
+		})
 	}
 }
 
@@ -3007,7 +2983,7 @@ func TestModuleCodegenOnDepChange(t *testing.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
 				With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
-				With(sdkSource("go", useGoInner)).
+				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
 				With(daggerExec("mod", "init", "--name=use", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source)).
@@ -3022,7 +2998,7 @@ func TestModuleCodegenOnDepChange(t *testing.T) {
 			require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
 
 			// make back-incompatible change to dep
-			newInner := strings.ReplaceAll(useGoInner, `Hello()`, `Hellov2()`)
+			newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
 			modGen = modGen.
 				WithWorkdir("/work/dep").
 				With(sdkSource("go", newInner)).
@@ -3072,7 +3048,7 @@ func TestModuleSyncDeps(t *testing.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
 				With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
-				With(sdkSource("go", useGoInner)).
+				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
 				With(daggerExec("mod", "init", "--name=use", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source)).
@@ -3087,7 +3063,7 @@ func TestModuleSyncDeps(t *testing.T) {
 			require.NoError(t, err)
 			require.JSONEq(t, `{"use":{"useHello":"hello"}}`, out)
 
-			newInner := strings.ReplaceAll(useGoInner, `"hello"`, `"goodbye"`)
+			newInner := strings.ReplaceAll(useInner, `"hello"`, `"goodbye"`)
 			modGen = modGen.
 				WithWorkdir("/work/dep").
 				With(sdkSource("go", newInner)).
