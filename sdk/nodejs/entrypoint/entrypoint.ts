@@ -58,7 +58,7 @@ async function entrypoint() {
         result = await invoke(parentName, fnName, parentArgs, args)
 
         // Load ID if it's a Dagger type with an id
-        if (result && result.id && typeof result.id === "function") {
+        if (typeof result?.id === "function") {
           result = await result.id()
         }
 
@@ -73,7 +73,8 @@ async function entrypoint() {
         }
       }
 
-      if (result) {
+      // If result is set, we stringify it
+      if (result !== undefined && result !== null) {
         result = JSON.stringify(result)
       } else {
         result = "null"

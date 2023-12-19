@@ -845,7 +845,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 			Contents: tsSignatures,
 		})
 
-	t.Run("func Hello() string", func(t *testing.T) {
+	t.Run("hello(): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
@@ -854,7 +854,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
-	t.Run("func Echoes([]string) []string", func(t *testing.T) {
+	t.Run("echoes(msgs: string[]): string[]", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
@@ -863,7 +863,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
-	t.Run("func EchoOptional(string) string", func(t *testing.T) {
+	t.Run("echoOptional(msg = 'default'): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
@@ -877,7 +877,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
 	})
 
-	t.Run("func EchoesVariadic(...string) string", func(t *testing.T) {
+	t.Run("echoesVariadic(...msgs: string[]): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: "hello")}}`)).Stdout(ctx)
@@ -886,7 +886,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
 
-	t.Run("func Echo(string) string", func(t *testing.T) {
+	t.Run("echo(msg: string): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
@@ -895,7 +895,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
-	t.Run("func EchoOptionalSlice([]string) string", func(t *testing.T) {
+	t.Run("echoOptionalSlice(msg = ['foobar']): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
@@ -909,16 +909,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"foobar...foobar...foobar..."}}`, out)
 	})
 
-	t.Run("func Echoes([]string) []string", func(t *testing.T) {
-		t.Parallel()
-
-		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
-
-		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
-	})
-
-	t.Run("func HelloVoid()", func(t *testing.T) {
+	t.Run("helloVoid(): void", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
@@ -927,7 +918,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
-	t.Run("func EchoOpts(string, string, int) error", func(t *testing.T) {
+	t.Run("echoOpts(msg: string, suffix: string = '', times: number = 1): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
@@ -3765,8 +3756,6 @@ func TestModuleTypescriptInit(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("mod", "init", "--name=My-Module", "--sdk=go"))
-
-		logGen(ctx, t, modGen.Directory("."))
 
 		out, err := modGen.
 			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
