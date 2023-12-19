@@ -390,6 +390,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 		// builtins
 		if !strings.HasPrefix(typeName, "__") {
 			idScalar := ID[T]{}
+			server.InstallScalar(idScalar)
 			server.scalars[idScalar.TypeName()] = idScalar
 			Field[T]{
 				Spec: FieldSpec{

@@ -55,6 +55,13 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
+// InstallScalar installs the given Scalar type into the schema.
+//
+// To install an Object type, use (Fields).Install.
+func (s *Server) InstallScalar(scalar ScalarType) {
+	s.scalars[scalar.TypeName()] = scalar
+}
+
 func (s *Server) RecordTo(rec *progrock.Recorder) {
 	s.rec = rec
 }
