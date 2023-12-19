@@ -55,10 +55,17 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
+// InstallObject installs the given Object type into the schema.
+func (s *Server) InstallObject(class ObjectType) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	s.classes[class.TypeName()] = class
+}
+
 // InstallScalar installs the given Scalar type into the schema.
-//
-// To install an Object type, use (Fields).Install.
 func (s *Server) InstallScalar(scalar ScalarType) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
 	s.scalars[scalar.TypeName()] = scalar
 }
 
@@ -76,6 +83,8 @@ var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
 func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whenever something is installed, instead
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}

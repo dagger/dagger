@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -18,13 +19,31 @@ import (
 // The class is defined by a set of fields, which are installed into the class
 // dynamically at runtime.
 type Class[T Typed] struct {
-	Fields map[string]*Field[T]
+	fields  map[string]*Field[T]
+	fieldsL *sync.Mutex
 }
 
 // NewClass returns a new empty class for a given type.
 func NewClass[T Typed]() Class[T] {
 	return Class[T]{
-		Fields: map[string]*Field[T]{},
+		fields:  map[string]*Field[T]{},
+		fieldsL: new(sync.Mutex),
+	}
+}
+
+func (class Class[T]) Field(name string) (Field[T], bool) {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	field, ok := class.fields[name]
+	return *field, ok
+}
+
+func (class Class[T]) Install(fields ...Field[T]) {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	for _, field := range fields {
+		field := field
+		class.fields[field.Spec.Name] = &field
 	}
 }
 
@@ -42,6 +61,8 @@ func (cls Class[T]) TypeName() string {
 //
 // Each currently defined field is installed on the returned definition.
 func (cls Class[T]) Definition() *ast.Definition {
+	cls.fieldsL.Lock()
+	defer cls.fieldsL.Unlock()
 	var zero T
 	var val any = zero
 	var def *ast.Definition
@@ -56,7 +77,7 @@ func (cls Class[T]) Definition() *ast.Definition {
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.Description()
 	}
-	for _, field := range cls.Fields { // TODO sort, or preserve order
+	for _, field := range cls.fields { // TODO sort, or preserve order
 		def.Fields = append(def.Fields, field.Definition())
 	}
 	return def
@@ -64,8 +85,8 @@ func (cls Class[T]) Definition() *ast.Definition {
 
 // ParseField parses a field selection into a Selector and return type.
 func (cls Class[T]) ParseField(astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
-	field := cls.Fields[astField.Name]
-	if field == nil {
+	field, ok := cls.Field(astField.Name)
+	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
@@ -112,7 +133,7 @@ func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
 
 // Call calls a field on the class against an instance.
 func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Typed) (Typed, error) {
-	field, ok := cls.Fields[fieldName]
+	field, ok := cls.Field(fieldName)
 	if !ok {
 		var zero T
 		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), fieldName)
@@ -151,7 +172,7 @@ func (r Instance[T]) String() string {
 }
 
 func (r Instance[T]) IDFor(sel Selector) (*idproto.ID, error) {
-	field, ok := r.Class.Fields[sel.Field]
+	field, ok := r.Class.Field(sel.Field)
 	if !ok {
 		var zero T
 		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
@@ -185,7 +206,7 @@ func (r Instance[T]) IDFor(sel Selector) (*idproto.ID, error) {
 
 // Select calls a field on the instance.
 func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err error) {
-	field, ok := r.Class.Fields[sel.Field]
+	field, ok := r.Class.Field(sel.Field)
 	if !ok {
 		var zero T
 		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
@@ -370,13 +391,12 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
+	server.installLock.Lock()
+	defer server.installLock.Unlock()
 	var t T
 	typeName := t.Type().Name()
 	class := fields.findOrInitializeType(server, typeName)
-	for _, field := range fields {
-		field := field
-		class.Fields[field.Spec.Name] = &field
-	}
+	class.Install(fields...)
 }
 
 func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Class[T] {
@@ -390,9 +410,8 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 		// builtins
 		if !strings.HasPrefix(typeName, "__") {
 			idScalar := ID[T]{}
-			server.InstallScalar(idScalar)
 			server.scalars[idScalar.TypeName()] = idScalar
-			Field[T]{
+			classT.Install(Field[T]{
 				Spec: FieldSpec{
 					Name: "id",
 					Type: idScalar,
@@ -400,7 +419,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
 					return ID[T]{ID: self.ID()}, nil
 				},
-			}.Install(classT)
+			})
 		}
 	} else {
 		classT = class.(Class[T])
@@ -412,12 +431,6 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 type Field[T Typed] struct {
 	Spec FieldSpec
 	Func func(context.Context, Instance[T], map[string]Typed) (Typed, error)
-}
-
-// Install installs the field into a class.
-func (field Field[T]) Install(class Class[T]) {
-	// TODO data race
-	class.Fields[field.Spec.Name] = &field
 }
 
 // Doc sets the description of the field. Each argument is joined by two empty
