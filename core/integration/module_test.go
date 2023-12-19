@@ -443,10 +443,7 @@ def hello() -> str:
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("mod", "init", "--name=hello-world", "--sdk=python")).
-			With(sdkSource("python", `import logging
-from dagger import field, function, log, object_type
-
-log.configure_logging(level=logging.DEBUG)
+			With(sdkSource("python", `from dagger import field, function, object_type
 
 @object_type
 class HelloWorld:
