@@ -6,8 +6,9 @@ defmodule Dagger.ObjectTypeDef do
           description: Dagger.String.t() | nil,
           fields: [Dagger.FieldTypeDef.t()] | nil,
           functions: [Dagger.Function.t()] | nil,
-          name: Dagger.String.t()
+          name: Dagger.String.t(),
+          source_module_name: Dagger.String.t() | nil
         }
   @derive Nestru.Decoder
-  defstruct [:constructor, :description, :fields, :functions, :name]
+  defstruct [:constructor, :description, :fields, :functions, :name, :source_module_name]
 end

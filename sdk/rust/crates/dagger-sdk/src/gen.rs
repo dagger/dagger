@@ -3527,6 +3527,11 @@ impl ObjectTypeDef {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Port {

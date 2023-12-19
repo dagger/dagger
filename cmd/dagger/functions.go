@@ -165,6 +165,12 @@ type FuncCommand struct {
 	// It can be useful to add persistent flags for all subcommands here.
 	Init func(*cobra.Command)
 
+	// BeforeLoad is called immediately before loading the module definition.
+	//
+	// It can be useful for applying any parsed flags to the FuncCommand that
+	// impact module loading.
+	BeforeLoad func(*FuncCommand) error
+
 	// Execute circumvents the default behavior of traversing  subcommands
 	// from the arguments, but still has access to the loaded objects from
 	// the module.
@@ -197,6 +203,11 @@ type FuncCommand struct {
 
 	// AfterResponse is called when the query has completed and returned a result.
 	AfterResponse func(*FuncCommand, *cobra.Command, *modTypeDef, any) error
+
+	// Whether to load core API types along side the user module types.
+	// TODO: this should become the default behavior once the CLI simplification
+	// work is done, can be removed at that time.
+	IncludeCore bool
 
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
@@ -310,6 +321,12 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	loader := rec.Vertex("cmd-func-loader", "load "+c.Name())
 	setCmdOutput(c, loader)
 
+	if fc.BeforeLoad != nil {
+		if err := fc.BeforeLoad(fc); err != nil {
+			return err
+		}
+	}
+
 	cmd, flags, err := fc.load(c, a, loader)
 	loader.Done(err)
 	if err != nil {
@@ -399,7 +416,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	}
 
 	load = vtx.Task("loading objects")
-	modDef, err := loadModObjects(ctx, dag, mod)
+	modDef, err := loadModObjects(ctx, dag, mod, fc.IncludeCore)
 	load.Done(err)
 	if err != nil {
 		return nil, nil, err

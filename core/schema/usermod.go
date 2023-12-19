@@ -137,7 +137,11 @@ func (m *UserMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 	}
 	typeDefs := make([]*core.TypeDef, 0, len(objs))
 	for _, obj := range objs {
-		typeDefs = append(typeDefs, obj.typeDef)
+		typeDef := obj.typeDef.Clone()
+		if typeDef.AsObject != nil {
+			typeDef.AsObject.SourceModuleName = m.Name()
+		}
+		typeDefs = append(typeDefs, typeDef)
 	}
 	return typeDefs, nil
 }

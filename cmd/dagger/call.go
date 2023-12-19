@@ -6,10 +6,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	experimentalIncludeCore bool
+)
+
 var callCmd = &FuncCommand{
 	Name:  "call",
 	Short: "Call a module function",
 	Long:  "Call a module function and print the result.\n\nOn a container, the stdout will be returned. On a directory, the list of entries, and on a file, its contents.",
+	Init: func(cmd *cobra.Command) {
+		cmd.PersistentFlags().BoolVarP(&experimentalIncludeCore, "experimental-include-core", "x", false, "Enable experimental inclusion of core APIs in the call command")
+	},
+	BeforeLoad: func(fc *FuncCommand) error {
+		fc.IncludeCore = experimentalIncludeCore
+		return nil
+	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		switch name {
 		case Container:

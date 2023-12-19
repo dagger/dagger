@@ -4632,6 +4632,7 @@ export class ModuleConfig extends BaseClient {
 export class ObjectTypeDef extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4639,12 +4640,14 @@ export class ObjectTypeDef extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _description?: string,
-    _name?: string
+    _name?: string,
+    _sourceModuleName?: string
   ) {
     super(parent)
 
     this._description = _description
     this._name = _name
+    this._sourceModuleName = _sourceModuleName
   }
 
   /**
@@ -4764,6 +4767,27 @@ export class ObjectTypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
         },
       ],
       await this._ctx.connection()
