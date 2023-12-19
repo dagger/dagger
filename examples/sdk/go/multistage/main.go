@@ -30,6 +30,7 @@ func main() {
 
 	prodImage := client.Container().
 		From("cgr.dev/chainguard/wolfi-base:latest").
+		WithDefaultArgs(). // Set CMD to []
 		WithFile("/bin/dagger", build.File("/src/dagger")).
 		WithEntrypoint([]string{"/bin/dagger"})
 
