@@ -101,6 +101,10 @@ func TestLoadGitLabels(t *testing.T) {
 					Value: "example.com",
 				},
 				{
+					Name:  "dagger.io/git.branch",
+					Value: "main",
+				},
+				{
 					Name:  "dagger.io/git.ref",
 					Value: detachedHead,
 				},
