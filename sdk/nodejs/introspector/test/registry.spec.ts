@@ -315,4 +315,37 @@ describe("Registry", function () {
     )
     assert.deepEqual(result, "Hello Dagger")
   })
+
+  it("Should support overriding default arg", async function () {
+    this.timeout(60000)
+
+    const registry = new Registry()
+
+    @registry.object
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    class HelloWorld {
+      @registry.func
+      sayHi(msg = ["foobar"]): string {
+        return msg.join(" ")
+      }
+    }
+
+    const defaultResult = await registry.getResult(
+      "HelloWorld",
+      "sayHi",
+      {},
+      {}
+    )
+    assert.deepEqual(defaultResult, "foobar")
+
+    const result = await registry.getResult(
+      "HelloWorld",
+      "sayHi",
+      {},
+      {
+        msg: ["hello", "there"],
+      }
+    )
+    assert.deepEqual(result, "hello there")
+  })
 })

@@ -170,7 +170,7 @@ export class Registry {
     return (
       fnStr
         .slice(fnStr.indexOf("(") + 1, fnStr.indexOf(")"))
-        .match(/([^\s,]+)/g) ?? []
+        .match(/\b(\w+)\b(?:(?=\s*[:=?]|,\s*|$))/g) ?? []
     )
   }
 }
