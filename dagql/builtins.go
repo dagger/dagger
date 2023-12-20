@@ -49,7 +49,7 @@ func builtinOrTyped(val any) (Typed, error) {
 			}
 			return arr, nil
 		default:
-			return nil, fmt.Errorf("cxxxxannot convert %T to a Typed value", val)
+			return nil, fmt.Errorf("cannot convert %T to a Typed value", val)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func builtinOrInput(val any) (Input, error) {
 				Elem: input,
 			}, nil
 		default:
-			return nil, fmt.Errorf("cyyyyannot convert %T to an Input value", val)
+			return nil, fmt.Errorf("cannot convert %T to an Input value", val)
 		}
 	}
 }
