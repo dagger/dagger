@@ -150,17 +150,16 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 }
 
 func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (map[string]any, error) {
-	doc := gqlOp.Doc
-	if doc == nil {
+	if gqlOp.Doc == nil {
 		var err error
-		doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
+		gqlOp.Doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	results := make(map[string]any)
-	for _, op := range doc.Operations {
+	for _, op := range gqlOp.Doc.Operations {
 		switch op.Operation {
 		case ast.Query:
 			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
