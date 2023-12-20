@@ -610,11 +610,13 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 			if err != nil {
 				return fmt.Errorf("convert default value for arg %s: %w", name, err)
 			}
-		} else {
+		} else if zeroInput.Type().NonNull {
 			return fmt.Errorf("missing required input field %q", name)
 		}
-		if err := assign(fieldV, input); err != nil {
-			return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+		if input != nil { // will be nil for optional fields
+			if err := assign(fieldV, input); err != nil {
+				return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+			}
 		}
 	}
 	return nil

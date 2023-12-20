@@ -814,6 +814,7 @@ type DefaultsInput struct {
 	String      dagql.String  `default:"hello, world!"`
 	EmptyString dagql.String  `default:""`
 	Float       dagql.Float   `default:"3.14"`
+	Optional    dagql.Optional[dagql.String]
 
 	EmbeddedWrapped
 }
@@ -833,7 +834,7 @@ type BuiltinsInput struct {
 	String      string  `default:"hello, world!"`
 	EmptyString string  `default:""`
 	Float       float64 `default:"3.14"`
-	// Optional *string
+	Optional    *string
 	EmbeddedBuiltins
 	InvalidButIgnored any `name:"-"`
 }
@@ -1035,11 +1036,12 @@ func TestInputObjects(t *testing.T) {
 }
 
 type Defaults struct {
-	Boolean     dagql.Boolean `field:"true" default:"true"`
-	Int         dagql.Int     `field:"true" default:"42"`
-	String      dagql.String  `field:"true" default:"hello, world!"`
-	EmptyString dagql.String  `field:"true" default:""`
-	Float       dagql.Float   `field:"true" default:"3.14"`
+	Boolean     dagql.Boolean                `field:"true" default:"true"`
+	Int         dagql.Int                    `field:"true" default:"42"`
+	String      dagql.String                 `field:"true" default:"hello, world!"`
+	EmptyString dagql.String                 `field:"true" default:""`
+	Float       dagql.Float                  `field:"true" default:"3.14"`
+	Optional    dagql.Optional[dagql.String] `field:"true"`
 
 	EmbeddedWrapped
 }
@@ -1202,6 +1204,7 @@ type Builtins struct {
 	String      string  `field:"true" default:"hello, world!"`
 	EmptyString string  `field:"true" default:""`
 	Float       float64 `field:"true" default:"3.14"`
+	Optional    *string `field:"true"`
 	EmbeddedBuiltins
 	InvalidButIgnored any `name:"-"`
 }
@@ -1243,16 +1246,18 @@ func TestBuiltins(t *testing.T) {
 				Float     float64
 				Slice     []int
 				DeepSlice [][]int
+				Optional  *string
 			}
 		}
 		req(t, gql, `query {
-			builtins(boolean: false, int: 21, string: "goodbye, world!", float: 6.28, slice: [4, 5], deepSlice: [[4], [5]]) {
+			builtins(boolean: false, int: 21, string: "goodbye, world!", float: 6.28, slice: [4, 5], deepSlice: [[4], [5]], optional: "present") {
 				boolean
 				int
 				string
 				float
 				slice
 				deepSlice
+				optional
 			}
 		}`, &res)
 
@@ -1262,6 +1267,7 @@ func TestBuiltins(t *testing.T) {
 		assert.Check(t, cmp.Equal(6.28, res.Builtins.Float))
 		assert.Check(t, cmp.DeepEqual([]int{4, 5}, res.Builtins.Slice))
 		assert.Check(t, cmp.DeepEqual([][]int{{4}, {5}}, res.Builtins.DeepSlice))
+		assert.Check(t, cmp.DeepEqual(ptr("present"), res.Builtins.Optional))
 	})
 
 	t.Run("with defaults", func(t *testing.T) {
@@ -1279,6 +1285,7 @@ func TestBuiltins(t *testing.T) {
 				Float     float64
 				Slice     []int
 				DeepSlice [][]int
+				Optional  *string
 			}
 		}
 		req(t, gql, `query {
@@ -1289,6 +1296,7 @@ func TestBuiltins(t *testing.T) {
 				float
 				slice
 				deepSlice
+				optional
 			}
 		}`, &res)
 
@@ -1298,6 +1306,7 @@ func TestBuiltins(t *testing.T) {
 		assert.Check(t, cmp.Equal(3.14, res.Builtins.Float))
 		assert.Check(t, cmp.DeepEqual([]int{1, 2, 3}, res.Builtins.Slice))
 		assert.Check(t, cmp.DeepEqual([][]int{{1, 2}, {3}}, res.Builtins.DeepSlice))
+		assert.Check(t, res.Builtins.Optional == nil)
 	})
 
 	t.Run("invalid defaults for builtins", func(t *testing.T) {
