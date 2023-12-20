@@ -108,12 +108,25 @@ export function isOptional(param: ts.Symbol): OptionalValue {
         parameterDeclaration.initializer !== undefined
 
       if (parameterDeclaration.initializer !== undefined) {
-        result.defaultValue = parameterDeclaration.initializer.getText()
+        result.defaultValue = formatDefaultValue(
+          parameterDeclaration.initializer.getText()
+        )
       }
     }
   }
 
   return result
+}
+
+function formatDefaultValue(value: string): string {
+  const isSingleQuoteString = (): boolean =>
+    value.startsWith("'") && value.endsWith("'")
+
+  if (isSingleQuoteString()) {
+    return `"${value.slice(1, value.length - 1)}"`
+  }
+
+  return value
 }
 
 /**
