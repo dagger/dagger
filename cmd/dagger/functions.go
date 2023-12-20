@@ -165,12 +165,6 @@ type FuncCommand struct {
 	// It can be useful to add persistent flags for all subcommands here.
 	Init func(*cobra.Command)
 
-	// BeforeLoad is called immediately before loading the module definition.
-	//
-	// It can be useful for applying any parsed flags to the FuncCommand that
-	// impact module loading.
-	BeforeLoad func(*FuncCommand) error
-
 	// Execute circumvents the default behavior of traversing  subcommands
 	// from the arguments, but still has access to the loaded objects from
 	// the module.
@@ -181,18 +175,13 @@ type FuncCommand struct {
 	// It can be useful to add any additional flags for a subcommand here.
 	BeforeParse func(*FuncCommand, *cobra.Command, *modFunction) error
 
-	// OnSelectObjectLeaf is called when adding a query selection on a
-	// function that returns an object with no subsequent chainable
-	// functions (e.g., Container).
+	// OnSelectObjectLeaf is called when a user provided command ends in a
+	// object and no more sub-commands are provided.
 	//
-	// It can be useful to add an additional field selection for the object.
+	// If set, it should make another selection on the object that results
+	// return no error. Otherwise if it doesn't handle the object, it should
+	// return an error.
 	OnSelectObjectLeaf func(*FuncCommand, string) error
-
-	// OnSelectObjectList is called when adding a query selection on a
-	// function that returns a list of objects.
-	//
-	// It can be useful to add an additional field selection for each object.
-	OnSelectObjectList func(*FuncCommand, *modObject) error
 
 	// BeforeRequest is called before making the request with the query that
 	// contains the whole chain of functions.
@@ -203,11 +192,6 @@ type FuncCommand struct {
 
 	// AfterResponse is called when the query has completed and returned a result.
 	AfterResponse func(*FuncCommand, *cobra.Command, *modTypeDef, any) error
-
-	// Whether to load core API types along side the user module types.
-	// TODO: this should become the default behavior once the CLI simplification
-	// work is done, can be removed at that time.
-	IncludeCore bool
 
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
@@ -321,12 +305,6 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	loader := rec.Vertex("cmd-func-loader", "load "+c.Name())
 	setCmdOutput(c, loader)
 
-	if fc.BeforeLoad != nil {
-		if err := fc.BeforeLoad(fc); err != nil {
-			return err
-		}
-	}
-
 	cmd, flags, err := fc.load(c, a, loader)
 	loader.Done(err)
 	if err != nil {
@@ -416,7 +394,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	}
 
 	load = vtx.Task("loading objects")
-	modDef, err := loadModObjects(ctx, dag, mod, fc.IncludeCore)
+	modDef, err := loadModObjects(ctx, dag, mod)
 	load.Done(err)
 	if err != nil {
 		return nil, nil, err
@@ -528,14 +506,28 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			obj := fn.ReturnType.AsObject
-			if obj == nil && fn.ReturnType.AsList != nil {
-				obj = fn.ReturnType.AsList.ElementTypeDef.AsObject
-			}
+			switch fn.ReturnType.Kind {
+			case dagger.Objectkind:
+				if fc.OnSelectObjectLeaf == nil {
+					// there is no handling of this object and no further selections, error out
+					fc.showUsage = true
+					return fmt.Errorf("%q requires a sub-command", cmd.Name())
+				}
 
-			if obj != nil && len(obj.GetFunctions()) > 0 {
-				fc.showUsage = true
-				return fmt.Errorf("%q requires a sub-command", cmd.Name())
+				// the top-level command may handle this via OnSelectObjectLeaf
+				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.AsObject.Name)
+				if err != nil {
+					fc.showUsage = true
+					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
+				}
+
+			case dagger.Listkind:
+				obj := fn.ReturnType.AsList.ElementTypeDef.AsObject
+				if obj != nil && len(obj.GetFunctions()) > 0 {
+					// we don't handle lists of objects w/ extra functions on any commands right now
+					fc.showUsage = true
+					return fmt.Errorf("%q requires a sub-command", cmd.Name())
+				}
 			}
 
 			if fc.BeforeRequest != nil {
@@ -657,30 +649,6 @@ func (fc *FuncCommand) selectFunc(selectName string, fn *modFunction, cmd *cobra
 		}
 
 		fc.Arg(arg.Name, val)
-	}
-
-	ret := fn.ReturnType
-
-	switch ret.Kind {
-	case dagger.Objectkind:
-		// Possible to continue chaining.
-		if len(ret.AsObject.GetFunctions()) > 0 {
-			break
-		}
-		// Otherwise this is a leaf.
-		if fc.OnSelectObjectLeaf != nil {
-			err := fc.OnSelectObjectLeaf(fc, ret.AsObject.Name)
-			if err != nil {
-				return err
-			}
-		}
-	case dagger.Listkind:
-		if fc.OnSelectObjectList != nil && ret.AsList.ElementTypeDef.AsObject != nil {
-			err := fc.OnSelectObjectList(fc, ret.AsList.ElementTypeDef.AsObject)
-			if err != nil {
-				return err
-			}
-		}
 	}
 
 	return nil

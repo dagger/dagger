@@ -487,7 +487,7 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 }
 
 // loadModObjects loads the objects defined by the given module in an easier to use data structure.
-func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module, includeCore bool) (*moduleDef, error) {
+func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
 	var res struct {
 		Mod struct {
 			Name string
@@ -604,25 +604,7 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module,
 		return nil, fmt.Errorf("query module objects: %w", err)
 	}
 
-	modName := res.Mod.Name
-	typeDefs := res.TypeDefs
-	if !includeCore {
-		var filteredTypeDefs []*modTypeDef
-		for _, typeDef := range typeDefs {
-			obj := typeDef.AsObject
-			if obj == nil {
-				continue
-			}
-			if obj.SourceModuleName == "" {
-				// core objects have no source module name
-				continue
-			}
-			filteredTypeDefs = append(filteredTypeDefs, typeDef)
-		}
-		typeDefs = filteredTypeDefs
-	}
-
-	return &moduleDef{Name: modName, Objects: typeDefs}, nil
+	return &moduleDef{Name: res.Mod.Name, Objects: res.TypeDefs}, nil
 }
 
 // moduleDef is a representation of dagger.Module.

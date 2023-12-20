@@ -27,7 +27,7 @@ var upCmd = &FuncCommand{
 		case Container:
 			c.Select("asService")
 		default:
-			return fmt.Errorf("up can only be called on a service or container")
+			return fmt.Errorf("up can only be called on a service or container, not %q", name)
 		}
 		c.Select("id")
 		return nil
