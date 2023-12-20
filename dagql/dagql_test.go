@@ -333,7 +333,7 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-func TestLoadingByID(t *testing.T) {
+func TestLoadingFromID(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
 	points.Install[Query](srv)
@@ -786,31 +786,64 @@ func TestEnums(t *testing.T) {
 	})
 }
 
-type MyInput struct {
+type DefaultsInput struct {
 	Boolean     dagql.Boolean `default:"true"`
 	Int         dagql.Int     `default:"42"`
 	String      dagql.String  `default:"hello, world!"`
 	EmptyString dagql.String  `default:""`
 	Float       dagql.Float   `default:"3.14"`
+
+	EmbeddedInputs
 }
 
-func (MyInput) TypeName() string {
-	return "MyInput"
+type EmbeddedInputs struct {
+	Slice     dagql.ArrayInput[dagql.Int]                   `default:"[1, 2, 3]"`
+	DeepSlice dagql.ArrayInput[dagql.ArrayInput[dagql.Int]] `default:"[[1, 2], [3]]"`
+}
+
+func (DefaultsInput) TypeName() string {
+	return "DefaultsInput"
+}
+
+type BuiltinsInput struct {
+	Boolean     bool    `default:"true"`
+	Int         int     `default:"42"`
+	String      string  `default:"hello, world!"`
+	EmptyString string  `default:""`
+	Float       float64 `default:"3.14"`
+	// Optional *string
+	EmbeddedBuiltins
+	InvalidButIgnored any `name:"-"`
+}
+
+func (BuiltinsInput) TypeName() string {
+	return "BuiltinsInput"
 }
 
 func TestInputObjects(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	gql := client.New(handler.NewDefaultServer(srv))
 
-	dagql.MustInputSpec(MyInput{}).Install(srv)
+	dagql.MustInputSpec(DefaultsInput{}).Install(srv)
 
 	InstallDefaults(srv)
+	InstallBuiltins(srv)
 
 	dagql.Fields[Query]{
 		dagql.Func("myInput", func(ctx context.Context, self Query, args struct {
-			Input dagql.InputObject[MyInput]
+			Input dagql.InputObject[DefaultsInput]
 		}) (Defaults, error) {
 			return Defaults(args.Input.Value), nil
+		}),
+		dagql.Func("myBuiltinsInput", func(ctx context.Context, self Query, args struct {
+			Input dagql.InputObject[BuiltinsInput]
+		}) (Builtins, error) {
+			return Builtins(args.Input.Value), nil
+		}),
+		dagql.Func("loadInputFromID", func(ctx context.Context, self Query, args struct {
+			ID dagql.ID[Defaults]
+		}) (dagql.Instance[Defaults], error) {
+			return args.ID.Load(ctx, srv)
 		}),
 	}.Install(srv)
 
@@ -820,6 +853,8 @@ func TestInputObjects(t *testing.T) {
 		String      string
 		EmptyString string
 		Float       float64
+		Slice       []int
+		DeepSlice   [][]int
 	}
 
 	t.Run("inputs and defaults", func(t *testing.T) {
@@ -834,26 +869,106 @@ func TestInputObjects(t *testing.T) {
 				string
 				emptyString
 				float
+				slice
+				deepSlice
 			}
-			notDefaults: myInput(input: {boolean: false, int: 21, string: "goodbye, world!", emptyString: "not empty", float: 6.28}) {
+			notDefaults: myInput(input: {boolean: false, int: 21, string: "goodbye, world!", emptyString: "not empty", float: 6.28, slice: [4, 5], deepSlice: [[4], [5]]}) {
 				boolean
 				int
 				string
 				emptyString
 				float
+				slice
+				deepSlice
 			}
 		}`, &res)
 
-		assert.Equal(t, values{true, 42, "hello, world!", "", 3.14}, res.Defaults)
-		assert.Equal(t, values{false, 21, "goodbye, world!", "not empty", 6.28}, res.NotDefaults)
+		assert.DeepEqual(t, values{true, 42, "hello, world!", "", 3.14, []int{1, 2, 3}, [][]int{{1, 2}, {3}}}, res.Defaults)
+		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.NotDefaults)
+	})
+
+	t.Run("inputs with embedded structs in IDs", func(t *testing.T) {
+		var idRes struct {
+			MyInput struct {
+				Id string
+			}
+			DifferentEmbedded struct {
+				Id string
+			}
+		}
+		req(t, gql, `query {
+			myInput(input: {boolean: false, int: 21, string: "goodbye, world!", emptyString: "not empty", float: 6.28, slice: [4, 5], deepSlice: [[4], [5]]}) {
+				id
+			}
+			differentEmbedded: myInput(input: {boolean: false, int: 21, string: "goodbye, world!", emptyString: "not empty", float: 6.28, slice: [4, 5], deepSlice: [[6], [7]]}) {
+				id
+			}
+		}`, &idRes)
+
+		var id1, id2 idproto.ID
+		err := id1.Decode(idRes.MyInput.Id)
+		assert.NilError(t, err)
+		err = id2.Decode(idRes.DifferentEmbedded.Id)
+		assert.NilError(t, err)
+
+		t.Logf("id1: %s", id1.Display())
+		t.Logf("id2: %s", id2.Display())
+		assert.Assert(t, id1.Display() != id2.Display())
+
+		var res struct {
+			LoadInputFromID values
+		}
+		req(t, gql, `query {
+			loadInputFromID(id: "`+idRes.MyInput.Id+`") {
+				boolean
+				int
+				string
+				emptyString
+				float
+				slice
+				deepSlice
+			}
+		}`, &res)
+
+		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.LoadInputFromID)
+	})
+
+	t.Run("inputs with builtins and defaults", func(t *testing.T) {
+		var res struct {
+			NotDefaults values
+			Defaults    values
+		}
+		req(t, gql, `query {
+			defaults: myBuiltinsInput(input: {}) {
+				boolean
+				int
+				string
+				emptyString
+				float
+				slice
+				deepSlice
+			}
+			notDefaults: myBuiltinsInput(input: {boolean: false, int: 21, string: "goodbye, world!", emptyString: "not empty", float: 6.28, slice: [4, 5], deepSlice: [[4], [5]]}) {
+				boolean
+				int
+				string
+				emptyString
+				float
+				slice
+				deepSlice
+			}
+		}`, &res)
+
+		assert.DeepEqual(t, values{true, 42, "hello, world!", "", 3.14, []int{1, 2, 3}, [][]int{{1, 2}, {3}}}, res.Defaults)
+		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.NotDefaults)
 	})
 
 	t.Run("nullable inputs", func(t *testing.T) {
 		dagql.Fields[Query]{
 			dagql.Func("myOptionalInput", func(ctx context.Context, self Query, args struct {
-				Input dagql.Optional[dagql.InputObject[MyInput]]
+				Input dagql.Optional[dagql.InputObject[DefaultsInput]]
 			}) (dagql.Nullable[dagql.Boolean], error) {
-				return dagql.MapOpt(args.Input, func(input dagql.InputObject[MyInput]) (dagql.Boolean, error) {
+				return dagql.MapOpt(args.Input, func(input dagql.InputObject[DefaultsInput]) (dagql.Boolean, error) {
 					return input.Value.Boolean, nil
 				})
 			}),
@@ -878,9 +993,9 @@ func TestInputObjects(t *testing.T) {
 	t.Run("arrays of inputs", func(t *testing.T) {
 		dagql.Fields[Query]{
 			dagql.Func("myArrayInput", func(ctx context.Context, self Query, args struct {
-				Input dagql.ArrayInput[dagql.InputObject[MyInput]]
+				Input dagql.ArrayInput[dagql.InputObject[DefaultsInput]]
 			}) (dagql.Array[dagql.Boolean], error) {
-				return dagql.MapArrayInput(args.Input, func(input dagql.InputObject[MyInput]) (dagql.Boolean, error) {
+				return dagql.MapArrayInput(args.Input, func(input dagql.InputObject[DefaultsInput]) (dagql.Boolean, error) {
 					return input.Value.Boolean, nil
 				})
 			}),
@@ -903,6 +1018,8 @@ type Defaults struct {
 	String      dagql.String  `default:"hello, world!"`
 	EmptyString dagql.String  `default:""`
 	Float       dagql.Float   `default:"3.14"`
+
+	EmbeddedInputs
 }
 
 func (Defaults) Type() *ast.Type {
@@ -928,6 +1045,16 @@ func InstallDefaults(srv *dagql.Server) {
 		}),
 		dagql.Func("float", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Float, error) {
 			return self.Float, nil
+		}),
+		dagql.Func("slice", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Array[dagql.Int], error) {
+			return self.Slice.ToArray(), nil
+		}),
+		dagql.Func("deepSlice", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Array[dagql.Array[dagql.Int]], error) {
+			arrs := make([]dagql.Array[dagql.Int], len(self.DeepSlice))
+			for i, arr := range self.DeepSlice {
+				arrs[i] = arr.ToArray()
+			}
+			return arrs, nil
 		}),
 	}.Install(srv)
 }
@@ -1074,16 +1201,16 @@ func TestParallelism(t *testing.T) {
 }
 
 type Builtins struct {
-	Boolean bool    `default:"true"`
-	Int     int     `default:"42"`
-	String  string  `default:"hello, world!"`
-	Float   float64 `default:"3.14"`
-	Embedded
-
+	Boolean     bool    `default:"true"`
+	Int         int     `default:"42"`
+	String      string  `default:"hello, world!"`
+	EmptyString string  `default:""`
+	Float       float64 `default:"3.14"`
+	EmbeddedBuiltins
 	InvalidButIgnored any `name:"-"`
 }
 
-type Embedded struct {
+type EmbeddedBuiltins struct {
 	Slice     []int   `default:"[1, 2, 3]"`
 	DeepSlice [][]int `default:"[[1, 2], [3]]"` // chicago style
 }
@@ -1105,6 +1232,9 @@ func InstallBuiltins(srv *dagql.Server) {
 		}),
 		dagql.Func("string", func(ctx context.Context, self Builtins, _ struct{}) (string, error) {
 			return self.String, nil
+		}),
+		dagql.Func("emptyString", func(ctx context.Context, self Builtins, _ struct{}) (string, error) {
+			return self.EmptyString, nil
 		}),
 		dagql.Func("float", func(ctx context.Context, self Builtins, _ struct{}) (float64, error) {
 			return self.Float, nil

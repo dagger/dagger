@@ -245,7 +245,7 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	return s.toSelectable(id, val)
 }
 
-func LoadIDs[T Typed](ctx context.Context, srv *Server, ids ArrayInput[ID[T]]) ([]T, error) {
+func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
 	var out []T
 	for _, id := range ids {
 		// TODO(vito): parallelize, in case these IDs haven't been seen before
@@ -557,44 +557,8 @@ func (InputObject[T]) Decoder() InputDecoder {
 			return nil, fmt.Errorf("expected map[string]any, got %T", val)
 		}
 		var obj T
-		objT := reflect.TypeOf(obj)
-		objV := reflect.ValueOf(&obj)
-		if objT.Kind() != reflect.Struct {
-			// TODO handle pointer?
-			return nil, fmt.Errorf("object must be a struct, got %T", obj)
-		}
-		for i := 0; i < objT.NumField(); i++ {
-			fieldT := objT.Field(i)
-			fieldV := objV.Elem().Field(i)
-			name := fieldT.Tag.Get("name")
-			if name == "" {
-				name = strcase.ToLowerCamel(fieldT.Name)
-			}
-			if name == "-" {
-				continue
-			}
-			zeroInput, ok := fieldV.Interface().(Input)
-			if !ok {
-				return nil, fmt.Errorf("field %q (%T) cannot be passed as an input", fieldT.Name, val)
-			}
-			var input Input
-			if val, ok := vals[name]; ok {
-				var err error
-				input, err = zeroInput.Decoder().DecodeInput(val)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
-					var err error
-					input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
-					if err != nil {
-						return nil, fmt.Errorf("convert default value for arg %s: %w", name, err)
-					}
-				}
-				// TODO is required-ness checked by now at schema validation?
-			}
-			fieldV.Set(reflect.ValueOf(input))
+		if err := setInputObjectFields(&obj, vals); err != nil {
+			return nil, err
 		}
 		return InputObject[T]{
 			Value: obj,
@@ -602,15 +566,84 @@ func (InputObject[T]) Decoder() InputDecoder {
 	})
 }
 
+func setInputObjectFields(obj any, vals map[string]any) error {
+	objT := reflect.TypeOf(obj).Elem()
+	objV := reflect.ValueOf(obj)
+	if objT.Kind() != reflect.Struct {
+		// TODO handle pointer?
+		return fmt.Errorf("object must be a struct, got %T", obj)
+	}
+	for i := 0; i < objT.NumField(); i++ {
+		fieldT := objT.Field(i)
+		fieldV := objV.Elem().Field(i)
+		name := fieldT.Tag.Get("name")
+		if name == "" {
+			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		if name == "-" {
+			continue
+		}
+		fieldI := fieldV.Interface()
+		if fieldT.Anonymous {
+			// embedded struct
+			val := reflect.New(fieldT.Type)
+			if err := setInputObjectFields(val.Interface(), vals); err != nil {
+				return err
+			}
+			fieldV.Set(val.Elem())
+			continue
+		}
+		zeroInput, err := builtinOrInput(fieldI)
+		if err != nil {
+			return fmt.Errorf("arg %q: %w", fieldT.Name, err)
+		}
+		var input Input
+		if val, ok := vals[name]; ok {
+			var err error
+			input, err = zeroInput.Decoder().DecodeInput(val)
+			if err != nil {
+				return err
+			}
+		} else {
+			if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
+				var err error
+				input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
+				if err != nil {
+					return fmt.Errorf("convert default value for arg %s: %w", name, err)
+				}
+			}
+			// TODO is required-ness checked by now at schema validation?
+		}
+		if err := assign(fieldV, input); err != nil {
+			return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+		}
+	}
+	return nil
+}
+
 func (input InputObject[T]) ToLiteral() *idproto.Literal {
 	obj := input.Value
+	args, err := collectLiteralArgs(obj)
+	if err != nil {
+		panic(fmt.Errorf("collectLiteralArgs: %w", err))
+	}
+	return &idproto.Literal{
+		Value: &idproto.Literal_Object{
+			Object: &idproto.Object{
+				Values: args,
+			},
+		},
+	}
+}
+
+func collectLiteralArgs(obj any) ([]*idproto.Argument, error) {
 	objT := reflect.TypeOf(obj)
 	objV := reflect.ValueOf(obj)
 	if objV.Kind() != reflect.Struct {
 		// TODO handle pointer?
-		panic(fmt.Errorf("object must be a struct, got %T", obj))
+		return nil, fmt.Errorf("object must be a struct, got %T", obj)
 	}
-	lit := &idproto.Object{}
+	args := []*idproto.Argument{}
 	for i := 0; i < objV.NumField(); i++ {
 		fieldT := objT.Field(i)
 		name := fieldT.Tag.Get("name")
@@ -620,19 +653,23 @@ func (input InputObject[T]) ToLiteral() *idproto.Literal {
 		if name == "-" {
 			continue
 		}
-		val := objV.Field(i).Interface()
-		input, ok := val.(Input)
-		if !ok {
-			panic(fmt.Errorf("arg %q (%T) cannot be passed as an input", fieldT.Name, val))
+		fieldI := objV.Field(i).Interface()
+		if fieldT.Anonymous {
+			subArgs, err := collectLiteralArgs(fieldI)
+			if err != nil {
+				return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
+			}
+			args = append(args, subArgs...)
+			continue
 		}
-		lit.Values = append(lit.Values, &idproto.Argument{
+		input, err := builtinOrInput(fieldI)
+		if err != nil {
+			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
+		}
+		args = append(args, &idproto.Argument{
 			Name:  name,
 			Value: input.ToLiteral(),
 		})
 	}
-	return &idproto.Literal{
-		Value: &idproto.Literal_Object{
-			Object: lit,
-		},
-	}
+	return args, nil
 }
