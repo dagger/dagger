@@ -234,6 +234,13 @@ export type ContainerWithDirectoryOpts = {
   owner?: string
 }
 
+export type ContainerWithEntrypointOpts = {
+  /**
+   * Don't remove the default arguments when setting the entrypoint.
+   */
+  keepDefaultArgs?: boolean
+}
+
 export type ContainerWithEnvVariableOpts = {
   /**
    * Replace `${VAR}` or $VAR in the value according to the current environment
@@ -1710,14 +1717,18 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container but with a different command entrypoint.
    * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
+   * @param opts.keepDefaultArgs Don't remove the default arguments when setting the entrypoint.
    */
-  withEntrypoint = (args: string[]): Container => {
+  withEntrypoint = (
+    args: string[],
+    opts?: ContainerWithEntrypointOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withEntrypoint",
-          args: { args },
+          args: { args, ...opts },
         },
       ],
       ctx: this._ctx,

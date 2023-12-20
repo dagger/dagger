@@ -261,6 +261,11 @@ type Container {
     Entrypoint to use for future executions (e.g., ["go", "run"]).
     """
     args: [String!]!
+
+    """
+    Don't remove the default arguments when setting the entrypoint.
+    """
+    keepDefaultArgs: Boolean = false
   ): Container!
 
   """

@@ -30,8 +30,7 @@ func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string, introspe
 			Contents:    runtimeTmpl,
 			Permissions: 0755,
 		}).
-		WithEntrypoint([]string{RuntimeExecutablePath}).
-		WithDefaultArgs()
+		WithEntrypoint([]string{RuntimeExecutablePath})
 }
 
 func (m *PythonSdk) Codegen(modSource *Directory, subPath string, introspectionJson string) *GeneratedCode {

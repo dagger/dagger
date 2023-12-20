@@ -503,11 +503,19 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"])."
-    @spec with_entrypoint(t(), [Dagger.String.t()]) :: Dagger.Container.t()
-    def with_entrypoint(%__MODULE__{} = container, args) do
+    @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"]).\n\n## Optional Arguments\n\n* `keep_default_args` - Don't remove the default arguments when setting the entrypoint."
+    @spec with_entrypoint(t(), [Dagger.String.t()], keyword()) :: Dagger.Container.t()
+    def with_entrypoint(%__MODULE__{} = container, args, optional_args \\ []) do
       selection = select(container.selection, "withEntrypoint")
       selection = arg(selection, "args", args)
+
+      selection =
+        if is_nil(optional_args[:keep_default_args]) do
+          selection
+        else
+          arg(selection, "keepDefaultArgs", optional_args[:keep_default_args])
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )

@@ -992,16 +992,24 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_entrypoint(self, args: Sequence[str]) -> "Container":
+    def with_entrypoint(
+        self,
+        args: Sequence[str],
+        *,
+        keep_default_args: bool | None = False,
+    ) -> "Container":
         """Retrieves this container but with a different command entrypoint.
 
         Parameters
         ----------
         args:
             Entrypoint to use for future executions (e.g., ["go", "run"]).
+        keep_default_args:
+            Don't remove the default arguments when setting the entrypoint.
         """
         _args = [
             Arg("args", args),
+            Arg("keepDefaultArgs", keep_default_args, False),
         ]
         _ctx = self._select("withEntrypoint", _args)
         return Container(_ctx)

@@ -33,8 +33,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 		WithExec([]string{"npm", "install"}).
 		// Add tsx to execute the entrypoint
 		WithExec([]string{"npm", "install", "-g", "tsx"}).
-		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
-		WithDefaultArgs(), nil
+		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}), nil
 }
 
 // Codegen returns the generated API client based on user's module
@@ -120,7 +119,7 @@ func (t *TypescriptSdk) Base(version string) *Container {
 	return dag.Container().
 		From(fmt.Sprintf("node:%s", version)).
 		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version)).
-		WithEntrypoint(nil)
+		WithoutEntrypoint()
 }
 
 // TODO: fix .. restriction
