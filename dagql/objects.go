@@ -552,6 +552,11 @@ func inputSpecsForType(obj any, optIn bool) ([]InputSpec, error) {
 			if err != nil {
 				return nil, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
 			}
+			if input.Type().NonNull {
+				input = DynamicOptional{
+					Elem: input,
+				}
+			}
 		}
 		inputSpecs = append(inputSpecs, InputSpec{
 			Name:        name,

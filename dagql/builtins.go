@@ -48,6 +48,23 @@ func builtinOrTyped(val any) (Typed, error) {
 				arr.Values = append(arr.Values, elem)
 			}
 			return arr, nil
+		case reflect.Ptr:
+			elem, err := builtinOrTyped(reflect.New(valT.Elem()).Elem().Interface())
+			if err != nil {
+				return nil, fmt.Errorf("slice elem: %w", err)
+			}
+			nul := DynamicNullable{
+				Elem: elem,
+			}
+			if !valV.IsNil() {
+				elem, err := builtinOrTyped(valV.Elem().Interface())
+				if err != nil {
+					return nil, fmt.Errorf("slice elem: %w", err)
+				}
+				nul.Value = elem
+				nul.Valid = true
+			}
+			return nul, nil
 		default:
 			return nil, fmt.Errorf("cannot convert %T to a Typed value", val)
 		}
@@ -113,6 +130,14 @@ func builtinOrInput(val any) (Input, error) {
 				return nil, fmt.Errorf("slice elem: %w", err)
 			}
 			return DynamicArrayInput{
+				Elem: input,
+			}, nil
+		case reflect.Ptr:
+			input, err := builtinOrInput(reflect.New(valT.Elem()).Elem().Interface())
+			if err != nil {
+				return nil, fmt.Errorf("slice elem: %w", err)
+			}
+			return DynamicOptional{
 				Elem: input,
 			}, nil
 		default:
