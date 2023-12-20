@@ -3,8 +3,9 @@ package introspection
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
-	"github.com/99designs/gqlgen/graphql/introspection"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
 	"github.com/vito/dagql/idproto"
@@ -12,15 +13,15 @@ import (
 
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
-		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (Schema, error) {
+		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
 		}),
 		dagql.Func("__type", func(ctx context.Context, self T, args struct {
-			Name dagql.String
-		}) (Type, error) {
-			def, ok := srv.Schema().Types[args.Name.String()]
+			Name string
+		}) (*Type, error) {
+			def, ok := srv.Schema().Types[args.Name]
 			if !ok {
-				return Type{}, fmt.Errorf("unknown type: %q", args.Name)
+				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
 			return WrapTypeFromDef(srv.Schema(), def), nil
 		}),
@@ -30,115 +31,89 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 
 	DirectiveLocations.Install(srv)
 
-	dagql.Fields[Schema]{
-		dagql.Func("queryType", func(ctx context.Context, self Schema, args struct{}) (Type, error) {
-			return NewType(*self.QueryType()), nil
+	dagql.Fields[*Schema]{
+		dagql.Func("queryType", func(ctx context.Context, self *Schema, args struct{}) (*Type, error) {
+			return self.QueryType(), nil
 		}),
-		dagql.Func("mutationType", func(ctx context.Context, self Schema, args struct{}) (dagql.Nullable[Type], error) {
+		dagql.Func("mutationType", func(ctx context.Context, self *Schema, args struct{}) (dagql.Nullable[*Type], error) {
 			if self.MutationType() == nil {
-				return dagql.Null[Type](), nil
+				return dagql.Null[*Type](), nil
 			}
-			return dagql.NonNull(NewType(*self.MutationType())), nil
+			return dagql.NonNull(self.MutationType()), nil
 		}),
-		dagql.Func("subscriptionType", func(ctx context.Context, self Schema, args struct{}) (dagql.Nullable[Type], error) {
+		dagql.Func("subscriptionType", func(ctx context.Context, self *Schema, args struct{}) (dagql.Nullable[*Type], error) {
 			if self.SubscriptionType() == nil {
-				return dagql.Null[Type](), nil
+				return dagql.Null[*Type](), nil
 			}
-			return dagql.NonNull(NewType(*self.SubscriptionType())), nil
+			return dagql.NonNull(self.SubscriptionType()), nil
 		}),
-		dagql.Func("types", func(ctx context.Context, self Schema, args struct{}) (dagql.Array[Type], error) {
-			var types []Type
-			for _, def := range self.Types() {
-				types = append(types, NewType(def))
-			}
-			return types, nil
+		dagql.Func("types", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Type], error) {
+			return self.Types(), nil
 		}),
-		dagql.Func("directives", func(ctx context.Context, self Schema, args struct{}) (dagql.Array[Directive], error) {
-			var directives []Directive
-			for _, dir := range self.Directives() {
-				directives = append(directives, NewDirective(dir))
-			}
-			return directives, nil
+		dagql.Func("directives", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Directive], error) {
+			return self.Directives(), nil
 		}),
 	}.Install(srv)
 
-	dagql.Fields[Type]{
-		dagql.Func("name", func(ctx context.Context, self Type, args struct{}) (dagql.Nullable[dagql.String], error) {
+	dagql.Fields[*Type]{
+		dagql.Func("name", func(ctx context.Context, self *Type, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Name() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Name())), nil
 			}
 		}),
-		dagql.Func("kind", func(ctx context.Context, self Type, args struct{}) (TypeKind, error) {
-			return TypeKinds.Lookup(self.Kind())
+		dagql.NodeFunc("kind", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (TypeKind, error) {
+			return TypeKinds.Lookup(self.Self.Kind())
 		}),
-		dagql.Func("description", func(ctx context.Context, self Type, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self *Type, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
-		dagql.Func("fields", func(ctx context.Context, self Type, args struct {
+		dagql.Func("fields", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
-		}) (dagql.Array[Field], error) {
-			var fields dagql.Array[Field]
-			for _, field := range self.Fields(args.IncludeDeprecated.Bool()) {
-				fields = append(fields, NewField(field))
-			}
-			return fields, nil
+		}) (dagql.Array[*Field], error) {
+			return self.Fields(args.IncludeDeprecated.Bool()), nil
 		}),
-		dagql.Func("inputFields", func(ctx context.Context, self Type, _ struct{}) (dagql.Array[InputValue], error) {
-			var args []InputValue
-			for _, arg := range self.InputFields() {
-				args = append(args, NewInputValue(arg))
-			}
-			return args, nil
+		dagql.Func("inputFields", func(ctx context.Context, self *Type, _ struct{}) (dagql.Array[*InputValue], error) {
+			return self.InputFields(), nil
 		}),
-		dagql.Func("interfaces", func(ctx context.Context, self Type, args struct{}) (dagql.Array[Type], error) {
-			var interfaces []Type
-			for _, iface := range self.Interfaces() {
-				interfaces = append(interfaces, NewType(iface))
-			}
-			return interfaces, nil
+		dagql.Func("interfaces", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*Type], error) {
+			return self.Interfaces(), nil
 		}),
-		dagql.Func("possibleTypes", func(ctx context.Context, self Type, args struct{}) (dagql.Array[Type], error) {
-			var possibleTypes []Type
-			for _, iface := range self.PossibleTypes() {
-				possibleTypes = append(possibleTypes, NewType(iface))
-			}
-			return possibleTypes, nil
+		dagql.Func("possibleTypes", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*Type], error) {
+			return self.PossibleTypes(), nil
 		}),
-		dagql.Func("enumValues", func(ctx context.Context, self Type, args struct {
+		dagql.Func("enumValues", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
-		}) (dagql.Array[EnumValue], error) {
-			var values []EnumValue
-			for _, val := range self.EnumValues(args.IncludeDeprecated.Bool()) {
-				values = append(values, NewEnumValue(val))
-			}
-			return values, nil
+		}) (dagql.Array[*EnumValue], error) {
+			return self.EnumValues(args.IncludeDeprecated.Bool()), nil
 		}),
-		dagql.Func("ofType", func(ctx context.Context, self Type, args struct{}) (dagql.Nullable[Type], error) {
-			if self.OfType() == nil {
-				return dagql.Null[Type](), nil
+		dagql.NodeFunc("ofType", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (dagql.Nullable[*Type], error) {
+			switch self.Self.Kind() {
+			case "LIST", "NON_NULL":
+				return dagql.NonNull(self.Self.OfType()), nil
+			default:
+				return dagql.Null[*Type](), nil
 			}
-			return dagql.NonNull(NewType(*self.OfType())), nil
 		}),
 	}.Install(srv)
 
-	dagql.Fields[Directive]{
-		dagql.Func("name", func(ctx context.Context, self Directive, args struct{}) (dagql.String, error) {
+	dagql.Fields[*Directive]{
+		dagql.Func("name", func(ctx context.Context, self *Directive, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self Directive, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self *Directive, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
-		dagql.Func("locations", func(ctx context.Context, self Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
+		dagql.Func("locations", func(ctx context.Context, self *Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
 			var locations []DirectiveLocation
 			for _, loc := range self.Locations {
 				enum, err := DirectiveLocations.Lookup(loc)
@@ -149,40 +124,32 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			}
 			return locations, nil
 		}),
-		dagql.Func("args", func(ctx context.Context, self Directive, _ struct{}) (dagql.Array[InputValue], error) {
-			var args []InputValue
-			for _, arg := range self.Args {
-				args = append(args, NewInputValue(arg))
-			}
-			return args, nil
+		dagql.Func("args", func(ctx context.Context, self *Directive, _ struct{}) (dagql.Array[*InputValue], error) {
+			return self.Args, nil
 		}),
 	}.Install(srv)
 
-	dagql.Fields[Field]{
-		dagql.Func("name", func(ctx context.Context, self Field, args struct{}) (dagql.String, error) {
+	dagql.Fields[*Field]{
+		dagql.Func("name", func(ctx context.Context, self *Field, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self Field, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self *Field, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
-		dagql.Func("args", func(ctx context.Context, self Field, _ struct{}) (dagql.Array[InputValue], error) {
-			var args []InputValue
-			for _, arg := range self.Args {
-				args = append(args, NewInputValue(arg))
-			}
-			return args, nil
+		dagql.Func("args", func(ctx context.Context, self *Field, _ struct{}) (dagql.Array[*InputValue], error) {
+			return self.Args, nil
 		}),
-		dagql.Func("type", func(ctx context.Context, self Field, args struct{}) (Type, error) {
-			return NewType(*self.Field.Type), nil
+		dagql.Func("type", func(ctx context.Context, self *Field, args struct{}) (*Type, error) {
+			return self.Type_, nil
 		}),
-		dagql.Func("isDeprecated", func(ctx context.Context, self Field, args struct{}) (dagql.Boolean, error) {
+		dagql.Func("isDeprecated", func(ctx context.Context, self *Field, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
 		}),
-		dagql.Func("deprecationReason", func(ctx context.Context, self Field, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("deprecationReason", func(ctx context.Context, self *Field, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DeprecationReason() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
@@ -191,21 +158,21 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}),
 	}.Install(srv)
 
-	dagql.Fields[InputValue]{
-		dagql.Func("name", func(ctx context.Context, self InputValue, args struct{}) (dagql.String, error) {
+	dagql.Fields[*InputValue]{
+		dagql.Func("name", func(ctx context.Context, self *InputValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self *InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
-		dagql.Func("type", func(ctx context.Context, self InputValue, args struct{}) (Type, error) {
-			return NewType(*self.InputValue.Type), nil
+		dagql.Func("type", func(ctx context.Context, self *InputValue, args struct{}) (*Type, error) {
+			return self.Type_, nil
 		}),
-		dagql.Func("defaultValue", func(ctx context.Context, self InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("defaultValue", func(ctx context.Context, self *InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DefaultValue == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
@@ -214,21 +181,21 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}),
 	}.Install(srv)
 
-	dagql.Fields[EnumValue]{
-		dagql.Func("name", func(ctx context.Context, self EnumValue, args struct{}) (dagql.String, error) {
+	dagql.Fields[*EnumValue]{
+		dagql.Func("name", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("description", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Description() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Description())), nil
 			}
 		}),
-		dagql.Func("isDeprecated", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Boolean, error) {
+		dagql.Func("isDeprecated", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
 		}),
-		dagql.Func("deprecationReason", func(ctx context.Context, self EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
+		dagql.Func("deprecationReason", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DeprecationReason() == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
@@ -239,116 +206,137 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 }
 
 type Schema struct {
-	*introspection.Schema
+	schema *ast.Schema
 }
 
-func WrapSchema(schema *ast.Schema) Schema {
-	return Schema{introspection.WrapSchema(schema)}
+func (s *Schema) Description() *string {
+	if s.schema.Description == "" {
+		return nil
+	}
+	return &s.schema.Description
 }
 
-var _ dagql.Typed = Schema{}
+func (s *Schema) Types() []*Type {
+	typeIndex := map[string]Type{}
+	typeNames := make([]string, 0, len(s.schema.Types))
+	for _, typ := range s.schema.Types {
+		typeNames = append(typeNames, typ.Name)
+		typeIndex[typ.Name] = *WrapTypeFromDef(s.schema, typ)
+	}
+	sort.Strings(typeNames)
 
-func (s Schema) Type() *ast.Type {
+	types := make([]*Type, len(typeNames))
+	for i, t := range typeNames {
+		cp := typeIndex[t]
+		types[i] = &cp
+	}
+	return types
+}
+
+func (s *Schema) QueryType() *Type {
+	return WrapTypeFromDef(s.schema, s.schema.Query)
+}
+
+func (s *Schema) MutationType() *Type {
+	return WrapTypeFromDef(s.schema, s.schema.Mutation)
+}
+
+func (s *Schema) SubscriptionType() *Type {
+	return WrapTypeFromDef(s.schema, s.schema.Subscription)
+}
+
+func (s *Schema) Directives() []*Directive {
+	dIndex := map[string]Directive{}
+	dNames := make([]string, 0, len(s.schema.Directives))
+
+	for _, d := range s.schema.Directives {
+		dNames = append(dNames, d.Name)
+		dIndex[d.Name] = s.directiveFromDef(d)
+	}
+	sort.Strings(dNames)
+
+	res := make([]*Directive, len(dNames))
+	for i, d := range dNames {
+		cp := dIndex[d]
+		res[i] = &cp
+	}
+
+	return res
+}
+
+func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
+	locs := make([]string, len(d.Locations))
+	for i, loc := range d.Locations {
+		locs[i] = string(loc)
+	}
+
+	args := make([]*InputValue, len(d.Arguments))
+	for i, arg := range d.Arguments {
+		args[i] = &InputValue{
+			Name:         arg.Name,
+			description:  arg.Description,
+			DefaultValue: defaultValue(arg.DefaultValue),
+			Type_:        WrapTypeFromType(s.schema, arg.Type),
+		}
+	}
+
+	return Directive{
+		Name:         d.Name,
+		description:  d.Description,
+		Locations:    locs,
+		Args:         args,
+		IsRepeatable: d.IsRepeatable,
+	}
+}
+
+var _ dagql.Typed = &Schema{}
+
+func (s *Schema) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Schema",
 		NonNull:   true,
 	}
 }
 
-// workaround Type method conflict
-type type_ = introspection.Type
+var _ dagql.Typed = &Type{}
 
-type Type struct {
-	*type_
-}
-
-func NewType(t introspection.Type) Type {
-	return Type{&t}
-}
-
-var _ dagql.Typed = Type{}
-
-func (s Type) Type() *ast.Type {
+func (s *Type) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Type",
 		NonNull:   true,
 	}
 }
 
-func WrapTypeFromDef(schema *ast.Schema, def *ast.Definition) Type {
-	return Type{
-		type_: (*type_)(introspection.WrapTypeFromDef(schema, def)),
-	}
-}
+var _ dagql.Typed = &Directive{}
 
-func WrapTypeFromType(schema *ast.Schema, typ *ast.Type) Type {
-	return Type{
-		type_: (*type_)(introspection.WrapTypeFromType(schema, typ)),
-	}
-}
-
-type Directive struct {
-	*introspection.Directive
-}
-
-func NewDirective(x introspection.Directive) Directive {
-	return Directive{&x}
-}
-
-var _ dagql.Typed = Directive{}
-
-func (s Directive) Type() *ast.Type {
+func (s *Directive) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Directive",
 		NonNull:   true,
 	}
 }
 
-type InputValue struct {
-	*introspection.InputValue
-}
+var _ dagql.Typed = &InputValue{}
 
-func NewInputValue(x introspection.InputValue) InputValue {
-	return InputValue{&x}
-}
-
-var _ dagql.Typed = InputValue{}
-
-func (s InputValue) Type() *ast.Type {
+func (s *InputValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__InputValue",
 		NonNull:   true,
 	}
 }
 
-type Field struct {
-	*introspection.Field
-}
+var _ dagql.Typed = &Field{}
 
-func NewField(x introspection.Field) Field {
-	return Field{&x}
-}
-
-var _ dagql.Typed = Field{}
-
-func (s Field) Type() *ast.Type {
+func (s *Field) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Field",
 		NonNull:   true,
 	}
 }
 
-type EnumValue struct {
-	*introspection.EnumValue
-}
+var _ dagql.Typed = &EnumValue{}
 
-func NewEnumValue(x introspection.EnumValue) EnumValue {
-	return EnumValue{&x}
-}
-
-var _ dagql.Typed = EnumValue{}
-
-func (s EnumValue) Type() *ast.Type {
+func (s *EnumValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__EnumValue",
 		NonNull:   true,
@@ -424,4 +412,294 @@ func (k DirectiveLocation) Type() *ast.Type {
 		NamedType: "__DirectiveLocation",
 		NonNull:   true,
 	}
+}
+
+type Type struct {
+	schema *ast.Schema
+	def    *ast.Definition
+	typ    *ast.Type
+}
+
+func WrapTypeFromDef(s *ast.Schema, def *ast.Definition) *Type {
+	if def == nil {
+		return nil
+	}
+	return &Type{schema: s, def: def}
+}
+
+func WrapTypeFromType(s *ast.Schema, typ *ast.Type) *Type {
+	if typ == nil {
+		return nil
+	}
+
+	if !typ.NonNull && typ.NamedType != "" {
+		def, ok := s.Types[typ.NamedType]
+		if !ok {
+			panic("unknown type: " + typ.NamedType)
+		}
+		return &Type{schema: s, def: def}
+	}
+	return &Type{schema: s, typ: typ}
+}
+
+func (t *Type) Kind() string {
+	if t.typ != nil {
+		if t.typ.NonNull {
+			return "NON_NULL"
+		}
+
+		if t.typ.Elem != nil {
+			return "LIST"
+		}
+	} else {
+		return string(t.def.Kind)
+	}
+
+	panic("UNKNOWN")
+}
+
+func (t *Type) Name() *string {
+	if t.def == nil {
+		return nil
+	}
+	return &t.def.Name
+}
+
+func (t *Type) Description() *string {
+	if t.def == nil || t.def.Description == "" {
+		return nil
+	}
+	return &t.def.Description
+}
+
+func (t *Type) Fields(includeDeprecated bool) []*Field {
+	if t.def == nil || (t.def.Kind != ast.Object && t.def.Kind != ast.Interface) {
+		return []*Field{}
+	}
+	fields := []*Field{}
+	for _, f := range t.def.Fields {
+		if strings.HasPrefix(f.Name, "__") {
+			continue
+		}
+
+		if !includeDeprecated && f.Directives.ForName("deprecated") != nil {
+			continue
+		}
+
+		var args []*InputValue
+		for _, arg := range f.Arguments {
+			args = append(args, &InputValue{
+				Type_:        WrapTypeFromType(t.schema, arg.Type),
+				Name:         arg.Name,
+				description:  arg.Description,
+				DefaultValue: defaultValue(arg.DefaultValue),
+			})
+		}
+
+		fields = append(fields, &Field{
+			Name:        f.Name,
+			description: f.Description,
+			Args:        args,
+			Type_:       WrapTypeFromType(t.schema, f.Type),
+			deprecation: f.Directives.ForName("deprecated"),
+		})
+	}
+	return fields
+}
+
+func (t *Type) InputFields() []*InputValue {
+	if t.def == nil || t.def.Kind != ast.InputObject {
+		return []*InputValue{}
+	}
+
+	res := []*InputValue{}
+	for _, f := range t.def.Fields {
+		res = append(res, &InputValue{
+			Name:         f.Name,
+			description:  f.Description,
+			Type_:        WrapTypeFromType(t.schema, f.Type),
+			DefaultValue: defaultValue(f.DefaultValue),
+		})
+	}
+	return res
+}
+
+func defaultValue(value *ast.Value) *string {
+	if value == nil {
+		return nil
+	}
+	val := value.String()
+	return &val
+}
+
+func (t *Type) Interfaces() []*Type {
+	if t.def == nil || t.def.Kind != ast.Object {
+		return []*Type{}
+	}
+
+	res := []*Type{}
+	for _, intf := range t.def.Interfaces {
+		res = append(res, WrapTypeFromDef(t.schema, t.schema.Types[intf]))
+	}
+
+	return res
+}
+
+func (t *Type) PossibleTypes() []*Type {
+	if t.def == nil || (t.def.Kind != ast.Interface && t.def.Kind != ast.Union) {
+		return []*Type{}
+	}
+
+	res := []*Type{}
+	for _, pt := range t.schema.GetPossibleTypes(t.def) {
+		res = append(res, WrapTypeFromDef(t.schema, pt))
+	}
+	return res
+}
+
+func (t *Type) EnumValues(includeDeprecated bool) []*EnumValue {
+	if t.def == nil || t.def.Kind != ast.Enum {
+		return []*EnumValue{}
+	}
+
+	res := []*EnumValue{}
+	for _, val := range t.def.EnumValues {
+		if !includeDeprecated && val.Directives.ForName("deprecated") != nil {
+			continue
+		}
+
+		res = append(res, &EnumValue{
+			Name:        val.Name,
+			description: val.Description,
+			deprecation: val.Directives.ForName("deprecated"),
+		})
+	}
+	return res
+}
+
+func (t *Type) OfType() *Type {
+	if t.typ == nil {
+		return nil
+	}
+	if t.typ.NonNull {
+		// fake non null nodes
+		cpy := *t.typ
+		cpy.NonNull = false
+
+		return WrapTypeFromType(t.schema, &cpy)
+	}
+	if t.typ.Elem != nil {
+		return WrapTypeFromType(t.schema, t.typ.Elem)
+	}
+	return nil
+}
+
+func (t *Type) SpecifiedByURL() *string {
+	directive := t.def.Directives.ForName("specifiedBy")
+	if t.def.Kind != ast.Scalar || directive == nil {
+		return nil
+	}
+	// def: directive @specifiedBy(url: String!) on SCALAR
+	// the argument "url" is required.
+	url := directive.Arguments.ForName("url")
+	return &url.Value.Raw
+}
+
+type (
+	Directive struct {
+		Name         string
+		description  string
+		Locations    []string
+		Args         []*InputValue
+		IsRepeatable bool
+	}
+
+	EnumValue struct {
+		Name        string
+		description string
+		deprecation *ast.Directive
+	}
+
+	Field struct {
+		Name        string
+		description string
+		Type_       *Type
+		Args        []*InputValue
+		deprecation *ast.Directive
+	}
+
+	InputValue struct {
+		Name         string
+		description  string
+		DefaultValue *string
+		Type_        *Type
+	}
+)
+
+func WrapSchema(schema *ast.Schema) *Schema {
+	return &Schema{schema: schema}
+}
+
+func (f *EnumValue) Description() *string {
+	if f.description == "" {
+		return nil
+	}
+	return &f.description
+}
+
+func (f *EnumValue) IsDeprecated() bool {
+	return f.deprecation != nil
+}
+
+func (f *EnumValue) DeprecationReason() *string {
+	if f.deprecation == nil {
+		return nil
+	}
+
+	reason := f.deprecation.Arguments.ForName("reason")
+	if reason == nil {
+		return nil
+	}
+
+	return &reason.Value.Raw
+}
+
+func (f *Field) Description() *string {
+	if f.description == "" {
+		return nil
+	}
+	return &f.description
+}
+
+func (f *Field) IsDeprecated() bool {
+	return f.deprecation != nil
+}
+
+func (f *Field) DeprecationReason() *string {
+	if f.deprecation == nil || !f.IsDeprecated() {
+		return nil
+	}
+
+	reason := f.deprecation.Arguments.ForName("reason")
+
+	if reason == nil {
+		defaultReason := "No longer supported"
+		return &defaultReason
+	}
+
+	return &reason.Value.Raw
+}
+
+func (f *InputValue) Description() *string {
+	if f.description == "" {
+		return nil
+	}
+	return &f.description
+}
+
+func (f *Directive) Description() *string {
+	if f.description == "" {
+		return nil
+	}
+	return &f.description
 }
