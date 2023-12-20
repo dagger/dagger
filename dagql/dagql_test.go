@@ -1061,3 +1061,159 @@ func TestParallelism(t *testing.T) {
 		assert.Equal(t, res.Pipe.Write.Read, "two")
 	})
 }
+
+type Builtins struct {
+	Boolean   bool    `default:"true"`
+	Int       int     `default:"42"`
+	String    string  `default:"hello, world!"`
+	Float     float64 `default:"3.14"`
+	Slice     []int   `default:"[1, 2, 3]"`
+	DeepSlice [][]int `default:"[[1, 2], [3]]"` // chicago style
+}
+
+func (Builtins) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Builtins",
+		NonNull:   true,
+	}
+}
+
+func InstallBuiltins(srv *dagql.Server) {
+	dagql.Fields[Builtins]{
+		dagql.Func("boolean", func(ctx context.Context, self Builtins, _ any) (bool, error) {
+			return self.Boolean, nil
+		}),
+		dagql.Func("int", func(ctx context.Context, self Builtins, _ any) (int, error) {
+			return self.Int, nil
+		}),
+		dagql.Func("string", func(ctx context.Context, self Builtins, _ any) (string, error) {
+			return self.String, nil
+		}),
+		dagql.Func("float", func(ctx context.Context, self Builtins, _ any) (float64, error) {
+			return self.Float, nil
+		}),
+		dagql.Func("slice", func(ctx context.Context, self Builtins, _ any) ([]int, error) {
+			return self.Slice, nil
+		}),
+		dagql.Func("deepSlice", func(ctx context.Context, self Builtins, _ any) ([][]int, error) {
+			return self.DeepSlice, nil
+		}),
+	}.Install(srv)
+}
+
+func TestBuiltins(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	InstallBuiltins(srv)
+
+	t.Run("builtin scalar types", func(t *testing.T) {
+		dagql.Fields[Query]{
+			dagql.Func("builtins", func(ctx context.Context, self Query, args Builtins) (Builtins, error) {
+				return args, nil // cute
+			}),
+		}.Install(srv)
+
+		var res struct {
+			Builtins struct {
+				Boolean   bool
+				Int       int
+				String    string
+				Float     float64
+				Slice     []int
+				DeepSlice [][]int
+			}
+		}
+		req(t, gql, `query {
+			builtins(boolean: false, int: 21, string: "goodbye, world!", float: 6.28) {
+				boolean
+				int
+				string
+				float
+				slice
+				deepSlice
+			}
+		}`, &res)
+
+		assert.Check(t, cmp.Equal(false, res.Builtins.Boolean))
+		assert.Check(t, cmp.Equal(21, res.Builtins.Int))
+		assert.Check(t, cmp.Equal("goodbye, world!", res.Builtins.String))
+		assert.Check(t, cmp.Equal(6.28, res.Builtins.Float))
+		assert.Check(t, cmp.DeepEqual([]int{1, 2, 3}, res.Builtins.Slice))
+		assert.Check(t, cmp.DeepEqual([][]int{{1, 2}, {3}}, res.Builtins.DeepSlice))
+	})
+
+	t.Run("with defaults", func(t *testing.T) {
+		dagql.Fields[Query]{
+			dagql.Func("builtins", func(ctx context.Context, self Query, args Builtins) (Builtins, error) {
+				return args, nil // cute
+			}),
+		}.Install(srv)
+
+		var res struct {
+			Builtins struct {
+				Boolean bool
+				Int     int
+				String  string
+				Float   float64
+			}
+		}
+		req(t, gql, `query {
+			builtins {
+				boolean
+				int
+				string
+				float
+			}
+		}`, &res)
+
+		assert.Check(t, cmp.Equal(true, res.Builtins.Boolean))
+		assert.Check(t, cmp.Equal(42, res.Builtins.Int))
+		assert.Check(t, cmp.Equal("hello, world!", res.Builtins.String))
+		assert.Check(t, cmp.Equal(3.14, res.Builtins.Float))
+	})
+
+	t.Run("invalid defaults for builtins", func(t *testing.T) {
+		dagql.Fields[Query]{
+			dagql.Func("badBool", func(ctx context.Context, self Query, args struct {
+				Boolean bool `default:"yessir"`
+			}) (Builtins, error) {
+				panic("should not be called")
+			}),
+			dagql.Func("badInt", func(ctx context.Context, self Query, args struct {
+				Int int `default:"forty-two"`
+			}) (Builtins, error) {
+				panic("should not be called")
+			}),
+			dagql.Func("badFloat", func(ctx context.Context, self Query, args struct {
+				Float float64 `default:"float on"`
+			}) (Builtins, error) {
+				panic("should not be called")
+			}),
+		}.Install(srv)
+
+		var res struct {
+			Builtins struct {
+				Boolean bool
+				Int     int
+				String  string
+				Float   float64
+			}
+		}
+		err := gql.Post(`query {
+			badBool {
+				boolean
+			}
+			badInt {
+				int
+			}
+			badFloat {
+				float
+			}
+		}`, &res)
+		t.Logf("error (expected): %s", err)
+		assert.ErrorContains(t, err, "yessir")
+		assert.ErrorContains(t, err, "forty-two")
+		assert.ErrorContains(t, err, "float on")
+	})
+}

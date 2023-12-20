@@ -34,6 +34,9 @@ func (class Class[T]) Field(name string) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	field, ok := class.fields[name]
+	if !ok {
+		return Field[T]{}, false
+	}
 	return *field, ok
 }
 
@@ -237,7 +240,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 //
 // To configure a description for the field in the schema, call .Doc on the
 // result.
-func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
 	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
 	})
@@ -245,7 +248,7 @@ func Func[T Typed, A any, R Typed](name string, fn func(ctx context.Context, sel
 
 // NodeFunc is the same as Func, except it passes the Instance instead of the
 // receiver so that you can access its ID.
-func NodeFunc[T Typed, A any, R Typed](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
+func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
 	var zeroArgs A
 	inputs, argsErr := inputSpecsForType(zeroArgs)
 	if argsErr != nil {
@@ -253,11 +256,16 @@ func NodeFunc[T Typed, A any, R Typed](name string, fn func(ctx context.Context,
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
 	}
 	var zeroRet R
+	ret, err := builtinOrTyped(zeroRet)
+	if err != nil {
+		var zeroSelf T
+		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
+	}
 	return Field[T]{
 		Spec: FieldSpec{
 			Name: name,
 			Args: inputs,
-			Type: zeroRet,
+			Type: ret,
 			Pure: true, // default to pure
 		},
 		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
@@ -270,7 +278,11 @@ func NodeFunc[T Typed, A any, R Typed](name string, fn func(ctx context.Context,
 			if err := setInputFields(inputs, argVals, &args); err != nil {
 				return nil, err
 			}
-			return fn(ctx, self, args)
+			res, err := fn(ctx, self, args)
+			if err != nil {
+				return nil, err
+			}
+			return builtinOrTyped(res)
 		},
 	}
 }
@@ -486,9 +498,13 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 			name = strcase.ToLowerCamel(field.Name)
 		}
 		fieldI := reflect.New(field.Type).Elem().Interface()
-		input, ok := fieldI.(Input)
+		typed, err := builtinOrInput(fieldI)
+		if err != nil {
+			return nil, fmt.Errorf("arg %q: %w", field.Name, err)
+		}
+		input, ok := typed.(Input)
 		if !ok {
-			return nil, fmt.Errorf("arg %q (%T) cannot be passed as an input", field.Name, fieldI)
+			return nil, fmt.Errorf("arg %q: %T is not an input", field.Name, typed)
 		}
 		var inputDef Input
 		if inputDefStr := field.Tag.Get("default"); len(inputDefStr) > 0 {
@@ -521,7 +537,20 @@ func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
 			}
 			return fmt.Errorf("missing required input: %q", spec.Name)
 		}
-		destV.Elem().Field(i).Set(reflect.ValueOf(val))
+		if err := assign(destV.Elem().Field(i), val); err != nil {
+			return fmt.Errorf("assign %q: %w", spec.Name, err)
+		}
 	}
 	return nil
+}
+
+func assign(field reflect.Value, val any) error {
+	if reflect.TypeOf(val).AssignableTo(field.Type()) {
+		field.Set(reflect.ValueOf(val))
+		return nil
+	} else if setter, ok := val.(Setter); ok {
+		return setter.SetField(field)
+	} else {
+		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
+	}
 }

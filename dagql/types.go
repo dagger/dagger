@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -68,9 +69,15 @@ type Input interface {
 	// All Inputs now how to decode new instances of themselves.
 	Decoder() InputDecoder
 	// In principle all Inputs are able to be represented as JSON, but we don't
-	// require the interface to be implemented since basic values like strings
-	// (Enums) and arrays (...Arrays) already marshal appropriately.
-	// json.Marshaler
+	// require the interface to be implemented since builtins like strings
+	// (Enums) and slices (Arrays) already marshal appropriately. json.Marshaler
+}
+
+// Setter allows a type to populate fields of a struct.
+//
+// This is how builtins are supported.
+type Setter interface {
+	SetField(reflect.Value) error
 }
 
 // InputDecoder is a type that knows how to decode values into Inputs.
@@ -168,6 +175,18 @@ func (i *Int) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+var _ Setter = ID[Typed]{}
+
+func (i Int) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case int:
+		v.SetInt(i.Int64())
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), i)
+	}
+}
+
 // Float is a GraphQL Float scalar.
 type Float float64
 
@@ -251,6 +270,19 @@ func (f *Float) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+var _ Setter = Float(0)
+
+func (f Float) SetField(v reflect.Value) error {
+	switch x := v.Interface().(type) {
+	case float64:
+		v.SetFloat(f.Float64())
+		_ = x
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), f)
+	}
+}
+
 // Boolean is a GraphQL Boolean scalar.
 type Boolean bool
 
@@ -328,6 +360,18 @@ func (b *Boolean) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+var _ Setter = Boolean(false)
+
+func (b Boolean) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case bool:
+		v.SetBool(b.Bool())
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), b)
+	}
+}
+
 // String is a GraphQL String scalar.
 type String string
 
@@ -397,6 +441,18 @@ func (s *String) UnmarshalJSON(p []byte) error {
 
 func (s String) String() string {
 	return string(s)
+}
+
+var _ Setter = String("")
+
+func (s String) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case string:
+		v.SetString(s.String())
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), s)
+	}
 }
 
 // ID is a type-checked ID scalar.
@@ -469,6 +525,18 @@ func (i ID[T]) String() string {
 		panic(err) // TODO
 	}
 	return fmt.Sprintf("%s@%s", zero.Type().Name(), dig)
+}
+
+var _ Setter = ID[Typed]{}
+
+func (i ID[T]) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case *idproto.ID:
+		v.Set(reflect.ValueOf(i.ID))
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), i)
+	}
 }
 
 // For parsing string IDs provided in queries.
