@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -257,7 +258,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 		labels := opts.Labels
 		labels = append(labels, pipeline.EngineLabel(e.EngineName))
-		labels = append(labels, pipeline.LoadServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH)...)
+		labels = append(labels, pipeline.LoadServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH, e.cacheManager.ID() != cache.LocalCacheID)...)
 
 		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels)
 		if err != nil {

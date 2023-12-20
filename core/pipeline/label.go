@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -32,7 +33,7 @@ func EngineLabel(engineName string) Label {
 	}
 }
 
-func LoadServerLabels(engineVersion, os, arch string) []Label {
+func LoadServerLabels(engineVersion, os, arch string, cacheEnabled bool) []Label {
 	labels := []Label{
 		{
 			Name:  "dagger.io/server.os",
@@ -45,6 +46,11 @@ func LoadServerLabels(engineVersion, os, arch string) []Label {
 		{
 			Name:  "dagger.io/server.version",
 			Value: engineVersion,
+		},
+
+		{
+			Name:  "dagger.io/server.cache.enabled",
+			Value: strconv.FormatBool(cacheEnabled),
 		},
 	}
 

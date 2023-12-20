@@ -25,12 +25,13 @@ func TestLoadClientLabels(t *testing.T) {
 }
 
 func TestLoadServerLabels(t *testing.T) {
-	labels := pipeline.LoadServerLabels("0.8.4", "linux", "amd64")
+	labels := pipeline.LoadServerLabels("0.8.4", "linux", "amd64", false)
 
 	expected := []pipeline.Label{
 		{"dagger.io/server.os", "linux"},
 		{"dagger.io/server.arch", "amd64"},
 		{"dagger.io/server.version", "0.8.4"},
+		{"dagger.io/server.cache.enabled", "false"},
 	}
 
 	require.ElementsMatch(t, expected, labels)
