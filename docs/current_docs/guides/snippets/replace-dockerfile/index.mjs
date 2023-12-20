@@ -43,7 +43,7 @@ connect(
       ])
       .withEntrypoint(["docker-entrypoint.sh"])
       .withUser("memcache")
-      .withDefaultArgs({ args: ["memcached"] })
+      .withDefaultArgs(["memcached"])
 
     // publish the container image
     const addr = await memcached.publish(PUBLISH_ADDRESS)

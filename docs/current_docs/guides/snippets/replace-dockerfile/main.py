@@ -54,7 +54,7 @@ async def main():
             )
             .with_entrypoint(["docker-entrypoint.sh"])
             .with_user("memcache")
-            .with_default_args(args=["memcached"])
+            .with_default_args(["memcached"])
         )
 
         # publish the container image
