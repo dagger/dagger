@@ -658,7 +658,8 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	t.Run("prepended to exec", func(t *testing.T) {
 		t.Parallel()
 		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
-		require.Error(t, err) // 'sh sh -c echo $HOME' is not valid
+		require.Error(t, err)
+		require.ErrorContains(t, err, "can't open 'sh'")
 	})
 
 	t.Run("skipped", func(t *testing.T) {
