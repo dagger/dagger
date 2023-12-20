@@ -815,12 +815,12 @@ type DefaultsInput struct {
 	EmptyString dagql.String  `default:""`
 	Float       dagql.Float   `default:"3.14"`
 
-	EmbeddedInputs
+	EmbeddedWrapped
 }
 
-type EmbeddedInputs struct {
-	Slice     dagql.ArrayInput[dagql.Int]                   `default:"[1, 2, 3]"`
-	DeepSlice dagql.ArrayInput[dagql.ArrayInput[dagql.Int]] `default:"[[1, 2], [3]]"`
+type EmbeddedWrapped struct {
+	Slice     dagql.ArrayInput[dagql.Int]                   `field:"true" default:"[1, 2, 3]"`
+	DeepSlice dagql.ArrayInput[dagql.ArrayInput[dagql.Int]] `field:"true" default:"[[1, 2], [3]]"`
 }
 
 func (DefaultsInput) TypeName() string {
@@ -1035,13 +1035,13 @@ func TestInputObjects(t *testing.T) {
 }
 
 type Defaults struct {
-	Boolean     dagql.Boolean `default:"true"`
-	Int         dagql.Int     `default:"42"`
-	String      dagql.String  `default:"hello, world!"`
-	EmptyString dagql.String  `default:""`
-	Float       dagql.Float   `default:"3.14"`
+	Boolean     dagql.Boolean `field:"true" default:"true"`
+	Int         dagql.Int     `field:"true" default:"42"`
+	String      dagql.String  `field:"true" default:"hello, world!"`
+	EmptyString dagql.String  `field:"true" default:""`
+	Float       dagql.Float   `field:"true" default:"3.14"`
 
-	EmbeddedInputs
+	EmbeddedWrapped
 }
 
 func (Defaults) Type() *ast.Type {
@@ -1052,33 +1052,7 @@ func (Defaults) Type() *ast.Type {
 }
 
 func InstallDefaults(srv *dagql.Server) {
-	dagql.Fields[Defaults]{
-		dagql.Func("boolean", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Boolean, error) {
-			return self.Boolean, nil
-		}),
-		dagql.Func("int", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Int, error) {
-			return self.Int, nil
-		}),
-		dagql.Func("string", func(ctx context.Context, self Defaults, _ struct{}) (dagql.String, error) {
-			return self.String, nil
-		}),
-		dagql.Func("emptyString", func(ctx context.Context, self Defaults, _ struct{}) (dagql.String, error) {
-			return self.EmptyString, nil
-		}),
-		dagql.Func("float", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Float, error) {
-			return self.Float, nil
-		}),
-		dagql.Func("slice", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Array[dagql.Int], error) {
-			return self.Slice.ToArray(), nil
-		}),
-		dagql.Func("deepSlice", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Array[dagql.Array[dagql.Int]], error) {
-			arrs := make([]dagql.Array[dagql.Int], len(self.DeepSlice))
-			for i, arr := range self.DeepSlice {
-				arrs[i] = arr.ToArray()
-			}
-			return arrs, nil
-		}),
-	}.Install(srv)
+	dagql.Fields[Defaults]{}.Install(srv)
 }
 
 func TestDefaults(t *testing.T) {
@@ -1223,18 +1197,18 @@ func TestParallelism(t *testing.T) {
 }
 
 type Builtins struct {
-	Boolean     bool    `default:"true"`
-	Int         int     `default:"42"`
-	String      string  `default:"hello, world!"`
-	EmptyString string  `default:""`
-	Float       float64 `default:"3.14"`
+	Boolean     bool    `field:"true" default:"true"`
+	Int         int     `field:"true" default:"42"`
+	String      string  `field:"true" default:"hello, world!"`
+	EmptyString string  `field:"true" default:""`
+	Float       float64 `field:"true" default:"3.14"`
 	EmbeddedBuiltins
 	InvalidButIgnored any `name:"-"`
 }
 
 type EmbeddedBuiltins struct {
-	Slice     []int   `default:"[1, 2, 3]"`
-	DeepSlice [][]int `default:"[[1, 2], [3]]"` // chicago style
+	Slice     []int   `field:"true" default:"[1, 2, 3]"`
+	DeepSlice [][]int `field:"true" default:"[[1, 2], [3]]"` // chicago style
 }
 
 func (Builtins) Type() *ast.Type {
@@ -1245,29 +1219,7 @@ func (Builtins) Type() *ast.Type {
 }
 
 func InstallBuiltins(srv *dagql.Server) {
-	dagql.Fields[Builtins]{
-		dagql.Func("boolean", func(ctx context.Context, self Builtins, _ struct{}) (bool, error) {
-			return self.Boolean, nil
-		}),
-		dagql.Func("int", func(ctx context.Context, self Builtins, _ struct{}) (int, error) {
-			return self.Int, nil
-		}),
-		dagql.Func("string", func(ctx context.Context, self Builtins, _ struct{}) (string, error) {
-			return self.String, nil
-		}),
-		dagql.Func("emptyString", func(ctx context.Context, self Builtins, _ struct{}) (string, error) {
-			return self.EmptyString, nil
-		}),
-		dagql.Func("float", func(ctx context.Context, self Builtins, _ struct{}) (float64, error) {
-			return self.Float, nil
-		}),
-		dagql.Func("slice", func(ctx context.Context, self Builtins, _ struct{}) ([]int, error) {
-			return self.Slice, nil
-		}),
-		dagql.Func("deepSlice", func(ctx context.Context, self Builtins, _ struct{}) ([][]int, error) {
-			return self.DeepSlice, nil
-		}),
-	}.Install(srv)
+	dagql.Fields[Builtins]{}.Install(srv)
 }
 
 func TestBuiltins(t *testing.T) {

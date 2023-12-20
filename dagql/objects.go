@@ -250,7 +250,7 @@ func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self 
 // receiver so that you can access its ID.
 func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
 	var zeroArgs A
-	inputs, argsErr := inputSpecsForType(zeroArgs)
+	inputs, argsErr := inputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
 		var zeroSelf T
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
@@ -383,6 +383,30 @@ func (fields Fields[T]) Install(server *Server) {
 	var t T
 	typeName := t.Type().Name()
 	class := fields.findOrInitializeType(server, typeName)
+	inputs, err := inputSpecsForType(t, false)
+	if err != nil {
+		panic(err)
+	}
+	for _, input := range inputs {
+		name := input.Name
+		fields = append(fields, Field[T]{
+			Spec: FieldSpec{
+				Name: name,
+				Type: input.Type,
+				Pure: true,
+			},
+			Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+				t, found, err := getField(self.Self, false, name)
+				if err != nil {
+					return nil, err
+				}
+				if !found {
+					return nil, fmt.Errorf("no such field: %q", name)
+				}
+				return t, nil
+			},
+		})
+	}
 	class.Install(fields...)
 }
 
@@ -482,39 +506,47 @@ func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Typed, error) {
 	return args, nil
 }
 
-func inputSpecsForType(obj any) ([]InputSpec, error) {
+func inputSpecsForType(obj any, optIn bool) ([]InputSpec, error) {
 	var inputSpecs InputSpecs
 	objT := reflect.TypeOf(obj)
 	if objT == nil {
 		return nil, nil
 	}
+	if objT.Kind() == reflect.Ptr {
+		objT = objT.Elem()
+	}
 	if objT.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("inputs must be a struct, got %T (%s)", obj, objT.Kind())
 	}
 	for i := 0; i < objT.NumField(); i++ {
-		field := objT.Field(i)
-		name := field.Tag.Get("name")
-		if name == "" {
-			name = strcase.ToLowerCamel(field.Name)
-		}
-		if name == "-" {
-			continue
-		}
-		fieldI := reflect.New(field.Type).Elem().Interface()
-		if field.Anonymous {
-			specs, err := inputSpecsForType(fieldI)
+		fieldT := objT.Field(i)
+		if fieldT.Anonymous {
+			fieldI := reflect.New(fieldT.Type).Elem().Interface()
+			specs, err := inputSpecsForType(fieldI, optIn)
 			if err != nil {
-				return nil, fmt.Errorf("arg %q: %w", name, err)
+				return nil, fmt.Errorf("embedded struct %q: %w", fieldT.Name, err)
 			}
 			inputSpecs = append(inputSpecs, specs...)
 			continue
 		}
+		isField := optIn || fieldT.Tag.Get("field") == "true"
+		if !isField {
+			continue
+		}
+		name := fieldT.Tag.Get("name")
+		if name == "" && isField {
+			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		if name == "" || name == "-" {
+			continue
+		}
+		fieldI := reflect.New(fieldT.Type).Elem().Interface()
 		input, err := builtinOrInput(fieldI)
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", name, err)
 		}
 		var inputDef Input
-		if inputDefStr, hasDefault := field.Tag.Lookup("default"); hasDefault {
+		if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
 			var err error
 			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
@@ -523,12 +555,60 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 		}
 		inputSpecs = append(inputSpecs, InputSpec{
 			Name:        name,
-			Description: field.Tag.Get("doc"),
+			Description: fieldT.Tag.Get("doc"),
 			Type:        input,
 			Default:     inputDef,
 		})
 	}
 	return inputSpecs, nil
+}
+
+func getField(obj any, optIn bool, fieldName string) (Typed, bool, error) {
+	objT := reflect.TypeOf(obj)
+	if objT == nil {
+		return nil, false, fmt.Errorf("get field %q: object is nil", fieldName)
+	}
+	objV := reflect.ValueOf(obj)
+	if objT.Kind() == reflect.Ptr {
+		objT = objT.Elem()
+		objV = objV.Elem()
+	}
+	if objT.Kind() != reflect.Struct {
+		return nil, false, fmt.Errorf("get field %q: object must be a struct, got %T (%s)", fieldName, obj, objT.Kind())
+	}
+	for i := 0; i < objT.NumField(); i++ {
+		fieldT := objT.Field(i)
+		if fieldT.Anonymous {
+			fieldI := objV.Field(i).Interface()
+			t, found, err := getField(fieldI, optIn, fieldName)
+			if err != nil {
+				return nil, false, fmt.Errorf("embedded struct %q: %w", fieldT.Name, err)
+			}
+			if found {
+				return t, true, nil
+			}
+			continue
+		}
+		isField := optIn || fieldT.Tag.Get("field") == "true"
+		if !isField {
+			continue
+		}
+		name := fieldT.Tag.Get("name")
+		if name == "" && isField {
+			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		if name == "" || name == "-" {
+			continue
+		}
+		if name == fieldName {
+			t, err := builtinOrTyped(objV.Field(i).Interface())
+			if err != nil {
+				return nil, false, fmt.Errorf("get field %q: %w", name, err)
+			}
+			return t, true, nil
+		}
+	}
+	return nil, false, nil
 }
 
 func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {

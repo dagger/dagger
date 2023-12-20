@@ -10,8 +10,8 @@ import (
 )
 
 type Point struct {
-	X int
-	Y int
+	X int `field:"true"`
+	Y int `field:"true"`
 }
 
 func (*Point) Type() *ast.Type {
@@ -89,12 +89,6 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*Point]{
-		dagql.Func("x", func(ctx context.Context, self *Point, _ struct{}) (dagql.Int, error) {
-			return dagql.NewInt(self.X), nil
-		}),
-		dagql.Func("y", func(ctx context.Context, self *Point, _ struct{}) (dagql.Int, error) {
-			return dagql.NewInt(self.Y), nil
-		}),
 		dagql.Func("self", func(ctx context.Context, self *Point, _ struct{}) (*Point, error) {
 			return self, nil
 		}),

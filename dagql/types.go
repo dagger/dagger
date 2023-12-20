@@ -997,7 +997,7 @@ func MustInputSpec(val Type) InputObjectSpec {
 	if desc, ok := val.(Descriptive); ok {
 		spec.Description = desc.Description()
 	}
-	inputs, err := inputSpecsForType(val)
+	inputs, err := inputSpecsForType(val, true)
 	if err != nil {
 		panic(err)
 	}
