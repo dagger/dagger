@@ -33,7 +33,7 @@ type ObjectType interface {
 	New(*idproto.ID, Typed) (Object, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
-	ParseField(*ast.Field, map[string]any) (Selector, *ast.Type, error)
+	ParseField(context.Context, *ast.Field, map[string]any) (Selector, *ast.Type, error)
 }
 
 // Object represents an Object in the graph which has an ID and can have
@@ -43,7 +43,7 @@ type Object interface {
 	// ID returns the ID of the object.
 	ID() *idproto.ID
 	// IDFor returns the ID representing the return value of the given field.
-	IDFor(Selector) (*idproto.ID, error)
+	IDFor(context.Context, Selector) (*idproto.ID, error)
 	// Select evaluates the selected field and returns the result.
 	//
 	// The returned value is the raw Typed value returned from the field; it must
