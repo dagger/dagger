@@ -89,13 +89,13 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*Point]{
-		dagql.Func("x", func(ctx context.Context, self *Point, _ any) (dagql.Int, error) {
+		dagql.Func("x", func(ctx context.Context, self *Point, _ struct{}) (dagql.Int, error) {
 			return dagql.NewInt(self.X), nil
 		}),
-		dagql.Func("y", func(ctx context.Context, self *Point, _ any) (dagql.Int, error) {
+		dagql.Func("y", func(ctx context.Context, self *Point, _ struct{}) (dagql.Int, error) {
 			return dagql.NewInt(self.Y), nil
 		}),
-		dagql.Func("self", func(ctx context.Context, self *Point, _ any) (*Point, error) {
+		dagql.Func("self", func(ctx context.Context, self *Point, _ struct{}) (*Point, error) {
 			return self, nil
 		}),
 		dagql.Func("shiftLeft", func(ctx context.Context, self *Point, args struct {
@@ -122,7 +122,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 			}
 			return &shifted, nil
 		}),
-		dagql.Func("neighbors", func(ctx context.Context, self *Point, _ any) (dagql.Array[*Point], error) {
+		dagql.Func("neighbors", func(ctx context.Context, self *Point, _ struct{}) (dagql.Array[*Point], error) {
 			return []*Point{
 				{X: self.X - 1, Y: self.Y},
 				{X: self.X + 1, Y: self.Y},
@@ -144,7 +144,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 	Directions.Install(srv)
 
 	dagql.Fields[*Line]{
-		dagql.Func("length", func(ctx context.Context, self *Line, _ any) (dagql.Float, error) {
+		dagql.Func("length", func(ctx context.Context, self *Line, _ struct{}) (dagql.Float, error) {
 			// well this got more complicated than I planned
 			// √((x2 - x1)2 + (y2 - y1)2)
 			return dagql.NewFloat(
@@ -153,7 +153,7 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 						math.Pow(float64(self.To.Y-self.From.Y), 2)),
 			), nil
 		}),
-		dagql.Func("direction", func(ctx context.Context, self *Line, _ any) (Direction, error) {
+		dagql.Func("direction", func(ctx context.Context, self *Line, _ struct{}) (Direction, error) {
 			switch {
 			case self.From.X < self.To.X:
 				return DirectionRight, nil

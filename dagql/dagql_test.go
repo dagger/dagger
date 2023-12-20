@@ -523,7 +523,7 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 
 	called := 0
 	dagql.Fields[*points.Point]{
-		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ any) (*points.Point, error) {
+		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
 			called++
 			return self, nil
 		}),
@@ -576,7 +576,7 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 
 	called := 0
 	dagql.Fields[*points.Point]{
-		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ any) (*points.Point, error) {
+		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
 			called++
 			return self, nil
 		}).Impure(),
@@ -909,16 +909,16 @@ func (Defaults) Type() *ast.Type {
 
 func InstallDefaults(srv *dagql.Server) {
 	dagql.Fields[Defaults]{
-		dagql.Func("boolean", func(ctx context.Context, self Defaults, _ any) (dagql.Boolean, error) {
+		dagql.Func("boolean", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Boolean, error) {
 			return self.Boolean, nil
 		}),
-		dagql.Func("int", func(ctx context.Context, self Defaults, _ any) (dagql.Int, error) {
+		dagql.Func("int", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Int, error) {
 			return self.Int, nil
 		}),
-		dagql.Func("string", func(ctx context.Context, self Defaults, _ any) (dagql.String, error) {
+		dagql.Func("string", func(ctx context.Context, self Defaults, _ struct{}) (dagql.String, error) {
 			return self.String, nil
 		}),
-		dagql.Func("float", func(ctx context.Context, self Defaults, _ any) (dagql.Float, error) {
+		dagql.Func("float", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Float, error) {
 			return self.Float, nil
 		}),
 	}.Install(srv)
@@ -1063,10 +1063,14 @@ func TestParallelism(t *testing.T) {
 }
 
 type Builtins struct {
-	Boolean   bool    `default:"true"`
-	Int       int     `default:"42"`
-	String    string  `default:"hello, world!"`
-	Float     float64 `default:"3.14"`
+	Boolean bool    `default:"true"`
+	Int     int     `default:"42"`
+	String  string  `default:"hello, world!"`
+	Float   float64 `default:"3.14"`
+	Embedded
+}
+
+type Embedded struct {
 	Slice     []int   `default:"[1, 2, 3]"`
 	DeepSlice [][]int `default:"[[1, 2], [3]]"` // chicago style
 }
@@ -1080,22 +1084,22 @@ func (Builtins) Type() *ast.Type {
 
 func InstallBuiltins(srv *dagql.Server) {
 	dagql.Fields[Builtins]{
-		dagql.Func("boolean", func(ctx context.Context, self Builtins, _ any) (bool, error) {
+		dagql.Func("boolean", func(ctx context.Context, self Builtins, _ struct{}) (bool, error) {
 			return self.Boolean, nil
 		}),
-		dagql.Func("int", func(ctx context.Context, self Builtins, _ any) (int, error) {
+		dagql.Func("int", func(ctx context.Context, self Builtins, _ struct{}) (int, error) {
 			return self.Int, nil
 		}),
-		dagql.Func("string", func(ctx context.Context, self Builtins, _ any) (string, error) {
+		dagql.Func("string", func(ctx context.Context, self Builtins, _ struct{}) (string, error) {
 			return self.String, nil
 		}),
-		dagql.Func("float", func(ctx context.Context, self Builtins, _ any) (float64, error) {
+		dagql.Func("float", func(ctx context.Context, self Builtins, _ struct{}) (float64, error) {
 			return self.Float, nil
 		}),
-		dagql.Func("slice", func(ctx context.Context, self Builtins, _ any) ([]int, error) {
+		dagql.Func("slice", func(ctx context.Context, self Builtins, _ struct{}) ([]int, error) {
 			return self.Slice, nil
 		}),
-		dagql.Func("deepSlice", func(ctx context.Context, self Builtins, _ any) ([][]int, error) {
+		dagql.Func("deepSlice", func(ctx context.Context, self Builtins, _ struct{}) ([][]int, error) {
 			return self.DeepSlice, nil
 		}),
 	}.Install(srv)
@@ -1125,7 +1129,7 @@ func TestBuiltins(t *testing.T) {
 			}
 		}
 		req(t, gql, `query {
-			builtins(boolean: false, int: 21, string: "goodbye, world!", float: 6.28) {
+			builtins(boolean: false, int: 21, string: "goodbye, world!", float: 6.28, slice: [4, 5], deepSlice: [[4], [5]]) {
 				boolean
 				int
 				string
@@ -1139,8 +1143,8 @@ func TestBuiltins(t *testing.T) {
 		assert.Check(t, cmp.Equal(21, res.Builtins.Int))
 		assert.Check(t, cmp.Equal("goodbye, world!", res.Builtins.String))
 		assert.Check(t, cmp.Equal(6.28, res.Builtins.Float))
-		assert.Check(t, cmp.DeepEqual([]int{1, 2, 3}, res.Builtins.Slice))
-		assert.Check(t, cmp.DeepEqual([][]int{{1, 2}, {3}}, res.Builtins.DeepSlice))
+		assert.Check(t, cmp.DeepEqual([]int{4, 5}, res.Builtins.Slice))
+		assert.Check(t, cmp.DeepEqual([][]int{{4}, {5}}, res.Builtins.DeepSlice))
 	})
 
 	t.Run("with defaults", func(t *testing.T) {
@@ -1152,10 +1156,12 @@ func TestBuiltins(t *testing.T) {
 
 		var res struct {
 			Builtins struct {
-				Boolean bool
-				Int     int
-				String  string
-				Float   float64
+				Boolean   bool
+				Int       int
+				String    string
+				Float     float64
+				Slice     []int
+				DeepSlice [][]int
 			}
 		}
 		req(t, gql, `query {
@@ -1164,6 +1170,8 @@ func TestBuiltins(t *testing.T) {
 				int
 				string
 				float
+				slice
+				deepSlice
 			}
 		}`, &res)
 
@@ -1171,6 +1179,8 @@ func TestBuiltins(t *testing.T) {
 		assert.Check(t, cmp.Equal(42, res.Builtins.Int))
 		assert.Check(t, cmp.Equal("hello, world!", res.Builtins.String))
 		assert.Check(t, cmp.Equal(3.14, res.Builtins.Float))
+		assert.Check(t, cmp.DeepEqual([]int{1, 2, 3}, res.Builtins.Slice))
+		assert.Check(t, cmp.DeepEqual([][]int{{1, 2}, {3}}, res.Builtins.DeepSlice))
 	})
 
 	t.Run("invalid defaults for builtins", func(t *testing.T) {
@@ -1187,6 +1197,11 @@ func TestBuiltins(t *testing.T) {
 			}),
 			dagql.Func("badFloat", func(ctx context.Context, self Query, args struct {
 				Float float64 `default:"float on"`
+			}) (Builtins, error) {
+				panic("should not be called")
+			}),
+			dagql.Func("badSlice", func(ctx context.Context, self Query, args struct {
+				Slice []int `default:"pizza"`
 			}) (Builtins, error) {
 				panic("should not be called")
 			}),
@@ -1210,10 +1225,14 @@ func TestBuiltins(t *testing.T) {
 			badFloat {
 				float
 			}
+			badSlice {
+				slice
+			}
 		}`, &res)
 		t.Logf("error (expected): %s", err)
 		assert.ErrorContains(t, err, "yessir")
 		assert.ErrorContains(t, err, "forty-two")
 		assert.ErrorContains(t, err, "float on")
+		assert.ErrorContains(t, err, "pizza")
 	})
 }

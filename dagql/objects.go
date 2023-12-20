@@ -498,6 +498,14 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 			name = strcase.ToLowerCamel(field.Name)
 		}
 		fieldI := reflect.New(field.Type).Elem().Interface()
+		if field.Anonymous {
+			specs, err := inputSpecsForType(fieldI)
+			if err != nil {
+				return nil, fmt.Errorf("arg %q: %w", field.Name, err)
+			}
+			inputSpecs = append(inputSpecs, specs...)
+			continue
+		}
 		typed, err := builtinOrInput(fieldI)
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", field.Name, err)
@@ -525,8 +533,31 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 }
 
 func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
-	destV := reflect.ValueOf(dest)
-	for i, spec := range specs {
+	destT := reflect.TypeOf(dest).Elem()
+	destV := reflect.ValueOf(dest).Elem()
+	if destT.Kind() != reflect.Struct {
+		return fmt.Errorf("inputs must be a struct, got %T (%s)", dest, destT.Kind())
+	}
+	for i := 0; i < destT.NumField(); i++ {
+		fieldT := destT.Field(i)
+		fieldV := destV.Field(i)
+		if fieldT.Anonymous {
+			// embedded struct
+			val := reflect.New(fieldT.Type)
+			if err := setInputFields(specs, inputs, val.Interface()); err != nil {
+				return err
+			}
+			fieldV.Set(val.Elem())
+			continue
+		}
+		name := fieldT.Tag.Get("name")
+		if name == "" {
+			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		spec, found := specs.Lookup(name)
+		if !found {
+			return fmt.Errorf("missing input spec for %q", name)
+		}
 		val, isProvided := inputs[spec.Name]
 		isNullable := !spec.Type.Type().NonNull
 		if !isProvided {
@@ -537,7 +568,7 @@ func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
 			}
 			return fmt.Errorf("missing required input: %q", spec.Name)
 		}
-		if err := assign(destV.Elem().Field(i), val); err != nil {
+		if err := assign(fieldV, val); err != nil {
 			return fmt.Errorf("assign %q: %w", spec.Name, err)
 		}
 	}
