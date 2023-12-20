@@ -49,9 +49,7 @@ func main() {
 		WithWorkdir("/src").
 		WithExec([]string{"npm", "install"}).
 		WithExec([]string{"npm", "run", "build"}).
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-			Args: []string{"npm", "start"},
-		})
+		WithDefaultArgs([]string{"npm", "start"})
 
 	// publish image to registry
 	// at registry path [registry-username]/myapp

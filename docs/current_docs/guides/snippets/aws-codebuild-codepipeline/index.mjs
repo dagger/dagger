@@ -36,7 +36,7 @@ connect(
       .withWorkdir("/src")
       .withExec(["npm", "install"])
       .withExec(["npm", "run", "build"])
-      .withDefaultArgs({ args: ["npm", "start"] })
+      .withDefaultArgs(["npm", "start"])
 
     // publish image to registry
     // at registry path [registry-username]/myapp
