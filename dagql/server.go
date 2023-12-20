@@ -604,15 +604,14 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 			if err != nil {
 				return err
 			}
-		} else {
-			if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
-				var err error
-				input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
-				if err != nil {
-					return fmt.Errorf("convert default value for arg %s: %w", name, err)
-				}
+		} else if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
+			var err error
+			input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
+			if err != nil {
+				return fmt.Errorf("convert default value for arg %s: %w", name, err)
 			}
-			// TODO is required-ness checked by now at schema validation?
+		} else {
+			return fmt.Errorf("missing required input field %q", name)
 		}
 		if err := assign(fieldV, input); err != nil {
 			return fmt.Errorf("assign %q: %w", fieldT.Name, err)
