@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -12,6 +13,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vito/dagql/idproto"
 	"github.com/vito/dagql/ioctx"
 	"github.com/vito/progrock"
@@ -79,6 +81,16 @@ func (s *Server) Root() Object {
 	return s.root
 }
 
+// Query is a convenience method for executing a query against the server
+// without having to go through HTTP. This can be useful for introspection, for
+// example.
+func (s *Server) Query(ctx context.Context, query string, vars map[string]any) (map[string]any, error) {
+	return s.ExecOp(ctx, &graphql.OperationContext{
+		RawQuery:  query,
+		Variables: vars,
+	})
+}
+
 var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
@@ -119,31 +131,10 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 			return graphql.ErrorResponse(ctx, "validate: %s", err)
 		}
 
-		doc := gqlOp.Doc
-
-		results := make(map[string]any)
-		for _, op := range doc.Operations {
-			switch op.Operation {
-			case ast.Query:
-				// TODO prospective
-				if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
-					continue
-				}
-				sels, err := s.parseASTSelections(gqlOp, s.root.Type(), op.SelectionSet)
-				if err != nil {
-					return graphql.ErrorResponse(ctx, "failed to convert selections: %s", err)
-				}
-				results, err = s.Resolve(ctx, s.root, sels...)
-				if err != nil {
-					return graphql.ErrorResponse(ctx, "failed to resolve: %s", err)
-				}
-			case ast.Mutation:
-				// TODO
-				return graphql.ErrorResponse(ctx, "mutations not supported")
-			case ast.Subscription:
-				// TODO
-				return graphql.ErrorResponse(ctx, "subscriptions not supported")
-			}
+		results, err := s.ExecOp(ctx, gqlOp)
+		if err != nil {
+			gqlOp.Error(ctx, err)
+			return graphql.ErrorResponse(ctx, "exec: %s", err)
 		}
 
 		data, err := json.Marshal(results)
@@ -156,6 +147,42 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 			Data: json.RawMessage(data),
 		}
 	}
+}
+
+func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (map[string]any, error) {
+	doc := gqlOp.Doc
+	if doc == nil {
+		var err error
+		doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	results := make(map[string]any)
+	for _, op := range doc.Operations {
+		switch op.Operation {
+		case ast.Query:
+			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
+				continue
+			}
+			sels, err := s.parseASTSelections(gqlOp, s.root.Type(), op.SelectionSet)
+			if err != nil {
+				return nil, fmt.Errorf("parse selections: %w", err)
+			}
+			results, err = s.Resolve(ctx, s.root, sels...)
+			if err != nil {
+				return nil, fmt.Errorf("resolve: %w", err)
+			}
+		case ast.Mutation:
+			// TODO
+			return nil, fmt.Errorf("mutations not supported")
+		case ast.Subscription:
+			// TODO
+			return nil, fmt.Errorf("subscriptions not supported")
+		}
+	}
+	return results, nil
 }
 
 // Resolve resolves the given selections on the given object.
