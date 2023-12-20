@@ -585,7 +585,7 @@ func (InputObject[T]) Decoder() InputDecoder {
 					return nil, err
 				}
 			} else {
-				if inputDefStr := fieldT.Tag.Get("default"); len(inputDefStr) > 0 {
+				if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
 					var err error
 					input, err = zeroInput.Decoder().DecodeInput(inputDefStr)
 					if err != nil {

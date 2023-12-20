@@ -518,7 +518,7 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 			return nil, fmt.Errorf("arg %q: %T is not an input", field.Name, typed)
 		}
 		var inputDef Input
-		if inputDefStr := field.Tag.Get("default"); len(inputDefStr) > 0 {
+		if inputDefStr, hasDefault := field.Tag.Lookup("default"); hasDefault {
 			var err error
 			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
