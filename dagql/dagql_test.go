@@ -787,10 +787,11 @@ func TestEnums(t *testing.T) {
 }
 
 type MyInput struct {
-	Boolean dagql.Boolean `default:"true"`
-	Int     dagql.Int     `default:"42"`
-	String  dagql.String  `default:"hello, world!"`
-	Float   dagql.Float   `default:"3.14"`
+	Boolean     dagql.Boolean `default:"true"`
+	Int         dagql.Int     `default:"42"`
+	String      dagql.String  `default:"hello, world!"`
+	EmptyString dagql.String  `default:""`
+	Float       dagql.Float   `default:"3.14"`
 }
 
 func (MyInput) TypeName() string {
@@ -814,10 +815,11 @@ func TestInputObjects(t *testing.T) {
 	}.Install(srv)
 
 	type values struct {
-		Boolean bool
-		Int     int
-		String  string
-		Float   float64
+		Boolean     bool
+		Int         int
+		String      string
+		EmptyString string
+		Float       float64
 	}
 
 	t.Run("inputs and defaults", func(t *testing.T) {
@@ -830,18 +832,20 @@ func TestInputObjects(t *testing.T) {
 				boolean
 				int
 				string
+				emptyString
 				float
 			}
-			notDefaults: myInput(input: {boolean: false, int: 21, string: "goodbye, world!", float: 6.28}) {
+			notDefaults: myInput(input: {boolean: false, int: 21, string: "goodbye, world!", emptyString: "not empty", float: 6.28}) {
 				boolean
 				int
 				string
+				emptyString
 				float
 			}
 		}`, &res)
 
-		assert.Equal(t, values{true, 42, "hello, world!", 3.14}, res.Defaults)
-		assert.Equal(t, values{false, 21, "goodbye, world!", 6.28}, res.NotDefaults)
+		assert.Equal(t, values{true, 42, "hello, world!", "", 3.14}, res.Defaults)
+		assert.Equal(t, values{false, 21, "goodbye, world!", "not empty", 6.28}, res.NotDefaults)
 	})
 
 	t.Run("nullable inputs", func(t *testing.T) {
@@ -894,10 +898,11 @@ func TestInputObjects(t *testing.T) {
 }
 
 type Defaults struct {
-	Boolean dagql.Boolean `default:"true"`
-	Int     dagql.Int     `default:"42"`
-	String  dagql.String  `default:"hello, world!"`
-	Float   dagql.Float   `default:"3.14"`
+	Boolean     dagql.Boolean `default:"true"`
+	Int         dagql.Int     `default:"42"`
+	String      dagql.String  `default:"hello, world!"`
+	EmptyString dagql.String  `default:""`
+	Float       dagql.Float   `default:"3.14"`
 }
 
 func (Defaults) Type() *ast.Type {
@@ -917,6 +922,9 @@ func InstallDefaults(srv *dagql.Server) {
 		}),
 		dagql.Func("string", func(ctx context.Context, self Defaults, _ struct{}) (dagql.String, error) {
 			return self.String, nil
+		}),
+		dagql.Func("emptyString", func(ctx context.Context, self Defaults, _ struct{}) (dagql.String, error) {
+			return self.EmptyString, nil
 		}),
 		dagql.Func("float", func(ctx context.Context, self Defaults, _ struct{}) (dagql.Float, error) {
 			return self.Float, nil
@@ -939,10 +947,11 @@ func TestDefaults(t *testing.T) {
 
 		var res struct {
 			Defaults struct {
-				Boolean bool
-				Int     int
-				String  string
-				Float   float64
+				Boolean     bool
+				Int         int
+				String      string
+				EmptyString string
+				Float       float64
 			}
 		}
 		req(t, gql, `query {
@@ -950,6 +959,7 @@ func TestDefaults(t *testing.T) {
 				boolean
 				int
 				string
+				emptyString
 				float
 			}
 		}`, &res)
@@ -957,6 +967,7 @@ func TestDefaults(t *testing.T) {
 		assert.Equal(t, true, res.Defaults.Boolean)
 		assert.Equal(t, 42, res.Defaults.Int)
 		assert.Equal(t, "hello, world!", res.Defaults.String)
+		assert.Equal(t, "", res.Defaults.EmptyString)
 		assert.Equal(t, 3.14, res.Defaults.Float)
 	})
 
