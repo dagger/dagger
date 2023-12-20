@@ -166,7 +166,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			if gqlOp.OperationName != "" && gqlOp.OperationName != op.Name {
 				continue
 			}
-			sels, err := s.parseASTSelections(gqlOp, s.root.Type(), op.SelectionSet)
+			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
 			if err != nil {
 				return nil, fmt.Errorf("parse selections: %w", err)
 			}
@@ -260,7 +260,7 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids ArrayInput[ID[T]]) (
 }
 
 func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
-	chainedID, err := self.IDFor(sel.Selector)
+	chainedID, err := self.IDFor(ctx, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +358,7 @@ func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type,
 			},
 		})
 	}
-	sel, resType, err := class.ParseField(astField, vars)
+	sel, resType, err := class.ParseField(ctx, astField, vars)
 	if err != nil {
 		return Selection{}, err
 	}
@@ -393,7 +393,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 	return class.New(chainedID, val)
 }
 
-func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
+func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
 	class := s.classes[self.Name()]
@@ -405,13 +405,13 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.T
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(x, vars)
+			sel, resType, err := class.ParseField(ctx, x, vars)
 			if err != nil {
 				return nil, err
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {
-				subsels, err = s.parseASTSelections(gqlOp, resType, x.SelectionSet)
+				subsels, err = s.parseASTSelections(ctx, gqlOp, resType, x.SelectionSet)
 				if err != nil {
 					return nil, err
 				}
@@ -427,7 +427,7 @@ func (s *Server) parseASTSelections(gqlOp *graphql.OperationContext, self *ast.T
 				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
 			}
 			if len(fragment.SelectionSet) > 0 {
-				subsels, err := s.parseASTSelections(gqlOp, self, fragment.SelectionSet)
+				subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
 				if err != nil {
 					return nil, err
 				}
@@ -480,6 +480,33 @@ func (sel Selector) String() string {
 		str += fmt.Sprintf("[%d]", sel.Nth)
 	}
 	return str
+}
+
+func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *idproto.ID {
+	cp := id.Clone()
+	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
+	for _, arg := range sel.Args {
+		if arg.Value == nil {
+			// we don't include null arguments, since they would needlessly bust caches
+			continue
+		}
+		idArgs = append(idArgs, &idproto.Argument{
+			Name:  arg.Name,
+			Value: arg.Value.ToLiteral(),
+		})
+	}
+	sort.Slice(idArgs, func(i, j int) bool {
+		return idArgs[i].Name < idArgs[j].Name
+	})
+	cp.Constructor = append(cp.Constructor, &idproto.Selector{
+		Field:   sel.Field,
+		Args:    idArgs,
+		Nth:     int64(sel.Nth),
+		Tainted: tainted,
+		// Meta:    field.Directives.ForName("meta") != nil,    // TODO
+	})
+	cp.Type = idproto.NewType(astType)
+	return cp
 }
 
 type Inputs []NamedInput

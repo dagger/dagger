@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 
@@ -84,7 +83,7 @@ func (cls Class[T]) Definition() *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (cls Class[T]) ParseField(astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field, ok := cls.Field(astField.Name)
 	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, astField.Name)
@@ -171,37 +170,13 @@ func (r Instance[T]) String() string {
 	return fmt.Sprintf("%s@%s", r.Type().Name(), dig)
 }
 
-func (r Instance[T]) IDFor(sel Selector) (*idproto.ID, error) {
+func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, error) {
 	field, ok := r.Class.Field(sel.Field)
 	if !ok {
 		var zero T
 		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
 	}
-	cp := r.Constructor.Clone()
-	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
-	for _, arg := range sel.Args {
-		if arg.Value == nil {
-			// we don't include null arguments, since they would needlessly bust caches
-			continue
-		}
-		idArgs = append(idArgs, &idproto.Argument{
-			Name:  arg.Name,
-			Value: arg.Value.ToLiteral(),
-		})
-	}
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name < idArgs[j].Name
-	})
-	cp.Constructor = append(cp.Constructor, &idproto.Selector{
-		Field:   sel.Field,
-		Args:    idArgs,
-		Nth:     int64(sel.Nth),
-		Tainted: !field.Spec.Pure,
-		// Tainted: field.Directives.ForName("tainted") != nil, // TODO
-		// Meta:    field.Directives.ForName("meta") != nil,    // TODO
-	})
-	cp.Type = idproto.NewType(field.Spec.Type.Type())
-	return cp, nil
+	return sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure), nil
 }
 
 // Select calls a field on the instance.
@@ -437,6 +412,13 @@ type Field[T Typed] struct {
 // lines.
 func (field Field[T]) Doc(paras ...string) Field[T] {
 	field.Spec.Description = strings.Join(paras, "\n\n")
+	return field
+}
+
+// Doc sets the description of the field. Each argument is joined by two empty
+// lines.
+func (field Field[T]) DynamicReturnType(ret Typed) Field[T] {
+	field.Spec.Type = ret
 	return field
 }
 
