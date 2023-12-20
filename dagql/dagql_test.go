@@ -515,6 +515,28 @@ func TestIDsReflectQuery(t *testing.T) {
 	}
 }
 
+func TestEmptyID(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	var res struct {
+		LoadPointFromID struct {
+			X int
+			Y int
+		}
+	}
+	err := gql.Post(`query {
+		loadPointFromID(id: "") {
+			id
+			x
+			y
+		}
+	}`, &res)
+	assert.ErrorContains(t, err, "cannot decode empty string as ID")
+}
+
 func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)

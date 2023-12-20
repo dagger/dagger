@@ -556,10 +556,16 @@ func (i ID[T]) ToLiteral() *idproto.Literal {
 }
 
 func (i *ID[T]) Decode(str string) error {
+	if str == "" {
+		return fmt.Errorf("cannot decode empty string as ID")
+	}
 	expectedName := i.expected.Type().Name()
 	var idp idproto.ID
 	if err := idp.Decode(str); err != nil {
 		return err
+	}
+	if idp.Type == nil {
+		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
 	}
 	if idp.Type.NamedType != expectedName {
 		return fmt.Errorf("expected %q ID, got %q ID", expectedName, idp.Type)
