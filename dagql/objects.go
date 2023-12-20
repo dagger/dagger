@@ -489,7 +489,7 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 		return nil, nil
 	}
 	if objT.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("inputs must be a struct, got %T", obj)
+		return nil, fmt.Errorf("inputs must be a struct, got %T (%s)", obj, objT.Kind())
 	}
 	for i := 0; i < objT.NumField(); i++ {
 		field := objT.Field(i)
@@ -535,6 +535,9 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
+	if destT == nil {
+		return nil
+	}
 	if destT.Kind() != reflect.Struct {
 		return fmt.Errorf("inputs must be a struct, got %T (%s)", dest, destT.Kind())
 	}

@@ -103,6 +103,9 @@ func builtinOrInput(val any) (Input, error) {
 		return Boolean(x), nil
 	default:
 		valT := reflect.TypeOf(val)
+		if val == nil {
+			return nil, fmt.Errorf("cannot convert nil to an Input value")
+		}
 		switch valT.Kind() {
 		case reflect.Slice:
 			input, err := builtinOrInput(reflect.New(valT.Elem()).Elem().Interface())
