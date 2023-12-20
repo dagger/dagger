@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
-	"github.com/iancoleman/strcase"
 )
 
 const errorTypeName = "error"
@@ -139,7 +138,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		}
 
 		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
-		argTypeDefArgCode := []Code{Lit(argSpec.graphqlName()), argTypeDefCode}
+		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
 		if len(argOptsCode) > 0 {
 			argTypeDefArgCode = append(argTypeDefArgCode, Id("FunctionWithArgOpts").Values(argOptsCode...))
 		}
@@ -340,8 +339,4 @@ type paramSpec struct {
 	// parent is set if this paramSpec is nested inside a parent inline struct,
 	// and is used to create a declaration of the entire inline struct
 	parent *paramSpec
-}
-
-func (spec *paramSpec) graphqlName() string {
-	return strcase.ToLowerCamel(spec.name)
 }
