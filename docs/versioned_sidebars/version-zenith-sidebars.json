@@ -88,6 +88,21 @@
           ]
         },
         {
+          "type": "category",
+          "label": "Typescript",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer/typescript/quickstart"
+            },
+            {
+              "type": "link",
+              "label": "Typescript SDK Reference",
+              "id": "sdk/nodejs/reference/modules"
+            }
+          ]
+        },
+        {
           "type": "doc",
           "id": "developer/publishing-modules"
         },
