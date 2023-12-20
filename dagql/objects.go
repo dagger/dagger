@@ -497,6 +497,9 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 		if name == "" {
 			name = strcase.ToLowerCamel(field.Name)
 		}
+		if name == "-" {
+			continue
+		}
 		fieldI := reflect.New(field.Type).Elem().Interface()
 		if field.Anonymous {
 			specs, err := inputSpecsForType(fieldI)
@@ -556,6 +559,9 @@ func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
 		name := fieldT.Tag.Get("name")
 		if name == "" {
 			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		if name == "-" {
+			continue
 		}
 		spec, found := specs.Lookup(name)
 		if !found {

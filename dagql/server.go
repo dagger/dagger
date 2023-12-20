@@ -571,6 +571,9 @@ func (InputObject[T]) Decoder() InputDecoder {
 			if name == "" {
 				name = strcase.ToLowerCamel(fieldT.Name)
 			}
+			if name == "-" {
+				continue
+			}
 			zeroInput, ok := fieldV.Interface().(Input)
 			if !ok {
 				return nil, fmt.Errorf("field %q (%T) cannot be passed as an input", fieldT.Name, val)
@@ -614,6 +617,9 @@ func (input InputObject[T]) ToLiteral() *idproto.Literal {
 		name := fieldT.Tag.Get("name")
 		if name == "" {
 			name = strcase.ToLowerCamel(fieldT.Name)
+		}
+		if name == "-" {
+			continue
 		}
 		val := objV.Field(i).Interface()
 		input, ok := val.(Input)
