@@ -1068,6 +1068,8 @@ type Builtins struct {
 	String  string  `default:"hello, world!"`
 	Float   float64 `default:"3.14"`
 	Embedded
+
+	InvalidButIgnored any `name:"-"`
 }
 
 type Embedded struct {
