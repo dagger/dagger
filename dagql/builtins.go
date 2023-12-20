@@ -145,7 +145,7 @@ func (d DynamicArrayInput) DecodeInput(val any) (Input, error) {
 		dec := json.NewDecoder(strings.NewReader(x))
 		dec.UseNumber()
 		if err := dec.Decode(&vals); err != nil {
-			return nil, fmt.Errorf("decode: %w", err)
+			return nil, fmt.Errorf("decode %q: %w", x, err)
 		}
 		return d.DecodeInput(vals)
 	default:

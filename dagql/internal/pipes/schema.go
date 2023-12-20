@@ -32,7 +32,7 @@ func Install[Root dagql.Typed](srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[Pipe]{
-		dagql.Func("read", func(ctx context.Context, self Pipe, _ any) (dagql.String, error) {
+		dagql.Func("read", func(ctx context.Context, self Pipe, _ struct{}) (dagql.String, error) {
 			fmt.Fprintln(ioctx.Stdout(ctx), "reading from", self.Channel)
 			return <-self.Channel, nil
 		}).Impure(),
