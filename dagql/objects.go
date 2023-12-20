@@ -504,25 +504,21 @@ func inputSpecsForType(obj any) ([]InputSpec, error) {
 		if field.Anonymous {
 			specs, err := inputSpecsForType(fieldI)
 			if err != nil {
-				return nil, fmt.Errorf("arg %q: %w", field.Name, err)
+				return nil, fmt.Errorf("arg %q: %w", name, err)
 			}
 			inputSpecs = append(inputSpecs, specs...)
 			continue
 		}
-		typed, err := builtinOrInput(fieldI)
+		input, err := builtinOrInput(fieldI)
 		if err != nil {
-			return nil, fmt.Errorf("arg %q: %w", field.Name, err)
-		}
-		input, ok := typed.(Input)
-		if !ok {
-			return nil, fmt.Errorf("arg %q: %T is not an input", field.Name, typed)
+			return nil, fmt.Errorf("arg %q: %w", name, err)
 		}
 		var inputDef Input
 		if inputDefStr, hasDefault := field.Tag.Lookup("default"); hasDefault {
 			var err error
 			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
-				return nil, fmt.Errorf("convert default value for arg %s: %w", name, err)
+				return nil, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
 			}
 		}
 		inputSpecs = append(inputSpecs, InputSpec{

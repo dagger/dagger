@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
@@ -650,7 +651,7 @@ func (a ArrayInput[S]) Decoder() InputDecoder {
 
 var _ InputDecoder = ArrayInput[Input]{}
 
-func (ArrayInput[I]) DecodeInput(val any) (Input, error) {
+func (a ArrayInput[I]) DecodeInput(val any) (Input, error) {
 	var zero I
 	decoder := zero.Decoder()
 	switch x := val.(type) {
@@ -664,8 +665,16 @@ func (ArrayInput[I]) DecodeInput(val any) (Input, error) {
 			arr[i] = elem.(I) // TODO sus
 		}
 		return arr, nil
+	case string: // default
+		var vals []any
+		dec := json.NewDecoder(strings.NewReader(x))
+		dec.UseNumber()
+		if err := dec.Decode(&vals); err != nil {
+			return nil, fmt.Errorf("decode %q: %w", x, err)
+		}
+		return a.DecodeInput(vals)
 	default:
-		return nil, fmt.Errorf("cannot create Int from %T", x)
+		return nil, fmt.Errorf("cannot create ArrayInput from %T", x)
 	}
 }
 
@@ -840,11 +849,11 @@ func (n Optional[I]) DecodeInput(val any) (Input, error) { // TODO this should r
 	}, nil
 }
 
-func (n Optional[S]) Unwrap() (Typed, bool) {
+func (n Optional[I]) Unwrap() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
-func (i *Optional[S]) UnmarshalJSON(p []byte) error {
+func (i *Optional[I]) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &i.Value); err != nil {
 		return err
 	}
