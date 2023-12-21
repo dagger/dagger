@@ -1038,6 +1038,30 @@ Retrieves this container with a different working directory.
 
 ___
 
+### withoutDefaultArgs
+
+**withoutDefaultArgs**(): [`Container`](api_client_gen.Container.md)
+
+Retrieves this container with unset default arguments for future commands.
+
+#### Returns
+
+[`Container`](api_client_gen.Container.md)
+
+___
+
+### withoutEntrypoint
+
+**withoutEntrypoint**(): [`Container`](api_client_gen.Container.md)
+
+Retrieves this container with an unset command entrypoint.
+
+#### Returns
+
+[`Container`](api_client_gen.Container.md)
+
+___
+
 ### withoutEnvVariable
 
 **withoutEnvVariable**(`name`): [`Container`](api_client_gen.Container.md)
@@ -1155,6 +1179,34 @@ Retrieves this container with a previously added Unix socket removed.
 | Name | Type | Description |
 | :------ | :------ | :------ |
 | `path` | `string` | Location of the socket to remove (e.g., "/tmp/socket"). |
+
+#### Returns
+
+[`Container`](api_client_gen.Container.md)
+
+___
+
+### withoutUser
+
+**withoutUser**(): [`Container`](api_client_gen.Container.md)
+
+Retrieves this container with an unset command user.
+
+Should default to root.
+
+#### Returns
+
+[`Container`](api_client_gen.Container.md)
+
+___
+
+### withoutWorkdir
+
+**withoutWorkdir**(): [`Container`](api_client_gen.Container.md)
+
+Retrieves this container with an unset working directory.
+
+Should default to "/".
 
 #### Returns
 

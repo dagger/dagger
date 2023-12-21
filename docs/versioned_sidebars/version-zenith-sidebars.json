@@ -88,6 +88,16 @@
           ]
         },
         {
+          "type": "category",
+          "label": "Typescript",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer/typescript/quickstart"
+            }
+          ]
+        },
+        {
           "type": "doc",
           "id": "developer/publishing-modules"
         },
