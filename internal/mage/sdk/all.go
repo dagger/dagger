@@ -27,6 +27,7 @@ var availableSDKs = []SDK{
 	&Nodejs{},
 	&Elixir{},
 	&Rust{},
+	&PHP{},
 }
 
 var _ SDK = All{}

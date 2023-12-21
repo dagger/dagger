@@ -1,0 +1,5 @@
+schema:
+  - http://localhost:8080/query:
+      headers:
+        Authorization: "Basic ZGV2Og=="
+      introspect: true

@@ -1,0 +1,30 @@
+{
+    "name": "dagger/dagger",
+    "description": "Dagger PHP SDK",
+    "type": "library",
+    "homepage": "https://dagger.io",
+    "license": "Apache-2.0",
+    "require": {
+        "php": ">=8.2",
+        "symfony/process": "^6.3",
+        "gmostafa/php-graphql-client": "^1.13",
+        "psr/log": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Dagger\\": "src/",
+            "Dagger\\Dagger\\": "generated/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Dagger\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.4",
+        "symfony/console": "^6.3",
+        "nette/php-generator": "^4.1",
+        "webonyx/graphql-php": "^15.8"
+    }
+}
