@@ -65,7 +65,7 @@ jobs:
           ./hack/make ${{ inputs.mage-targets }}
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
-          DAGGER_CLOUD_TOKEN: "${{ secrets.DAGGER_CLOUD_TOKEN }}"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
