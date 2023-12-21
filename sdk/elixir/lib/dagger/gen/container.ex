@@ -951,10 +951,18 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container with an unset command entrypoint."
-    @spec without_entrypoint(t()) :: Dagger.Container.t()
-    def without_entrypoint(%__MODULE__{} = container) do
+    @doc "Retrieves this container with an unset command entrypoint.\n\n\n\n## Optional Arguments\n\n* `keep_default_args` - Don't remove the default arguments when unsetting the entrypoint."
+    @spec without_entrypoint(t(), keyword()) :: Dagger.Container.t()
+    def without_entrypoint(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "withoutEntrypoint")
+
+      selection =
+        if is_nil(optional_args[:keep_default_args]) do
+          selection
+        else
+          arg(selection, "keepDefaultArgs", optional_args[:keep_default_args])
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )

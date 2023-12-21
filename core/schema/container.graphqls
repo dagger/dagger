@@ -271,7 +271,12 @@ type Container {
   """
   Retrieves this container with an unset command entrypoint.
   """
-  withoutEntrypoint: Container!
+  withoutEntrypoint(
+    """
+    Don't remove the default arguments when unsetting the entrypoint.
+    """
+    keepDefaultArgs: Boolean = false
+  ): Container!
 
   "Retrieves default arguments for future commands."
   defaultArgs: [String!]

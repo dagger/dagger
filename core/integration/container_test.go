@@ -710,16 +710,45 @@ func TestContainerExecWithoutEntrypoint(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
-	res, err := c.Container().
-		From(alpineImage).
-		// if not unset this would return an error
-		WithEntrypoint([]string{"foo"}).
-		WithoutEntrypoint().
-		WithExec([]string{"echo", "-n", "foobar"}).
-		Stdout(ctx)
+	t.Run("cleared entrypoint", func(t *testing.T) {
+		res, err := c.Container().
+			From(alpineImage).
+			// if not unset this would return an error
+			WithEntrypoint([]string{"foo"}).
+			WithoutEntrypoint().
+			WithExec([]string{"echo", "-n", "foobar"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", res)
+	})
 
-	require.NoError(t, err)
-	require.Equal(t, "foobar", res)
+	t.Run("cleared entrypoint with default args", func(t *testing.T) {
+		res, err := c.Container().
+			From(alpineImage).
+			WithEntrypoint([]string{"foo"}).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+				Args: []string{"echo", "-n", "foobar"},
+			}).
+			WithoutEntrypoint().
+			Stdout(ctx)
+		require.ErrorContains(t, err, "no command has been set")
+		require.Empty(t, res)
+	})
+
+	t.Run("cleared entrypoint without default args", func(t *testing.T) {
+		res, err := c.Container().
+			From(alpineImage).
+			WithEntrypoint([]string{"foo"}).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+				Args: []string{"echo", "-n", "foobar"},
+			}).
+			WithoutEntrypoint(dagger.ContainerWithoutEntrypointOpts{
+				KeepDefaultArgs: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", res)
+	})
 }
 
 func TestContainerWithDefaultArgs(t *testing.T) {

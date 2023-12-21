@@ -417,6 +417,13 @@ export type ContainerWithUnixSocketOpts = {
   owner?: string
 }
 
+export type ContainerWithoutEntrypointOpts = {
+  /**
+   * Don't remove the default arguments when unsetting the entrypoint.
+   */
+  keepDefaultArgs?: boolean
+}
+
 export type ContainerWithoutExposedPortOpts = {
   /**
    * Port protocol to unexpose
@@ -2211,13 +2218,15 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves this container with an unset command entrypoint.
+   * @param opts.keepDefaultArgs Don't remove the default arguments when unsetting the entrypoint.
    */
-  withoutEntrypoint = (): Container => {
+  withoutEntrypoint = (opts?: ContainerWithoutEntrypointOpts): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withoutEntrypoint",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,
