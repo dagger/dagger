@@ -766,9 +766,12 @@ class Container extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
     /**
      * Retrieves this container with an unset command entrypoint.
      */
-    public function withoutEntrypoint(): Container
+    public function withoutEntrypoint(?bool $keepDefaultArgs = false): Container
     {
         $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutEntrypoint');
+        if (null !== $keepDefaultArgs) {
+        $innerQueryBuilder->setArgument('keepDefaultArgs', $keepDefaultArgs);
+        }
         return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
