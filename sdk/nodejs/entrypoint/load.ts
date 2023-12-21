@@ -22,11 +22,13 @@ export async function loadArg(value: string): Promise<any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsedValue: any
 
-  // Apply JSON parse to parse array or string if the value is wrapped into a string or array
-  if (
+  const isString = (): boolean =>
     (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("[") && value.endsWith("]"))
-  ) {
+    (value.startsWith(`'`) && value.endsWith(`'`))
+  const isArray = (): boolean => value.startsWith("[") && value.endsWith("]")
+
+  // Apply JSON parse to parse array or string if the value is wrapped into a string or array
+  if (isString() || isArray()) {
     parsedValue = JSON.parse(value)
   } else {
     parsedValue = value

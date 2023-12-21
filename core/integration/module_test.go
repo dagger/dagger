@@ -4390,6 +4390,51 @@ func TestModuleReservedWords(t *testing.T) {
 	})
 }
 
+//go:embed testdata/modules/typescript/syntax/index.ts
+var tsSyntax string
+
+func TestModuleTypescriptSyntaxSupport(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=syntax", "--sdk=typescript")).
+		WithNewFile("src/index.ts", dagger.ContainerWithNewFileOpts{
+			Contents: tsSyntax,
+		})
+
+	t.Run("singleQuoteDefaultArgHello(msg: string = 'world'): string", func(t *testing.T) {
+		t.Parallel()
+
+		defaultOut, err := modGen.With(daggerQuery(`{syntax{singleQuoteDefaultArgHello}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"syntax":{"singleQuoteDefaultArgHello":"hello world"}}`, defaultOut)
+
+		out, err := modGen.With(daggerQuery(`{syntax{singleQuoteDefaultArgHello(msg: "dagger")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"syntax":{"singleQuoteDefaultArgHello":"hello dagger"}}`, out)
+	})
+
+	t.Run("doubleQuotesDefaultArgHello(msg: string = \"world\"): string", func(t *testing.T) {
+		t.Parallel()
+
+		defaultOut, err := modGen.With(daggerQuery(`{syntax{doubleQuotesDefaultArgHello}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"syntax":{"doubleQuotesDefaultArgHello":"hello world"}}`, defaultOut)
+
+		out, err := modGen.With(daggerQuery(`{syntax{doubleQuotesDefaultArgHello(msg: "dagger")}}`)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"syntax":{"doubleQuotesDefaultArgHello":"hello dagger"}}`, out)
+	})
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
