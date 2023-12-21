@@ -17,8 +17,6 @@ import (
 	"github.com/vito/dagql/idproto"
 	"github.com/vito/dagql/internal/pipes"
 	"github.com/vito/dagql/internal/points"
-	"github.com/vito/progrock"
-	"github.com/vito/progrock/console"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 )
@@ -1156,8 +1154,6 @@ func TestDefaults(t *testing.T) {
 
 func TestParallelism(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	cons := console.NewWriter(newTWriter(t))
-	srv.RecordTo(progrock.NewRecorder(cons))
 	gql := client.New(handler.NewDefaultServer(srv))
 
 	pipes.Install[Query](srv)
