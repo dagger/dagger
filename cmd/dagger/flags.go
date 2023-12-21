@@ -250,16 +250,45 @@ type secretValue struct {
 	plaintext string
 }
 
+const (
+	envSecretSource  = "env"
+	fileSecretSource = "file"
+)
+
 func (v *secretValue) Type() string {
 	return Secret
 }
 
 func (v *secretValue) Set(s string) error {
+	secretSource, val, ok := strings.Cut(s, ":")
+	if !ok {
+		val = secretSource
+		secretSource = envSecretSource
+	}
+
+	switch secretSource {
+	case envSecretSource:
+		plaintext, ok := os.LookupEnv(val)
+		if !ok {
+			return fmt.Errorf("secret env var source not found: %q", val)
+		}
+		v.plaintext = plaintext
+
+	case fileSecretSource:
+		plaintext, err := os.ReadFile(val)
+		if err != nil {
+			return fmt.Errorf("failed to read secret file source: %q", val)
+		}
+		v.plaintext = string(plaintext)
+
+	default:
+		return fmt.Errorf("unsupported secret arg source: %q", secretSource)
+	}
+
 	// NB: If we allow getting the name from the dagger.Secret instance,
 	// it can be vulnerable to brute force attacks.
-	hash := sha256.Sum256([]byte(s))
+	hash := sha256.Sum256([]byte(v.plaintext))
 	v.name = hex.EncodeToString(hash[:])
-	v.plaintext = s
 	return nil
 }
 

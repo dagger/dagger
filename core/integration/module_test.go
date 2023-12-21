@@ -4252,6 +4252,41 @@ func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
 			}
 		})
 	})
+
+	t.Run("secret args", func(t *testing.T) {
+		t.Parallel()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
+	return token.Plaintext(ctx)
+}
+`,
+			}).
+			WithEnvVariable("TOPSECRET", "shhh").
+			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
+
+		out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "shhh", strings.TrimSpace(out))
+
+		out, err = modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "shhh", strings.TrimSpace(out))
+
+		out, err = modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file shhh", strings.TrimSpace(out))
+	})
 }
 
 func TestModuleLoops(t *testing.T) {
