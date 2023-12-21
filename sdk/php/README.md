@@ -11,16 +11,10 @@
 > **Warning**
 > The Dagger PHP SDK requires Dagger v0.9.3 or later
 
-# dagger-php-sdk
-Experimental [Dagger.io](https://dagger.io) SDK for PHP
+# Dagger PHP SDK
+An experimental [Dagger.io](https://dagger.io) SDK for PHP.
 
 ## Usage
-
-### Install the composer package
-
-TODO
-
-### Example code
 
 ```php
 $client = Dagger::connect();

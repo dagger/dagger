@@ -140,7 +140,7 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 
 	var gitUserEmail = os.Getenv("GIT_USER_EMAIL")
 	if gitUserEmail == "" {
-		gitUserEmail = "hellog@dagger.io"
+		gitUserEmail = "hello@dagger.io"
 	}
 
 	git := util.GoBase(c).

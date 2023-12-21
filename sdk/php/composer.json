@@ -1,15 +1,15 @@
 {
     "name": "dagger/dagger",
     "description": "Dagger PHP SDK",
-    "version": "0.0.2",
     "type": "library",
+    "homepage": "https://dagger.io",
+    "license": "Apache-2.0",
     "require": {
         "php": ">=8.2",
         "symfony/process": "^6.3",
         "gmostafa/php-graphql-client": "^1.13",
         "psr/log": "^3.0"
     },
-    "license": "Apache-2.0",
     "autoload": {
         "psr-4": {
             "Dagger\\": "src/",
