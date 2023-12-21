@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2026%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-December%2021,%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -210,7 +210,7 @@ cd ../..
 
 ```console
 git checkout main
-git "${DAGGER_REPO_REMOTE:?must be set}" pull
+git pull "${DAGGER_REPO_REMOTE:?must be set}"
 git branch -D bump-engine
 
 export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
@@ -256,7 +256,7 @@ dagger run ./hack/make engine:test
       double-check that is was picked up by
       [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
       this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
-      The new version can take up to `30mins` to appear, it's OK to move on.
+      The new version can take up to `60mins` to appear, it's OK to move on.
 
 > **Note**
 >
