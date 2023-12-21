@@ -246,8 +246,8 @@ func (v *fileValue) Get(c *dagger.Client) any {
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
 // plaintext value.
 type secretValue struct {
-	name      string
-	plaintext string
+	secretSource string
+	sourceVal    string
 }
 
 const (
@@ -262,42 +262,46 @@ func (v *secretValue) Type() string {
 func (v *secretValue) Set(s string) error {
 	secretSource, val, ok := strings.Cut(s, ":")
 	if !ok {
+		// case of e.g. `--token MY_ENV_SECRET`, which is shorthand for `--token env:MY_ENV_SECRET`
 		val = secretSource
 		secretSource = envSecretSource
 	}
+	v.secretSource = secretSource
+	v.sourceVal = val
 
-	switch secretSource {
-	case envSecretSource:
-		plaintext, ok := os.LookupEnv(val)
-		if !ok {
-			return fmt.Errorf("secret env var source not found: %q", val)
-		}
-		v.plaintext = plaintext
-
-	case fileSecretSource:
-		plaintext, err := os.ReadFile(val)
-		if err != nil {
-			return fmt.Errorf("failed to read secret file source: %q", val)
-		}
-		v.plaintext = string(plaintext)
-
-	default:
-		return fmt.Errorf("unsupported secret arg source: %q", secretSource)
-	}
-
-	// NB: If we allow getting the name from the dagger.Secret instance,
-	// it can be vulnerable to brute force attacks.
-	hash := sha256.Sum256([]byte(v.plaintext))
-	v.name = hex.EncodeToString(hash[:])
 	return nil
 }
 
 func (v *secretValue) String() string {
-	return v.name
+	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
 }
 
 func (v *secretValue) Get(c *dagger.Client) any {
-	return c.SetSecret(v.name, v.plaintext)
+	var plaintext string
+	switch v.secretSource {
+	case envSecretSource:
+		envPlaintext, ok := os.LookupEnv(v.sourceVal)
+		if !ok {
+			return fmt.Errorf("secret env var source not found: %q", v.sourceVal)
+		}
+		plaintext = envPlaintext
+
+	case fileSecretSource:
+		filePlaintext, err := os.ReadFile(v.sourceVal)
+		if err != nil {
+			return fmt.Errorf("failed to read secret file source: %q", v.sourceVal)
+		}
+		plaintext = string(filePlaintext)
+
+	default:
+		return fmt.Errorf("unsupported secret arg source: %q", v.secretSource)
+	}
+
+	// NB: If we allow getting the name from the dagger.Secret instance,
+	// it can be vulnerable to brute force attacks.
+	hash := sha256.Sum256([]byte(plaintext))
+	secretName := hex.EncodeToString(hash[:])
+	return c.SetSecret(secretName, plaintext)
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port
