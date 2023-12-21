@@ -20,6 +20,12 @@ func (id *ID) Path() string {
 	if id.Parent != nil {
 		fmt.Fprintf(buf, "%s.", id.Parent.Path())
 	}
+	fmt.Fprint(buf, id.DisplaySelf())
+	return buf.String()
+}
+
+func (id *ID) DisplaySelf() string {
+	buf := new(bytes.Buffer)
 	fmt.Fprintf(buf, "%s", id.Field)
 	for ai, arg := range id.Args {
 		if ai == 0 {
