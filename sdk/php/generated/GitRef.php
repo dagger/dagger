@@ -11,7 +11,7 @@ namespace Dagger\Dagger;
 /**
  * A git ref (tag, branch or commit).
  */
-class GitRef extends \Dagger\Client\AbstractDaggerObject
+class GitRef extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
 {
     /**
      * The resolved commit id at this ref.
@@ -20,6 +20,15 @@ class GitRef extends \Dagger\Client\AbstractDaggerObject
     {
         $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('commit');
         return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
+    }
+
+    /**
+     * Retrieves the content-addressed identifier of the git ref.
+     */
+    public function id(): GitRefId
+    {
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
+        return new \Dagger\Dagger\GitRefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

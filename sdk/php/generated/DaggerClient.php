@@ -242,6 +242,26 @@ class DaggerClient extends \Dagger\Client\AbstractDaggerClient
     }
 
     /**
+     * Load a git ref from its ID.
+     */
+    public function loadGitRefFromID(GitRefId|GitRef $id): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadGitRefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a git repository from its ID.
+     */
+    public function loadGitRepositoryFromID(GitRepositoryId|GitRepository $id): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('loadGitRepositoryFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a module by ID.
      */
     public function loadModuleFromID(ModuleId|Module $id): Module

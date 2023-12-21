@@ -11,7 +11,7 @@ namespace Dagger\Dagger;
 /**
  * A git repository.
  */
-class GitRepository extends \Dagger\Client\AbstractDaggerObject
+class GitRepository extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
 {
     /**
      * Returns details on one branch.
@@ -31,6 +31,15 @@ class GitRepository extends \Dagger\Client\AbstractDaggerObject
         $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('commit');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the content-addressed identifier of the git repository.
+     */
+    public function id(): GitRepositoryId
+    {
+        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
+        return new \Dagger\Dagger\GitRepositoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

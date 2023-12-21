@@ -427,10 +427,13 @@ class Container extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
     /**
      * Retrieves this container but with a different command entrypoint.
      */
-    public function withEntrypoint(array $args): Container
+    public function withEntrypoint(array $args, ?bool $keepDefaultArgs = false): Container
     {
         $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withEntrypoint');
         $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $keepDefaultArgs) {
+        $innerQueryBuilder->setArgument('keepDefaultArgs', $keepDefaultArgs);
+        }
         return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -488,8 +491,9 @@ class Container extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      * Expose a network port.
      *
      * Exposed ports serve two purposes:
-     *   - For health checks and introspection, when running services
-     *   - For setting the EXPOSE OCI field when publishing the container
+     *
+     * - For health checks and introspection, when running services
+     * - For setting the EXPOSE OCI field when publishing the container
      */
     public function withExposedPort(
         int $port,
@@ -751,6 +755,24 @@ class Container extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
     }
 
     /**
+     * Retrieves this container with unset default arguments for future commands.
+     */
+    public function withoutDefaultArgs(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutDefaultArgs');
+        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with an unset command entrypoint.
+     */
+    public function withoutEntrypoint(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutEntrypoint');
+        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container minus the given environment variable.
      */
     public function withoutEnvVariable(string $name): Container
@@ -822,6 +844,28 @@ class Container extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
     {
         $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutUnixSocket');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with an unset command user.
+     *
+     * Should default to root.
+     */
+    public function withoutUser(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutUser');
+        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with an unset working directory.
+     *
+     * Should default to "/".
+     */
+    public function withoutWorkdir(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutWorkdir');
         return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
