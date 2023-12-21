@@ -11,7 +11,7 @@ import (
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
+	_ "github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
@@ -40,36 +40,32 @@ var funcCmds = FuncCommands{
 
 var funcListCmd = &FuncCommand{
 	Name:  "functions",
-	Short: `List all functions in a module`,
+	Short: `List available functions`,
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			termenv.String("object name").Bold(),
-			termenv.String("function name").Bold(),
-			termenv.String("description").Bold(),
-			termenv.String("return type").Bold(),
-		)
-
-		for _, o := range fc.mod.Objects {
-			if o.AsObject != nil {
-				for _, fn := range o.AsObject.GetFunctions() {
-					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(fc.mod.Name) {
-						objName = "*" + objName
-					}
-
-					// TODO: Add another column with available verbs.
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-						objName,
-						fn.Name,
-						fn.Description,
-						printReturnType(fn.ReturnType),
-					)
-				}
+		o := fc.mod.GetMainObject()
+		// Walk the hypothetical function pipeline specified by the args
+		for _, field := range cmd.Flags().Args() {
+			// Lookup the next function in the specified pipeline
+			nextFunc, err := o.GetFunction(field)
+			if err != nil {
+				return err
 			}
+			nextType := nextFunc.ReturnType
+			if nextType.AsObject != nil {
+				o = nextType.AsObject
+				continue
+			}
+			// FIXME: handle arrays of objects
+			return fmt.Errorf("Function '%s' returns non-object type %v", field, nextType.Kind)
 		}
-
+		// List functions on the final object
+		for _, fn := range o.GetFunctions() {
+			fmt.Fprintf(tw, "%s\t%s\n",
+				fn.Name,
+				fn.Description,
+			)
+		}
 		return tw.Flush()
 	},
 }
