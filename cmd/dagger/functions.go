@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -40,34 +42,54 @@ var funcCmds = FuncCommands{
 
 var funcListCmd = &FuncCommand{
 	Name:  "functions",
-	Short: `List all functions in a module`,
+	Short: `List available functions`,
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			termenv.String("object name").Bold(),
-			termenv.String("function name").Bold(),
-			termenv.String("description").Bold(),
-			termenv.String("return type").Bold(),
+		o := fc.mod.GetMainObject()
+		fmt.Fprintf(tw, "%s\t%s\n",
+			termenv.String("Name").Bold(),
+			termenv.String("Description").Bold(),
 		)
-
-		for _, fnProvider := range fc.mod.AsFunctionProviders() {
-			for _, fn := range fnProvider.GetFunctions() {
-				providerName := fnProvider.ProviderName()
-				if gqlObjectName(providerName) == gqlObjectName(fc.mod.Name) {
-					providerName = "*" + providerName
-				}
-
-				// TODO: Add another column with available verbs.
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-					providerName,
-					fn.Name,
-					fn.Description,
-					printReturnType(fn.ReturnType),
-				)
+		// Walk the hypothetical function pipeline specified by the args
+		for _, field := range cmd.Flags().Args() {
+			// Lookup the next function in the specified pipeline
+			nextFunc, err := o.GetFunction(field)
+			if err != nil {
+				return err
 			}
+			nextType := nextFunc.ReturnType
+			if nextType.AsObject != nil {
+				// sipsma explains why 'nextType.AsObject' is not enough:
+				// > when we're returning the hierarchies of TypeDefs from the API,
+				// > and an object shows up as an output/input type to a function,
+				// > we just return a TypeDef with a name of the object rather than the full object definition.
+				// > You can get the full object definition only from the "top-level" returned object on the api call.
+				//
+				// > The reason is that if we repeated the full object definition every time,
+				// > you'd at best be using O(n^2) space in the result,
+				// > and at worst cause json serialization errors due to cyclic references
+				// > (i.e. with* functions on an object that return the object itself).
+				o = fc.mod.GetObject(nextType.AsObject.Name)
+				continue
+			}
+			// FIXME: handle arrays of objects
+			return fmt.Errorf("function '%s' returns non-object type %v", field, nextType.Kind)
 		}
-
+		// List functions on the final object
+		fns := o.GetFunctions()
+		sort.Slice(fns, func(i, j int) bool {
+			return fns[i].Name < fns[j].Name
+		})
+		for _, fn := range fns {
+			desc := strings.SplitN(fn.Description, "\n", 2)[0]
+			if desc == "" {
+				desc = "-"
+			}
+			fmt.Fprintf(tw, "%s\t%s\n",
+				fn.Name,
+				desc,
+			)
+		}
 		return tw.Flush()
 	},
 }

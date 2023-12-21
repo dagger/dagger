@@ -846,6 +846,24 @@ func (o *modObject) GetFunctions() []*modFunction {
 	return fns
 }
 
+func (o *modObject) GetFunction(name string) (*modFunction, error) {
+	for _, fn := range o.Functions {
+		if fn.Name == name {
+			return fn, nil
+		}
+	}
+	for _, f := range o.Fields {
+		if f.Name == name {
+			return &modFunction{
+				Name:        f.Name,
+				Description: f.Description,
+				ReturnType:  f.TypeDef,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("no function '%s' in object type '%s'", name, o.Name)
+}
+
 type modInterface struct {
 	Name      string
 	Functions []*modFunction
