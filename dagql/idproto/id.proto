@@ -12,27 +12,17 @@ option go_package = "./idproto";
 // objects. Alternatively it may be stored in a database and referred to via an
 // RFC-6920 ni://sha-256;... URI.
 message ID {
+  // The parent ID, if any.
+  ID parent = 1;
+
   // The GraphQL type of the value.
-  Type type = 1;
+  Type type = 2;
 
-  // Chain of GraphQL field selections that construct the object, starting from
-  // Query.
-  repeated Selector constructor = 2;
-}
-
-// Selector is an individual field and arguments. Its result will either be
-// passed to the next Selector in the pipeline or returned as the final ID
-// result.
-//
-// I can't explain why, but this name feels more satisfying than the drier
-// alternatives ("field", "call", ...). Feel free to call me out and suggest
-// alternatives.
-message Selector {
   // GraphQL field name.
-  string field = 1;
+  string field = 3;
 
   // GraphQL field arguments, always in alphabetical order.
-  repeated Argument args = 2;
+  repeated Argument args = 4;
 
   // If true, this Selector is not reproducible.
   //
@@ -40,7 +30,7 @@ message Selector {
   // that all internal? Forcing function is whether this is used as an
   // in-memory query cache key. But the query cache might be made per-session
   // or even per-client instead anyway! What buys us the most?
-  bool tainted = 3;
+  bool tainted = 5;
 
   // If true, this Selector may be omitted from the pipeline without changing
   // the ultimate result.
@@ -51,7 +41,7 @@ message Selector {
   // It is worth noting that we don't store meta information at this level and
   // continue to force metadata to be set via GraphQL queries. It makes IDs
   // always easy to evaluate.
-  bool meta = 4;
+  bool meta = 6;
 
   // If the field returns a list, this is the index of the element to select.
   // Note that this defaults to zero, as IDs always refer to
@@ -60,7 +50,7 @@ message Selector {
   // selection, but we're intentionally limiting ourselves instead to cover
   // only the common case of returning a list of objects. The only case not
   // handled is a nested list. Don't do that; have a type instead.
-  int64 nth = 5;
+  int64 nth = 7;
 }
 
 // A named value passed to a GraphQL field or contained in an input object.

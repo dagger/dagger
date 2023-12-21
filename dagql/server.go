@@ -36,9 +36,8 @@ func NewServer[T Typed](root T) *Server {
 	queryClass := NewClass[T]()
 	srv := &Server{
 		root: Instance[T]{
-			Constructor: idproto.New(root.Type()),
-			Self:        root,
-			Class:       queryClass,
+			Self:  root,
+			Class: queryClass,
 		},
 		classes: map[string]ObjectType{
 			root.Type().Name(): queryClass,
@@ -217,32 +216,45 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 
 // Load loads the object with the given ID.
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
-	if len(id.Constructor) == 0 {
-		return s.root, nil
-	}
-	sel, err := s.constructorToSelection(ctx, s.root.Type(), id.Constructor[0], id.Constructor[1:]...)
-	if err != nil {
-		return nil, err
-	}
-	var res any
-	res, err = s.Resolve(ctx, s.root, sel)
-	if err != nil {
-		return nil, err
-	}
-	for _, sel := range id.Constructor {
-		switch x := res.(type) {
-		case map[string]any:
-			res = x[sel.Field]
-		default:
-			return nil, fmt.Errorf("unexpected result type %T", x)
+	var base Object
+	var err error
+	if id.Parent != nil {
+		base, err = s.Load(ctx, id.Parent)
+		if err != nil {
+			return nil, err
 		}
+	} else {
+		base = s.root
 	}
-	val, ok := res.(Typed)
+	selfType := base.Type()
+	class, ok := s.classes[selfType.Name()]
 	if !ok {
-		// should be impossible, since Instance.Select returns a Typed
-		return nil, fmt.Errorf("unexpected result type %T", res)
+		return nil, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
 	}
-	return s.toSelectable(id, val)
+	astField := &ast.Field{
+		Name: id.Field,
+	}
+	vars := map[string]any{}
+	for _, arg := range id.Args {
+		vars[arg.Name] = arg.Value.ToInput()
+		astField.Arguments = append(astField.Arguments, &ast.Argument{
+			Name: arg.Name,
+			Value: &ast.Value{
+				Kind: ast.Variable,
+				Raw:  arg.Name,
+			},
+		})
+	}
+	sel, _, err := class.ParseField(ctx, astField, vars)
+	if err != nil {
+		return nil, err
+	}
+	sel.Nth = int(id.Nth)
+	res, id, err := s.cachedSelect(ctx, base, sel)
+	if err != nil {
+		return nil, err
+	}
+	return s.toSelectable(id, res)
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
@@ -258,20 +270,18 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 	return out, nil
 }
 
-func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
-	chainedID, err := self.IDFor(ctx, sel.Selector)
+func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *idproto.ID, rerr error) {
+	chainedID, err := self.IDFor(ctx, sel)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
 	dig, err := chainedID.Canonical().Digest()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
 	var val Typed
-	if chainedID.Tainted() {
-		val, err = self.Select(ctx, sel.Selector)
+	if chainedID.IsTainted() {
+		val, err = self.Select(ctx, sel)
 	} else {
 		val, err = s.cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (Typed, error) {
 			if s.rec != nil {
@@ -280,9 +290,17 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 				ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 				ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 			}
-			return self.Select(ctx, sel.Selector)
+			return self.Select(ctx, sel)
 		})
 	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return val, chainedID, nil
+}
+
+func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
+	val, chainedID, err := s.cachedSelect(ctx, self, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +334,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 					continue
 				}
 			}
-			node, err := s.toSelectable(chainedID.Nth(nth), val)
+			node, err := s.toSelectable(chainedID.SelectNth(nth), val)
 			if err != nil {
 				return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 			}
@@ -336,47 +354,6 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 	}
 
 	return s.Resolve(ctx, node, sel.Subselections...)
-}
-
-func (s *Server) constructorToSelection(ctx context.Context, selfType *ast.Type, first *idproto.Selector, rest ...*idproto.Selector) (Selection, error) {
-	class, ok := s.classes[selfType.Name()]
-	if !ok {
-		return Selection{}, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
-	}
-	astField := &ast.Field{
-		Name: first.Field,
-	}
-	vars := map[string]any{}
-	for _, arg := range first.Args {
-		vars[arg.Name] = arg.Value.ToInput()
-		astField.Arguments = append(astField.Arguments, &ast.Argument{
-			Name: arg.Name,
-			Value: &ast.Value{
-				Kind: ast.Variable,
-				Raw:  arg.Name,
-			},
-		})
-	}
-	sel, resType, err := class.ParseField(ctx, astField, vars)
-	if err != nil {
-		return Selection{}, err
-	}
-	if first.Nth != 0 {
-		sel.Nth = int(first.Nth)
-		resType = resType.Elem
-	}
-	var subsels []Selection
-	if len(rest) > 0 {
-		subsel, err := s.constructorToSelection(ctx, resType, rest[0], rest[1:]...)
-		if err != nil {
-			return Selection{}, err
-		}
-		subsels = []Selection{subsel}
-	}
-	return Selection{
-		Selector:      sel,
-		Subselections: subsels,
-	}, nil
 }
 
 func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) {
@@ -482,7 +459,6 @@ func (sel Selector) String() string {
 }
 
 func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *idproto.ID {
-	cp := id.Clone()
 	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
 	for _, arg := range sel.Args {
 		if arg.Value == nil {
@@ -494,18 +470,21 @@ func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *i
 			Value: arg.Value.ToLiteral(),
 		})
 	}
+	// TODO: it's better DX if it matches schema order
 	sort.Slice(idArgs, func(i, j int) bool {
 		return idArgs[i].Name < idArgs[j].Name
 	})
-	cp.Constructor = append(cp.Constructor, &idproto.Selector{
-		Field:   sel.Field,
-		Args:    idArgs,
-		Nth:     int64(sel.Nth),
-		Tainted: tainted,
-		// Meta:    field.Directives.ForName("meta") != nil,    // TODO
-	})
-	cp.Type = idproto.NewType(astType)
-	return cp
+	appended := id.
+		Append(
+			astType,
+			sel.Field,
+			idArgs...,
+		).
+		WithTainted(tainted)
+	if sel.Nth != 0 {
+		appended = appended.SelectNth(sel.Nth)
+	}
+	return appended
 }
 
 type Inputs []NamedInput

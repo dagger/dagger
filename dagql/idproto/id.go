@@ -10,46 +10,52 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func New(gqlType *ast.Type) *ID {
-	return &ID{
-		Type: NewType(gqlType),
-	}
+func New() *ID {
+	// we start with nil so there's always a nil parent at the bottom
+	return nil
 }
 
-func (id *ID) Display() string {
+func (id *ID) Path() string {
 	buf := new(bytes.Buffer)
-	for si, sel := range id.Constructor {
-		if si > 0 {
-			fmt.Fprintf(buf, ".")
+	if id.Parent != nil {
+		fmt.Fprintf(buf, "%s.", id.Parent.Path())
+	}
+	fmt.Fprintf(buf, "%s", id.Field)
+	for ai, arg := range id.Args {
+		if ai == 0 {
+			fmt.Fprintf(buf, "(")
+		} else {
+			fmt.Fprintf(buf, ", ")
 		}
-		fmt.Fprintf(buf, "%s", sel.Field)
-		for ai, arg := range sel.Args {
-			if ai == 0 {
-				fmt.Fprintf(buf, "(")
-			} else {
-				fmt.Fprintf(buf, ", ")
-			}
-			fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST())
-			if ai == len(sel.Args)-1 {
-				fmt.Fprintf(buf, ")")
-			}
-		}
-		if sel.Nth != 0 {
-			fmt.Fprintf(buf, "#%d", sel.Nth)
+		fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST())
+		if ai == len(id.Args)-1 {
+			fmt.Fprintf(buf, ")")
 		}
 	}
-	fmt.Fprintf(buf, ": %s", id.Type.ToAST())
+	if id.Nth != 0 {
+		fmt.Fprintf(buf, "#%d", id.Nth)
+	}
 	return buf.String()
 }
 
-func (id *ID) Nth(i int) *ID {
+func (id *ID) Display() string {
+	return fmt.Sprintf("%s: %s", id.Path(), id.Type.ToAST())
+}
+
+func (id *ID) WithNth(i int) *ID {
 	cp := id.Clone()
-	cp.Constructor[len(cp.Constructor)-1].Nth = int64(i)
+	cp.Nth = int64(i)
+	return cp
+}
+
+func (id *ID) SelectNth(i int) *ID {
+	cp := id.Clone()
+	cp.Nth = int64(i)
 	cp.Type = cp.Type.Elem
 	return cp
 }
 
-func (id *ID) Append(field string, args ...*Argument) {
+func (id *ID) Append(ret *ast.Type, field string, args ...*Argument) *ID {
 	var tainted bool
 	for _, arg := range args {
 		if arg.Tainted() {
@@ -58,36 +64,46 @@ func (id *ID) Append(field string, args ...*Argument) {
 		}
 	}
 
-	id.Constructor = append(id.Constructor, &Selector{
+	return &ID{
+		Parent:  id,
+		Type:    NewType(ret),
 		Field:   field,
 		Args:    args,
 		Tainted: tainted,
-	})
+	}
+}
+
+func (id *ID) WithTainted(tainted bool) *ID {
+	cp := id.Clone()
+	cp.Tainted = tainted
+	return cp
 }
 
 // Tainted returns true if the ID contains any tainted selectors.
-func (id *ID) Tainted() bool {
-	for _, sel := range id.Constructor {
-		if sel.Tainted {
-			return true
-		}
+func (id *ID) IsTainted() bool {
+	if id.Tainted {
+		return true
+	}
+	if id.Parent != nil {
+		return id.Parent.IsTainted()
 	}
 	return false
 }
 
 // Canonical returns the ID with any contained IDs canonicalized.
 func (id *ID) Canonical() *ID {
+	if id.Meta {
+		return id.Parent.Canonical()
+	}
+	canon := id.Clone()
+	if id.Parent != nil {
+		canon.Parent = id.Parent.Canonical()
+	}
 	// TODO sort args...? is it worth preserving them in the first place? (default answer no)
-	noMeta := []*Selector{}
-	for _, sel := range id.Constructor {
-		if !sel.Meta {
-			noMeta = append(noMeta, sel.Canonical())
-		}
+	for i, arg := range canon.Args {
+		canon.Args[i] = arg.Canonical()
 	}
-	return &ID{
-		Type:        id.Type,
-		Constructor: noMeta,
-	}
+	return canon
 }
 
 // Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
@@ -119,15 +135,6 @@ func (id *ID) Decode(str string) error {
 		return err
 	}
 	return proto.Unmarshal(bytes, id)
-}
-
-// Canonical returns the selector with any contained IDs canonicalized.
-func (sel *Selector) Canonical() *Selector {
-	cp := proto.Clone(sel).(*Selector)
-	for i := range cp.Args {
-		cp.Args[i] = cp.Args[i].Canonical()
-	}
-	return sel
 }
 
 // Canonical returns the literal with any contained IDs canonicalized.
@@ -168,7 +175,7 @@ func (arg *Argument) Tainted() bool {
 func (lit *Literal) Tainted() bool {
 	switch v := lit.Value.(type) {
 	case *Literal_Id:
-		return v.Id.Tainted()
+		return v.Id.IsTainted()
 	case *Literal_List:
 		for _, val := range v.List.Values {
 			if val.Tainted() {
