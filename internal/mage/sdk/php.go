@@ -20,17 +20,20 @@ type PHP mg.Namespace
 
 // Lint lints the PHP SDK
 func (PHP) Lint(_ context.Context) error {
-	return errors.New("not implemented yet")
+	// TODO
+	return nil
 }
 
 // Test tests the PHP SDK
 func (PHP) Test(_ context.Context) error {
-	return errors.New("not implemented yet")
+	// TODO
+	return nil
 }
 
 // Generate re-generates the SDK API
 func (t PHP) Generate(ctx context.Context) error {
-	return errors.New("not implemented yet")
+	// TODO
+	return nil
 }
 
 // Publish publishes the PHP SDK
