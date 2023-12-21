@@ -12,9 +12,11 @@ import (
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql"
+	"github.com/vito/dagql/idproto"
 	"github.com/vito/dagql/internal/pipes"
 	"github.com/vito/dagql/internal/points"
 	"github.com/vito/dagql/introspection"
+	"github.com/vito/dagql/ioctx"
 	"github.com/vito/progrock"
 )
 
@@ -38,7 +40,6 @@ func (Query) Definition() *ast.Definition {
 func main() {
 	ctx := context.Background()
 	tape := progrock.NewTape()
-	tape.ShowAllOutput(true)
 	rec := progrock.NewRecorder(tape)
 	ctx = progrock.ToContext(ctx, rec)
 
@@ -48,7 +49,7 @@ func main() {
 	}
 
 	srv := dagql.NewServer(Query{})
-	srv.RecordTo(rec)
+	srv.RecordTo(TelemetryFunc(rec))
 	points.Install[Query](srv)
 	pipes.Install[Query](srv)
 	introspection.Install[Query](srv)
@@ -72,4 +73,17 @@ func main() {
 		}()
 		return http.Serve(l, nil)
 	}))
+}
+
+func TelemetryFunc(rec *progrock.Recorder) dagql.TelemetryFunc {
+	return func(ctx context.Context, id *idproto.ID) (context.Context, func(error)) {
+		dig, err := id.Digest()
+		if err != nil {
+			return ctx, func(error) {}
+		}
+		vtx := rec.Vertex(dig, id.Display())
+		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
+		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
+		return ctx, vtx.Done
+	}
 }

@@ -15,15 +15,15 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vito/dagql/idproto"
-	"github.com/vito/dagql/ioctx"
-	"github.com/vito/progrock"
 )
+
+type TelemetryFunc func(context.Context, *idproto.ID) (context.Context, func(error))
 
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
 	root        Object
-	rec         *progrock.Recorder
+	telemetry   TelemetryFunc
 	classes     map[string]ObjectType
 	scalars     map[string]ScalarType
 	inputs      map[string]*ast.Definition
@@ -70,8 +70,8 @@ func (s *Server) InstallScalar(scalar ScalarType) {
 	s.scalars[scalar.TypeName()] = scalar
 }
 
-func (s *Server) RecordTo(rec *progrock.Recorder) {
-	s.rec = rec
+func (s *Server) RecordTo(rec TelemetryFunc) {
+	s.telemetry = rec
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -279,17 +279,17 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	if err != nil {
 		return nil, nil, err
 	}
+	if s.telemetry != nil {
+		var done func(error)
+		wrapped, done := s.telemetry(ctx, chainedID)
+		defer done(rerr)
+		ctx = wrapped
+	}
 	var val Typed
 	if chainedID.IsTainted() {
 		val, err = self.Select(ctx, sel)
 	} else {
 		val, err = s.cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (Typed, error) {
-			if s.rec != nil {
-				vtx := s.rec.Vertex(dig, chainedID.Display())
-				defer vtx.Done(rerr)
-				ctx = ioctx.WithStdout(ctx, vtx.Stdout())
-				ctx = ioctx.WithStderr(ctx, vtx.Stderr())
-			}
 			return self.Select(ctx, sel)
 		})
 	}
