@@ -90,15 +90,21 @@ func TestBasic(t *testing.T) {
 		}
 	}`, &res)
 
-	expectedID := idproto.New((&points.Point{}).Type())
-	expectedID.Append("point", &idproto.Argument{
-		Name:  "x",
-		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-	}, &idproto.Argument{
-		Name:  "y",
-		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-	})
-	expectedID.Append("shiftLeft")
+	pointT := (&points.Point{}).Type()
+	expectedID := idproto.New().
+		Append(
+			pointT,
+			"point",
+			&idproto.Argument{
+				Name:  "x",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+			},
+			&idproto.Argument{
+				Name:  "y",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+			},
+		).
+		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.ID[*points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -467,18 +473,24 @@ func TestIDsReflectQuery(t *testing.T) {
 		}
 	}`, &res)
 
-	expectedID := idproto.New((&points.Point{}).Type())
-	expectedID.Append("point", &idproto.Argument{
-		Name:  "x",
-		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-	}, &idproto.Argument{
-		Name:  "y",
-		Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-	})
-	expectedID.Append("shiftLeft")
+	pointT := (&points.Point{}).Type()
+	expectedID := idproto.New().
+		Append(
+			pointT,
+			"point",
+			&idproto.Argument{
+				Name:  "x",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+			},
+			&idproto.Argument{
+				Name:  "y",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+			},
+		).
+		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.ID[*points.Point]{ID: expectedID}.Encode()
 	assert.NilError(t, err)
-	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
+	eqIDs(t, res.Point.ShiftLeft.Id, expectedEnc)
 
 	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
@@ -497,7 +509,8 @@ func TestIDsReflectQuery(t *testing.T) {
 			}
 		}`, &res)
 
-		assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
+		eqIDs(t, res.LoadPointFromID.Id, neighbor.Id)
+
 		switch i {
 		case 0:
 			assert.Equal(t, res.LoadPointFromID.X, 4)
@@ -1361,4 +1374,17 @@ func TestBuiltins(t *testing.T) {
 		assert.ErrorContains(t, err, "float on")
 		assert.ErrorContains(t, err, "pizza")
 	})
+}
+
+func eqIDs(t *testing.T, actual, expected string) {
+	debugID(t, "actual  : %s", actual)
+	debugID(t, "expected: %s", expected)
+	assert.Equal(t, actual, expected)
+}
+
+func debugID(t *testing.T, msgf string, idStr string, args ...any) {
+	var id idproto.ID
+	err := id.Decode(idStr)
+	assert.NilError(t, err)
+	t.Logf(msgf, append([]any{id.Display()}, args...)...)
 }

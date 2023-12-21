@@ -426,6 +426,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 				Spec: FieldSpec{
 					Name: "id",
 					Type: idScalar,
+					Pure: true,
 				},
 				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
 					return ID[T]{ID: self.ID()}, nil
