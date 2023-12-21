@@ -627,7 +627,10 @@ func (fc *FuncCommand) selectFunc(selectName string, fn *modFunction, cmd *cobra
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj := v.Get(dag)
+			obj, err := v.Get(cmd.Context(), dag)
+			if err != nil {
+				return fmt.Errorf("failed to get value for argument %q: %w", arg.Name, err)
+			}
 			if obj == nil {
 				return fmt.Errorf("no value for argument: %s", arg.Name)
 			}

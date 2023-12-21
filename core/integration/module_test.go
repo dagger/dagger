@@ -4275,17 +4275,71 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			WithEnvVariable("TOPSECRET", "shhh").
 			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
 
-		out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "shhh", strings.TrimSpace(out))
+		t.Run("explicit env", func(t *testing.T) {
+			t.Parallel()
+			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
+				out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "shhh", strings.TrimSpace(out))
+			})
+			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
+				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
+				require.ErrorContains(t, err, `secret env var not found "NOWHERETOBEFOUND"`)
+			})
+		})
 
-		out, err = modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "shhh", strings.TrimSpace(out))
+		t.Run("implicit env", func(t *testing.T) {
+			t.Parallel()
+			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
+				out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "shhh", strings.TrimSpace(out))
+			})
+			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
+				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
+				require.ErrorContains(t, err, `secret env var not found "NOWHERETOBEFOUND"`)
+			})
+		})
 
-		out, err = modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "file shhh", strings.TrimSpace(out))
+		t.Run("file", func(t *testing.T) {
+			t.Parallel()
+			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
+				out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file shhh", strings.TrimSpace(out))
+			})
+			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
+				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
+				require.ErrorContains(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
+			})
+		})
+
+		t.Run("cmd", func(t *testing.T) {
+			t.Parallel()
+			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
+				out, err := modGen.With(daggerCall("insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "cmd shhh", strings.TrimSpace(out))
+			})
+			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
+				_, err := modGen.With(daggerCall("insecure", "--token", "cmd:exit 1")).Stdout(ctx)
+				require.ErrorContains(t, err, `failed to run secret command "exit 1": exit status 1`)
+			})
+		})
+
+		t.Run("invalid source", func(t *testing.T) {
+			t.Parallel()
+			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
+			require.ErrorContains(t, err, `unsupported secret arg source: "wtf"`)
+		})
 	})
 }
 
