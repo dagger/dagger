@@ -1,6 +1,0 @@
-kind: Fixed
-body: Clear `defaultArgs` on `withEntrypoint` by default
-time: 2023-12-19T12:24:26.810172-01:00
-custom:
-  Author: helderco
-  PR: "6280"

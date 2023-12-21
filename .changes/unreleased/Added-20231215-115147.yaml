@@ -1,6 +1,0 @@
-kind: Added
-body: New `withoutEntryoint` and `withoutDefaultArgs` fields
-time: 2023-12-15T11:51:47.24762-01:00
-custom:
-  Author: helderco
-  PR: "6278"
