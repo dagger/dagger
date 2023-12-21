@@ -572,6 +572,12 @@ pub struct ContainerWithUnixSocketOpts<'a> {
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutEntrypointOpts {
+    /// Don't remove the default arguments when unsetting the entrypoint.
+    #[builder(setter(into, strip_option), default)]
+    pub keep_default_args: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutExposedPortOpts {
     /// Port protocol to unexpose
     #[builder(setter(into, strip_option), default)]
@@ -1879,8 +1885,28 @@ impl Container {
         };
     }
     /// Retrieves this container with an unset command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_entrypoint(&self) -> Container {
         let query = self.selection.select("withoutEntrypoint");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_entrypoint_opts(&self, opts: ContainerWithoutEntrypointOpts) -> Container {
+        let mut query = self.selection.select("withoutEntrypoint");
+        if let Some(keep_default_args) = opts.keep_default_args {
+            query = query.arg("keepDefaultArgs", keep_default_args);
+        }
         return Container {
             proc: self.proc.clone(),
             selection: query,

@@ -1548,9 +1548,21 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def without_entrypoint(self) -> "Container":
-        """Retrieves this container with an unset command entrypoint."""
-        _args: list[Arg] = []
+    def without_entrypoint(
+        self,
+        *,
+        keep_default_args: bool | None = False,
+    ) -> "Container":
+        """Retrieves this container with an unset command entrypoint.
+
+        Parameters
+        ----------
+        keep_default_args:
+            Don't remove the default arguments when unsetting the entrypoint.
+        """
+        _args = [
+            Arg("keepDefaultArgs", keep_default_args, False),
+        ]
         _ctx = self._select("withoutEntrypoint", _args)
         return Container(_ctx)
 

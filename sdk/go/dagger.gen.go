@@ -1442,9 +1442,21 @@ func (r *Container) WithoutDefaultArgs() *Container {
 	}
 }
 
+// ContainerWithoutEntrypointOpts contains options for Container.WithoutEntrypoint
+type ContainerWithoutEntrypointOpts struct {
+	// Don't remove the default arguments when unsetting the entrypoint.
+	KeepDefaultArgs bool
+}
+
 // Retrieves this container with an unset command entrypoint.
-func (r *Container) WithoutEntrypoint() *Container {
+func (r *Container) WithoutEntrypoint(opts ...ContainerWithoutEntrypointOpts) *Container {
 	q := r.q.Select("withoutEntrypoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `keepDefaultArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KeepDefaultArgs) {
+			q = q.Arg("keepDefaultArgs", opts[i].KeepDefaultArgs)
+		}
+	}
 
 	return &Container{
 		q: q,

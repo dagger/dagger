@@ -246,9 +246,16 @@ func (s *containerSchema) withEntrypoint(ctx context.Context, parent *core.Conta
 	})
 }
 
-func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent *core.Container, _ any) (*core.Container, error) {
+type containerWithoutEntrypointArgs struct {
+	KeepDefaultArgs bool
+}
+
+func (s *containerSchema) withoutEntrypoint(ctx context.Context, parent *core.Container, args containerWithoutEntrypointArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.Entrypoint = nil
+		if !args.KeepDefaultArgs {
+			cfg.Cmd = nil
+		}
 		return cfg
 	})
 }
