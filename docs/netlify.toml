@@ -537,7 +537,7 @@
 [[redirects]]
   from = "/current/sdk/nodejs/*"
   to = "/sdk/nodejs/:splat"
-  status = 301
+  status = 302
 
 [[headers]]
   for = "/*"
