@@ -534,6 +534,11 @@
   to = "https://play.dagger.cloud/_next/:splat"
   status = 200
 
+[[redirects]]
+  from = "/current/sdk/nodejs/*"
+  to = "/sdk/nodejs/:splat"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]
