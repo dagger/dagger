@@ -15,7 +15,7 @@ archives:
 
 # https://goreleaser.com/customization/homebrew/
 brews:
-  - tap:
+  - repository:
       owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
       name: homebrew-tap
     name: dagger
