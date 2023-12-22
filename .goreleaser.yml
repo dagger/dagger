@@ -16,7 +16,7 @@ archives:
 # https://goreleaser.com/customization/homebrew/
 brews:
   - repository:
-      owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
+      owner: "{{ .Env.GH_ORG_NAME }}"
       name: homebrew-tap
     name: dagger
     commit_author:
@@ -32,7 +32,7 @@ brews:
 nix:
   - name: dagger
     repository:
-      owner: dagger
+      owner: "{{ .Env.GH_ORG_NAME }}"
       name: nix
     commit_author:
       name: dagger-bot

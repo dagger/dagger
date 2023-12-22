@@ -50,6 +50,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 	_, err = ctr.
 		WithWorkdir("/app").
 		WithMountedDirectory("/app", wd).
+		With(util.HostVar(c, "GH_ORG_NAME")).
 		With(util.HostSecretVar(c, "GITHUB_TOKEN")).
 		With(util.HostSecretVar(c, "GORELEASER_KEY")).
 		With(util.HostSecretVar(c, "AWS_ACCESS_KEY_ID")).
@@ -57,7 +58,6 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		With(util.HostSecretVar(c, "AWS_REGION")).
 		With(util.HostSecretVar(c, "AWS_BUCKET")).
 		With(util.HostSecretVar(c, "ARTEFACTS_FQDN")).
-		With(util.HostSecretVar(c, "HOMEBREW_TAP_OWNER")).
 		With(func(ctr *dagger.Container) *dagger.Container {
 			if devRelease {
 				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver

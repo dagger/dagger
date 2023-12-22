@@ -176,6 +176,13 @@ func HostDockerDir(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(path)
 }
 
+// HostVar is a chainable util for setting an env var from the host in a container.
+func HostVar(c *dagger.Client, name string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithEnvVariable(name, GetHostEnv(name))
+	}
+}
+
 // HostSecretVar is a chainable util for setting a secret env var from the host in a container.
 func HostSecretVar(c *dagger.Client, name string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
