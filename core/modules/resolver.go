@@ -14,6 +14,12 @@ import (
 	"github.com/moby/buildkit/identity"
 )
 
+var (
+	// The digest-pinned ref of an address that can run 'git'
+	// FIXME: make this image smaller
+	gitImageRef = "index.docker.io/alpine/git@sha256:1031f50b5bdda7eee6167e362cff09b8c809889cd43e5306abc5bf6438e68890"
+)
+
 // Ref contains all of the information we're able to learn about a provided
 // module ref.
 type Ref struct {
@@ -305,7 +311,7 @@ func ResolveModuleDependency(ctx context.Context, dag *dagger.Client, parent *Re
 
 func defaultBranch(ctx context.Context, dag *dagger.Client, repo string) (string, error) {
 	output, err := dag.Container().
-		From("alpine/git").
+		From(gitImageRef).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()). // force this to always run so we don't get stale data
 		WithExec([]string{"git", "ls-remote", "--symref", repo, "HEAD"}, dagger.ContainerWithExecOpts{
 			SkipEntrypoint: true,
