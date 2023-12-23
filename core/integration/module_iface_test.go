@@ -69,15 +69,14 @@ func (m Crested) QuackAtAll(quackees []string) []string {
 		WithWorkdir("/work/pond").
 		WithNewFile("./main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
+
 import (
 	"context"
 	"strings"
 )
 
 type Pond struct {
-	Quacks []string
-	QuacksAtBystander []string
-	QuacksAtGeese []string
+	Ducks []Duck
 }
 
 type Duck interface {
@@ -87,76 +86,61 @@ type Duck interface {
 	QuackAtAll(ctx context.Context, quackees []string) ([]string, error)
 }
 
-func (m Pond) WithDuck(ctx context.Context, duck Duck) (*Pond, error) {
-	quack, err := duck.Quack(ctx)
-	if err != nil {
-		return nil, err
-	}
-	m.Quacks = append(m.Quacks, quack)
-
-	quackAt, err := duck.QuackAt(ctx, "innocent bystander")
-	if err != nil {
-		return nil, err
-	}
-	m.QuacksAtBystander = append(m.QuacksAtBystander, quackAt)
-
-	quacksAtGeese, err := duck.QuackAtAll(ctx, []string{"goose A", "goose B"})
-	if err != nil {
-		return nil, err
-	}
-	m.QuacksAtGeese = append(m.QuacksAtGeese, quacksAtGeese...)
-
-	return &m, nil
+func (m Pond) WithDuck(duck Duck) *Pond {
+	m.Ducks = append(m.Ducks, duck)
+	return &m
 }
 
-func (m Pond) WithMaybeDuck(ctx context.Context, maybeDuck Optional[Duck]) (*Pond, error) {
+func (m *Pond) WithMaybeDuck(maybeDuck Optional[Duck]) *Pond {
 	duck, ok := maybeDuck.Get()
 	if !ok {
-		return &m, nil
+		return m
 	}
-
-	quack, err := duck.Quack(ctx)
-	if err != nil {
-		return nil, err
-	}
-	m.Quacks = append(m.Quacks, quack)
-
-	quackAt, err := duck.QuackAt(ctx, "innocent bystander")
-	if err != nil {
-		return nil, err
-	}
-	m.QuacksAtBystander = append(m.QuacksAtBystander, quackAt)
-
-	quacksAtGeese, err := duck.QuackAtAll(ctx, []string{"goose A", "goose B"})
-	if err != nil {
-		return nil, err
-	}
-	m.QuacksAtGeese = append(m.QuacksAtGeese, quacksAtGeese...)
-
-	return &m, nil
+	m.Ducks = append(m.Ducks, duck)
+	return m
 }
 
-func (m Pond) WithDucks(ctx context.Context, ducks []Duck) (*Pond, error) {
+func (m *Pond) WithDucks(ducks []Duck) *Pond {
 	for _, duck := range ducks {
+		m = m.WithDuck(duck)
+	}
+	return m
+}
+
+func (m *Pond) QuackAll(ctx context.Context) (string, error) {
+	var quacks []string
+	for _, duck := range m.Ducks {
 		quack, err := duck.Quack(ctx)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		m.Quacks = append(m.Quacks, quack)
+		quacks = append(quacks, quack)
 	}
-	return &m, nil
+	return strings.Join(quacks, "\n"), nil
 }
 
-func (m *Pond) QuackAll() string {
-	return strings.Join(m.Quacks, "\n")
+func (m *Pond) QuackAllAt(ctx context.Context, quackee string) (string, error) {
+	var quacks []string
+	for _, duck := range m.Ducks {
+		quack, err := duck.QuackAt(ctx, quackee)
+		if err != nil {
+			return "", err
+		}
+		quacks = append(quacks, quack)
+	}
+	return strings.Join(quacks, "\n"), nil
 }
 
-func (m *Pond) QuackAllAtBystander() string {
-	return strings.Join(m.QuacksAtBystander, "\n")
-}
-
-func (m *Pond) QuackAllAtGeese() string {
-	return strings.Join(m.QuacksAtGeese, "\n")
+func (m *Pond) QuackAllAtMany(ctx context.Context, quackees []string) (string, error) {
+	var quacks []string
+	for _, duck := range m.Ducks {
+		newQuacks, err := duck.QuackAtAll(ctx, quackees)
+		if err != nil {
+			return "", err
+		}
+		quacks = append(quacks, newQuacks...)
+	}
+	return strings.Join(quacks, "\n"), nil
 }
 			`,
 		}).
@@ -191,18 +175,18 @@ func (m *Top) TestOptional(ctx context.Context) (string, error) {
 		QuackAll(ctx)
 }
 
-func (m *Top) TestQuackAt(ctx context.Context) (string, error) {
+func (m *Top) TestQuackAt(ctx context.Context, quackee string) (string, error) {
 	return dag.Pond().
 		WithDuck(dag.Mallard().AsPondDuck()).
 		WithDuck(dag.Crested().AsPondDuck()).
-		QuackAllAtBystander(ctx)
+		QuackAllAt(ctx, quackee)
 }
 
-func (m *Top) TestQuackAtAll(ctx context.Context) (string, error) {
+func (m *Top) TestQuackAtAll(ctx context.Context, quackees []string) (string, error) {
 	return dag.Pond().
 		WithDuck(dag.Mallard().AsPondDuck()).
 		WithDuck(dag.Crested().AsPondDuck()).
-		QuackAllAtGeese(ctx)
+		QuackAllAtMany(ctx, quackees)
 }
 			`,
 		}).
@@ -234,15 +218,15 @@ func (m *Top) TestQuackAtAll(ctx context.Context) (string, error) {
 
 	t.Run("iface with primitive arg", func(t *testing.T) {
 		t.Parallel()
-		out, err := ctr.With(daggerQuery(`{top{testQuackAt}}`)).Stdout(ctx)
+		out, err := ctr.With(daggerQuery(`{top{testQuackAt(quackee: "innocent bystander")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"top":{"testQuackAt":"to innocent bystander I say: mallard quack\nto innocent bystander I say: crested quack"}}`, out)
 	})
 
 	t.Run("iface with list of primitive arg and list of primitive return", func(t *testing.T) {
 		t.Parallel()
-		out, err := ctr.With(daggerQuery(`{top{testQuackAtAll}}`)).Stdout(ctx)
+		out, err := ctr.With(daggerQuery(`{top{testQuackAtAll(quackees: ["Mushu", "Sammy"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"top":{"testQuackAtAll":"to goose A I say: mallard quack\nto goose B I say: mallard quack\nto goose A I say: crested quack\nto goose B I say: crested quack"}}`, out)
+		require.JSONEq(t, `{"top":{"testQuackAtAll":"to Mushu I say: mallard quack\nto Sammy I say: mallard quack\nto Mushu I say: crested quack\nto Sammy I say: crested quack"}}`, out)
 	})
 }

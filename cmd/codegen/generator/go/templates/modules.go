@@ -121,6 +121,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	topLevel := true
 
 	var interfaceCodes []Code
+	var objectJSONMethodCodes []Code
 	for len(tps) != 0 {
 		var nextTps []types.Type
 		for _, tp := range tps {
@@ -175,6 +176,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				}
 				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
 				added[obj.Name()] = struct{}{}
+
+				jsonMethodCode, err := objTypeSpec.JSONMethodCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
+				}
+				objectJSONMethodCodes = append(objectJSONMethodCodes, jsonMethodCode)
 
 				// If the object has any extra sub-types (e.g. for function return
 				// values), add them to the list of types to process
@@ -231,8 +238,18 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 		renderedInterfaceCode += fmt.Sprintf("%#v\n\n", interfaceCode)
 	}
 
+	var renderedObjectJSONMethodCode string
+	for _, objectJSONMethodCode := range objectJSONMethodCodes {
+		renderedObjectJSONMethodCode += fmt.Sprintf("%#v\n\n", objectJSONMethodCode)
+	}
+
 	// TODO: sort cases and functions based on their definition order
-	return strings.Join([]string{renderedInterfaceCode, mainSrc, invokeSrc(objFunctionCases, createMod)}, "\n"), nil
+	return strings.Join([]string{
+		renderedObjectJSONMethodCode,
+		renderedInterfaceCode,
+		mainSrc,
+		invokeSrc(objFunctionCases, createMod),
+	}, "\n"), nil
 }
 
 func dotLine(a *Statement, id string) *Statement {

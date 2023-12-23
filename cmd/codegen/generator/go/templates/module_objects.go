@@ -113,7 +113,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 			}
 		}
 
-		fieldSpec := &fieldSpec{}
+		fieldSpec := &fieldSpec{goType: field.Type()}
 		fieldSpec.typeSpec, err = ps.parseGoTypeReference(field.Type(), nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse field type: %w", err)
@@ -229,8 +229,90 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 	return subTypes
 }
 
+func (spec *parsedObjectType) JSONMethodCode() (*Statement, error) {
+	var concreteFields []Code
+	for _, field := range spec.fields {
+		fieldCode := Id(field.name).Do(spec.concreteFieldTypeCode(field.typeSpec))
+		concreteFields = append(concreteFields, fieldCode)
+	}
+
+	return Func().Params(Id("r").Op("*").Id(spec.name)).
+		Id("UnmarshalJSON").
+		Params(Id("bs").Id("[]byte")).
+		Params(Id("error")).
+		BlockFunc(func(g *Group) {
+			g.Var().Id("concrete").Struct(concreteFields...)
+			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("concrete"))
+			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
+
+			for _, field := range spec.fields {
+				g.Do(spec.setFieldsFromConcreteStructCode(field))
+			}
+
+			g.Return(Nil())
+		}), nil
+}
+
+func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) func(*Statement) {
+	return func(s *Statement) {
+		switch typeSpec := typeSpec.(type) {
+		case *parsedPrimitiveType:
+			if typeSpec.alias != "" {
+				s.Id(typeSpec.alias)
+			} else {
+				s.Id(typeSpec.GoType().String())
+			}
+
+		case *parsedSliceType:
+			s.Index().Do(spec.concreteFieldTypeCode(typeSpec.underlying))
+
+		case *parsedObjectTypeReference:
+			s.Op("*").Id(typeSpec.name)
+
+		case *parsedObjectType:
+			s.Op("*").Id(typeSpec.name)
+
+		case *parsedIfaceTypeReference:
+			s.Id(formatIfaceImplName(typeSpec.name))
+
+		case *parsedIfaceType:
+			s.Id(formatIfaceImplName(typeSpec.name))
+
+		default:
+			panic(fmt.Errorf("unsupported concrete field type %T", typeSpec))
+		}
+	}
+}
+
+func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) func(*Statement) {
+	return func(s *Statement) {
+		switch typeSpec := field.typeSpec.(type) {
+		case *parsedPrimitiveType, *parsedObjectTypeReference, *parsedObjectType:
+			s.Id("r").Dot(field.name).Op("=").Id("concrete").Dot(field.name)
+
+		case *parsedSliceType:
+			underlyingIface, ok := typeSpec.underlying.(*parsedIfaceTypeReference)
+			if !ok {
+				s.Id("r").Dot(field.name).Op("=").Id("concrete").Dot(field.name)
+				return
+			}
+			s.Id("r").Dot(field.name).Op("=").Id("convertSlice").Call(
+				Id("concrete").Dot(field.name),
+				Id(formatIfaceImplName(underlyingIface.name)).Dot("toIface"),
+			)
+
+		case *parsedIfaceTypeReference, *parsedIfaceType:
+			s.Id("r").Dot(field.name).Op("=").Id("concrete").Dot(field.name).Dot("toIface").Call()
+
+		default:
+			panic(fmt.Errorf("unsupported field type %T", typeSpec))
+		}
+	}
+}
+
 type fieldSpec struct {
 	name     string
 	doc      string
 	typeSpec ParsedType
+	goType   types.Type
 }
