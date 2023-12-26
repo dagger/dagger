@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"sort"
 	"sync"
@@ -19,48 +20,95 @@ import (
 
 type TelemetryFunc func(context.Context, *idproto.ID) (context.Context, func(error))
 
+type Cache = *CacheMap[digest.Digest, Typed]
+
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
 	root        Object
 	telemetry   TelemetryFunc
-	classes     map[string]ObjectType
+	objects     map[string]ObjectType
 	scalars     map[string]ScalarType
-	inputs      map[string]*ast.Definition
-	cache       *CacheMap[digest.Digest, Typed]
-	installLock sync.Mutex
+	typeDefs    map[string]TypeDef
+	installLock *sync.Mutex
+
+	// Cache is the inner cache used by the server. It can be replicated to
+	// another *Server to inherit and share caches.
+	//
+	// TODO: copy-on-write
+	Cache Cache
+}
+
+// TypeDef is a type whose sole practical purpose is to define a GraphQL type,
+// so it explicitly includes the Definitive interface.
+type TypeDef interface {
+	Type
+	Definitive
+}
+
+var coreScalars = []ScalarType{
+	Boolean(false),
+	Int(0),
+	Float(0),
+	String(""),
+	// instead of a single ID type, each object has its own ID type
+	// ID{},
 }
 
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
-	queryClass := NewClass[T]()
+	rootClass := NewClass[T]()
 	srv := &Server{
 		root: Instance[T]{
 			Self:  root,
-			Class: queryClass,
+			Class: rootClass,
 		},
-		classes: map[string]ObjectType{
-			root.Type().Name(): queryClass,
-		},
-		scalars: map[string]ScalarType{
-			"Boolean": Boolean(false),
-			"Int":     Int(0),
-			"Float":   Float(0),
-			"String":  String(""),
-			// instead of a single ID type, each object has its own ID type
-			// "ID": ID{},
-		},
-		inputs: map[string]*ast.Definition{},
-		cache:  NewCacheMap[digest.Digest, Typed](),
+		objects:     map[string]ObjectType{},
+		scalars:     map[string]ScalarType{},
+		typeDefs:    map[string]TypeDef{},
+		installLock: &sync.Mutex{},
+
+		Cache: NewCacheMap[digest.Digest, Typed](),
+	}
+	srv.InstallObject(rootClass)
+	for _, scalar := range coreScalars {
+		srv.InstallScalar(scalar)
 	}
 	return srv
+}
+
+// Merge installs every type from the other Server into this server.
+//
+// In the event of a conflict, an error is returned.
+//
+// Built-in types (Boolean, Int, Float, String) are not merged.
+func (s *Server) Merge(other *Server, merge func(a, b Type) Type) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	other.installLock.Lock()
+	defer other.installLock.Unlock()
+	for name, obj := range other.objects {
+		s.objects[name] = obj
+	}
+	for name, scalar := range other.scalars {
+		s.scalars[name] = scalar
+	}
+	for name, typeDef := range other.typeDefs {
+		s.typeDefs[name] = typeDef
+	}
+}
+
+// Root returns the root object of the server. It is suitable for passing to
+// Resolve to resolve a query.
+func (s *Server) Root() Object {
+	return s.root
 }
 
 // InstallObject installs the given Object type into the schema.
 func (s *Server) InstallObject(class ObjectType) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
-	s.classes[class.TypeName()] = class
+	s.objects[class.TypeName()] = class
 }
 
 // InstallScalar installs the given Scalar type into the schema.
@@ -70,14 +118,39 @@ func (s *Server) InstallScalar(scalar ScalarType) {
 	s.scalars[scalar.TypeName()] = scalar
 }
 
-func (s *Server) RecordTo(rec TelemetryFunc) {
-	s.telemetry = rec
+// InstallTypeDef installs an arbitrary type definition into the schema.
+func (s *Server) InstallTypeDef(def TypeDef) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	s.typeDefs[def.TypeName()] = def
 }
 
-// Root returns the root object of the server. It is suitable for passing to
-// Resolve to resolve a query.
-func (s *Server) Root() Object {
-	return s.root
+// ObjectType returns the ObjectType with the given name, if it exists.
+func (s *Server) ObjectType(name string) (ObjectType, bool) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	t, ok := s.objects[name]
+	return t, ok
+}
+
+// ScalarType returns the ScalarType with the given name, if it exists.
+func (s *Server) ScalarType(name string) (ScalarType, bool) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	t, ok := s.scalars[name]
+	return t, ok
+}
+
+// InputType returns the InputType with the given name, if it exists.
+func (s *Server) TypeDef(name string) (TypeDef, bool) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	t, ok := s.typeDefs[name]
+	return t, ok
+}
+
+func (s *Server) RecordTo(rec TelemetryFunc) {
+	s.telemetry = rec
 }
 
 // Query is a convenience method for executing a query against the server
@@ -99,7 +172,7 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
-	for _, t := range s.classes { // TODO stable order
+	for _, t := range s.objects { // TODO stable order
 		def := definition(ast.Object, t)
 		if def.Name == queryType {
 			schema.Query = def
@@ -109,8 +182,8 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	for _, t := range s.scalars {
 		schema.AddTypes(definition(ast.Scalar, t))
 	}
-	for _, t := range s.inputs {
-		schema.AddTypes(t)
+	for _, t := range s.typeDefs {
+		schema.AddTypes(t.Definition())
 	}
 	return schema
 }
@@ -166,7 +239,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			}
 			sels, err := s.parseASTSelections(ctx, gqlOp, s.root.Type(), op.SelectionSet)
 			if err != nil {
-				return nil, fmt.Errorf("parse selections: %w", err)
+				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
 			}
 			results, err = s.Resolve(ctx, s.root, sels...)
 			if err != nil {
@@ -227,10 +300,6 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 		base = s.root
 	}
 	selfType := base.Type()
-	class, ok := s.classes[selfType.Name()]
-	if !ok {
-		return nil, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
-	}
 	astField := &ast.Field{
 		Name: id.Field,
 	}
@@ -245,6 +314,10 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 			},
 		})
 	}
+	class, ok := s.objects[selfType.Name()]
+	if !ok {
+		return nil, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
+	}
 	sel, _, err := class.ParseField(ctx, astField, vars)
 	if err != nil {
 		return nil, err
@@ -255,6 +328,20 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 		return nil, err
 	}
 	return s.toSelectable(id, res)
+}
+
+func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
+	for _, sel := range sels {
+		res, id, err := s.cachedSelect(ctx, self, sel)
+		if err != nil {
+			return err
+		}
+		self, err = s.toSelectable(id, res)
+		if err != nil {
+			return err
+		}
+	}
+	return assign(reflect.ValueOf(dest).Elem(), self)
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
@@ -270,11 +357,26 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 	return out, nil
 }
 
+type idCtx struct{}
+
+func idToContext(ctx context.Context, id *idproto.ID) context.Context {
+	return context.WithValue(ctx, idCtx{}, id)
+}
+
+func CurrentID(ctx context.Context) *idproto.ID {
+	val := ctx.Value(idCtx{})
+	if val == nil {
+		return nil
+	}
+	return val.(*idproto.ID)
+}
+
 func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *idproto.ID, rerr error) {
 	chainedID, err := self.IDFor(ctx, sel)
 	if err != nil {
 		return nil, nil, err
 	}
+	ctx = idToContext(ctx, chainedID)
 	dig, err := chainedID.Canonical().Digest()
 	if err != nil {
 		return nil, nil, err
@@ -282,15 +384,19 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	if s.telemetry != nil {
 		var done func(error)
 		wrapped, done := s.telemetry(ctx, chainedID)
-		defer done(rerr)
+		defer func() {
+			done(rerr)
+		}()
 		ctx = wrapped
 	}
 	var val Typed
 	if chainedID.IsTainted() {
 		val, err = self.Select(ctx, sel)
 	} else {
-		val, err = s.cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (Typed, error) {
+		val, err = s.Cache.GetOrInitializeOnHit(ctx, dig, func(ctx context.Context) (Typed, error) {
 			return self.Select(ctx, sel)
+		}, func(val Typed, err error) {
+			log.Println("!!!!!! CACHE HIT:", chainedID.Display(), fmt.Sprintf("%T", val), err)
 		})
 	}
 	if err != nil {
@@ -311,8 +417,12 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 	}
 
 	if len(sel.Subselections) == 0 {
-		// there are no sub-selections; we're done
 		return val, nil
+		// if lit, ok := val.(idproto.Literate); ok {
+		// 	// there are no sub-selections; we're done
+		// 	return lit.ToLiteral().ToInput(), nil
+		// }
+		// return nil, fmt.Errorf("%s must have sub-selections", val.Type())
 	}
 
 	enum, ok := val.(Enumerable)
@@ -362,7 +472,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 		// object loaded from its ID.
 		return sel, nil
 	}
-	class, ok := s.classes[val.Type().Name()]
+	class, ok := s.objects[val.Type().Name()]
 	if !ok {
 		return nil, fmt.Errorf("unknown type %q", val.Type().Name())
 	}
@@ -372,7 +482,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
-	class := s.classes[self.Name()]
+	class := s.objects[self.Name()]
 	if class == nil {
 		return nil, fmt.Errorf("parseASTSelections: not an Object type: %q", self.Name())
 	}
@@ -383,7 +493,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 		case *ast.Field:
 			sel, resType, err := class.ParseField(ctx, x, vars)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
 			var subsels []Selection
 			if len(x.SelectionSet) > 0 {

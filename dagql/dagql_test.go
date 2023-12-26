@@ -33,6 +33,7 @@ func init() {
 }
 
 type Query struct {
+	dagql.Objectable
 }
 
 func (Query) Type() *ast.Type {
@@ -1372,6 +1373,50 @@ func TestBuiltins(t *testing.T) {
 	})
 }
 
+type Points struct{}
+
+func (Points) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Points",
+		NonNull:   true,
+	}
+}
+
+func TestExtending(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+
+	pointsSrv := dagql.NewServer(Points{})
+	points.Install[Points](pointsSrv)
+	dagql.InstallModule(srv, "points", pointsSrv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	var res struct {
+		Points struct {
+			Point struct {
+				Id string
+			}
+		}
+	}
+	req(t, gql, `query {
+		points {
+			point(x: 6, y: 7) {
+				id
+			}
+		}
+	}`, &res)
+
+	eqID(t, res.Points.Point.Id, "points.point(x: 6, y: 7): Point!")
+
+	var id idproto.ID
+	err := id.Decode(res.Points.Point.Id)
+	assert.NilError(t, err)
+	loaded, err := srv.Load(context.Background(), &id)
+	assert.NilError(t, err)
+	assert.Equal(t, loaded.Type().NamedType, "Point")
+	assert.Equal(t, loaded.ID().Display(), "points.point(x: 6, y: 7): Point!")
+}
+
 func eqIDs(t *testing.T, actual, expected string) {
 	debugID(t, "actual  : %s", actual)
 	debugID(t, "expected: %s", expected)
@@ -1383,4 +1428,11 @@ func debugID(t *testing.T, msgf string, idStr string, args ...any) {
 	err := id.Decode(idStr)
 	assert.NilError(t, err)
 	t.Logf(msgf, append([]any{id.Display()}, args...)...)
+}
+
+func eqID(t *testing.T, idStr string, expected string) {
+	var id idproto.ID
+	err := id.Decode(idStr)
+	assert.NilError(t, err)
+	assert.Equal(t, id.Display(), expected)
 }
