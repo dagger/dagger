@@ -39,6 +39,10 @@ func (m *CacheMap[K, T]) Set(key K, val T) {
 }
 
 func (m *CacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, error) {
+	return m.GetOrInitializeOnHit(ctx, key, fn, func(T, error) {})
+}
+
+func (m *CacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn func(ctx context.Context) (T, error), onHit func(T, error)) (T, error) {
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T
 		return zero, ErrCacheMapRecursiveCall
@@ -48,6 +52,9 @@ func (m *CacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()
 		c.wg.Wait()
+		if onHit != nil {
+			onHit(c.val, c.err)
+		}
 		return c.val, c.err
 	}
 

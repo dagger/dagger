@@ -33,7 +33,11 @@ func (id *ID) DisplaySelf() string {
 		} else {
 			fmt.Fprintf(buf, ", ")
 		}
-		fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST())
+		if id, ok := arg.Value.Value.(*Literal_Id); ok {
+			fmt.Fprintf(buf, "%s: {%s}", arg.Name, id.Id.Display())
+		} else {
+			fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST())
+		}
 		if ai == len(id.Args)-1 {
 			fmt.Fprintf(buf, ")")
 		}
@@ -76,6 +80,20 @@ func (id *ID) Append(ret *ast.Type, field string, args ...*Argument) *ID {
 		Field:   field,
 		Args:    args,
 		Tainted: tainted,
+	}
+}
+
+func (id *ID) Rebase(root *ID) *ID {
+	cp := id.Clone()
+	rebase(cp, root)
+	return cp
+}
+
+func rebase(id *ID, root *ID) {
+	if id.Parent == nil {
+		id.Parent = root
+	} else {
+		rebase(id.Parent, root)
 	}
 }
 

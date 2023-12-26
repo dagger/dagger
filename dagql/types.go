@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
+	"golang.org/x/exp/constraints"
 )
 
 // Typed is any value that knows its GraphQL type.
@@ -36,12 +38,23 @@ type ObjectType interface {
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
 	ParseField(context.Context, *ast.Field, map[string]any) (Selector, *ast.Type, error)
+	// Extend registers an additional field onto the type.
+	//
+	// Unlike natively added fields, the extended func is limited to the external
+	// Object interface.
+	Extend(FieldSpec, FieldFunc)
 }
+
+// FieldFunc is a function that implements a field on an object while limited
+// to the object's external interface.
+type FieldFunc func(context.Context, Object, map[string]Typed) (Typed, error)
 
 // Object represents an Object in the graph which has an ID and can have
 // sub-selections.
 type Object interface {
 	Typed
+	// ObjectType returns the type of the object.
+	ObjectType() ObjectType
 	// ID returns the ID of the object.
 	ID() *idproto.ID
 	// IDFor returns the ID representing the return value of the given field.
@@ -88,9 +101,9 @@ type InputDecoder interface {
 }
 
 // Int is a GraphQL Int scalar.
-type Int int
+type Int int64
 
-func NewInt(val int) Int {
+func NewInt[T constraints.Integer](val T) Int {
 	return Int(val)
 }
 
@@ -114,17 +127,17 @@ func (Int) DecodeInput(val any) (Input, error) {
 	case int:
 		return NewInt(x), nil
 	case int32:
-		return NewInt(int(x)), nil
+		return NewInt(x), nil
 	case int64:
-		return NewInt(int(x)), nil
+		return NewInt(x), nil
 	case json.Number:
 		i, err := x.Int64()
 		if err != nil {
 			return nil, err
 		}
-		return NewInt(int(i)), nil
+		return NewInt(i), nil
 	case string: // default struct tags
-		i, err := strconv.Atoi(x)
+		i, err := strconv.ParseInt(x, 0, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +193,7 @@ var _ Setter = ID[Typed]{}
 
 func (i Int) SetField(v reflect.Value) error {
 	switch v.Interface().(type) {
-	case int:
+	case int, int64:
 		v.SetInt(i.Int64())
 		return nil
 	default:
@@ -514,7 +527,9 @@ func (ID[T]) DecodeInput(val any) (Input, error) {
 		}
 		return i, nil
 	default:
-		return nil, fmt.Errorf("cannot create Int from %T", x)
+		var zero T
+		debug.PrintStack()
+		return nil, fmt.Errorf("cannot create ID[%T] from %T: %#v", zero, x, x)
 	}
 }
 
@@ -568,7 +583,7 @@ func (i *ID[T]) Decode(str string) error {
 		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
 	}
 	if idp.Type.NamedType != expectedName {
-		return fmt.Errorf("expected %q ID, got %q ID", expectedName, idp.Type)
+		return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type.ToAST())
 	}
 	i.ID = &idp
 	return nil
@@ -602,11 +617,11 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
 	val, err := server.Load(ctx, i.ID)
 	if err != nil {
-		return Instance[T]{}, err
+		return Instance[T]{}, fmt.Errorf("load %s: %w", i.ID.Display(), err)
 	}
 	obj, ok := val.(Instance[T])
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("load: expected %T, got %T", obj, val)
+		return Instance[T]{}, fmt.Errorf("load %s: expected %T, got %T", i.ID.Display(), obj, val)
 	}
 	return obj, nil
 }
@@ -694,6 +709,21 @@ func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
 			List: list,
 		},
 	}
+}
+
+var _ Setter = ArrayInput[Input]{}
+
+func (d ArrayInput[I]) SetField(val reflect.Value) error {
+	if val.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice, got %v", val.Kind())
+	}
+	val.Set(reflect.MakeSlice(val.Type(), len(d), len(d)))
+	for i, elem := range d {
+		if err := assign(val.Index(i), elem); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Array is an array of GraphQL values.
@@ -834,7 +864,7 @@ func MustInputSpec(val Type) InputObjectSpec {
 	}
 	inputs, err := inputSpecsForType(val, true)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("input specs for %T: %w", val, err))
 	}
 	spec.Fields = inputs
 	return spec
@@ -847,7 +877,11 @@ type InputObjectSpec struct {
 }
 
 func (spec InputObjectSpec) Install(srv *Server) {
-	srv.inputs[spec.Name] = spec.Definition()
+	srv.InstallTypeDef(spec)
+}
+
+func (spec InputObjectSpec) TypeName() string {
+	return spec.Name
 }
 
 func (spec InputObjectSpec) Definition() *ast.Definition {

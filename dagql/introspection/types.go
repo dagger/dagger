@@ -15,7 +15,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
 		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
-		}),
+		}).Impure(),
 		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
@@ -24,7 +24,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
 			return WrapTypeFromDef(srv.Schema(), def), nil
-		}),
+		}).Impure(),
 	}.Install(srv)
 
 	TypeKinds.Install(srv)

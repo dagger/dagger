@@ -199,6 +199,17 @@ func (n DynamicOptional) SetField(val reflect.Value) error {
 	return nil
 }
 
+func (i DynamicOptional) MarshalJSON() ([]byte, error) {
+	if !i.Valid {
+		return json.Marshal(nil)
+	}
+	optional, err := json.Marshal(i.Value)
+	if err != nil {
+		return nil, err
+	}
+	return optional, nil
+}
+
 // Nullable wraps a type and allows it to be null.
 //
 // This is used for optional arguments and return values.

@@ -56,6 +56,17 @@ func (cls Class[T]) TypeName() string {
 	return zero.Type().Name()
 }
 
+func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
+	cls.fieldsL.Lock()
+	defer cls.fieldsL.Unlock()
+	cls.fields[spec.Name] = &Field[T]{
+		Spec: spec,
+		Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+			return fun(ctx, self, args)
+		},
+	}
+}
+
 // Definition returns the schema definition of the class.
 //
 // The definition is derived from the type name, description, and fields. The
@@ -89,13 +100,13 @@ func (cls Class[T]) Definition() *ast.Definition {
 func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field, ok := cls.Field(astField.Name)
 	if !ok {
-		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.Definition().Name, astField.Name)
+		return Selector{}, nil, fmt.Errorf("ParseField: %s has no such field: %q", cls.Definition().Name, astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
 		argSpec, ok := field.Spec.Args.Lookup(arg.Name)
 		if !ok {
-			return Selector{}, nil, fmt.Errorf("%s has no such argument: %q", field.Spec.Name, arg.Name)
+			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", cls.TypeName(), field.Spec.Name, arg.Name)
 		}
 		val, err := arg.Value.Value(vars)
 		if err != nil {
@@ -138,7 +149,7 @@ func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string
 	field, ok := cls.Field(fieldName)
 	if !ok {
 		var zero T
-		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", zero.Type().Name(), fieldName)
 	}
 	return field.Func(ctx, node, args)
 }
@@ -160,6 +171,11 @@ func (o Instance[T]) Type() *ast.Type {
 var _ Object = Instance[Typed]{}
 
 // ID returns the ID of the instance.
+func (r Instance[T]) ObjectType() ObjectType {
+	return r.Class
+}
+
+// ID returns the ID of the instance.
 func (r Instance[T]) ID() *idproto.ID {
 	return r.Constructor
 }
@@ -177,7 +193,7 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, erro
 	field, ok := r.Class.Field(sel.Field)
 	if !ok {
 		var zero T
-		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
+		return nil, fmt.Errorf("IDFor: %s has no such field: %q", zero.Type().Name(), sel.Field)
 	}
 	return sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure), nil
 }
@@ -187,7 +203,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 	field, ok := r.Class.Field(sel.Field)
 	if !ok {
 		var zero T
-		return nil, fmt.Errorf("%s has no such field: %q", zero.Type().Name(), sel.Field)
+		return nil, fmt.Errorf("Select: %s has no such field: %q", zero.Type().Name(), sel.Field)
 	}
 	args, err := applyDefaults(field.Spec, sel.Args)
 	if err != nil {
@@ -383,16 +399,16 @@ func (fields Fields[T]) Install(server *Server) {
 	var t T
 	typeName := t.Type().Name()
 	class := fields.findOrInitializeType(server, typeName)
-	inputs, err := inputSpecsForType(t, false)
+	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("fields for %T: %w", t, err))
 	}
-	for _, input := range inputs {
-		name := input.Name
+	for _, field := range objectFields {
+		name := field.Name
 		fields = append(fields, Field[T]{
 			Spec: FieldSpec{
 				Name: name,
-				Type: input.Type,
+				Type: field.Value,
 				Pure: true,
 			},
 			Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
@@ -412,10 +428,10 @@ func (fields Fields[T]) Install(server *Server) {
 
 func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Class[T] {
 	var classT Class[T]
-	class, ok := server.classes[typeName]
+	class, ok := server.objects[typeName]
 	if !ok {
 		classT = NewClass[T]()
-		server.classes[typeName] = classT
+		server.objects[typeName] = classT
 
 		// TODO: better way to avoid registering IDs for schema introspection
 		// builtins
@@ -432,6 +448,23 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 					return ID[T]{ID: self.ID()}, nil
 				},
 			})
+			var zero T
+			server.Root().ObjectType().Extend(
+				FieldSpec{
+					Name: fmt.Sprintf("load%sFromID", typeName),
+					Type: zero,
+					Pure: false, // no need to cache this; what if the ID is impure?
+					Args: []InputSpec{
+						{
+							Name: "id",
+							Type: idScalar,
+						},
+					},
+				},
+				func(ctx context.Context, self Object, args map[string]Typed) (Typed, error) {
+					return args["id"].(ID[T]).Load(ctx, server)
+				},
+			)
 		}
 	} else {
 		classT = class.(Class[T])
@@ -507,8 +540,47 @@ func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Typed, error) {
 	return args, nil
 }
 
-func inputSpecsForType(obj any, optIn bool) ([]InputSpec, error) {
-	var inputSpecs InputSpecs
+type reflectField[T any] struct {
+	Name  string
+	Value T
+	Field reflect.StructField
+}
+
+func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
+	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
+	if err != nil {
+		return nil, err
+	}
+	specs := make([]InputSpec, len(fields))
+	for i, field := range fields {
+		name := field.Name
+		fieldT := field.Field
+		input := field.Value
+		var inputDef Input
+		if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
+			var err error
+			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
+			if err != nil {
+				return nil, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
+			}
+			if input.Type().NonNull {
+				input = DynamicOptional{
+					Elem: input,
+				}
+			}
+		}
+		specs[i] = InputSpec{
+			Name:        field.Name,
+			Description: field.Field.Tag.Get("doc"),
+			Type:        input,
+			Default:     inputDef,
+		}
+	}
+	return specs, nil
+}
+
+func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error)) ([]reflectField[T], error) {
+	var fields []reflectField[T]
 	objT := reflect.TypeOf(obj)
 	if objT == nil {
 		return nil, nil
@@ -523,11 +595,11 @@ func inputSpecsForType(obj any, optIn bool) ([]InputSpec, error) {
 		fieldT := objT.Field(i)
 		if fieldT.Anonymous {
 			fieldI := reflect.New(fieldT.Type).Elem().Interface()
-			specs, err := inputSpecsForType(fieldI, optIn)
+			embeddedFields, err := reflectFieldsForType(fieldI, optIn, init)
 			if err != nil {
 				return nil, fmt.Errorf("embedded struct %q: %w", fieldT.Name, err)
 			}
-			inputSpecs = append(inputSpecs, specs...)
+			fields = append(fields, embeddedFields...)
 			continue
 		}
 		isField := optIn || fieldT.Tag.Get("field") == "true"
@@ -542,40 +614,34 @@ func inputSpecsForType(obj any, optIn bool) ([]InputSpec, error) {
 			continue
 		}
 		fieldI := reflect.New(fieldT.Type).Elem().Interface()
-		input, err := builtinOrInput(fieldI)
+		val, err := init(fieldI)
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", name, err)
 		}
-		var inputDef Input
-		if inputDefStr, hasDefault := fieldT.Tag.Lookup("default"); hasDefault {
-			var err error
-			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
-			if err != nil {
-				return nil, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
-			}
-			if input.Type().NonNull {
-				input = DynamicOptional{
-					Elem: input,
-				}
-			}
-		}
-		inputSpecs = append(inputSpecs, InputSpec{
-			Name:        name,
-			Description: fieldT.Tag.Get("doc"),
-			Type:        input,
-			Default:     inputDef,
+		fields = append(fields, reflectField[T]{
+			Name:  name,
+			Value: val,
+			Field: fieldT,
 		})
 	}
-	return inputSpecs, nil
+	return fields, nil
 }
 
-func getField(obj any, optIn bool, fieldName string) (Typed, bool, error) {
+func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rerr error) {
+	defer func() {
+		if err := recover(); err != nil {
+			rerr = fmt.Errorf("get field %q: %s", fieldName, err)
+		}
+	}()
 	objT := reflect.TypeOf(obj)
 	if objT == nil {
 		return nil, false, fmt.Errorf("get field %q: object is nil", fieldName)
 	}
 	objV := reflect.ValueOf(obj)
 	if objT.Kind() == reflect.Ptr {
+		// if objV.IsZero() {
+		// 	return nil, false, nil
+		// }
 		objT = objT.Elem()
 		objV = objV.Elem()
 	}
@@ -607,10 +673,14 @@ func getField(obj any, optIn bool, fieldName string) (Typed, bool, error) {
 			continue
 		}
 		if name == fieldName {
-			t, err := builtinOrTyped(objV.Field(i).Interface())
+			val := objV.Field(i).Interface()
+			t, err := builtinOrTyped(val)
 			if err != nil {
 				return nil, false, fmt.Errorf("get field %q: %w", name, err)
 			}
+			// if !t.Type().NonNull && objV.Field(i).IsZero() {
+			// 	return nil, true, nil
+			// }
 			return t, true, nil
 		}
 	}
