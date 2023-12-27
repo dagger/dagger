@@ -59,14 +59,14 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 			spec.returnsError = true
 			break
 		}
-		spec.returnSpec, err = ps.parseGoTypeReference(result, nil)
+		spec.returnSpec, err = ps.parseGoTypeReference(result, nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse return type: %w", err)
 		}
 	case 2:
 		spec.returnsError = true
 		result := results.At(0).Type()
-		spec.returnSpec, err = ps.parseGoTypeReference(result, nil)
+		spec.returnSpec, err = ps.parseGoTypeReference(result, nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse return type: %w", err)
 		}
@@ -301,7 +301,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	var typeSpec ParsedType
 	if paramType.String() != contextTypename {
 		var err error
-		typeSpec, err = ps.parseGoTypeReference(baseType, nil)
+		typeSpec, err = ps.parseGoTypeReference(baseType, nil, false)
 		if err != nil {
 			return paramSpec{}, fmt.Errorf("failed to parse type reference: %w", err)
 		}

@@ -29,25 +29,25 @@ type NamedParsedType interface {
 // only the type name and kind.
 // This is so that the typedef can be referenced as the type of an arg, return value or field
 // without needing to duplicate the full type definition every time it occurs.
-func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (ParsedType, error) {
+func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, isPtr bool) (ParsedType, error) {
 	switch t := typ.(type) {
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
-		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t)
+		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t, isPtr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse named type: %w", err)
 		}
 		return typeSpec, nil
 
 	case *types.Pointer:
-		typeSpec, err := ps.parseGoTypeReference(t.Elem(), named)
+		typeSpec, err := ps.parseGoTypeReference(t.Elem(), named, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse pointer type: %w", err)
 		}
 		return typeSpec, nil
 
 	case *types.Slice:
-		elemTypeSpec, err := ps.parseGoTypeReference(t.Elem(), nil)
+		elemTypeSpec, err := ps.parseGoTypeReference(t.Elem(), nil, isPtr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse slice element type: %w", err)
 		}
@@ -60,7 +60,7 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 		if t.Kind() == types.Invalid {
 			return nil, fmt.Errorf("invalid type: %+v", t)
 		}
-		parsedType := &parsedPrimitiveType{goType: t}
+		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
 		if named != nil {
 			parsedType.alias = named.Obj().Name()
 		}
@@ -76,6 +76,7 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 		}
 		return &parsedObjectTypeReference{
 			name:   typeName,
+			isPtr:  isPtr,
 			goType: named,
 		}, nil
 
@@ -100,6 +101,7 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 // parsedPrimitiveType is a parsed type that is a primitive type like string, int, bool, etc.
 type parsedPrimitiveType struct {
 	goType *types.Basic
+	isPtr  bool
 
 	// if this is something like `type Foo string`, then alias will be "Foo"
 	alias string
@@ -160,6 +162,7 @@ func (spec *parsedSliceType) GoSubTypes() []types.Type {
 // than with the full type definition
 type parsedObjectTypeReference struct {
 	name   string
+	isPtr  bool
 	goType types.Type
 }
 

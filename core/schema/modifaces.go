@@ -83,7 +83,6 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		}, nil
 
 	case map[string]any:
-		// TODO: can have a helpful error message or just update to handle return of objects from own module as interface
 		return nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T", value)
 	default:
 		return nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T", value)

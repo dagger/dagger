@@ -89,39 +89,15 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		if !field.Exported() {
 			continue
 		}
-		name := field.Name()
-
-		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
-		linePragmas, lineComment := parsePragmaComment(astFields[i].Comment.Text())
-		comment := strings.TrimSpace(docComment)
-		if comment == "" {
-			comment = strings.TrimSpace(lineComment)
-		}
-		pragmas := make(map[string]string)
-		maps.Copy(pragmas, docPragmas)
-		maps.Copy(pragmas, linePragmas)
-		if v, ok := pragmas["private"]; ok {
-			private := false
-			if v == "" {
-				private = true
-			} else {
-				private, _ = strconv.ParseBool(v)
-			}
-			if private {
-				// don't generate WithField for private fields
-				continue
-			}
-		}
 
 		fieldSpec := &fieldSpec{goType: field.Type()}
-		fieldSpec.typeSpec, err = ps.parseGoTypeReference(field.Type(), nil)
+		fieldSpec.typeSpec, err = ps.parseGoTypeReference(field.Type(), nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse field type: %w", err)
 		}
 
-		fieldSpec.doc = comment
-
-		fieldSpec.name = name
+		fieldSpec.goName = field.Name()
+		fieldSpec.name = fieldSpec.goName
 
 		// override the name with the json tag if it was set - otherwise, we
 		// end up asking for a name that we won't unmarshal correctly
@@ -133,6 +109,25 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 			}
 			fieldSpec.name = dt
 		}
+
+		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
+		linePragmas, lineComment := parsePragmaComment(astFields[i].Comment.Text())
+		comment := strings.TrimSpace(docComment)
+		if comment == "" {
+			comment = strings.TrimSpace(lineComment)
+		}
+		pragmas := make(map[string]string)
+		maps.Copy(pragmas, docPragmas)
+		maps.Copy(pragmas, linePragmas)
+		if v, ok := pragmas["private"]; ok {
+			if v == "" {
+				fieldSpec.isPrivate = true
+			} else {
+				fieldSpec.isPrivate, _ = strconv.ParseBool(v)
+			}
+		}
+
+		fieldSpec.doc = comment
 
 		spec.fields = append(spec.fields, fieldSpec)
 	}
@@ -183,6 +178,10 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	for _, field := range spec.fields {
+		if field.isPrivate {
+			continue
+		}
+
 		fieldTypeDefCode, err := field.typeSpec.TypeDefCode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
@@ -221,6 +220,9 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 		subTypes = append(subTypes, method.GoSubTypes()...)
 	}
 	for _, field := range spec.fields {
+		if field.isPrivate {
+			continue
+		}
 		subTypes = append(subTypes, field.typeSpec.GoSubTypes()...)
 	}
 	if spec.constructor != nil {
@@ -236,7 +238,10 @@ func (spec *parsedObjectType) Name() string {
 func (spec *parsedObjectType) JSONMethodCode() (*Statement, error) {
 	var concreteFields []Code
 	for _, field := range spec.fields {
-		fieldCode := Id(field.name).Do(spec.concreteFieldTypeCode(field.typeSpec))
+		fieldCode := Id(field.goName).Do(spec.concreteFieldTypeCode(field.typeSpec))
+		if field.goName != field.name {
+			fieldCode.Tag(map[string]string{"json": field.name})
+		}
 		concreteFields = append(concreteFields, fieldCode)
 	}
 
@@ -261,6 +266,9 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) func(*S
 	return func(s *Statement) {
 		switch typeSpec := typeSpec.(type) {
 		case *parsedPrimitiveType:
+			if typeSpec.isPtr {
+				s.Op("*")
+			}
 			if typeSpec.alias != "" {
 				s.Id(typeSpec.alias)
 			} else {
@@ -271,15 +279,12 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) func(*S
 			s.Index().Do(spec.concreteFieldTypeCode(typeSpec.underlying))
 
 		case *parsedObjectTypeReference:
-			s.Op("*").Id(typeSpec.name)
-
-		case *parsedObjectType:
-			s.Op("*").Id(typeSpec.name)
+			if typeSpec.isPtr {
+				s.Op("*")
+			}
+			s.Id(typeSpec.name)
 
 		case *parsedIfaceTypeReference:
-			s.Id(formatIfaceImplName(typeSpec.name))
-
-		case *parsedIfaceType:
 			s.Id(formatIfaceImplName(typeSpec.name))
 
 		default:
@@ -291,22 +296,22 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) func(*S
 func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) func(*Statement) {
 	return func(s *Statement) {
 		switch typeSpec := field.typeSpec.(type) {
-		case *parsedPrimitiveType, *parsedObjectTypeReference, *parsedObjectType:
-			s.Id("r").Dot(field.name).Op("=").Id("concrete").Dot(field.name)
+		case *parsedPrimitiveType, *parsedObjectTypeReference:
+			s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
 
 		case *parsedSliceType:
 			underlyingIface, ok := typeSpec.underlying.(*parsedIfaceTypeReference)
 			if !ok {
-				s.Id("r").Dot(field.name).Op("=").Id("concrete").Dot(field.name)
+				s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
 				return
 			}
-			s.Id("r").Dot(field.name).Op("=").Id("convertSlice").Call(
-				Id("concrete").Dot(field.name),
+			s.Id("r").Dot(field.goName).Op("=").Id("convertSlice").Call(
+				Id("concrete").Dot(field.goName),
 				Id(formatIfaceImplName(underlyingIface.name)).Dot("toIface"),
 			)
 
-		case *parsedIfaceTypeReference, *parsedIfaceType:
-			s.Id("r").Dot(field.name).Op("=").Id("concrete").Dot(field.name).Dot("toIface").Call()
+		case *parsedIfaceTypeReference:
+			s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName).Dot("toIface").Call()
 
 		default:
 			panic(fmt.Errorf("unsupported field type %T", typeSpec))
@@ -318,5 +323,9 @@ type fieldSpec struct {
 	name     string
 	doc      string
 	typeSpec ParsedType
-	goType   types.Type
+
+	// TODO: doc
+	isPrivate bool
+	goName    string
+	goType    types.Type
 }

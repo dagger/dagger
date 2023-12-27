@@ -745,7 +745,7 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		Type:        ast.NonNullNamedType(objName+"ID", nil),
 	})
 	newObjResolver["id"] = func(p graphql.ResolveParams) (any, error) {
-		return resourceid.EncodeModule(obj.mod.DagDigest(), objName, p.Source)
+		return obj.ConvertToID(ctx, p.Source)
 	}
 
 	for _, field := range fields {
@@ -771,7 +771,11 @@ func (obj *UserModObject) Schema(ctx context.Context) (*ast.SchemaDocument, Reso
 		typeSchemaResolvers[objName+"ID"] = stringResolver[string]()
 
 		queryResolver[fmt.Sprintf("load%sFromID", objName)] = func(p graphql.ResolveParams) (any, error) {
-			return obj.ConvertFromSDKResult(ctx, p.Args["id"])
+			res, err := obj.ConvertFromSDKResult(ctx, p.Args["id"])
+			if err != nil {
+				return nil, fmt.Errorf("failed to load object %s from id: %w", objName, err)
+			}
+			return res, nil
 		}
 	}
 
