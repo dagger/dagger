@@ -14,6 +14,7 @@ import (
 
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
+	"github.com/opencontainers/go-digest"
 	"github.com/psanford/memfs"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/packages"
@@ -309,6 +310,12 @@ func generateCode(
 
 func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {
 	fset := token.NewFileSet()
+
+	f, _ := os.Open(path.Join(dir, ".git/index"))
+	if f != nil {
+		fmt.Println(digest.FromReader(f))
+	}
+
 	pkgs, err := packages.Load(&packages.Config{
 		Context: ctx,
 		Dir:     dir,
@@ -323,6 +330,12 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 	if err != nil {
 		return nil, nil, err
 	}
+
+	f, _ = os.Open(path.Join(dir, ".git/index"))
+	if f != nil {
+		fmt.Println(digest.FromReader(f))
+	}
+
 	switch len(pkgs) {
 	case 0:
 		return nil, nil, fmt.Errorf("no packages found in %s", dir)
