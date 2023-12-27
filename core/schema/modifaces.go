@@ -75,6 +75,13 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 			IfaceType:      iface,
 		}, nil
 
+	case *interfaceRuntimeValue:
+		return &interfaceRuntimeValue{
+			Value:          value.Value,
+			UnderlyingType: value.UnderlyingType,
+			IfaceType:      iface,
+		}, nil
+
 	case map[string]any:
 		// TODO: can have a helpful error message or just update to handle return of objects from own module as interface
 		return nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T", value)
@@ -180,6 +187,7 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 	}
 
 	for _, fnTypeDef := range iface.typeDef.Functions {
+		fnTypeDef := fnTypeDef
 		fnName := gqlFieldName(fnTypeDef.Name)
 
 		returnASTType, err := typeDefToASTType(fnTypeDef.ReturnType, false)
@@ -196,6 +204,7 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 
 		argTypeDefsByName := map[string]*core.TypeDef{}
 		for _, argMetadata := range fnTypeDef.Args {
+			argMetadata := argMetadata
 			argTypeDefsByName[argMetadata.Name] = argMetadata.TypeDef
 			argASTType, err := typeDefToASTType(argMetadata.TypeDef, true)
 			if err != nil {
@@ -236,6 +245,7 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 
 			var callInputs []*core.CallInput
 			for k, rawArgVal := range p.Args {
+				k, rawArgVal := k, rawArgVal
 				callableArgType, err := callable.ArgType(k)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get underlying arg type for %s.%s arg %s: %w", ifaceName, fieldDef.Name, k, err)
@@ -322,7 +332,7 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 			}
 
 			switch objReturnType := objReturnType.(type) {
-			case *InterfaceType:
+			case *InterfaceType, *UserModObject:
 				return &interfaceRuntimeValue{
 					Value:          res,
 					UnderlyingType: objReturnType,
@@ -335,6 +345,7 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 				}
 				resList := make([]any, len(rawResList))
 				for i, rawResItem := range rawResList {
+					rawResItem := rawResItem
 					resList[i] = &interfaceRuntimeValue{
 						Value:          rawResItem,
 						UnderlyingType: objReturnType.underlying,

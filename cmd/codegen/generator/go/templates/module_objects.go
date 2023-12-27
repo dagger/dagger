@@ -158,7 +158,7 @@ type parsedObjectType struct {
 	goType *types.Struct
 }
 
-var _ ParsedType = &parsedObjectType{}
+var _ NamedParsedType = &parsedObjectType{}
 
 func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	withObjectArgsCode := []Code{
@@ -227,6 +227,10 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 		subTypes = append(subTypes, spec.constructor.GoSubTypes()...)
 	}
 	return subTypes
+}
+
+func (spec *parsedObjectType) Name() string {
+	return spec.name
 }
 
 func (spec *parsedObjectType) JSONMethodCode() (*Statement, error) {

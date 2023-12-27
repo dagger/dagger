@@ -844,6 +844,7 @@ func (obj *UserModObject) InterfaceExtensionsSchema(ctx context.Context, ifaces 
 	typeSchemaDoc := &ast.SchemaDocument{}
 	objResolver := ObjectResolver{}
 	for _, iface := range ifaces {
+		iface := iface
 		if !obj.typeDef.AsObject.IsSubtypeOf(iface.typeDef) {
 			continue
 		}

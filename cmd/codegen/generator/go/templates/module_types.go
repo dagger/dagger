@@ -19,6 +19,11 @@ type ParsedType interface {
 	GoSubTypes() []types.Type
 }
 
+type NamedParsedType interface {
+	ParsedType
+	Name() string
+}
+
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
 // So if the type is a struct or interface, the returned TypeSpec will not have all the fields,
 // only the type name and kind.
@@ -158,7 +163,7 @@ type parsedObjectTypeReference struct {
 	goType types.Type
 }
 
-var _ ParsedType = &parsedObjectTypeReference{}
+var _ NamedParsedType = &parsedObjectTypeReference{}
 
 func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
@@ -175,6 +180,10 @@ func (spec *parsedObjectTypeReference) GoSubTypes() []types.Type {
 	return []types.Type{spec.goType}
 }
 
+func (spec *parsedObjectTypeReference) Name() string {
+	return spec.name
+}
+
 // parsedIfaceTypeReference is a parsed object type that is referred to just by name rather
 // than with the full type definition
 type parsedIfaceTypeReference struct {
@@ -182,7 +191,7 @@ type parsedIfaceTypeReference struct {
 	goType types.Type
 }
 
-var _ ParsedType = &parsedIfaceTypeReference{}
+var _ NamedParsedType = &parsedIfaceTypeReference{}
 
 func (spec *parsedIfaceTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(
@@ -197,4 +206,8 @@ func (spec *parsedIfaceTypeReference) GoType() types.Type {
 func (spec *parsedIfaceTypeReference) GoSubTypes() []types.Type {
 	// because this is a *reference* to a named type, we return the goType itself as a subtype too
 	return []types.Type{spec.goType}
+}
+
+func (spec *parsedIfaceTypeReference) Name() string {
+	return spec.name
 }

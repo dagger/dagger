@@ -136,7 +136,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledS
 		}
 		schemas = append(schemas, modSchemas...)
 
-		// TODO: support core here too
+		// TODO: support core types too
 		if userMod, ok := mod.(*UserMod); ok {
 			modObjects, err := userMod.Objects(ctx)
 			if err != nil {

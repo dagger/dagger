@@ -92,7 +92,7 @@ type parsedIfaceType struct {
 	moduleName string
 }
 
-var _ ParsedType = &parsedIfaceType{}
+var _ NamedParsedType = &parsedIfaceType{}
 
 func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 	withIfaceArgsCode := []Code{
@@ -129,6 +129,10 @@ func (spec *parsedIfaceType) GoSubTypes() []types.Type {
 		subTypes = append(subTypes, method.GoSubTypes()...)
 	}
 	return subTypes
+}
+
+func (spec *parsedIfaceType) Name() string {
+	return spec.name
 }
 
 func (spec *parsedIfaceType) ConcreteStructCode() ([]Code, error) {
@@ -302,19 +306,69 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) Code {
 
 func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec) func(*Statement) {
 	return func(s *Statement) {
-		s.Var().Id("response").Do(spec.concreteMethodImplTypeCode(method.returnSpec)).Line()
-		s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
+		switch returnType := method.returnSpec.(type) {
+		case nil:
+			s.Var().Id("response").Do(spec.concreteMethodImplTypeCode(method.returnSpec)).Line()
+			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
+			s.Return(
+				Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")),
+			)
 
-		var returns []Code
-		switch method.returnSpec.(type) {
-		case *parsedIfaceTypeReference, *parsedIfaceType:
-			returns = append(returns, Op("&").Id("response"))
+		case *parsedPrimitiveType:
+			s.Var().Id("response").Do(spec.concreteMethodImplTypeCode(method.returnSpec)).Line()
+			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
+			s.Return(
+				Id("response"),
+				Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")),
+			)
+
+		case *parsedIfaceTypeReference, *parsedObjectTypeReference:
+			s.Return(Op("&").Do(spec.concreteMethodImplTypeCode(method.returnSpec)).Values(Dict{
+				Id("q"): Id("q"),
+				Id("c"): Id("r").Dot("c"),
+			}))
+
+		case *parsedSliceType:
+			switch underlyingReturnType := returnType.underlying.(type) {
+			case NamedParsedType:
+				idScalarName := fmt.Sprintf("%sID", strcase.ToCamel(underlyingReturnType.Name()))
+				loadFromIDQueryName := fmt.Sprintf("load%sFromID", strcase.ToCamel(underlyingReturnType.Name()))
+
+				s.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("id")).Line()
+				s.Var().Id("idResults").Index().Struct(Id("Id").Id(idScalarName)).Line()
+				s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("idResults")).Line()
+
+				s.Id("err").Op(":=").Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")).Line()
+				s.If(Id("err").Op("!=").Nil()).Block(Return(Nil(), Id("err"))).Line()
+
+				s.Var().Id("results").Index().Do(spec.concreteMethodSigTypeCode(returnType.underlying)).Line()
+				s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
+					g.Id("id").Op(":=").Id("idResult").Dot("Id").Line()
+					// TODO: if iface is from this module then it needs namespacing...
+					g.Id("results").Op("=").Append(Id("results"), Op("&").Do(spec.concreteMethodImplTypeCode(returnType.underlying)).Values(Dict{
+						Id("id"): Op("&").Id("id"),
+						Id("q"):  Id("querybuilder").Dot("Query").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
+						Id("c"):  Id("r").Dot("c"),
+					}))
+				}).Line()
+
+				s.Return(Id("results"), Nil())
+
+			case *parsedPrimitiveType, nil:
+				s.Var().Id("response").Do(spec.concreteMethodImplTypeCode(method.returnSpec)).Line()
+				s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
+				s.Return(
+					Id("response"),
+					Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")),
+				)
+
+			default:
+				panic(fmt.Errorf("unsupported method return slice element type %T", underlyingReturnType))
+			}
+
 		default:
-			returns = append(returns, Id("response"))
+			panic(fmt.Errorf("unsupported method return type %T", method.returnSpec))
 		}
-		returns = append(returns, Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")))
-
-		s.Return(returns...)
 	}
 }
 
@@ -335,6 +389,9 @@ func (spec *parsedIfaceType) concreteMethodCheckCachedFieldCode(method *funcType
 func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) func(*Statement) {
 	return func(s *Statement) {
 		switch argTypeSpec := argTypeSpec.(type) {
+		case nil:
+			s.Id("Void")
+
 		case *parsedPrimitiveType:
 			if argTypeSpec.alias != "" {
 				s.Id(argTypeSpec.alias)
@@ -348,13 +405,7 @@ func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) f
 		case *parsedObjectTypeReference:
 			s.Op("*").Id(argTypeSpec.name)
 
-		case *parsedObjectType:
-			s.Op("*").Id(argTypeSpec.name)
-
 		case *parsedIfaceTypeReference:
-			s.Id(argTypeSpec.name)
-
-		case *parsedIfaceType:
 			s.Id(argTypeSpec.name)
 
 		default:
@@ -366,6 +417,9 @@ func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) f
 func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedType) func(*Statement) {
 	return func(s *Statement) {
 		switch returnTypeSpec := returnTypeSpec.(type) {
+		case nil:
+			s.Id("Void")
+
 		case *parsedPrimitiveType:
 			if returnTypeSpec.alias != "" {
 				s.Id(returnTypeSpec.alias)
@@ -379,13 +433,7 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 		case *parsedObjectTypeReference:
 			s.Id(returnTypeSpec.name)
 
-		case *parsedObjectType:
-			s.Id(returnTypeSpec.name)
-
 		case *parsedIfaceTypeReference:
-			s.Id(formatIfaceImplName(returnTypeSpec.name))
-
-		case *parsedIfaceType:
 			s.Id(formatIfaceImplName(returnTypeSpec.name))
 
 		default:
