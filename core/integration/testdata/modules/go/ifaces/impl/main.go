@@ -92,6 +92,22 @@ func (m Impl) WithObj(objArg *Directory) *Impl {
 	return &m
 }
 
+func (m Impl) WithOptionalTypeObj(objArg Optional[*Directory]) *Impl {
+	if obj, ok := objArg.Get(); ok {
+		m.Obj = obj
+	}
+	return &m
+}
+func (m Impl) WithOptionalPragmaObj(
+	// +optional
+	objArg *Directory,
+) *Impl {
+	if objArg != nil {
+		m.Obj = objArg
+	}
+	return &m
+}
+
 func (m Impl) WithObjList(objListArg []*Directory) *Impl {
 	m.ObjList = objListArg
 	return &m

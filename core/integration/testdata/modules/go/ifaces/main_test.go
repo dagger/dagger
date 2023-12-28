@@ -139,6 +139,20 @@ func TestIface(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, dirEnts, "file2")
 	})
+	t.Run("withOptionalTypeObj", func(t *testing.T) {
+		t.Parallel()
+		obj := test.WithOptionalTypeObj(impl.AsTestCustomIface(), TestWithOptionalTypeObjOpts{
+			ObjArg: dag.Directory().WithNewFile("/file3", "file3"),
+		}).Obj()
+		dirEnts, err := obj.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "file3")
+
+		obj = test.WithOptionalTypeObj(impl.AsTestCustomIface()).Obj()
+		dirEnts, err = obj.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "file1")
+	})
 	t.Run("objList", func(t *testing.T) {
 		t.Parallel()
 		dirs, err := test.ObjList(ctx, impl.AsTestCustomIface())

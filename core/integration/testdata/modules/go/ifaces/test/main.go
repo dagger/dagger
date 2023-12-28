@@ -44,6 +44,11 @@ type CustomIface interface {
 
 	Obj() *Directory
 	WithObj(objArg *Directory) CustomIface
+	WithOptionalTypeObj(objArg Optional[*Directory]) CustomIface
+	WithOptionalPragmaObj(
+		// +optional
+		objArg *Directory,
+	) CustomIface
 	ObjList(ctx context.Context) ([]*Directory, error)
 	WithObjList(ctx context.Context, objListArg []*Directory) CustomIface
 
@@ -130,6 +135,18 @@ func (m *Test) Obj(ifaceArg CustomIface) *Directory {
 
 func (m *Test) WithObj(ifaceArg CustomIface, objArg *Directory) CustomIface {
 	return ifaceArg.WithObj(objArg)
+}
+
+func (m *Test) WithOptionalTypeObj(ifaceArg CustomIface, objArg Optional[*Directory]) CustomIface {
+	return ifaceArg.WithOptionalTypeObj(objArg)
+}
+
+func (m *Test) WithOptionalPragmaObj(
+	ifaceArg CustomIface,
+	// +optional
+	objArg *Directory,
+) CustomIface {
+	return ifaceArg.WithOptionalPragmaObj(objArg)
 }
 
 func (m *Test) ObjList(ctx context.Context, ifaceArg CustomIface) ([]*Directory, error) {
