@@ -54,6 +54,9 @@ type Module {
   "Objects served by this module"
   objects: [TypeDef!]
 
+  "Interfaces served by this module"
+  interfaces: [TypeDef!]
+
   "This module plus the given Object type and associated functions"
   withObject(object: TypeDefID!): Module! # TODO: ObjectTypeDefID?
   "TODO: doc"

@@ -4434,6 +4434,39 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Interfaces served by this module
+   */
+  interfaces = async (): Promise<TypeDef[]> => {
+    type interfaces = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<interfaces[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "interfaces",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {

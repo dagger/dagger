@@ -50,6 +50,7 @@ func (s *moduleSchema) Resolvers() Resolvers {
 	ResolveIDable[core.Module](rs, "Module", ObjectResolver{
 		"dependencies":  ToResolver(s.moduleDependencies),
 		"objects":       ToResolver(s.moduleObjects),
+		"interfaces":    ToResolver(s.moduleInterfaces),
 		"withObject":    ToResolver(s.moduleWithObject),
 		"withInterface": ToResolver(s.moduleWithInterface),
 		"generatedCode": ToResolver(s.moduleGeneratedCode),
@@ -279,6 +280,25 @@ func (s *moduleSchema) moduleObjects(ctx context.Context, modMeta *core.Module, 
 	typeDefs := make([]*core.TypeDef, 0, len(objs))
 	for _, obj := range objs {
 		typeDefs = append(typeDefs, obj.typeDef)
+	}
+	return typeDefs, nil
+}
+
+func (s *moduleSchema) moduleInterfaces(ctx context.Context, modMeta *core.Module, _ any) ([]*core.TypeDef, error) {
+	mod, err := s.GetOrAddModFromMetadata(ctx, modMeta, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module: %w", err)
+	}
+	ifaces, err := mod.Interfaces(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module objects: %w", err)
+	}
+	typeDefs := make([]*core.TypeDef, 0, len(ifaces))
+	for _, iface := range ifaces {
+		typeDefs = append(typeDefs, &core.TypeDef{
+			Kind:        core.TypeDefKindInterface,
+			AsInterface: iface.typeDef,
+		})
 	}
 	return typeDefs, nil
 }

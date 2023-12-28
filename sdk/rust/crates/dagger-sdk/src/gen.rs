@@ -3415,6 +3415,15 @@ impl Module {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Interfaces served by this module
+    pub fn interfaces(&self) -> Vec<TypeDef> {
+        let query = self.selection.select("interfaces");
+        return vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");

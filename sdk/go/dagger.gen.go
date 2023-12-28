@@ -423,9 +423,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 		for i := range fields {
 			val := EnvVariable{name: &fields[i].Name, value: &fields[i].Value}
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -537,9 +535,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -691,9 +687,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 		for i := range fields {
 			val := Label{name: &fields[i].Name, value: &fields[i].Value}
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -2264,9 +2258,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 			val := FunctionArg{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
 			val.c = r.c
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -2530,9 +2522,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 
 		for i := range fields {
 			val := FunctionCallArgValue{name: &fields[i].Name, value: &fields[i].Value}
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -3089,9 +3079,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 			val := Function{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
 			val.c = r.c
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -3209,9 +3197,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 			val := Module{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadModuleFromID").Arg("id", fields[i].Id)
 			val.c = r.c
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -3301,6 +3287,40 @@ func (r *Module) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Interfaces served by this module
+func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("interfaces")
+
+	q = q.Select("id")
+
+	type interfaces struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []interfaces) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []interfaces
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -3331,9 +3351,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 			val := TypeDef{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
 			val.c = r.c
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -3554,9 +3572,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{description: &fields[i].Description, name: &fields[i].Name}
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -3590,9 +3606,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 			val := Function{id: &fields[i].Id}
 			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
 			val.c = r.c
-
 			out = append(out, val)
-
 		}
 
 		return out
@@ -4398,9 +4412,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
-
 			out = append(out, val)
-
 		}
 
 		return out

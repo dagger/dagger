@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedCode id name objects sdk serve sourceDirectory sourceDirectorySubPath withInterface withObject"
+          "dependencies dependencyConfig description generatedCode id interfaces name objects sdk serve sourceDirectory sourceDirectorySubPath withInterface withObject"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -55,6 +55,15 @@ defmodule Dagger.Module do
     @spec id(t()) :: {:ok, Dagger.ModuleID.t()} | {:error, term()}
     def id(%__MODULE__{} = module) do
       selection = select(module.selection, "id")
+      execute(selection, module.client)
+    end
+  )
+
+  (
+    @doc "Interfaces served by this module"
+    @spec interfaces(t()) :: {:ok, [Dagger.TypeDef.t()] | nil} | {:error, term()}
+    def interfaces(%__MODULE__{} = module) do
+      selection = select(module.selection, "interfaces")
       execute(selection, module.client)
     end
   )
