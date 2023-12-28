@@ -1,98 +1,76 @@
 package templates
 
 import (
-	_ "embed"
+	"embed"
+	"fmt"
+	"io/fs"
+	"path/filepath"
 	"text/template"
 )
 
 var (
-	//go:embed src/header.go.tmpl
-	headerSource string
-	header       *template.Template
+	//go:embed src/*
+	tmplFS embed.FS
 
-	//go:embed src/scalar.go.tmpl
-	scalarSource string
-	scalar       *template.Template
-
-	//go:embed src/input.go.tmpl
-	inputSource string
-	input       *template.Template
-
-	//go:embed src/object.go.tmpl
-	objectSource string
-	object       *template.Template
-
-	//go:embed src/enum.go.tmpl
-	enumSource string
-	enum       *template.Template
-
-	//go:embed src/module.go.tmpl
-	moduleSource string
-	module       *template.Template
+	files map[string]TemplateFile
 )
 
-func Header(funcs template.FuncMap) *template.Template {
-	if header == nil {
-		var err error
-		header, err = template.New("header").Funcs(funcs).Parse(headerSource)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return header
+type TemplateFile struct {
+	Name string
+	tmpl *template.Template
 }
 
-func Scalar(funcs template.FuncMap) *template.Template {
-	if scalar == nil {
-		var err error
-		scalar, err = template.New("scalar").Funcs(funcs).Parse(scalarSource)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return scalar
+func (t *TemplateFile) template(name string) *template.Template {
+	return t.tmpl.Lookup(fmt.Sprintf("%s.go.tmpl", name))
 }
 
-func Input(funcs template.FuncMap) *template.Template {
-	if input == nil {
-		var err error
-		input, err = template.New("input").Funcs(funcs).Parse(inputSource)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return input
+func (t *TemplateFile) Header() *template.Template {
+	return t.template("header")
 }
 
-func Object(funcs template.FuncMap) *template.Template {
-	if object == nil {
-		var err error
-		object, err = template.New("object").Funcs(funcs).Parse(objectSource)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return object
+func (t *TemplateFile) Module() *template.Template {
+	return t.template("module")
 }
 
-func Enum(funcs template.FuncMap) *template.Template {
-	if enum == nil {
-		var err error
-		enum, err = template.New("enum").Funcs(funcs).Parse(enumSource)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return enum
+func (t *TemplateFile) Scalar() *template.Template {
+	return t.template("scalar")
 }
 
-func Module(funcs template.FuncMap) *template.Template {
-	if module == nil {
-		var err error
-		module, err = template.New("module").Funcs(funcs).Parse(moduleSource)
+func (t *TemplateFile) Object() *template.Template {
+	return t.template("object")
+}
+
+func (t *TemplateFile) Enum() *template.Template {
+	return t.template("enum")
+}
+
+func (t *TemplateFile) Input() *template.Template {
+	return t.template("input")
+}
+
+func TemplateFiles(funcs template.FuncMap) map[string]TemplateFile {
+	if files != nil {
+		for _, file := range files {
+			file.tmpl.Funcs(funcs)
+		}
+		return files
+	}
+
+	files = map[string]TemplateFile{}
+	root := "src"
+
+	entries, err := fs.ReadDir(tmplFS, root)
+	if err != nil {
+		panic(err)
+	}
+	for _, entry := range entries {
+		tmpl, err := template.New("").Funcs(funcs).ParseFS(tmplFS, filepath.Join(root, entry.Name(), "*.go.tmpl"))
 		if err != nil {
 			panic(err)
 		}
+		f := TemplateFile{Name: entry.Name(), tmpl: tmpl}
+		files[f.Name] = f
 	}
-	return module
+
+	return files
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/hexops/gotextdiff"
 	"github.com/hexops/gotextdiff/myers"
@@ -86,6 +88,24 @@ func (t All) runAll(ctx context.Context, fn func(context.Context, SDK) error) er
 // 3) Compare
 // 4) Restore original generated code.
 func lintGeneratedCode(fn func() error, files ...string) error {
+	newFiles := make([]string, 0, len(files))
+	for _, file := range files {
+		err := filepath.WalkDir(file, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			newFiles = append(newFiles, path)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	files = newFiles
+
 	originals := map[string][]byte{}
 	for _, f := range files {
 		content, err := os.ReadFile(f)
