@@ -285,7 +285,7 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) func(*S
 			s.Id(typeSpec.name)
 
 		case *parsedIfaceTypeReference:
-			s.Id(formatIfaceImplName(typeSpec.name))
+			s.Op("*").Id(formatIfaceImplName(typeSpec.name))
 
 		default:
 			panic(fmt.Errorf("unsupported concrete field type %T", typeSpec))
@@ -307,7 +307,7 @@ func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) 
 			}
 			s.Id("r").Dot(field.goName).Op("=").Id("convertSlice").Call(
 				Id("concrete").Dot(field.goName),
-				Id(formatIfaceImplName(underlyingIface.name)).Dot("toIface"),
+				Parens(Op("*").Id(formatIfaceImplName(underlyingIface.name))).Dot("toIface"),
 			)
 
 		case *parsedIfaceTypeReference:

@@ -45,6 +45,23 @@ func (m Impl) WithStr(strArg string) *Impl {
 	return &m
 }
 
+func (m Impl) WithOptionalTypeStr(strArg Optional[string]) *Impl {
+	if str, ok := strArg.Get(); ok {
+		m.Str = str
+	}
+	return &m
+}
+
+func (m Impl) WithOptionalPragmaStr(
+	// +optional
+	strArg string,
+) *Impl {
+	if strArg != "" {
+		m.Str = strArg
+	}
+	return &m
+}
+
 func (m Impl) WithStrList(strListArg []string) *Impl {
 	m.StrList = strListArg
 	return &m

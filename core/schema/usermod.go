@@ -515,7 +515,7 @@ func (obj *UserModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 			delete(value, k)
 			value[normalizedName], err = field.modType.ConvertFromSDKResult(ctx, v)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert field %q: %w", k, err)
+				return nil, fmt.Errorf("failed to convert field result %q: %w", k, err)
 			}
 		}
 		return value, nil
@@ -551,7 +551,7 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 			delete(value, k)
 			value[field.metadata.OriginalName], err = field.modType.ConvertToSDKInput(ctx, v)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert field %q: %w", k, err)
+				return nil, fmt.Errorf("failed to convert field input %q: %w", k, err)
 			}
 		}
 		return value, nil

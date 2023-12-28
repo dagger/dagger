@@ -38,6 +38,10 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 	switch value := value.(type) {
 	case string:
+		if value == "" {
+			return nil, nil
+		}
+
 		// TODO: this needs to handle core IDs too; need a common func for decoding both those and mod objects?
 
 		objMap, modDgst, typeName, err := resourceid.DecodeModuleID(value, "")

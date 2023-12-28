@@ -19,108 +19,129 @@ func TestIface(t *testing.T) {
 		dag.Directory().WithNewFile("/file2", "file2"),
 	}
 	impl := dag.Impl(strs, ints, bools, dirs)
-	// otherImpl := impl.OtherIface()
 
 	test := dag.Test()
 
 	t.Run("void", func(t *testing.T) {
 		t.Parallel()
-		_, err := test.TestVoid(ctx, impl.AsTestCustomIface())
+		_, err := test.Void(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 	})
 
 	t.Run("str", func(t *testing.T) {
 		t.Parallel()
-		str, err := test.TestStr(ctx, impl.AsTestCustomIface())
+		str, err := test.Str(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Equal(t, "a", str)
 	})
 	t.Run("withStr", func(t *testing.T) {
 		t.Parallel()
-		str, err := test.TestWithStr(impl.AsTestCustomIface(), "c").Str(ctx)
+		str, err := test.WithStr(impl.AsTestCustomIface(), "c").Str(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "c", str)
 	})
+	t.Run("withOptionalTypeStr", func(t *testing.T) {
+		t.Parallel()
+		str, err := test.WithOptionalTypeStr(impl.AsTestCustomIface(), TestWithOptionalTypeStrOpts{
+			StrArg: "d",
+		}).Str(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "d", str)
+		str, err = test.WithOptionalTypeStr(impl.AsTestCustomIface()).Str(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a", str)
+	})
+	t.Run("withOptionalPragmaStr", func(t *testing.T) {
+		t.Parallel()
+		str, err := test.WithOptionalPragmaStr(impl.AsTestCustomIface(), TestWithOptionalPragmaStrOpts{
+			StrArg: "d",
+		}).Str(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "d", str)
+		str, err = test.WithOptionalPragmaStr(impl.AsTestCustomIface()).Str(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a", str)
+	})
 	t.Run("strList", func(t *testing.T) {
 		t.Parallel()
-		strs, err := test.TestStrList(ctx, impl.AsTestCustomIface())
+		strs, err := test.StrList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Equal(t, []string{"a", "b"}, strs)
 	})
 	t.Run("withStrList", func(t *testing.T) {
 		t.Parallel()
-		strs, err := test.TestWithStrList(impl.AsTestCustomIface(), []string{"c", "d"}).StrList(ctx)
+		strs, err := test.WithStrList(impl.AsTestCustomIface(), []string{"c", "d"}).StrList(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"c", "d"}, strs)
 	})
 
 	t.Run("int", func(t *testing.T) {
 		t.Parallel()
-		i, err := test.TestInt(ctx, impl.AsTestCustomIface())
+		i, err := test.Int(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Equal(t, 1, i)
 	})
 	t.Run("withInt", func(t *testing.T) {
 		t.Parallel()
-		i, err := test.TestWithInt(impl.AsTestCustomIface(), 3).Int(ctx)
+		i, err := test.WithInt(impl.AsTestCustomIface(), 3).Int(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 3, i)
 	})
 	t.Run("intList", func(t *testing.T) {
 		t.Parallel()
-		ints, err := test.TestIntList(ctx, impl.AsTestCustomIface())
+		ints, err := test.IntList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Equal(t, []int{1, 2}, ints)
 	})
 	t.Run("withIntList", func(t *testing.T) {
 		t.Parallel()
-		ints, err := test.TestWithIntList(impl.AsTestCustomIface(), []int{3, 4}).IntList(ctx)
+		ints, err := test.WithIntList(impl.AsTestCustomIface(), []int{3, 4}).IntList(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []int{3, 4}, ints)
 	})
 
 	t.Run("bool", func(t *testing.T) {
 		t.Parallel()
-		b, err := test.TestBool(ctx, impl.AsTestCustomIface())
+		b, err := test.Bool(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Equal(t, true, b)
 	})
 	t.Run("withBool", func(t *testing.T) {
 		t.Parallel()
-		b, err := test.TestWithBool(impl.AsTestCustomIface(), false).Bool(ctx)
+		b, err := test.WithBool(impl.AsTestCustomIface(), false).Bool(ctx)
 		require.NoError(t, err)
 		require.Equal(t, false, b)
 	})
 	t.Run("boolList", func(t *testing.T) {
 		t.Parallel()
-		bools, err := test.TestBoolList(ctx, impl.AsTestCustomIface())
+		bools, err := test.BoolList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Equal(t, []bool{true, false}, bools)
 	})
 	t.Run("withBoolList", func(t *testing.T) {
 		t.Parallel()
-		bools, err := test.TestWithBoolList(impl.AsTestCustomIface(), []bool{false, true}).BoolList(ctx)
+		bools, err := test.WithBoolList(impl.AsTestCustomIface(), []bool{false, true}).BoolList(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []bool{false, true}, bools)
 	})
 
 	t.Run("obj", func(t *testing.T) {
 		t.Parallel()
-		dir := test.TestObj(impl.AsTestCustomIface())
+		dir := test.Obj(impl.AsTestCustomIface())
 		dirEnts, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, dirEnts, "file1")
 	})
 	t.Run("withObj", func(t *testing.T) {
 		t.Parallel()
-		dir := test.TestWithObj(impl.AsTestCustomIface(), dirs[1]).Obj()
+		dir := test.WithObj(impl.AsTestCustomIface(), dirs[1]).Obj()
 		dirEnts, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, dirEnts, "file2")
 	})
 	t.Run("objList", func(t *testing.T) {
 		t.Parallel()
-		dirs, err := test.TestObjList(ctx, impl.AsTestCustomIface())
+		dirs, err := test.ObjList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Len(t, dirs, 2)
 		dirEnts1, err := dirs[0].Entries(ctx)
@@ -132,7 +153,7 @@ func TestIface(t *testing.T) {
 	})
 	t.Run("withObjList", func(t *testing.T) {
 		t.Parallel()
-		dirs, err := test.TestWithObjList(impl.AsTestCustomIface(), []*Directory{
+		dirs, err := test.WithObjList(impl.AsTestCustomIface(), []*Directory{
 			dag.Directory().WithNewFile("/file3", "file3"),
 			dag.Directory().WithNewFile("/file4", "file4"),
 		}).ObjList(ctx)
@@ -148,14 +169,14 @@ func TestIface(t *testing.T) {
 
 	t.Run("selfIface", func(t *testing.T) {
 		t.Parallel()
-		iface := test.TestSelfIface(impl.AsTestCustomIface())
+		iface := test.SelfIface(impl.AsTestCustomIface())
 		str, err := iface.Str(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "aself", str)
 	})
 	t.Run("selfIfaceList", func(t *testing.T) {
 		t.Parallel()
-		ifaces, err := test.TestSelfIfaceList(ctx, impl.AsTestCustomIface())
+		ifaces, err := test.SelfIfaceList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Len(t, ifaces, 2)
 		str1, err := ifaces[0].Str(ctx)
@@ -168,14 +189,14 @@ func TestIface(t *testing.T) {
 
 	t.Run("otherIface", func(t *testing.T) {
 		t.Parallel()
-		iface := test.TestOtherIface(impl.AsTestCustomIface())
+		iface := test.OtherIface(impl.AsTestCustomIface())
 		str, err := iface.Foo(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "aother", str)
 	})
 	t.Run("otherIfaceList", func(t *testing.T) {
 		t.Parallel()
-		ifaces, err := test.TestOtherIfaceList(ctx, impl.AsTestCustomIface())
+		ifaces, err := test.OtherIfaceList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Len(t, ifaces, 2)
 		str1, err := ifaces[0].Foo(ctx)
@@ -188,7 +209,7 @@ func TestIface(t *testing.T) {
 
 	t.Run("ifaceListArgs", func(t *testing.T) {
 		t.Parallel()
-		strs, err := test.TestIfaceListArgs(ctx,
+		strs, err := test.IfaceListArgs(ctx,
 			[]*TestCustomIface{
 				impl.AsTestCustomIface(),
 				impl.SelfIface().AsTestCustomIface(),
@@ -204,24 +225,45 @@ func TestIface(t *testing.T) {
 
 	t.Run("parentIfaceFields", func(t *testing.T) {
 		t.Parallel()
-		strs, err := test.
-			WithIface(impl.AsTestCustomIface()).
-			WithIfaceList([]*TestCustomIface{
-				impl.AsTestCustomIface(),
-				impl.SelfIface().AsTestCustomIface(),
-			}).
-			WithOtherIfaceList([]*TestOtherIface{
-				impl.OtherIface().AsTestOtherIface(),
-				impl.SelfIface().OtherIface().AsTestOtherIface(),
-			}).
-			TestParentIfaceFields(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{"a", "a", "aself", "aother", "aselfother"}, strs)
+		t.Run("basic", func(t *testing.T) {
+			t.Parallel()
+			strs, err := test.
+				WithIface(impl.AsTestCustomIface()).
+				WithPrivateIface(dag.Impl([]string{"private"}, []int{99}, []bool{false}, []*Directory{dag.Directory()}).AsTestCustomIface()).
+				WithIfaceList([]*TestCustomIface{
+					impl.AsTestCustomIface(),
+					impl.SelfIface().AsTestCustomIface(),
+				}).
+				WithOtherIfaceList([]*TestOtherIface{
+					impl.OtherIface().AsTestOtherIface(),
+					impl.SelfIface().OtherIface().AsTestOtherIface(),
+				}).
+				ParentIfaceFields(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"a", "private", "a", "aself", "aother", "aselfother"}, strs)
+		})
+		t.Run("optionals", func(t *testing.T) {
+			t.Parallel()
+			strs, err := test.
+				WithOptionalTypeIface().
+				WithOptionalTypeIface(TestWithOptionalTypeIfaceOpts{Iface: impl.AsTestCustomIface()}).
+				WithOptionalTypeIface().
+				ParentIfaceFields(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"a"}, strs)
+			strs, err = test.
+				WithOptionalPragmaIface().
+				WithOptionalPragmaIface(TestWithOptionalPragmaIfaceOpts{Iface: impl.AsTestCustomIface()}).
+				WithOptionalPragmaIface().
+				ParentIfaceFields(ctx)
+			require.NoError(t, err)
+			require.Equal(t, []string{"a"}, strs)
+		})
 	})
 
 	t.Run("returnCustomObj", func(t *testing.T) {
 		t.Parallel()
-		customObj := test.TestReturnCustomObj(
+		customObj := test.ReturnCustomObj(
 			[]*TestCustomIface{
 				impl.AsTestCustomIface(),
 				impl.SelfIface().AsTestCustomIface(),

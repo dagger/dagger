@@ -249,11 +249,13 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 
 	paramType := field.Type()
 	baseType := paramType
+	isPtr := false
 	for {
 		ptr, ok := baseType.(*types.Pointer)
 		if !ok {
 			break
 		}
+		isPtr = true
 		baseType = ptr.Elem()
 	}
 
@@ -267,11 +269,13 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	if isOptionalType {
 		optional = true
 		baseType = wrappedType
+		isPtr = false
 		for {
 			ptr, ok := baseType.(*types.Pointer)
 			if !ok {
 				break
 			}
+			isPtr = true
 			baseType = ptr.Elem()
 		}
 	}
@@ -301,7 +305,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	var typeSpec ParsedType
 	if paramType.String() != contextTypename {
 		var err error
-		typeSpec, err = ps.parseGoTypeReference(baseType, nil, false)
+		typeSpec, err = ps.parseGoTypeReference(baseType, nil, isPtr)
 		if err != nil {
 			return paramSpec{}, fmt.Errorf("failed to parse type reference: %w", err)
 		}
@@ -314,12 +318,13 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	}
 
 	return paramSpec{
-		name:         name,
-		paramType:    paramType,
-		typeSpec:     typeSpec,
-		optional:     optional,
-		defaultValue: defaultValue,
-		description:  comment,
+		name:               name,
+		paramType:          paramType,
+		typeSpec:           typeSpec,
+		optional:           optional,
+		hasOptionalWrapper: isOptionalType,
+		defaultValue:       defaultValue,
+		description:        comment,
 	}, nil
 }
 
@@ -329,6 +334,8 @@ type paramSpec struct {
 
 	optional bool
 	variadic bool
+	// TODO: doc
+	hasOptionalWrapper bool
 
 	defaultValue string
 

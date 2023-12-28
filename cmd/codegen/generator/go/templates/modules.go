@@ -387,7 +387,7 @@ func renderNameOrStruct(t types.Type) string {
 	}
 	if named, ok := t.(*types.Named); ok {
 		if _, ok := named.Underlying().(*types.Interface); ok {
-			return formatIfaceImplName(named.Obj().Name())
+			return "*" + formatIfaceImplName(named.Obj().Name())
 		}
 
 		// Assume local
@@ -768,6 +768,9 @@ func (ps *parseState) declForFunc(parentType *types.Named, fnType *types.Func) (
 					if !ok {
 						continue
 					}
+					if typeSpec.Name.Name != parentType.Obj().Name() {
+						continue
+					}
 					iface, ok := typeSpec.Type.(*ast.InterfaceType)
 					if !ok {
 						continue
@@ -926,11 +929,17 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 			if !ok {
 				return t, access, true, nil
 			}
-			return t, Id("convertOptionalVal").Call(access, Id(formatIfaceImplName(wrappedNamed.Obj().Name())).Dot("toIface")), true, nil
+			return t, Id("convertOptionalVal").Call(
+				access,
+				Parens(Op("*").Id(formatIfaceImplName(wrappedNamed.Obj().Name()))).Dot("toIface"),
+			), true, nil
 		}
 
 		if _, ok := t.Underlying().(*types.Interface); ok {
-			return t, Id("ptr").Call(access), true, nil
+			return t,
+				access.Dot("toIface").Call(),
+				true,
+				nil
 		}
 		return nil, nil, false, nil
 	case *types.Slice:
@@ -942,7 +951,10 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 		if !ok {
 			return nil, nil, false, nil
 		}
-		return t, Id("convertSlice").Call(access, Id(formatIfaceImplName(elemNamed.Obj().Name())).Dot("toIface")), true, nil
+		return t, Id("convertSlice").Call(
+			access,
+			Parens(Op("*").Id(formatIfaceImplName(elemNamed.Obj().Name()))).Dot("toIface"),
+		), true, nil
 	case *types.Struct:
 		// inline struct case
 		return t, access, true, nil

@@ -216,6 +216,8 @@ func (spec *parsedIfaceType) ConcreteStructCode() ([]Code, error) {
 		Params().
 		Params(Id("[]byte"), Id("error")).
 		BlockFunc(func(g *Group) {
+			g.If(Id("r").Op("==").Nil()).Block(Return(Index().Byte().Parens(Lit(`""`)), Nil()))
+
 			g.List(Id("id"), Id("err")).Op(":=").Id("r").Dot("ID").Call(Qual("context", "Background").Call())
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Nil(), Id("err")))
 			g.Return(Id("json").Dot("Marshal").Call(Id("id")))
@@ -235,12 +237,13 @@ func (spec *parsedIfaceType) ConcreteStructCode() ([]Code, error) {
 	)
 
 	// convert to iface method
-	methodCodes = append(methodCodes, Func().Params(Id("r").Id(structName)).
+	methodCodes = append(methodCodes, Func().Params(Id("r").Op("*").Id(structName)).
 		Id("toIface").
 		Params().
 		Params(Id(spec.name)).
 		BlockFunc(func(g *Group) {
-			g.Return(Op("&").Id("r"))
+			g.If(Id("r").Op("==").Nil()).Block(Return(Nil()))
+			g.Return(Id("r"))
 		}),
 	)
 
@@ -264,14 +267,18 @@ func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec)
 func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) Code {
 	methodArgs := []Code{}
 	for _, argSpec := range method.argSpecs {
-		var argCode Code
 		if argSpec.typeSpec == nil {
 			// context case
-			argCode = Id("ctx").Qual("context", "Context")
-		} else {
-			argCode = Id(argSpec.name).Do(spec.concreteMethodSigTypeCode(argSpec.typeSpec))
+			methodArgs = append(methodArgs, Id("ctx").Qual("context", "Context"))
+			continue
 		}
-		methodArgs = append(methodArgs, argCode)
+
+		// TODO:: stupid to use Do now, cleanup
+		argTypeCode := Empty().Do(spec.concreteMethodSigTypeCode(argSpec.typeSpec))
+		if argSpec.hasOptionalWrapper {
+			argTypeCode = Id("Optional").Types(argTypeCode.Clone())
+		}
+		methodArgs = append(methodArgs, Id(argSpec.name).Add(argTypeCode))
 	}
 
 	methodReturns := []Code{}
@@ -297,7 +304,15 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) Code {
 					continue
 				}
 				gqlArgName := strcase.ToLowerCamel(argSpec.name)
-				g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit(gqlArgName), Id(argSpec.name))
+				setCode := Id("q").Op("=").Id("q").Dot("Arg").Call(Lit(gqlArgName), Id(argSpec.name))
+				if argSpec.hasOptionalWrapper {
+					g.If(
+						List(Id(argSpec.name), Id("ok")).Op(":=").Id(argSpec.name).Dot("Get").Call(),
+						Id("ok"),
+					).Block(setCode)
+				} else {
+					g.Add(setCode).Line()
+				}
 			}
 
 			g.Do(spec.concreteMethodExecuteQueryCode(method))
@@ -331,6 +346,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		case *parsedSliceType:
 			switch underlyingReturnType := returnType.underlying.(type) {
 			case NamedParsedType:
+				// TODO: if iface is from this module then it needs namespacing...
 				idScalarName := fmt.Sprintf("%sID", strcase.ToCamel(underlyingReturnType.Name()))
 				loadFromIDQueryName := fmt.Sprintf("load%sFromID", strcase.ToCamel(underlyingReturnType.Name()))
 
@@ -344,7 +360,6 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 				s.Var().Id("results").Index().Do(spec.concreteMethodSigTypeCode(returnType.underlying)).Line()
 				s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 					g.Id("id").Op(":=").Id("idResult").Dot("Id").Line()
-					// TODO: if iface is from this module then it needs namespacing...
 					g.Id("results").Op("=").Append(Id("results"), Op("&").Do(spec.concreteMethodImplTypeCode(returnType.underlying)).Values(Dict{
 						Id("id"): Op("&").Id("id"),
 						Id("q"):  Id("querybuilder").Dot("Query").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
@@ -403,7 +418,10 @@ func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) f
 			s.Index().Do(spec.concreteMethodSigTypeCode(argTypeSpec.underlying))
 
 		case *parsedObjectTypeReference:
-			s.Op("*").Id(argTypeSpec.name)
+			if argTypeSpec.isPtr {
+				s.Op("*")
+			}
+			s.Id(argTypeSpec.name)
 
 		case *parsedIfaceTypeReference:
 			s.Id(argTypeSpec.name)
