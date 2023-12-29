@@ -135,18 +135,17 @@ func (spec *parsedIfaceType) Name() string {
 	return spec.name
 }
 
-func (spec *parsedIfaceType) ConcreteStructCode() ([]Code, error) {
-	allCode := []Code{
-		spec.concreteStructDefCode(),
-		spec.idDefCode(),
-		spec.loadFromIDMethodCode(),
-		spec.graphqlTypeMethodCode(),
-		spec.graphqlIDTypeMethodCode(),
-		spec.graphqlIDMethodCode(),
-		spec.marshalJSONMethodCode(),
-		spec.unmarshalJSONMethodCode(),
-		spec.toIfaceMethodCode(),
-	}
+func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
+	code := Empty().
+		Add(spec.concreteStructDefCode()).Line().
+		Add(spec.idDefCode()).Line().
+		Add(spec.loadFromIDMethodCode()).Line().
+		Add(spec.graphqlTypeMethodCode()).Line().
+		Add(spec.graphqlIDTypeMethodCode()).Line().
+		Add(spec.graphqlIDMethodCode()).Line().
+		Add(spec.marshalJSONMethodCode()).Line().
+		Add(spec.unmarshalJSONMethodCode()).Line().
+		Add(spec.toIfaceMethodCode()).Line()
 
 	idMethodCode, err := spec.concreteMethodCode(&funcTypeSpec{
 		name:         "ID",
@@ -157,17 +156,17 @@ func (spec *parsedIfaceType) ConcreteStructCode() ([]Code, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ID method code: %w", err)
 	}
-	allCode = append(allCode, idMethodCode)
+	code.Add(idMethodCode).Line()
 
 	for _, method := range spec.methods {
 		methodCode, err := spec.concreteMethodCode(method)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate method %s code: %w", method.name, err)
 		}
-		allCode = append(allCode, methodCode)
+		code.Add(methodCode).Line()
 	}
 
-	return allCode, nil
+	return code, nil
 }
 
 func (spec *parsedIfaceType) concreteStructName() string {

@@ -336,9 +336,10 @@ type paramSpec struct {
 
 	optional bool
 	variadic bool
-	// TODO: doc
+	// hasOptionalWrapper is true if the type is wrapped in the Optional generic type
 	hasOptionalWrapper bool
-	isContext          bool
+	// isContext is true if the type is context.Context
+	isContext bool
 
 	defaultValue string
 

@@ -248,7 +248,6 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 
 			var callInputs []*core.CallInput
 			for k, rawArgVal := range p.Args {
-				k, rawArgVal := k, rawArgVal
 				callableArgType, err := callable.ArgType(k)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get underlying arg type for %s.%s arg %s: %w", ifaceName, fieldDef.Name, k, err)

@@ -212,38 +212,6 @@ func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
 	return typeDef, nil
 }
 
-func (typeDef *TypeDef) IsEqualTypeOf(otherDef *TypeDef) bool {
-	if typeDef == nil || otherDef == nil {
-		return false
-	}
-
-	if typeDef.Optional != otherDef.Optional {
-		return false
-	}
-
-	switch typeDef.Kind {
-	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
-		return typeDef.Kind == otherDef.Kind
-	case TypeDefKindList:
-		if otherDef.Kind != TypeDefKindList {
-			return false
-		}
-		return typeDef.AsList.ElementTypeDef.IsEqualTypeOf(otherDef.AsList.ElementTypeDef)
-	case TypeDefKindObject:
-		if otherDef.Kind != TypeDefKindObject {
-			return false
-		}
-		return typeDef.AsObject.IsEqualTypeOf(otherDef.AsObject)
-	case TypeDefKindInterface:
-		if otherDef.Kind != TypeDefKindInterface {
-			return false
-		}
-		return typeDef.AsInterface.IsEqualTypeOf(otherDef.AsInterface)
-	default:
-		return false
-	}
-}
-
 func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	if typeDef == nil || otherDef == nil {
 		return false
@@ -264,7 +232,9 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	case TypeDefKindObject:
 		switch otherDef.Kind {
 		case TypeDefKindObject:
-			return typeDef.AsObject.IsEqualTypeOf(otherDef.AsObject)
+			// For now, assume that if the objects have the same name, they are the same object. This should be a safe assumption
+			// within the context of a single, already-namedspace schema, but not safe if objects are compared across schemas
+			return typeDef.AsObject.Name == otherDef.AsObject.Name
 		case TypeDefKindInterface:
 			return typeDef.AsObject.IsSubtypeOf(otherDef.AsInterface)
 		default:
@@ -341,79 +311,6 @@ func (obj ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
 		}
 	}
 	return nil, false
-}
-
-func (obj *ObjectTypeDef) IsEqualTypeOf(otherObj *ObjectTypeDef) bool {
-	if obj == nil || otherObj == nil {
-		return false
-	}
-
-	objFnByName := make(map[string]*Function)
-	for _, fn := range obj.Functions {
-		objFnByName[fn.Name] = fn
-	}
-	otherObjFnByName := make(map[string]*Function)
-	for _, fn := range otherObj.Functions {
-		if _, ok := objFnByName[fn.Name]; !ok {
-			return false
-		}
-		otherObjFnByName[fn.Name] = fn
-	}
-
-	objFieldByName := make(map[string]*FieldTypeDef)
-	for _, field := range obj.Fields {
-		objFieldByName[field.Name] = field
-	}
-	otherObjFieldByName := make(map[string]*FieldTypeDef)
-	for _, field := range otherObj.Fields {
-		if _, ok := objFieldByName[field.Name]; !ok {
-			return false
-		}
-		otherObjFieldByName[field.Name] = field
-	}
-
-	for _, fn := range obj.Functions {
-		otherFn, ok := otherObjFnByName[fn.Name]
-		if !ok {
-			return false
-		}
-
-		if !fn.ReturnType.IsEqualTypeOf(otherFn.ReturnType) {
-			return false
-		}
-
-		for i, fnArg := range fn.Args {
-			if i >= len(otherFn.Args) {
-				return false
-			}
-			otherFnArg := otherFn.Args[i]
-
-			if fnArg.Name != otherFnArg.Name {
-				return false
-			}
-
-			if fnArg.TypeDef.Optional != otherFnArg.TypeDef.Optional {
-				return false
-			}
-
-			if !fnArg.TypeDef.IsEqualTypeOf(otherFnArg.TypeDef) {
-				return false
-			}
-		}
-	}
-
-	for _, field := range obj.Fields {
-		otherField, ok := otherObjFieldByName[field.Name]
-		if !ok {
-			return false
-		}
-
-		if !field.TypeDef.IsEqualTypeOf(otherField.TypeDef) {
-			return false
-		}
-	}
-
-	return true
 }
 
 func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
@@ -550,49 +447,6 @@ func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
 	}
 
 	return &cp
-}
-
-func (iface *InterfaceTypeDef) IsEqualTypeOf(otherIface *InterfaceTypeDef) bool {
-	if iface == nil || otherIface == nil {
-		return false
-	}
-
-	ifaceFnByName := make(map[string]*Function)
-	for _, fn := range iface.Functions {
-		ifaceFnByName[fn.Name] = fn
-	}
-
-	for _, otherIfaceFn := range otherIface.Functions {
-		ifaceFn, ok := ifaceFnByName[otherIfaceFn.Name]
-		if !ok {
-			return false
-		}
-
-		if !ifaceFn.ReturnType.IsEqualTypeOf(otherIfaceFn.ReturnType) {
-			return false
-		}
-
-		for i, otherIfaceFnArg := range otherIfaceFn.Args {
-			if i >= len(ifaceFn.Args) {
-				return false
-			}
-			ifaceFnArg := ifaceFn.Args[i]
-
-			if ifaceFnArg.Name != otherIfaceFnArg.Name {
-				return false
-			}
-
-			if ifaceFnArg.TypeDef.Optional != otherIfaceFnArg.TypeDef.Optional {
-				return false
-			}
-
-			if !otherIfaceFnArg.TypeDef.IsEqualTypeOf(ifaceFnArg.TypeDef) {
-				return false
-			}
-		}
-	}
-
-	return true
 }
 
 func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {

@@ -94,20 +94,13 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	tps := []types.Type{}
 	for _, obj := range objs {
 		// check if this is the constructor func, save it for later if so
-		fn, isFn := obj.(*types.Func)
-		if isFn && fn.Name() == constructorFuncName {
-			ps.constructor = fn
+		if ok := ps.checkConstructor(obj); ok {
 			continue
 		}
 
 		// check if this is the DaggerObject interface
-		named, isNamed := obj.Type().(*types.Named)
-		if isNamed {
-			iface, isIface := named.Underlying().(*types.Interface)
-			if isIface && named.Obj().Name() == daggerObjectIfaceName {
-				ps.daggerObjectIfaceType = iface
-				continue
-			}
+		if ok := ps.checkDaggerObjectIface(obj); ok {
+			continue
 		}
 
 		tps = append(tps, obj.Type())
@@ -120,8 +113,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	added := map[string]struct{}{}
 	topLevel := true
 
-	var interfaceCodes []Code
-	var objectJSONMethodCodes []Code
+	implementationCode := Empty()
 	for len(tps) != 0 {
 		var nextTps []types.Type
 		for _, tp := range tps {
@@ -148,8 +140,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				continue
 			}
 
-			strct, isStruct := named.Underlying().(*types.Struct)
-			if isStruct {
+			switch underlyingObj := named.Underlying().(type) {
+			case *types.Struct:
+				strct := underlyingObj
 				objTypeSpec, err := ps.parseGoStruct(strct, named)
 				if err != nil {
 					return "", err
@@ -177,26 +170,20 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
 				added[obj.Name()] = struct{}{}
 
-				jsonMethodCode, err := objTypeSpec.JSONMethodCode()
+				implCode, err := objTypeSpec.ImplementationCode()
 				if err != nil {
 					return "", fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
 				}
-				objectJSONMethodCodes = append(objectJSONMethodCodes, jsonMethodCode)
+				implementationCode.Add(implCode).Line()
 
 				// If the object has any extra sub-types (e.g. for function return
 				// values), add them to the list of types to process
 				nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
-			}
 
-			iface, isIface := named.Underlying().(*types.Interface)
-			if isIface {
+			case *types.Interface:
+				iface := underlyingObj
 				if topLevel {
 					// refrain from adding interfaces to the module typedefs unless it's referenced by a object/function in the module
-					continue
-				}
-
-				if ps.isDaggerGenerated(named.Obj()) {
-					// skip objects from outside this module
 					continue
 				}
 
@@ -217,11 +204,11 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
 				added[obj.Name()] = struct{}{}
 
-				concreteStructCode, err := ifaceTypeSpec.ConcreteStructCode()
+				implCode, err := ifaceTypeSpec.ImplementationCode()
 				if err != nil {
 					return "", fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
 				}
-				interfaceCodes = append(interfaceCodes, concreteStructCode...)
+				implementationCode.Add(implCode).Line()
 
 				// If the object has any extra sub-types (e.g. for function return
 				// values), add them to the list of types to process
@@ -233,19 +220,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 		topLevel = false
 	}
 
-	var renderedInterfaceCode string
-	for _, interfaceCode := range interfaceCodes {
-		renderedInterfaceCode += fmt.Sprintf("%#v\n\n", interfaceCode)
-	}
-
-	var renderedObjectJSONMethodCode string
-	for _, objectJSONMethodCode := range objectJSONMethodCodes {
-		renderedObjectJSONMethodCode += fmt.Sprintf("%#v\n\n", objectJSONMethodCode)
-	}
-
 	return strings.Join([]string{
-		renderedObjectJSONMethodCode,
-		renderedInterfaceCode,
+		fmt.Sprintf("%#v", implementationCode),
 		mainSrc,
 		invokeSrc(objFunctionCases, createMod),
 	}, "\n"), nil
@@ -419,6 +395,36 @@ var checkErrStatement = If(Err().Op("!=").Nil()).Block(
 	// os.Exit(2)
 	Qual("os", "Exit").Call(Lit(2)),
 )
+
+func (ps *parseState) checkConstructor(obj types.Object) bool {
+	fn, isFn := obj.(*types.Func)
+	if !isFn {
+		return false
+	}
+	if fn.Name() != constructorFuncName {
+		return false
+	}
+
+	ps.constructor = fn
+	return true
+}
+
+func (ps *parseState) checkDaggerObjectIface(obj types.Object) bool {
+	named, isNamed := obj.Type().(*types.Named)
+	if !isNamed {
+		return false
+	}
+	iface, isIface := named.Underlying().(*types.Interface)
+	if !isIface {
+		return false
+	}
+	if named.Obj().Name() != daggerObjectIfaceName {
+		return false
+	}
+
+	ps.daggerObjectIfaceType = iface
+	return true
+}
 
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object

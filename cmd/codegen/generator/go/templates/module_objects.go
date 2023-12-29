@@ -235,9 +235,9 @@ func (spec *parsedObjectType) Name() string {
 	return spec.name
 }
 
-func (spec *parsedObjectType) JSONMethodCode() (*Statement, error) {
-	var concreteFields []Code
-	var setFieldCodes []*Statement
+func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
+	concreteFields := make([]Code, 0, len(spec.fields))
+	setFieldCodes := make([]*Statement, 0, len(spec.fields))
 	for _, field := range spec.fields {
 		fieldTypeCode, err := spec.concreteFieldTypeCode(field.typeSpec)
 		if err != nil {
@@ -341,8 +341,10 @@ type fieldSpec struct {
 	doc      string
 	typeSpec ParsedType
 
-	// TODO: doc
+	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool
-	goName    string
-	goType    types.Type
+	// goName is the name of the field in the Go struct. It may be different than name if the user changed the name of the field via a json tag
+	goName string
+
+	goType types.Type
 }
