@@ -5,13 +5,18 @@ package dag
 import (
 	"context"
 	"os"
+	"sync"
 
 	dagger "dagger.io/dagger"
 )
 
 var client *dagger.Client
+var clientMu sync.Mutex
 
 func initClient() *dagger.Client {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+
 	if client == nil {
 		var err error
 		client, err = dagger.Connect(context.Background(), dagger.WithLogOutput(os.Stdout))
