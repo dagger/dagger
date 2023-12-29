@@ -302,8 +302,9 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	}
 
 	// ignore ctx arg for parsing type reference
+	isContext := paramType.String() == contextTypename
 	var typeSpec ParsedType
-	if paramType.String() != contextTypename {
+	if !isContext {
 		var err error
 		typeSpec, err = ps.parseGoTypeReference(baseType, nil, isPtr)
 		if err != nil {
@@ -323,6 +324,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		typeSpec:           typeSpec,
 		optional:           optional,
 		hasOptionalWrapper: isOptionalType,
+		isContext:          isContext,
 		defaultValue:       defaultValue,
 		description:        comment,
 	}, nil
@@ -336,6 +338,7 @@ type paramSpec struct {
 	variadic bool
 	// TODO: doc
 	hasOptionalWrapper bool
+	isContext          bool
 
 	defaultValue string
 

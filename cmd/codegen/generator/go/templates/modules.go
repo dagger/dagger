@@ -243,7 +243,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 		renderedObjectJSONMethodCode += fmt.Sprintf("%#v\n\n", objectJSONMethodCode)
 	}
 
-	// TODO: sort cases and functions based on their definition order
 	return strings.Join([]string{
 		renderedObjectJSONMethodCode,
 		renderedInterfaceCode,
@@ -936,10 +935,7 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 		}
 
 		if _, ok := t.Underlying().(*types.Interface); ok {
-			return t,
-				access.Dot("toIface").Call(),
-				true,
-				nil
+			return t, access.Dot("toIface").Call(), true, nil
 		}
 		return nil, nil, false, nil
 	case *types.Slice:
