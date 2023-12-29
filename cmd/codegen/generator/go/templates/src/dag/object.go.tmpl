@@ -6,7 +6,7 @@
 //
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
-{{ FieldFunction $field true "dagger." }} {
+{{ FieldFunction $field true "dagger" }} {
 	client := initClient()
 	return client.{{ .Name | FormatName }}(
 		{{- if not $field.TypeRef.IsObject -}}

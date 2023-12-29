@@ -16,6 +16,8 @@ const (
 // FormatTypeFuncs is an interface to format any GraphQL type.
 // Each generator has to implement this interface.
 type FormatTypeFuncs interface {
+	WithScope(scope string) FormatTypeFuncs
+
 	FormatKindList(representation string) string
 	FormatKindScalarString(representation string) string
 	FormatKindScalarInt(representation string) string
@@ -188,6 +190,8 @@ func (c *CommonFunctions) FormatOutputType(r *introspection.TypeRef, scopes ...s
 
 // formatType loops through the type reference to transform it into its SDK language.
 func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, input bool) (representation string, err error) {
+	ff := c.formatTypeFuncs.WithScope(scope)
+
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
 		case introspection.TypeKindList:
@@ -195,27 +199,27 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 			// the loop.
 			// Since an SDK needs to insert it at the end, other at the beginning.
 			defer func() {
-				representation = c.formatTypeFuncs.FormatKindList(representation)
+				representation = ff.FormatKindList(representation)
 			}()
 		case introspection.TypeKindScalar:
 			switch introspection.Scalar(ref.Name) {
 			case introspection.ScalarString:
-				return c.formatTypeFuncs.FormatKindScalarString(representation), nil
+				return ff.FormatKindScalarString(representation), nil
 			case introspection.ScalarInt:
-				return c.formatTypeFuncs.FormatKindScalarInt(representation), nil
+				return ff.FormatKindScalarInt(representation), nil
 			case introspection.ScalarFloat:
-				return c.formatTypeFuncs.FormatKindScalarFloat(representation), nil
+				return ff.FormatKindScalarFloat(representation), nil
 			case introspection.ScalarBoolean:
-				return c.formatTypeFuncs.FormatKindScalarBoolean(representation), nil
+				return ff.FormatKindScalarBoolean(representation), nil
 			default:
-				return c.formatTypeFuncs.FormatKindScalarDefault(representation, scope+ref.Name, input), nil
+				return ff.FormatKindScalarDefault(representation, ref.Name, input), nil
 			}
 		case introspection.TypeKindObject:
-			return scope + c.formatTypeFuncs.FormatKindObject(representation, ref.Name, input), nil
+			return ff.FormatKindObject(representation, ref.Name, input), nil
 		case introspection.TypeKindInputObject:
-			return scope + c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name, input), nil
+			return ff.FormatKindInputObject(representation, ref.Name, input), nil
 		case introspection.TypeKindEnum:
-			return scope + c.formatTypeFuncs.FormatKindEnum(representation, ref.Name), nil
+			return ff.FormatKindEnum(representation, ref.Name), nil
 		}
 	}
 

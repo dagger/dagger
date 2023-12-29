@@ -170,10 +170,14 @@ func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field, scope
 	// `ContainerOpts` rather than `QueryContainerOpts`
 	// The structure name will not clash with others since everybody else
 	// is prefixed by object name.
-	if f.ParentObject.Name == generator.QueryStructName {
-		return strings.Join(scopes, "") + formatName(f.Name) + "Opts"
+	scope := strings.Join(scopes, "")
+	if scope != "" {
+		scope += "."
 	}
-	return strings.Join(scopes, "") + formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
+	if f.ParentObject.Name == generator.QueryStructName {
+		return scope + formatName(f.Name) + "Opts"
+	}
+	return scope + formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
 }
 
 // fieldFunction converts a field into a function signature
