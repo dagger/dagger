@@ -6,16 +6,16 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
-class Socket extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class Socket extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * The content-addressed identifier of the socket.
      */
     public function id(): SocketId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\SocketId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\SocketId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

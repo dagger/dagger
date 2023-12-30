@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Function represents a resolver provided by a Module.
@@ -14,14 +14,14 @@ namespace Dagger\Dagger;
  * A function always evaluates against a parent object and is given a set of
  * named arguments.
  */
-class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class Function_ extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * Arguments accepted by this function, if any
      */
     public function args(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('args');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
         return (array)$this->queryLeaf($leafQueryBuilder, 'args');
     }
 
@@ -30,7 +30,7 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function description(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
@@ -39,8 +39,8 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function id(): FunctionId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -48,7 +48,7 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -57,8 +57,8 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function returnType(): TypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('returnType');
-        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('returnType');
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -71,7 +71,7 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         ?Json $defaultValue = null,
     ): Function_
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withArg');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('typeDef', $typeDef);
         if (null !== $description) {
@@ -80,7 +80,7 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         if (null !== $defaultValue) {
         $innerQueryBuilder->setArgument('defaultValue', $defaultValue);
         }
-        return new \Dagger\Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -88,8 +88,8 @@ class Function_ extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withDescription(string $description): Function_
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withDescription');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
         $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

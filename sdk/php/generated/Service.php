@@ -6,9 +6,9 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
-class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class Service extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * Retrieves an endpoint that clients can use to reach this container.
@@ -19,7 +19,7 @@ class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Cli
      */
     public function endpoint(?int $port = null, ?string $scheme = null): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('endpoint');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('endpoint');
         if (null !== $port) {
         $leafQueryBuilder->setArgument('port', $port);
         }
@@ -34,7 +34,7 @@ class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Cli
      */
     public function hostname(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('hostname');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hostname');
         return (string)$this->queryLeaf($leafQueryBuilder, 'hostname');
     }
 
@@ -43,8 +43,8 @@ class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Cli
      */
     public function id(): ServiceId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -52,7 +52,7 @@ class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Cli
      */
     public function ports(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('ports');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ports');
         return (array)$this->queryLeaf($leafQueryBuilder, 'ports');
     }
 
@@ -63,8 +63,8 @@ class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Cli
      */
     public function start(): ServiceId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('start');
-        return new \Dagger\Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
+        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
     }
 
     /**
@@ -72,7 +72,7 @@ class Service extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Cli
      */
     public function stop(): ServiceId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('stop');
-        return new \Dagger\Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'stop'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
+        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'stop'));
     }
 }

@@ -6,12 +6,12 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Key value object that represents a build argument.
  */
-class BuildArg extends \Dagger\Client\AbstractDaggerInputObject
+class BuildArg extends Client\AbstractInputObject
 {
     public function __construct(
         public string $name,

@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Transport layer network protocol associated to a port.

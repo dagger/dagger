@@ -5,10 +5,10 @@ namespace Dagger\Client;
 use Dagger\GraphQl\QueryBuilderChain;
 use GraphQL\QueryBuilder\QueryBuilder;
 
-abstract class AbstractDaggerObject
+abstract class AbstractObject
 {
     public function __construct(
-        protected readonly AbstractDaggerClient $client,
+        protected readonly AbstractClient $client,
         protected readonly QueryBuilderChain $queryBuilderChain
     ) {
     }

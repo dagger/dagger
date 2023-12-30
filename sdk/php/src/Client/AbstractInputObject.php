@@ -2,7 +2,7 @@
 
 namespace Dagger\Client;
 
-abstract class AbstractDaggerInputObject
+abstract class AbstractInputObject
 {
     public function toArray(): array
     {

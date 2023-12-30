@@ -6,19 +6,19 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Information about the host execution environment.
  */
-class Host extends \Dagger\Client\AbstractDaggerObject
+class Host extends Client\AbstractObject
 {
     /**
      * Accesses a directory on the host.
      */
     public function directory(string $path, ?array $exclude = null, ?array $include = null): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('directory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
@@ -26,7 +26,7 @@ class Host extends \Dagger\Client\AbstractDaggerObject
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -34,9 +34,9 @@ class Host extends \Dagger\Client\AbstractDaggerObject
      */
     public function file(string $path): File
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('file');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -44,12 +44,12 @@ class Host extends \Dagger\Client\AbstractDaggerObject
      */
     public function service(array $ports, ?string $host = 'localhost'): Service
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('service');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('service');
         $innerQueryBuilder->setArgument('ports', $ports);
         if (null !== $host) {
         $innerQueryBuilder->setArgument('host', $host);
         }
-        return new \Dagger\Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -58,10 +58,10 @@ class Host extends \Dagger\Client\AbstractDaggerObject
      */
     public function setSecretFile(string $name, string $path): Secret
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('setSecretFile');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('setSecretFile');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -69,7 +69,7 @@ class Host extends \Dagger\Client\AbstractDaggerObject
      */
     public function tunnel(ServiceId|Service $service, ?bool $native = false, ?array $ports = null): Service
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('tunnel');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tunnel');
         $innerQueryBuilder->setArgument('service', $service);
         if (null !== $native) {
         $innerQueryBuilder->setArgument('native', $native);
@@ -77,7 +77,7 @@ class Host extends \Dagger\Client\AbstractDaggerObject
         if (null !== $ports) {
         $innerQueryBuilder->setArgument('ports', $ports);
         }
-        return new \Dagger\Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -85,8 +85,8 @@ class Host extends \Dagger\Client\AbstractDaggerObject
      */
     public function unixSocket(string $path): Socket
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('unixSocket');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('unixSocket');
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

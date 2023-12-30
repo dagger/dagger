@@ -2,23 +2,23 @@
 
 namespace Dagger\Client;
 
+use Dagger\Client;
 use Dagger\Connection;
-use Dagger\Dagger\DaggerClient;
 use Dagger\GraphQl\QueryBuilderChain;
-use GraphQL\Client;
+use GraphQL\Client as GqlClient;
 use GraphQL\Query;
 use GraphQL\QueryBuilder\QueryBuilder;
 use GraphQL\Results;
 use RecursiveArrayIterator;
 use RecursiveIteratorIterator;
 
-abstract class AbstractDaggerClient
+abstract class AbstractClient
 {
-    protected AbstractDaggerClient $client;
-    protected Client $graphQlClient;
+    protected AbstractClient $client;
+    protected GqlClient $graphQlClient;
 
     public function __construct(
-        Connection|DaggerClient $clientOrConnection,
+        Connection|Client $clientOrConnection,
         protected readonly QueryBuilderChain $queryBuilderChain = new QueryBuilderChain()
     ) {
         if ($clientOrConnection instanceof Connection) {

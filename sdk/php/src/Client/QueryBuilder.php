@@ -3,11 +3,12 @@
 namespace Dagger\Client;
 
 use BackedEnum;
-use GraphQL\QueryBuilder\QueryBuilder;
+use GraphQL\QueryBuilder\AbstractQueryBuilder;
+use GraphQL\QueryBuilder\QueryBuilder as GqlQueryBuilder;
 
-class DaggerQueryBuilder extends QueryBuilder
+class QueryBuilder extends GqlQueryBuilder
 {
-    public function setArgument(string $argumentName, $argumentValue): QueryBuilder|\GraphQL\QueryBuilder\AbstractQueryBuilder
+    public function setArgument(string $argumentName, $argumentValue): QueryBuilder|AbstractQueryBuilder
     {
         if ($argumentValue instanceof BackedEnum) {
             $value = $argumentValue->value;

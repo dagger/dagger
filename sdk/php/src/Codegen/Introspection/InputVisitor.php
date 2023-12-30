@@ -2,7 +2,7 @@
 
 namespace Dagger\Codegen\Introspection;
 
-use Dagger\Client\AbstractDaggerInputObject;
+use Dagger\Client\AbstractInputObject;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\Type;
 use Nette\PhpGenerator\ClassType;
@@ -22,7 +22,7 @@ class InputVisitor extends AbstractVisitor
         $phpClassName = Helpers::formatPhpClassName($typeName);
 
         $inputObjectClass = new ClassType($phpClassName);
-        $inputObjectClass->setExtends(AbstractDaggerInputObject::class);
+        $inputObjectClass->setExtends(AbstractInputObject::class);
         $inputObjectClass->addComment($type->description);
 
         $constructor = $inputObjectClass->addMethod('__construct');

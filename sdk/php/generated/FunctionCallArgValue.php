@@ -6,16 +6,16 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
-class FunctionCallArgValue extends \Dagger\Client\AbstractDaggerObject
+class FunctionCallArgValue extends Client\AbstractObject
 {
     /**
      * The name of the argument.
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -24,7 +24,7 @@ class FunctionCallArgValue extends \Dagger\Client\AbstractDaggerObject
      */
     public function value(): Json
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('value');
-        return new \Dagger\Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'value'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'value'));
     }
 }

@@ -75,7 +75,7 @@ class Helpers
 
         if ($type instanceof ObjectType) {
             if ('Query' === $typeName) {
-                return 'DaggerClient';
+                return 'Client';
             }
 
             return Helpers::formatPhpClassName($typeName);

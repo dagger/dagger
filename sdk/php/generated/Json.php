@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * An arbitrary JSON-encoded value.
  */
-readonly class Json extends \Dagger\Client\DaggerScalar
+readonly class Json extends Client\DaggerScalar
 {
 }

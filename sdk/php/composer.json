@@ -12,8 +12,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Dagger\\": "src/",
-            "Dagger\\Dagger\\": "generated/"
+            "Dagger\\": ["src/", "generated/"]
         }
     },
     "autoload-dev": {
