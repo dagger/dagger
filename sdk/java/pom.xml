@@ -257,7 +257,7 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <maven-source-plugin.version>3.3.0</maven-source-plugin.version>
         <maven-versions-plugin.version>2.16.0</maven-versions-plugin.version>
-        <mockito-core.version>5.6.0</mockito-core.version>
+        <mockito-core.version>5.8.0</mockito-core.version>
         <slf4j-api.version>2.0.0</slf4j-api.version>
         <slf4j-simple.version>2.0.7</slf4j-simple.version>
         <smallrye-graphql.version>2.5.1</smallrye-graphql.version>
