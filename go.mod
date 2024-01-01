@@ -15,7 +15,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/containerd/containerd v1.7.8
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.6
-	github.com/containerd/stargz-snapshotter v0.14.3
+	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171
@@ -28,14 +28,14 @@ require (
 	github.com/moby/buildkit v0.13.0-beta1.0.20231107172747-c4f191410a41
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc5
-	github.com/opencontainers/runtime-spec v1.1.0-rc.2
+	github.com/opencontainers/runtime-spec v1.1.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tonistiigi/fsutil v0.0.0-20230825212630-f09800878302
-	github.com/urfave/cli v1.22.12
+	github.com/urfave/cli v1.22.14
 	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.3.7 // indirect
@@ -159,12 +159,12 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20231101202521-4ca4178f5c7a // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.18.1 // indirect
-	github.com/hanwen/go-fuse/v2 v2.2.0 // indirect
+	github.com/hanwen/go-fuse/v2 v2.4.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.2 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
@@ -187,9 +187,9 @@ require (
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/pkg/profile v1.5.0 // indirect
-	github.com/prometheus/client_golang v1.14.0 // indirect
-	github.com/prometheus/client_model v0.3.0 // indirect
-	github.com/prometheus/common v0.42.0 // indirect
+	github.com/prometheus/client_golang v1.17.0 // indirect
+	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16 // indirect
+	github.com/prometheus/common v0.44.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
@@ -229,13 +229,13 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect
-	github.com/containerd/continuity v0.4.2
+	github.com/containerd/continuity v0.4.3
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/nydus-snapshotter v0.13.1 // indirect
-	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
+	github.com/containerd/stargz-snapshotter/estargz v0.15.1 // indirect
 	github.com/containerd/ttrpc v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/docker/cli v24.0.5+incompatible
+	github.com/docker/cli v24.0.7+incompatible
 	github.com/docker/docker v25.0.0-beta.1+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
@@ -263,7 +263,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/tidwall/gjson v1.17.0
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/vbatts/tar-split v0.11.3 // indirect
+	github.com/vbatts/tar-split v0.11.5 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.6
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.19.0
