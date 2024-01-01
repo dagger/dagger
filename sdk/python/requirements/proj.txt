@@ -4,7 +4,7 @@
 #
 #    dagger dl -m dev deps --env=proj lock
 #
-anyio==4.1.0
+anyio==4.2.0
     # via
     #   -r requirements.in
     #   httpx
