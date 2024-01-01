@@ -48,7 +48,7 @@ pytest==7.4.3
     #   pytest-lazy-fixture
     #   pytest-mock
     #   pytest-subprocess
-pytest-httpx==0.27.0
+pytest-httpx==0.28.0
     # via -r requirements.in
 pytest-lazy-fixture==0.6.3
     # via -r requirements.in
