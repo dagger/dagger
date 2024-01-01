@@ -85,7 +85,7 @@ require (
 	github.com/vito/midterm v0.1.4
 	github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
-	golang.org/x/oauth2 v0.13.0
+	golang.org/x/oauth2 v0.15.0
 	golang.org/x/tools v0.15.0
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
