@@ -241,7 +241,7 @@
         <exec-maven-plugin.version>3.1.0</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
         <fmt-maven-plugin.version>2.21.1</fmt-maven-plugin.version>
-        <inject-maven-plugin.version>1.4</inject-maven-plugin.version>
+        <inject-maven-plugin.version>1.5</inject-maven-plugin.version>
         <jakarta.json-api.version>2.1.2</jakarta.json-api.version>
         <jakarta.json.bind-api.version>3.0.0</jakarta.json.bind-api.version>
         <javapoet.version>1.13.0</javapoet.version>
