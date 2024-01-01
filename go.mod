@@ -22,7 +22,7 @@ require (
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2
-	github.com/google/uuid v1.4.0
+	github.com/google/uuid v1.5.0
 	github.com/iancoleman/strcase v0.3.0
 	// https://github.com/moby/buildkit/commit/c4f191410a411d7b7cb31426e2bd17fae305acf1
 	github.com/moby/buildkit v0.13.0-beta1.0.20231107172747-c4f191410a41
