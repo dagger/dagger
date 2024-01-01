@@ -8,7 +8,7 @@ black==23.11.0
     # via -r requirements.in
 click==8.1.7
     # via black
-mypy==1.7.1
+mypy==1.8.0
     # via -r requirements.in
 mypy-extensions==1.0.0
     # via
