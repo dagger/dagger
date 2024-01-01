@@ -8,7 +8,7 @@ anyio==4.1.0
     # via
     #   -r requirements.in
     #   httpx
-attrs==23.1.0
+attrs==23.2.0
     # via cattrs
 backoff==2.2.1
     # via gql
