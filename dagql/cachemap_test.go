@@ -12,7 +12,7 @@ import (
 
 func TestCacheMapConcurrent(t *testing.T) {
 	t.Parallel()
-	c := NewCacheMap[int, int]()
+	c := newCacheMap[int, int]()
 	ctx := context.Background()
 
 	commonKey := 42
@@ -41,7 +41,7 @@ func TestCacheMapConcurrent(t *testing.T) {
 
 func TestCacheMapErrors(t *testing.T) {
 	t.Parallel()
-	c := NewCacheMap[int, int]()
+	c := newCacheMap[int, int]()
 	ctx := context.Background()
 
 	commonKey := 42
@@ -73,7 +73,7 @@ func TestCacheMapErrors(t *testing.T) {
 
 func TestCacheMapRecursiveCall(t *testing.T) {
 	t.Parallel()
-	c := NewCacheMap[int, int]()
+	c := newCacheMap[int, int]()
 	ctx := context.Background()
 
 	// recursive calls that are guaranteed to result in deadlock should error out
@@ -94,7 +94,7 @@ func TestCacheMapRecursiveCall(t *testing.T) {
 	assert.Equal(t, 12, v)
 
 	// verify other cachemaps can be called w/ same keys
-	c2 := NewCacheMap[int, int]()
+	c2 := newCacheMap[int, int]()
 	v, err = c.GetOrInitialize(ctx, 100, func(ctx context.Context) (int, error) {
 		return c2.GetOrInitialize(ctx, 100, func(ctx context.Context) (int, error) {
 			return 101, nil
