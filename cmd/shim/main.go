@@ -518,7 +518,7 @@ func setupBundle() int {
 	}
 
 	exitCode := 0
-	if err := execProcess(cmd); err != nil {
+	if err := execProcess(cmd, false); err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 				exitCode = waitStatus.ExitStatus()
@@ -604,17 +604,7 @@ func internalEnv(name string) (string, bool) {
 func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); !found {
 		// no nesting; run as normal
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-
-		// Wait for stdout and stderr copy goroutines to finish:
-		pipeWg.Wait()
-
-		if err := cmd.Wait(); err != nil {
-			return err
-		}
-		return nil
+		return execProcess(cmd, true)
 	}
 
 	// setup a session and associated env vars for the container
@@ -670,16 +660,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	// pass dagger session along to any SDKs that run in the container
 	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(sessionPort))
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
-	err = cmd.Start()
-	if err != nil {
-		return err
-	}
-	pipeWg.Wait()
-	err = cmd.Wait()
-	if err != nil {
-		return err
-	}
-	return nil
+	return execProcess(cmd, true)
 }
 
 // execProcess runs the command as a child process.
@@ -688,7 +669,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 // the child can receive SIGTERM, etc). Additionally, it spawns a separate
 // goroutine locked to the OS thread to ensure that Pdeathsig is never sent
 // incorrectly: https://github.com/golang/go/issues/27505
-func execProcess(cmd *exec.Cmd) error {
+func execProcess(cmd *exec.Cmd, waitForStreams bool) error {
 	errCh := make(chan error)
 	go func() {
 		runtime.LockOSThread()
@@ -706,6 +687,9 @@ func execProcess(cmd *exec.Cmd) error {
 				cmd.Process.Signal(sig)
 			}
 		}()
+		if waitForStreams {
+			pipeWg.Wait()
+		}
 		if err := cmd.Wait(); err != nil {
 			errCh <- err
 			return
