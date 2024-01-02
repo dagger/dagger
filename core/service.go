@@ -599,7 +599,7 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client, svcs *
 		Stop: func(_ context.Context, force bool) error {
 			stop()
 			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
-			go svcs.Detach(svcCtx, upstream, force)
+			go svcs.Detach(svcCtx, upstream, nil, force)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())

@@ -13,14 +13,21 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
-// DetachGracePeriod is an arbitrary amount of time between when a service is
-// no longer actively used and before it is detached. This is to avoid repeated
-// stopping and re-starting of the same service in rapid succession.
-const DetachGracePeriod = 10 * time.Second
+const (
+	// DetachGracePeriod is an arbitrary amount of time between when a service is
+	// no longer actively used and before it is detached. This is to avoid repeated
+	// stopping and re-starting of the same service in rapid succession.
+	DetachGracePeriod = 10 * time.Second
+
+	// TerminateGracePeriod is an arbitrary amount of time between when a service is
+	// sent a graceful stop (SIGTERM) and when it is sent an immediate stop (SIGKILL).
+	TerminateGracePeriod = 10 * time.Second
+)
 
 // Services manages the lifecycle of services, ensuring the same service only
 // runs once per client.
@@ -211,7 +218,8 @@ func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bind
 		go func() {
 			<-time.After(DetachGracePeriod)
 			for _, svc := range running {
-				ss.Detach(ctx, svc, true)
+				grace := TerminateGracePeriod
+				ss.Detach(ctx, svc, &grace, false)
 			}
 		}()
 	}
@@ -317,7 +325,7 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 		svc := svc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
-			if err := svc.Stop(ctx, true); err != nil {
+			if err := ss.stopGraceful(ctx, svc, DetachGracePeriod); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil
@@ -330,7 +338,7 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 // Detach detaches from the given service. If the service is not running, it is
 // a no-op. If the service is running, it is stopped if there are no other
 // clients using it.
-func (ss *Services) Detach(ctx context.Context, svc *RunningService, force bool) error {
+func (ss *Services) Detach(ctx context.Context, svc *RunningService, gracePeriod *time.Duration, force bool) error {
 	ss.l.Lock()
 
 	running, found := ss.running[svc.Key]
@@ -350,6 +358,9 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService, force bool)
 
 	ss.l.Unlock()
 
+	if gracePeriod != nil {
+		return ss.stopGraceful(ctx, running, *gracePeriod)
+	}
 	return ss.stop(ctx, running, force)
 }
 
@@ -364,5 +375,25 @@ func (ss *Services) stop(ctx context.Context, running *RunningService, force boo
 	delete(ss.running, running.Key)
 	ss.l.Unlock()
 
+	return nil
+}
+
+func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, timeout time.Duration) error {
+	// attempt to gentle stop within a timeout
+	cause := errors.New("service did not terminate")
+	ctx2, _ := context.WithTimeoutCause(ctx, timeout, cause)
+	err := running.Stop(ctx2, false)
+	if context.Cause(ctx2) == cause {
+		// service didn't terminate within timeout, so force it to stop
+		err = running.Stop(ctx, true)
+	}
+	if err != nil {
+		return err
+	}
+
+	ss.l.Lock()
+	delete(ss.bindings, running.Key)
+	delete(ss.running, running.Key)
+	ss.l.Unlock()
 	return nil
 }
