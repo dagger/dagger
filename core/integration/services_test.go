@@ -1206,6 +1206,65 @@ func TestServiceStartStop(t *testing.T) {
 	require.Empty(t, out)
 }
 
+// TestServiceStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
+// Additionally, we check that we can attempt to SIGKILL a process that is not
+// responding to SIGTERM.
+func TestServiceStartStopKill(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	httpSrv, httpURL := signalService(ctx, t, c)
+
+	fetch := func() (string, error) {
+		return c.Container().
+			From(alpineImage).
+			WithEnvVariable("BUST", identity.NewID()).
+			WithExec([]string{"wget", "-O-", httpURL + "/signals.txt"}).
+			Stdout(ctx)
+	}
+
+	out, err := fetch()
+	require.Error(t, err)
+	require.Empty(t, out)
+
+	_, err = httpSrv.Start(ctx)
+	require.NoError(t, err)
+
+	out, err = fetch()
+	require.NoError(t, err)
+	require.Empty(t, out)
+
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		// attempt to SIGTERM the service
+		// this won't stop the service though, since the process ignores this one - we'll
+		// end up blocking here until the SIGKILL applies
+		_, err := httpSrv.Stop(ctx)
+		return err
+	})
+
+	// ensures that the subprocess gets SIGTERM
+	require.Eventually(t, func() bool {
+		out, err = fetch()
+		require.NoError(t, err)
+		return out == "Terminated\n"
+	}, time.Minute, time.Second)
+
+	eg.Go(func() error {
+		// attempt to SIGKILL the serive (this will work)
+		_, err := httpSrv.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		return err
+	})
+
+	// ensure everyone eventually stops
+	eg.Wait()
+
+	out, err = fetch()
+	require.Error(t, err)
+	require.Empty(t, out)
+}
+
 // TestServiceNoCrossTalk shows that services spawned in one client cannot be
 // reached by another client.
 func TestServiceNoCrossTalk(t *testing.T) {
@@ -1647,6 +1706,44 @@ git daemon --verbose --export-all --base-path=/root/srv
 	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
 
 	return gitDaemon, repoURL
+}
+
+// signalService is a little helper service that writes assorted signals that
+// it receives to /signals.txt.
+func signalService(ctx context.Context, t *testing.T, c *dagger.Client) (*dagger.Service, string) {
+	t.Helper()
+
+	srv := c.Container().
+		From("python").
+		WithNewFile("/signals.py", dagger.ContainerWithNewFileOpts{Contents: `
+import http.server
+import signal
+import socketserver
+import sys
+import time
+
+def print_signal(signum, frame):
+        with open("./signals.txt", "a+") as f:
+                print(signal.strsignal(signum), file=f)
+for sig in [signal.SIGINT, signal.SIGTERM]:
+	signal.signal(sig, print_signal)
+
+with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as httpd:
+    print("serving at port 8000")
+    httpd.serve_forever()
+`}).
+		WithWorkdir("/srv/www").
+		WithNewFile("signals.txt").
+		WithExposedPort(8000).
+		WithExec([]string{"python", "/signals.py"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+		AsService()
+
+	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	return srv, httpURL
 }
 
 var nestingLimitOnce = &sync.Once{}
