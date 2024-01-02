@@ -271,22 +271,23 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service,
 	}
 
 	ss.l.Lock()
-	defer ss.l.Unlock()
-
 	starting, isStarting := ss.starting[key]
 	running, isRunning := ss.running[key]
+	ss.l.Unlock()
+
 	switch {
 	case isRunning:
 		// running; stop it
 		return ss.stop(ctx, running, kill)
 	case isStarting:
 		// starting; wait for the attempt to finish and then stop it
-		ss.l.Unlock()
 		starting.Wait()
-		ss.l.Lock()
 
-		running, didStart := ss.running[key]
-		if didStart {
+		ss.l.Lock()
+		running, isRunning := ss.running[key]
+		ss.l.Unlock()
+
+		if isRunning {
 			// starting succeeded as normal; now stop it
 			return ss.stop(ctx, running, kill)
 		}
@@ -303,14 +304,16 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service,
 // It is called when a client is closing.
 func (ss *Services) StopClientServices(ctx context.Context, client *engine.ClientMetadata) error {
 	ss.l.Lock()
-	defer ss.l.Unlock()
+	var svcs []*RunningService
+	for _, svc := range ss.running {
+		if svc.Key.ClientID == client.ClientID {
+			svcs = append(svcs, svc)
+		}
+	}
+	ss.l.Unlock()
 
 	eg := new(errgroup.Group)
-	for _, svc := range ss.running {
-		if svc.Key.ClientID != client.ClientID {
-			continue
-		}
-
+	for _, svc := range svcs {
 		svc := svc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
@@ -329,10 +332,10 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 // clients using it.
 func (ss *Services) Detach(ctx context.Context, svc *RunningService, force bool) error {
 	ss.l.Lock()
-	defer ss.l.Unlock()
 
 	running, found := ss.running[svc.Key]
 	if !found {
+		ss.l.Unlock()
 		// not even running; ignore
 		return nil
 	}
@@ -340,9 +343,12 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService, force bool)
 	ss.bindings[svc.Key]--
 
 	if ss.bindings[svc.Key] > 0 {
+		ss.l.Unlock()
 		// detached, but other instances still active
 		return nil
 	}
+
+	ss.l.Unlock()
 
 	return ss.stop(ctx, running, force)
 }
@@ -353,8 +359,10 @@ func (ss *Services) stop(ctx context.Context, running *RunningService, force boo
 		return fmt.Errorf("stop: %w", err)
 	}
 
+	ss.l.Lock()
 	delete(ss.bindings, running.Key)
 	delete(ss.running, running.Key)
+	ss.l.Unlock()
 
 	return nil
 }
