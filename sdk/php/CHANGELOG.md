@@ -26,6 +26,8 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.6`. [See what changed in that
 
 This SDK uses 🚙 Engine + 🚗 CLI version `v0.9.5`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/v0.9.5).
 
+🐘 https://packagist.org/packages/dagger/dagger#v0.9.5
+
 
 ### Dependencies
 - Bump Engine to v0.9.5 by @github-actions in https://github.com/dagger/dagger/pull/6309
