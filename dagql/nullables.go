@@ -271,7 +271,7 @@ func (d DynamicNullable) Type() *ast.Type {
 	return &cp
 }
 
-var _ NullableWrapper = Nullable[Typed]{}
+var _ NullableWrapper = DynamicNullable{}
 
 func (n DynamicNullable) Unwrap() (Typed, bool) {
 	return n.Value, n.Valid

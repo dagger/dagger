@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vito/dagql/idproto"
 )
@@ -200,6 +202,12 @@ func (s *Server) Complexity(typeName, field string, childComplexity int, args ma
 	return 1, false
 }
 
+// ExtendedError is an error that can provide extra data in an error response.
+type ExtendedError interface {
+	error
+	Extensions() map[string]any
+}
+
 // Exec implements graphql.ExecutableSchema.
 func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	return func(ctx context.Context) *graphql.Response {
@@ -212,7 +220,18 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
 			gqlOp.Error(ctx, err)
-			return graphql.ErrorResponse(ctx, "exec: %s", err)
+			gqlErr := &gqlerror.Error{
+				Err:     err,
+				Message: err.Error(),
+				// TODO Path would correspond nicely to an ID
+			}
+			var ext ExtendedError
+			if errors.As(err, &ext) {
+				gqlErr.Extensions = ext.Extensions()
+			}
+			return &graphql.Response{
+				Errors: gqlerror.List{gqlErr},
+			}
 		}
 
 		data, err := json.Marshal(results)
