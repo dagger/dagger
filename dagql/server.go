@@ -448,7 +448,9 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 					continue
 				}
 			}
-			node, err := s.toSelectable(chainedID.SelectNth(nth), val)
+			nthID := chainedID.Clone()
+			nthID.SelectNth(nth)
+			node, err := s.toSelectable(nthID, val)
 			if err != nil {
 				return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
 			}
@@ -588,15 +590,16 @@ func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *i
 	sort.Slice(idArgs, func(i, j int) bool {
 		return idArgs[i].Name < idArgs[j].Name
 	})
-	appended := id.
-		Append(
-			astType,
-			sel.Field,
-			idArgs...,
-		).
-		WithTainted(tainted)
+	appended := id.Append(
+		astType,
+		sel.Field,
+		idArgs...,
+	)
+	if appended.IsTainted() != tainted {
+		appended.SetTainted(tainted)
+	}
 	if sel.Nth != 0 {
-		appended = appended.SelectNth(sel.Nth)
+		appended.SelectNth(sel.Nth)
 	}
 	return appended
 }
