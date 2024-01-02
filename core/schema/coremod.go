@@ -104,7 +104,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 				Description: introspectionField.Description,
 			}
 
-			rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false)
+			rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert return type: %w", err)
 			}
@@ -123,7 +123,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 					fnArg.DefaultValue = *introspectionArg.DefaultValue
 				}
 
-				argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false)
+				argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert argument type: %w", err)
 				}
@@ -180,13 +180,13 @@ func (obj *CoreModObject) SourceMod() Mod {
 	return obj.coreMod
 }
 
-func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull bool) (*core.TypeDef, bool, error) {
+func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
-		return introspectionRefToTypeDef(introspectionType.OfType, true)
+		return introspectionRefToTypeDef(introspectionType.OfType, true, isInput)
 
 	case introspection.TypeKindScalar:
-		if strings.HasSuffix(introspectionType.Name, "ID") {
+		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
 			// convert ID inputs to the actual object
 			objName := strings.TrimSuffix(introspectionType.Name, "ID")
 			return &core.TypeDef{
@@ -223,7 +223,7 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 		}, true, nil
 
 	case introspection.TypeKindList:
-		elementTypeDef, ok, err := introspectionRefToTypeDef(introspectionType.OfType, false)
+		elementTypeDef, ok, err := introspectionRefToTypeDef(introspectionType.OfType, false, isInput)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to convert list element type: %w", err)
 		}

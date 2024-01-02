@@ -396,6 +396,32 @@ type Test struct {
 		require.NoError(t, err)
 		require.Equal(t, "foo", strings.TrimSpace(out))
 	})
+
+	t.Run("sync", func(t *testing.T) {
+		t.Parallel()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+func New() *Test {
+	return &Test{Ctr: dag.Container().From("alpine:3.18").WithExec([]string{"echo", "hello", "world"})}
+}
+
+type Test struct {
+	Ctr *Container
+}
+`,
+			})
+
+		// just verify it works without error for now
+		_, err := modGen.With(daggerCall("ctr", "sync")).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
 }
 
 func TestModuleDaggerCallCoreChaining(t *testing.T) {
