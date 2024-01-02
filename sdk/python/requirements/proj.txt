@@ -4,11 +4,11 @@
 #
 #    dagger dl -m dev deps --env=proj lock
 #
-anyio==4.1.0
+anyio==4.2.0
     # via
     #   -r requirements.in
     #   httpx
-attrs==23.1.0
+attrs==23.2.0
     # via cattrs
 backoff==2.2.1
     # via gql
@@ -30,7 +30,7 @@ h11==0.14.0
     # via httpcore
 httpcore==1.0.2
     # via httpx
-httpx==0.25.2
+httpx==0.26.0
     # via -r requirements.in
 idna==3.6
     # via
@@ -43,7 +43,7 @@ mdurl==0.1.2
     # via markdown-it-py
 multidict==6.0.4
     # via yarl
-platformdirs==4.0.0
+platformdirs==4.1.0
     # via -r requirements.in
 pygments==2.17.2
     # via rich
@@ -53,7 +53,7 @@ sniffio==1.3.0
     # via
     #   anyio
     #   httpx
-typing-extensions==4.8.0
+typing-extensions==4.9.0
     # via -r requirements.in
-yarl==1.9.3
+yarl==1.9.4
     # via gql

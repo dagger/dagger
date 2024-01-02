@@ -4,11 +4,11 @@
 #
 #    dagger dl -m dev deps --env=lint lock
 #
-black==23.11.0
+black==23.12.1
     # via -r requirements.in
 click==8.1.7
     # via black
-mypy==1.7.1
+mypy==1.8.0
     # via -r requirements.in
 mypy-extensions==1.0.0
     # via
@@ -16,11 +16,11 @@ mypy-extensions==1.0.0
     #   mypy
 packaging==23.2
     # via black
-pathspec==0.11.2
+pathspec==0.12.1
     # via black
-platformdirs==4.0.0
+platformdirs==4.1.0
     # via black
-ruff==0.1.6
+ruff==0.1.9
     # via -r requirements.in
-typing-extensions==4.8.0
+typing-extensions==4.9.0
     # via mypy
