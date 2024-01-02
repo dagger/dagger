@@ -58,11 +58,9 @@ func (id *ID) WithNth(i int) *ID {
 	return cp
 }
 
-func (id *ID) SelectNth(i int) *ID {
-	cp := id.Clone()
-	cp.Nth = int64(i)
-	cp.Type = cp.Type.Elem
-	return cp
+func (id *ID) SelectNth(i int) {
+	id.Nth = int64(i)
+	id.Type = id.Type.Elem
 }
 
 func (id *ID) Append(ret *ast.Type, field string, args ...*Argument) *ID {
@@ -97,10 +95,8 @@ func rebase(id *ID, root *ID) {
 	}
 }
 
-func (id *ID) WithTainted(tainted bool) *ID {
-	cp := id.Clone()
-	cp.Tainted = tainted
-	return cp
+func (id *ID) SetTainted(tainted bool) {
+	id.Tainted = tainted
 }
 
 // Tainted returns true if the ID contains any tainted selectors.
