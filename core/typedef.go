@@ -72,6 +72,50 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 	return fn
 }
 
+func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
+	if fn == nil || otherFn == nil {
+		return false
+	}
+
+	// check return type
+	if !fn.ReturnType.IsSubtypeOf(otherFn.ReturnType) {
+		return false
+	}
+
+	// check args
+	for i, otherFnArg := range otherFn.Args {
+		/* TODO: with more effort could probably relax and allow:
+		* arg names to not match (only types really matter in theory)
+		* mismatches in optional (provided defaults exist, etc.)
+		* fewer args in interface fn than object fn (as long as the ones that exist match)
+		 */
+
+		if i >= len(fn.Args) {
+			return false
+		}
+		fnArg := fn.Args[i]
+
+		if fnArg.Name != otherFnArg.Name {
+			return false
+		}
+
+		if fnArg.TypeDef.Optional != otherFnArg.TypeDef.Optional {
+			return false
+		}
+
+		// We want to be contravariant on arg matching types. So if fnArg asks for a Cat, then
+		// we can't invoke it with any Animal since it requested a cat specifically.
+		// However, if the fnArg asks for an Animal, we can provide a Cat because that's a subtype of Animal.
+		// Thus, we check that the otherFnArg is a subtype of the fnArg (inverse of the covariant matching done
+		// on function *return* types above).
+		if !otherFnArg.TypeDef.IsSubtypeOf(fnArg.TypeDef) {
+			return false
+		}
+	}
+
+	return true
+}
+
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
 	Name         string   `json:"name"`
@@ -339,58 +383,10 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 			// check return type of field
 			return objField.TypeDef.IsSubtypeOf(ifaceFn.ReturnType)
 		}
+
 		// otherwise there can only be a match on the objFn
-
-		// check return type of fn
-		if !objFn.ReturnType.IsSubtypeOf(ifaceFn.ReturnType) {
+		if ok := objFn.IsSubtypeOf(ifaceFn); !ok {
 			return false
-		}
-
-		// check args of fn
-		for i, ifaceFnArg := range ifaceFn.Args {
-			/* TODO: with more effort could probably relax and allow:
-			* arg names to not match (only types really matter in theory)
-			* mismatches in optional (provided defaults exist, etc.)
-			* fewer args in interface fn than object fn (as long as the ones that exist match)
-			 */
-
-			if i >= len(objFn.Args) {
-				return false
-			}
-			objFnArg := objFn.Args[i]
-
-			if objFnArg.Name != ifaceFnArg.Name {
-				return false
-			}
-
-			if objFnArg.TypeDef.Optional != ifaceFnArg.TypeDef.Optional {
-				return false
-			}
-
-			// TODO:: rm or clean up comment
-			/*
-				(obj, iface)
-
-				(string, string) -> yes
-				(string, int) -> no
-				([]string, []string) -> yes
-				([]string, []int) -> no
-				([]string, string) -> no
-				(string, []string) -> no
-
-				(cat obj, animal iface) -> no (obj fn needs a cat, we can't invoke it with any animal)
-				([]catobj, []animaliface) -> no
-				(cat iface, animal iface) -> no (obj fn needs a cat, we can't invoke it with any animal)
-				([]catiface, []animaliface) -> no
-
-				(animal iface, cat obj) -> yes (obj fn needs an animal, we can invoke it with a cat)
-				([]animaliface, []catobj) -> yes
-				(animal iface, cat iface) -> yes (obj fn needs an animal, we can invoke it with a cat)
-				([]animaliface, []catiface) -> yes
-			*/
-			if !ifaceFnArg.TypeDef.IsSubtypeOf(objFnArg.TypeDef) {
-				return false
-			}
 		}
 	}
 
@@ -450,7 +446,6 @@ func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
 }
 
 func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
-	// TODO: dedupe with equivalent logic in ObjectTypeDef.IsSubtypeOf
 	if iface == nil || otherIface == nil {
 		return false
 	}
@@ -466,27 +461,8 @@ func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
 			return false
 		}
 
-		if !ifaceFn.ReturnType.IsSubtypeOf(otherIfaceFn.ReturnType) {
+		if ok := ifaceFn.IsSubtypeOf(otherIfaceFn); !ok {
 			return false
-		}
-
-		for i, otherIfaceFnArg := range otherIfaceFn.Args {
-			if i >= len(ifaceFn.Args) {
-				return false
-			}
-			ifaceFnArg := ifaceFn.Args[i]
-
-			if ifaceFnArg.Name != otherIfaceFnArg.Name {
-				return false
-			}
-
-			if ifaceFnArg.TypeDef.Optional != otherIfaceFnArg.TypeDef.Optional {
-				return false
-			}
-
-			if !otherIfaceFnArg.TypeDef.IsSubtypeOf(ifaceFnArg.TypeDef) {
-				return false
-			}
 		}
 	}
 

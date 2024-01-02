@@ -3464,7 +3464,7 @@ impl Module {
         let query = self.selection.select("sourceDirectorySubPath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO: doc
+    /// This module plus the given Interface type and associated functions
     pub fn with_interface(&self, iface: TypeDef) -> Module {
         let mut query = self.selection.select("withInterface");
         query = query.arg_lazy(

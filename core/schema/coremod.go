@@ -65,6 +65,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 		return &CoreModObject{
 			coreMod:  m,
+			name:     typeName,
 			resolver: idableResolver,
 		}, true, nil
 
@@ -156,6 +157,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 // CoreModObject represents objects from core (Container, Directory, etc.)
 type CoreModObject struct {
 	coreMod  *CoreMod
+	name     string
 	resolver IDableObjectResolver
 }
 
@@ -181,6 +183,17 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 
 func (obj *CoreModObject) SourceMod() Mod {
 	return obj.coreMod
+}
+
+func (obj *CoreModObject) TypeDef() *core.TypeDef {
+	// TODO: update this with the core typedef support in https://github.com/dagger/dagger/pull/6293
+	// once that's merged
+	return &core.TypeDef{
+		Kind: core.TypeDefKindObject,
+		AsObject: &core.ObjectTypeDef{
+			Name: obj.name,
+		},
+	}
 }
 
 func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {

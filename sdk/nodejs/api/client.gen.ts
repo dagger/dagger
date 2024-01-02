@@ -850,7 +850,9 @@ export enum TypeDefKind {
   Integerkind = "IntegerKind",
 
   /**
-   * TODO: doc
+   * A named type of functions that can be matched+implemented by other objects+interfaces.
+   *
+   * Always paired with an InterfaceTypeDef.
    */
   Interfacekind = "InterfaceKind",
 
@@ -4601,7 +4603,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * TODO: doc
+   * This module plus the given Interface type and associated functions
    */
   withInterface = (iface: TypeDef): Module_ => {
     return new Module_({

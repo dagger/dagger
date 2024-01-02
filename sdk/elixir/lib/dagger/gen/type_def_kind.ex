@@ -26,7 +26,7 @@ defmodule Dagger.TypeDefKind do
   )
 
   (
-    @doc "TODO: doc"
+    @doc "A named type of functions that can be matched+implemented by other objects+interfaces.\n\nAlways paired with an InterfaceTypeDef."
     @spec interface_kind() :: :InterfaceKind
     def interface_kind() do
       :InterfaceKind

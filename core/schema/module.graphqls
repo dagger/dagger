@@ -59,7 +59,7 @@ type Module {
 
   "This module plus the given Object type and associated functions"
   withObject(object: TypeDefID!): Module! # TODO: ObjectTypeDefID?
-  "TODO: doc"
+  "This module plus the given Interface type and associated functions"
   withInterface(iface: TypeDefID!): Module!
 
   """

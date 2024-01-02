@@ -3420,7 +3420,7 @@ func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO: doc
+// This module plus the given Interface type and associated functions
 func (r *Module) WithInterface(iface *TypeDef) *Module {
 	assertNotNil("iface", iface)
 	q := r.q.Select("withInterface")
@@ -4802,7 +4802,9 @@ const (
 	// An integer value
 	Integerkind TypeDefKind = "IntegerKind"
 
-	// TODO: doc
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	//
+	// Always paired with an InterfaceTypeDef.
 	Interfacekind TypeDefKind = "InterfaceKind"
 
 	// A list of values all having the same type.

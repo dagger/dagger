@@ -123,7 +123,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "TODO: doc\n\n## Required Arguments\n\n* `iface` -"
+    @doc "This module plus the given Interface type and associated functions\n\n## Required Arguments\n\n* `iface` -"
     @spec with_interface(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
     def with_interface(%__MODULE__{} = module, iface) do
       selection = select(module.selection, "withInterface")

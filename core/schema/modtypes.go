@@ -20,6 +20,9 @@ type ModType interface {
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
+
+	// The core API TypeDef representation of this type
+	TypeDef() *core.TypeDef
 }
 
 // PrimitiveType are the basic types like string, int, bool, void, etc.
@@ -37,6 +40,12 @@ func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value any) (any, 
 
 func (t *PrimitiveType) SourceMod() Mod {
 	return nil
+}
+
+func (t *PrimitiveType) TypeDef() *core.TypeDef {
+	return &core.TypeDef{
+		Kind: t.kind,
+	}
 }
 
 type ListType struct {
@@ -85,4 +94,13 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value any) (any, error
 
 func (t *ListType) SourceMod() Mod {
 	return t.underlying.SourceMod()
+}
+
+func (t *ListType) TypeDef() *core.TypeDef {
+	return &core.TypeDef{
+		Kind: core.TypeDefKindList,
+		AsList: &core.ListTypeDef{
+			ElementTypeDef: t.underlying.TypeDef(),
+		},
+	}
 }

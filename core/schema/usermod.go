@@ -496,11 +496,11 @@ func (obj *UserModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 
 	switch value := value.(type) {
 	case string:
-		decodedMap, _, _, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
+		modObjData, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode module id: %w", err)
 		}
-		return obj.ConvertFromSDKResult(ctx, decodedMap)
+		return obj.ConvertFromSDKResult(ctx, modObjData.Data)
 	case map[string]any:
 		for k, v := range value {
 			normalizedName := gqlFieldName(k)
@@ -535,8 +535,11 @@ func (obj *UserModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 	// calls to their own API).
 	switch value := value.(type) {
 	case string:
-		decoded, _, _, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
-		return decoded, err
+		modObjData, err := resourceid.DecodeModuleID(value, obj.typeDef.AsObject.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode module id: %w", err)
+		}
+		return modObjData.Data, nil
 	case map[string]any:
 		for k, v := range value {
 			normalizedName := gqlFieldName(k)
@@ -578,7 +581,11 @@ func (obj *UserModObject) ConvertToID(ctx context.Context, value any) (any, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert to sdk input: %w", err)
 		}
-		return resourceid.EncodeModule(obj.mod.DagDigest(), obj.typeDef.AsObject.Name, objMap)
+		return resourceid.EncodeModule(&resourceid.ModuleObjectData{
+			Data:      objMap,
+			ModDigest: obj.mod.DagDigest(),
+			TypeName:  obj.typeDef.AsObject.Name,
+		})
 	default:
 		return nil, fmt.Errorf("unexpected input value type %T for object %q", value, obj.typeDef.AsObject.Name)
 	}
@@ -586,6 +593,10 @@ func (obj *UserModObject) ConvertToID(ctx context.Context, value any) (any, erro
 
 func (obj *UserModObject) SourceMod() Mod {
 	return obj.mod
+}
+
+func (obj *UserModObject) TypeDef() *core.TypeDef {
+	return obj.typeDef.Clone()
 }
 
 func (obj *UserModObject) Fields(ctx context.Context) ([]*UserModField, error) {

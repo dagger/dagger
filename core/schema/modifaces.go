@@ -44,10 +44,14 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 		// TODO: this needs to handle core IDs too; need a common func for decoding both those and mod objects?
 
-		objMap, modDgst, typeName, err := resourceid.DecodeModuleID(value, "")
+		modObjData, err := resourceid.DecodeModuleID(value, "")
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode id: %w", err)
 		}
+		objMap := modObjData.Data
+		modDgst := modObjData.ModDigest
+		typeName := modObjData.TypeName
+
 		sourceMod, err := iface.api.GetModFromDagDigest(ctx, modDgst)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get source mod %s: %w", modDgst, err)
@@ -66,7 +70,13 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 			return nil, fmt.Errorf("failed to find mod type for %s", typeName)
 		}
 
-		// TODO: need to assert object implements interface here now
+		// Verify that the object provided actually implements the interface. This is also enforced
+		// by only adding "As*" fields to objects in a schema once they implement the interface, but
+		// in theory an SDK could provide arbitrary IDs of objects here, so we need to check again to
+		// be fully robust.
+		if ok := modType.TypeDef().IsSubtypeOf(iface.TypeDef()); !ok {
+			return nil, fmt.Errorf("object %s does not implement interface %s", typeName, iface.typeDef.Name)
+		}
 
 		convertedValue, err := modType.ConvertFromSDKResult(ctx, objMap)
 		if err != nil {
@@ -103,7 +113,7 @@ func (iface *InterfaceType) ConvertToSDKInput(ctx context.Context, value any) (a
 		return value, nil
 
 	case *interfaceRuntimeValue:
-		// TODO: kludge to deal with inconsistency in how user mod objects are currently provided SDKs.
+		// NOTE: kludge to deal with inconsistency in how user mod objects are currently provided SDKs.
 		// For interfaces specifically, we actually do need to provide the object ID rather than the json
 		// serialization of the object directly. Otherwise we'll lose track of what the underlying object
 		// is.
@@ -131,6 +141,14 @@ func (iface *InterfaceType) SourceMod() Mod {
 	return iface.sourceMod
 }
 
+func (iface *InterfaceType) TypeDef() *core.TypeDef {
+	return &core.TypeDef{
+		Kind:        core.TypeDefKindInterface,
+		AsInterface: iface.typeDef.Clone(),
+	}
+}
+
+// nolint:gocyclo
 func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Resolvers, error) {
 	ifaceTypeDef := iface.typeDef
 	ifaceName := gqlObjectName(ifaceTypeDef.Name)
@@ -197,7 +215,25 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 		if err != nil {
 			return nil, nil, err
 		}
-		// TODO: validate return type use of non-core concrete objects?
+		// check whether this is a pre-existing object from a dependency module
+		returnModType, ok, err := iface.sourceMod.deps.ModTypeFor(ctx, fnTypeDef.ReturnType)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+		if ok {
+			// can either be a core type or a type from *this* module
+			switch {
+			case returnModType.SourceMod() == nil:
+			case returnModType.SourceMod().Name() == coreModuleName:
+			case returnModType.SourceMod().DagDigest() == iface.sourceMod.DagDigest():
+			default:
+				return nil, nil, fmt.Errorf("interface %q function %q cannot return external type from dependency module %q",
+					ifaceName,
+					fnName,
+					returnModType.SourceMod().Name(),
+				)
+			}
+		}
 
 		fieldDef := &ast.FieldDefinition{
 			Name:        fnName,
@@ -214,9 +250,26 @@ func (iface *InterfaceType) Schema(ctx context.Context) (*ast.SchemaDocument, Re
 				return nil, nil, err
 			}
 
-			// TODO: default values? Or should that not apply to interfaces?
-
-			// TODO: validate arg type use of non-core concrete objects?
+			// check whether this is a pre-existing object from a dependency module
+			argModType, ok, err := iface.sourceMod.deps.ModTypeFor(ctx, argMetadata.TypeDef)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get mod type for type def: %w", err)
+			}
+			if ok {
+				// can either be a core type or a type from *this* module
+				switch {
+				case argModType.SourceMod() == nil:
+				case argModType.SourceMod().Name() == coreModuleName:
+				case argModType.SourceMod().DagDigest() == iface.sourceMod.DagDigest():
+				default:
+					return nil, nil, fmt.Errorf("interface %q function %q cannot accept arg %q of external type from dependency module %q",
+						ifaceName,
+						fnName,
+						argMetadata.Name,
+						argModType.SourceMod().Name(),
+					)
+				}
+			}
 
 			argDef := &ast.ArgumentDefinition{
 				Name:        gqlArgName(argMetadata.Name),

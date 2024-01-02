@@ -136,7 +136,10 @@ class TypeDefKind(Enum):
     """An integer value"""
 
     InterfaceKind = "InterfaceKind"
-    """TODO: doc"""
+    """A named type of functions that can be matched+implemented by other objects+interfaces.
+
+    Always paired with an InterfaceTypeDef.
+    """
 
     ListKind = "ListKind"
     """A list of values all having the same type.
@@ -3659,7 +3662,7 @@ class Module(Type):
 
     @typecheck
     def with_interface(self, iface: "TypeDef") -> "Module":
-        """TODO: doc"""
+        """This module plus the given Interface type and associated functions"""
         _args = [
             Arg("iface", iface),
         ]

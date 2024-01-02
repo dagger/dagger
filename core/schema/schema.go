@@ -514,13 +514,7 @@ func mergeSchemaResolvers(newSchemas ...SchemaResolvers) (*CompiledSchema, error
 			sourceContext = getSourceContext(mergedSchema.Schema, 0, -1)
 		}
 
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// return nil, fmt.Errorf("schema validation failed: %w\n\n%s", err, sourceContext)
-		return nil, fmt.Errorf("schema validation failed: %w\n\n%s\n\n%s", err, sourceContext, mergedSchema.Schema)
+		return nil, fmt.Errorf("schema validation failed: %w\n\n%s", err, sourceContext)
 	}
 
 	schemaResolvers := StaticSchema(mergedSchema)
@@ -800,7 +794,6 @@ func astDefaultValue(typeDef *core.TypeDef, val any) (*ast.Value, error) {
 		}
 		return astVal, nil
 	default:
-		// TODO: handle interface default value
 		return nil, fmt.Errorf("unsupported type kind %q", typeDef.Kind)
 	}
 }
