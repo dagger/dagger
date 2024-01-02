@@ -78,8 +78,12 @@ func (s *serviceSchema) start(ctx context.Context, parent *core.Service, args an
 	return running.Service.ID()
 }
 
-func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
-	err := s.svcs.Stop(ctx, s.bk, parent)
+type serviceStopArgs struct {
+	Kill bool
+}
+
+func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args serviceStopArgs) (core.ServiceID, error) {
+	err := s.svcs.Stop(ctx, s.bk, parent, args.Kill)
 	if err != nil {
 		return "", err
 	}

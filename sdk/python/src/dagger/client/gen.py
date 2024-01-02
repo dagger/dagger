@@ -4582,8 +4582,13 @@ class Service(Type):
         return Service(_ctx)
 
     @typecheck
-    async def stop(self) -> "Service":
+    async def stop(self, *, kill: bool | None = None) -> "Service":
         """Stop the service.
+
+        Parameters
+        ----------
+        kill:
+            Immediately kill the service without waiting for a graceful exit
 
         Raises
         ------
@@ -4592,7 +4597,9 @@ class Service(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("kill", kill, None),
+        ]
         _ctx = self._select("stop", _args)
         _id = await _ctx.execute(ServiceID)
         _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])

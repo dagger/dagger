@@ -44,7 +44,10 @@ type Service {
   """
   Stop the service.
   """
-  stop: ServiceID!
+  stop(
+    "Immediately kill the service without waiting for a graceful exit"
+    kill: Boolean
+  ): ServiceID!
 }
 
 extend type Container {

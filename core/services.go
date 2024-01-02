@@ -254,7 +254,7 @@ func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bind
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service) error {
+func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service, kill bool) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
@@ -278,7 +278,7 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 	switch {
 	case isRunning:
 		// running; stop it
-		return ss.stop(ctx, running, true)
+		return ss.stop(ctx, running, kill)
 	case isStarting:
 		// starting; wait for the attempt to finish and then stop it
 		ss.l.Unlock()
@@ -288,7 +288,7 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 		running, didStart := ss.running[key]
 		if didStart {
 			// starting succeeded as normal; now stop it
-			return ss.stop(ctx, running, true)
+			return ss.stop(ctx, running, kill)
 		}
 
 		// starting didn't work; nothing to do
@@ -344,13 +344,12 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService, force bool)
 		return nil
 	}
 
-	ss.l.Unlock()
-
 	return ss.stop(ctx, running, force)
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
-	if err := running.Stop(ctx, force); err != nil {
+	err := running.Stop(ctx, force)
+	if err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}
 

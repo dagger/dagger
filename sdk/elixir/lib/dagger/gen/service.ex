@@ -70,10 +70,18 @@ defmodule Dagger.Service do
   )
 
   (
-    @doc "Stop the service."
-    @spec stop(t()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
-    def stop(%__MODULE__{} = service) do
+    @doc "Stop the service.\n\n\n\n## Optional Arguments\n\n* `kill` - Immediately kill the service without waiting for a graceful exit"
+    @spec stop(t(), keyword()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+    def stop(%__MODULE__{} = service, optional_args \\ []) do
       selection = select(service.selection, "stop")
+
+      selection =
+        if is_nil(optional_args[:kill]) do
+          selection
+        else
+          arg(selection, "kill", optional_args[:kill])
+        end
+
       execute(selection, service.client)
     end
   )
