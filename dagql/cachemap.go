@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/opencontainers/go-digest"
 )
 
-type CacheMap[K comparable, T any] struct {
+type cacheMap[K comparable, T any] struct {
 	l     sync.Mutex
 	calls map[K]*cache[T]
 }
@@ -17,20 +19,26 @@ type cache[T any] struct {
 	err error
 }
 
-func NewCacheMap[K comparable, T any]() *CacheMap[K, T] {
-	return &CacheMap[K, T]{
+// NewCache creates a new cache map suitable for assigning on a Server or
+// multiple Servers.
+func NewCache() Cache {
+	return newCacheMap[digest.Digest, Typed]()
+}
+
+func newCacheMap[K comparable, T any]() *cacheMap[K, T] {
+	return &cacheMap[K, T]{
 		calls: map[K]*cache[T]{},
 	}
 }
 
 type cacheMapContextKey[K comparable, T any] struct {
 	key K
-	m   *CacheMap[K, T]
+	m   *cacheMap[K, T]
 }
 
 var ErrCacheMapRecursiveCall = fmt.Errorf("recursive call detected")
 
-func (m *CacheMap[K, T]) Set(key K, val T) {
+func (m *cacheMap[K, T]) Set(key K, val T) {
 	m.l.Lock()
 	m.calls[key] = &cache[T]{
 		val: val,
@@ -38,11 +46,11 @@ func (m *CacheMap[K, T]) Set(key K, val T) {
 	m.l.Unlock()
 }
 
-func (m *CacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, error) {
+func (m *cacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, error) {
 	return m.GetOrInitializeOnHit(ctx, key, fn, func(T, error) {})
 }
 
-func (m *CacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn func(ctx context.Context) (T, error), onHit func(T, error)) (T, error) {
+func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn func(ctx context.Context) (T, error), onHit func(T, error)) (T, error) {
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T
 		return zero, ErrCacheMapRecursiveCall
@@ -76,7 +84,7 @@ func (m *CacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 	return c.val, c.err
 }
 
-func (m *CacheMap[K, T]) Get(ctx context.Context, key K) (T, error) {
+func (m *cacheMap[K, T]) Get(ctx context.Context, key K) (T, error) {
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T
 		return zero, ErrCacheMapRecursiveCall

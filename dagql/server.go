@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"sort"
 	"sync"
@@ -19,8 +18,6 @@ import (
 )
 
 type TelemetryFunc func(context.Context, *idproto.ID) (context.Context, func(error))
-
-type Cache = *CacheMap[digest.Digest, Typed]
 
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
@@ -37,6 +34,15 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache Cache
+}
+
+// Cache stores results of pure selections against Server.
+type Cache interface {
+	GetOrInitialize(
+		context.Context,
+		digest.Digest,
+		func(context.Context) (Typed, error),
+	) (Typed, error)
 }
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
@@ -59,6 +65,8 @@ var coreScalars = []ScalarType{
 func NewServer[T Typed](root T) *Server {
 	rootClass := NewClass[T]()
 	srv := &Server{
+		Cache: NewCache(),
+
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
@@ -67,8 +75,6 @@ func NewServer[T Typed](root T) *Server {
 		scalars:     map[string]ScalarType{},
 		typeDefs:    map[string]TypeDef{},
 		installLock: &sync.Mutex{},
-
-		Cache: NewCacheMap[digest.Digest, Typed](),
 	}
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -393,10 +399,8 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	if chainedID.IsTainted() {
 		val, err = self.Select(ctx, sel)
 	} else {
-		val, err = s.Cache.GetOrInitializeOnHit(ctx, dig, func(ctx context.Context) (Typed, error) {
+		val, err = s.Cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (Typed, error) {
 			return self.Select(ctx, sel)
-		}, func(val Typed, err error) {
-			log.Println("!!!!!! CACHE HIT:", chainedID.Display(), fmt.Sprintf("%T", val), err)
 		})
 	}
 	if err != nil {
