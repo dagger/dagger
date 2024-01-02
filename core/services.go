@@ -56,10 +56,10 @@ type RunningService struct {
 
 	// Stop forcibly stops the service. It is normally called after all clients
 	// have detached, but may also be called manually by the user.
-	Stop func(context.Context) error
+	Stop func(ctx context.Context, force bool) error
 
 	// Block until the service has exited or the provided context is canceled.
-	Wait func(context.Context) error
+	Wait func(ctx context.Context) error
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -211,7 +211,7 @@ func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bind
 		go func() {
 			<-time.After(DetachGracePeriod)
 			for _, svc := range running {
-				ss.Detach(ctx, svc)
+				ss.Detach(ctx, svc, true)
 			}
 		}()
 	}
@@ -278,7 +278,7 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 	switch {
 	case isRunning:
 		// running; stop it
-		return ss.stop(ctx, running)
+		return ss.stop(ctx, running, true)
 	case isStarting:
 		// starting; wait for the attempt to finish and then stop it
 		ss.l.Unlock()
@@ -288,7 +288,7 @@ func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service)
 		running, didStart := ss.running[key]
 		if didStart {
 			// starting succeeded as normal; now stop it
-			return ss.stop(ctx, running)
+			return ss.stop(ctx, running, true)
 		}
 
 		// starting didn't work; nothing to do
@@ -314,7 +314,7 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 		svc := svc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
-			if err := svc.Stop(ctx); err != nil {
+			if err := svc.Stop(ctx, true); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil
@@ -327,7 +327,7 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 // Detach detaches from the given service. If the service is not running, it is
 // a no-op. If the service is running, it is stopped if there are no other
 // clients using it.
-func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
+func (ss *Services) Detach(ctx context.Context, svc *RunningService, force bool) error {
 	ss.l.Lock()
 	defer ss.l.Unlock()
 
@@ -344,11 +344,13 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 		return nil
 	}
 
-	return ss.stop(ctx, running)
+	ss.l.Unlock()
+
+	return ss.stop(ctx, running, force)
 }
 
-func (ss *Services) stop(ctx context.Context, running *RunningService) error {
-	if err := running.Stop(ctx); err != nil {
+func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
+	if err := running.Stop(ctx, force); err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}
 

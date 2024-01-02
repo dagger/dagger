@@ -415,6 +415,7 @@ func (svc *Service) startContainer(
 	}
 
 	exited := make(chan error, 1)
+	stopped := make(chan struct{})
 	go func() {
 		defer func() {
 			if stdinClient != nil {
@@ -427,33 +428,49 @@ func (svc *Service) startContainer(
 				stderrClient.Close()
 			}
 			close(exited)
+			close(stopped)
 		}()
 
-		exited <- svcProc.Wait()
+		err := svcProc.Wait()
 
 		// detach dependent services when process exits
 		detachDeps()
-	}()
 
-	stopSvc := func(ctx context.Context) (stopErr error) {
-		defer func() {
-			vtx.Done(stopErr)
-		}()
-
-		// TODO(vito): graceful shutdown?
-		if err := svcProc.Signal(ctx, syscall.SIGKILL); err != nil {
-			return fmt.Errorf("signal: %w", err)
-		}
-
-		if err := gc.Release(ctx); err != nil {
-			// TODO(vito): returns context.Canceled, which is a bit strange, because
-			// that's the goal
-			if !errors.Is(err, context.Canceled) {
-				return fmt.Errorf("release: %w", err)
+		// release container
+		if err2 := gc.Release(ctx); err == nil && err2 != nil {
+			if !errors.Is(err2, context.Canceled) {
+				err = fmt.Errorf("release: %w", err2)
 			}
 		}
 
-		return nil
+		// propagate error
+		exited <- err
+		vtx.Done(err)
+	}()
+
+	stopSvc := func(ctx context.Context, force bool) error {
+		sig := syscall.SIGTERM
+		if force {
+			sig = syscall.SIGKILL
+		}
+		if err := svcProc.Signal(ctx, sig); err != nil {
+			return fmt.Errorf("signal: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-stopped:
+			return nil
+		}
+	}
+
+	waitSvc := func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-exited:
+			return err
+		}
 	}
 
 	select {
@@ -471,14 +488,7 @@ func (svc *Service) startContainer(
 				ClientID: clientMetadata.ClientID,
 			},
 			Stop: stopSvc,
-			Wait: func(ctx context.Context) error {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case err := <-exited:
-					return err
-				}
-			},
+			Wait: waitSvc,
 		}, nil
 	case err := <-exited:
 		if err != nil {
@@ -586,10 +596,10 @@ func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client, svcs *
 		},
 		Host:  dialHost,
 		Ports: ports,
-		Stop: func(context.Context) error {
+		Stop: func(_ context.Context, force bool) error {
 			stop()
 			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
-			go svcs.Detach(svcCtx, upstream)
+			go svcs.Detach(svcCtx, upstream, force)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
@@ -667,7 +677,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client,
 			},
 			Host:  fullHost,
 			Ports: checkPorts,
-			Stop: func(context.Context) error {
+			Stop: func(context.Context, bool) error {
 				stop()
 				return nil
 			},
