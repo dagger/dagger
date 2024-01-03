@@ -7,6 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	m.Run()
+	Close() // close needs to be explicitly called
+}
+
 func TestDirectory(t *testing.T) {
 	t.Parallel()
 

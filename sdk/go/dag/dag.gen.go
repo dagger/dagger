@@ -27,6 +27,19 @@ func initClient() *dagger.Client {
 	return client
 }
 
+// Close the engine connection
+func Close() error {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+
+	var err error
+	if client != nil {
+		err = client.Close()
+		client = nil
+	}
+	return err
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
