@@ -3527,6 +3527,11 @@ impl ObjectTypeDef {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Port {
@@ -3692,6 +3697,15 @@ impl Query {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// The TypeDef representations of the objects currently being served in the session.
+    pub fn current_type_defs(&self) -> Vec<TypeDef> {
+        let query = self.selection.select("currentTypeDefs");
+        return vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
     }
     /// The default platform of the builder.
     pub async fn default_platform(&self) -> Result<Platform, DaggerError> {

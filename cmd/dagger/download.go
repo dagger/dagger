@@ -24,8 +24,10 @@ var downloadCmd = &FuncCommand{
 			if name == File {
 				c.Arg("allowParentDirPath", true)
 			}
+			return nil
+		default:
+			return fmt.Errorf("return type %q cannot be downloaded", name)
 		}
-		return nil
 	},
 	BeforeRequest: func(_ *FuncCommand, cmd *cobra.Command, returnType *modTypeDef) error {
 		switch returnType.ObjectName() {

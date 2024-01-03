@@ -489,86 +489,33 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 // loadModObjects loads the objects defined by the given module in an easier to use data structure.
 func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
 	var res struct {
-		Module *moduleDef
+		Mod struct {
+			Name string
+		}
+		TypeDefs []*modTypeDef
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
 		Query: `
             query Objects($module: ModuleID!) {
-                module: loadModuleFromID(id: $module) {
+                mod: loadModuleFromID(id: $module) {
                     name
-                    objects {
-                        asObject {
-                            name
-                            constructor {
-                                returnType {
-                                    kind
-                                    asObject {
-                                        name
-                                    }
-                                }
-                                args {
+                }
+                typeDefs: currentTypeDefs {
+                    asObject {
+                        name
+                        sourceModuleName
+                        constructor {
+                            returnType {
+                                kind
+                                asObject {
                                     name
-                                    description
-                                    defaultValue
-                                    typeDef {
-                                        kind
-                                        optional
-                                        asObject {
-                                            name
-                                        }
-                                        asList {
-                                            elementTypeDef {
-                                                kind
-                                                asObject {
-                                                    name
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
-                            functions {
+                            args {
                                 name
                                 description
-                                returnType {
-                                    kind
-                                    asObject {
-                                        name
-                                    }
-                                    asList {
-                                        elementTypeDef {
-                                            kind
-                                            asObject {
-                                                name
-                                            }
-                                        }
-                                    }
-                                }
-                                args {
-                                    name
-                                    description
-                                    defaultValue
-                                    typeDef {
-                                        kind
-                                        optional
-                                        asObject {
-                                            name
-                                        }
-                                        asList {
-                                            elementTypeDef {
-                                                kind
-                                                asObject {
-                                                    name
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            fields {
-                                name
-                                description
+                                defaultValue
                                 typeDef {
                                     kind
                                     optional
@@ -586,6 +533,63 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
                                 }
                             }
                         }
+                        functions {
+                            name
+                            description
+                            returnType {
+                                kind
+                                asObject {
+                                    name
+                                }
+                                asList {
+                                    elementTypeDef {
+                                        kind
+                                        asObject {
+                                            name
+                                        }
+                                    }
+                                }
+                            }
+                            args {
+                                name
+                                description
+                                defaultValue
+                                typeDef {
+                                    kind
+                                    optional
+                                    asObject {
+                                        name
+                                    }
+                                    asList {
+                                        elementTypeDef {
+                                            kind
+                                            asObject {
+                                                name
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        fields {
+                            name
+                            description
+                            typeDef {
+                                kind
+                                optional
+                                asObject {
+                                    name
+                                }
+                                asList {
+                                    elementTypeDef {
+                                        kind
+                                        asObject {
+                                            name
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -596,12 +600,11 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
 	}, &dagger.Response{
 		Data: &res,
 	})
-
 	if err != nil {
-		err = fmt.Errorf("query module objects: %w", err)
+		return nil, fmt.Errorf("query module objects: %w", err)
 	}
 
-	return res.Module, err
+	return &moduleDef{Name: res.Mod.Name, Objects: res.TypeDefs}, nil
 }
 
 // moduleDef is a representation of dagger.Module.
@@ -668,10 +671,11 @@ func (t *modTypeDef) ObjectName() string {
 
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
-	Name        string
-	Functions   []*modFunction
-	Fields      []*modField
-	Constructor *modFunction
+	Name             string
+	Functions        []*modFunction
+	Fields           []*modField
+	Constructor      *modFunction
+	SourceModuleName string
 }
 
 // GetFunctions returns the object's function definitions as well as the fields,

@@ -31,7 +31,7 @@ var shellCmd = &FuncCommand{
 	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		if name != Container {
-			return fmt.Errorf("shell can only be called on a container")
+			return fmt.Errorf("shell can only be called on a container, not %q", name)
 		}
 		c.Select("id")
 		return nil

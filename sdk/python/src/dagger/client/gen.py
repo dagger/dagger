@@ -3816,6 +3816,29 @@ class ObjectTypeDef(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    @typecheck
+    async def source_module_name(self) -> str | None:
+        """If this ObjectTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str | None)
+
 
 class Port(Type):
     """A port exposed by a container."""
@@ -3984,6 +4007,19 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("currentModule", _args)
         return Module(_ctx)
+
+    @typecheck
+    async def current_type_defs(self) -> list["TypeDef"]:
+        """The TypeDef representations of the objects currently being served in
+        the session.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentTypeDefs", _args)
+        _ctx = TypeDef(_ctx)._select_multiple(
+            _kind="kind",
+            _optional="optional",
+        )
+        return await _ctx.execute(list[TypeDef])
 
     @typecheck
     async def default_platform(self) -> Platform:

@@ -2,8 +2,11 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/opencontainers/go-digest"
 )
@@ -71,6 +74,82 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	}
 }
 
+func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	var schemaResp introspection.Response
+	if err := json.Unmarshal([]byte(m.introspectionJSON), &schemaResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
+	}
+	schema := schemaResp.Schema
+
+	objTypeDefs := make([]*core.TypeDef, 0, len(schema.Types))
+	for _, introspectionType := range schema.Types {
+		if introspectionType.Kind != introspection.TypeKindObject {
+			continue
+		}
+
+		typeDef := &core.ObjectTypeDef{
+			Name:        introspectionType.Name,
+			Description: introspectionType.Description,
+		}
+
+		isIdable := false
+		for _, introspectionField := range introspectionType.Fields {
+			if introspectionField.Name == "id" {
+				isIdable = true
+				continue
+			}
+
+			fn := &core.Function{
+				Name:        introspectionField.Name,
+				Description: introspectionField.Description,
+			}
+
+			rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert return type: %w", err)
+			}
+			if !ok {
+				continue
+			}
+			fn.ReturnType = rtType
+
+			for _, introspectionArg := range introspectionField.Args {
+				fnArg := &core.FunctionArg{
+					Name:        introspectionArg.Name,
+					Description: introspectionArg.Description,
+				}
+
+				if introspectionArg.DefaultValue != nil {
+					fnArg.DefaultValue = *introspectionArg.DefaultValue
+				}
+
+				argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert argument type: %w", err)
+				}
+				if !ok {
+					continue
+				}
+				fnArg.TypeDef = argType
+
+				fn.Args = append(fn.Args, fnArg)
+			}
+
+			typeDef.Functions = append(typeDef.Functions, fn)
+		}
+
+		if !isIdable {
+			continue
+		}
+
+		objTypeDefs = append(objTypeDefs, &core.TypeDef{
+			Kind:     core.TypeDefKindObject,
+			AsObject: typeDef,
+		})
+	}
+	return objTypeDefs, nil
+}
+
 // CoreModObject represents objects from core (Container, Directory, etc.)
 type CoreModObject struct {
 	coreMod  *CoreMod
@@ -99,4 +178,80 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 
 func (obj *CoreModObject) SourceMod() Mod {
 	return obj.coreMod
+}
+
+func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {
+	switch introspectionType.Kind {
+	case introspection.TypeKindNonNull:
+		return introspectionRefToTypeDef(introspectionType.OfType, true, isInput)
+
+	case introspection.TypeKindScalar:
+		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
+			// convert ID inputs to the actual object
+			objName := strings.TrimSuffix(introspectionType.Name, "ID")
+			return &core.TypeDef{
+				Kind:     core.TypeDefKindObject,
+				Optional: !nonNull,
+				AsObject: &core.ObjectTypeDef{
+					Name: objName,
+				},
+			}, true, nil
+		}
+
+		typeDef := &core.TypeDef{
+			Optional: !nonNull,
+		}
+		switch introspectionType.Name {
+		case string(introspection.ScalarString):
+			typeDef.Kind = core.TypeDefKindString
+		case string(introspection.ScalarInt):
+			typeDef.Kind = core.TypeDefKindInteger
+		case string(introspection.ScalarBoolean):
+			typeDef.Kind = core.TypeDefKindBoolean
+		default:
+			// default to saying it's a string for now
+			typeDef.Kind = core.TypeDefKindString
+		}
+
+		return typeDef, true, nil
+
+	case introspection.TypeKindEnum:
+		return &core.TypeDef{
+			// just call it a string for now
+			Kind:     core.TypeDefKindString,
+			Optional: !nonNull,
+		}, true, nil
+
+	case introspection.TypeKindList:
+		elementTypeDef, ok, err := introspectionRefToTypeDef(introspectionType.OfType, false, isInput)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert list element type: %w", err)
+		}
+		if !ok {
+			return nil, false, nil
+		}
+		return &core.TypeDef{
+			Kind:     core.TypeDefKindList,
+			Optional: !nonNull,
+			AsList: &core.ListTypeDef{
+				ElementTypeDef: elementTypeDef,
+			},
+		}, true, nil
+
+	case introspection.TypeKindObject:
+		return &core.TypeDef{
+			Kind:     core.TypeDefKindObject,
+			Optional: !nonNull,
+			AsObject: &core.ObjectTypeDef{
+				Name: introspectionType.Name,
+			},
+		}, true, nil
+
+	case introspection.TypeKindInputObject:
+		// don't handle right now, just skip fields that reference these
+		return nil, false, nil
+
+	default:
+		return nil, false, fmt.Errorf("unexpected type kind %s", introspectionType.Kind)
+	}
 }

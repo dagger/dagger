@@ -171,6 +171,11 @@ type ObjectTypeDef {
 
   "The function used to construct new instances of this object, if any"
   constructor: Function
+
+  """
+  If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String
 }
 
 """

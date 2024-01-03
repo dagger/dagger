@@ -409,6 +409,18 @@ func (s *APIServer) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall
 	return callCtx.fnCall, nil
 }
 
+func (s *APIServer) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallerDigest]
+	if !ok {
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
+	}
+	return callCtx.deps, nil
+}
+
 type CompiledSchema struct {
 	SchemaResolvers
 	Compiled *graphql.Schema

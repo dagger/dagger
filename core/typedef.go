@@ -203,6 +203,8 @@ type ObjectTypeDef struct {
 	Fields      []*FieldTypeDef `json:"fields"`
 	Functions   []*Function     `json:"functions"`
 	Constructor *Function       `json:"constructor"`
+	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
+	SourceModuleName string `json:"sourceModuleName"`
 
 	// Below are not in public API
 

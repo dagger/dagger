@@ -3396,8 +3396,9 @@ type ObjectTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	name        *string
+	description      *string
+	name             *string
+	sourceModuleName *string
 }
 
 // The function used to construct new instances of this object, if any
@@ -3496,6 +3497,19 @@ func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 		return *r.name, nil
 	}
 	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.q.Select("sourceModuleName")
 
 	var response string
 
@@ -3633,6 +3647,40 @@ func (r *Client) CurrentModule() *Module {
 		q: q,
 		c: r.c,
 	}
+}
+
+// The TypeDef representations of the objects currently being served in the session.
+func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("currentTypeDefs")
+
+	q = q.Select("id")
+
+	type currentTypeDefs struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []currentTypeDefs) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []currentTypeDefs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // The default platform of the builder.
