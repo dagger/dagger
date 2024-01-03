@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * An arbitrary JSON-encoded value.
  */
-readonly class Json extends Client\DaggerScalar
+readonly class Json extends Client\AbstractScalar
 {
 }

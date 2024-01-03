@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A content-addressed socket identifier.
  */
-readonly class SocketId extends Client\DaggerId
+readonly class SocketId extends Client\AbstractId
 {
 }

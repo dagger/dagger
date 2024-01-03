@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A reference to GeneratedCode.
  */
-readonly class GeneratedCodeId extends Client\DaggerId
+readonly class GeneratedCodeId extends Client\AbstractId
 {
 }

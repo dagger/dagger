@@ -18,7 +18,7 @@ class QueryBuilder extends GqlQueryBuilder
             $value = $argumentValue;
         }
 
-        if ($value instanceof DaggerScalar) {
+        if ($value instanceof AbstractScalar) {
             $value = $value->getValue();
         }
 

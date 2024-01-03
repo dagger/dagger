@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A reference to a TypeDef.
  */
-readonly class TypeDefId extends Client\DaggerId
+readonly class TypeDefId extends Client\AbstractId
 {
 }

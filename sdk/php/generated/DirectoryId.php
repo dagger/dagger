@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A content-addressed directory identifier.
  */
-readonly class DirectoryId extends Client\DaggerId
+readonly class DirectoryId extends Client\AbstractId
 {
 }

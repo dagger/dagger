@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A file identifier.
  */
-readonly class FileId extends Client\DaggerId
+readonly class FileId extends Client\AbstractId
 {
 }

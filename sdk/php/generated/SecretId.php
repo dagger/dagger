@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A unique identifier for a secret.
  */
-readonly class SecretId extends Client\DaggerId
+readonly class SecretId extends Client\AbstractId
 {
 }

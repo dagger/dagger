@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A unique service identifier.
  */
-readonly class ServiceId extends Client\DaggerId
+readonly class ServiceId extends Client\AbstractId
 {
 }

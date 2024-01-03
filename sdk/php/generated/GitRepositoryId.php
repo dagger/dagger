@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A git repository identifier.
  */
-readonly class GitRepositoryId extends Client\DaggerId
+readonly class GitRepositoryId extends Client\AbstractId
 {
 }

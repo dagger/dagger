@@ -13,6 +13,6 @@ namespace Dagger;
  *
  * The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
  */
-readonly class Platform extends Client\DaggerScalar
+readonly class Platform extends Client\AbstractScalar
 {
 }

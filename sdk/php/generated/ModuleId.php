@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A reference to a Module.
  */
-readonly class ModuleId extends Client\DaggerId
+readonly class ModuleId extends Client\AbstractId
 {
 }

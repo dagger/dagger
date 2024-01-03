@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A unique container identifier. Null designates an empty container (scratch).
  */
-readonly class ContainerId extends Client\DaggerId
+readonly class ContainerId extends Client\AbstractId
 {
 }

@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A reference to a Function.
  */
-readonly class FunctionId extends Client\DaggerId
+readonly class FunctionId extends Client\AbstractId
 {
 }
