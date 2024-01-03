@@ -284,11 +284,11 @@ func shim() (returnExitCode int) {
 
 	exitCode := 0
 	if err := runWithNesting(ctx, cmd); err != nil {
-		exitCode = errorExitCode
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			exitCode = exiterr.ExitCode()
 		} else {
-			panic(err)
+			exitCode = errorExitCode
+			fmt.Fprintln(os.Stderr, err.Error())
 		}
 	}
 
