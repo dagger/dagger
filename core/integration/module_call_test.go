@@ -421,7 +421,6 @@ type Test struct {
 		_, err := modGen.With(daggerCall("ctr", "sync")).Stdout(ctx)
 		require.NoError(t, err)
 	})
-
 }
 
 func TestModuleDaggerCallCoreChaining(t *testing.T) {
