@@ -8,7 +8,18 @@ import (
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
 // to format GraphQL type into Typescript.
-type FormatTypeFunc struct{}
+type FormatTypeFunc struct {
+	scope string
+}
+
+func (f *FormatTypeFunc) WithScope(scope string) generator.FormatTypeFuncs {
+	if scope != "" {
+		scope += "."
+	}
+	clone := *f
+	clone.scope = scope
+	return &clone
+}
 
 func (f *FormatTypeFunc) FormatKindList(representation string) string {
 	representation += "[]"
@@ -38,9 +49,9 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
 	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
 		// map e.g. FooID to Foo
-		representation += formatName(obj)
+		representation += f.scope + formatName(obj)
 	} else {
-		representation += refName
+		representation += f.scope + refName
 	}
 
 	return representation
@@ -52,16 +63,16 @@ func (f *FormatTypeFunc) FormatKindObject(representation string, refName string,
 		name = generator.QueryStructClientName
 	}
 
-	representation += formatName(name)
+	representation += f.scope + formatName(name)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindInputObject(representation string, refName string, input bool) string {
-	representation += formatName(refName)
+	representation += f.scope + formatName(refName)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindEnum(representation string, refName string) string {
-	representation += refName
+	representation += f.scope + refName
 	return representation
 }

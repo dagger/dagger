@@ -23,6 +23,10 @@ const (
 	constructorFuncName = "New"
 )
 
+func (funcs goTemplateFuncs) isModuleCode() bool {
+	return funcs.module != nil
+}
+
 /*
 moduleMainSrc generates the source code of the main func for Dagger Module code using the Go SDK.
 

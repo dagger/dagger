@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
+	"io"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strings"
+	"text/template"
 
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
@@ -25,8 +26,17 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-const ClientGenFile = "dagger.gen.go"
-const StarterTemplateFile = "main.go"
+const (
+	// ClientGenFile is the path to write the codegen for the dagger API
+	ClientGenFile = "dagger.gen.go"
+
+	// GlobalClientGenFile is the path to write the codegen for the global "dag"
+	// API client
+	GlobalClientGenFile = "dag/dag.gen.go"
+
+	// StarterTemplateFile is the path to write the default module code
+	StarterTemplateFile = "main.go"
+)
 
 type GoGenerator struct {
 	Config generator.Config
@@ -71,7 +81,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		// generate an initial dagger.gen.go from the base Dagger API
 		baseCfg := g.Config
 		baseCfg.ModuleConfig = nil
-		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil); err != nil {
+		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, true); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
@@ -101,7 +111,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
 
-	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset); err != nil {
+	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset, false); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
@@ -213,9 +223,41 @@ func generateCode(
 	pkgInfo *PackageInfo,
 	pkg *packages.Package,
 	fset *token.FileSet,
+	partial bool,
 ) error {
 	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset)
+	templateFiles := templates.TemplateFiles(funcs)
 
+	targets := map[string]string{
+		"defs": ClientGenFile,
+	}
+	if !partial && cfg.ModuleConfig == nil {
+		targets["dag"] = GlobalClientGenFile
+	}
+
+	for k, target := range targets {
+		dt, err := renderFile(ctx, cfg, schema, pkgInfo, templateFiles[k])
+		if err != nil {
+			return err
+		}
+		if err := mfs.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if err := mfs.WriteFile(target, dt, 0600); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func renderFile(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	pkgInfo *PackageInfo,
+	templateFile templates.TemplateFile,
+) ([]byte, error) {
 	headerData := struct {
 		*PackageInfo
 		Schema *introspection.Schema
@@ -224,87 +266,60 @@ func generateCode(
 		Schema:      schema,
 	}
 
-	var render []string
+	var render bytes.Buffer
 
-	var header bytes.Buffer
-	if err := templates.Header(funcs).Execute(&header, headerData); err != nil {
-		return err
+	if tmpl := templateFile.Header(); tmpl != nil {
+		var header bytes.Buffer
+		if err := tmpl.Execute(&header, headerData); err != nil {
+			return nil, err
+		}
+		header.WriteTo(&render)
 	}
-	render = append(render, header.String())
 
 	err := schema.Visit(introspection.VisitHandlers{
-		Scalar: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Scalar(funcs).Execute(&out, t); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-		Object: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Object(funcs).Execute(&out, struct {
-				*introspection.Type
-				IsModuleCode bool
-			}{
-				Type:         t,
-				IsModuleCode: cfg.ModuleConfig != nil,
-			}); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-		Enum: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Enum(funcs).Execute(&out, t); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-		Input: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Input(funcs).Execute(&out, t); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
+		Scalar: makeVisitor(cfg, templateFile.Scalar(), &render),
+		Object: makeVisitor(cfg, templateFile.Object(), &render),
+		Enum:   makeVisitor(cfg, templateFile.Enum(), &render),
+		Input:  makeVisitor(cfg, templateFile.Input(), &render),
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if cfg.ModuleConfig != nil {
-		moduleData := struct {
-			Schema *introspection.Schema
-		}{
-			Schema: schema,
+		if tmpl := templateFile.Module(); tmpl != nil {
+			var moduleMain bytes.Buffer
+			if err := tmpl.Execute(&moduleMain, schema); err != nil {
+				return nil, err
+			}
+			moduleMain.WriteTo(&render)
 		}
-
-		var moduleMain bytes.Buffer
-		if err := templates.Module(funcs).Execute(&moduleMain, moduleData); err != nil {
-			return err
-		}
-		render = append(render, moduleMain.String())
 	}
 
-	source := strings.Join(render, "\n")
-	formatted, err := format.Source([]byte(source))
+	source := render.Bytes()
+	formatted, err := format.Source(source)
 	if err != nil {
-		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
+		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
 	}
 	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)
 	if err != nil {
-		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
+		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
 	}
+	return formatted, nil
+}
 
-	if err := mfs.WriteFile(ClientGenFile, formatted, 0600); err != nil {
+func makeVisitor(cfg generator.Config, tmpl *template.Template, w io.Writer) func(t *introspection.Type) error {
+	if tmpl == nil {
+		return nil
+	}
+	return func(t *introspection.Type) error {
+		var out bytes.Buffer
+		if err := tmpl.Execute(&out, t); err != nil {
+			return err
+		}
+		_, err := out.WriteTo(w)
 		return err
 	}
-
-	return nil
 }
 
 func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {
