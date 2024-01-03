@@ -325,7 +325,9 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 		svc := svc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
-			if err := ss.stopGraceful(ctx, svc, DetachGracePeriod); err != nil {
+			// force kill the service, users should manually shutdown services if they're
+			// concerned about graceful termination
+			if err := ss.stop(ctx, svc, true); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil
