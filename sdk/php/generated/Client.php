@@ -69,6 +69,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * The TypeDef representations of the objects currently being served in the session.
+     */
+    public function currentTypeDefs(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentTypeDefs');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'currentTypeDefs');
+    }
+
+    /**
      * The default platform of the builder.
      */
     public function defaultPlatform(): Platform

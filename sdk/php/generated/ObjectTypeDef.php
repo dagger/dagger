@@ -57,4 +57,13 @@ class ObjectTypeDef extends Client\AbstractObject
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
+
+    /**
+     * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+     */
+    public function sourceModuleName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
+    }
 }
