@@ -3,18 +3,17 @@
 namespace Dagger;
 
 use CompileError;
-use Dagger\Dagger\DaggerClient;
 
 class Dagger
 {
-    public static function connect(string $workingDir = ''): DaggerClient
+    public static function connect(string $workingDir = ''): Client
     {
-        if (!class_exists('Dagger\\Dagger\\DaggerClient')) {
+        if (!class_exists('Dagger\\Client')) {
             throw new CompileError('Missing code generated dagger client');
         }
 
         $connection = Connection::get($workingDir);
 
-        return new DaggerClient($connection);
+        return new Client($connection);
     }
 }

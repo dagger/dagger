@@ -6,23 +6,23 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A directory.
  */
-class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class Directory extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * Load the directory as a Dagger module
      */
     public function asModule(?string $sourceSubpath = null): Module
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('asModule');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
         if (null !== $sourceSubpath) {
         $innerQueryBuilder->setArgument('sourceSubpath', $sourceSubpath);
         }
-        return new \Dagger\Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -30,9 +30,9 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function diff(DirectoryId|Directory $other): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('diff');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('diff');
         $innerQueryBuilder->setArgument('other', $other);
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -40,9 +40,9 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function directory(string $path): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('directory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -56,7 +56,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         ?array $secrets = null,
     ): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('dockerBuild');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
         if (null !== $dockerfile) {
         $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
         }
@@ -72,7 +72,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
         }
-        return new \Dagger\Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -80,7 +80,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function entries(?string $path = null): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('entries');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('entries');
         if (null !== $path) {
         $leafQueryBuilder->setArgument('path', $path);
         }
@@ -92,7 +92,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function export(string $path): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('export');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
@@ -102,9 +102,9 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function file(string $path): File
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('file');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -112,7 +112,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function glob(string $pattern): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('glob');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('glob');
         $leafQueryBuilder->setArgument('pattern', $pattern);
         return (array)$this->queryLeaf($leafQueryBuilder, 'glob');
     }
@@ -122,8 +122,8 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function id(): DirectoryId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -131,7 +131,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function pipeline(string $name, ?string $description = null, ?array $labels = null): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('pipeline');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
@@ -139,7 +139,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         if (null !== $labels) {
         $innerQueryBuilder->setArgument('labels', $labels);
         }
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -147,8 +147,8 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function sync(): DirectoryId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('sync');
-        return new \Dagger\Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 
     /**
@@ -161,7 +161,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         ?array $include = null,
     ): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('directory', $directory);
         if (null !== $exclude) {
@@ -170,7 +170,7 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
         }
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -178,13 +178,13 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withFile(string $path, FileId|File $source, ?int $permissions = null): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withFile');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -192,12 +192,12 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withNewDirectory(string $path, ?int $permissions = null): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withNewDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewDirectory');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -205,13 +205,13 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withNewFile(string $path, string $contents, ?int $permissions = null): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withNewFile');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('contents', $contents);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -219,9 +219,9 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withTimestamps(int $timestamp): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withTimestamps');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTimestamps');
         $innerQueryBuilder->setArgument('timestamp', $timestamp);
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -229,9 +229,9 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withoutDirectory(string $path): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -239,8 +239,8 @@ class Directory extends \Dagger\Client\AbstractDaggerObject implements \Dagger\C
      */
     public function withoutFile(string $path): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withoutFile');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
         $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -2,8 +2,8 @@
 
 namespace Dagger\Codegen\Introspection;
 
-use Dagger\Client\DaggerId;
-use Dagger\Client\DaggerScalar;
+use Dagger\Client\AbstractId;
+use Dagger\Client\AbstractScalar;
 use GraphQL\Type\Definition\ScalarType;
 use GraphQL\Type\Definition\Type;
 use Nette\PhpGenerator\ClassType;
@@ -26,9 +26,9 @@ class ScalarVisitor extends AbstractVisitor
         $scalarClass->addComment($type->description);
 
         if (str_ends_with($typeName, 'ID')) {
-            $scalarClass->setExtends(DaggerId::class);
+            $scalarClass->setExtends(AbstractId::class);
         } else {
-            $scalarClass->setExtends(DaggerScalar::class);
+            $scalarClass->setExtends(AbstractScalar::class);
         }
 
         return $scalarClass;

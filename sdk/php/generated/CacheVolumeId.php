@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A global cache volume identifier.
  */
-readonly class CacheVolumeId extends \Dagger\Client\DaggerId
+readonly class CacheVolumeId extends Client\AbstractId
 {
 }

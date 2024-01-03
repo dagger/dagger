@@ -6,20 +6,20 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A definition of a custom object defined in a Module.
  */
-class ObjectTypeDef extends \Dagger\Client\AbstractDaggerObject
+class ObjectTypeDef extends Client\AbstractObject
 {
     /**
      * The function used to construct new instances of this object, if any
      */
     public function constructor(): Function_
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('constructor');
-        return new \Dagger\Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -27,7 +27,7 @@ class ObjectTypeDef extends \Dagger\Client\AbstractDaggerObject
      */
     public function description(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
@@ -36,7 +36,7 @@ class ObjectTypeDef extends \Dagger\Client\AbstractDaggerObject
      */
     public function fields(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('fields');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
         return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
     }
 
@@ -45,7 +45,7 @@ class ObjectTypeDef extends \Dagger\Client\AbstractDaggerObject
      */
     public function functions(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('functions');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('functions');
         return (array)$this->queryLeaf($leafQueryBuilder, 'functions');
     }
 
@@ -54,7 +54,16 @@ class ObjectTypeDef extends \Dagger\Client\AbstractDaggerObject
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+     */
+    public function sourceModuleName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceModuleName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceModuleName');
     }
 }

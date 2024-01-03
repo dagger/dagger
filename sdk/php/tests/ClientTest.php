@@ -2,14 +2,14 @@
 
 namespace Dagger\Tests;
 
+use Dagger\Client;
 use Dagger\Dagger;
-use Dagger\Dagger\DaggerClient;
 use GraphQL\QueryBuilder\QueryBuilder;
 use PHPUnit\Framework\TestCase;
 
-class DaggerClientTest extends TestCase
+class ClientTest extends TestCase
 {
-    public function newClient(): DaggerClient
+    public function newClient(): Client
     {
         return Dagger::connect();
     }

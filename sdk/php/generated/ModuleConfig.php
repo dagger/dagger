@@ -6,19 +6,19 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Static configuration for a module (e.g. parsed contents of dagger.json)
  */
-class ModuleConfig extends \Dagger\Client\AbstractDaggerObject
+class ModuleConfig extends Client\AbstractObject
 {
     /**
      * Modules that this module depends on.
      */
     public function dependencies(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('dependencies');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
@@ -27,7 +27,7 @@ class ModuleConfig extends \Dagger\Client\AbstractDaggerObject
      */
     public function exclude(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('exclude');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exclude');
         return (array)$this->queryLeaf($leafQueryBuilder, 'exclude');
     }
 
@@ -36,7 +36,7 @@ class ModuleConfig extends \Dagger\Client\AbstractDaggerObject
      */
     public function include(): array
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('include');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('include');
         return (array)$this->queryLeaf($leafQueryBuilder, 'include');
     }
 
@@ -45,7 +45,7 @@ class ModuleConfig extends \Dagger\Client\AbstractDaggerObject
      */
     public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
@@ -54,7 +54,7 @@ class ModuleConfig extends \Dagger\Client\AbstractDaggerObject
      */
     public function root(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('root');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('root');
         return (string)$this->queryLeaf($leafQueryBuilder, 'root');
     }
 
@@ -63,7 +63,7 @@ class ModuleConfig extends \Dagger\Client\AbstractDaggerObject
      */
     public function sdk(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('sdk');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
     }
 }

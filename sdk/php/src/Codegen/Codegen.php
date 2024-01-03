@@ -11,7 +11,7 @@ use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Schema;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-class DaggerCodegen
+class Codegen
 {
     public function __construct(
         private readonly Schema $schema,

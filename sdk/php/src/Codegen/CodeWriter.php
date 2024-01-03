@@ -9,7 +9,7 @@ use Nette\PhpGenerator\PsrPrinter;
 
 class CodeWriter
 {
-    public const NAMESPACE = 'Dagger\\Dagger';
+    public const NAMESPACE = 'Dagger';
 
     public function __construct(private readonly string $targetDirectory)
     {

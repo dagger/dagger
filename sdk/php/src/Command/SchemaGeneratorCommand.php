@@ -11,7 +11,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand('dagger:schema')]
-class DaggerSchemaGeneratorCommand extends Command
+class SchemaGeneratorCommand extends Command
 {
     private const WRITE_DIR =
         __DIR__.DIRECTORY_SEPARATOR.

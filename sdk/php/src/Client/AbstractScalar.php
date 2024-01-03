@@ -4,7 +4,7 @@ namespace Dagger\Client;
 
 use Stringable;
 
-readonly class DaggerScalar implements Stringable
+abstract readonly class AbstractScalar implements Stringable
 {
     public function __construct(private string $value)
     {

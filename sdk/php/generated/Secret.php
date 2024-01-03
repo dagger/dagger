@@ -6,20 +6,20 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
-class Secret extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class Secret extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * The identifier for this secret.
      */
     public function id(): SecretId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\SecretId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\SecretId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -27,7 +27,7 @@ class Secret extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Clie
      */
     public function plaintext(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('plaintext');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('plaintext');
         return (string)$this->queryLeaf($leafQueryBuilder, 'plaintext');
     }
 }

@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A unique container identifier. Null designates an empty container (scratch).
  */
-readonly class ContainerId extends \Dagger\Client\DaggerId
+readonly class ContainerId extends Client\AbstractId
 {
 }

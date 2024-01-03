@@ -2,7 +2,7 @@
 
 namespace Dagger\Command;
 
-use Dagger\Codegen\DaggerCodegen;
+use Dagger\Codegen\Codegen;
 use Dagger\Codegen\SchemaGenerator;
 use Dagger\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -12,7 +12,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand('dagger:codegen')]
-class DaggerCodegenCommand extends Command
+class CodegenCommand extends Command
 {
     private const WRITE_DIR =
         __DIR__.DIRECTORY_SEPARATOR.
@@ -36,7 +36,7 @@ class DaggerCodegenCommand extends Command
         $client = $this->daggerConnection->connect();
 
         $schema = (new SchemaGenerator($client))->getSchema();
-        $codegen = new DaggerCodegen($schema, self::WRITE_DIR, $io);
+        $codegen = new Codegen($schema, self::WRITE_DIR, $io);
         $codegen->generate();
 
         return Command::SUCCESS;
