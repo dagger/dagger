@@ -19,13 +19,18 @@ import (
 	"github.com/vito/dagql/idproto"
 )
 
-type TelemetryFunc func(context.Context, *idproto.ID) (context.Context, func(error))
+type AroundFunc func(
+	context.Context,
+	Object,
+	*idproto.ID,
+	func(context.Context) (Typed, error),
+) func(context.Context) (Typed, error)
 
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
 	root        Object
-	telemetry   TelemetryFunc
+	telemetry   AroundFunc
 	objects     map[string]ObjectType
 	scalars     map[string]ScalarType
 	typeDefs    map[string]TypeDef
@@ -157,7 +162,8 @@ func (s *Server) TypeDef(name string) (TypeDef, bool) {
 	return t, ok
 }
 
-func (s *Server) RecordTo(rec TelemetryFunc) {
+// Around installs a function to be called around every non-cached selection.
+func (s *Server) Around(rec AroundFunc) {
 	s.telemetry = rec
 }
 
@@ -406,21 +412,17 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	if err != nil {
 		return nil, nil, err
 	}
+	doSelect := func(ctx context.Context) (Typed, error) {
+		return self.Select(ctx, sel)
+	}
 	if s.telemetry != nil {
-		var done func(error)
-		wrapped, done := s.telemetry(ctx, chainedID)
-		defer func() {
-			done(rerr)
-		}()
-		ctx = wrapped
+		doSelect = s.telemetry(ctx, self, chainedID, doSelect)
 	}
 	var val Typed
 	if chainedID.IsTainted() {
-		val, err = self.Select(ctx, sel)
+		val, err = doSelect(ctx)
 	} else {
-		val, err = s.Cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (Typed, error) {
-			return self.Select(ctx, sel)
-		})
+		val, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -460,8 +462,8 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 			if err != nil {
 				return nil, err
 			}
-			if wrapped, ok := val.(NullableWrapper); ok {
-				val, ok = wrapped.Unwrap()
+			if wrapped, ok := val.(Derefable); ok {
+				val, ok = wrapped.Deref()
 				if !ok {
 					results = append(results, nil)
 					continue

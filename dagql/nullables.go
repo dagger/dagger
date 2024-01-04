@@ -9,12 +9,12 @@ import (
 	"github.com/vito/dagql/idproto"
 )
 
-// NullableWrapper is a type that wraps another type.
+// Derefable is a type that wraps another type.
 //
 // In practice this is only used for Optional and Nullable. It should be used
 // sparingly, since wrapping interfaces explodes very quickly.
-type NullableWrapper interface {
-	Unwrap() (Typed, bool)
+type Derefable interface {
+	Deref() (Typed, bool)
 }
 
 // Optional wraps a type and allows it to be null.
@@ -99,7 +99,7 @@ func (n Optional[I]) Type() *ast.Type {
 	return &nullable
 }
 
-var _ NullableWrapper = Optional[Input]{}
+var _ Derefable = Optional[Input]{}
 
 func (n Optional[I]) DecodeInput(val any) (Input, error) {
 	if val == nil {
@@ -116,7 +116,7 @@ func (n Optional[I]) DecodeInput(val any) (Input, error) {
 	}, nil
 }
 
-func (n Optional[I]) Unwrap() (Typed, bool) {
+func (n Optional[I]) Deref() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
@@ -237,9 +237,9 @@ func (n Nullable[T]) Type() *ast.Type {
 	return &nullable
 }
 
-var _ NullableWrapper = Nullable[Typed]{}
+var _ Derefable = Nullable[Typed]{}
 
-func (n Nullable[T]) Unwrap() (Typed, bool) {
+func (n Nullable[T]) Deref() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
@@ -271,9 +271,9 @@ func (d DynamicNullable) Type() *ast.Type {
 	return &cp
 }
 
-var _ NullableWrapper = DynamicNullable{}
+var _ Derefable = DynamicNullable{}
 
-func (n DynamicNullable) Unwrap() (Typed, bool) {
+func (n DynamicNullable) Deref() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
