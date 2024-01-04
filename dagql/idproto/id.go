@@ -152,7 +152,7 @@ func (id *ID) Encode() (string, error) {
 func (id *ID) Decode(str string) error {
 	bytes, err := base64.URLEncoding.DecodeString(str)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot decode ID from %q: %w", str, err)
 	}
 	return proto.Unmarshal(bytes, id)
 }
