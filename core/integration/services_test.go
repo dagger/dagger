@@ -212,10 +212,10 @@ func TestServicePortsSkipHealthCheck(t *testing.T) {
 		srv := c.Container().
 			From("python").
 			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
-				SkipHealthCheck: true,
+				ExperimentalSkipHealthcheck: true,
 			}).
 			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
-				SkipHealthCheck: true,
+				ExperimentalSkipHealthcheck: true,
 			}).
 			WithExec([]string{"python", "-m", "http.server"}).
 			AsService()
@@ -230,11 +230,11 @@ func TestServicePortsSkipHealthCheck(t *testing.T) {
 		srv := c.Container().
 			From("python").
 			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
-				SkipHealthCheck: true,
+				ExperimentalSkipHealthcheck: true,
 			}).
 			WithExposedPort(8000).
 			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
-				SkipHealthCheck: true,
+				ExperimentalSkipHealthcheck: true,
 			}).
 			WithExec([]string{"python", "-m", "http.server", "8000"}).
 			AsService()

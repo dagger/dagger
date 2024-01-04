@@ -280,7 +280,7 @@ export type ContainerWithExposedPortOpts = {
   /**
    * Skip the health check when run as a service.
    */
-  skipHealthCheck?: boolean
+  experimentalSkipHealthcheck?: boolean
 }
 
 export type ContainerWithFileOpts = {
@@ -1849,7 +1849,7 @@ export class Container extends BaseClient {
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
-   * @param opts.skipHealthCheck Skip the health check when run as a service.
+   * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
    */
   withExposedPort = (
     port: number,

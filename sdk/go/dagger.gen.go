@@ -1141,7 +1141,7 @@ type ContainerWithExposedPortOpts struct {
 	// Optional port description
 	Description string
 	// Skip the health check when run as a service.
-	SkipHealthCheck bool
+	ExperimentalSkipHealthcheck bool
 }
 
 // Expose a network port.
@@ -1162,9 +1162,9 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
 		}
-		// `skipHealthCheck` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipHealthCheck) {
-			q = q.Arg("skipHealthCheck", opts[i].SkipHealthCheck)
+		// `experimentalSkipHealthcheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalSkipHealthcheck) {
+			q = q.Arg("experimentalSkipHealthcheck", opts[i].ExperimentalSkipHealthcheck)
 		}
 	}
 	q = q.Arg("port", port)

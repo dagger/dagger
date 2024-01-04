@@ -647,12 +647,12 @@ pub struct ContainerWithExposedPortOpts<'a> {
     /// Optional port description
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Skip the health check when run as a service.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_skip_healthcheck: Option<bool>,
     /// Transport layer network protocol
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
-    /// Skip the health check when run as a service.
-    #[builder(setter(into, strip_option), default)]
-    pub skip_health_check: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts<'a> {
@@ -1479,8 +1479,8 @@ impl Container {
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
-        if let Some(skip_health_check) = opts.skip_health_check {
-            query = query.arg("skipHealthCheck", skip_health_check);
+        if let Some(experimental_skip_healthcheck) = opts.experimental_skip_healthcheck {
+            query = query.arg("experimentalSkipHealthcheck", experimental_skip_healthcheck);
         }
         return Container {
             proc: self.proc.clone(),

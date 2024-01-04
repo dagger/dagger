@@ -1174,7 +1174,7 @@ class Container(Type):
         *,
         protocol: NetworkProtocol | None = "TCP",
         description: str | None = None,
-        skip_health_check: bool | None = False,
+        experimental_skip_healthcheck: bool | None = False,
     ) -> "Container":
         """Expose a network port.
 
@@ -1192,14 +1192,14 @@ class Container(Type):
             Transport layer network protocol
         description:
             Optional port description
-        skip_health_check:
+        experimental_skip_healthcheck:
             Skip the health check when run as a service.
         """
         _args = [
             Arg("port", port),
             Arg("protocol", protocol, "TCP"),
             Arg("description", description, None),
-            Arg("skipHealthCheck", skip_health_check, False),
+            Arg("experimentalSkipHealthcheck", experimental_skip_healthcheck, False),
         ]
         _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)
