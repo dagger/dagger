@@ -180,6 +180,18 @@ func (r Instance[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
+// Wrapped is an interface for types that wrap another type.
+type Wrapped interface {
+	Unwrap() Typed
+}
+
+var _ Wrapped = Instance[Typed]{}
+
+// Inner returns the inner value of the instance.
+func (r Instance[T]) Unwrap() Typed {
+	return r.Self
+}
+
 // String returns the instance in Class@sha256:... format.
 func (r Instance[T]) String() string {
 	dig, err := r.Constructor.Digest()
@@ -213,8 +225,8 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 	if err != nil {
 		return nil, err
 	}
-	if n, ok := val.(NullableWrapper); ok {
-		val, ok = n.Unwrap()
+	if n, ok := val.(Derefable); ok {
+		val, ok = n.Deref()
 		if !ok {
 			return nil, nil
 		}
@@ -228,8 +240,8 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 		if err != nil {
 			return nil, err
 		}
-		if n, ok := val.(NullableWrapper); ok {
-			val, ok = n.Unwrap()
+		if n, ok := val.(Derefable); ok {
+			val, ok = n.Deref()
 			if !ok {
 				return nil, nil
 			}
