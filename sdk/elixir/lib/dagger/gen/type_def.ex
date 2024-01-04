@@ -6,6 +6,20 @@ defmodule Dagger.TypeDef do
   defstruct [:selection, :client]
 
   (
+    @doc "If kind is INTERFACE, the interface-specific type definition.\nIf kind is not INTERFACE, this will be null."
+    @spec as_interface(t()) :: {:ok, Dagger.InterfaceTypeDef.t() | nil} | {:error, term()}
+    def as_interface(%__MODULE__{} = type_def) do
+      selection = select(type_def.selection, "asInterface")
+
+      case execute(selection, type_def.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.InterfaceTypeDef)
+        error -> error
+      end
+    end
+  )
+
+  (
     @doc "If kind is LIST, the list-specific type definition.\nIf kind is not LIST, this will be null."
     @spec as_list(t()) :: {:ok, Dagger.ListTypeDef.t() | nil} | {:error, term()}
     def as_list(%__MODULE__{} = type_def) do
@@ -90,11 +104,29 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc "Adds a function for an Object TypeDef, failing if the type is not an object.\n\n## Required Arguments\n\n* `function` -"
+    @doc "Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.\n\n## Required Arguments\n\n* `function` -"
     @spec with_function(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
     def with_function(%__MODULE__{} = type_def, function) do
       selection = select(type_def.selection, "withFunction")
       selection = arg(selection, "function", function)
+      %Dagger.TypeDef{selection: selection, client: type_def.client}
+    end
+  )
+
+  (
+    @doc "Returns a TypeDef of kind Interface with the provided name.\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments\n\n* `description` -"
+    @spec with_interface(t(), Dagger.String.t(), keyword()) :: Dagger.TypeDef.t()
+    def with_interface(%__MODULE__{} = type_def, name, optional_args \\ []) do
+      selection = select(type_def.selection, "withInterface")
+      selection = arg(selection, "name", name)
+
+      selection =
+        if is_nil(optional_args[:description]) do
+          selection
+        else
+          arg(selection, "description", optional_args[:description])
+        end
+
       %Dagger.TypeDef{selection: selection, client: type_def.client}
     end
   )

@@ -18,7 +18,7 @@ require (
 	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/dagger/graphql v0.0.0-20231103002502-b36795bcf171
+	github.com/dagger/graphql v0.0.0-20231212185230-c34d978a0776
 	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2

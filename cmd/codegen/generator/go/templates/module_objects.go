@@ -63,7 +63,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	})
 
 	for _, goFuncType := range goFuncTypes {
-		funcTypeSpec, err := ps.parseGoFunc(spec.name, goFuncType)
+		funcTypeSpec, err := ps.parseGoFunc(named, goFuncType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse method %s: %w", goFuncType.Name(), err)
 		}
@@ -89,39 +89,15 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		if !field.Exported() {
 			continue
 		}
-		name := field.Name()
 
-		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
-		linePragmas, lineComment := parsePragmaComment(astFields[i].Comment.Text())
-		comment := strings.TrimSpace(docComment)
-		if comment == "" {
-			comment = strings.TrimSpace(lineComment)
-		}
-		pragmas := make(map[string]string)
-		maps.Copy(pragmas, docPragmas)
-		maps.Copy(pragmas, linePragmas)
-		if v, ok := pragmas["private"]; ok {
-			private := false
-			if v == "" {
-				private = true
-			} else {
-				private, _ = strconv.ParseBool(v)
-			}
-			if private {
-				// don't generate WithField for private fields
-				continue
-			}
-		}
-
-		fieldSpec := &fieldSpec{}
-		fieldSpec.typeSpec, err = ps.parseGoTypeReference(field.Type(), nil)
+		fieldSpec := &fieldSpec{goType: field.Type()}
+		fieldSpec.typeSpec, err = ps.parseGoTypeReference(field.Type(), nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse field type: %w", err)
 		}
 
-		fieldSpec.doc = comment
-
-		fieldSpec.name = name
+		fieldSpec.goName = field.Name()
+		fieldSpec.name = fieldSpec.goName
 
 		// override the name with the json tag if it was set - otherwise, we
 		// end up asking for a name that we won't unmarshal correctly
@@ -134,11 +110,30 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 			fieldSpec.name = dt
 		}
 
+		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
+		linePragmas, lineComment := parsePragmaComment(astFields[i].Comment.Text())
+		comment := strings.TrimSpace(docComment)
+		if comment == "" {
+			comment = strings.TrimSpace(lineComment)
+		}
+		pragmas := make(map[string]string)
+		maps.Copy(pragmas, docPragmas)
+		maps.Copy(pragmas, linePragmas)
+		if v, ok := pragmas["private"]; ok {
+			if v == "" {
+				fieldSpec.isPrivate = true
+			} else {
+				fieldSpec.isPrivate, _ = strconv.ParseBool(v)
+			}
+		}
+
+		fieldSpec.doc = comment
+
 		spec.fields = append(spec.fields, fieldSpec)
 	}
 
 	if ps.isMainModuleObject(spec.name) && ps.constructor != nil {
-		spec.constructor, err = ps.parseGoFunc("", ps.constructor)
+		spec.constructor, err = ps.parseGoFunc(nil, ps.constructor)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse constructor: %w", err)
 		}
@@ -157,6 +152,8 @@ type parsedObjectType struct {
 
 	goType *types.Struct
 }
+
+var _ NamedParsedType = &parsedObjectType{}
 
 func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	withObjectArgsCode := []Code{
@@ -181,6 +178,10 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	for _, field := range spec.fields {
+		if field.isPrivate {
+			continue
+		}
+
 		fieldTypeDefCode, err := field.typeSpec.TypeDefCode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
@@ -219,6 +220,9 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 		subTypes = append(subTypes, method.GoSubTypes()...)
 	}
 	for _, field := range spec.fields {
+		if field.isPrivate {
+			continue
+		}
 		subTypes = append(subTypes, field.typeSpec.GoSubTypes()...)
 	}
 	if spec.constructor != nil {
@@ -227,8 +231,120 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 	return subTypes
 }
 
+func (spec *parsedObjectType) Name() string {
+	return spec.name
+}
+
+func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
+	concreteFields := make([]Code, 0, len(spec.fields))
+	setFieldCodes := make([]*Statement, 0, len(spec.fields))
+	for _, field := range spec.fields {
+		fieldTypeCode, err := spec.concreteFieldTypeCode(field.typeSpec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate field type code: %w", err)
+		}
+		fieldCode := Id(field.goName).Add(fieldTypeCode)
+		if field.goName != field.name {
+			fieldCode.Tag(map[string]string{"json": field.name})
+		}
+		concreteFields = append(concreteFields, fieldCode)
+
+		setFieldCode, err := spec.setFieldsFromConcreteStructCode(field)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate set field code: %w", err)
+		}
+		setFieldCodes = append(setFieldCodes, setFieldCode)
+	}
+
+	return Func().Params(Id("r").Op("*").Id(spec.name)).
+		Id("UnmarshalJSON").
+		Params(Id("bs").Id("[]byte")).
+		Params(Id("error")).
+		BlockFunc(func(g *Group) {
+			g.Var().Id("concrete").Struct(concreteFields...)
+			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("concrete"))
+			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
+
+			for _, setFieldCode := range setFieldCodes {
+				g.Add(setFieldCode)
+			}
+
+			g.Return(Nil())
+		}), nil
+}
+
+func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*Statement, error) {
+	s := Empty()
+	switch typeSpec := typeSpec.(type) {
+	case *parsedPrimitiveType:
+		if typeSpec.isPtr {
+			s.Op("*")
+		}
+		if typeSpec.alias != "" {
+			s.Id(typeSpec.alias)
+		} else {
+			s.Id(typeSpec.GoType().String())
+		}
+
+	case *parsedSliceType:
+		fieldTypeCode, err := spec.concreteFieldTypeCode(typeSpec.underlying)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate slice field type code: %w", err)
+		}
+		s.Index().Add(fieldTypeCode)
+
+	case *parsedObjectTypeReference:
+		if typeSpec.isPtr {
+			s.Op("*")
+		}
+		s.Id(typeSpec.name)
+
+	case *parsedIfaceTypeReference:
+		s.Op("*").Id(formatIfaceImplName(typeSpec.name))
+
+	default:
+		return nil, fmt.Errorf("unsupported concrete field type %T", typeSpec)
+	}
+
+	return s, nil
+}
+
+func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) (*Statement, error) {
+	s := Empty()
+	switch typeSpec := field.typeSpec.(type) {
+	case *parsedPrimitiveType, *parsedObjectTypeReference:
+		s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
+
+	case *parsedSliceType:
+		switch underlyingTypeSpec := typeSpec.underlying.(type) {
+		case *parsedIfaceTypeReference:
+			s.Id("r").Dot(field.goName).Op("=").Id("convertSlice").Call(
+				Id("concrete").Dot(field.goName),
+				Parens(Op("*").Id(formatIfaceImplName(underlyingTypeSpec.name))).Dot("toIface"),
+			)
+		default:
+			s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
+		}
+
+	case *parsedIfaceTypeReference:
+		s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName).Dot("toIface").Call()
+
+	default:
+		return nil, fmt.Errorf("unsupported field type %T", typeSpec)
+	}
+
+	return s, nil
+}
+
 type fieldSpec struct {
 	name     string
 	doc      string
 	typeSpec ParsedType
+
+	// isPrivate is true if the field is marked with the +private pragma
+	isPrivate bool
+	// goName is the name of the field in the Go struct. It may be different than name if the user changed the name of the field via a json tag
+	goName string
+
+	goType types.Type
 }

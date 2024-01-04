@@ -822,6 +822,10 @@ export type TypeDefWithFieldOpts = {
   description?: string
 }
 
+export type TypeDefWithInterfaceOpts = {
+  description?: string
+}
+
 export type TypeDefWithObjectOpts = {
   description?: string
 }
@@ -844,6 +848,13 @@ export enum TypeDefKind {
    * An integer value
    */
   Integerkind = "IntegerKind",
+
+  /**
+   * A named type of functions that can be matched+implemented by other objects+interfaces.
+   *
+   * Always paired with an InterfaceTypeDef.
+   */
+  Interfacekind = "InterfaceKind",
 
   /**
    * A list of values all having the same type.
@@ -4100,6 +4111,127 @@ export class Host extends BaseClient {
 }
 
 /**
+ * A definition of a custom interface defined in a Module.
+ */
+export class InterfaceTypeDef extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
+
+  /**
+   * The doc string for the interface, if any
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * Functions defined on this interface, if any
+   */
+  functions = async (): Promise<Function_[]> => {
+    type functions = {
+      id: FunctionID
+    }
+
+    const response: Awaited<functions[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "functions",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new Function_(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * The name of the interface
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+/**
  * A simple key value object that represents a label.
  */
 export class Label extends BaseClient {
@@ -4328,6 +4460,39 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Interfaces served by this module
+   */
+  interfaces = async (): Promise<TypeDef[]> => {
+    type interfaces = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<interfaces[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "interfaces",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {
@@ -4459,6 +4624,22 @@ export class Module_ extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * This module plus the given Interface type and associated functions
+   */
+  withInterface = (iface: TypeDef): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withInterface",
+          args: { iface },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -5831,6 +6012,22 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * If kind is INTERFACE, the interface-specific type definition.
+   * If kind is not INTERFACE, this will be null.
+   */
+  asInterface = (): InterfaceTypeDef => {
+    return new InterfaceTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asInterface",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * If kind is LIST, the list-specific type definition.
    * If kind is not LIST, this will be null.
    */
@@ -5946,7 +6143,7 @@ export class TypeDef extends BaseClient {
   }
 
   /**
-   * Adds a function for an Object TypeDef, failing if the type is not an object.
+   * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
    */
   withFunction = (function_: Function_): TypeDef => {
     return new TypeDef({
@@ -5957,6 +6154,22 @@ export class TypeDef extends BaseClient {
           args: {
             function: function_,
           },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind Interface with the provided name.
+   */
+  withInterface = (name: string, opts?: TypeDefWithInterfaceOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withInterface",
+          args: { name, ...opts },
         },
       ],
       ctx: this._ctx,

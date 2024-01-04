@@ -72,6 +72,50 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 	return fn
 }
 
+func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
+	if fn == nil || otherFn == nil {
+		return false
+	}
+
+	// check return type
+	if !fn.ReturnType.IsSubtypeOf(otherFn.ReturnType) {
+		return false
+	}
+
+	// check args
+	for i, otherFnArg := range otherFn.Args {
+		/* TODO: with more effort could probably relax and allow:
+		* arg names to not match (only types really matter in theory)
+		* mismatches in optional (provided defaults exist, etc.)
+		* fewer args in interface fn than object fn (as long as the ones that exist match)
+		 */
+
+		if i >= len(fn.Args) {
+			return false
+		}
+		fnArg := fn.Args[i]
+
+		if fnArg.Name != otherFnArg.Name {
+			return false
+		}
+
+		if fnArg.TypeDef.Optional != otherFnArg.TypeDef.Optional {
+			return false
+		}
+
+		// We want to be contravariant on arg matching types. So if fnArg asks for a Cat, then
+		// we can't invoke it with any Animal since it requested a cat specifically.
+		// However, if the fnArg asks for an Animal, we can provide a Cat because that's a subtype of Animal.
+		// Thus, we check that the otherFnArg is a subtype of the fnArg (inverse of the covariant matching done
+		// on function *return* types above).
+		if !otherFnArg.TypeDef.IsSubtypeOf(fnArg.TypeDef) {
+			return false
+		}
+	}
+
+	return true
+}
+
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
 	Name         string   `json:"name"`
@@ -99,10 +143,11 @@ func (arg *FunctionArg) ID() (FunctionArgID, error) {
 }
 
 type TypeDef struct {
-	Kind     TypeDefKind    `json:"kind"`
-	Optional bool           `json:"optional"`
-	AsList   *ListTypeDef   `json:"asList"`
-	AsObject *ObjectTypeDef `json:"asObject"`
+	Kind        TypeDefKind       `json:"kind"`
+	Optional    bool              `json:"optional"`
+	AsList      *ListTypeDef      `json:"asList"`
+	AsObject    *ObjectTypeDef    `json:"asObject"`
+	AsInterface *InterfaceTypeDef `json:"asInterface"`
 }
 
 func (typeDef *TypeDef) ID() (TypeDefID, error) {
@@ -130,6 +175,9 @@ func (typeDef TypeDef) Clone() *TypeDef {
 	if typeDef.AsObject != nil {
 		cp.AsObject = typeDef.AsObject.Clone()
 	}
+	if typeDef.AsInterface != nil {
+		cp.AsInterface = typeDef.AsInterface.Clone()
+	}
 	return &cp
 }
 
@@ -153,6 +201,12 @@ func (typeDef *TypeDef) WithObject(name, desc string) *TypeDef {
 	return typeDef
 }
 
+func (typeDef *TypeDef) WithInterface(name, desc string) *TypeDef {
+	typeDef = typeDef.WithKind(TypeDefKindInterface)
+	typeDef.AsInterface = NewInterfaceTypeDef(name, desc)
+	return typeDef
+}
+
 func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Optional = optional
@@ -173,15 +227,21 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 	return typeDef, nil
 }
 
-func (typeDef *TypeDef) WithObjectFunction(fn *Function) (*TypeDef, error) {
-	if typeDef.AsObject == nil {
-		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
-	}
+func (typeDef *TypeDef) WithFunction(fn *Function) (*TypeDef, error) {
 	typeDef = typeDef.Clone()
 	fn = fn.Clone()
-	fn.ParentOriginalName = typeDef.AsObject.OriginalName
-	typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
-	return typeDef, nil
+	switch typeDef.Kind {
+	case TypeDefKindObject:
+		fn.ParentOriginalName = typeDef.AsObject.OriginalName
+		typeDef.AsObject.Functions = append(typeDef.AsObject.Functions, fn)
+		return typeDef, nil
+	case TypeDefKindInterface:
+		fn.ParentOriginalName = typeDef.AsInterface.OriginalName
+		typeDef.AsInterface.Functions = append(typeDef.AsInterface.Functions, fn)
+		return typeDef, nil
+	default:
+		return nil, fmt.Errorf("cannot add function to type: %s", typeDef.Kind)
+	}
 }
 
 func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
@@ -194,6 +254,44 @@ func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
 	fn.ParentOriginalName = typeDef.AsObject.OriginalName
 	typeDef.AsObject.Constructor = fn
 	return typeDef, nil
+}
+
+func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
+	if typeDef == nil || otherDef == nil {
+		return false
+	}
+
+	if typeDef.Optional != otherDef.Optional {
+		return false
+	}
+
+	switch typeDef.Kind {
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
+		return typeDef.Kind == otherDef.Kind
+	case TypeDefKindList:
+		if otherDef.Kind != TypeDefKindList {
+			return false
+		}
+		return typeDef.AsList.ElementTypeDef.IsSubtypeOf(otherDef.AsList.ElementTypeDef)
+	case TypeDefKindObject:
+		switch otherDef.Kind {
+		case TypeDefKindObject:
+			// For now, assume that if the objects have the same name, they are the same object. This should be a safe assumption
+			// within the context of a single, already-namedspace schema, but not safe if objects are compared across schemas
+			return typeDef.AsObject.Name == otherDef.AsObject.Name
+		case TypeDefKindInterface:
+			return typeDef.AsObject.IsSubtypeOf(otherDef.AsInterface)
+		default:
+			return false
+		}
+	case TypeDefKindInterface:
+		if otherDef.Kind != TypeDefKindInterface {
+			return false
+		}
+		return typeDef.AsInterface.IsSubtypeOf(otherDef.AsInterface)
+	default:
+		return false
+	}
 }
 
 type ObjectTypeDef struct {
@@ -221,28 +319,28 @@ func NewObjectTypeDef(name, description string) *ObjectTypeDef {
 	}
 }
 
-func (typeDef ObjectTypeDef) Clone() *ObjectTypeDef {
-	cp := typeDef
+func (obj ObjectTypeDef) Clone() *ObjectTypeDef {
+	cp := obj
 
-	cp.Fields = make([]*FieldTypeDef, len(typeDef.Fields))
-	for i, field := range typeDef.Fields {
+	cp.Fields = make([]*FieldTypeDef, len(obj.Fields))
+	for i, field := range obj.Fields {
 		cp.Fields[i] = field.Clone()
 	}
 
-	cp.Functions = make([]*Function, len(typeDef.Functions))
-	for i, fn := range typeDef.Functions {
+	cp.Functions = make([]*Function, len(obj.Functions))
+	for i, fn := range obj.Functions {
 		cp.Functions[i] = fn.Clone()
 	}
 
 	if cp.Constructor != nil {
-		cp.Constructor = typeDef.Constructor.Clone()
+		cp.Constructor = obj.Constructor.Clone()
 	}
 
 	return &cp
 }
 
-func (typeDef ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
-	for _, field := range typeDef.Fields {
+func (obj ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
+	for _, field := range obj.Fields {
 		if field.Name == name {
 			return field, true
 		}
@@ -250,13 +348,49 @@ func (typeDef ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
 	return nil, false
 }
 
-func (typeDef ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
-	for _, fn := range typeDef.Functions {
+func (obj ObjectTypeDef) FunctionByName(name string) (*Function, bool) {
+	for _, fn := range obj.Functions {
 		if fn.Name == name {
 			return fn, true
 		}
 	}
 	return nil, false
+}
+
+func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
+	if obj == nil || iface == nil {
+		return false
+	}
+
+	objFnByName := make(map[string]*Function)
+	for _, fn := range obj.Functions {
+		objFnByName[fn.Name] = fn
+	}
+	objFieldByName := make(map[string]*FieldTypeDef)
+	for _, field := range obj.Fields {
+		objFieldByName[field.Name] = field
+	}
+
+	for _, ifaceFn := range iface.Functions {
+		objFn, objFnExists := objFnByName[ifaceFn.Name]
+		objField, objFieldExists := objFieldByName[ifaceFn.Name]
+
+		if !objFnExists && !objFieldExists {
+			return false
+		}
+
+		if objFieldExists {
+			// check return type of field
+			return objField.TypeDef.IsSubtypeOf(ifaceFn.ReturnType)
+		}
+
+		// otherwise there can only be a match on the objFn
+		if ok := objFn.IsSubtypeOf(ifaceFn); !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 type FieldTypeDef struct {
@@ -279,6 +413,64 @@ func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
 	return &cp
 }
 
+type InterfaceTypeDef struct {
+	// Name is the standardized name of the interface (CamelCase), as used for the interface in the graphql schema
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Functions   []*Function `json:"functions"`
+	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
+	SourceModuleName string `json:"sourceModuleName"`
+
+	// Below are not in public API
+
+	// The original name of the interface as provided by the SDK that defined it, used
+	// when invoking the SDK so it doesn't need to think as hard about case conversions
+	OriginalName string `json:"originalName,omitempty"`
+}
+
+func NewInterfaceTypeDef(name, description string) *InterfaceTypeDef {
+	return &InterfaceTypeDef{
+		Name:         strcase.ToCamel(name),
+		OriginalName: name,
+		Description:  description,
+	}
+}
+
+func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
+	cp := iface
+
+	cp.Functions = make([]*Function, len(iface.Functions))
+	for i, fn := range iface.Functions {
+		cp.Functions[i] = fn.Clone()
+	}
+
+	return &cp
+}
+
+func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
+	if iface == nil || otherIface == nil {
+		return false
+	}
+
+	ifaceFnByName := make(map[string]*Function)
+	for _, fn := range iface.Functions {
+		ifaceFnByName[fn.Name] = fn
+	}
+
+	for _, otherIfaceFn := range otherIface.Functions {
+		ifaceFn, ok := ifaceFnByName[otherIfaceFn.Name]
+		if !ok {
+			return false
+		}
+
+		if ok := ifaceFn.IsSubtypeOf(otherIfaceFn); !ok {
+			return false
+		}
+	}
+
+	return true
+}
+
 type ListTypeDef struct {
 	ElementTypeDef *TypeDef `json:"elementTypeDef"`
 }
@@ -298,12 +490,13 @@ func (k TypeDefKind) String() string {
 }
 
 const (
-	TypeDefKindString  TypeDefKind = "StringKind"
-	TypeDefKindInteger TypeDefKind = "IntegerKind"
-	TypeDefKindBoolean TypeDefKind = "BooleanKind"
-	TypeDefKindList    TypeDefKind = "ListKind"
-	TypeDefKindObject  TypeDefKind = "ObjectKind"
-	TypeDefKindVoid    TypeDefKind = "VoidKind"
+	TypeDefKindString    TypeDefKind = "StringKind"
+	TypeDefKindInteger   TypeDefKind = "IntegerKind"
+	TypeDefKindBoolean   TypeDefKind = "BooleanKind"
+	TypeDefKindList      TypeDefKind = "ListKind"
+	TypeDefKindObject    TypeDefKind = "ObjectKind"
+	TypeDefKindInterface TypeDefKind = "InterfaceKind"
+	TypeDefKindVoid      TypeDefKind = "VoidKind"
 )
 
 type FunctionCall struct {

@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	daggerGenFilename   = "dagger.gen.go"
-	contextTypename     = "context.Context"
-	constructorFuncName = "New"
+	daggerGenFilename     = "dagger.gen.go"
+	contextTypename       = "context.Context"
+	constructorFuncName   = "New"
+	daggerObjectIfaceName = "DaggerObject"
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
@@ -93,18 +94,26 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	tps := []types.Type{}
 	for _, obj := range objs {
 		// check if this is the constructor func, save it for later if so
-		fn, isFn := obj.(*types.Func)
-		if isFn && fn.Name() == constructorFuncName {
-			ps.constructor = fn
+		if ok := ps.checkConstructor(obj); ok {
+			continue
+		}
+
+		// check if this is the DaggerObject interface
+		if ok := ps.checkDaggerObjectIface(obj); ok {
 			continue
 		}
 
 		tps = append(tps, obj.Type())
 	}
 
+	if ps.daggerObjectIfaceType == nil {
+		return "", fmt.Errorf("cannot find default codegen %s interface", daggerObjectIfaceName)
+	}
+
 	added := map[string]struct{}{}
 	topLevel := true
 
+	implementationCode := Empty()
 	for len(tps) != 0 {
 		var nextTps []types.Type
 		for _, tp := range tps {
@@ -126,55 +135,96 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				continue
 			}
 
-			strct, isStruct := named.Underlying().(*types.Struct)
-			if !isStruct {
-				// TODO(vito): could possibly support non-struct types, but why bother
-				continue
-			}
-
 			// avoid adding a struct definition twice (if it's referenced in two function signatures)
 			if _, ok := added[obj.Name()]; ok {
 				continue
 			}
 
-			objTypeSpec, err := ps.parseGoStruct(strct, named)
-			if err != nil {
-				return "", err
-			}
-			if objTypeSpec == nil {
-				// not including in module schema, skip it
-				continue
-			}
+			switch underlyingObj := named.Underlying().(type) {
+			case *types.Struct:
+				strct := underlyingObj
+				objTypeSpec, err := ps.parseGoStruct(strct, named)
+				if err != nil {
+					return "", err
+				}
+				if objTypeSpec == nil {
+					// not including in module schema, skip it
+					continue
+				}
 
-			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
-				// errors indicate an internal problem rather than something w/ user code, so error instead
-				return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
-			}
+				if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
+					// errors indicate an internal problem rather than something w/ user code, so error instead
+					return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
+				}
 
-			if topLevel && !ps.isMainModuleObject(obj.Name()) {
-				// don't add a non-main object at the top-level (wait till it comes up as a sub-object)
-				continue
-			}
+				if topLevel && !ps.isMainModuleObject(obj.Name()) {
+					// don't add a non-main object at the top-level (wait till it comes up as a sub-object)
+					continue
+				}
 
-			// Add the object to the module
-			objTypeDefCode, err := objTypeSpec.TypeDefCode()
-			if err != nil {
-				return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-			}
-			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
-			added[obj.Name()] = struct{}{}
+				// Add the object to the module
+				objTypeDefCode, err := objTypeSpec.TypeDefCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
+				added[obj.Name()] = struct{}{}
 
-			// If the object has any extra sub-types (e.g. for function return
-			// values), add them to the list of types to process
-			nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
+				implCode, err := objTypeSpec.ImplementationCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				// If the object has any extra sub-types (e.g. for function return
+				// values), add them to the list of types to process
+				nextTps = append(nextTps, objTypeSpec.GoSubTypes()...)
+
+			case *types.Interface:
+				iface := underlyingObj
+				if topLevel {
+					// refrain from adding interfaces to the module typedefs unless it's referenced by a object/function in the module
+					continue
+				}
+
+				ifaceTypeSpec, err := ps.parseGoIface(iface, named)
+				if err != nil {
+					return "", err
+				}
+				if ifaceTypeSpec == nil {
+					// not including in module schema, skip it
+					continue
+				}
+
+				// Add the iface to the module
+				ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
+				added[obj.Name()] = struct{}{}
+
+				implCode, err := ifaceTypeSpec.ImplementationCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				// If the object has any extra sub-types (e.g. for function return
+				// values), add them to the list of types to process
+				nextTps = append(nextTps, ifaceTypeSpec.GoSubTypes()...)
+			}
 		}
 
 		tps, nextTps = nextTps, nil
 		topLevel = false
 	}
 
-	// TODO: sort cases and functions based on their definition order
-	return strings.Join([]string{mainSrc, invokeSrc(objFunctionCases, createMod)}, "\n"), nil
+	return strings.Join([]string{
+		fmt.Sprintf("%#v", implementationCode),
+		mainSrc,
+		invokeSrc(objFunctionCases, createMod),
+	}, "\n"), nil
 }
 
 func dotLine(a *Statement, id string) *Statement {
@@ -311,6 +361,10 @@ func renderNameOrStruct(t types.Type) string {
 		return result
 	}
 	if named, ok := t.(*types.Named); ok {
+		if _, ok := named.Underlying().(*types.Interface); ok {
+			return "*" + formatIfaceImplName(named.Obj().Name())
+		}
+
 		// Assume local
 		//
 		// TODO: this isn't always true - we likely want to support returning
@@ -341,6 +395,36 @@ var checkErrStatement = If(Err().Op("!=").Nil()).Block(
 	// os.Exit(2)
 	Qual("os", "Exit").Call(Lit(2)),
 )
+
+func (ps *parseState) checkConstructor(obj types.Object) bool {
+	fn, isFn := obj.(*types.Func)
+	if !isFn {
+		return false
+	}
+	if fn.Name() != constructorFuncName {
+		return false
+	}
+
+	ps.constructor = fn
+	return true
+}
+
+func (ps *parseState) checkDaggerObjectIface(obj types.Object) bool {
+	named, isNamed := obj.Type().(*types.Named)
+	if !isNamed {
+		return false
+	}
+	iface, isIface := named.Underlying().(*types.Interface)
+	if !isIface {
+		return false
+	}
+	if named.Obj().Name() != daggerObjectIfaceName {
+		return false
+	}
+
+	ps.daggerObjectIfaceType = iface
+	return true
+}
 
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
 // for each function in that object
@@ -380,7 +464,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		if !ok {
 			return fmt.Errorf("expected %s to be a function, got %T", constructorFuncName, ps.constructor.Type())
 		}
-		paramSpecs, err := ps.parseParamSpecs(ps.constructor)
+		paramSpecs, err := ps.parseParamSpecs(nil, ps.constructor)
 		if err != nil {
 			return fmt.Errorf("failed to parse %s function: %w", constructorFuncName, err)
 		}
@@ -463,14 +547,11 @@ func (ps *parseState) fillObjectFunctionCase(
 
 			tp := varType
 			access := Id(varName)
-			tp2, access2 := findOptsAccessPattern(varType, Id(varName))
-			// only apply the access pattern if this is an inline opts struct wrapper or an Optional type wrapper
-			_, applyAccessPattern := tp2.(*types.Struct) // inline struct case
-			if !applyAccessPattern {
-				// check for Optional
-				_, applyAccessPattern = ps.isOptionalWrapper(tp2)
+			tp2, access2, ok, err := ps.findOptsAccessPattern(varType, Id(varName))
+			if err != nil {
+				return fmt.Errorf("failed to find opts access pattern for %s: %w", varName, err)
 			}
-			if applyAccessPattern {
+			if ok {
 				tp = tp2
 				access = access2
 			}
@@ -562,8 +643,12 @@ type parseState struct {
 	fset       *token.FileSet
 	methods    map[string][]method
 	moduleName string
+
 	// If it exists, constructor is the New func that returns the main module object
 	constructor *types.Func
+
+	// the DaggerObject interface type, used to check that user defined interfaces embed it
+	daggerObjectIfaceType *types.Interface
 }
 
 func (ps *parseState) isMainModuleObject(name string) bool {
@@ -613,7 +698,7 @@ func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec
 // declForFunc returns the *ast* func decl for the given Func type. This is needed
 // because the types.Func object does not have the comments associated with the type, which
 // we want to parse.
-func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
+func (ps *parseState) declForFunc(parentType *types.Named, fnType *types.Func) (*ast.FuncDecl, error) {
 	var recv *types.Named
 	if signature, ok := fnType.Type().(*types.Signature); ok && signature.Recv() != nil {
 		tp := signature.Recv().Type()
@@ -627,46 +712,93 @@ func (ps *parseState) declForFunc(fnType *types.Func) (*ast.FuncDecl, error) {
 		recv, _ = tp.(*types.Named)
 	}
 
+	var underlying types.Type
+	if parentType != nil {
+		underlying = parentType.Underlying()
+	}
+
 	tokenFile := ps.fset.File(fnType.Pos())
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", fnType.Name())
 	}
+
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue
 		}
 		for _, decl := range f.Decls {
-			fnDecl, ok := decl.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			if fnDecl.Name.Name != fnType.Name() {
-				continue
-			}
-			if recv != nil {
-				if len(fnDecl.Recv.List) != 1 {
-					continue
-				}
-
-				tp := fnDecl.Recv.List[0].Type
-				for {
-					if star, ok := tp.(*ast.StarExpr); ok {
-						tp = star.X
+			switch underlying.(type) {
+			case *types.Struct, nil:
+				// top-level func or method on object case
+				for _, decl := range f.Decls {
+					fnDecl, ok := decl.(*ast.FuncDecl)
+					if !ok {
 						continue
 					}
-					break
+					if fnDecl.Name.Name != fnType.Name() {
+						continue
+					}
+					if recv != nil {
+						if len(fnDecl.Recv.List) != 1 {
+							continue
+						}
+
+						tp := fnDecl.Recv.List[0].Type
+						for {
+							if star, ok := tp.(*ast.StarExpr); ok {
+								tp = star.X
+								continue
+							}
+							break
+						}
+						ident, ok := tp.(*ast.Ident)
+						if !ok {
+							continue
+						}
+						if ident.Name != recv.Obj().Name() {
+							continue
+						}
+					}
+					return fnDecl, nil
 				}
-				ident, ok := tp.(*ast.Ident)
+
+			case *types.Interface:
+				// interface method case
+				genDecl, ok := decl.(*ast.GenDecl)
 				if !ok {
 					continue
 				}
-				if ident.Name != recv.Obj().Name() {
-					continue
+				for _, spec := range genDecl.Specs {
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+					if typeSpec.Name.Name != parentType.Obj().Name() {
+						continue
+					}
+					iface, ok := typeSpec.Type.(*ast.InterfaceType)
+					if !ok {
+						continue
+					}
+					for _, ifaceField := range iface.Methods.List {
+						ifaceFieldFunc, ok := ifaceField.Type.(*ast.FuncType)
+						if !ok {
+							continue
+						}
+						ifaceFieldFuncName := ifaceField.Names[0].Name
+						if ifaceFieldFuncName != fnType.Name() {
+							continue
+						}
+						return &ast.FuncDecl{
+							Doc:  ifaceField.Doc,
+							Type: ifaceFieldFunc,
+						}, nil
+					}
 				}
 			}
-			return fnDecl, nil
 		}
 	}
+
 	return nil, fmt.Errorf("no decl for %s", fnType.Name())
 }
 
@@ -751,15 +883,20 @@ func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
 	return filepath.Base(tokenFile.Name()) == daggerGenFilename
 }
 
-func (ps *parseState) isOptionalWrapper(typ types.Type) (*types.Named, bool) {
+// returns whether the given type is an Optional and, if so, the wrapped type
+func (ps *parseState) isOptionalWrapper(typ types.Type) (types.Type, bool, error) {
 	named, ok := typ.(*types.Named)
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
-	if named.Obj().Name() == "Optional" && ps.isDaggerGenerated(named.Obj()) {
-		return named, true
+	if named.Obj().Name() != "Optional" || !ps.isDaggerGenerated(named.Obj()) {
+		return nil, false, nil
 	}
-	return nil, false
+	typeArgs := named.TypeArgs()
+	if typeArgs.Len() != 1 {
+		return nil, false, fmt.Errorf("optional type must have exactly one type argument")
+	}
+	return typeArgs.At(0), true, nil
 }
 
 // findOptsAccessPattern takes a type and a base statement (the name of a
@@ -770,18 +907,61 @@ func (ps *parseState) isOptionalWrapper(typ types.Type) (*types.Named, bool) {
 // This is essentially for helping resolve the pointeriness of types: a type of
 // **T and a variable p becomes T and &&p. This means we can *always* construct
 // an Opts object and unmarshal into it without having nil dereferences.
-func findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statement) {
+func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statement, bool, error) {
 	switch t := t.(type) {
 	case *types.Pointer:
 		// taking the address of an address isn't allowed - so we use a ptr
 		// helper function
-		t2, val := findOptsAccessPattern(t.Elem(), access)
-		return t2, Id("ptr").Call(val)
-	// case *types.Slice:
-	// 	t2, val := findOptsAccessPattern(t.Elem(), access)
-	// 	return t2, Index().Id(renderNameOrStruct(t.Elem())).Values(val)
+		t2, access2, ok, err := ps.findOptsAccessPattern(t.Elem(), access)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if ok {
+			return t2, Id("ptr").Call(access2), true, nil
+		}
+		return nil, nil, false, nil
+	case *types.Named:
+		wrappedType, isOptionalType, err := ps.isOptionalWrapper(t)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if isOptionalType {
+			wrappedNamed, ok := wrappedType.(*types.Named)
+			if !ok {
+				return t, access, true, nil
+			}
+			_, ok = wrappedNamed.Underlying().(*types.Interface)
+			if !ok {
+				return t, access, true, nil
+			}
+			return t, Id("convertOptionalVal").Call(
+				access,
+				Parens(Op("*").Id(formatIfaceImplName(wrappedNamed.Obj().Name()))).Dot("toIface"),
+			), true, nil
+		}
+
+		if _, ok := t.Underlying().(*types.Interface); ok {
+			return t, access.Dot("toIface").Call(), true, nil
+		}
+		return nil, nil, false, nil
+	case *types.Slice:
+		elemNamed, ok := t.Elem().(*types.Named)
+		if !ok {
+			return nil, nil, false, nil
+		}
+		_, ok = elemNamed.Underlying().(*types.Interface)
+		if !ok {
+			return nil, nil, false, nil
+		}
+		return t, Id("convertSlice").Call(
+			access,
+			Parens(Op("*").Id(formatIfaceImplName(elemNamed.Obj().Name()))).Dot("toIface"),
+		), true, nil
+	case *types.Struct:
+		// inline struct case
+		return t, access, true, nil
 	default:
-		return t, access
+		return nil, nil, false, nil
 	}
 }
 

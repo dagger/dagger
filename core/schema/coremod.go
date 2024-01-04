@@ -15,8 +15,7 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	compiledSchema    *CompiledSchema
-	introspectionJSON string
+	compiledSchema *CompiledSchema
 }
 
 var _ Mod = (*CoreMod)(nil)
@@ -35,17 +34,13 @@ func (m *CoreMod) Dependencies() []Mod {
 }
 
 func (m *CoreMod) Schema(_ context.Context) ([]SchemaResolvers, error) {
-	return []SchemaResolvers{m.compiledSchema.SchemaResolvers}, nil
-}
-
-func (m *CoreMod) SchemaIntrospectionJSON(_ context.Context) (string, error) {
-	return m.introspectionJSON, nil
+	return []SchemaResolvers{m.compiledSchema}, nil
 }
 
 func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:
-		return &PrimitiveType{}, true, nil
+		return &PrimitiveType{kind: typeDef.Kind}, true, nil
 
 	case core.TypeDefKindList:
 		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.ElementTypeDef, checkDirectDeps)
@@ -67,7 +62,15 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		if !ok {
 			return nil, false, nil
 		}
-		return &CoreModObject{coreMod: m, resolver: idableResolver}, true, nil
+		return &CoreModObject{
+			coreMod:  m,
+			name:     typeName,
+			resolver: idableResolver,
+		}, true, nil
+
+	case core.TypeDefKindInterface:
+		// core does not yet defined any interfaces
+		return nil, false, nil
 
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
@@ -75,8 +78,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, *m.compiledSchema.Compiled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
+	}
 	var schemaResp introspection.Response
-	if err := json.Unmarshal([]byte(m.introspectionJSON), &schemaResp); err != nil {
+	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
 	}
 	schema := schemaResp.Schema
@@ -153,6 +160,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 // CoreModObject represents objects from core (Container, Directory, etc.)
 type CoreModObject struct {
 	coreMod  *CoreMod
+	name     string
 	resolver IDableObjectResolver
 }
 
@@ -178,6 +186,17 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any
 
 func (obj *CoreModObject) SourceMod() Mod {
 	return obj.coreMod
+}
+
+func (obj *CoreModObject) TypeDef() *core.TypeDef {
+	// TODO: to support matching core types against interfaces, we will need to actually fill
+	// this out with the functions rather than just name
+	return &core.TypeDef{
+		Kind: core.TypeDefKindObject,
+		AsObject: &core.ObjectTypeDef{
+			Name: obj.name,
+		},
+	}
 }
 
 func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {

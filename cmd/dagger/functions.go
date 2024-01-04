@@ -51,22 +51,20 @@ var funcListCmd = &FuncCommand{
 			termenv.String("return type").Bold(),
 		)
 
-		for _, o := range fc.mod.Objects {
-			if o.AsObject != nil {
-				for _, fn := range o.AsObject.GetFunctions() {
-					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(fc.mod.Name) {
-						objName = "*" + objName
-					}
-
-					// TODO: Add another column with available verbs.
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-						objName,
-						fn.Name,
-						fn.Description,
-						printReturnType(fn.ReturnType),
-					)
+		for _, fnProvider := range fc.mod.AsFunctionProviders() {
+			for _, fn := range fnProvider.GetFunctions() {
+				providerName := fnProvider.ProviderName()
+				if gqlObjectName(providerName) == gqlObjectName(fc.mod.Name) {
+					providerName = "*" + providerName
 				}
+
+				// TODO: Add another column with available verbs.
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+					providerName,
+					fn.Name,
+					fn.Description,
+					printReturnType(fn.ReturnType),
+				)
 			}
 		}
 
@@ -89,6 +87,8 @@ func printReturnType(returnType *modTypeDef) (n string) {
 		return "Boolean"
 	case dagger.Objectkind:
 		return returnType.AsObject.Name
+	case dagger.Interfacekind:
+		return returnType.AsInterface.Name
 	case dagger.Listkind:
 		return fmt.Sprintf("[%s]", printReturnType(returnType.AsList.ElementTypeDef))
 	default:
@@ -394,7 +394,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	}
 
 	load = vtx.Task("loading objects")
-	modDef, err := loadModObjects(ctx, dag, mod)
+	modDef, err := loadModTypeDefs(ctx, dag, mod)
 	load.Done(err)
 	if err != nil {
 		return nil, nil, err
@@ -469,9 +469,9 @@ func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, err
 	return fc.traverse(cmd)
 }
 
-func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, obj *modObject) {
-	if obj != nil {
-		for _, fn := range obj.GetFunctions() {
+func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fnProvider functionProvider) {
+	if fnProvider != nil {
+		for _, fn := range fnProvider.GetFunctions() {
 			subCmd := fc.makeSubCmd(dag, fn)
 			cmd.AddCommand(subCmd)
 		}
@@ -487,11 +487,11 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				return err
 			}
 
-			obj := fn.ReturnType.AsObject
-			if obj == nil && fn.ReturnType.AsList != nil {
-				obj = fn.ReturnType.AsList.ElementTypeDef.AsObject
+			fnProvider := fn.ReturnType.AsFunctionProvider()
+			if fnProvider == nil && fn.ReturnType.AsList != nil {
+				fnProvider = fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 			}
-			fc.addSubCommands(cmd, dag, obj)
+			fc.addSubCommands(cmd, dag, fnProvider)
 
 			// Show help for first command that has the --help flag.
 			help, _ := cmd.Flags().GetBool("help")
@@ -507,7 +507,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			switch fn.ReturnType.Kind {
-			case dagger.Objectkind:
+			case dagger.Objectkind, dagger.Interfacekind:
 				if fc.OnSelectObjectLeaf == nil {
 					// there is no handling of this object and no further selections, error out
 					fc.showUsage = true
@@ -515,16 +515,16 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				}
 
 				// the top-level command may handle this via OnSelectObjectLeaf
-				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.AsObject.Name)
+				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.Name())
 				if err != nil {
 					fc.showUsage = true
 					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
 				}
 
 			case dagger.Listkind:
-				obj := fn.ReturnType.AsList.ElementTypeDef.AsObject
-				if obj != nil && len(obj.GetFunctions()) > 0 {
-					// we don't handle lists of objects w/ extra functions on any commands right now
+				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
+				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
+					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
 					fc.showUsage = true
 					return fmt.Errorf("%q requires a sub-command", cmd.Name())
 				}
@@ -573,10 +573,10 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 }
 
 func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, fn *modFunction, dag *dagger.Client) error {
-	fc.mod.LoadObject(fn.ReturnType)
+	fc.mod.LoadTypeDef(fn.ReturnType)
 
 	for _, arg := range fn.Args {
-		fc.mod.LoadObject(arg.TypeDef)
+		fc.mod.LoadTypeDef(arg.TypeDef)
 	}
 
 	for _, arg := range fn.Args {

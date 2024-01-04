@@ -130,6 +130,11 @@ type TypeDef {
   """
   withObject(name: String!, description: String): TypeDef!
 
+  """
+  Returns a TypeDef of kind Interface with the provided name.
+  """
+  withInterface(name: String!, description: String): TypeDef!
+
   "Adds a static field for an Object TypeDef, failing if the type is not an object."
   withField(
     "The name of the field in the object"
@@ -140,7 +145,7 @@ type TypeDef {
     description: String
   ): TypeDef!
 
-  "Adds a function for an Object TypeDef, failing if the type is not an object."
+  "Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds."
   withFunction(function: FunctionID!): TypeDef!
 
   "Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object."
@@ -151,6 +156,12 @@ type TypeDef {
   If kind is not OBJECT, this will be null.
   """
   asObject: ObjectTypeDef
+
+  """
+  If kind is INTERFACE, the interface-specific type definition.
+  If kind is not INTERFACE, this will be null.
+  """
+  asInterface: InterfaceTypeDef
 }
 
 """
@@ -174,6 +185,25 @@ type ObjectTypeDef {
 
   """
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String
+}
+
+"""
+A definition of a custom interface defined in a Module.
+"""
+type InterfaceTypeDef {
+  "The name of the interface"
+  name: String!
+
+  "The doc string for the interface, if any"
+  description: String
+
+  "Functions defined on this interface, if any"
+  functions: [Function!]
+
+  """
+  If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
   sourceModuleName: String
 }
@@ -228,6 +258,13 @@ enum TypeDefKind {
   Always paired with an ObjectTypeDef.
   """
   ObjectKind
+
+  """
+  A named type of functions that can be matched+implemented by other objects+interfaces.
+
+  Always paired with an InterfaceTypeDef.
+  """
+  InterfaceKind
 
   """
   A special kind used to signify that no value is returned.

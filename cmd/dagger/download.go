@@ -30,10 +30,10 @@ var downloadCmd = &FuncCommand{
 		}
 	},
 	BeforeRequest: func(_ *FuncCommand, cmd *cobra.Command, returnType *modTypeDef) error {
-		switch returnType.ObjectName() {
+		switch returnType.Name() {
 		case Directory, File, Container:
 			flag := cmd.Flags().Lookup("output")
-			if returnType.ObjectName() == Container && flag != nil && !flag.Changed {
+			if returnType.Name() == Container && flag != nil && !flag.Changed {
 				return fmt.Errorf("flag --output is required for containers")
 			}
 			return nil
