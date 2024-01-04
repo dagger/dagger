@@ -36,7 +36,7 @@ func (id *ID) DisplaySelf() string {
 		if id, ok := arg.Value.Value.(*Literal_Id); ok {
 			fmt.Fprintf(buf, "%s: {%s}", arg.Name, id.Id.Display())
 		} else {
-			fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST())
+			fmt.Fprintf(buf, "%s: %s", arg.Name, truncate(arg.Value.ToAST().String(), 100))
 		}
 		if ai == len(id.Args)-1 {
 			fmt.Fprintf(buf, ")")
@@ -213,4 +213,20 @@ func (lit *Literal) Tainted() bool {
 	default:
 		return false
 	}
+}
+
+func truncate(s string, length int) string {
+	if len(s) <= length {
+		return s
+	}
+
+	if length < 5 {
+		return s[:length]
+	}
+
+	dig := digest.FromString(s)
+	prefixLength := (length - 3) / 2
+	suffixLength := length - 3 - prefixLength
+	abbrev := s[:prefixLength] + "..." + s[len(s)-suffixLength:]
+	return fmt.Sprintf("%s:%d:%s", dig, len(s), abbrev)
 }
