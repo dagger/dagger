@@ -3349,6 +3349,29 @@ class InterfaceTypeDef(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    @typecheck
+    async def source_module_name(self) -> str | None:
+        """If this InterfaceTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str | None)
+
 
 class Label(Type):
     """A simple key value object that represents a label."""

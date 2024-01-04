@@ -168,16 +168,19 @@ func (m *UserMod) objectsAndInterfaces(ctx context.Context) (loadedObjects []*Us
 }
 
 func (m *UserMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	objs, err := m.Objects(ctx)
+	objs, ifaces, err := m.objectsAndInterfaces(ctx)
 	if err != nil {
 		return nil, err
 	}
-	typeDefs := make([]*core.TypeDef, 0, len(objs))
+	typeDefs := make([]*core.TypeDef, 0, len(objs)+len(ifaces))
 	for _, obj := range objs {
-		typeDef := obj.typeDef.Clone()
-		if typeDef.AsObject != nil {
-			typeDef.AsObject.SourceModuleName = m.Name()
-		}
+		typeDef := obj.TypeDef()
+		typeDef.AsObject.SourceModuleName = m.Name()
+		typeDefs = append(typeDefs, typeDef)
+	}
+	for _, iface := range ifaces {
+		typeDef := iface.TypeDef()
+		typeDef.AsInterface.SourceModuleName = m.Name()
 		typeDefs = append(typeDefs, typeDef)
 	}
 	return typeDefs, nil

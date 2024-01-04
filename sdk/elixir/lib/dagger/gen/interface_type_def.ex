@@ -4,8 +4,9 @@ defmodule Dagger.InterfaceTypeDef do
   @type t() :: %__MODULE__{
           description: Dagger.String.t() | nil,
           functions: [Dagger.Function.t()] | nil,
-          name: Dagger.String.t()
+          name: Dagger.String.t(),
+          source_module_name: Dagger.String.t() | nil
         }
   @derive Nestru.Decoder
-  defstruct [:description, :functions, :name]
+  defstruct [:description, :functions, :name, :source_module_name]
 end

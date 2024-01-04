@@ -79,8 +79,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, *m.compiledSchema.Compiled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
+	}
 	var schemaResp introspection.Response
-	if err := json.Unmarshal([]byte(m.introspectionJSON), &schemaResp); err != nil {
+	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
 	}
 	schema := schemaResp.Schema
@@ -186,8 +190,8 @@ func (obj *CoreModObject) SourceMod() Mod {
 }
 
 func (obj *CoreModObject) TypeDef() *core.TypeDef {
-	// TODO: update this with the core typedef support in https://github.com/dagger/dagger/pull/6293
-	// once that's merged
+	// TODO: to support matching core types against interfaces, we will need to actually fill
+	// this out with the functions rather than just name
 	return &core.TypeDef{
 		Kind: core.TypeDefKindObject,
 		AsObject: &core.ObjectTypeDef{

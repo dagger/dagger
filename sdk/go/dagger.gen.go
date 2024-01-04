@@ -3045,8 +3045,9 @@ type InterfaceTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	name        *string
+	description      *string
+	name             *string
+	sourceModuleName *string
 }
 
 // The doc string for the interface, if any
@@ -3102,6 +3103,19 @@ func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
 		return *r.name, nil
 	}
 	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.q.Select("sourceModuleName")
 
 	var response string
 

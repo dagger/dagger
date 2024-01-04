@@ -502,6 +502,8 @@ func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module
                     name
                 }
                 typeDefs: currentTypeDefs {
+                    kind
+                    optional
                     asObject {
                         name
                         sourceModuleName
@@ -682,7 +684,16 @@ func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module
 		return nil, fmt.Errorf("query module objects: %w", err)
 	}
 
-	return &moduleDef{Name: res.Mod.Name, Objects: res.TypeDefs}, nil
+	modDef := &moduleDef{Name: res.Mod.Name}
+	for _, typeDef := range res.TypeDefs {
+		switch typeDef.Kind {
+		case dagger.Objectkind:
+			modDef.Objects = append(modDef.Objects, typeDef)
+		case dagger.Interfacekind:
+			modDef.Interfaces = append(modDef.Interfaces, typeDef)
+		}
+	}
+	return modDef, nil
 }
 
 // moduleDef is a representation of dagger.Module.

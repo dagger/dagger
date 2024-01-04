@@ -418,6 +418,8 @@ type InterfaceTypeDef struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
 	Functions   []*Function `json:"functions"`
+	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
+	SourceModuleName string `json:"sourceModuleName"`
 
 	// Below are not in public API
 

@@ -506,7 +506,6 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			fnProvider := fn.ReturnType.AsFunctionProvider()
 			switch fn.ReturnType.Kind {
 			case dagger.Objectkind, dagger.Interfacekind:
 				if fc.OnSelectObjectLeaf == nil {
@@ -523,7 +522,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				}
 
 			case dagger.Listkind:
-				fnProvider = fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
+				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
 					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
 					fc.showUsage = true

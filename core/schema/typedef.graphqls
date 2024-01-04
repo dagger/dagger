@@ -201,6 +201,11 @@ type InterfaceTypeDef {
 
   "Functions defined on this interface, if any"
   functions: [Function!]
+
+  """
+  If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String
 }
 
 """
