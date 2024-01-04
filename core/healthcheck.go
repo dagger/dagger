@@ -33,10 +33,15 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 	rec := progrock.FromContext(ctx)
 
 	args := []string{"check", d.host}
+	allPortsSkipped := true
 	for _, port := range d.ports {
 		if !port.ExperimentalSkipHealthcheck {
 			args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
+			allPortsSkipped = false
 		}
+	}
+	if allPortsSkipped {
+		return nil
 	}
 
 	// show health-check logs in a --debug vertex
