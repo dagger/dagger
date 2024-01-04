@@ -15,7 +15,6 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	api            *APIServer
 	compiledSchema *CompiledSchema
 }
 

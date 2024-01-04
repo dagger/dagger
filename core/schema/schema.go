@@ -93,7 +93,7 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge core schema: %w", err)
 	}
-	api.core = &CoreMod{api: api, compiledSchema: coreSchema}
+	api.core = &CoreMod{compiledSchema: coreSchema}
 	api.defaultDeps, err = newModDeps([]Mod{api.core})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create default deps: %w", err)
