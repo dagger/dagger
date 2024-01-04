@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix shim panic when exec-ing an unknown command
+time: 2024-01-04T00:30:32.476564652+08:00
+custom:
+  Author: Juneezee
+  PR: "6356"
