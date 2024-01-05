@@ -104,7 +104,7 @@ func TestBasic(t *testing.T) {
 			},
 		).
 		Append(pointT, "shiftLeft")
-	expectedEnc, err := dagql.ID[*points.Point]{ID: expectedID}.Encode()
+	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
 	assert.Equal(t, 7, res.Point.Y)
@@ -487,7 +487,7 @@ func TestIDsReflectQuery(t *testing.T) {
 			},
 		).
 		Append(pointT, "shiftLeft")
-	expectedEnc, err := dagql.ID[*points.Point]{ID: expectedID}.Encode()
+	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.Id, expectedEnc)
 

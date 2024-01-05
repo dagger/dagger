@@ -31,6 +31,29 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 
 	DirectiveLocations.Install(srv)
 
+	for _, class := range []dagql.ObjectType{
+		dagql.NewClass[*Directive](dagql.ClassOpts[*Directive]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*EnumValue](dagql.ClassOpts[*EnumValue]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*Field](dagql.ClassOpts[*Field]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*InputValue](dagql.ClassOpts[*InputValue]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*Schema](dagql.ClassOpts[*Schema]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*Type](dagql.ClassOpts[*Type]{
+			NoIDs: true,
+		}),
+	} {
+		srv.InstallObject(class)
+	}
+
 	dagql.Fields[*Schema]{
 		dagql.Func("queryType", func(ctx context.Context, self *Schema, args struct{}) (*Type, error) {
 			return self.QueryType(), nil
