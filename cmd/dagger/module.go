@@ -757,6 +757,17 @@ func (m *moduleDef) GetInterface(name string) *modInterface {
 	return nil
 }
 
+// GetInterface retrieves a saved object or interface type definition from the module as a functionProvider.
+func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
+	if obj := m.GetObject(name); obj != nil {
+		return obj
+	}
+	if iface := m.GetInterface(name); iface != nil {
+		return iface
+	}
+	return nil
+}
+
 func (m *moduleDef) GetMainObject() *modObject {
 	return m.GetObject(m.Name)
 }
@@ -794,6 +805,7 @@ type modTypeDef struct {
 type functionProvider interface {
 	ProviderName() string
 	GetFunctions() []*modFunction
+	GetFunction(name string) (*modFunction, error)
 }
 
 func (t *modTypeDef) Name() string {
@@ -848,12 +860,12 @@ func (o *modObject) GetFunctions() []*modFunction {
 
 func (o *modObject) GetFunction(name string) (*modFunction, error) {
 	for _, fn := range o.Functions {
-		if fn.Name == name {
+		if fn.Name == name || cliName(fn.Name) == name {
 			return fn, nil
 		}
 	}
 	for _, f := range o.Fields {
-		if f.Name == name {
+		if f.Name == name || cliName(f.Name) == name {
 			return &modFunction{
 				Name:        f.Name,
 				Description: f.Description,
@@ -879,6 +891,15 @@ func (o *modInterface) GetFunctions() []*modFunction {
 	fns := make([]*modFunction, 0, len(o.Functions))
 	fns = append(fns, o.Functions...)
 	return fns
+}
+
+func (o *modInterface) GetFunction(name string) (*modFunction, error) {
+	for _, fn := range o.Functions {
+		if fn.Name == name || cliName(fn.Name) == name {
+			return fn, nil
+		}
+	}
+	return nil, fmt.Errorf("no function '%s' in interface type '%s'", name, o.Name)
 }
 
 // modList is a representation of dagger.ListTypeDef.

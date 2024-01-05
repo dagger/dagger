@@ -45,7 +45,7 @@ var funcListCmd = &FuncCommand{
 	Short: `List available functions`,
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-		o := fc.mod.GetMainObject()
+		var o functionProvider = fc.mod.GetMainObject()
 		fmt.Fprintf(tw, "%s\t%s\n",
 			termenv.String("Name").Bold(),
 			termenv.String("Description").Bold(),
@@ -58,7 +58,7 @@ var funcListCmd = &FuncCommand{
 				return err
 			}
 			nextType := nextFunc.ReturnType
-			if nextType.AsObject != nil {
+			if nextType.AsFunctionProvider() != nil {
 				// sipsma explains why 'nextType.AsObject' is not enough:
 				// > when we're returning the hierarchies of TypeDefs from the API,
 				// > and an object shows up as an output/input type to a function,
@@ -69,7 +69,7 @@ var funcListCmd = &FuncCommand{
 				// > you'd at best be using O(n^2) space in the result,
 				// > and at worst cause json serialization errors due to cyclic references
 				// > (i.e. with* functions on an object that return the object itself).
-				o = fc.mod.GetObject(nextType.AsObject.Name)
+				o = fc.mod.GetFunctionProvider(nextType.Name())
 				continue
 			}
 			// FIXME: handle arrays of objects
@@ -86,7 +86,7 @@ var funcListCmd = &FuncCommand{
 				desc = "-"
 			}
 			fmt.Fprintf(tw, "%s\t%s\n",
-				fn.Name,
+				cliName(fn.Name),
 				desc,
 			)
 		}
