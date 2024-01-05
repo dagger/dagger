@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/iancoleman/strcase"
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/iancoleman/strcase"
 )
 
 type TypeScriptSdk struct{}
@@ -68,7 +69,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 	ctr := t.Base("").
 		// Add sdk directory without runtime nor codegen binary
 		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
-			Exclude: []string{"runtime, codegen"},
+			Exclude: []string{"runtime", "codegen"},
 		})).
 		// Add codegen binary into a special path
 		WithFile(codegenBinPath, dag.Host().File("/src/codegen")).

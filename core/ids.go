@@ -1,33 +1,33 @@
 package core
 
 import (
-	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/dagql"
 )
 
-type ContainerID = resourceid.ID[Container]
+type ContainerID = dagql.ID[*Container]
 
-type ServiceID = resourceid.ID[Service]
+type ServiceID = dagql.ID[*Service]
 
-type CacheVolumeID = resourceid.ID[CacheVolume]
+type CacheVolumeID = dagql.ID[*CacheVolume]
 
-type DirectoryID = resourceid.ID[Directory]
+type DirectoryID = dagql.ID[*Directory]
 
-type FileID = resourceid.ID[File]
+type FileID = dagql.ID[*File]
 
-type SecretID = resourceid.ID[Secret]
+type SecretID = dagql.ID[*Secret]
 
-type ModuleID = resourceid.ID[Module]
+type ModuleID = dagql.ID[*Module]
 
-type FunctionID = resourceid.ID[Function]
+type FunctionID = dagql.ID[*Function]
 
-type FunctionArgID = resourceid.ID[FunctionArg]
+type FunctionArgID = dagql.ID[*FunctionArg]
 
-type TypeDefID = resourceid.ID[TypeDef]
+type TypeDefID = dagql.ID[*TypeDef]
 
-type GeneratedCodeID = resourceid.ID[GeneratedCode]
+type GeneratedCodeID = dagql.ID[*GeneratedCode]
 
-type GitRepositoryID = resourceid.ID[GitRepository]
+type GitRepositoryID = dagql.ID[*GitRepository]
 
-type GitRefID = resourceid.ID[GitRef]
+type GitRefID = dagql.ID[*GitRef]
 
-// SocketID is in the socket package (to avoid circular imports)
+type SocketID = dagql.ID[*Socket]

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Filename is the name of the module config file.
@@ -15,24 +16,12 @@ const Filename = "dagger.json"
 
 // Config is the module config loaded from dagger.json.
 type Config struct {
-	// The name of the module.
-	Name string `json:"name"`
-
-	// The root directory of the module's project, which may be above the module
-	// source code.
-	Root string `json:"root,omitempty"`
-
-	// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
-	SDK string `json:"sdk,omitempty"`
-
-	// Include only these file globs when loading the module root.
-	Include []string `json:"include,omitempty"`
-
-	// Exclude these file globs when loading the module root.
-	Exclude []string `json:"exclude,omitempty"`
-
-	// Modules that this module depends on.
-	Dependencies []string `json:"dependencies,omitempty"`
+	Name         string   `json:"name" field:"true" doc:"The name of the module."`
+	Root         string   `json:"root,omitempty" field:"true" doc:"The root directory of the module's project, which may be above the module source code."`
+	SDK          string   `json:"sdk" field:"true" doc:"Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation."`
+	Include      []string `json:"include,omitempty" field:"true" doc:"Include only these file globs when loading the module root."`
+	Exclude      []string `json:"exclude,omitempty" field:"true" doc:"Exclude these file globs when loading the module root."`
+	Dependencies []string `json:"dependencies,omitempty" field:"true" doc:"Modules that this module depends on."`
 }
 
 func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
@@ -42,6 +31,17 @@ func NewConfig(name, sdkNameOrRef, rootPath string) *Config {
 		SDK:  sdkNameOrRef,
 	}
 	return cfg
+}
+
+func (cfg *Config) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleConfig",
+		NonNull:   true,
+	}
+}
+
+func (cfg *Config) TypeDescription() string {
+	return "Static configuration for a module (e.g. parsed contents of dagger.json)"
 }
 
 func (cfg *Config) RootAndSubpath(modSourceDir string) (string, string, error) {

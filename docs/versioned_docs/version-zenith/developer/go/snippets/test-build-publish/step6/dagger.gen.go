@@ -4725,12 +4725,12 @@ type TypeDefKind string
 func (TypeDefKind) IsEnum() {}
 
 const (
-	Booleankind TypeDefKind = "BooleanKind"
-	Integerkind TypeDefKind = "IntegerKind"
-	Listkind    TypeDefKind = "ListKind"
-	Objectkind  TypeDefKind = "ObjectKind"
-	Stringkind  TypeDefKind = "StringKind"
-	Voidkind    TypeDefKind = "VoidKind"
+	BooleanKind TypeDefKind = "BooleanKind"
+	IntegerKind TypeDefKind = "IntegerKind"
+	ListKind    TypeDefKind = "ListKind"
+	ObjectKind  TypeDefKind = "ObjectKind"
+	StringKind  TypeDefKind = "StringKind"
+	VoidKind    TypeDefKind = "VoidKind"
 )
 
 type Client struct {
@@ -4909,16 +4909,16 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				dag.TypeDef().WithObject("Mymod").
 					WithFunction(
 						dag.Function("Test",
-							dag.TypeDef().WithKind(Stringkind)).
-							WithArg("nodeVersion", dag.TypeDef().WithKind(Stringkind).WithOptional(true))).
+							dag.TypeDef().WithKind(StringKind)).
+							WithArg("nodeVersion", dag.TypeDef().WithKind(StringKind).WithOptional(true))).
 					WithFunction(
 						dag.Function("Build",
 							dag.TypeDef().WithObject("Directory")).
-							WithArg("nodeVersion", dag.TypeDef().WithKind(Stringkind).WithOptional(true))).
+							WithArg("nodeVersion", dag.TypeDef().WithKind(StringKind).WithOptional(true))).
 					WithFunction(
 						dag.Function("Publish",
-							dag.TypeDef().WithKind(Stringkind)).
-							WithArg("nodeVersion", dag.TypeDef().WithKind(Stringkind).WithOptional(true)))), nil
+							dag.TypeDef().WithKind(StringKind)).
+							WithArg("nodeVersion", dag.TypeDef().WithKind(StringKind).WithOptional(true)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

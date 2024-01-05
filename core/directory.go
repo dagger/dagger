@@ -16,28 +16,41 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	LLB      *pb.Definition `json:"llb"`
-	Dir      string         `json:"dir"`
-	Platform specs.Platform `json:"platform"`
-	Pipeline pipeline.Path  `json:"pipeline"`
+	Query *Query
+
+	LLB      *pb.Definition
+	Dir      string
+	Platform Platform
 
 	// Services necessary to provision the directory.
-	Services ServiceBindings `json:"services,omitempty"`
+	Services ServiceBindings
 }
 
-func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
+func (*Directory) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Directory",
+		NonNull:   true,
+	}
+}
+
+func (*Directory) TypeDescription() string {
+	return "A directory."
+}
+
+var _ HasPBDefinitions = (*Directory)(nil)
+
+func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if dir.LLB != nil {
 		defs = append(defs, dir.LLB)
@@ -47,7 +60,7 @@ func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
 		if ctr == nil {
 			continue
 		}
-		ctrDefs, err := ctr.PBDefinitions()
+		ctrDefs, err := ctr.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -56,42 +69,46 @@ func (dir *Directory) PBDefinitions() ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *Directory {
+func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
+	if query == nil {
+		panic("query must be non-nil")
+	}
 	return &Directory{
+		Query:    query,
 		LLB:      def,
 		Dir:      dir,
 		Platform: platform,
-		Pipeline: pipeline.Copy(),
 		Services: services,
 	}
 }
 
-func NewScratchDirectory(pipeline pipeline.Path, platform specs.Platform) *Directory {
+func NewScratchDirectory(query *Query, platform Platform) *Directory {
+	if query == nil {
+		panic("query must be non-nil")
+	}
 	return &Directory{
+		Query:    query,
 		Dir:      "/",
 		Platform: platform,
-		Pipeline: pipeline.Copy(),
 	}
 }
 
-func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform))
+func NewDirectorySt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {
+	if query == nil {
+		panic("query must be non-nil")
+	}
+	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewDirectory(ctx, def.ToPB(), dir, pipeline, platform, services), nil
-}
-
-func (dir *Directory) ID() (DirectoryID, error) {
-	return resourceid.Encode(dir)
+	return NewDirectory(query, def.ToPB(), dir, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (dir *Directory) Clone() *Directory {
 	cp := *dir
-	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
 }
@@ -99,17 +116,7 @@ func (dir *Directory) Clone() *Directory {
 var _ pipeline.Pipelineable = (*Directory)(nil)
 
 func (dir *Directory) PipelinePath() pipeline.Path {
-	// TODO(vito): test
-	return dir.Pipeline
-}
-
-// Directory is digestible so that it can be recorded as an output of the
-// --debug vertex that created it.
-var _ resourceid.Digestible = (*Directory)(nil)
-
-// Digest returns the directory's content hash.
-func (dir *Directory) Digest() (digest.Digest, error) {
-	return stableDigest(dir)
+	return dir.Query.Pipeline
 }
 
 func (dir *Directory) State() (llb.State, error) {
@@ -138,7 +145,7 @@ func (dir *Directory) StateWithSourcePath() (llb.State, error) {
 }
 
 func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
-	def, err := st.Marshal(ctx, llb.Platform(dir.Platform))
+	def, err := st.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
 	if err != nil {
 		return nil
 	}
@@ -149,20 +156,19 @@ func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
 
 func (dir *Directory) WithPipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Directory, error) {
 	dir = dir.Clone()
-	dir.Pipeline = dir.Pipeline.Add(pipeline.Pipeline{
-		Name:        name,
-		Description: description,
-		Labels:      labels,
-	})
+	dir.Query = dir.Query.WithPipeline(name, description, labels)
 	return dir, nil
 }
 
-func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) (*buildkit.Result, error) {
+func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if dir.LLB == nil {
 		return nil, nil
 	}
 
-	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	svcs := dir.Query.Services
+	bk := dir.Query.Buildkit
+
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +183,7 @@ func (dir *Directory) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *S
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +218,13 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 	})
 }
 
-func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	svcs := dir.Query.Services
+	bk := dir.Query.Buildkit
+
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -261,10 +270,13 @@ func (dir *Directory) Entries(ctx context.Context, bk *buildkit.Client, svcs *Se
 // so it will only mount and unmount the filesystem one time.
 // However, this requires to maintain buildkit code and is not mandatory for now until
 // we hit performances issues.
-func (dir *Directory) Glob(ctx context.Context, bk *buildkit.Client, svcs *Services, src string, pattern string) ([]string, error) {
+func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	svcs := dir.Query.Services
+	bk := dir.Query.Buildkit
+
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +332,7 @@ func (dir *Directory) Glob(ctx context.Context, bk *buildkit.Client, svcs *Servi
 
 		// Handle recursive option
 		if entry.IsDir() {
-			subEntries, err := dir.Glob(ctx, bk, svcs, entryPath, pattern)
+			subEntries, err := dir.Glob(ctx, entryPath, pattern)
 			if err != nil {
 				return nil, err
 			}
@@ -372,8 +384,12 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	return dir, nil
 }
 
-func (dir *Directory) Directory(ctx context.Context, bk *buildkit.Client, svcs *Services, subdir string) (*Directory, error) {
+func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
 	dir = dir.Clone()
+
+	svcs := dir.Query.Services
+	bk := dir.Query.Buildkit
+
 	dir.Dir = path.Join(dir.Dir, subdir)
 
 	// check that the directory actually exists so the user gets an error earlier
@@ -390,7 +406,10 @@ func (dir *Directory) Directory(ctx context.Context, bk *buildkit.Client, svcs *
 	return dir, nil
 }
 
-func (dir *Directory) File(ctx context.Context, bk *buildkit.Client, svcs *Services, file string) (*File, error) {
+func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
+	svcs := dir.Query.Services
+	bk := dir.Query.Buildkit
+
 	err := validateFileName(file)
 	if err != nil {
 		return nil, err
@@ -408,9 +427,9 @@ func (dir *Directory) File(ctx context.Context, bk *buildkit.Client, svcs *Servi
 	}
 
 	return &File{
+		Query:    dir.Query,
 		LLB:      dir.LLB,
 		File:     path.Join(dir.Dir, file),
-		Pipeline: dir.Pipeline,
 		Platform: dir.Platform,
 		Services: dir.Services,
 	}, nil
@@ -446,7 +465,13 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 	return dir, nil
 }
 
-func (dir *Directory) WithFile(ctx context.Context, destPath string, src *File, permissions fs.FileMode, owner *Ownership) (*Directory, error) {
+func (dir *Directory) WithFile(
+	ctx context.Context,
+	destPath string,
+	src *File,
+	permissions *int,
+	owner *Ownership,
+) (*Directory, error) {
 	dir = dir.Clone()
 
 	destSt, err := dir.State()
@@ -489,7 +514,7 @@ type mergeStateInput struct {
 	IncludePatterns []string
 	ExcludePatterns []string
 
-	Permissions fs.FileMode
+	Permissions *int
 	Owner       *Ownership
 }
 
@@ -506,8 +531,9 @@ func mergeStates(input mergeStateInput) llb.State {
 	if input.DestFileName == "" && input.SrcFileName != "" {
 		input.DestFileName = input.SrcFileName
 	}
-	if input.Permissions != 0 {
-		copyInfo.Mode = &input.Permissions
+	if input.Permissions != nil {
+		fm := fs.FileMode(*input.Permissions)
+		copyInfo.Mode = &fm
 	}
 	if input.Owner != nil {
 		input.Owner.Opt().SetCopyOption(copyInfo)
@@ -648,13 +674,10 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 	return dir, nil
 }
 
-func (dir *Directory) Export(
-	ctx context.Context,
-	bk *buildkit.Client,
-	host *Host,
-	svcs *Services,
-	destPath string,
-) (rerr error) {
+func (dir *Directory) Export(ctx context.Context, destPath string) (rerr error) {
+	svcs := dir.Query.Services
+	bk := dir.Query.Buildkit
+
 	var defPB *pb.Definition
 	if dir.Dir != "" {
 		src, err := dir.State()
@@ -665,7 +688,7 @@ func (dir *Directory) Export(
 			CopyDirContentsOnly: true,
 		}))
 
-		def, err := src.Marshal(ctx, llb.Platform(dir.Platform))
+		def, err := src.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
 		if err != nil {
 			return err
 		}
@@ -682,7 +705,7 @@ func (dir *Directory) Export(
 	)
 	defer vtx.Done(rerr)
 
-	detach, _, err := svcs.StartBindings(ctx, bk, dir.Services)
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return err
 	}

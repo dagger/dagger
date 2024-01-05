@@ -4,22 +4,27 @@ import (
 	"context"
 	"sync"
 
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/secrets"
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	// Name specifies the arbitrary name/id of the secret.
+	Query *Query
+	// Name specifies the name of the secret.
 	Name string `json:"name,omitempty"`
 }
 
-func NewDynamicSecret(name string) *Secret {
-	return &Secret{
-		Name: name,
+func (*Secret) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Secret",
+		NonNull:   true,
 	}
+}
+
+func (*Secret) TypeDescription() string {
+	return "A reference to a secret value, which can be handled more safely than the value itself."
 }
 
 func (secret *Secret) Clone() *Secret {
@@ -27,12 +32,8 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-func (secret *Secret) ID() (SecretID, error) {
-	return resourceid.Encode(secret)
-}
-
-func (secret *Secret) Digest() (digest.Digest, error) {
-	return stableDigest(secret)
+func (secret *Secret) Plaintext(ctx context.Context) ([]byte, error) {
+	return secret.Query.Secrets.GetSecret(ctx, secret.Name)
 }
 
 func NewSecretStore() *SecretStore {
@@ -50,16 +51,11 @@ type SecretStore struct {
 
 // AddSecret adds the secret identified by user defined name with its plaintext
 // value to the secret store.
-func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []byte) (SecretID, error) {
+func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []byte) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-
-	secret := NewDynamicSecret(name)
-
-	// add the plaintext to the map
-	store.secrets[secret.Name] = plaintext
-
-	return secret.ID()
+	store.secrets[name] = plaintext
+	return nil
 }
 
 // GetSecret returns the plaintext secret value.
@@ -71,21 +67,12 @@ func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []
 // build.
 //
 // In all other cases, a SecretID is expected.
-func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
+func (store *SecretStore) GetSecret(ctx context.Context, name string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-
-	var name string
-	if secret, err := SecretID(idOrName).Decode(); err == nil {
-		name = secret.Name
-	} else {
-		name = idOrName
-	}
-
 	plaintext, ok := store.secrets[name]
 	if !ok {
 		return nil, errors.Wrapf(secrets.ErrNotFound, "secret %s", name)
 	}
-
 	return plaintext, nil
 }

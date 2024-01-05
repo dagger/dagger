@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path"
 	"strconv"
 	"strings"
@@ -19,10 +20,49 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/user"
 	"github.com/pkg/errors"
+	"github.com/dagger/dagger/dagql"
 )
 
 type HasPBDefinitions interface {
-	PBDefinitions() ([]*pb.Definition, error)
+	PBDefinitions(context.Context) ([]*pb.Definition, error)
+}
+
+func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definition, error) {
+	switch x := value.(type) {
+	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:
+		// nothing to do
+		return nil, nil
+	case dagql.Enumerable: // dagql.Array
+		defs := []*pb.Definition{}
+		for i := 1; i < x.Len(); i++ {
+			val, err := x.Nth(i)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get nth value: %w", err)
+			}
+			elemDefs, err := collectPBDefinitions(ctx, val)
+			if err != nil {
+				return nil, fmt.Errorf("failed to link nth value dependency blobs: %w", err)
+			}
+			defs = append(defs, elemDefs...)
+		}
+		return defs, nil
+	case dagql.Derefable: // dagql.Nullable
+		if inner, ok := x.Deref(); ok {
+			return collectPBDefinitions(ctx, inner)
+		} else {
+			return nil, nil
+		}
+	case dagql.Wrapper: // dagql.Instance
+		return collectPBDefinitions(ctx, x.Unwrap())
+	case HasPBDefinitions:
+		return x.PBDefinitions(ctx)
+	default:
+		// NB: being SUPER cautious for now, since this feels a bit spooky to drop
+		// on the floor. might be worth just implementing HasPBDefinitions for
+		// everything. (would be nice to just skip scalars though.)
+		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
+		return nil, nil
+	}
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -54,7 +94,7 @@ func defToState(def *pb.Definition) (llb.State, error) {
 	return llb.NewState(defop), nil
 }
 
-func resolveUIDGID(ctx context.Context, fsSt llb.State, bk *buildkit.Client, platform specs.Platform, owner string) (*Ownership, error) {
+func resolveUIDGID(ctx context.Context, fsSt llb.State, bk *buildkit.Client, platform Platform, owner string) (*Ownership, error) {
 	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
 
 	var uid, gid int
@@ -74,7 +114,7 @@ func resolveUIDGID(ctx context.Context, fsSt llb.State, bk *buildkit.Client, pla
 
 	var fs fs.FS
 	if uname != "" || gname != "" {
-		fs, err = reffs.OpenState(ctx, bk, fsSt, llb.Platform(platform))
+		fs, err = reffs.OpenState(ctx, bk, fsSt, llb.Platform(platform.Spec()))
 		if err != nil {
 			return nil, fmt.Errorf("open fs state for name->id: %w", err)
 		}
@@ -288,4 +328,8 @@ func resolveProvenance(ctx context.Context, bk *buildkit.Client, st llb.State) (
 		return nil, errors.Errorf("no provenance was resolved")
 	}
 	return p, nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

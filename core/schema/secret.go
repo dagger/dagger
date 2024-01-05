@@ -4,76 +4,71 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 )
 
 type secretSchema struct {
-	*APIServer
+	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &secretSchema{}
 
-func (s *secretSchema) Name() string {
-	return "secret"
-}
+func (s *secretSchema) Install() {
+	dagql.Fields[*core.Query]{
+		dagql.Func("setSecret", s.setSecret).
+			Doc(`Sets a secret given a user defined name to its plaintext and returns the secret.`,
+				`The plaintext value is limited to a size of 128000 bytes.`).
+			ArgDoc("name", `The user defined name for this secret`).
+			ArgDoc("plaintext", `The plaintext of the secret`).
+			ArgSensitive("plaintext").
+			Impure(),
 
-func (s *secretSchema) Schema() string {
-	return Secret
-}
+		dagql.Func("secret", s.secret).
+			Doc(`Reference a secret by name.`),
+	}.Install(s.srv)
 
-func (s *secretSchema) Resolvers() Resolvers {
-	rs := Resolvers{
-		"Query": ObjectResolver{
-			"secret":    ToResolver(s.secret),
-			"setSecret": ToResolver(s.setSecret),
-		},
-	}
-
-	ResolveIDable[core.Secret](rs, "Secret", ObjectResolver{
-		"plaintext": ToResolver(s.plaintext),
-	})
-
-	return rs
+	dagql.Fields[*core.Secret]{
+		dagql.Func("plaintext", s.plaintext).Impure().
+			Doc(`The value of this secret.`),
+	}.Install(s.srv)
 }
 
 type secretArgs struct {
-	ID core.SecretID
+	Name string
 }
 
-func (s *secretSchema) secret(ctx context.Context, parent any, args secretArgs) (*core.Secret, error) {
-	return args.ID.Decode()
-}
-
-type SecretPlaintext string
-
-// This method ensures that the progrock vertex info does not display the plaintext.
-func (s SecretPlaintext) MarshalText() ([]byte, error) {
-	return []byte("***"), nil
+func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
+	return parent.NewSecret(args.Name), nil
 }
 
 type setSecretArgs struct {
 	Name      string
-	Plaintext SecretPlaintext
+	Plaintext string `sensitive:"true"` // NB: redundant with ArgSensitive above
 }
 
-func (s *secretSchema) setSecret(ctx context.Context, parent any, args setSecretArgs) (*core.Secret, error) {
-	secretID, err := s.secrets.AddSecret(ctx, args.Name, []byte(args.Plaintext))
-	if err != nil {
-		return nil, err
+func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (dagql.Instance[*core.Secret], error) {
+	var inst dagql.Instance[*core.Secret]
+	if err := parent.Secrets.AddSecret(ctx, args.Name, []byte(args.Plaintext)); err != nil {
+		return inst, err
 	}
-
-	return secretID.Decode()
+	// NB: to avoid putting the plaintext value in the graph, return a freshly
+	// minted Object that just gets the secret by name
+	if err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+		Field: "secret",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(args.Name)},
+		},
+	}); err != nil {
+		return inst, err
+	}
+	return inst, nil
 }
 
-func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args any) (string, error) {
-	id, err := parent.ID()
+func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args struct{}) (dagql.String, error) {
+	bytes, err := parent.Plaintext(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	bytes, err := s.secrets.GetSecret(ctx, id.String())
-	if err != nil {
-		return "", err
-	}
-
-	return string(bytes), nil
+	return dagql.NewString(string(bytes)), nil
 }

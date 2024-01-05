@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/internal/mage
 
-go 1.21
+go 1.21.3
 
 require (
 	dagger.io/dagger v0.9.5

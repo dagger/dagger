@@ -16,7 +16,7 @@ defmodule Dagger.File do
   )
 
   (
-    @doc "Writes the file to a file path on the host.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"output.txt\").\n\n## Optional Arguments\n\n* `allow_parent_dir_path` - If allowParentDirPath is true, the path argument can be a directory path, in which case\nthe file will be created in that directory."
+    @doc "Writes the file to a file path on the host.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"output.txt\").\n\n## Optional Arguments\n\n* `allow_parent_dir_path` - If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory."
     @spec export(t(), Dagger.String.t(), keyword()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
     def export(%__MODULE__{} = file, path, optional_args \\ []) do
@@ -35,7 +35,7 @@ defmodule Dagger.File do
   )
 
   (
-    @doc "Retrieves the content-addressed identifier of the file."
+    @doc "A unique identifier for this File."
     @spec id(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
     def id(%__MODULE__{} = file) do
       selection = select(file.selection, "id")
@@ -44,7 +44,7 @@ defmodule Dagger.File do
   )
 
   (
-    @doc "Gets the size of the file, in bytes."
+    @doc "Retrieves the size of the file, in bytes."
     @spec size(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
     def size(%__MODULE__{} = file) do
       selection = select(file.selection, "size")

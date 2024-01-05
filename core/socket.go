@@ -1,13 +1,13 @@
-package socket
+package core
 
 import (
 	"context"
 	"io"
 	"net"
+	"net/url"
 
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/sshforward"
-	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Socket struct {
@@ -19,24 +19,21 @@ type Socket struct {
 	HostAddr     string `json:"host_addr,omitempty"`
 }
 
-type ID = resourceid.ID[Socket]
-
-func (socket *Socket) Digest() (digest.Digest, error) {
-	id, err := socket.ID()
-	if err != nil {
-		return "", err
+func (*Socket) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Socket",
+		NonNull:   true,
 	}
-	return digest.FromString(string(id)), nil
+}
+
+func (*Socket) TypeDescription() string {
+	return "A Unix or TCP/IP socket that can be mounted into a container."
 }
 
 func NewHostUnixSocket(absPath string) *Socket {
 	return &Socket{
 		HostPath: absPath,
 	}
-}
-
-func (socket *Socket) ID() (ID, error) {
-	return resourceid.Encode(socket)
 }
 
 func NewHostIPSocket(proto string, addr string) *Socket {
@@ -46,8 +43,17 @@ func NewHostIPSocket(proto string, addr string) *Socket {
 	}
 }
 
-func (socket *Socket) IsHost() bool {
-	return socket.HostPath != "" || socket.HostAddr != ""
+func (socket *Socket) SSHID() string {
+	u := &url.URL{}
+	switch {
+	case socket.HostPath != "":
+		u.Scheme = "unix"
+		u.Path = socket.HostPath
+	default:
+		u.Scheme = socket.HostProtocol
+		u.Host = socket.HostAddr
+	}
+	return u.String()
 }
 
 func (socket *Socket) Server() (sshforward.SSHServer, error) {

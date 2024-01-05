@@ -6,7 +6,7 @@ defmodule Dagger.TypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc "If kind is INTERFACE, the interface-specific type definition.\nIf kind is not INTERFACE, this will be null."
+    @doc ""
     @spec as_interface(t()) :: {:ok, Dagger.InterfaceTypeDef.t() | nil} | {:error, term()}
     def as_interface(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asInterface")
@@ -20,7 +20,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc "If kind is LIST, the list-specific type definition.\nIf kind is not LIST, this will be null."
+    @doc ""
     @spec as_list(t()) :: {:ok, Dagger.ListTypeDef.t() | nil} | {:error, term()}
     def as_list(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asList")
@@ -34,7 +34,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc "If kind is OBJECT, the object-specific type definition.\nIf kind is not OBJECT, this will be null."
+    @doc ""
     @spec as_object(t()) :: {:ok, Dagger.ObjectTypeDef.t() | nil} | {:error, term()}
     def as_object(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asObject")
@@ -48,7 +48,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc ""
+    @doc "A unique identifier for this TypeDef."
     @spec id(t()) :: {:ok, Dagger.TypeDefID.t()} | {:error, term()}
     def id(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "id")
@@ -57,8 +57,8 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc "The kind of type this is (e.g. primitive, list, object)"
-    @spec kind(t()) :: {:ok, Dagger.TypeDefKind.t() | nil} | {:error, term()}
+    @doc ""
+    @spec kind(t()) :: {:ok, Dagger.TypeDefKind.t()} | {:error, term()}
     def kind(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "kind")
       execute(selection, type_def.client)
@@ -66,7 +66,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc "Whether this type can be set to null. Defaults to false."
+    @doc ""
     @spec optional(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
     def optional(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "optional")
@@ -79,7 +79,12 @@ defmodule Dagger.TypeDef do
     @spec with_constructor(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
     def with_constructor(%__MODULE__{} = type_def, function) do
       selection = select(type_def.selection, "withConstructor")
-      selection = arg(selection, "function", function)
+
+      (
+        {:ok, id} = Dagger.Function.id(function)
+        selection = arg(selection, "function", id)
+      )
+
       %Dagger.TypeDef{selection: selection, client: type_def.client}
     end
   )
@@ -90,7 +95,11 @@ defmodule Dagger.TypeDef do
     def with_field(%__MODULE__{} = type_def, name, type_def, optional_args \\ []) do
       selection = select(type_def.selection, "withField")
       selection = arg(selection, "name", name)
-      selection = arg(selection, "typeDef", type_def)
+
+      (
+        {:ok, id} = Dagger.TypeDef.id(type_def)
+        selection = arg(selection, "typeDef", id)
+      )
 
       selection =
         if is_nil(optional_args[:description]) do
@@ -108,7 +117,12 @@ defmodule Dagger.TypeDef do
     @spec with_function(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
     def with_function(%__MODULE__{} = type_def, function) do
       selection = select(type_def.selection, "withFunction")
-      selection = arg(selection, "function", function)
+
+      (
+        {:ok, id} = Dagger.Function.id(function)
+        selection = arg(selection, "function", id)
+      )
+
       %Dagger.TypeDef{selection: selection, client: type_def.client}
     end
   )
@@ -146,13 +160,18 @@ defmodule Dagger.TypeDef do
     @spec with_list_of(t(), Dagger.TypeDef.t()) :: Dagger.TypeDef.t()
     def with_list_of(%__MODULE__{} = type_def, element_type) do
       selection = select(type_def.selection, "withListOf")
-      selection = arg(selection, "elementType", element_type)
+
+      (
+        {:ok, id} = Dagger.TypeDef.id(element_type)
+        selection = arg(selection, "elementType", id)
+      )
+
       %Dagger.TypeDef{selection: selection, client: type_def.client}
     end
   )
 
   (
-    @doc "Returns a TypeDef of kind Object with the provided name.\n\nNote that an object's fields and functions may be omitted if the intent is\nonly to refer to an object. This is how functions are able to return their\nown object, or any other circular reference.\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments\n\n* `description` -"
+    @doc "Returns a TypeDef of kind Object with the provided name.\n\nNote that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments\n\n* `description` -"
     @spec with_object(t(), Dagger.String.t(), keyword()) :: Dagger.TypeDef.t()
     def with_object(%__MODULE__{} = type_def, name, optional_args \\ []) do
       selection = select(type_def.selection, "withObject")

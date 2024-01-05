@@ -11,16 +11,16 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/gorilla/websocket"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/dagger/dagger/dagql/idproto"
 	"golang.org/x/sync/errgroup"
 )
 
-func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string, svcs *Services) (string, http.Handler, error) {
+func (container *Container) ShellEndpoint(svcID *idproto.ID) (string, http.Handler, error) {
 	shellID := identity.NewID()
 	endpoint := "shells/" + shellID
 	return endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +41,7 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string, 
 		bklog.G(r.Context()).Debugf("shell handler for %s has been upgraded", endpoint)
 		defer bklog.G(context.Background()).Debugf("shell handler for %s finished", endpoint)
 
-		if err := container.runShell(r.Context(), ws, bk, progSock, clientMetadata, svcs); err != nil {
+		if err := container.runShell(r.Context(), svcID, ws, clientMetadata); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
 			err = ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			if err != nil {
@@ -53,13 +53,11 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string, 
 
 func (container *Container) runShell(
 	ctx context.Context,
+	svcID *idproto.ID,
 	conn *websocket.Conn,
-	bk *buildkit.Client,
-	progSock string,
 	clientMetadata *engine.ClientMetadata,
-	svcs *Services,
 ) error {
-	svc, err := container.Service(ctx, bk, progSock)
+	svc, err := container.Service(ctx)
 	if err != nil {
 		return err
 	}
@@ -91,7 +89,8 @@ func (container *Container) runShell(
 	}
 
 	runningSvc, err := svc.Start(
-		ctx, bk, svcs,
+		ctx,
+		svcID,
 		true,
 		func(w io.Writer, svcProc bkgw.ContainerProcess) {
 			eg.Go(func() error {

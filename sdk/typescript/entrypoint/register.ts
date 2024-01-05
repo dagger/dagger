@@ -115,11 +115,11 @@ function addArg(args: FunctionArg[]): (fct: Function_) => Function_ {
  */
 function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
   switch (type.kind) {
-    case TypeDefKind.Objectkind:
+    case TypeDefKind.ObjectKind:
       return dag.typeDef().withObject((type as ObjectTypeDef).name)
-    case TypeDefKind.Listkind:
+    case TypeDefKind.ListKind:
       return dag.typeDef().withListOf(addTypeDef((type as ListTypeDef).typeDef))
-    case TypeDefKind.Voidkind:
+    case TypeDefKind.VoidKind:
       return dag.typeDef().withKind(type.kind).withOptional(true)
     default:
       return dag.typeDef().withKind(type.kind)

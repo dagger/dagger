@@ -137,23 +137,23 @@ export function typeNameToTypedef(typeName: string): TypeDef<TypeDefKind> {
   // the type of list
   if (typeName.endsWith("[]")) {
     return {
-      kind: TypeDefKind.Listkind,
+      kind: TypeDefKind.ListKind,
       typeDef: typeNameToTypedef(typeName.slice(0, typeName.length - 2)),
     }
   }
 
   switch (typeName) {
     case "string":
-      return { kind: TypeDefKind.Stringkind }
+      return { kind: TypeDefKind.StringKind }
     case "number":
-      return { kind: TypeDefKind.Integerkind }
+      return { kind: TypeDefKind.IntegerKind }
     case "boolean":
-      return { kind: TypeDefKind.Booleankind }
+      return { kind: TypeDefKind.BooleanKind }
     case "void":
-      return { kind: TypeDefKind.Voidkind }
+      return { kind: TypeDefKind.VoidKind }
     default:
       return {
-        kind: TypeDefKind.Objectkind,
+        kind: TypeDefKind.ObjectKind,
         name: typeName,
       }
   }

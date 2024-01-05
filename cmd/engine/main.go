@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/user"
@@ -260,9 +261,16 @@ func main() { //nolint:gocyclo
 		}
 
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+		slogOpts := &slog.HandlerOptions{
+			// AddSource causes the handler to compute the source code position of the
+			// log statement and add a SourceKey attribute to the output.
+			AddSource: true,
+		}
 		if cfg.Debug {
+			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
 		}
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, slogOpts)))
 		if cfg.Trace {
 			logrus.SetLevel(logrus.TraceLevel)
 		}
@@ -292,8 +300,8 @@ func main() { //nolint:gocyclo
 		stream := grpc_middleware.ChainStreamServer(streamTracer, grpcerrors.StreamServerInterceptor)
 
 		bklog.G(ctx).Debug("creating engine GRPC server")
-		opts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
-		server := grpc.NewServer(opts...)
+		grpcOpts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
+		server := grpc.NewServer(grpcOpts...)
 
 		// relative path does not work with nightlyone/lockfile
 		root, err := filepath.Abs(cfg.Root)

@@ -202,8 +202,8 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer close(doneCh)
 		req = req.WithContext(bklog.WithLogger(req.Context(), lg))
-		bklog.G(req.Context()).Tracef("http handler for client conn to path %s", req.URL.Path)
-		defer bklog.G(req.Context()).Tracef("http handler for client conn done: %s", clientMetadata.ClientID)
+		bklog.G(req.Context()).Debugf("http handler for client conn to path %s", req.URL.Path)
+		defer bklog.G(req.Context()).Debugf("http handler for client conn done: %s", clientMetadata.ClientID)
 
 		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))

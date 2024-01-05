@@ -1,5 +1,7 @@
 package main
 
+import "context"
+
 func New(
 	strs []string,
 	ints []int,
@@ -34,6 +36,9 @@ type Impl struct {
 
 	Obj     *Directory
 	ObjList []*Directory
+
+	Others      []*OtherImpl
+	OtherIfaces []LocalOtherIface
 }
 
 func (m *Impl) Void() error {
@@ -128,13 +133,38 @@ func (m *Impl) OtherIface() *OtherImpl {
 	return &OtherImpl{Foo: m.Str + "other"}
 }
 
-func (m *Impl) OtherIfaceList() []*OtherImpl {
+func (m *Impl) StaticOtherIfaceList() []*OtherImpl {
 	return []*OtherImpl{
 		{Foo: m.Str + "other1"},
 		{Foo: m.Str + "other2"},
 	}
 }
 
+func (m *Impl) WithOtherIface(other *OtherImpl) *Impl {
+	m.Others = append(m.Others, other)
+	return m
+}
+
+func (m *Impl) DynamicOtherIfaceList() []*OtherImpl {
+	return m.Others
+}
+
+func (m *Impl) WithOtherIfaceByIface(other LocalOtherIface) *Impl {
+	m.OtherIfaces = append(m.OtherIfaces, other)
+	return m
+}
+
+func (m *Impl) DynamicOtherIfaceByIfaceList() []LocalOtherIface {
+	return m.OtherIfaces
+}
+
 type OtherImpl struct {
 	Foo string
+}
+
+// LocalOtherIface is the same as OtherIface and is used here to test interface
+// to interface compatibility.
+type LocalOtherIface interface {
+	DaggerObject
+	Foo(ctx context.Context) (string, error)
 }

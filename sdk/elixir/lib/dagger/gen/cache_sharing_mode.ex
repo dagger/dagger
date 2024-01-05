@@ -3,7 +3,7 @@ defmodule Dagger.CacheSharingMode do
   @moduledoc "Sharing mode of the cache volume."
   @type t() :: :LOCKED | :PRIVATE | :SHARED
   (
-    @doc "Shares the cache volume amongst many build pipelines,\nbut will serialize the writes"
+    @doc "Shares the cache volume amongst many build pipelines, but will serialize the writes"
     @spec locked() :: :LOCKED
     def locked() do
       :LOCKED

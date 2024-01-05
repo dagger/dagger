@@ -5,64 +5,77 @@ import (
 	"runtime/debug"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 )
 
 type serviceSchema struct {
-	*APIServer
-
-	svcs *core.Services
+	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &serviceSchema{}
 
-func (s *serviceSchema) Name() string {
-	return "service"
+func (s *serviceSchema) Install() {
+	dagql.Fields[*core.Container]{
+		dagql.Func("asService", s.containerAsService).
+			Doc(`Turn the container into a Service.`,
+				`Be sure to set any exposed ports before this conversion.`),
+	}.Install(s.srv)
+
+	dagql.Fields[*core.Service]{
+		dagql.NodeFunc("hostname", s.hostname).
+			Doc(`Retrieves a hostname which can be used by clients to reach this container.`),
+
+		dagql.NodeFunc("ports", s.ports).
+			Doc(`Retrieves the list of ports provided by the service.`),
+
+		dagql.NodeFunc("endpoint", s.endpoint).
+			Doc(`Retrieves an endpoint that clients can use to reach this container.`,
+				`If no port is specified, the first exposed port is used. If none exist an error is returned.`,
+				`If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.`).
+			ArgDoc("port", `The exposed port number for the endpoint`).
+			ArgDoc("scheme", `Return a URL with the given scheme, eg. http for http://`),
+
+		dagql.NodeFunc("start", s.start).
+			Impure().
+			Doc(`Start the service and wait for its health checks to succeed.`,
+				`Services bound to a Container do not need to be manually started.`),
+
+		dagql.NodeFunc("stop", s.stop).
+			Impure().
+			Doc(`Stop the service.`),
+	}.Install(s.srv)
 }
 
-func (s *serviceSchema) Schema() string {
-	return Service
+func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
+	return parent.Service(ctx)
 }
 
-func (s *serviceSchema) Resolvers() Resolvers {
-	rs := Resolvers{
-		"Container": ObjectResolver{
-			"asService": ToResolver(s.containerAsService),
-		},
+func (s *serviceSchema) hostname(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (dagql.String, error) {
+	hn, err := parent.Self.Hostname(ctx, parent.ID())
+	if err != nil {
+		return "", err
 	}
-
-	ResolveIDable[core.Service](rs, "Service", ObjectResolver{
-		"hostname": ToResolver(s.hostname),
-		"ports":    ToResolver(s.ports),
-		"endpoint": ToResolver(s.endpoint),
-		"start":    ToResolver(s.start),
-		"stop":     ToResolver(s.stop),
-	})
-
-	return rs
+	return dagql.NewString(hn), nil
 }
 
-func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args any) (*core.Service, error) {
-	return parent.Service(ctx, s.bk, s.progSockPath)
-}
-
-func (s *serviceSchema) hostname(ctx context.Context, parent *core.Service, args any) (string, error) {
-	return parent.Hostname(ctx, s.svcs)
-}
-
-func (s *serviceSchema) ports(ctx context.Context, parent *core.Service, args any) ([]core.Port, error) {
-	return parent.Ports(ctx, s.svcs)
+func (s *serviceSchema) ports(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (dagql.Array[core.Port], error) {
+	return parent.Self.Ports(ctx, parent.ID())
 }
 
 type serviceEndpointArgs struct {
-	Port   int
-	Scheme string
+	Port   dagql.Optional[dagql.Int]
+	Scheme string `default:""`
 }
 
-func (s *serviceSchema) endpoint(ctx context.Context, parent *core.Service, args serviceEndpointArgs) (string, error) {
-	return parent.Endpoint(ctx, s.svcs, args.Port, args.Scheme)
+func (s *serviceSchema) endpoint(ctx context.Context, parent dagql.Instance[*core.Service], args serviceEndpointArgs) (dagql.String, error) {
+	str, err := parent.Self.Endpoint(ctx, parent.ID(), args.Port.Value.Int(), args.Scheme)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(str), nil
 }
 
-func (s *serviceSchema) start(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
+func (s *serviceSchema) start(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (core.ServiceID, error) {
 	defer func() {
 		if err := recover(); err != nil {
 			debug.PrintStack()
@@ -70,19 +83,22 @@ func (s *serviceSchema) start(ctx context.Context, parent *core.Service, args an
 		}
 	}()
 
-	running, err := s.svcs.Start(ctx, parent)
-	if err != nil {
-		return "", err
+	if err := parent.Self.StartAndTrack(ctx, parent.ID()); err != nil {
+		return core.ServiceID{}, err
 	}
 
-	return running.Service.ID()
+	return dagql.NewID[*core.Service](parent.ID()), nil
 }
 
-func (s *serviceSchema) stop(ctx context.Context, parent *core.Service, args any) (core.ServiceID, error) {
-	err := s.svcs.Stop(ctx, s.bk, parent)
-	if err != nil {
-		return "", err
+func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (core.ServiceID, error) {
+	if err := parent.Self.Stop(ctx, parent.ID()); err != nil {
+		return core.ServiceID{}, err
 	}
 
-	return parent.ID()
+	err := parent.Self.Stop(ctx, parent.ID())
+	if err != nil {
+		return core.ServiceID{}, err
+	}
+
+	return dagql.NewID[*core.Service](parent.ID()), nil
 }

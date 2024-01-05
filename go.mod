@@ -18,8 +18,6 @@ require (
 	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/dagger/graphql v0.0.0-20231212185230-c34d978a0776
-	github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.15.2
 	github.com/google/uuid v1.5.0
@@ -68,7 +66,6 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/jackpal/gateway v1.0.7
 	github.com/juju/ansiterm v1.0.0
-	github.com/koron-go/prefixw v1.0.0
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
@@ -84,7 +81,7 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/sourcegraph/conc v0.3.0
 	github.com/vito/midterm v0.1.4
-	github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007
+	github.com/vito/progrock v0.10.2-0.20240101100611-2d9fa8bf30ad
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/oauth2 v0.15.0
 	golang.org/x/tools v0.15.0
@@ -278,3 +275,7 @@ require (
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+// replace github.com/vito/progrock => ./progrock
+
+// replace github.com/vito/dagql => ./dagql

@@ -165,6 +165,10 @@ func inlineTUI(
 	tape.Focus(focus)
 	tape.RevealErrored(revealErrored)
 
+	if os.Getenv("IDS") != "" {
+		tape.RenderIDs(true)
+	}
+
 	if debug {
 		tape.MessageLevel(progrock.MessageLevel_DEBUG)
 	}

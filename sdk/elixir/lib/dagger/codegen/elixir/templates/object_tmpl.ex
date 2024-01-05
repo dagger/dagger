@@ -5,16 +5,33 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   alias Dagger.Codegen.Elixir.Module, as: Mod
   alias Dagger.Codegen.Elixir.Type
 
+  # TODO: retire this and find a better way
   @id_modules [
     "CacheVolumeID",
     "ContainerID",
     "DirectoryID",
+    "EnvVariableID",
+    "FieldTypeDefID",
     "FileID",
-    "ProjectCommandID",
-    "ProjectID",
+    "FunctionArgID",
+    "FunctionCallArgValueID",
+    "FunctionCallID",
+    "FunctionID",
+    "GeneratedCodeID",
+    "GitRefID",
+    "GitRepositoryID",
+    "HostID",
+    "InterfaceTypeDefID",
+    "LabelID",
+    "ListTypeDefID",
+    "ModuleConfigID",
+    "ModuleID",
+    "ObjectTypeDefID",
+    "PortID",
     "SecretID",
+    "ServiceID",
     "SocketID",
-    "ServiceID"
+    "TypeDefID"
   ]
 
   def render(full_type, types) do
@@ -198,7 +215,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
        when field_name != "moduleConfig" do
     name = if(name == "Query", do: "Client", else: name)
     mod_name = Mod.from_name(name)
-    args = render_args(args)
+    args = render_args(field_name, args)
 
     quote do
       selection = select(unquote(mod_var_name).selection, unquote(field_name))
@@ -224,15 +241,19 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          },
          types
        ) do
-    args = render_args(args)
+    args = render_args(field_name, args)
 
+    return_module = Mod.from_name(name)
+    loader = "load#{name}FromID"
+
+    # TODO(vito): technically we just need to select the ID, but selecting a
+    # single field here seems to confuse the query builder. maybe pre-fetching
+    # fields will come in useful anyway?
     selection_fields =
       types
       |> Enum.find(fn %{"name" => typename} -> typename == name end)
       |> then(fn %{"fields" => fields} -> get_in(fields, [Access.all(), "name"]) end)
       |> Enum.join(" ")
-
-    return_module = Mod.from_name(name)
 
     quote do
       selection = select(unquote(mod_var_name).selection, unquote(field_name))
@@ -241,13 +262,24 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       unquote_splicing(args)
 
       with {:ok, data} <- execute(selection, unquote(mod_var_name).client) do
-        Nestru.decode_from_list_of_maps(data, unquote(return_module))
+        {:ok,
+         data
+         |> Enum.map(fn value ->
+           elem_selection = Dagger.QueryBuilder.Selection.query()
+           elem_selection = select(elem_selection, unquote(loader))
+           elem_selection = arg(elem_selection, "id", value["id"])
+
+           %unquote(return_module){
+             selection: elem_selection,
+             client: unquote(mod_var_name).client
+           }
+         end)}
       end
     end
   end
 
   defp format_function_body(field_name, {mod_var_name, args}, type_ref, _types) do
-    args = render_args(args)
+    args = render_args(field_name, args)
 
     execute_block =
       case type_ref do
@@ -337,32 +369,41 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     "* `#{name}` - #{description}"
   end
 
-  defp render_args(args) do
-    required_args = render_required_args(args)
+  defp render_args(field_name, args) do
+    required_args = render_required_args(field_name, args)
     optional_args = render_optional_args(args)
 
     required_args ++ optional_args
   end
 
-  defp render_required_args(args) do
+  defp render_required_args(field_name, args) do
     for arg <- args,
         arg["type"]["kind"] == "NON_NULL" do
       name = arg |> fun_arg_name() |> Function.format_var_name()
 
-      case arg do
-        %{"type" => %{"ofType" => %{"name" => type_name}}}
-        when type_name in @id_modules ->
-          mod = Mod.from_name(Mod.id_module_to_module(type_name))
+      basic =
+        quote do
+          selection = arg(selection, unquote(arg["name"]), unquote(to_macro_var(name)))
+        end
 
-          quote do
-            {:ok, id} = unquote(mod).id(unquote(to_macro_var(name)))
-            selection = arg(selection, unquote(arg["name"]), id)
-          end
+      if String.starts_with?(field_name, "load") and String.ends_with?(field_name, "FromID") do
+        # The point of loadFooFromID is to take an ID, so we don't want to
+        # translate it to the real object.
+        basic
+      else
+        case arg do
+          %{"type" => %{"ofType" => %{"name" => type_name}}}
+          when type_name in @id_modules ->
+            mod = Mod.from_name(Mod.id_module_to_module(type_name))
 
-        _ ->
-          quote do
-            selection = arg(selection, unquote(arg["name"]), unquote(to_macro_var(name)))
-          end
+            quote do
+              {:ok, id} = unquote(mod).id(unquote(to_macro_var(name)))
+              selection = arg(selection, unquote(arg["name"]), id)
+            end
+
+          _ ->
+            basic
+        end
       end
     end
   end

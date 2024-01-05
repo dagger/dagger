@@ -450,10 +450,6 @@ github.com/creack/pty v1.1.18/go.mod h1:MOBLtS5ELjhRRrroQr9kyvTxUAFNvYEK993ew/Vr
 github.com/cyphar/filepath-securejoin v0.2.2/go.mod h1:FpkQEhXnPnOthhzymB7CGsFk2G9VLXONKD9G7QGMM+4=
 github.com/cyphar/filepath-securejoin v0.2.4 h1:Ugdm7cg7i6ZK6x3xDF1oEu1nfkyfH53EtKeQYTC3kyg=
 github.com/cyphar/filepath-securejoin v0.2.4/go.mod h1:aPGpWjXOXUn2NCNjFvBE6aRxGGx79pTxQpKOJNYHHl4=
-github.com/dagger/graphql v0.0.0-20231212185230-c34d978a0776 h1:q4NFtiS8UuAMOesRfzXivddzqMyR+OrWF9omzgYM5Sc=
-github.com/dagger/graphql v0.0.0-20231212185230-c34d978a0776/go.mod h1:jxe8vuRdvEbdLR5nrc6F7gLPmPeJhGe2DbIgEok+pCA=
-github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e h1:5fyK89J8og+XMW5JetgXzaxRhoI9UrS0BhrNskj4cuA=
-github.com/dagger/graphql-go-tools v0.0.0-20231012004527-77189e400b6e/go.mod h1:SXt7tSY8l+OVghRddofY+eDdv8EK82N0JlrrfrkqFEw=
 github.com/dave/jennifer v1.7.0 h1:uRbSBH9UTS64yXbh4FrMHfgfY762RD+C7bUPKODpSJE=
 github.com/dave/jennifer v1.7.0/go.mod h1:nXbxhEmQfOZhWml3D1cDK5M1FLnMSozpbFN/m3RmGZc=
 github.com/davecgh/go-spew v0.0.0-20151105211317-5215b55f46b2/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -981,8 +977,6 @@ github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa02
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
-github.com/koron-go/prefixw v1.0.0 h1:p7OC1ffZ/z+Miz0j/Ddt4fVYr8g4W9BKWkViAZ+1LmI=
-github.com/koron-go/prefixw v1.0.0/go.mod h1:WZvD0yrbCrkJD23tq03BhCu1ucn5ZenktcXt39QbPyk=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.2.0/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
@@ -1462,10 +1456,12 @@ github.com/vektah/gqlparser/v2 v2.5.10 h1:6zSM4azXC9u4Nxy5YmdmGu4uKamfwsdKTwp5zs
 github.com/vektah/gqlparser/v2 v2.5.10/go.mod h1:1rCcfwB2ekJofmluGWXMSEnPMZgbxzwj6FaZ/4OT8Cc=
 github.com/vishvananda/netlink v1.1.0/go.mod h1:cTgwzPIzzgDAYoQrMm0EdrjRUBkTqKYppBueQtXaqoE=
 github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df/go.mod h1:JP3t17pCcGlemwknint6hfoeCVQrEMVwxRLRjXpq+BU=
+github.com/vito/dagql v0.0.0-20240111010033-b09d56910ae6 h1:ML+D8BcFUq5MB+3ULa++/yH84gSI8DDNriwCIBUpDBA=
+github.com/vito/dagql v0.0.0-20240111010033-b09d56910ae6/go.mod h1:KAoi0FPXtjVeE0IMwHUkYysR3BJIW9HkpQPJQ3d3pXg=
 github.com/vito/midterm v0.1.4 h1:SALq5mQ+AgzeZxjL4loB6Uk5TZc9JMyX2ELA/NVH65c=
 github.com/vito/midterm v0.1.4/go.mod h1:Mm3u6lrpzo2EFSJbwksKOdottTJzYePK8c1KJy4aRbk=
-github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007 h1:RMNnjVKSImroyzJMINdkfNmlxFiBLGP30tjBH4GYgBE=
-github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007/go.mod h1:ysw2W2gc20Snmlc0a34JbWO45HPM0oXO8IC59hyFc3k=
+github.com/vito/progrock v0.10.2-0.20240101100611-2d9fa8bf30ad h1:zvCBKtqnK5KqesuEIC0TipFV7z/7//zPdexE5ajRclY=
+github.com/vito/progrock v0.10.2-0.20240101100611-2d9fa8bf30ad/go.mod h1:4489nVbNazrRfzrnZQvawC1adlEuhJ5bmz1bBFKB7Qs=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 h1:qZcnPZbiX8gGs3VmipVc3ft29vPYBZzlox/04Von6+k=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63/go.mod h1:KoQ+3z63GUJzQ7AhU0AWQNU+LPda2EwL/cx1PlbDzVQ=

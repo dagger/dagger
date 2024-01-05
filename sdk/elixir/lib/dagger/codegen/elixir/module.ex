@@ -1,16 +1,33 @@
 defmodule Dagger.Codegen.Elixir.Module do
   @moduledoc false
 
+  # TODO: retire this and find a better way
   @id_modules_map %{
     "CacheVolumeID" => "CacheVolume",
     "ContainerID" => "Container",
     "DirectoryID" => "Directory",
+    "EnvVariableID" => "EnvVariable",
+    "FieldTypeDefID" => "FieldTypeDef",
     "FileID" => "File",
-    "ProjectCommandID" => "ProjectCommand",
-    "ProjectID" => "Project",
+    "FunctionArgID" => "FunctionArg",
+    "FunctionCallArgValueID" => "FunctionCallArgValue",
+    "FunctionCallID" => "FunctionCall",
+    "FunctionID" => "Function",
+    "GeneratedCodeID" => "GeneratedCode",
+    "GitRefID" => "GitRef",
+    "GitRepositoryID" => "GitRepository",
+    "HostID" => "Host",
+    "InterfaceTypeDefID" => "InterfaceTypeDef",
+    "LabelID" => "Label",
+    "ListTypeDefID" => "ListTypeDef",
+    "ModuleConfigID" => "ModuleConfig",
+    "ModuleID" => "Module",
+    "ObjectTypeDefID" => "ObjectTypeDef",
+    "PortID" => "Port",
     "SecretID" => "Secret",
+    "ServiceID" => "Service",
     "SocketID" => "Socket",
-    "ServiceID" => "Service"
+    "TypeDefID" => "TypeDef"
   }
 
   defmacro id_modules(), do: quote(do: Map.keys(@id_modules_map))

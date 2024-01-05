@@ -1,4 +1,4 @@
-import { dag, ID } from "../api/client.gen.js"
+import { dag } from "../api/client.gen.js"
 
 /**
  * Import all given typescript files so that trigger their decorators
@@ -34,7 +34,7 @@ export async function loadArg(value: string): Promise<any> {
     parsedValue = value
   }
 
-  // If it's a string, it might contain an identifier to load ,or it might be a hidden array
+  // If it's a string, it might contain an identifier to load, or it might be a hidden array
   if (typeof parsedValue === "string") {
     const [source] = parsedValue.split(":")
 
@@ -43,7 +43,7 @@ export async function loadArg(value: string): Promise<any> {
       // Workaround to call get any object that has an id
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      return dag[`load${type}FromID`](parsedValue as ID)
+      return dag[`load${type}FromID`](parsedValue)
     }
   }
 

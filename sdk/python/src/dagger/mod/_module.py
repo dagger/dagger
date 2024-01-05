@@ -213,6 +213,9 @@ class Module:
         mod = self._mod
 
         for obj, obj_resolvers in resolvers.items():
+            if obj.name == "":
+                raise InternalError("Unexpected empty object name")
+
             typedef = dag.type_def().with_object(
                 obj.name,
                 description=obj.doc,
