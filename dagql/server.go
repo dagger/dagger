@@ -70,10 +70,14 @@ var coreScalars = []ScalarType{
 
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
-	rootClass := NewClass[T]()
+	rootClass := NewClass[T](ClassOpts[T]{
+		// NB: there's nothing actually stopping this from being a thing, except it
+		// currently confuses the Dagger Go SDK. could be a nifty way to pass
+		// around global config I suppose.
+		NoIDs: true,
+	})
 	srv := &Server{
 		Cache: NewCache(),
-
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
@@ -90,38 +94,53 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-// Merge installs every type from the other Server into this server.
-//
-// In the event of a conflict, an error is returned.
-//
-// Built-in types (Boolean, Int, Float, String) are not merged.
-func (s *Server) Merge(other *Server, merge func(a, b Type) Type) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
-	other.installLock.Lock()
-	defer other.installLock.Unlock()
-	for name, obj := range other.objects {
-		s.objects[name] = obj
-	}
-	for name, scalar := range other.scalars {
-		s.scalars[name] = scalar
-	}
-	for name, typeDef := range other.typeDefs {
-		s.typeDefs[name] = typeDef
-	}
-}
-
 // Root returns the root object of the server. It is suitable for passing to
 // Resolve to resolve a query.
 func (s *Server) Root() Object {
 	return s.root
 }
 
+type Loadable interface {
+	Load(context.Context, *Server) (Typed, error)
+}
+
 // InstallObject installs the given Object type into the schema.
 func (s *Server) InstallObject(class ObjectType) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
+	s.installObjectLocked(class)
+}
+
+func (s *Server) installObjectLocked(class ObjectType) {
 	s.objects[class.TypeName()] = class
+
+	if idType, hasID := class.IDType(); hasID {
+		s.scalars[idType.TypeName()] = idType
+		s.Root().ObjectType().Extend(
+			FieldSpec{
+				Name: fmt.Sprintf("load%sFromID", class.TypeName()),
+				Type: class.Typed(),
+				Pure: false, // no need to cache this; what if the ID is impure?
+				Args: []InputSpec{
+					{
+						Name: "id",
+						Type: idType,
+					},
+				},
+			},
+			func(ctx context.Context, self Object, args map[string]Typed) (Typed, error) {
+				idable, ok := args["id"].(IDable)
+				if !ok {
+					return nil, fmt.Errorf("load%sFromID: expected IDable, got %T", class.TypeName(), args["id"])
+				}
+				id := idable.ID()
+				if id.Type.ToAST().NamedType != class.TypeName() {
+					return nil, fmt.Errorf("load%sFromID: expected ID of type %q, got %q", class.TypeName(), class.TypeName(), id.Type.ToAST().NamedType)
+				}
+				return s.Load(ctx, idable.ID())
+			},
+		)
+	}
 }
 
 // InstallScalar installs the given Scalar type into the schema.

@@ -31,6 +31,9 @@ func builtinOrTyped(val any) (Typed, error) {
 	default:
 		valT := reflect.TypeOf(val)
 		valV := reflect.ValueOf(val)
+		if valT == nil {
+			return nil, fmt.Errorf("cannot convert %T to a Typed value", val)
+		}
 		switch valT.Kind() {
 		case reflect.Slice:
 			elem, err := builtinOrTyped(reflect.New(valT.Elem()).Elem().Interface())

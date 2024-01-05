@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 
@@ -18,15 +19,61 @@ import (
 // The class is defined by a set of fields, which are installed into the class
 // dynamically at runtime.
 type Class[T Typed] struct {
+	inner   T
+	idable  bool
 	fields  map[string]*Field[T]
 	fieldsL *sync.Mutex
 }
 
+type ClassOpts[T Typed] struct {
+	// NoIDs disables the default "id" field and disables the IDType method.
+	NoIDs bool
+
+	// Typed contains the Typed value whose Type() determines the class's type.
+	//
+	// In the simple case, we can just use a zero-value, but it is also allowed
+	// to use a dynamic Typed value.
+	Typed T
+}
+
 // NewClass returns a new empty class for a given type.
-func NewClass[T Typed]() Class[T] {
-	return Class[T]{
+func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
+	var opts ClassOpts[T]
+	if len(opts_) > 0 {
+		opts = opts_[0]
+	}
+	class := Class[T]{
+		inner:   opts.Typed,
 		fields:  map[string]*Field[T]{},
 		fieldsL: new(sync.Mutex),
+	}
+	if !opts.NoIDs {
+		class.Install(
+			Field[T]{
+				Spec: FieldSpec{
+					Name: "id",
+					Type: ID[T]{inner: opts.Typed},
+					Pure: true,
+				},
+				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+					return NewDynamicID[T](self.ID(), opts.Typed), nil
+				},
+			},
+		)
+		class.idable = true
+	}
+	return class
+}
+
+func (class Class[T]) Typed() Typed {
+	return class.inner
+}
+
+func (class Class[T]) IDType() (IDType, bool) {
+	if class.idable {
+		return ID[T]{inner: class.inner}, true
+	} else {
+		return nil, false
 	}
 }
 
@@ -52,8 +99,7 @@ func (class Class[T]) Install(fields ...Field[T]) {
 var _ ObjectType = Class[Typed]{}
 
 func (cls Class[T]) TypeName() string {
-	var zero T
-	return zero.Type().Name()
+	return cls.inner.Type().Name()
 }
 
 func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
@@ -76,23 +122,26 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 func (cls Class[T]) Definition() *ast.Definition {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
-	var zero T
-	var val any = zero
+	var val any = cls.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
 		def = isType.Definition()
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
-			Name: zero.Type().Name(),
+			Name: cls.inner.Type().Name(),
 		}
 	}
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.Description()
 	}
-	for _, field := range cls.fields { // TODO sort, or preserve order
+	for _, field := range cls.fields {
 		def.Fields = append(def.Fields, field.Definition())
 	}
+	// TODO preserve order
+	sort.Slice(def.Fields, func(i, j int) bool {
+		return def.Fields[i].Name < def.Fields[j].Name
+	})
 	return def
 }
 
@@ -148,8 +197,7 @@ func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
 func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Typed) (Typed, error) {
 	field, ok := cls.Field(fieldName)
 	if !ok {
-		var zero T
-		return nil, fmt.Errorf("Call: %s has no such field: %q", zero.Type().Name(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
 	return field.Func(ctx, node, args)
 }
@@ -180,12 +228,12 @@ func (r Instance[T]) ID() *idproto.ID {
 	return r.Constructor
 }
 
-// Wrapped is an interface for types that wrap another type.
-type Wrapped interface {
+// Wrapper is an interface for types that wrap another type.
+type Wrapper interface {
 	Unwrap() Typed
 }
 
-var _ Wrapped = Instance[Typed]{}
+var _ Wrapper = Instance[Typed]{}
 
 // Inner returns the inner value of the instance.
 func (r Instance[T]) Unwrap() Typed {
@@ -204,8 +252,7 @@ func (r Instance[T]) String() string {
 func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, error) {
 	field, ok := r.Class.Field(sel.Field)
 	if !ok {
-		var zero T
-		return nil, fmt.Errorf("IDFor: %s has no such field: %q", zero.Type().Name(), sel.Field)
+		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
 	}
 	return sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure), nil
 }
@@ -443,41 +490,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 	class, ok := server.objects[typeName]
 	if !ok {
 		classT = NewClass[T]()
-		server.objects[typeName] = classT
-
-		// TODO: better way to avoid registering IDs for schema introspection
-		// builtins
-		if !strings.HasPrefix(typeName, "__") {
-			idScalar := ID[T]{}
-			server.scalars[idScalar.TypeName()] = idScalar
-			classT.Install(Field[T]{
-				Spec: FieldSpec{
-					Name: "id",
-					Type: idScalar,
-					Pure: true,
-				},
-				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
-					return ID[T]{ID: self.ID()}, nil
-				},
-			})
-			var zero T
-			server.Root().ObjectType().Extend(
-				FieldSpec{
-					Name: fmt.Sprintf("load%sFromID", typeName),
-					Type: zero,
-					Pure: false, // no need to cache this; what if the ID is impure?
-					Args: []InputSpec{
-						{
-							Name: "id",
-							Type: idScalar,
-						},
-					},
-				},
-				func(ctx context.Context, self Object, args map[string]Typed) (Typed, error) {
-					return args["id"].(ID[T]).Load(ctx, server)
-				},
-			)
-		}
+		server.installObjectLocked(classT)
 	} else {
 		classT = class.(Class[T])
 	}
@@ -513,6 +526,9 @@ func (field Field[T]) Impure() Field[T] {
 
 // Definition returns the schema definition of the field.
 func (field Field[T]) Definition() *ast.FieldDefinition {
+	if field.Spec.Type == nil {
+		panic(fmt.Errorf("field %q has no type", field.Spec.Name))
+	}
 	return &ast.FieldDefinition{
 		Name:        field.Spec.Name,
 		Description: field.Spec.Description,

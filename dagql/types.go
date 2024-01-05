@@ -26,6 +26,7 @@ type Type interface {
 	TypeName() string
 
 	// Typically a Type will optionally define either of the two interfaces:
+
 	// Descriptive
 	// Definitive
 }
@@ -33,6 +34,10 @@ type Type interface {
 // ObjectType represents a GraphQL Object type.
 type ObjectType interface {
 	Type
+	// Typed returns a Typed value whose Type refers to the object type.
+	Typed() Typed
+	// IDType returns the scalar type for the object's IDs.
+	IDType() (IDType, bool)
 	// New creates a new instance of the type.
 	New(*idproto.ID, Typed) (Object, error)
 	// ParseField parses the given field and returns a Selector and an expected
@@ -45,18 +50,28 @@ type ObjectType interface {
 	Extend(FieldSpec, FieldFunc)
 }
 
+type IDType interface {
+	Input
+	IDable
+	ScalarType
+}
+
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
 type FieldFunc func(context.Context, Object, map[string]Typed) (Typed, error)
+
+type IDable interface {
+	// ID returns the ID of the value.
+	ID() *idproto.ID
+}
 
 // Object represents an Object in the graph which has an ID and can have
 // sub-selections.
 type Object interface {
 	Typed
+	IDable
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
-	// ID returns the ID of the object.
-	ID() *idproto.ID
 	// IDFor returns the ID representing the return value of the given field.
 	IDFor(context.Context, Selector) (*idproto.ID, error)
 	// Select evaluates the selected field and returns the result.
@@ -82,9 +97,12 @@ type Input interface {
 	idproto.Literate
 	// All Inputs now how to decode new instances of themselves.
 	Decoder() InputDecoder
+
 	// In principle all Inputs are able to be represented as JSON, but we don't
 	// require the interface to be implemented since builtins like strings
-	// (Enums) and slices (Arrays) already marshal appropriately. json.Marshaler
+	// (Enums) and slices (Arrays) already marshal appropriately.
+
+	// json.Marshaler
 }
 
 // Setter allows a type to populate fields of a struct.
@@ -471,19 +489,26 @@ func (s String) SetField(v reflect.Value) error {
 
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
-	*idproto.ID
-	expected T
+	id    *idproto.ID
+	inner T
 }
 
 func NewID[T Typed](id *idproto.ID) ID[T] {
 	return ID[T]{
-		ID: id,
+		id: id,
+	}
+}
+
+func NewDynamicID[T Typed](id *idproto.ID, typed T) ID[T] {
+	return ID[T]{
+		id:    id,
+		inner: typed,
 	}
 }
 
 // TypeName returns the name of the type with "ID" appended, e.g. `FooID`.
 func (i ID[T]) TypeName() string {
-	return i.expected.Type().Name() + "ID"
+	return i.inner.Type().Name() + "ID"
 }
 
 var _ Typed = ID[Typed]{}
@@ -496,6 +521,13 @@ func (i ID[T]) Type() *ast.Type {
 	}
 }
 
+var _ IDable = ID[Typed]{}
+
+// ID returns the ID of the value.
+func (i ID[T]) ID() *idproto.ID {
+	return i.id
+}
+
 var _ ScalarType = ID[Typed]{}
 
 // Definition returns the GraphQL definition of the type.
@@ -506,7 +538,7 @@ func (i ID[T]) Definition() *ast.Definition {
 		Description: fmt.Sprintf(
 			"The `%s` scalar type represents an identifier for an object of type %s.",
 			i.TypeName(),
-			i.expected.Type().Name(),
+			i.inner.Type().Name(),
 		),
 		BuiltIn: true,
 	}
@@ -516,31 +548,28 @@ func (i ID[T]) Definition() *ast.Definition {
 //
 // It accepts either an *idproto.ID or a string. The string is expected to be
 // the base64-encoded representation of an *idproto.ID.
-func (ID[T]) DecodeInput(val any) (Input, error) {
+func (i ID[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case *idproto.ID:
-		return ID[T]{ID: x}, nil
+		return ID[T]{id: x, inner: i.inner}, nil
 	case string:
-		i := ID[T]{}
 		if err := (&i).Decode(x); err != nil {
 			return nil, err
 		}
 		return i, nil
 	default:
-		var zero T
 		debug.PrintStack()
-		return nil, fmt.Errorf("cannot create ID[%T] from %T: %#v", zero, x, x)
+		return nil, fmt.Errorf("cannot create ID[%T] from %T: %#v", i.inner, x, x)
 	}
 }
 
 // String returns the ID in ClassID@sha256:... format.
 func (i ID[T]) String() string {
-	var zero T
-	dig, err := i.ID.Digest()
+	dig, err := i.id.Digest()
 	if err != nil {
 		panic(err) // TODO
 	}
-	return fmt.Sprintf("%s@%s", zero.Type().Name(), dig)
+	return fmt.Sprintf("%s@%s", i.inner.Type().Name(), dig)
 }
 
 var _ Setter = ID[Typed]{}
@@ -559,22 +588,30 @@ func (i ID[T]) SetField(v reflect.Value) error {
 var _ Input = ID[Typed]{}
 
 func (i ID[T]) Decoder() InputDecoder {
-	return ID[T]{expected: i.expected}
+	return ID[T]{inner: i.inner}
 }
 
 func (i ID[T]) ToLiteral() *idproto.Literal {
 	return &idproto.Literal{
 		Value: &idproto.Literal_Id{
-			Id: i.ID,
+			Id: i.id,
 		},
 	}
+}
+
+func (i ID[T]) Encode() (string, error) {
+	return i.id.Encode()
+}
+
+func (i ID[T]) Display() string {
+	return i.id.Display()
 }
 
 func (i *ID[T]) Decode(str string) error {
 	if str == "" {
 		return fmt.Errorf("cannot decode empty string as ID")
 	}
-	expectedName := i.expected.Type().Name()
+	expectedName := i.inner.Type().Name()
 	var idp idproto.ID
 	if err := idp.Decode(str); err != nil {
 		return err
@@ -585,7 +622,7 @@ func (i *ID[T]) Decode(str string) error {
 	if idp.Type.NamedType != expectedName {
 		return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type.ToAST())
 	}
-	i.ID = &idp
+	i.id = &idp
 	return nil
 }
 
@@ -615,13 +652,13 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 
 // Load loads the instance with the given ID from the server.
 func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
-	val, err := server.Load(ctx, i.ID)
+	val, err := server.Load(ctx, i.id)
 	if err != nil {
-		return Instance[T]{}, fmt.Errorf("load %s: %w", i.ID.Display(), err)
+		return Instance[T]{}, fmt.Errorf("load %s: %w", i.id.Display(), err)
 	}
 	obj, ok := val.(Instance[T])
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("load %s: expected %T, got %T", i.ID.Display(), obj, val)
+		return Instance[T]{}, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
 	}
 	return obj, nil
 }
@@ -791,9 +828,13 @@ func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
 	return (*EnumValues[T])(&vals)
 }
 
-func (e *EnumValues[T]) TypeName() string {
+func (e *EnumValues[T]) Type() *ast.Type {
 	var zero T
-	return zero.Type().Name()
+	return zero.Type()
+}
+
+func (e *EnumValues[T]) TypeName() string {
+	return e.Type().Name()
 }
 
 func (e *EnumValues[T]) Definition() *ast.Definition {
@@ -878,6 +919,13 @@ type InputObjectSpec struct {
 
 func (spec InputObjectSpec) Install(srv *Server) {
 	srv.InstallTypeDef(spec)
+}
+
+func (spec InputObjectSpec) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: spec.Name,
+		NonNull:   true,
+	}
 }
 
 func (spec InputObjectSpec) TypeName() string {
