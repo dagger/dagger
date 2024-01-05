@@ -13,7 +13,7 @@ import { connect, close, connection } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
-describe("NodeJS default client", function () {
+describe("Typescript default client", function () {
   it("Should use the default client and close connection on call to close", async function () {
     this.timeout(60000)
 
@@ -88,7 +88,7 @@ describe("NodeJS default client", function () {
   })
 })
 
-describe("NodeJS sdk Connect", function () {
+describe("Typescript sdk Connect", function () {
   it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
     this.timeout(60000)
 

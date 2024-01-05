@@ -19,7 +19,7 @@ import { buildQuery, queryFlatten } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
-describe("NodeJS SDK api", function () {
+describe("Typescript SDK api", function () {
   it("Build correctly a query with one argument", function () {
     const tree = new Client().container().from("alpine:3.16.2")
 

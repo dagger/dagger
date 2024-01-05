@@ -177,7 +177,7 @@ export class Bin implements EngineConn {
     const flagsAndValues = [
       { flag: "--workdir", value: opts.Workdir },
       { flag: "--project", value: opts.Project },
-      { flag: "--label", value: "dagger.io/sdk.name:nodejs" },
+      { flag: "--label", value: "dagger.io/sdk.name:typescript" },
       { flag: "--label", value: `dagger.io/sdk.version:${sdkVersion}` },
     ]
 

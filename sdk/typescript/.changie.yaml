@@ -3,7 +3,7 @@ unreleasedDir: unreleased
 headerPath: header.tpl.md
 changelogPath: CHANGELOG.md
 versionExt: md
-versionFormat: '## sdk/nodejs/{{.Version}} - {{.Time.Format "2006-01-02"}}'
+versionFormat: '## sdk/typescript/{{.Version}} - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
 changeFormat: '- {{.Body}} by @{{.Custom.Author}} in https://github.com/dagger/dagger/pull/{{.Custom.PR}}'
 custom:
@@ -27,10 +27,10 @@ headerFormat: |
   This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
 
   ⬢ https://www.npmjs.com/package/@dagger.io/dagger
-  📒 https://docs.dagger.io/sdk/nodejs/reference/modules/api_client_gen
+  📒 https://docs.dagger.io/sdk/typescript/reference/modules/api_client_gen
 footerFormat: |
   ### What to do next
-  - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
+  - Read the [documentation](https://docs.dagger.io/sdk/typescript)
   - Join our [Discord server](https://discord.gg/dagger-io)
   - Follow us on [Twitter](https://twitter.com/dagger_io)
 newlines:

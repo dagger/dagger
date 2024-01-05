@@ -85,7 +85,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		// Execute the code generator using the given introspection file
 		WithExec([]string{
 			codegenBinPath,
-			"--lang", "nodejs",
+			"--lang", "typescript",
 			"--output", genPath,
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{

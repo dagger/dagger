@@ -1,10 +1,10 @@
-# Dagger NodeJS SDK
+# Dagger Typescript SDK
 
 A client package for running [Dagger](https://dagger.io/) pipelines.
 
-## What is the Dagger NodeJS SDK?
+## What is the Dagger Typescript SDK?
 
-The Dagger NodeJS SDK contains everything you need to develop CI/CD pipelines in Typescript of Javascript, and run them on any OCI-compatible container runtime.
+The Dagger Typescript SDK contains everything you need to develop CI/CD pipelines in Typescript of Javascript, and run them on any OCI-compatible container runtime.
 
 ## Install
 
@@ -52,28 +52,28 @@ You must also update your `tsconfig.json` to use `NodeNext` as `module`.
 
 ### 3. Symlink Dagger local module
 
-Go to the Dagger nodejs SDK directory and do the following :
+Go to the Dagger Typescript SDK directory and do the following :
 
 ```shell
-cd path/to/dagger/sdk/nodejs # go into the package directory
+cd path/to/dagger/sdk/typescript # go into the package directory
 npm link # creates global link
 ```
 
-Go back to the root directory of your local project to link the nodejs sdk.
+Go back to the root directory of your local project to link the typescript sdk.
 
 ```shell
 cd path/to/my_app # go into your project directory.
 npm link @dagger.io/dagger # link install the package
 ```
 
-:bulb: Any changes to `path/to/dagger/sdk/nodejs` will be reflected in `path/to/my_app/node_modules/@dagger.io/dagger`.
+:bulb: Any changes to `path/to/dagger/sdk/typescript` will be reflected in `path/to/my_app/node_modules/@dagger.io/dagger`.
 
 ### 4. Make your contribution
 
 While making SDK code modification you should `watch` the input files:
 
 ```shell
-cd path/to/dagger/sdk/nodejs # go into the package directory
+cd path/to/dagger/sdk/typescript # go into the package directory
 yarn watch # Recompile the code when input files are modified
 ```
 
@@ -85,4 +85,4 @@ import { connect } from "@dagger.io/dagger"
 
 ## Documentation
 
-Please [visit our documentation](https://docs.dagger.io/sdk/nodejs/835948/install) for a full list of commands and examples.
+Please [visit our documentation](https://docs.dagger.io/sdk/typescript/835948/install) for a full list of commands and examples.
