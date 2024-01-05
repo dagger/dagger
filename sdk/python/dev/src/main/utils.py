@@ -20,7 +20,7 @@ def python_base(
     return (
         dag.container()
         .from_(f"python:{version}-{IMAGE}")
-        .with_default_args(args=["/bin/bash"])  # for dagger shell
+        .with_default_args(["/bin/bash"])  # for dagger shell
         .with_(cache("/root/.cache/pip", keys=["pip", version, IMAGE]))
         .with_(venv)
     )

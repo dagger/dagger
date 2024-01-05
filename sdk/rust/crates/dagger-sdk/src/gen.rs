@@ -423,12 +423,6 @@ pub struct ContainerPublishOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerWithDefaultArgsOpts<'a> {
-    /// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-    #[builder(setter(into, strip_option), default)]
-    pub args: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
     #[builder(setter(into, strip_option), default)]
@@ -1049,25 +1043,13 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_default_args(&self) -> Container {
-        let query = self.selection.select("withDefaultArgs");
-        return Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Configures default arguments for future commands.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_default_args_opts<'a>(&self, opts: ContainerWithDefaultArgsOpts<'a>) -> Container {
+    /// * `args` - Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+    pub fn with_default_args(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,

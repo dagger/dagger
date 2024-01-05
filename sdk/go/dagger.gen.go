@@ -882,21 +882,10 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerWithDefaultArgsOpts contains options for Container.WithDefaultArgs
-type ContainerWithDefaultArgsOpts struct {
-	// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-	Args []string
-}
-
 // Configures default arguments for future commands.
-func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
+func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.q.Select("withDefaultArgs")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
+	q = q.Arg("args", args)
 
 	return &Container{
 		q: q,

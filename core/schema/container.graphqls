@@ -288,7 +288,7 @@ type Container {
     """
     Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     """
-    args: [String!]
+    args: [String!]!
   ): Container!
 
   """
