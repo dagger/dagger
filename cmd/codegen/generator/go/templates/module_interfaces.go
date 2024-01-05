@@ -135,7 +135,9 @@ func (spec *parsedIfaceType) Name() string {
 	return spec.name
 }
 
+// The code implementing the concrete struct that implements the interface and associated methods.
 func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
+	// the base boilerplate methods needed for all structs implementing an api type
 	code := Empty().
 		Add(spec.concreteStructDefCode()).Line().
 		Add(spec.idDefCode()).Line().
@@ -147,6 +149,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 		Add(spec.unmarshalJSONMethodCode()).Line().
 		Add(spec.toIfaceMethodCode()).Line()
 
+	// the ID method, which is not explicitly declared by the user but needed internally
 	idMethodCode, err := spec.concreteMethodCode(&funcTypeSpec{
 		name:         "ID",
 		argSpecs:     []paramSpec{{name: "ctx", isContext: true}},
@@ -158,6 +161,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	}
 	code.Add(idMethodCode).Line()
 
+	// the implementations of the methods declared on the interface
 	for _, method := range spec.methods {
 		methodCode, err := spec.concreteMethodCode(method)
 		if err != nil {
@@ -190,6 +194,22 @@ func (spec *parsedIfaceType) idDefCode() *Statement {
 	return Type().Id(spec.idTypeName()).String()
 }
 
+func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec) string {
+	return strcase.ToLowerCamel(method.name)
+}
+
+/*
+The struct definition for the concrete implementation of the interface. e.g.:
+
+	type customIfaceImpl struct {
+		q    *querybuilder.Selection
+		c    graphql.Client
+		id   *CustomIfaceID
+		str  *string
+		int  *int
+		bool *bool
+	}
+*/
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	return Type().Id(spec.concreteStructName()).StructFunc(func(g *Group) {
 		g.Id("q").Op("*").Qual("querybuilder", "Selection")
@@ -209,6 +229,18 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	})
 }
 
+/*
+The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
+
+	func (r *Client) LoadCustomIfaceFromID(id CustomIfaceID) CustomIface {
+		q := r.q.Select("loadTestCustomIfaceFromID")
+		q = q.Arg("id", id)
+		return &customIfaceImpl{
+			c: r.c,
+			q: q,
+		}
+	}
+*/
 func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id("Client")).
 		Id(spec.loadFromIDMethodName()).
@@ -224,6 +256,13 @@ func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 		})
 }
 
+/*
+The XXX_GraphQLType method attached to the concrete implementation of the interface. e.g.:
+
+	func (r *customIfaceImpl) XXX_GraphQLType() string {
+		return "CustomIface"
+	}
+*/
 func (spec *parsedIfaceType) graphqlTypeMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("XXX_GraphQLType").
@@ -232,6 +271,13 @@ func (spec *parsedIfaceType) graphqlTypeMethodCode() *Statement {
 		Block(Return(Lit(spec.name)))
 }
 
+/*
+The XXX_GraphQLIDType method attached to the concrete implementation of the interface. e.g.:
+
+	func (r *customIfaceImpl) XXX_GraphQLIDType() string {
+		return "CustomIfaceID"
+	}
+*/
 func (spec *parsedIfaceType) graphqlIDTypeMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("XXX_GraphQLIDType").
@@ -240,6 +286,17 @@ func (spec *parsedIfaceType) graphqlIDTypeMethodCode() *Statement {
 		Block(Return(Lit(spec.idTypeName())))
 }
 
+/*
+The XXX_GraphQLID method attached to the concrete implementation of the interface. e.g.:
+
+	func (r *customIfaceImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
+		id, err := r.ID(ctx)
+		if err != nil {
+			return "", err
+		}
+		return string(id), nil
+	}
+*/
 func (spec *parsedIfaceType) graphqlIDMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("XXX_GraphQLID").
@@ -252,6 +309,20 @@ func (spec *parsedIfaceType) graphqlIDMethodCode() *Statement {
 		})
 }
 
+/*
+The MarshalJSON method attached to the concrete implementation of the interface. e.g.:
+
+	func (r *customIfaceImpl) MarshalJSON() ([]byte, error) {
+		if r == nil {
+			return []byte("\"\""), nil
+		}
+		id, err := r.ID(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(id)
+	}
+*/
 func (spec *parsedIfaceType) marshalJSONMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("MarshalJSON").
@@ -266,6 +337,19 @@ func (spec *parsedIfaceType) marshalJSONMethodCode() *Statement {
 		})
 }
 
+/*
+The UnmarshalJSON method attached to the concrete implementation of the interface. e.g.:
+
+	func (r *customIfaceImpl) UnmarshalJSON(bs []byte) error {
+		var id CustomIfaceID
+		err := json.Unmarshal(bs, &id)
+		if err != nil {
+			return err
+		}
+		*r = *dag.LoadCustomIfaceFromID(id).(*customIfaceImpl)
+		return nil
+	}
+*/
 func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("UnmarshalJSON").
@@ -281,6 +365,17 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 		})
 }
 
+/*
+The toIface helper method attached to the concrete implementation of the interface
+that's used to convert the concrete implementation to the interface. e.g.:
+
+	func (r *customIfaceImpl) toIface() CustomIface {
+		if r == nil {
+			return nil
+		}
+		return r
+	}
+*/
 func (spec *parsedIfaceType) toIfaceMethodCode() *Statement {
 	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
 		Id("toIface").
@@ -292,10 +387,17 @@ func (spec *parsedIfaceType) toIfaceMethodCode() *Statement {
 		})
 }
 
-func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec) string {
-	return strcase.ToLowerCamel(method.name)
-}
+/*
+The code for the given interface method's concrete implementation attached to concrete
+implementation struct. e.g.:
 
+	func (r *customIfaceImpl) WithSomeArg(ctx context.Context, someArg string) CustomIface {
+		q := r.q.Select("withSomeArg")
+		q = q.Arg("someArg", someArg)
+
+		// concreteMethodExecuteQueryCode...
+	}
+*/
 func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statement, error) {
 	methodArgs := []Code{}
 	for _, argSpec := range method.argSpecs {
@@ -361,10 +463,22 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 		}), nil
 }
 
+/*
+The code for binding args and executing the query for the given interface method's concrete implementation.
+*/
 func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec) (*Statement, error) {
 	s := Empty()
 	switch returnType := method.returnSpec.(type) {
 	case nil:
+		/*
+			Void return, just need to return error. e.g.:
+
+				q := r.q.Select("void")
+				var response Void
+				q = q.Bind(&response)
+				return q.Execute(ctx, r.c)
+		*/
+
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate return type code: %w", err)
@@ -376,6 +490,15 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		)
 
 	case *parsedPrimitiveType:
+		/*
+			Just return the primitive type response + error. e.g.:
+
+				q := r.q.Select("str")
+				var response string
+				q = q.Bind(&response)
+				return response, q.Execute(ctx, r.c)
+		*/
+
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate return type code: %w", err)
@@ -388,6 +511,15 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		)
 
 	case *parsedIfaceTypeReference, *parsedObjectTypeReference:
+		/*
+			Just object type with chained query (no error). e.g.:
+
+				return &customIfaceImpl{
+					c: r.c,
+					q: q,
+				}
+		*/
+
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate return type code: %w", err)
@@ -400,6 +532,32 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 	case *parsedSliceType:
 		switch underlyingReturnType := returnType.underlying.(type) {
 		case NamedParsedType:
+			/*
+				Need to return a slice of an object/interface. This is done by querying for the IDs and then
+				converting those ids into a slice of the object/interface. e.g.:
+
+					q = q.Select("id")
+					var idResults []struct {
+						Id DirectoryID
+					}
+					q = q.Bind(&idResults)
+					err := q.Execute(ctx, r.c)
+					if err != nil {
+						return nil, err
+					}
+					var results []*Directory
+					for _, idResult := range idResults {
+						id := idResult.Id
+
+						results = append(results, &Directory{
+							c:  r.c,
+							id: &id,
+							q:  querybuilder.Query().Select("loadDirectoryFromID").Arg("id", id),
+						})
+					}
+					return results, nil
+			*/
+
 			// TODO: if iface is from this module then it needs namespacing...
 			idScalarName := fmt.Sprintf("%sID", strcase.ToCamel(underlyingReturnType.Name()))
 			loadFromIDQueryName := fmt.Sprintf("load%sFromID", strcase.ToCamel(underlyingReturnType.Name()))
@@ -432,6 +590,14 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Return(Id("results"), Nil())
 
 		case *parsedPrimitiveType, nil:
+			/*
+				Need to return the slice of the primitive, e.g.:
+
+					var response []string
+					q = q.Bind(&response)
+					return response, q.Execute(ctx, r.c)
+			*/
+
 			implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate return type code: %w", err)
@@ -454,6 +620,14 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 	return s, nil
 }
 
+/*
+Code for checking whether we have already cached the result of a primitive type in the concrete struct
+e.g.:
+
+	if r.str != nil {
+		return *r.str, nil
+	}
+*/
 func (spec *parsedIfaceType) concreteMethodCheckCachedFieldCode(method *funcTypeSpec) *Statement {
 	structFieldName := spec.concreteStructCachedFieldName(method)
 
@@ -466,13 +640,21 @@ func (spec *parsedIfaceType) concreteMethodCheckCachedFieldCode(method *funcType
 	return s
 }
 
+/*
+The code to use for the given type when used in a method signature as an arg or a return type. It's
+important that this always be the expected pointer type and, if it's an interface, the actual go
+interface type rather than the underlying concrete struct implementing it.
+*/
 func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) (*Statement, error) {
 	s := Empty()
 	switch argTypeSpec := argTypeSpec.(type) {
 	case nil:
+		// theoretically there should never be a void arg, but it's trivial enough to handle gracefully here...
 		s.Id("Void")
 
 	case *parsedPrimitiveType:
+		// just make sure to use the alias of the primitive type if set, e.g. if it's a type declared like
+		// `type MyString string` then we want to use `MyString` rather than `string`
 		if argTypeSpec.alias != "" {
 			s.Id(argTypeSpec.alias)
 		} else {
@@ -480,6 +662,7 @@ func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) (
 		}
 
 	case *parsedSliceType:
+		// just return []T for the underlying element type
 		underlyingCode, err := spec.concreteMethodSigTypeCode(argTypeSpec.underlying)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate underlying type code: %w", err)
@@ -502,6 +685,11 @@ func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) (
 	return s, nil
 }
 
+/*
+The code to use for the given type when used in the actual implementation of a method. This differs from
+concreteMethodSigTypeCode when the type is an interface, in which case we want to use the internal concrete
+struct rather than the interface type.
+*/
 func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedType) (*Statement, error) {
 	s := Empty()
 	switch returnTypeSpec := returnTypeSpec.(type) {
@@ -535,6 +723,8 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 	return s, nil
 }
 
+// The name of the concrete struct implementing the interface with the given name.
+// If the interface is "Foo", this is "fooImpl".
 func formatIfaceImplName(s string) string {
 	return strcase.ToLowerCamel(s) + "Impl"
 }
