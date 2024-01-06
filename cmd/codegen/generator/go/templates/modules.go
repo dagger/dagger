@@ -546,21 +546,21 @@ func (ps *parseState) fillObjectFunctionCase(
 			vars[varName] = struct{}{}
 
 			tp := varType
-			access := Id(varName)
-			tp2, access2, ok, err := ps.findOptsAccessPattern(varType, Id(varName))
+			fnCallArgCode := Id(varName)
+			tp2, fnCallArgCode2, ok, err := ps.functionCallArgCode(varType, Id(varName))
 			if err != nil {
-				return fmt.Errorf("failed to find opts access pattern for %s: %w", varName, err)
+				return fmt.Errorf("failed to get function call arg code for %s: %w", varName, err)
 			}
 			if ok {
 				tp = tp2
-				access = access2
+				fnCallArgCode = fnCallArgCode2
 			}
 
 			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
 			if spec.variadic {
-				fnCallArgs = append(fnCallArgs, access.Op("..."))
+				fnCallArgs = append(fnCallArgs, fnCallArgCode.Op("..."))
 			} else {
-				fnCallArgs = append(fnCallArgs, access)
+				fnCallArgs = append(fnCallArgs, fnCallArgCode)
 			}
 		}
 
@@ -899,24 +899,32 @@ func (ps *parseState) isOptionalWrapper(typ types.Type) (types.Type, bool, error
 	return typeArgs.At(0), true, nil
 }
 
-// findOptsAccessPattern takes a type and a base statement (the name of a
-// variable that has the target type) and produces a type that can be used in a
-// variable declaration, as well as a statement that has the same type as the
-// target statement.
-//
-// This is essentially for helping resolve the pointeriness of types: a type of
-// **T and a variable p becomes T and &&p. This means we can *always* construct
-// an Opts object and unmarshal into it without having nil dereferences.
-func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (types.Type, *Statement, bool, error) {
+/*
+functionCallArgCode takes a type and code for providing an arg of that type (just
+the name of the arg variable as a base) and returns the type that should be used
+to declare the arg as well as the code that should be used to provide the arg
+variable to a function call
+
+This is needed to handle various special cases:
+* Function args that are various degrees of pointeriness (i.e. *string, **int, etc.)
+* Concrete structs implementing an interface that will be provided as an arg
+* Slices and Optional wrappers of the above
+*/
+func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (types.Type, *Statement, bool, error) {
 	switch t := t.(type) {
 	case *types.Pointer:
 		// taking the address of an address isn't allowed - so we use a ptr
 		// helper function
-		t2, access2, ok, err := ps.findOptsAccessPattern(t.Elem(), access)
+		t2, access2, ok, err := ps.functionCallArgCode(t.Elem(), access)
 		if err != nil {
 			return nil, nil, false, err
 		}
 		if ok {
+			/*
+				Taking the address of an address isn't allowed - so we use a ptr helper
+				function. e.g.:
+					ptr(access)
+			*/
 			return t2, Id("ptr").Call(access2), true, nil
 		}
 		return nil, nil, false, nil
@@ -926,6 +934,7 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 			return nil, nil, false, err
 		}
 		if isOptionalType {
+			// Check if this is an Optional of an interface
 			wrappedNamed, ok := wrappedType.(*types.Named)
 			if !ok {
 				return t, access, true, nil
@@ -934,6 +943,12 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 			if !ok {
 				return t, access, true, nil
 			}
+
+			/*
+				Need to convert concrete impl struct wrapped by Optional to interface wrapped
+				by Optional. e.g.:
+					convertOptionalVal(access, (*ifaceImpl).toIface)
+			*/
 			return t, Id("convertOptionalVal").Call(
 				access,
 				Parens(Op("*").Id(formatIfaceImplName(wrappedNamed.Obj().Name()))).Dot("toIface"),
@@ -941,6 +956,10 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 		}
 
 		if _, ok := t.Underlying().(*types.Interface); ok {
+			/*
+				Need to convert concrete impl struct interface. e.g.:
+					access.toIface
+			*/
 			return t, access.Dot("toIface").Call(), true, nil
 		}
 		return nil, nil, false, nil
@@ -953,6 +972,11 @@ func (ps *parseState) findOptsAccessPattern(t types.Type, access *Statement) (ty
 		if !ok {
 			return nil, nil, false, nil
 		}
+
+		/*
+			Need to convert slice of concrete impl structs to slice of interface e.g.:
+				convertSlice(access, (*ifaceImpl).toIface)
+		*/
 		return t, Id("convertSlice").Call(
 			access,
 			Parens(Op("*").Id(formatIfaceImplName(elemNamed.Obj().Name()))).Dot("toIface"),

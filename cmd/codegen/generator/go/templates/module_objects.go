@@ -235,6 +235,36 @@ func (spec *parsedObjectType) Name() string {
 	return spec.name
 }
 
+/*
+Extra generated code needed for the object implementation.
+
+Right now, this is just an UnmarshalJSON method. This is needed because objects may have fields
+of an interface type, which the JSON unmarshaller can't handle on its own. Instead, this custom
+unmarshaller will unmarshal the JSON into a struct where all the fields are concrete types,
+including the underlying concrete struct implementation of any interface fields.
+
+After it unmarshals into that, it copies the fields to the real object fields, handling any
+special cases around interface conversions (e.g. converting a slice of structs to a slice of
+interfaces).
+
+e.g.:
+
+	func (r *Test) UnmarshalJSON(bs []byte) error {
+		var concrete struct {
+			Iface          *customIfaceImpl
+			IfaceList      []*customIfaceImpl
+			OtherIfaceList []*otherIfaceImpl
+		}
+		err := json.Unmarshal(bs, &concrete)
+		if err != nil {
+			return err
+		}
+		r.Iface = concrete.Iface.toIface()
+		r.IfaceList = convertSlice(concrete.IfaceList, (*customIfaceImpl).toIface)
+		r.OtherIfaceList = convertSlice(concrete.OtherIfaceList, (*otherIfaceImpl).toIface)
+		return nil
+	}
+*/
 func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
 	concreteFields := make([]Code, 0, len(spec.fields))
 	setFieldCodes := make([]*Statement, 0, len(spec.fields))
@@ -273,6 +303,10 @@ func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
 		}), nil
 }
 
+/*
+The code for the type of a field in the concrete struct unmarshalled into. Mainly needs to handle
+interface types, which need to be converted to their concrete struct implementations.
+*/
 func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*Statement, error) {
 	s := Empty()
 	switch typeSpec := typeSpec.(type) {
@@ -309,6 +343,12 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 	return s, nil
 }
 
+/*
+The code for setting the fields of the real object from the concrete struct unmarshalled into. e.g.:
+
+	r.Iface = concrete.Iface.toIface()
+	r.IfaceList = convertSlice(concrete.IfaceList, (*customIfaceImpl).toIface)
+*/
 func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) (*Statement, error) {
 	s := Empty()
 	switch typeSpec := field.typeSpec.(type) {
