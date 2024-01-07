@@ -51,9 +51,10 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 		class.Install(
 			Field[T]{
 				Spec: FieldSpec{
-					Name: "id",
-					Type: ID[T]{inner: opts.Typed},
-					Pure: true,
+					Name:        "id",
+					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
+					Type:        ID[T]{inner: opts.Typed},
+					Pure:        true,
 				},
 				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
 					return NewDynamicID[T](self.ID(), opts.Typed), nil
@@ -377,6 +378,27 @@ type FieldSpec struct {
 	// Pure indicates that the field is a pure function of its arguments, and
 	// thus can be cached indefinitely.
 	Pure bool
+	// DeprecatedReason deprecates the input and provides a reason.
+	DeprecatedReason string
+}
+
+func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
+	def := &ast.FieldDefinition{
+		Name:        spec.Name,
+		Description: spec.Description,
+		Arguments:   spec.Args.ArgumentDefinitions(),
+		Type:        spec.Type.Type(),
+	}
+	if spec.DeprecatedReason != "" {
+		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
+	}
+	if !spec.Pure {
+		def.Directives = append(def.Directives, impure())
+	}
+	if spec.Meta {
+		def.Directives = append(def.Directives, meta())
+	}
+	return def
 }
 
 // InputSpec specifies a field argument, or an input field.
@@ -389,6 +411,8 @@ type InputSpec struct {
 	Type Input
 	// Default is the default value of the argument.
 	Default Input
+	// DeprecatedReason deprecates the input and provides a reason.
+	DeprecatedReason string
 }
 
 type InputSpecs []InputSpec
@@ -404,14 +428,17 @@ func (specs InputSpecs) Lookup(name string) (InputSpec, bool) {
 
 func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
 	defs := make([]*ast.ArgumentDefinition, len(specs))
-	for i, arg := range specs {
+	for i, spec := range specs {
 		schemaArg := &ast.ArgumentDefinition{
-			Name:        arg.Name,
-			Description: arg.Description,
-			Type:        arg.Type.Type(),
+			Name:        spec.Name,
+			Description: spec.Description,
+			Type:        spec.Type.Type(),
 		}
-		if arg.Default != nil {
-			schemaArg.DefaultValue = arg.Default.ToLiteral().ToAST()
+		if spec.Default != nil {
+			schemaArg.DefaultValue = spec.Default.ToLiteral().ToAST()
+		}
+		if spec.DeprecatedReason != "" {
+			schemaArg.Directives = append(schemaArg.Directives, deprecated(spec.DeprecatedReason))
 		}
 		defs[i] = schemaArg
 	}
@@ -428,6 +455,9 @@ func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
 		}
 		if spec.Default != nil {
 			field.DefaultValue = spec.Default.ToLiteral().ToAST()
+		}
+		if spec.DeprecatedReason != "" {
+			field.Directives = append(field.Directives, deprecated(spec.DeprecatedReason))
 		}
 		fields[i] = field
 	}
@@ -506,8 +536,25 @@ type Field[T Typed] struct {
 // Doc sets the description of the field. Each argument is joined by two empty
 // lines.
 func (field Field[T]) Doc(paras ...string) Field[T] {
-	field.Spec.Description = strings.Join(paras, "\n\n")
+	field.Spec.Description = FormatDescription(paras...)
 	return field
+}
+
+func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
+	for _, arg := range field.Spec.Args {
+		if arg.Name == name {
+			arg.Description = FormatDescription(paras...)
+			return field
+		}
+	}
+	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
+}
+
+func FormatDescription(paras ...string) string {
+	for i, p := range paras {
+		paras[i] = strings.Join(strings.Fields(strings.TrimSpace(p)), " ")
+	}
+	return strings.Join(paras, "\n\n")
 }
 
 // Doc sets the description of the field. Each argument is joined by two empty
@@ -519,22 +566,38 @@ func (field Field[T]) DynamicReturnType(ret Typed) Field[T] {
 
 // Impure marks the field as "impure", meaning its result may change over time,
 // or it has side effects.
+func (field Field[T]) Deprecated(paras ...string) Field[T] {
+	field.Spec.DeprecatedReason = FormatDescription(paras...)
+	return field
+}
+
+// Impure marks the field as "impure", meaning its result may change over time,
+// or it has side effects.
 func (field Field[T]) Impure() Field[T] {
 	field.Spec.Pure = false
 	return field
 }
 
+// Impure marks the field as "impure", meaning its result may change over time,
+// or it has side effects.
+func (field Field[T]) Meta() Field[T] {
+	field.Spec.Meta = true
+	return field
+}
+
+// WithPurity sets the purity of the field.
+func (field Field[T]) WithPurity(purity bool) Field[T] {
+	field.Spec.Pure = purity
+	return field
+}
+
 // Definition returns the schema definition of the field.
 func (field Field[T]) Definition() *ast.FieldDefinition {
-	if field.Spec.Type == nil {
-		panic(fmt.Errorf("field %q has no type", field.Spec.Name))
+	spec := field.Spec
+	if spec.Type == nil {
+		panic(fmt.Errorf("field %q has no type", spec.Name))
 	}
-	return &ast.FieldDefinition{
-		Name:        field.Spec.Name,
-		Description: field.Spec.Description,
-		Arguments:   field.Spec.Args.ArgumentDefinitions(),
-		Type:        field.Spec.Type.Type(),
-	}
+	return field.Spec.FieldDefinition()
 }
 
 func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
@@ -598,10 +661,11 @@ func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			}
 		}
 		specs[i] = InputSpec{
-			Name:        field.Name,
-			Description: field.Field.Tag.Get("doc"),
-			Type:        input,
-			Default:     inputDef,
+			Name:             field.Name,
+			Description:      field.Field.Tag.Get("doc"),
+			Type:             input,
+			Default:          inputDef,
+			DeprecatedReason: field.Field.Tag.Get("deprecated"),
 		}
 	}
 	return specs, nil

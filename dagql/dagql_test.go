@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -17,8 +18,10 @@ import (
 	"github.com/vito/dagql/idproto"
 	"github.com/vito/dagql/internal/pipes"
 	"github.com/vito/dagql/internal/points"
+	"github.com/vito/dagql/introspection"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
+	"gotest.tools/v3/golden"
 )
 
 var logs = new(bytes.Buffer)
@@ -875,11 +878,6 @@ func TestInputObjects(t *testing.T) {
 		}) (Builtins, error) {
 			return Builtins(args.Input.Value), nil
 		}),
-		dagql.Func("loadInputFromID", func(ctx context.Context, self Query, args struct {
-			ID dagql.ID[Defaults]
-		}) (dagql.Instance[Defaults], error) {
-			return args.ID.Load(ctx, srv)
-		}),
 	}.Install(srv)
 
 	type values struct {
@@ -951,10 +949,10 @@ func TestInputObjects(t *testing.T) {
 		assert.Assert(t, id1.Display() != id2.Display())
 
 		var res struct {
-			LoadInputFromID values
+			LoadDefaultsFromID values
 		}
 		req(t, gql, `query {
-			loadInputFromID(id: "`+idRes.MyInput.Id+`") {
+			loadDefaultsFromID(id: "`+idRes.MyInput.Id+`") {
 				boolean
 				int
 				string
@@ -965,7 +963,7 @@ func TestInputObjects(t *testing.T) {
 			}
 		}`, &res)
 
-		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.LoadInputFromID)
+		assert.DeepEqual(t, values{false, 21, "goodbye, world!", "not empty", 6.28, []int{4, 5}, [][]int{{4}, {5}}}, res.LoadDefaultsFromID)
 	})
 
 	t.Run("inputs with builtins and defaults", func(t *testing.T) {
@@ -1373,48 +1371,62 @@ func TestBuiltins(t *testing.T) {
 	})
 }
 
-type Points struct{}
-
-func (Points) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Points",
-		NonNull:   true,
-	}
-}
-
-func TestExtending(t *testing.T) {
+func TestIntrospection(t *testing.T) {
 	srv := dagql.NewServer(Query{})
+	introspection.Install[Query](srv)
 
-	pointsSrv := dagql.NewServer(Points{})
-	points.Install[Points](pointsSrv)
-	dagql.InstallModule(srv, "points", pointsSrv)
+	// just a quick way to get more coverage
+	points.Install[Query](srv)
+
+	dagql.Fields[Query]{
+		dagql.Func("fieldDoc", func(ctx context.Context, self Query, args struct{}) (bool, error) {
+			return true, nil
+		}).Doc(`a really cool function`),
+
+		dagql.Func("argDoc", func(ctx context.Context, self Query, args struct {
+			DocumentedArg string `doc:"a really cool argument"`
+		}) (string, error) {
+			return args.DocumentedArg, nil
+		}),
+
+		dagql.Func("argDocChain", func(ctx context.Context, self Query, args struct {
+			DocumentedArg string
+		}) (string, error) {
+			return args.DocumentedArg, nil
+		}).ArgDoc("documentedArg", "a really cool argument"),
+
+		dagql.Func("deprecatedField", func(ctx context.Context, self Query, args struct {
+			DeprecatedArg string
+		}) (string, error) {
+			return args.DeprecatedArg, nil
+		}).Deprecated("use something else", "another para"),
+
+		dagql.Func("deprecatedArg", func(ctx context.Context, self Query, args struct {
+			DeprecatedArg string `deprecated:"use something else"`
+		}) (string, error) {
+			return args.DeprecatedArg, nil
+		}),
+
+		dagql.Func("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
+			return time.Now().String(), nil
+		}).Impure(),
+
+		dagql.Func("metaField", func(ctx context.Context, self Query, args struct{}) (string, error) {
+			return "whoa", nil
+		}).Meta(),
+	}.Install(srv)
 
 	gql := client.New(handler.NewDefaultServer(srv))
 
-	var res struct {
-		Points struct {
-			Point struct {
-				Id string
-			}
-		}
-	}
-	req(t, gql, `query {
-		points {
-			point(x: 6, y: 7) {
-				id
-			}
-		}
-	}`, &res)
+	var res introspection.Response
+	req(t, gql, introspection.Query, &res)
 
-	eqID(t, res.Points.Point.Id, "points.point(x: 6, y: 7): Point!")
+	buf := new(bytes.Buffer)
+	enc := json.NewEncoder(buf)
+	enc.SetIndent("", "  ")
+	assert.NilError(t, enc.Encode(res))
 
-	var id idproto.ID
-	err := id.Decode(res.Points.Point.Id)
-	assert.NilError(t, err)
-	loaded, err := srv.Load(context.Background(), &id)
-	assert.NilError(t, err)
-	assert.Equal(t, loaded.Type().NamedType, "Point")
-	assert.Equal(t, loaded.ID().Display(), "points.point(x: 6, y: 7): Point!")
+	golden.Assert(t, buf.String(), "introspection.json")
 }
 
 func eqIDs(t *testing.T, actual, expected string) {
