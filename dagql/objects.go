@@ -120,13 +120,13 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) Definition() *ast.Definition {
+func (cls Class[T]) TypeDefinition() *ast.Definition {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	var val any = cls.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.Definition()
+		def = isType.TypeDefinition()
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
@@ -134,10 +134,10 @@ func (cls Class[T]) Definition() *ast.Definition {
 		}
 	}
 	if isType, ok := val.(Descriptive); ok {
-		def.Description = isType.Description()
+		def.Description = isType.TypeDescription()
 	}
 	for _, field := range cls.fields {
-		def.Fields = append(def.Fields, field.Definition())
+		def.Fields = append(def.Fields, field.FieldDefinition())
 	}
 	// TODO preserve order
 	sort.Slice(def.Fields, func(i, j int) bool {
@@ -150,7 +150,7 @@ func (cls Class[T]) Definition() *ast.Definition {
 func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field, ok := cls.Field(astField.Name)
 	if !ok {
-		return Selector{}, nil, fmt.Errorf("ParseField: %s has no such field: %q", cls.Definition().Name, astField.Name)
+		return Selector{}, nil, fmt.Errorf("ParseField: %s has no such field: %q", cls.TypeName(), astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
@@ -469,12 +469,12 @@ func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
 // The description is used in the schema. To provide a full definition,
 // implement Definitive instead.
 type Descriptive interface {
-	Description() string
+	TypeDescription() string
 }
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
-	Definition() *ast.Definition
+	TypeDefinition() *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
@@ -592,7 +592,7 @@ func (field Field[T]) WithPurity(purity bool) Field[T] {
 }
 
 // Definition returns the schema definition of the field.
-func (field Field[T]) Definition() *ast.FieldDefinition {
+func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
 	spec := field.Spec
 	if spec.Type == nil {
 		panic(fmt.Errorf("field %q has no type", spec.Name))
@@ -603,7 +603,7 @@ func (field Field[T]) Definition() *ast.FieldDefinition {
 func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.Definition()
+		def = isType.TypeDefinition()
 	} else {
 		def = &ast.Definition{
 			Kind: kind,
@@ -611,7 +611,7 @@ func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
 		}
 	}
 	if isType, ok := val.(Descriptive); ok {
-		def.Description = isType.Description()
+		def.Description = isType.TypeDescription()
 	}
 	return def
 }

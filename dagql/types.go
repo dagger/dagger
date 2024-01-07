@@ -131,7 +131,7 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
-func (i Int) Definition() *ast.Definition {
+func (i Int) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        i.TypeName(),
@@ -232,7 +232,7 @@ func (Float) TypeName() string {
 	return "Float"
 }
 
-func (f Float) Definition() *ast.Definition {
+func (f Float) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        f.TypeName(),
@@ -337,7 +337,7 @@ func (Boolean) TypeName() string {
 	return "Boolean"
 }
 
-func (b Boolean) Definition() *ast.Definition {
+func (b Boolean) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        b.TypeName(),
@@ -426,7 +426,7 @@ func (String) TypeName() string {
 	return "String"
 }
 
-func (s String) Definition() *ast.Definition {
+func (s String) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        s.TypeName(),
@@ -531,7 +531,7 @@ func (i ID[T]) ID() *idproto.ID {
 var _ ScalarType = ID[Typed]{}
 
 // Definition returns the GraphQL definition of the type.
-func (i ID[T]) Definition() *ast.Definition {
+func (i ID[T]) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
@@ -843,7 +843,7 @@ func (e *EnumValues[T]) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *EnumValues[T]) Definition() *ast.Definition {
+func (e *EnumValues[T]) TypeDefinition() *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
@@ -851,7 +851,7 @@ func (e *EnumValues[T]) Definition() *ast.Definition {
 	}
 	var val T
 	if isType, ok := any(val).(Descriptive); ok {
-		def.Description = isType.Description()
+		def.Description = isType.TypeDescription()
 	}
 	return def
 }
@@ -913,7 +913,7 @@ func MustInputSpec(val Type) InputObjectSpec {
 		Name: val.TypeName(),
 	}
 	if desc, ok := val.(Descriptive); ok {
-		spec.Description = desc.Description()
+		spec.Description = desc.TypeDescription()
 	}
 	inputs, err := inputSpecsForType(val, true)
 	if err != nil {
@@ -944,7 +944,7 @@ func (spec InputObjectSpec) TypeName() string {
 	return spec.Name
 }
 
-func (spec InputObjectSpec) Definition() *ast.Definition {
+func (spec InputObjectSpec) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        spec.Name,

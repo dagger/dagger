@@ -21,7 +21,7 @@ func (*Point) Type() *ast.Type {
 	}
 }
 
-func (*Point) Description() string {
+func (*Point) TypeDescription() string {
 	return "A point in 2D space."
 }
 
@@ -37,7 +37,7 @@ func (*Line) Type() *ast.Type {
 	}
 }
 
-func (*Line) Description() string {
+func (*Line) TypeDescription() string {
 	return "A line connecting two points."
 }
 
@@ -70,7 +70,7 @@ func (Direction) Type() *ast.Type {
 	}
 }
 
-func (Direction) Description() string {
+func (Direction) TypeDescription() string {
 	return "A direction relative to an initial position."
 }
 
