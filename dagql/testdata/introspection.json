@@ -15,31 +15,31 @@
         "enumValues": [
           {
             "name": "UP",
-            "description": "",
+            "description": "Upward.",
             "isDeprecated": false,
             "deprecationReason": ""
           },
           {
             "name": "DOWN",
-            "description": "",
+            "description": "Downward.",
             "isDeprecated": false,
             "deprecationReason": ""
           },
           {
             "name": "LEFT",
-            "description": "",
+            "description": "Leftward.",
             "isDeprecated": false,
             "deprecationReason": ""
           },
           {
             "name": "RIGHT",
-            "description": "",
+            "description": "Rightward.",
             "isDeprecated": false,
             "deprecationReason": ""
           },
           {
             "name": "INERT",
-            "description": "",
+            "description": "No direction.",
             "isDeprecated": false,
             "deprecationReason": ""
           }
