@@ -276,7 +276,7 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 		schema.AddTypes(definition(ast.Scalar, t))
 	}
 	for _, t := range s.typeDefs {
-		schema.AddTypes(t.Definition())
+		schema.AddTypes(t.TypeDefinition())
 	}
 	schema.Directives = map[string]*ast.DirectiveDefinition{}
 	for n, d := range s.directives {

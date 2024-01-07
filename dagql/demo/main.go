@@ -31,7 +31,7 @@ func (Query) Type() *ast.Type {
 	}
 }
 
-func (Query) Definition() *ast.Definition {
+func (Query) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Object,
 		Name: "Query",
