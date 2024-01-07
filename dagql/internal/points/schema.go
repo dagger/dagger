@@ -46,11 +46,11 @@ type Direction string
 var Directions = dagql.NewEnum[Direction]()
 
 var (
-	DirectionUp    = Directions.Register("UP")
-	DirectionDown  = Directions.Register("DOWN")
-	DirectionLeft  = Directions.Register("LEFT")
-	DirectionRight = Directions.Register("RIGHT")
-	DirectionInert = Directions.Register("INERT")
+	DirectionUp    = Directions.Register("UP", "Upward.")
+	DirectionDown  = Directions.Register("DOWN", "Downward.")
+	DirectionLeft  = Directions.Register("LEFT", "Leftward.")
+	DirectionRight = Directions.Register("RIGHT", "Rightward.")
+	DirectionInert = Directions.Register("INERT", "No direction.")
 )
 
 var _ dagql.Input = Direction("")

@@ -821,11 +821,17 @@ type EnumValue interface {
 }
 
 // EnumValues is a list of possible values for an Enum.
-type EnumValues[T EnumValue] []T
+type EnumValues[T EnumValue] struct {
+	values       []T
+	descriptions []string
+}
 
 // NewEnum creates a new EnumType with the given possible values.
 func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
-	return (*EnumValues[T])(&vals)
+	return &EnumValues[T]{
+		values:       vals,
+		descriptions: make([]string, len(vals)),
+	}
 }
 
 func (e *EnumValues[T]) Type() *ast.Type {
@@ -857,9 +863,10 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 
 func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
-	for _, val := range *e {
+	for i, val := range e.values {
 		values = append(values, &ast.EnumValueDefinition{
-			Name: string(val),
+			Name:        string(val),
+			Description: e.descriptions[i],
 		})
 	}
 	return values
@@ -875,7 +882,7 @@ func (e *EnumValues[T]) Literal(val T) *idproto.Literal {
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
 	var enum T
-	for _, possible := range *e {
+	for _, possible := range e.values {
 		if val == string(possible) {
 			return possible, nil
 		}
@@ -883,8 +890,9 @@ func (e *EnumValues[T]) Lookup(val string) (T, error) {
 	return enum, fmt.Errorf("invalid enum value %q", val)
 }
 
-func (e *EnumValues[T]) Register(val T) T {
-	*e = append(*e, val)
+func (e *EnumValues[T]) Register(val T, desc ...string) T {
+	e.values = append(e.values, val)
+	e.descriptions = append(e.descriptions, FormatDescription(desc...))
 	return val
 }
 
