@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -49,7 +50,7 @@ func main() {
 	}
 
 	srv := dagql.NewServer(Query{})
-	srv.RecordTo(TelemetryFunc(rec))
+	srv.Around(TelemetryFunc(rec))
 	points.Install[Query](srv)
 	pipes.Install[Query](srv)
 	introspection.Install[Query](srv)
@@ -75,15 +76,25 @@ func main() {
 	}))
 }
 
-func TelemetryFunc(rec *progrock.Recorder) dagql.TelemetryFunc {
-	return func(ctx context.Context, id *idproto.ID) (context.Context, func(error)) {
+func TelemetryFunc(rec *progrock.Recorder) dagql.AroundFunc {
+	return func(
+		ctx context.Context,
+		obj dagql.Object,
+		id *idproto.ID,
+		next func(context.Context) (dagql.Typed, error),
+	) func(context.Context) (dagql.Typed, error) {
 		dig, err := id.Digest()
 		if err != nil {
-			return ctx, func(error) {}
+			slog.Error("failed to digest id", "error", err, "id", id.Display())
+			return next
 		}
-		vtx := rec.Vertex(dig, id.Display())
-		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
-		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
-		return ctx, vtx.Done
+		return func(context.Context) (dagql.Typed, error) {
+			vtx := rec.Vertex(dig, id.Display())
+			ctx = ioctx.WithStdout(ctx, vtx.Stdout())
+			ctx = ioctx.WithStderr(ctx, vtx.Stderr())
+			res, err := next(ctx)
+			vtx.Done(err)
+			return res, err
+		}
 	}
 }

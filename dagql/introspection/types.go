@@ -172,12 +172,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("isDeprecated", func(ctx context.Context, self *Field, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
 		}),
-		dagql.Func("deprecationReason", func(ctx context.Context, self *Field, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.DeprecationReason() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.DeprecationReason())), nil
-			}
+		dagql.Func("deprecationReason", func(ctx context.Context, self *Field, args struct{}) (*string, error) {
+			return self.DeprecationReason(), nil
 		}),
 	}.Install(srv)
 
@@ -202,6 +198,12 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return dagql.NonNull(dagql.NewString(*self.DefaultValue)), nil
 			}
 		}),
+		dagql.Func("isDeprecated", func(ctx context.Context, self *InputValue, args struct{}) (bool, error) {
+			return self.IsDeprecated(), nil
+		}),
+		dagql.Func("deprecationReason", func(ctx context.Context, self *InputValue, args struct{}) (*string, error) {
+			return self.DeprecationReason(), nil
+		}),
 	}.Install(srv)
 
 	dagql.Fields[*EnumValue]{
@@ -218,12 +220,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("isDeprecated", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
 		}),
-		dagql.Func("deprecationReason", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.DeprecationReason() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.DeprecationReason())), nil
-			}
+		dagql.Func("deprecationReason", func(ctx context.Context, self *EnumValue, args struct{}) (*string, error) {
+			return self.DeprecationReason(), nil
 		}),
 	}.Install(srv)
 }
@@ -300,6 +298,7 @@ func (s *Schema) directiveFromDef(d *ast.DirectiveDefinition) Directive {
 			description:  arg.Description,
 			DefaultValue: defaultValue(arg.DefaultValue),
 			Type_:        WrapTypeFromType(s.schema, arg.Type),
+			deprecation:  arg.Directives.ForName("deprecated"),
 		}
 	}
 
@@ -516,6 +515,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 				Name:         arg.Name,
 				description:  arg.Description,
 				DefaultValue: defaultValue(arg.DefaultValue),
+				deprecation:  arg.Directives.ForName("deprecated"),
 			})
 		}
 
@@ -542,6 +542,7 @@ func (t *Type) InputFields() []*InputValue {
 			description:  f.Description,
 			Type_:        WrapTypeFromType(t.schema, f.Type),
 			DefaultValue: defaultValue(f.DefaultValue),
+			deprecation:  f.Directives.ForName("deprecated"),
 		})
 	}
 	return res
@@ -656,6 +657,7 @@ type (
 		description  string
 		DefaultValue *string
 		Type_        *Type
+		deprecation  *ast.Directive
 	}
 )
 
@@ -718,6 +720,23 @@ func (f *InputValue) Description() *string {
 		return nil
 	}
 	return &f.description
+}
+
+func (f *InputValue) IsDeprecated() bool {
+	return f.deprecation != nil
+}
+
+func (f *InputValue) DeprecationReason() *string {
+	if f.deprecation == nil {
+		return nil
+	}
+
+	reason := f.deprecation.Arguments.ForName("reason")
+	if reason == nil {
+		return nil
+	}
+
+	return &reason.Value.Raw
 }
 
 func (f *Directive) Description() *string {

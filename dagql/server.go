@@ -34,6 +34,7 @@ type Server struct {
 	objects     map[string]ObjectType
 	scalars     map[string]ScalarType
 	typeDefs    map[string]TypeDef
+	directives  map[string]DirectiveSpec
 	installLock *sync.Mutex
 
 	// Cache is the inner cache used by the server. It can be replicated to
@@ -59,15 +60,6 @@ type TypeDef interface {
 	Definitive
 }
 
-var coreScalars = []ScalarType{
-	Boolean(false),
-	Int(0),
-	Float(0),
-	String(""),
-	// instead of a single ID type, each object has its own ID type
-	// ID{},
-}
-
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
 	rootClass := NewClass[T](ClassOpts[T]{
@@ -85,13 +77,73 @@ func NewServer[T Typed](root T) *Server {
 		objects:     map[string]ObjectType{},
 		scalars:     map[string]ScalarType{},
 		typeDefs:    map[string]TypeDef{},
+		directives:  map[string]DirectiveSpec{},
 		installLock: &sync.Mutex{},
 	}
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
 		srv.InstallScalar(scalar)
 	}
+	for _, directive := range coreDirectives {
+		srv.InstallDirective(directive)
+	}
 	return srv
+}
+
+var coreScalars = []ScalarType{
+	Boolean(false),
+	Int(0),
+	Float(0),
+	String(""),
+	// instead of a single ID type, each object has its own ID type
+	// ID{},
+}
+
+var coreDirectives = []DirectiveSpec{
+	{
+		Name: "deprecated",
+		Description: FormatDescription(
+			`The @deprecated built-in directive is used within the type system
+			definition language to indicate deprecated portions of a GraphQL
+			service's schema, such as deprecated fields on a type, arguments on a
+			field, input fields on an input type, or values of an enum type.`),
+		Args: []InputSpec{
+			{
+				Name: "reason",
+				Description: FormatDescription(
+					`Explains why this element was deprecated, usually also including a
+					suggestion for how to access supported similar data. Formatted in
+					[Markdown](https://daringfireball.net/projects/markdown/).`),
+				Type:    String(""),
+				Default: String("No longer supported"),
+			},
+		},
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+			DirectiveLocationArgumentDefinition,
+			DirectiveLocationInputFieldDefinition,
+			DirectiveLocationEnumValue,
+		},
+	},
+	{
+		Name: "impure",
+		Description: FormatDescription(
+			`Indicates that a field may resolve to different values when called
+			repeatedly with the same inputs, or that the field has side effects.
+			Impure fields are never cached.`),
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name: "meta",
+		Description: FormatDescription(
+			`Indicates that a field's selection can be removed from any query without
+			changing the result. Meta fields are dropped from cache keys.`),
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -118,9 +170,10 @@ func (s *Server) installObjectLocked(class ObjectType) {
 		s.scalars[idType.TypeName()] = idType
 		s.Root().ObjectType().Extend(
 			FieldSpec{
-				Name: fmt.Sprintf("load%sFromID", class.TypeName()),
-				Type: class.Typed(),
-				Pure: false, // no need to cache this; what if the ID is impure?
+				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+				Type:        class.Typed(),
+				Pure:        false, // no need to cache this; what if the ID is impure?
 				Args: []InputSpec{
 					{
 						Name: "id",
@@ -148,6 +201,13 @@ func (s *Server) InstallScalar(scalar ScalarType) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	s.scalars[scalar.TypeName()] = scalar
+}
+
+// InstallDirective installs the given Directive type into the schema.
+func (s *Server) InstallDirective(directive DirectiveSpec) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	s.directives[directive.Name] = directive
 }
 
 // InstallTypeDef installs an arbitrary type definition into the schema.
@@ -217,6 +277,10 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	}
 	for _, t := range s.typeDefs {
 		schema.AddTypes(t.Definition())
+	}
+	schema.Directives = map[string]*ast.DirectiveDefinition{}
+	for n, d := range s.directives {
+		schema.Directives[n] = d.DirectiveDefinition()
 	}
 	return schema
 }
