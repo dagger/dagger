@@ -12,6 +12,7 @@
       {
         "kind": "ENUM",
         "name": "Direction",
+        "description": "A direction relative to an initial position.",
         "enumValues": [
           {
             "name": "UP",

@@ -844,12 +844,16 @@ func (e *EnumValues[T]) TypeName() string {
 }
 
 func (e *EnumValues[T]) Definition() *ast.Definition {
-	return &ast.Definition{
-		Kind: ast.Enum,
-		Name: e.TypeName(),
-		// Description: "TODO",
+	def := &ast.Definition{
+		Kind:       ast.Enum,
+		Name:       e.TypeName(),
 		EnumValues: e.PossibleValues(),
 	}
+	var val T
+	if isType, ok := any(val).(Descriptive); ok {
+		def.Description = isType.Description()
+	}
+	return def
 }
 
 func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
