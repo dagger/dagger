@@ -70,6 +70,10 @@ func (Direction) Type() *ast.Type {
 	}
 }
 
+func (Direction) Description() string {
+	return "A direction relative to an initial position."
+}
+
 func Install[R dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[R]{
 		dagql.Func("point", func(ctx context.Context, self R, args struct {
