@@ -541,9 +541,9 @@ func (field Field[T]) Doc(paras ...string) Field[T] {
 }
 
 func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
-	for _, arg := range field.Spec.Args {
+	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
-			arg.Description = FormatDescription(paras...)
+			field.Spec.Args[i].Description = FormatDescription(paras...)
 			return field
 		}
 	}

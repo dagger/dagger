@@ -338,7 +338,7 @@
             "args": [
               {
                 "name": "documentedArg",
-                "description": "",
+                "description": "a really cool argument",
                 "defaultValue": null,
                 "type": {
                   "kind": "NON_NULL",
