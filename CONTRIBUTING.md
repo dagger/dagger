@@ -265,7 +265,7 @@ To list available linters:
   sdk:elixir:lint         lints the Elixir SDK
   sdk:go:lint             lints the Go SDK
   sdk:java:lint           lints the Java SDK
-  sdk:typescript:lint     lints the Typescript SDK
+  sdk:typescript:lint     lints the TypeScript SDK
   sdk:python:lint         lints the Python SDK
   sdk:rust:lint           lints the Rust SDK
 ```
@@ -276,7 +276,7 @@ The `docs:lint` is misleading as it only lints the Markdown in documentation (`.
 
 ### How to test SDK changes locally?
 
-Typescript:
+TypeScript:
 
 - In `sdk/typescript`, run `npm run build`
 - In your `package.json`, update `@dagger.io/dagger` to reference your local path. For example `"@dagger.io/dagger": "<PATH TO DAGGER FORK>/dagger/sdk/typescript",`

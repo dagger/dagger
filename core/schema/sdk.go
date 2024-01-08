@@ -79,7 +79,7 @@ func (s *APIServer) builtinSDK(ctx context.Context, sdkName string) (SDK, error)
 	case "python":
 		return s.loadBuiltinSDK(ctx, sdkName, distconsts.PythonSDKEngineContainerModulePath)
 	case "typescript":
-		return s.loadBuiltinSDK(ctx, sdkName, distconsts.TypescriptSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, sdkName, distconsts.TypeScriptSDKEngineContainerModulePath)
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}

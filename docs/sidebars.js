@@ -92,7 +92,7 @@ module.exports = {
         },
         {
           type: "category",
-          label: "Typescript SDK",
+          label: "TypeScript SDK",
           collapsible: true,
           collapsed: true,
           items: [

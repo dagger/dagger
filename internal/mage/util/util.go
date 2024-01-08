@@ -152,7 +152,7 @@ func HostDaggerBinary(c *dagger.Client) *dagger.File {
 	return PlatformDaggerBinary(c, runtime.GOOS, runtime.GOARCH, goarm)
 }
 
-// CodegenBinary returns a binary for generating the Go and Typescript SDKs.
+// CodegenBinary returns a binary for generating the Go and TypeWcript SDKs.
 func CodegenBinary(c *dagger.Client) *dagger.File {
 	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/codegen", "-ldflags", "-s -w", "./cmd/codegen"}).

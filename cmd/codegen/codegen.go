@@ -83,15 +83,15 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 		gen = &gogenerator.GoGenerator{
 			Config: cfg,
 		}
-	case generator.SDKLangTypescript:
-		gen = &typescriptgenerator.TypescriptGenerator{
+	case generator.SDKLangTypeScript:
+		gen = &typescriptgenerator.TypeScriptGenerator{
 			Config: cfg,
 		}
 
 	default:
 		sdks := []string{
 			string(generator.SDKLangGo),
-			string(generator.SDKLangTypescript),
+			string(generator.SDKLangTypeScript),
 		}
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}

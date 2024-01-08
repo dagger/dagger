@@ -75,7 +75,7 @@
   status = 302
 
 [[redirects]]
-  # redirect Typescript CI guide to unified multi-language CI guide
+  # redirect TypeScript CI guide to unified multi-language CI guide
   from = "/114934/typescript-ci"
   to = "/145912/ci"
   status = 302

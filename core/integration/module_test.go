@@ -642,7 +642,7 @@ func TestModulePythonGitRemovesIgnored(t *testing.T) {
 	require.Contains(t, changedAfterSync, "D  sdk/src/dagger/__init__.py\n")
 }
 
-func TestModuleTypescriptGitRemovesIgnored(t *testing.T) {
+func TestModuleTypeScriptGitRemovesIgnored(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -861,7 +861,7 @@ func TestModuleGoSignatures(t *testing.T) {
 //go:embed testdata/modules/typescript/minimal/index.ts
 var tsSignatures string
 
-func TestModuleTypescriptSignatures(t *testing.T) {
+func TestModuleTypeScriptSignatures(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -3741,7 +3741,7 @@ func TestModuleConfigAPI(t *testing.T) {
 	require.Equal(t, "..", root)
 }
 
-func TestModuleTypescriptInit(t *testing.T) {
+func TestModuleTypeScriptInit(t *testing.T) {
 	t.Run("from scratch", func(t *testing.T) {
 		t.Parallel()
 
@@ -4178,7 +4178,7 @@ func TestModuleReservedWords(t *testing.T) {
 //go:embed testdata/modules/typescript/syntax/index.ts
 var tsSyntax string
 
-func TestModuleTypescriptSyntaxSupport(t *testing.T) {
+func TestModuleTypeScriptSyntaxSupport(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)

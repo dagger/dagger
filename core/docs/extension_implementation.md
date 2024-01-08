@@ -9,7 +9,7 @@ Code implementing an extension executes in its own isolated container, but other
 
 The end result is the ability for users to create re-usable abstractions over both the Dagger API and any arbitrary code in general. Extensions are invoked the same way Dagger invokes any Exec, so they benefit from all the same caching and other features provided by Dagger.
 
-Importantly, because extensions are merged into the language-agnostic graphql API, they can be invoked across language boundaries. Go code can call a Python extension, which internally can call a Typescript extension, etc. The language implementing the extension is opaque to the caller.
+Importantly, because extensions are merged into the language-agnostic graphql API, they can be invoked across language boundaries. Go code can call a Python extension, which internally can call a TypeScript extension, etc. The language implementing the extension is opaque to the caller.
 
 ## Extension Protocol Spec
 
@@ -160,7 +160,7 @@ Each individual input to a command should also support an optional doc string an
 The way this is implemented is up to the SDK, e.g.:
 * In Go, these are comments above the command
 * In Python, type annotations are used
-* For Typescript, TBD but jsdoc comments are one reasonable option
+* For TypeScript, TBD but jsdoc comments are one reasonable option
 
 ### Dagger Client
 An already connected dagger client should be available to the command.

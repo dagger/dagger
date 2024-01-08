@@ -59,7 +59,7 @@ To add or edit a step, be sure to:
 ```jsx
 export const ids = {
     Go: "ho4ZF-6naKv",
-    Typescript: "aPB-msb5UEn",
+    TypeScript: "aPB-msb5UEn",
     Python: "tqaPp2aVr_L"
 }
 

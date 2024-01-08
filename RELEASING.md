@@ -5,7 +5,7 @@ This describes how to release Dagger:
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
 - [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
-- [⬢ Typescript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
+- [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
@@ -47,7 +47,7 @@ flowchart TD
     readthedocs["📖 dagger-io.readthedocs.io"]
     repo ==> python --> pypi & readthedocs
 
-    typescript["⬢ Typescript SDK"]
+    typescript["⬢ TypeScript SDK"]
     npm["⬢ npmjs.com/@dagger.io/dagger"]
     repo ==> typescript --> npm
 
@@ -303,7 +303,7 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
       https://readthedocs.org/projects/dagger-io/builds/
 - [ ] Click on **Publish release**
 
-## ⬢ Typescript SDK ⏱ `5mins`
+## ⬢ TypeScript SDK ⏱ `5mins`
 
 - [ ] Tag & publish:
 
@@ -313,7 +313,7 @@ git tag "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?
 git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${TYPESCRIPT_SDK_VERSION}
 ```
 
-This will trigger the [`Publish Typescript SDK`
+This will trigger the [`Publish TypeScript SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-typescript.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 

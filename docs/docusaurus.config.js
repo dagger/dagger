@@ -97,7 +97,7 @@ const config = {
           frontmatter: {
             displayed_sidebar: 'current',
             sidebar_label: 'Reference',
-            title: "Dagger Typescript SDK"
+            title: "Dagger TypeScript SDK"
           },
           hideMembersSymbol: true,
           requiredToBeDocumented: ["Class"]

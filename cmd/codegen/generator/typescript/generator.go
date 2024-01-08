@@ -14,12 +14,12 @@ import (
 
 const ClientGenFile = "client.gen.ts"
 
-type TypescriptGenerator struct {
+type TypeScriptGenerator struct {
 	Config generator.Config
 }
 
-// Generate will generate the Typescript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *TypescriptGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
+// Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
+func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {

@@ -21,7 +21,7 @@ type SDKLang string
 
 const (
 	SDKLangGo         SDKLang = "go"
-	SDKLangTypescript SDKLang = "typescript"
+	SDKLangTypeScript SDKLang = "typescript"
 )
 
 type Config struct {

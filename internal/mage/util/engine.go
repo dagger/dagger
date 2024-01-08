@@ -238,7 +238,7 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		WithFile(engineClientPath, daggerBin(c, arch, version)).
 		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
-		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
+		WithDirectory(filepath.Dir(distconsts.TypeScriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, false)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
@@ -284,7 +284,7 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 		WithFile(engineClientPath, daggerBin(c, arch, version)).
 		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
-		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
+		WithDirectory(filepath.Dir(distconsts.TypeScriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, true)).
 		WithDirectory("/", dialstdioFiles(c, arch)).

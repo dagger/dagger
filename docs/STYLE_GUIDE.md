@@ -28,7 +28,7 @@
   <TabItem value="Go">
   ...
   </TabItem>
-  <TabItem value="Typescript">
+  <TabItem value="TypeScript">
   ...
   </TabItem>
   <TabItem value="Python">
@@ -38,7 +38,7 @@
   ```
 
 - Use API Playground embeds where possible (see "API Playground embeds" section below).
-- In inline text, when referring to an SDK method, instead of explicitly specifying the name for each language method (they have minor differences), use the GraphQL API type and field instead e.g `Container.withServiceBinding` instead of `Container.WithServiceBinding (Go), Container.with_service_binding (Python) and Container.withServiceBinding (Typescript)`.
+- In inline text, when referring to an SDK method, instead of explicitly specifying the name for each language method (they have minor differences), use the GraphQL API type and field instead e.g `Container.withServiceBinding` instead of `Container.WithServiceBinding (Go), Container.with_service_binding (Python) and Container.withServiceBinding (TypeScript)`.
   - Always `Capitalize` types, and always `lowerCamelCase` fields, to match GraphQL syntax as the common compromise.
   - Omit the `()` since a lot of the time it's either not necessary, or implies no args are needed, and sometimes you just want to refer to a method call and ignore its required args e.g. `Container.asService`.
 
@@ -114,4 +114,4 @@ Code listing can come from two sources:
 
 Code listings must be presented for each language SDK unless not relevant/not technically feasible for that language (e.g. a recipe for "using a magefile" would only be relevant for Go).
 
-Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `Typescript` and `Python`.
+Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `TypeScript` and `Python`.

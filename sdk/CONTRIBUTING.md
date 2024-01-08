@@ -176,7 +176,7 @@ print(result['container']['from']['withExec']['stdout'])
 
 </details>
 
-Developing with these query strings isn’t fun. It’s much better to build the query string dynamically by using a query [builder](https://en.wikipedia.org/wiki/Builder_pattern). Both Go and Typescript SDKs have implemented their own because there didn’t seem to have a good library for it, while Python didn’t have to because Python’s GraphQL client library has a good enough feature to [compose queries dynamically](https://gql.readthedocs.io/en/stable/advanced/dsl_module.html).
+Developing with these query strings isn’t fun. It’s much better to build the query string dynamically by using a query [builder](https://en.wikipedia.org/wiki/Builder_pattern). Both Go and TypeScript SDKs have implemented their own because there didn’t seem to have a good library for it, while Python didn’t have to because Python’s GraphQL client library has a good enough feature to [compose queries dynamically](https://gql.readthedocs.io/en/stable/advanced/dsl_module.html).
 
 <details><summary>Example: GraphQL query builder</summary>
 

@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/internal/tui"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/internal/tui"
 )
 
 var runCmd = &cobra.Command{
@@ -29,7 +30,7 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 	Example: `  Run a Dagger pipeline written in Go:
     dagger run go run main.go
 
-  Run a Dagger pipeline written in Typescript:
+  Run a Dagger pipeline written in TypeScript:
     dagger run tsx index.ts
 
   Run a Dagger pipeline written in Python:

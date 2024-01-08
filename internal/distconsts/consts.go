@@ -13,5 +13,5 @@ const (
 
 	GoSDKEngineContainerTarballPath        = "/usr/local/share/dagger/go-module-sdk-image.tar"
 	PythonSDKEngineContainerModulePath     = "/usr/local/share/dagger/python-sdk/runtime"
-	TypescriptSDKEngineContainerModulePath = "/usr/local/share/dagger/typescript-sdk/runtime"
+	TypeScriptSDKEngineContainerModulePath = "/usr/local/share/dagger/typescript-sdk/runtime"
 )
