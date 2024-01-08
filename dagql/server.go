@@ -181,7 +181,7 @@ func (s *Server) installObjectLocked(class ObjectType) {
 					},
 				},
 			},
-			func(ctx context.Context, self Object, args map[string]Typed) (Typed, error) {
+			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
 				idable, ok := args["id"].(IDable)
 				if !ok {
 					return nil, fmt.Errorf("load%sFromID: expected IDable, got %T", class.TypeName(), args["id"])
@@ -710,7 +710,7 @@ func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *i
 
 type Inputs []NamedInput
 
-func (args Inputs) Lookup(name string) (Typed, bool) {
+func (args Inputs) Lookup(name string) (Input, bool) {
 	for _, arg := range args {
 		if arg.Name == name {
 			return arg.Value, true

@@ -58,7 +58,7 @@ type IDType interface {
 
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
-type FieldFunc func(context.Context, Object, map[string]Typed) (Typed, error)
+type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
