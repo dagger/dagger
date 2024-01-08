@@ -32,6 +32,7 @@ jobs:
         run: |
           ./hack/make dagger:publish ${{ github.ref_name }}
         env:
+          GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
@@ -39,7 +40,6 @@ jobs:
           AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
-          HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
