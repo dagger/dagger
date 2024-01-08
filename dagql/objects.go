@@ -56,7 +56,7 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 					Type:        ID[T]{inner: opts.Typed},
 					Pure:        true,
 				},
-				Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+				Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 					return NewDynamicID[T](self.ID(), opts.Typed), nil
 				},
 			},
@@ -108,7 +108,7 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	defer cls.fieldsL.Unlock()
 	cls.fields[spec.Name] = &Field[T]{
 		Spec: spec,
-		Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+		Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 			return fun(ctx, self, args)
 		},
 	}
@@ -195,7 +195,7 @@ func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
 }
 
 // Call calls a field on the class against an instance.
-func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Typed) (Typed, error) {
+func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Input) (Typed, error) {
 	field, ok := cls.Field(fieldName)
 	if !ok {
 		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
@@ -344,7 +344,7 @@ func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, s
 			Type: ret,
 			Pure: true, // default to pure
 		},
-		Func: func(ctx context.Context, self Instance[T], argVals map[string]Typed) (Typed, error) {
+		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input) (Typed, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -500,7 +500,7 @@ func (fields Fields[T]) Install(server *Server) {
 				Type: field.Value,
 				Pure: true,
 			},
-			Func: func(ctx context.Context, self Instance[T], args map[string]Typed) (Typed, error) {
+			Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 				t, found, err := getField(self.Self, false, name)
 				if err != nil {
 					return nil, err
@@ -530,7 +530,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
 	Spec FieldSpec
-	Func func(context.Context, Instance[T], map[string]Typed) (Typed, error)
+	Func func(context.Context, Instance[T], map[string]Input) (Typed, error)
 }
 
 // Doc sets the description of the field. Each argument is joined by two empty
@@ -616,8 +616,8 @@ func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
 	return def
 }
 
-func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Typed, error) {
-	args := make(map[string]Typed, len(field.Args))
+func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Input, error) {
+	args := make(map[string]Input, len(field.Args))
 	for _, arg := range field.Args {
 		val, ok := inputs.Lookup(arg.Name)
 		if ok {
@@ -779,7 +779,7 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 	return nil, false, nil
 }
 
-func setInputFields(specs InputSpecs, inputs map[string]Typed, dest any) error {
+func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
 	if destT == nil {
