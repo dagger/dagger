@@ -44,7 +44,7 @@ func getClientParams() (graphql.Client, *querybuilder.Selection) {
 			return dialTransport.RoundTrip(r)
 		}),
 	}
-	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
+	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
 
 	return gqlClient, querybuilder.Query()
 }
@@ -54,6 +54,21 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+type errorWrappedClient struct {
+	graphql.Client
+}
+
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
 }
 
 {{ ModuleMainSrc }}

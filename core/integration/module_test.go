@@ -4220,6 +4220,45 @@ func TestModuleTypescriptSyntaxSupport(t *testing.T) {
 	})
 }
 
+func TestModuleExecError(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=playground", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `
+package main
+
+import (
+	"context"
+	"errors"
+)
+
+type Playground struct{}
+
+func (p *Playground) DoThing(ctx context.Context) error {
+	_, err := dag.Container().From("alpine").WithExec([]string{"sh", "-c", "exit 5"}).Sync(ctx)
+	var e *ExecError
+	if errors.As(err, &e) {
+		if e.ExitCode == 5 {
+			return nil
+		}
+	}
+	panic("yikes")
+}
+`})
+	logGen(ctx, t, modGen.Directory("."))
+
+	_, err := modGen.
+		With(daggerQuery(`{playground{doThing}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
