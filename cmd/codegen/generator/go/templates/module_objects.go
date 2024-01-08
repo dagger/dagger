@@ -91,7 +91,12 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		}
 
 		fieldSpec := &fieldSpec{goType: field.Type()}
-		fieldSpec.typeSpec, err = ps.parseGoTypeReference(field.Type(), nil, false)
+		if _, optional, err := ps.isOptionalWrapper(fieldSpec.goType); err != nil {
+			return nil, err
+		} else if optional {
+			return nil, fmt.Errorf("optional type wrapper not allowed in struct field %s", field.Name())
+		}
+		fieldSpec.typeSpec, err = ps.parseGoTypeReference(fieldSpec.goType, nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse field type: %w", err)
 		}
