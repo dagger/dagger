@@ -84,11 +84,11 @@ const config = {
     [
         "docusaurus-plugin-typedoc",
         {
-          entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts', '../sdk/nodejs/common/errors/index.ts'],
-          tsconfig: '../sdk/nodejs/tsconfig.json',
-          out: '../current_docs/sdk/nodejs/reference/',
+          entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
+          tsconfig: '../sdk/typescript/tsconfig.json',
+          out: '../current_docs/sdk/typescript/reference/',
           excludeProtected: true,
-          exclude: '../sdk/nodejs/node_modules/**',
+          exclude: '../sdk/typescript/node_modules/**',
           skipErrorChecking: true,
           disableSources: true,
           sidebar: {
@@ -97,7 +97,7 @@ const config = {
           frontmatter: {
             displayed_sidebar: 'current',
             sidebar_label: 'Reference',
-            title: "Dagger NodeJS SDK"
+            title: "Dagger Typescript SDK"
           },
           hideMembersSymbol: true,
           requiredToBeDocumented: ["Class"]

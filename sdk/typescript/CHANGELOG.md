@@ -285,6 +285,6 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.6.3`. [See what changed in that
 - Bump Engine to v0.6.3 by @github-actions in https://github.com/dagger/dagger/pull/5407
 
 ### What to do next
-- Read the [documentation](https://docs.dagger.io/sdk/nodejs)
+- Read the [documentation](https://docs.dagger.io/sdk/typescript)
 - Join our [Discord server](https://discord.gg/dagger-io)
 - Follow us on [Twitter](https://twitter.com/dagger_io)

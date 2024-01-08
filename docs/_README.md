@@ -59,7 +59,7 @@ To add or edit a step, be sure to:
 ```jsx
 export const ids = {
     Go: "ho4ZF-6naKv",
-    Node: "aPB-msb5UEn",
+    Typescript: "aPB-msb5UEn",
     Python: "tqaPp2aVr_L"
 }
 
@@ -68,7 +68,7 @@ export const ids = {
 
 - Encapsulate the whole quickstart content inside the `<QuickstartDoc>` component. This will pass all the content as children. This component will take care of rendering each column accordingly.
 - Use the `<Embed>` component instead of the native `<iframe>` element. This component makes sure to add a spinner while the `<iframe>` is loading, besides taking care of some custom styling.
-- Make sure the `<TabItem>` `value` prop has the same values as the `ids` object property names. Use `value=Node` instead of value="Node.js" on the prop, as property names cannot contain dots in JS.
+- Make sure the `<TabItem>` `value` prop has the same values as the `ids` object property names.
 
 See [children](https://beta.reactjs.org/reference/react/Children) and [tabs](https://docusaurus.io/docs/markdown-features/tabs) for implementation context.
 

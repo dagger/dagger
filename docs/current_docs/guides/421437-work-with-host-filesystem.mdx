@@ -2,7 +2,7 @@
 slug: /421437/work-with-host-filesystem
 displayed_sidebar: 'current'
 category: "guides"
-tags: ["go", "python", "nodejs"]
+tags: ["go", "python", "typescript"]
 authors: ["Alex Suraci", "Vikram Vaswani"]
 date: "2022-11-01"
 ---
@@ -26,7 +26,7 @@ This guide explains how to work with the host filesystem using the Dagger SDKs. 
 This guide assumes that:
 
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
-- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.mdx), [Python](../sdk/python/866944-install.mdx) or [Node.js](../sdk/nodejs/835948-install.mdx) SDK.
+- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.mdx), [Python](../sdk/python/866944-install.mdx) or [Typescript](../sdk/typescript/835948-install.mdx) SDK.
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.mdx).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
@@ -45,7 +45,7 @@ The following example shows how to list the contents of the working directory:
 The `Host` type provides information about the host's execution environment. Its `Directory()` method accepts a path and returns a reference to the corresponding host directory as a `Directory` struct. Entries in the directory can be obtained via the `Directory.Entries()` function.
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/list-dir/index.mts
 ```
@@ -76,7 +76,7 @@ The following example shows how to obtain a reference to the host working direct
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/list-dir-include/index.mts
 ```
@@ -99,7 +99,7 @@ The following example shows how to obtain a reference to the host working direct
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/list-dir-exclude/index.mts
 ```
@@ -122,7 +122,7 @@ The exclusion pattern overrides the inclusion pattern, but not vice-versa. The f
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/list-dir-exclude-include/index.mts
 ```
@@ -145,7 +145,7 @@ The exclusion pattern overrides the inclusion pattern, but not vice-versa. The f
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/glob-pattern/index.mts
 ```
@@ -172,7 +172,7 @@ The following example creates a file in a container's `/tmp` directory and then 
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/export-dir/index.mts
 ```
@@ -199,7 +199,7 @@ The following example shows how to write a host directory to a container at the 
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/transfer-dir/index.mts
 ```
@@ -226,7 +226,7 @@ The following example shows how to transfer a host directory to a container at t
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/work-with-host-filesystem/transfer-dir-export/index.mts
 ```
@@ -266,4 +266,4 @@ Using the host filesystem in your Dagger pipeline is convenient, but there are s
 
 This guide introduced you to the functions available in the Dagger SDKs to work with the host filesystem. It provided explanations and code samples demonstrating how to set the host working directory, read directory contents (with and without pathname filters), mount a host directory in a container and export a directory from a container to the host.
 
-Use the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.

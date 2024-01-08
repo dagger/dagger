@@ -1,28 +1,28 @@
 ---
-slug: /sdk/nodejs
+slug: /sdk/typescript
 ---
 
-# Dagger Node.js SDK
+# Dagger Typescript SDK
 
-## What is the Dagger Node.js SDK?
+## What is the Dagger Typescript SDK?
 
-The Dagger Node.js SDK contains everything you need to develop CI/CD pipelines in Node.js, and run them on any OCI-compatible container runtime.
+The Dagger Typescript SDK contains everything you need to develop CI/CD pipelines in Typescript, and run them on any OCI-compatible container runtime.
 
-Currently the Node.js SDK consists of:
+Currently the Typescript SDK consists of:
 
 * A Node.js package
 * This documentation
 
 ## Who is it for?
 
-The Dagger Node.js SDK may be a good fit if you are...
+The Dagger Typescript SDK may be a good fit if you are...
 
-* A front-end or back-end developer wishing your CI pipelines were TypeScript or JavaScript code that you can run locally in seconds, instead of YAML that can only run on a proprietary service.
-* A developer who needs CI/CD, and is looking for an excuse to learn TypeScript or JavaScript.
+* A front-end or back-end developer wishing your CI pipelines were TypeScript code that you can run locally in seconds, instead of YAML that can only run on a proprietary service.
+* A developer who needs CI/CD, and is looking for an excuse to learn TypeScript.
 * Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
 * A platform engineer writing custom TypeScript tooling, with the goal of unifying continuous delivery across organizational silos.
 
-The Dagger Node.js SDK may *not* be a good fit if you are...
+The Dagger Typescript SDK may *not* be a good fit if you are...
 
 * A developer who doesn't know TypeScript or JavaScript, and is not interested in learning it.
 * Someone who loves writing YAML all day, thank you very much.
@@ -33,8 +33,8 @@ The Dagger Node.js SDK may *not* be a good fit if you are...
 ```mermaid
 graph LR;
 
-subgraph program["Your Node.js program"]
-  lib["Node.js package"]
+subgraph program["Your Typescript program"]
+  lib["Typescript package"]
 end
 
 engine["Dagger Engine"]
@@ -53,13 +53,13 @@ end
 lib -..-> engine -..-> oci -..-> A1 & B1 & C1
 ```
 
-1. Your Node.js program imports the Dagger Node.js package.
-2. Using the Node.js package, your program opens a new session to a Dagger Engine: either by connecting to an existing engine, or by provisioning one on-the-fly.
-3. Using the Node.js package, your program prepares API requests describing pipelines to run, then sends them to the engine. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future. For now, the Node.js package is the only documented API available to your program.
+1. Your Typescript program imports the Dagger Typescript package.
+2. Using the Typescript package, your program opens a new session to a Dagger Engine: either by connecting to an existing engine, or by provisioning one on-the-fly.
+3. Using the Typescript package, your program prepares API requests describing pipelines to run, then sends them to the engine. The wire protocol used to communicate with the engine is private and not yet documented, but this will change in the future. For now, the Node.js package is the only documented API available to your program.
 4. When the engine receives an API request, it computes a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result, and starts processing operations concurrently.
 5. When all operations in the pipeline have been resolved, the engine sends the pipeline result back to your program.
 6. Your program may use the pipeline's result as input to new pipelines.
 
 ## Get started
 
-To learn more, [install the Node.js SDK](./835948-install.mdx) and [start using it](./783645-get-started.mdx).
+To learn more, [install the Typescript SDK](./835948-install.mdx) and [start using it](./783645-get-started.mdx).

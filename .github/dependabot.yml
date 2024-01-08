@@ -35,12 +35,12 @@ updates:
         update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "npm"
-    directory: "/sdk/nodejs"
+    directory: "/sdk/typescript"
     schedule:
       interval: "monthly"
     labels:
       - "kind/dependencies"
-      - "sdk/nodejs"
+      - "sdk/typescript"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]

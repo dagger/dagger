@@ -1,4 +1,4 @@
-name: Node.js SDK
+name: Typescript SDK
 
 on:
   push:
@@ -21,10 +21,10 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:nodejs:lint
+      mage-targets: sdk:typescript:lint
 
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:nodejs:test
+      mage-targets: sdk:typescript:test

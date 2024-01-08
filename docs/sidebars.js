@@ -92,25 +92,25 @@ module.exports = {
         },
         {
           type: "category",
-          label: "Node.js SDK",
+          label: "Typescript SDK",
           collapsible: true,
           collapsed: true,
           items: [
             {
               type: "doc",
               label: "Overview",
-              id: "sdk/nodejs/index",
+              id: "sdk/typescript/index",
             },
-            "sdk/nodejs/install",
+            "sdk/typescript/install",
             {
               type: "doc",
               label: "Get Started",
-              id: "sdk/nodejs/get-started",
+              id: "sdk/typescript/get-started",
             },
             {
               type: "doc",
               label: "Reference",
-              id: "sdk/nodejs/reference/modules",
+              id: "sdk/typescript/reference/modules",
             },
           ],
         },

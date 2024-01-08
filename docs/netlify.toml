@@ -28,7 +28,7 @@
 
 [[redirects]]
   # redirect single-language guide index to unified guides index
-  from = "/sdk/nodejs/947203/guides"
+  from = "/sdk/typescript/947203/guides"
   to = "/guides"
   status = 302
 
@@ -46,7 +46,7 @@
 
 [[redirects]]
   # URL consistency fix
-  from = "/sdk/nodejs/620941/github-google-cloud"
+  from = "/sdk/typescript/620941/github-google-cloud"
   to = "/620941/github-google-cloud"
   status = 302
 
@@ -75,8 +75,8 @@
   status = 302
 
 [[redirects]]
-  # redirect Node.js CI guide to unified multi-language CI guide
-  from = "/114934/nodejs-ci"
+  # redirect Typescript CI guide to unified multi-language CI guide
+  from = "/114934/typescript-ci"
   to = "/145912/ci"
   status = 302
 
@@ -535,8 +535,8 @@
   status = 200
 
 [[redirects]]
-  from = "/current/sdk/nodejs/*"
-  to = "/sdk/nodejs/:splat"
+  from = "/current/sdk/typescript/*"
+  to = "/sdk/typescript/:splat"
   status = 302
 
 [[headers]]

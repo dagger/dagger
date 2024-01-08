@@ -19,7 +19,7 @@ var _ SDK = Nodejs{}
 
 type Nodejs mg.Namespace
 
-// Lint lints the Node.js SDK
+// Lint lints the Typescript SDK
 func (t Nodejs) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -69,7 +69,7 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Test tests the Node.js SDK
+// Test tests the Typescript SDK
 func (t Nodejs) Test(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -131,7 +131,7 @@ func (t Nodejs) Generate(ctx context.Context) error {
 	return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
 }
 
-// Publish publishes the Node.js SDK
+// Publish publishes the Typescript SDK
 func (t Nodejs) Publish(ctx context.Context, tag string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -165,7 +165,7 @@ always-auth=true`, token)
 	return err
 }
 
-// Bump the Node.js SDK's Engine dependency
+// Bump the Typescript SDK's Engine dependency
 func (t Nodejs) Bump(_ context.Context, version string) error {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")

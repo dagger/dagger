@@ -7,25 +7,25 @@ If you'd like to see a new example, please open an issue.
 ### Mounting source files to a container
 
 - [Go](./sdk/go/db-service/main.go#L37)
-- [NodeJS](./sdk/nodejs/db-service/build.js#L19)
+- [Typescript](./sdk/typescript/db-service/build.js#L19)
 - [Python](./sdk/python/db-service/pipeline.py#L28)
 
 ### Multi-stage build
 
 - [Go](./sdk/go/multistage/main.go#L31)
-- [NodeJS](./sdk/nodejs/multistage/build.js#L14)
+- [Typescript](./sdk/typescript/multistage/build.js#L14)
 - [Python](./sdk/python/multistage/pipeline.py#L19)
 
 ### Multi-platform build
 
 - [Go](./sdk/go/multiplatform/main.go#L30)
-- [NodeJS](./sdk/nodejs/multiplatform/build.js#L16)
+- [Typescript](./sdk/typescript/multiplatform/build.js#L16)
 - [Python](./sdk/python/multiplatform/pipeline.py#L19)
 
 ### Cache mounts
 
 - [Go](./sdk/go/multiplatform/main.go#L34)
-- [NodeJS](./sdk/nodejs/multiplatform/build.js#L20)
+- [Typescript](./sdk/typescript/multiplatform/build.js#L20)
 - [Python](./sdk/python/multiplatform/pipeline.py#L23)
 
 ### Concurrency
@@ -33,25 +33,25 @@ If you'd like to see a new example, please open an issue.
 Note: While the DAG is constructed serially, the engine will execute the full DAG when the build artifacts directory is exported. Since each platform's build doesn't depend on the others, the engine will execute each build concurrently.
 
 - [Go](./sdk/go/multiplatform/main.go#L29)
-- [NodeJS](./sdk/nodejs/multiplatform/build.js#L15)
+- [Typescript](./sdk/typescript/multiplatform/build.js#L15)
 - [Python](./sdk/python/multiplatform/pipeline.py#L17)
 
 ### Container publishing
 
 - [Go](./sdk/go/multistage/main.go#L41)
-- [NodeJS](./sdk/nodejs/multistage/build.js#L23)
+- [Typescript](./sdk/typescript/multistage/build.js#L23)
 - [Python](./sdk/python/multistage/pipeline.py#L30)
 
 ### Secrets
 
 - [Go](./sdk/go/secrets/main.go#L21)
-- [NodeJS](./sdk/nodejs/secrets/ci.js#L6)
+- [Typescript](./sdk/typescript/secrets/ci.js#L6)
 - [Python](./sdk/python/secrets/pipeline.py#L9)
 
 ### Services
 
 - [Go](./sdk/go/db-service/main.go#L22)
-- [NodeJS](./sdk/nodejs/db-service/build.js#L6)
+- [Typescript](./sdk/typescript/db-service/build.js#L6)
 - [Python](./sdk/python/db-service/pipeline.py#L10)
 
 ## By language
@@ -77,14 +77,14 @@ Note: While the DAG is constructed serially, the engine will execute the full DA
 - [multiplatform](./sdk/python/multiplatform/)
 - [multistage](./sdk/python/multistage/)
 
-### Node.js (Typescript/Javascript)
+### Typescript (Typescript)
 
-- [react build](./sdk/nodejs/react-build/)
-- [services](./sdk/nodejs/db-service/)
-- [secrets](./sdk/nodejs/secrets/)
-- [multiplatform](./sdk/nodejs/multiplatform/)
-- [multistage](./sdk/nodejs/multistage/)
-- [Pulumi](./sdk/nodejs/pulumi/)
+- [react build](./sdk/typescript/react-build/)
+- [services](./sdk/typescript/db-service/)
+- [secrets](./sdk/typescript/secrets/)
+- [multiplatform](./sdk/typescript/multiplatform/)
+- [multistage](./sdk/typescript/multistage/)
+- [Pulumi](./sdk/typescript/pulumi/)
 
 ### Bash with Dagger CLI and GraphQL
 

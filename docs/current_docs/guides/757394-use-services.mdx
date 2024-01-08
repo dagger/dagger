@@ -1,15 +1,15 @@
 ---
 slug: /757394/use-services
-displayed_sidebar: "current"
-category: "guides"
-tags: ["go", "python", "nodejs"]
-authors: ["Alex Suraci"]
-date: "2023-10-12"
+displayed_sidebar: 'current'
+category: 'guides'
+tags: ['go', 'python', 'typescript']
+authors: ['Alex Suraci']
+date: '2023-10-12'
 ---
 
-import Tabs from "@theme/Tabs";
-import TabItem from "@theme/TabItem";
-import Embed from '@site/src/components/embed.js'
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Embed from '@site/src/components/embed.js';
 
 # Use Services in Dagger
 
@@ -34,7 +34,7 @@ This guide teaches you the basics of using services and service containers in Da
 This guide assumes that:
 
 - You have a Go, Python, or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/), or [Node.js](https://nodejs.org/en/download/).
-- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.mdx), [Python](../sdk/python/866944-install.mdx), or [Node.js](../sdk/nodejs/835948-install.mdx) SDK.
+- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.mdx), [Python](../sdk/python/866944-install.mdx), or [Typescript](../sdk/typescript/835948-install.mdx) SDK.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Key concepts
@@ -60,14 +60,16 @@ Each service container has a canonical, content-addressed hostname and an option
 You can query a service container's canonical hostname by calling the `Service.Hostname()` SDK method.
 
 ```go file=./snippets/use-services/use-hostnames/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 You can query a service container's canonical hostname by calling the `Service.hostname()` SDK method.
 
 ```typescript file=./snippets/use-services/use-hostnames/index.ts
+
 ```
 
 </TabItem>
@@ -76,6 +78,7 @@ You can query a service container's canonical hostname by calling the `Service.h
 You can query a service container's canonical hostname by calling the `Service.hostname()` SDK method.
 
 ```python file=./snippets/use-services/use-hostnames/main.py
+
 ```
 
 </TabItem>
@@ -89,14 +92,16 @@ You can also define the ports on which the service container will listen. Dagger
 This example uses the `WithExposedPort()` method to set ports on which the service container will listen. Note also the `Endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
 
 ```go file=./snippets/use-services/expose-ports/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 This example uses the `withExposedPort()` method to set ports on which the service container will listen. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
 
 ```typescript file=./snippets/use-services/expose-ports/index.ts
+
 ```
 
 </TabItem>
@@ -105,6 +110,7 @@ This example uses the `withExposedPort()` method to set ports on which the servi
 This example uses the `with_exposed_port()` method to set ports on which the service container will listen. Note also the `endpoint()` helper method, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
 
 ```python file=./snippets/use-services/expose-ports/main.py
+
 ```
 
 </TabItem>
@@ -140,18 +146,21 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/bind-service-containers-1/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/bind-service-containers-1/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/bind-service-containers-1/main.py
+
 ```
 
 </TabItem>
@@ -167,18 +176,21 @@ When a service is bound to a container, it also conveys to any outputs of that c
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/bind-service-containers-2/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/bind-service-containers-2/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/bind-service-containers-2/main.py
+
 ```
 
 </TabItem>
@@ -196,14 +208,16 @@ Here's an example of how to use Dagger services on the host. In this example, th
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/expose-service-containers-to-host/main.go
+
 ```
 
 The Dagger pipeline calls `Host.Tunnel(service).Start()` to create a new `Service`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/expose-service-containers-to-host/index.ts
+
 ```
 
 The Dagger pipeline calls `Host.Tunnel(service).Start()` to create a new `Service`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.Endpoint()` gets the final address with whichever port is bound.
@@ -212,6 +226,7 @@ The Dagger pipeline calls `Host.Tunnel(service).Start()` to create a new `Servic
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/expose-service-containers-to-host/main.py
+
 ```
 
 The Dagger pipeline calls `host.tunnel(service).start()` to create a new `Service`. By default, Dagger lets the operating system randomly choose which port to use based on the available ports on the host's side. Finally, a call to `Service.endpoint()` gets the final address with whichever port is bound.
@@ -237,18 +252,21 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/expose-host-services-to-container/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/expose-host-services-to-container/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/expose-host-services-to-container/main.py
+
 ```
 
 </TabItem>
@@ -268,18 +286,21 @@ Dagger cancels each service run after a 10 second grace period to avoid frequent
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/persist-service-state/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/persist-service-state/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/persist-service-state/main.py
+
 ```
 
 </TabItem>
@@ -299,18 +320,21 @@ Here's an example which demonstrates explicitly starting a Docker daemon for use
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/start-stop-services/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/start-stop-services/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/start-stop-services/main.py
+
 ```
 
 </TabItem>
@@ -326,18 +350,21 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/use-db-service/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/use-db-service/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/use-db-service/main.py
+
 ```
 
 </TabItem>
@@ -359,6 +386,7 @@ Consider this example:
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/test-service-lifecycle-1/main.go
+
 ```
 
 Here's what happens on the last line:
@@ -370,9 +398,10 @@ Here's what happens on the last line:
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/test-service-lifecycle-1/index.ts
+
 ```
 
 Here's what happens on the last line:
@@ -387,6 +416,7 @@ Here's what happens on the last line:
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/test-service-lifecycle-1/main.py
+
 ```
 
 Here's what happens on the last line:
@@ -404,7 +434,7 @@ Here's what happens on the last line:
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
 :::
 
-Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will  each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.
+Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.
 
 Content-addressed services are very convenient. You don't have to come up with names and maintain instances of services; just use them by value. You also don't have to manage the state of the service; you can just trust that it will be running when needed and stopped when not.
 
@@ -418,18 +448,21 @@ Here's a more detailed client-server example of running commands against a Redis
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/test-service-lifecycle-2/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/test-service-lifecycle-2/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/test-service-lifecycle-2/main.py
+
 ```
 
 </TabItem>
@@ -441,18 +474,21 @@ Note that this example relies on the 10-second grace period, which you should tr
 <TabItem value="Go">
 
 ```go file=./snippets/use-services/test-service-lifecycle-3/main.go
+
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```typescript file=./snippets/use-services/test-service-lifecycle-3/index.ts
+
 ```
 
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/use-services/test-service-lifecycle-3/main.py
+
 ```
 
 </TabItem>
@@ -466,4 +502,4 @@ Depending on the 10-second grace period is risky because there are many factors 
 
 This tutorial walked you through the basics of using service containers with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service containers to the host, exposiing host services to containers and persisting service state using Dagger.
 
-Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.

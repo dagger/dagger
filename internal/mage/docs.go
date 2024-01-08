@@ -47,7 +47,7 @@ func (Docs) Lint(ctx context.Context) error {
 
 	// Go is already linted by engine:lint
 	// Python is already linted by sdk:python:lint
-	// Node.js is already linted at sdk:nodejs:lint
+	// Node.js is already linted at sdk:typescript:lint
 
 	return eg.Wait()
 }

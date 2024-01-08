@@ -1,14 +1,14 @@
 ---
 slug: /882813/build-test-publish-java-spring
-displayed_sidebar: "current"
-category: "guides"
-tags: ["java", "spring"]
-authors: ["Vikram Vaswani"]
-date: "2023-07-05"
+displayed_sidebar: 'current'
+category: 'guides'
+tags: ['java', 'spring']
+authors: ['Vikram Vaswani']
+date: '2023-07-05'
 ---
 
-import Tabs from "@theme/Tabs";
-import TabItem from "@theme/TabItem";
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Build, Test and Publish a Spring Application with Dagger
 
@@ -44,103 +44,58 @@ The first step is to create a Dagger pipeline to build and test a container imag
 
 1. In the application directory, install the Dagger SDK:
 
-  ```shell
-  go mod init main
-  go get dagger.io/dagger@latest
-  ```
+```shell
+go mod init main
+go get dagger.io/dagger@latest
+```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
 
-  ```go file=./snippets/build-test-publish-java-spring/main.go
-  ```
+```go file=./snippets/build-test-publish-java-spring/main.go
 
-  This Dagger pipeline performs a number of different operations:
-    - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `SetSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `CacheVolume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
-    - It uses the client's `Host().Directory()` method to obtain a reference to the source code directory on the host.
-    - It uses the client's `Container().From()` method to initialize three new containers, each of which is returned as a `Container` object:
-        - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests;
-        - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
-        - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
-    - For the MariaDB database container:
-        - It chains multiple `WithEnvVariable()` methods to configure the database service, and uses the `WithExposedPort()` and `AsService()` methods to ensure that the service is available to clients.
-    -  For the Maven container:
-        - It uses the `WithMountedDirectory()` and `WithMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `WithWorkdir()` method to set the working directory in the container.
-        - It adds a service binding for the database service to the Maven container using the `WithServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `With_EnvVariable()` method.
-        - Finally, it uses the `WithExec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
-    -  For the Eclipse Temurin container:
-        - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `WithDirectory()` method, and sets the container entrypoint to start the Spring application using the `WithEntrypoint()` method.
-    - It uses the `WithRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `Publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
+```
+
+This Dagger pipeline performs a number of different operations: - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connect()`. This client provides an interface for executing commands against the Dagger engine. - It uses the client's `SetSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `CacheVolume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages. - It uses the client's `Host().Directory()` method to obtain a reference to the source code directory on the host. - It uses the client's `Container().From()` method to initialize three new containers, each of which is returned as a `Container` object: - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests; - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file; - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package. - For the MariaDB database container: - It chains multiple `WithEnvVariable()` methods to configure the database service, and uses the `WithExposedPort()` and `AsService()` methods to ensure that the service is available to clients. - For the Maven container: - It uses the `WithMountedDirectory()` and `WithMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `WithWorkdir()` method to set the working directory in the container. - It adds a service binding for the database service to the Maven container using the `WithServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `With_EnvVariable()` method. - Finally, it uses the `WithExec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application. - For the Eclipse Temurin container: - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `WithDirectory()` method, and sets the container entrypoint to start the Spring application using the `WithEntrypoint()` method. - It uses the `WithRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `Publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
 
 1. Run the following command to update `go.sum`:
 
-  ```shell
-  go mod tidy
-  ```
+```shell
+go mod tidy
+```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 1. Begin by installing the Dagger SDK as a development dependency:
 
-    ```shell
-    npm install @dagger.io/dagger@latest --save-dev
-    ```
+   ```shell
+   npm install @dagger.io/dagger@latest --save-dev
+   ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it.
 
-    ```javascript file=./snippets/build-test-publish-java-spring/index.mjs
-    ```
+   ```javascript file=./snippets/build-test-publish-java-spring/index.mjs
 
-  This Dagger pipeline performs a number of different operations:
-    - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `setSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cacheVolume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
-    - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
-    - It uses the client's `container().from()` method to initialize three new containers, each of which is returned as a `Container` object:
-        - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests;
-        - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
-        - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
-    - For the MariaDB database container:
-        - It chains multiple `withEnvVariable()` methods to configure the database service, and uses the `withExposedPort()` and `service()` methods to ensure that the service is available to clients.
-    - For the Maven container:
-        - It uses the `withMountedDirectory()` and `withMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `withWorkdir()` method to set the working directory in the container.
-        - It adds a service binding for the database service to the Maven container using the `withServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `withEnvVariable()` method.
-        - Finally, it uses the `withExec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
-    -  For the Eclipse Temurin container:
-        - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `withDirectory()` method, and sets the container entrypoint to start the Spring application using the `withEntrypoint()` method.
-    - It uses the `withRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
+   ```
+
+This Dagger pipeline performs a number of different operations: - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine. - It uses the client's `setSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cacheVolume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages. - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host. - It uses the client's `container().from()` method to initialize three new containers, each of which is returned as a `Container` object: - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests; - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file; - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package. - For the MariaDB database container: - It chains multiple `withEnvVariable()` methods to configure the database service, and uses the `withExposedPort()` and `service()` methods to ensure that the service is available to clients. - For the Maven container: - It uses the `withMountedDirectory()` and `withMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `withWorkdir()` method to set the working directory in the container. - It adds a service binding for the database service to the Maven container using the `withServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `withEnvVariable()` method. - Finally, it uses the `withExec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application. - For the Eclipse Temurin container: - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `withDirectory()` method, and sets the container entrypoint to start the Spring application using the `withEntrypoint()` method. - It uses the `withRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
 
 </TabItem>
 <TabItem value="Python">
 
 1. Begin by creating a virtual environment and installing the Dagger SDK:
 
-  ```shell
-  pip install dagger-io
-  ```
+```shell
+pip install dagger-io
+```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.py` and add the following code to it.
 
-  ```python file=./snippets/build-test-publish-java-spring/main.py
-  ```
+```python file=./snippets/build-test-publish-java-spring/main.py
 
-  This Dagger pipeline performs a number of different operations:
-    - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cache_volume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
-    - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
-    - It uses the client's `container().from_()` method to initialize three new containers, each of which is returned as a `Container` object:
-        - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests;
-        - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file;
-        - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
-    - For the MariaDB database container:
-        - It chains multiple `with_env_variable()` methods to configure the database service, and uses the `with_exposed_port()` and `service()` methods to ensure that the service is available to clients.
-    - For the Maven container:
-        - It uses the `with_mounted_directory()` and `with_mounted_cache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `with_workdir()` method to set the working directory in the container.
-        - It adds a service binding for the database service to the Maven container using the `with_service_binding()` method and sets the JDBC URL for the application test suite as an environment using the `with_env_variable()` method.
-        - Finally, it uses the `with_exec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
-    -  For the Eclipse Temurin container:
-        - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `with_directory()` method, and sets the container entrypoint to start the Spring application using the `with_entrypoint()` method.
-    - It uses the `with_registry_auth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
+```
+
+This Dagger pipeline performs a number of different operations: - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine. - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cache_volume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages. - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host. - It uses the client's `container().from_()` method to initialize three new containers, each of which is returned as a `Container` object: - A MariaDB database service container from the `mariadb:10.11.2` image, for application unit tests; - A Maven container with all required tools and dependencies from the `maven:3.9-eclipse-temurin-17` image, to build and package the application JAR file; - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package. - For the MariaDB database container: - It chains multiple `with_env_variable()` methods to configure the database service, and uses the `with_exposed_port()` and `service()` methods to ensure that the service is available to clients. - For the Maven container: - It uses the `with_mounted_directory()` and `with_mounted_cache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `with_workdir()` method to set the working directory in the container. - It adds a service binding for the database service to the Maven container using the `with_service_binding()` method and sets the JDBC URL for the application test suite as an environment using the `with_env_variable()` method. - Finally, it uses the `with_exec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application. - For the Eclipse Temurin container: - Once the JAR package is ready, it copies only the build artifact directory to the Eclipse Temurin container using the `with_directory()` method, and sets the container entrypoint to start the Spring application using the `with_entrypoint()` method. - It uses the `with_registry_auth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the Eclipse Temurin container image to Docker Hub. It also prints the SHA identifier of the published image.
 
 </TabItem>
 </Tabs>
@@ -164,7 +119,7 @@ dagger run go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```shell
 dagger run node ci/index.mjs
@@ -194,49 +149,47 @@ This also means that it's very easy to move your Dagger pipeline from your local
 
 1. Commit and push the pipeline script and related changes to the application's GitHub repository:
 
-  ```shell
-  git add .
-  git commit -a -m "Added pipeline"
-  git push
-  ```
+```shell
+git add .
+git commit -a -m "Added pipeline"
+git push
+```
 
 1. In the GitHub repository, create a new workflow file at `.github/workflows/main.yml` with the following content:
 
   <Tabs groupId="language">
   <TabItem value="Go">
 
-  ```yaml file=./snippets/build-test-publish-java-spring/github-go.yml
-  ```
+```yaml file=./snippets/build-test-publish-java-spring/github-go.yml
+
+```
 
   </TabItem>
-  <TabItem value="Node.js">
+  <TabItem value="Typescript">
 
-  ```yaml file=./snippets/build-test-publish-java-spring/github-nodejs.yml
-  ```
+```yaml file=./snippets/build-test-publish-java-spring/github-typescript.yml
+
+```
 
   </TabItem>
   <TabItem value="Python">
 
-  ```yaml file=./snippets/build-test-publish-java-spring/github-python.yml
-  ```
+```yaml file=./snippets/build-test-publish-java-spring/github-python.yml
+
+```
 
   </TabItem>
   </Tabs>
 
-  This workflow runs on every commit to the repository `main` branch. It consists of a single job with six steps, as below:
-    1. The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner.
-    1. The second step uses the [Docker Login action](https://github.com/marketplace/actions/docker-login) to authenticate to Docker Hub from the GitHub runner. This is necessary because [Docker rate-limits unauthenticated registry pulls](https://docs.docker.com/docker-hub/download-rate-limit/).
-    1. The third step downloads and installs the required programming language on the GitHub runner.
-    1. The fourth and fifth steps download and install the Dagger SDK and the Dagger CLI on the GitHub runner.
-    1. The final step executes the Dagger pipeline.
+This workflow runs on every commit to the repository `main` branch. It consists of a single job with six steps, as below: 1. The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner. 1. The second step uses the [Docker Login action](https://github.com/marketplace/actions/docker-login) to authenticate to Docker Hub from the GitHub runner. This is necessary because [Docker rate-limits unauthenticated registry pulls](https://docs.docker.com/docker-hub/download-rate-limit/). 1. The third step downloads and installs the required programming language on the GitHub runner. 1. The fourth and fifth steps download and install the Dagger SDK and the Dagger CLI on the GitHub runner. 1. The final step executes the Dagger pipeline.
 
 The Docker Login action and the Dagger pipeline both expect to find Docker Hub credentials in the `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` variables. Create these variables as GitHub secrets as follows:
 
 1. Navigate to the `Settings` -> `Secrets and variables` -> `Actions` page of the GitHub repository.
 1. Click `New repository secret` to create a new secret.
 1. Configure the secret with the following inputs:
-    - Name: `DOCKERHUB_USERNAME`
-    - Secret: Your Docker Hub username
+   - Name: `DOCKERHUB_USERNAME`
+   - Secret: Your Docker Hub username
 1. Click `Add secret` to save the secret.
 1. Repeat the process for the `DOCKERHUB_PASSWORD` variable.
 
@@ -279,7 +232,7 @@ Browse to host port 8080. If you are using the Spring Petclinic example applicat
 
 Dagger SDKs are currently available for Go, Node.js and Python, but you can use Dagger to create CI/CD pipelines for applications written in any programming language. This tutorial demonstrated by creating a Dagger pipeline to build, test and publish a Spring application. A similar approach can be followed for any application, regardless of which programming language it's written in.
 
-Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
 ## Appendix A: Create a GitHub repository with an example Spring application
 
@@ -291,43 +244,43 @@ This section assumes that you have the GitHub CLI. If not, [install the GitHub C
 
 1. Log in to GitHub using the GitHub CLI:
 
-  ```shell
-  gh auth login
-  ```
+```shell
+gh auth login
+```
 
 1. Create a directory for the Spring application:
 
-  ```shell
-  mkdir myapp
-  cd myapp
-  ```
+```shell
+mkdir myapp
+cd myapp
+```
 
 1. Clone the [Spring Petclinic sample application](https://github.com/spring-projects/spring-petclinic):
 
-  ```shell
-  git clone git@github.com:spring-projects/spring-petclinic.git .
-  ```
+```shell
+git clone git@github.com:spring-projects/spring-petclinic.git .
+```
 
 1. Update the `.gitignore` file:
 
-  ```shell
-  echo node_modules >> .gitignore
-  echo package*.json >> .gitignore
-  echo .venv >> .gitignore
-  git add .
-  git commit -m "Updated .gitignore"
-  ```
+```shell
+echo node_modules >> .gitignore
+echo package*.json >> .gitignore
+echo .venv >> .gitignore
+git add .
+git commit -m "Updated .gitignore"
+```
 
 1. Remove existing GitHub Action workflows:
 
-  ```shell
-  rm -rf .github/workflows/*
-  git add .
-  git commit -m "Removed workflows"
-  ```
+```shell
+rm -rf .github/workflows/*
+git add .
+git commit -m "Removed workflows"
+```
 
 1. Create a private repository in your GitHub account and push the code to it:
 
-  ```shell
-  gh repo create myapp --push --source . --private --remote github
-  ```
+```shell
+gh repo create myapp --push --source . --private --remote github
+```

@@ -2,7 +2,7 @@
 slug: /183109/aws-lambda
 displayed_sidebar: "current"
 category: "guides"
-tags: ["nodejs", "go", "python", "aws-lambda", "aws"]
+tags: ["typescript", "go", "python", "aws-lambda", "aws"]
 authors: ["Vikram Vaswani"]
 date: "2023-06-27"
 ---
@@ -67,7 +67,7 @@ The first step is to create a Dagger pipeline to build a ZIP archive of the func
   ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 1. In the function directory, install the Dagger SDK:
 
@@ -157,7 +157,7 @@ dagger run go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Typescript">
 
 ```shell
 dagger run node ci/index.mjs
@@ -185,7 +185,7 @@ Browse to the public URL endpoint displayed in the output to verify the output o
 
 This tutorial walked you through the process of creating a local Dagger pipeline to update and deploy a function on AWS Lambda. It used the Dagger SDKs and explained key concepts, objects and methods available in the SDKs to construct a Dagger pipeline.
 
-Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
 ## Appendix A: Create an example AWS Lambda function
 
@@ -233,7 +233,7 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   ```
 
   </TabItem>
-  <TabItem value="Node.js">
+  <TabItem value="Typescript">
 
   Within that directory, run the following commands to initialize a new Node.js project and add dependencies:
 
@@ -281,7 +281,7 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   ```
 
   </TabItem>
-  <TabItem value="Node.js">
+  <TabItem value="Typescript">
 
   ```shell
   zip -p -r function.zip .
