@@ -20,8 +20,8 @@ var ErrUnknownSDKLang = errors.New("unknown sdk language")
 type SDKLang string
 
 const (
-	SDKLangGo     SDKLang = "go"
-	SDKLangNodeJS SDKLang = "nodejs"
+	SDKLangGo         SDKLang = "go"
+	SDKLangTypescript SDKLang = "typescript"
 )
 
 type Config struct {

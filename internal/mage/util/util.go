@@ -22,7 +22,7 @@ func Repository(c *dagger.Client) *dagger.Directory {
 			"bin",
 			"**/.DS_Store",
 
-			// node
+			// typescript
 			"**/node_modules",
 
 			// python
@@ -78,7 +78,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			".golangci.yml",
 			"**/README.md", // needed for examples test
 			"**/help.txt",  // needed for linting module bootstrap code
-			"sdk/go/codegen/generator/nodejs/templates/src/testdata/**/*",
+			"sdk/go/codegen/generator/typescript/templates/src/testdata/**/*",
 			"core/integration/testdata/**/*",
 
 			// Go SDK runtime codegen
@@ -152,7 +152,7 @@ func HostDaggerBinary(c *dagger.Client) *dagger.File {
 	return PlatformDaggerBinary(c, runtime.GOOS, runtime.GOARCH, goarm)
 }
 
-// CodegenBinary returns a binary for generating the Go and NodeJS SDKs.
+// CodegenBinary returns a binary for generating the Go and Typescript SDKs.
 func CodegenBinary(c *dagger.Client) *dagger.File {
 	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/codegen", "-ldflags", "-s -w", "./cmd/codegen"}).

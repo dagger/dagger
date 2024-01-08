@@ -26,7 +26,7 @@ type SDK interface {
 var availableSDKs = []SDK{
 	&Go{},
 	&Python{},
-	&Nodejs{},
+	&Typescript{},
 	&Elixir{},
 	&Rust{},
 	&PHP{},

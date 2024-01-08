@@ -8,30 +8,31 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
-var nodejsGeneratedAPIPath = "sdk/nodejs/api/client.gen.ts"
+var typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
 
-var _ SDK = Nodejs{}
+var _ SDK = Typescript{}
 
-type Nodejs mg.Namespace
+type Typescript mg.Namespace
 
 // Lint lints the Typescript SDK
-func (t Nodejs) Lint(ctx context.Context) error {
+func (t Typescript) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("lint")
+	c = c.Pipeline("sdk").Pipeline("typescript").Pipeline("lint")
 
 	eg, gctx := errgroup.WithContext(ctx)
 
-	base := nodeJsBase(c)
+	base := typescriptBase(c)
 
 	eg.Go(func() error {
 		_, err = base.WithExec([]string{"yarn", "lint"}).Sync(gctx)
@@ -63,29 +64,29 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	eg.Go(func() error {
 		return lintGeneratedCode(func() error {
 			return t.Generate(gctx)
-		}, nodejsGeneratedAPIPath)
+		}, typescriptGeneratedAPIPath)
 	})
 
 	return eg.Wait()
 }
 
 // Test tests the Typescript SDK
-func (t Nodejs) Test(ctx context.Context) error {
+func (t Typescript) Test(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("test")
+	c = c.Pipeline("sdk").Pipeline("typescript").Pipeline("test")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-nodejs-test"})
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-typescript-test"})
 	if err != nil {
 		return err
 	}
 	cliBinPath := "/.dagger-cli"
 
-	_, err = nodeJsBase(c).
+	_, err = typescriptBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -96,63 +97,63 @@ func (t Nodejs) Test(ctx context.Context) error {
 }
 
 // Generate re-generates the SDK API
-func (t Nodejs) Generate(ctx context.Context) error {
+func (t Typescript) Generate(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("generate")
+	c = c.Pipeline("sdk").Pipeline("typescript").Pipeline("generate")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-nodejs-generate"})
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-typescript-generate"})
 	if err != nil {
 		return err
 	}
 	cliBinPath := "/.dagger-cli"
 
-	generated, err := nodeJsBase(c).
+	generated, err := typescriptBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithMountedFile("/usr/local/bin/codegen", util.CodegenBinary(c)).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"codegen", "--lang", "nodejs", "-o", path.Dir(nodejsGeneratedAPIPath)}).
+		WithExec([]string{"codegen", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
 		WithExec([]string{
 			"yarn",
 			"fmt",
-			nodejsGeneratedAPIPath,
+			typescriptGeneratedAPIPath,
 		}).
-		File(nodejsGeneratedAPIPath).
+		File(typescriptGeneratedAPIPath).
 		Contents(ctx)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
+	return os.WriteFile(typescriptGeneratedAPIPath, []byte(generated), 0o600)
 }
 
 // Publish publishes the Typescript SDK
-func (t Nodejs) Publish(ctx context.Context, tag string) error {
+func (t Typescript) Publish(ctx context.Context, tag string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("publish")
+	c = c.Pipeline("sdk").Pipeline("typescript").Pipeline("publish")
 
 	var (
-		version = strings.TrimPrefix(tag, "sdk/nodejs/v")
+		version = strings.TrimPrefix(tag, "sdk/typescript/v")
 		token   = os.Getenv("NPM_TOKEN")
 	)
 
-	build := nodeJsBase(c).WithExec([]string{"npm", "run", "build"})
+	build := typescriptBase(c).WithExec([]string{"npm", "run", "build"})
 
 	// configure .npmrc
 	npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
 registry=https://registry.npmjs.org/
 always-auth=true`, token)
-	if err = os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0o600); err != nil {
+	if err = os.WriteFile("sdk/typescript/.npmrc", []byte(npmrc), 0o600); err != nil {
 		return err
 	}
 
@@ -166,7 +167,7 @@ always-auth=true`, token)
 }
 
 // Bump the Typescript SDK's Engine dependency
-func (t Nodejs) Bump(_ context.Context, version string) error {
+func (t Typescript) Bump(_ context.Context, version string) error {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -175,11 +176,11 @@ func (t Nodejs) Bump(_ context.Context, version string) error {
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return os.WriteFile("sdk/nodejs/provisioning/default.ts", []byte(engineReference), 0o600)
+	return os.WriteFile("sdk/typescript/provisioning/default.ts", []byte(engineReference), 0o600)
 }
 
-func nodeJsBase(c *dagger.Client) *dagger.Container {
-	appDir := "sdk/nodejs"
+func typescriptBase(c *dagger.Client) *dagger.Container {
+	appDir := "sdk/typescript"
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
 	// Mirror the same dir structure from the repo because of the

@@ -7,13 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
-	nodegenerator "github.com/dagger/dagger/cmd/codegen/generator/nodejs"
+	typescriptgenerator "github.com/dagger/dagger/cmd/codegen/generator/typescript"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock"
 )
 
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
@@ -82,15 +83,15 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 		gen = &gogenerator.GoGenerator{
 			Config: cfg,
 		}
-	case generator.SDKLangNodeJS:
-		gen = &nodegenerator.NodeGenerator{
+	case generator.SDKLangTypescript:
+		gen = &typescriptgenerator.TypescriptGenerator{
 			Config: cfg,
 		}
 
 	default:
 		sdks := []string{
 			string(generator.SDKLangGo),
-			string(generator.SDKLangNodeJS),
+			string(generator.SDKLangTypescript),
 		}
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
