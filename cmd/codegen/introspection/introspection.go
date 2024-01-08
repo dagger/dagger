@@ -40,11 +40,8 @@ func (s *Schema) Subscription() *Type {
 	return s.Types.Get(s.SubscriptionType.Name)
 }
 
-func (s *Schema) Visit(handlers VisitHandlers) error {
-	v := Visitor{
-		schema:   s,
-		handlers: handlers,
-	}
+func (s *Schema) Visit() []*Type {
+	v := Visitor{schema: s}
 	return v.Run()
 }
 

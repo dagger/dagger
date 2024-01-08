@@ -2,75 +2,75 @@ package templates
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"text/template"
 )
 
 var (
-	//go:embed src/*
+	//go:embed all:src/*
 	tmplFS embed.FS
 
-	files map[string]TemplateFile
+	files map[string]*template.Template
 )
 
-type TemplateFile struct {
-	Name string
-	tmpl *template.Template
-}
-
-func (t *TemplateFile) template(name string) *template.Template {
-	return t.tmpl.Lookup(fmt.Sprintf("%s.go.tmpl", name))
-}
-
-func (t *TemplateFile) Header() *template.Template {
-	return t.template("header")
-}
-
-func (t *TemplateFile) Module() *template.Template {
-	return t.template("module")
-}
-
-func (t *TemplateFile) Scalar() *template.Template {
-	return t.template("scalar")
-}
-
-func (t *TemplateFile) Object() *template.Template {
-	return t.template("object")
-}
-
-func (t *TemplateFile) Enum() *template.Template {
-	return t.template("enum")
-}
-
-func (t *TemplateFile) Input() *template.Template {
-	return t.template("input")
-}
-
-func TemplateFiles(funcs template.FuncMap) map[string]TemplateFile {
+func Templates(funcs template.FuncMap) map[string]*template.Template {
 	if files != nil {
 		for _, file := range files {
-			file.tmpl.Funcs(funcs)
+			file.Funcs(funcs)
 		}
 		return files
 	}
 
-	files = map[string]TemplateFile{}
 	root := "src"
 
-	entries, err := fs.ReadDir(tmplFS, root)
+	tmpl := template.New("").Funcs(funcs)
+	err := fs.WalkDir(tmplFS, root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		ntmpl, err := template.New("").Funcs(funcs).ParseFS(tmplFS, path)
+		if err != nil {
+			return err
+		}
+		ntmpl = ntmpl.Lookup(filepath.Base(path))
+
+		path = strings.TrimPrefix(path, root+"/")
+		tmpl.AddParseTree(path, ntmpl.Tree)
+		return nil
+	})
 	if err != nil {
 		panic(err)
 	}
-	for _, entry := range entries {
-		tmpl, err := template.New("").Funcs(funcs).ParseFS(tmplFS, filepath.Join(root, entry.Name(), "*.go.tmpl"))
+
+	targets := []string{}
+	err = fs.WalkDir(tmplFS, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			panic(err)
+			return err
 		}
-		f := TemplateFile{Name: entry.Name(), tmpl: tmpl}
-		files[f.Name] = f
+		if strings.HasPrefix(d.Name(), "_") {
+			return fs.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		path = strings.TrimPrefix(path, root+"/")
+		targets = append(targets, path)
+		return nil
+	})
+	if err != nil {
+		panic(err)
 	}
 
+	files = map[string]*template.Template{}
+	for _, target := range targets {
+		tmpl, _ := tmpl.Clone()
+		files[strings.TrimSuffix(target, ".tmpl")] = tmpl.Lookup(target)
+	}
 	return files
 }
