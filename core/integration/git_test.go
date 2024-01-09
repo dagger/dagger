@@ -21,31 +21,28 @@ import (
 func TestGit(t *testing.T) {
 	t.Parallel()
 
+	type result struct {
+		Commit string
+		Tree   struct {
+			File struct {
+				Contents string
+			}
+		}
+	}
+
 	res := struct {
 		Git struct {
-			Branch struct {
-				Commit string
-				Tree   struct {
-					File struct {
-						Contents string
-					}
-				}
-			}
-			Commit struct {
-				Commit string
-				Tree   struct {
-					File struct {
-						Contents string
-					}
-				}
-			}
+			Ref    result
+			Commit result
+			Branch result
+			Tag    result
 		}
 	}{}
 
 	err := testutil.Query(
 		`{
 			git(url: "github.com/dagger/dagger", keepGitDir: true) {
-				branch(name: "main") {
+				ref(name: "refs/heads/main") {
 					commit
 					tree {
 						file(path: "README.md") {
@@ -61,13 +58,44 @@ func TestGit(t *testing.T) {
 						}
 					}
 				}
+				branch(name: "main") {
+					commit
+					tree {
+						file(path: "README.md") {
+							contents
+						}
+					}
+				}
+				tag(name: "v0.9.5") {
+					commit
+					tree {
+						file(path: "README.md") {
+							contents
+						}
+					}
+				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Git.Branch.Commit)
+
+	// refs/heads/main
+	require.NotEmpty(t, res.Git.Ref.Commit)
+	require.Contains(t, res.Git.Ref.Tree.File.Contents, "Dagger")
+
+	// c80ac2c13df7d573a069938e01ca13f7a81f0345
 	require.Equal(t, res.Git.Commit.Commit, "c80ac2c13df7d573a069938e01ca13f7a81f0345")
-	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
 	require.Contains(t, res.Git.Commit.Tree.File.Contents, "Dagger")
+
+	// main
+	require.NotEmpty(t, res.Git.Branch.Commit)
+	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
+
+	// v0.9.5
+	// FIXME: without moby/buildkit#4473, the wrong commit is selected:
+	//		  we *should* select refs/tags/v0.9.5, but we select
+	//		  refs/tags/sdk/elixir/v0.9.5
+	require.Equal(t, res.Git.Tag.Commit, "037520ed6c8a4ace2f1602fa5277d2cd1ed4ebd4")
+	require.Contains(t, res.Git.Tag.Tree.File.Contents, "Dagger")
 }
 
 func TestGitSSHAuthSock(t *testing.T) {

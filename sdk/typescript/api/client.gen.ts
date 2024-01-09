@@ -4366,6 +4366,23 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Returns details of a ref.
+   * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+   */
+  ref = (name: string): GitRef => {
+    return new GitRef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "ref",
+          args: { name },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Returns details of a tag.
    * @param name Tag's name (e.g., "v0.3.9").
    */

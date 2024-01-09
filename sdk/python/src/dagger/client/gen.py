@@ -3582,6 +3582,22 @@ class GitRepository(Type):
         return await _ctx.execute(GitRepositoryID)
 
     @typecheck
+    def ref(self, name: str) -> GitRef:
+        """Returns details of a ref.
+
+        Parameters
+        ----------
+        name:
+            Ref's name (can be a commit identifier, a tag name, a branch name,
+            or a fully-qualified ref).
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("ref", _args)
+        return GitRef(_ctx)
+
+    @typecheck
     def tag(self, name: str) -> GitRef:
         """Returns details of a tag.
 
