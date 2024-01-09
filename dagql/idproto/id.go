@@ -33,13 +33,7 @@ func (id *ID) DisplaySelf() string {
 		} else {
 			fmt.Fprintf(buf, ", ")
 		}
-		if id, ok := arg.Value.Value.(*Literal_Id); ok {
-			fmt.Fprintf(buf, "%s: {%s}", arg.Name, id.Id.Display())
-		} else if str, ok := arg.Value.Value.(*Literal_String_); ok {
-			fmt.Fprintf(buf, "%s: %q", arg.Name, truncate(str.String_, 100))
-		} else {
-			fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.ToAST().String())
-		}
+		fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.Display())
 		if ai == len(id.Args)-1 {
 			fmt.Fprintf(buf, ")")
 		}
@@ -147,8 +141,7 @@ func (id *ID) Encode() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	enc := base64.URLEncoding.EncodeToString(proto)
-	return enc, nil
+	return base64.URLEncoding.EncodeToString(proto), nil
 }
 
 func (id *ID) Decode(str string) error {
