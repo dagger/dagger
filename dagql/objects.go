@@ -268,14 +268,13 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, erro
 
 // Select calls a field on the instance.
 func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err error) {
-	var zero T
 	field, ok := r.Class.Field(sel.Field)
 	if !ok {
-		return nil, fmt.Errorf("Select: %s has no such field: %q", zero.Type().Name(), sel.Field)
+		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
 	args, err := applyDefaults(field.Spec, sel.Args)
 	if err != nil {
-		return nil, fmt.Errorf("%s.%s: %w", zero.Type().Name(), sel.Field, err)
+		return nil, fmt.Errorf("%s.%s: %w", r.Class.TypeName(), sel.Field, err)
 	}
 	val, err = r.Class.Call(ctx, r, sel.Field, args)
 	if err != nil {
