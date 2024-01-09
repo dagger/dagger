@@ -3,7 +3,7 @@
   let connect = (await import("@dagger.io/dagger")).connect
 
   connect(
-    async (client) => {
+    async (client: Client) => {
       // highlight-start
       // Set Node versions against which to test and build
       const nodeVersions = ["12", "14", "16"]

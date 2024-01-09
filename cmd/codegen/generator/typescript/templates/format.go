@@ -7,7 +7,7 @@ import (
 )
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
-// to format GraphQL type into Typescript.
+// to format GraphQL type into TypeScript.
 type FormatTypeFunc struct {
 	scope string
 }

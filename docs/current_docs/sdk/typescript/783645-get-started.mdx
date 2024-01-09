@@ -4,14 +4,14 @@ slug: /sdk/typescript/783645/get-started
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# Get Started with the Dagger Typescript SDK
+# Get Started with the Dagger TypeScript SDK
 
 ## Introduction
 
-This tutorial teaches you the basics of using Dagger in Typescript. You will learn how to:
+This tutorial teaches you the basics of using Dagger in TypeScript. You will learn how to:
 
-- Install the Typescript SDK
-- Create a Typescript CI tool that tests and builds a Node.js application for multiple Node.js versions using the Typescript SDK
+- Install the TypeScript SDK
+- Create a TypeScript CI tool that tests and builds a Node.js application for multiple Node.js versions using the TypeScript SDK
 
 ## Requirements
 
@@ -22,13 +22,13 @@ This tutorial assumes that:
 - You have the Dagger CLI installed on the host system. If not, [install the Dagger CLI](../../cli/465058-install.mdx).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
-## Step 1: Install the Dagger Typescript SDK
+## Step 1: Install the Dagger TypeScript SDK
 
 :::note
-The Dagger Typescript SDK requires [NodeJS 16.x or later](https://nodejs.org/en/download/).
+The Dagger TypeScript SDK requires [NodeJS 16.x or later](https://nodejs.org/en/download/).
 :::
 
-Install the Dagger Typescript SDK in your project using `npm` or `yarn`:
+Install the Dagger TypeScript SDK in your project using `npm` or `yarn`:
 
 <Tabs>
 <TabItem value="npm">
@@ -71,52 +71,22 @@ In your project directory, create a new file named `build.mts` and add the follo
 ```
 
   </TabItem>
-  <TabItem value="js-esm" label="JavaScript (ESM)">
-
-In your project directory, create a new file named `build.mjs` and add the following code to it.
-
-```typescript file=snippets/get-started/step2/build.mjs
-```
-
-  </TabItem>
-  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
-
-In your project directory, create a new file named `build.js` and add the following code to it.
-
-```typescript file=snippets/get-started/step2/build.js
-```
-
-  </TabItem>
 </Tabs>
 
-This Typescript stub imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
+This TypeScript stub imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
 
 - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
 - It uses the client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the `node:16` image. This method returns a `Container` representing an OCI-compatible container image.
 - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `withExec()` method returns a revised `Container` with the results of command execution.
 - It retrieves the output stream of the last executed with the `Container.stdout()` method and prints the result to the console.
 
-Run the Typescript CI tool by executing the command below from the project directory:
+Run the TypeScript CI tool by executing the command below from the project directory:
 
 <Tabs groupId="typescript-javascript">
   <TabItem value="ts" label="TypeScript">
 
 ```shell
 dagger run node --loader ts-node/esm ./build.mts
-```
-
-  </TabItem>
-  <TabItem value="js-esm" label="JavaScript (ESM)">
-
-```shell
-dagger run node ./build.mjs
-```
-
-  </TabItem>
-  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
-
-```shell
-dagger run node ./build.js
 ```
 
   </TabItem>
@@ -138,22 +108,6 @@ Now that the basic structure of the CI tool is defined and functional, the next 
 Replace the `build.mts` file from the previous step with the version below (highlighted lines indicate changes):
 
 ```typescript file=snippets/get-started/step3/build.mts
-```
-
-  </TabItem>
-  <TabItem value="js-esm" label="JavaScript (ESM)">
-
-Replace the `build.mjs` file from the previous step with the version below (highlighted lines indicate changes):
-
-```typescript file=snippets/get-started/step3/build.mjs
-```
-
-  </TabItem>
-  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
-
-Replace the `build.js` file from the previous step with the version below (highlighted lines indicate changes):
-
-```typescript file=snippets/get-started/step3/build.js
 ```
 
   </TabItem>
@@ -182,20 +136,6 @@ Run the Node.js CI tool by executing the command below:
 
 ```shell
 dagger run node --loader ts-node/esm ./build.mts
-```
-
-  </TabItem>
-  <TabItem value="js-esm" label="JavaScript (ESM)">
-
-```shell
-dagger run node ./build.mjs
-```
-
-  </TabItem>
-  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
-
-```shell
-dagger run node ./build.js
 ```
 
   </TabItem>
@@ -240,23 +180,8 @@ Replace the `build.mts` file from the previous step with the version below (high
 ```
 
   </TabItem>
-  <TabItem value="js-esm" label="JavaScript (ESM)">
-
-Replace the `build.mjs` file from the previous step with the version below (highlighted lines indicate changes):
-
-```typescript file=snippets/get-started/step4/build.mjs
-```
-
-  </TabItem>
-  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
-
-Replace the `build.js` file from the previous step with the version below (highlighted lines indicate changes):
-
-```typescript file=snippets/get-started/step4/build.js
-```
-
-  </TabItem>
 </Tabs>
+
 This version of the CI tool has additional support for testing and building against multiple Node.js versions.
 
 - It defines the test/build matrix, consisting of Node.js versions `12`, `14` and `16`.
@@ -270,21 +195,6 @@ Run the Node.js CI tool by executing the command below:
 
 ```shell
 dagger run node --loader ts-node/esm ./build.mts
-```
-
-  </TabItem>
-
-  <TabItem value="js-esm" label="JavaScript (ESM)">
-
-```shell
-dagger run node ./build.mjs
-```
-
-  </TabItem>
-  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
-
-```shell
-dagger run node ./build.js
 ```
 
   </TabItem>
@@ -313,9 +223,9 @@ build-node-16
 
 ## Conclusion
 
-This tutorial introduced you to the Dagger Typescript SDK. It explained how to install the SDK and use it with a Node.js application. It also provided a working example of a Node.js CI tool powered by the SDK, demonstrating how to test an application against multiple Node.js versions in parallel.
+This tutorial introduced you to the Dagger TypeScript SDK. It explained how to install the SDK and use it with a Node.js application. It also provided a working example of a Node.js CI tool powered by the SDK, demonstrating how to test an application against multiple Node.js versions in parallel.
 
-Use the [SDK Reference](./reference/modules.md) to learn more about the Dagger Typescript SDK.
+Use the [SDK Reference](./reference/modules.md) to learn more about the Dagger TypeScript SDK.
 
 ## Appendix A: Create a React application
 

@@ -46,7 +46,7 @@ spec:
       apk add nodejs npm curl
       curl https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
       npm i @dagger.io/dagger@latest
-      dagger run node ./ci/index.mjs
+      dagger run tsx ./ci/index.mts
     volumeMounts:
       - mountPath: /var/run/dagger
         name: dagger-socket

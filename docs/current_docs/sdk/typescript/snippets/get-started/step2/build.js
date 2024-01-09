@@ -3,7 +3,7 @@
   let connect = (await import("@dagger.io/dagger")).connect
 
   connect(
-    async (client) => {
+    async (client: Client) => {
       // get Node image
       // get Node version
       const node = client.container().from("node:16").withExec(["node", "-v"])

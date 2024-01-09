@@ -45,7 +45,7 @@ export class Registry {
     const methods: string[] = []
 
     // Create a dummy instance of the constructor to loop through its properties
-    // We only register user's method and ignore Typescript default method
+    // We only register user's method and ignore TypeScript default method
     let proto = new constructor()
     while (proto && proto !== Object.prototype) {
       const ownMethods = Object.getOwnPropertyNames(proto).filter((name) => {

@@ -1,4 +1,4 @@
-name: Typescript SDK
+name: TypeScript SDK
 
 on:
   push:

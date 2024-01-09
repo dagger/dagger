@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 
 ## Introduction
 
-Dagger SDKs are currently available for Go, Typescript and Python, but you can use them to create CI/CD pipelines for applications written in any programming language. This guide explains how to use Dagger to continuously build, test and publish a Java application using Spring. You will learn how to:
+Dagger SDKs are currently available for Go, TypeScript and Python, but you can use them to create CI/CD pipelines for applications written in any programming language. This guide explains how to use Dagger to continuously build, test and publish a Java application using Spring. You will learn how to:
 
 - Create a Dagger pipeline to:
   - Build your Spring application with all required dependencies
@@ -64,7 +64,7 @@ go mod tidy
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 1. Begin by installing the Dagger SDK as a development dependency:
 
@@ -74,7 +74,7 @@ go mod tidy
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it.
 
-   ```javascript file=./snippets/build-test-publish-java-spring/index.mjs
+   ```typescript file=./snippets/build-test-publish-java-spring/index.mjs
 
    ```
 
@@ -119,7 +119,7 @@ dagger run go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```shell
 dagger run node ci/index.mjs
@@ -165,7 +165,7 @@ git push
 ```
 
   </TabItem>
-  <TabItem value="Typescript">
+  <TabItem value="TypeScript">
 
 ```yaml file=./snippets/build-test-publish-java-spring/github-typescript.yml
 
@@ -230,9 +230,9 @@ Browse to host port 8080. If you are using the Spring Petclinic example applicat
 
 ## Conclusion
 
-Dagger SDKs are currently available for Go, Typescript and Python, but you can use Dagger to create CI/CD pipelines for applications written in any programming language. This tutorial demonstrated by creating a Dagger pipeline to build, test and publish a Spring application. A similar approach can be followed for any application, regardless of which programming language it's written in.
+Dagger SDKs are currently available for Go, TypeScript and Python, but you can use Dagger to create CI/CD pipelines for applications written in any programming language. This tutorial demonstrated by creating a Dagger pipeline to build, test and publish a Spring application. A similar approach can be followed for any application, regardless of which programming language it's written in.
 
-Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [TypeScript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
 ## Appendix A: Create a GitHub repository with an example Spring application
 

@@ -20,8 +20,8 @@ This guide explains how to integrate the Dagger SDKs with various CI services/to
 
 This guide assumes that:
 
-- You have a Go, Python or Typescript environment on the CI runner.
-- You have a Dagger SDK for one of the above languages installed on the CI runner. If not, install your preferred language SDK within your CI workflow following the installation instructions for the Dagger [Go](../sdk/go/371491-install.mdx), [Python](../sdk/python/866944-install.mdx) or [Typescript](../sdk/typescript/835948-install.mdx) SDK.
+- You have a Go, Python or TypeScript environment on the CI runner.
+- You have a Dagger SDK for one of the above languages installed on the CI runner. If not, install your preferred language SDK within your CI workflow following the installation instructions for the Dagger [Go](../sdk/go/371491-install.mdx), [Python](../sdk/python/866944-install.mdx) or [TypeScript](../sdk/typescript/835948-install.mdx) SDK.
 
 ## Use Dagger in CI
 
@@ -34,7 +34,7 @@ This guide assumes that:
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```yaml title=".github/workflows/dagger.yaml" file=./snippets/ci/typescript/actions.yml
 ```
@@ -57,7 +57,7 @@ This guide assumes that:
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```yaml title=".gitlab-ci.yml" file=./snippets/ci/typescript/gitlab.yml
 ```
@@ -80,7 +80,7 @@ This guide assumes that:
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```yaml title=".circleci/config.yml" file=./snippets/ci/typescript/circle.yml
 ```
@@ -105,7 +105,7 @@ This guide assumes that:
 Requires `docker` client and `go` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`.
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```groovy title="Jenkinsfile" file=./snippets/ci/typescript/Jenkinsfile
 ```
@@ -132,7 +132,7 @@ Requires `docker` client and `python` installed on your Jenkins agent, a Docker 
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```yaml title="azure-pipelines.yml" file=./snippets/ci/typescript/azure-pipelines.yml
 ```
@@ -155,7 +155,7 @@ Requires `docker` client and `python` installed on your Jenkins agent, a Docker 
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```yaml title="buildspec.yml" file=./snippets/ci/typescript/buildspec.yml
 ```

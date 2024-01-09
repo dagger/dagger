@@ -3,7 +3,7 @@
   let connect = (await import("@dagger.io/dagger")).connect
 
   connect(
-    async (client) => {
+    async (client: Client) => {
       // highlight-start
       // get reference to the local project
       const source = client

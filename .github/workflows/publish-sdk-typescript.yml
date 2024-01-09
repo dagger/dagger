@@ -1,4 +1,4 @@
-name: "Publish Typescript SDK"
+name: "Publish TypeScript SDK"
 on:
   push:
     tags: ["sdk/typescript/v**"]

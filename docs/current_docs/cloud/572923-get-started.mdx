@@ -257,7 +257,7 @@ Dagger comes with built-in support to define one or more such directories as cac
 
 Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
-```javascript file=./snippets/get-started/step4/index.mjs
+```typescript file=./snippets/get-started/step4/index.mjs
 ```
 
 This revised pipeline now uses a cache volume for the application dependencies.
@@ -300,7 +300,7 @@ This section assumes that you have a Node.js development environment. It uses th
 
 1. In the application directory, create a file named `index.mjs` and add the following code to it.
 
-  ```javascript file=./snippets/get-started/appa/index.mjs
+  ```typescript file=./snippets/get-started/appa/index.mjs
   ```
 
   This Dagger pipeline uses the Dagger TypeScript SDK to test, build and publish a containerized version of the application to a public registry.

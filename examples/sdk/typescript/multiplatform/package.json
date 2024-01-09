@@ -1,0 +1,17 @@
+{
+  "name": "multiplatform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "ci": "tsx build.ts"
+  },
+  "jest": {
+    "collectCoverage": true
+  },
+  "type": "module",
+  "devDependencies": {
+    "@dagger.io/dagger": "^0.8.8",
+    "uuid": "^9.0.0",
+    "typescript": "^5.3.3"
+  }
+}

@@ -11,7 +11,7 @@ async function longTimeTask(c: Client): Promise<void> {
 }
 
 connect(
-  async (client) => {
+  async (client: Client) => {
     await Promise.all([
       longTimeTask(client),
       longTimeTask(client),

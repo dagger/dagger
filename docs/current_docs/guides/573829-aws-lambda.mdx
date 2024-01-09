@@ -67,7 +67,7 @@ The first step is to create a Dagger pipeline to build a ZIP archive of the func
   ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 1. In the function directory, install the Dagger SDK:
 
@@ -77,7 +77,7 @@ The first step is to create a Dagger pipeline to build a ZIP archive of the func
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it.
 
-  ```javascript file=./snippets/aws-lambda/index.mjs
+  ```typescript file=./snippets/aws-lambda/index.mjs
   ```
 
   This file performs the following operations:
@@ -157,7 +157,7 @@ dagger run go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```shell
 dagger run node ci/index.mjs
@@ -185,7 +185,7 @@ Browse to the public URL endpoint displayed in the output to verify the output o
 
 This tutorial walked you through the process of creating a local Dagger pipeline to update and deploy a function on AWS Lambda. It used the Dagger SDKs and explained key concepts, objects and methods available in the SDKs to construct a Dagger pipeline.
 
-Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [TypeScript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
 ## Appendix A: Create an example AWS Lambda function
 
@@ -233,7 +233,7 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   ```
 
   </TabItem>
-  <TabItem value="Typescript">
+  <TabItem value="TypeScript">
 
   Within that directory, run the following commands to initialize a new Node.js project and add dependencies:
 
@@ -244,7 +244,7 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
 
   Within the same directory, create a file named `lambda.js` and fill it with the following code:
 
-  ```javascript file=./snippets/aws-lambda/lambda.js
+  ```typescript file=./snippets/aws-lambda/lambda.js
   ```
 
   </TabItem>
@@ -281,7 +281,7 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   ```
 
   </TabItem>
-  <TabItem value="Typescript">
+  <TabItem value="TypeScript">
 
   ```shell
   zip -p -r function.zip .

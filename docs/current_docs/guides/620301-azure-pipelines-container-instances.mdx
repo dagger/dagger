@@ -109,7 +109,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
   ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 1. In the application directory, install the Dagger SDK and the Azure SDK client libraries as development dependencies:
 
@@ -119,7 +119,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.
 
-  ```javascript file=./snippets/azure-pipelines-container-instances/index.mjs
+  ```typescript file=./snippets/azure-pipelines-container-instances/index.mjs
   ```
 
   This file performs the following operations:
@@ -200,7 +200,7 @@ dagger run go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Typescript">
+<TabItem value="TypeScript">
 
 ```shell
 dagger run node ci/index.mjs
@@ -272,7 +272,7 @@ This also means that it's very easy to move your Dagger pipeline from your local
   ```
 
   </TabItem>
-  <TabItem value="Typescript">
+  <TabItem value="TypeScript">
 
   ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-typescript.yml
   ```
@@ -327,7 +327,7 @@ This tutorial walked you through the process of creating a Dagger pipeline to co
 
 Dagger executes your pipelines entirely as standard OCI containers. This means that pipelines can be tested and debugged locally, and that the same pipeline will run consistently on your local machine, a CI runner, a dedicated server, or any container hosting service. This portability is one of Dagger's key advantages, and this tutorial demonstrated it in action by using the same pipeline on the local host and with Azure Pipelines.
 
-Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Typescript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [TypeScript](../sdk/typescript/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
 ## Appendix A: Create an Azure DevOps repository with an example Express application
 

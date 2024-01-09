@@ -16,12 +16,12 @@ import (
 
 var typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
 
-var _ SDK = Typescript{}
+var _ SDK = TypeScript{}
 
-type Typescript mg.Namespace
+type TypeScript mg.Namespace
 
-// Lint lints the Typescript SDK
-func (t Typescript) Lint(ctx context.Context) error {
+// Lint lints the TypeScript SDK
+func (t TypeScript) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -70,8 +70,8 @@ func (t Typescript) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Test tests the Typescript SDK
-func (t Typescript) Test(ctx context.Context) error {
+// Test tests the TypeScript SDK
+func (t TypeScript) Test(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func (t Typescript) Test(ctx context.Context) error {
 }
 
 // Generate re-generates the SDK API
-func (t Typescript) Generate(ctx context.Context) error {
+func (t TypeScript) Generate(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -132,8 +132,8 @@ func (t Typescript) Generate(ctx context.Context) error {
 	return os.WriteFile(typescriptGeneratedAPIPath, []byte(generated), 0o600)
 }
 
-// Publish publishes the Typescript SDK
-func (t Typescript) Publish(ctx context.Context, tag string) error {
+// Publish publishes the TypeScript SDK
+func (t TypeScript) Publish(ctx context.Context, tag string) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -166,8 +166,8 @@ always-auth=true`, token)
 	return err
 }
 
-// Bump the Typescript SDK's Engine dependency
-func (t Typescript) Bump(_ context.Context, version string) error {
+// Bump the TypeScript SDK's Engine dependency
+func (t TypeScript) Bump(_ context.Context, version string) error {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 

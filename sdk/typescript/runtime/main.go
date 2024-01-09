@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-type TypescriptSdk struct{}
+type TypeScriptSdk struct{}
 
 const (
 	ModSourceDirPath         = "/src"
@@ -22,7 +22,7 @@ const (
 )
 
 // ModuleRuntime returns a container with the node entrypoint ready to be called.
-func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
+func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
 	ctr, err := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*GeneratedCode, error) {
+func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*GeneratedCode, error) {
 	// Get base container
 	ctr, err := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
 	if err != nil {
@@ -58,7 +58,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *Directory, subPa
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
+func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
 	// Load module name for the template class
 	name, err := dag.ModuleConfig(modSource.Directory(subPath)).Name(ctx)
 	if err != nil {
@@ -111,7 +111,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 }
 
 // Base returns a Node container with cache setup for yarn
-func (t *TypescriptSdk) Base(version string) *Container {
+func (t *TypeScriptSdk) Base(version string) *Container {
 	if version == "" {
 		version = "21.3-alpine"
 	}
