@@ -11,6 +11,48 @@ type Literate interface {
 	ToLiteral() *Literal
 }
 
+// ToAST returns an AST value appropriate for passing to a GraphQL server.
+func (lit *Literal) Display() string {
+	switch x := lit.GetValue().(type) {
+	case *Literal_Id:
+		return fmt.Sprintf("{%s}", x.Id.Display())
+	case *Literal_Null:
+		return "null"
+	case *Literal_Bool:
+		return strconv.FormatBool(x.Bool)
+	case *Literal_Enum:
+		return x.Enum
+	case *Literal_Int:
+		return fmt.Sprintf("%d", x.Int)
+	case *Literal_Float:
+		return strconv.FormatFloat(x.Float, 'f', -1, 64)
+	case *Literal_String_:
+		return truncate(strconv.Quote(x.String_), 100)
+	case *Literal_List:
+		list := "["
+		for i, val := range x.List.Values {
+			if i > 0 {
+				list += ","
+			}
+			list += val.Display()
+		}
+		list += "]"
+		return list
+	case *Literal_Object:
+		obj := "{"
+		for i, field := range x.Object.Values {
+			if i > 0 {
+				obj += ","
+			}
+			obj += field.Name + ": " + field.Value.Display()
+		}
+		obj += "}"
+		return obj
+	default:
+		panic(fmt.Sprintf("unsupported literal type %T", x))
+	}
+}
+
 // ToInput returns a value appropriate for passing to an InputDecoder with
 // minimal encoding/decoding overhead.
 func (lit *Literal) ToInput() any {
