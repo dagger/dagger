@@ -184,13 +184,17 @@ func (s *Server) installObjectLocked(class ObjectType) {
 			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
 				idable, ok := args["id"].(IDable)
 				if !ok {
-					return nil, fmt.Errorf("load%sFromID: expected IDable, got %T", class.TypeName(), args["id"])
+					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
 				}
 				id := idable.ID()
 				if id.Type.ToAST().NamedType != class.TypeName() {
-					return nil, fmt.Errorf("load%sFromID: expected ID of type %q, got %q", class.TypeName(), class.TypeName(), id.Type.ToAST().NamedType)
+					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type.ToAST().NamedType)
 				}
-				return s.Load(ctx, idable.ID())
+				res, err := s.Load(ctx, idable.ID())
+				if err != nil {
+					return nil, fmt.Errorf("load: %w", err)
+				}
+				return res, nil
 			},
 		)
 	}
@@ -413,7 +417,6 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	} else {
 		base = s.root
 	}
-	selfType := base.Type()
 	astField := &ast.Field{
 		Name: id.Field,
 	}
@@ -428,13 +431,9 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 			},
 		})
 	}
-	class, ok := s.objects[selfType.Name()]
-	if !ok {
-		return nil, fmt.Errorf("constructorToSelection: unknown type: %q", selfType.Name())
-	}
-	sel, _, err := class.ParseField(ctx, astField, vars)
+	sel, _, err := base.ObjectType().ParseField(ctx, astField, vars)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse field %q: %w", astField.Name, err)
 	}
 	sel.Nth = int(id.Nth)
 	res, id, err := s.cachedSelect(ctx, base, sel)
@@ -584,7 +583,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 	}
 	class, ok := s.objects[val.Type().Name()]
 	if !ok {
-		return nil, fmt.Errorf("unknown type %q", val.Type().Name())
+		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 	}
 	return class.New(chainedID, val)
 }

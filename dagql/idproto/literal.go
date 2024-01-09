@@ -11,6 +11,27 @@ type Literate interface {
 	ToLiteral() *Literal
 }
 
+func (arg *Literal) Modules() []*ID {
+	switch v := arg.Value.(type) {
+	case *Literal_Id:
+		return v.Id.Modules()
+	case *Literal_List:
+		mods := []*ID{}
+		for _, val := range v.List.Values {
+			mods = append(mods, val.Modules()...)
+		}
+		return mods
+	case *Literal_Object:
+		mods := []*ID{}
+		for _, arg := range v.Object.Values {
+			mods = append(mods, arg.Value.Modules()...)
+		}
+		return mods
+	default:
+		return nil
+	}
+}
+
 // ToAST returns an AST value appropriate for passing to a GraphQL server.
 func (lit *Literal) Display() string {
 	switch x := lit.GetValue().(type) {

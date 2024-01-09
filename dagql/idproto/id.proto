@@ -51,6 +51,12 @@ message ID {
   // only the common case of returning a list of objects. The only case not
   // handled is a nested list. Don't do that; have a type instead.
   int64 nth = 7;
+
+  // A module that must be loaded prior to evaluating this ID.
+  //
+  // The actual usage of this ID is opaque to the protocol. In Dagger this is
+  // the module ID providing the implementation of the field.
+  ID module = 8;
 }
 
 // A named value passed to a GraphQL field or contained in an input object.

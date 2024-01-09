@@ -20,6 +20,7 @@ import (
 // dynamically at runtime.
 type Class[T Typed] struct {
 	inner   T
+	module  *idproto.ID
 	idable  bool
 	fields  map[string]*Field[T]
 	fieldsL *sync.Mutex
@@ -34,6 +35,9 @@ type ClassOpts[T Typed] struct {
 	// In the simple case, we can just use a zero-value, but it is also allowed
 	// to use a dynamic Typed value.
 	Typed T
+
+	// ModuleID is the ID of the module that the class belongs to.
+	ModuleID *idproto.ID
 }
 
 // NewClass returns a new empty class for a given type.
@@ -44,6 +48,7 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 	}
 	class := Class[T]{
 		inner:   opts.Typed,
+		module:  opts.ModuleID,
 		fields:  map[string]*Field[T]{},
 		fieldsL: new(sync.Mutex),
 	}
@@ -150,7 +155,7 @@ func (cls Class[T]) TypeDefinition() *ast.Definition {
 func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
 	field, ok := cls.Field(astField.Name)
 	if !ok {
-		return Selector{}, nil, fmt.Errorf("ParseField: %s has no such field: %q", cls.TypeName(), astField.Name)
+		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.TypeName(), astField.Name)
 	}
 	args := make([]NamedInput, len(astField.Arguments))
 	for i, arg := range astField.Arguments {
@@ -167,7 +172,7 @@ func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars ma
 		}
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return Selector{}, nil, fmt.Errorf("init arg %q value: %w", arg.Name, err)
+			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
 		}
 		args[i] = NamedInput{
 			Name:  arg.Name,
@@ -208,6 +213,7 @@ type Instance[T Typed] struct {
 	Constructor *idproto.ID
 	Self        T
 	Class       Class[T]
+	Module      *idproto.ID
 }
 
 var _ Typed = Instance[Typed]{}
@@ -255,7 +261,9 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, erro
 	if !ok {
 		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
 	}
-	return sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure), nil
+	id := sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure)
+	id.Module = r.Class.module
+	return id, nil
 }
 
 // Select calls a field on the instance.

@@ -15,6 +15,33 @@ func New() *ID {
 	return nil
 }
 
+func (id *ID) Modules() []*ID {
+	allMods := []*ID{}
+	for id != nil {
+		if id.Module != nil {
+			allMods = append(allMods, id.Module)
+		}
+		for _, arg := range id.Args {
+			allMods = append(allMods, arg.Value.Modules()...)
+		}
+		id = id.Parent
+	}
+	seen := map[digest.Digest]struct{}{}
+	deduped := []*ID{}
+	for _, mod := range allMods {
+		dig, err := mod.Digest()
+		if err != nil {
+			panic(err)
+		}
+		if _, ok := seen[dig]; ok {
+			continue
+		}
+		seen[dig] = struct{}{}
+		deduped = append(deduped, mod)
+	}
+	return allMods
+}
+
 func (id *ID) Path() string {
 	buf := new(bytes.Buffer)
 	if id.Parent != nil {
