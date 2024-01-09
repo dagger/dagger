@@ -199,6 +199,10 @@ func (m *manager) Export(ctx context.Context) error {
 				return nil
 			}
 			cacheRef := workerRef.ImmutableRef
+			if cacheRef == nil {
+				bklog.G(ctx).Debugf("skipping cache result %s for %s: nil", cacheResult.ID, id)
+				return nil
+			}
 			cacheKey.Results = append(cacheKey.Results, Result{
 				ID:          cacheRef.ID(),
 				CreatedAt:   cacheResult.CreatedAt,
