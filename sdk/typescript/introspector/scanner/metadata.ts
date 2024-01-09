@@ -1,5 +1,5 @@
 /**
- * Metadata of a variable (called symbol in the Typescript compiler)
+ * Metadata of a variable (called symbol in the TypeScript compiler)
  */
 export type SymbolMetadata = {
   name: string

@@ -20,7 +20,7 @@ A definition of a custom object defined in a Module.
 
 ### constructor
 
-**new ObjectTypeDef**(`parent?`, `_description?`, `_name?`): [`ObjectTypeDef`](api_client_gen.ObjectTypeDef.md)
+**new ObjectTypeDef**(`parent?`, `_description?`, `_name?`, `_sourceModuleName?`): [`ObjectTypeDef`](api_client_gen.ObjectTypeDef.md)
 
 Constructor is used for internal usage only, do not create object from it.
 
@@ -33,6 +33,7 @@ Constructor is used for internal usage only, do not create object from it.
 | `parent.queryTree?` | `QueryTree`[] |
 | `_description?` | `string` |
 | `_name?` | `string` |
+| `_sourceModuleName?` | `string` |
 
 #### Returns
 
@@ -53,6 +54,12 @@ ___
 ### \_name
 
  `Private` `Optional` `Readonly` **\_name**: `string` = `undefined`
+
+___
+
+### \_sourceModuleName
+
+ `Private` `Optional` `Readonly` **\_sourceModuleName**: `string` = `undefined`
 
 ## Methods
 
@@ -109,6 +116,18 @@ ___
 **name**(): `Promise`\<`string`\>
 
 The name of the object
+
+#### Returns
+
+`Promise`\<`string`\>
+
+___
+
+### sourceModuleName
+
+**sourceModuleName**(): `Promise`\<`string`\>
+
+If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
 
 #### Returns
 

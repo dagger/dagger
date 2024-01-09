@@ -613,15 +613,15 @@ ___
 
 ### withDefaultArgs
 
-**withDefaultArgs**(`opts?`): [`Container`](api_client_gen.Container.md)
+**withDefaultArgs**(`args`): [`Container`](api_client_gen.Container.md)
 
 Configures default arguments for future commands.
 
 #### Parameters
 
-| Name | Type |
-| :------ | :------ |
-| `opts?` | [`ContainerWithDefaultArgsOpts`](../modules/api_client_gen.md#containerwithdefaultargsopts) |
+| Name | Type | Description |
+| :------ | :------ | :------ |
+| `args` | `string`[] | Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]). |
 
 #### Returns
 
@@ -651,7 +651,7 @@ ___
 
 ### withEntrypoint
 
-**withEntrypoint**(`args`): [`Container`](api_client_gen.Container.md)
+**withEntrypoint**(`args`, `opts?`): [`Container`](api_client_gen.Container.md)
 
 Retrieves this container but with a different command entrypoint.
 
@@ -660,6 +660,7 @@ Retrieves this container but with a different command entrypoint.
 | Name | Type | Description |
 | :------ | :------ | :------ |
 | `args` | `string`[] | Entrypoint to use for future executions (e.g., ["go", "run"]). |
+| `opts?` | [`ContainerWithEntrypointOpts`](../modules/api_client_gen.md#containerwithentrypointopts) | - |
 
 #### Returns
 
@@ -1052,9 +1053,15 @@ ___
 
 ### withoutEntrypoint
 
-**withoutEntrypoint**(): [`Container`](api_client_gen.Container.md)
+**withoutEntrypoint**(`opts?`): [`Container`](api_client_gen.Container.md)
 
 Retrieves this container with an unset command entrypoint.
+
+#### Parameters
+
+| Name | Type |
+| :------ | :------ |
+| `opts?` | [`ContainerWithoutEntrypointOpts`](../modules/api_client_gen.md#containerwithoutentrypointopts) |
 
 #### Returns
 

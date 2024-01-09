@@ -28,6 +28,16 @@ An integer value
 
 ___
 
+### Interfacekind
+
+ **Interfacekind** = ``"InterfaceKind"``
+
+A named type of functions that can be matched+implemented by other objects+interfaces.
+
+Always paired with an InterfaceTypeDef.
+
+___
+
 ### Listkind
 
  **Listkind** = ``"ListKind"``

@@ -5,7 +5,7 @@ This describes how to release Dagger:
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
 - [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
-- [⬢ Node.js SDK ⏱ `5mins`](#-nodejs-sdk--5mins)
+- [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
@@ -40,16 +40,16 @@ flowchart TD
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
-    registry -.- S3 -.- go & python & nodejs & elixir
+    registry -.- S3 -.- go & python & typescript & elixir
 
     python["🐍 Python SDK"]
     pypi["🐍 pypi.org/project/dagger-io"]
     readthedocs["📖 dagger-io.readthedocs.io"]
     repo ==> python --> pypi & readthedocs
 
-    nodejs["⬢ Node.js SDK"]
+    typescript["⬢ TypeScript SDK"]
     npm["⬢ npmjs.com/@dagger.io/dagger"]
-    repo ==> nodejs --> npm
+    repo ==> typescript --> npm
 
     elixir["🧪 Elixir SDK"]
     hex["🧪 hex.pm/packages/dagger"]
@@ -181,7 +181,7 @@ changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --cust
 changie batch patch
 changie merge
 
-cd ../nodejs
+cd ../typescript
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
 changie batch patch
 changie merge
@@ -303,26 +303,26 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
       https://readthedocs.org/projects/dagger-io/builds/
 - [ ] Click on **Publish release**
 
-## ⬢ Node.js SDK ⏱ `5mins`
+## ⬢ TypeScript SDK ⏱ `5mins`
 
 - [ ] Tag & publish:
 
 ```console
-cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/nodejs/${NODEJS_SDK_VERSION}
+cd sdk/typescript && export TYPESCRIPT_SDK_VERSION=$(changie latest) && cd ../..
+git tag "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${NODEJS_SDK_VERSION}
 ```
 
-This will trigger the [`Publish Node.js SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-nodejs.yml)
+This will trigger the [`Publish TypeScript SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-typescript.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 
 - [ ] Upload the release notes by running:
 
 ```console
-gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/nodejs/$NODEJS_SDK_VERSION \
-    --notes-file sdk/nodejs/.changes/$NODEJS_SDK_VERSION.md
+gh release create "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/typescript/$TYPESCRIPT_SDK_VERSION \
+    --notes-file sdk/typescript/.changes/$TYPESCRIPT_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`

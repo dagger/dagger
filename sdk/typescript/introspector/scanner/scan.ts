@@ -23,14 +23,14 @@ export type ScanResult = {
 }
 
 /**
- * Scan the list of Typescript File using the Typescript compiler API.
+ * Scan the list of TypeScript File using the TypeScript compiler API.
  *
  * This function introspect files and returns metadata of their class and
  * functions that should be exposed to the Dagger API.
  *
  * WARNING(28/11/23): This does NOT include arrow style function.
  *
- * @param files List of Typescript files to introspect.
+ * @param files List of TypeScript files to introspect.
  */
 export function scan(files: string[]): ScanResult {
   if (files.length === 0) {

@@ -1,7 +1,7 @@
-name: "Publish NodeJS SDK"
+name: "Publish TypeScript SDK"
 on:
   push:
-    tags: ["sdk/nodejs/v**"]
+    tags: ["sdk/typescript/v**"]
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -10,7 +10,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: "1.21"
-      - run: ./hack/make sdk:nodejs:publish ${{ github.ref_name }}
+      - run: ./hack/make sdk:typescript:publish ${{ github.ref_name }}
         env:
           NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}

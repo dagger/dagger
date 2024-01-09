@@ -31,11 +31,11 @@ export function serializeSignature(
 }
 
 /**
- * Convert the Typescript symbol from the compiler API into a lighter data type.
+ * Convert the TypeScript symbol from the compiler API into a lighter data type.
  *
  * This function returns the name of the symbol, with its typename and its
  * documentation.
- * This function also returns the actual Typescript type for additional
+ * This function also returns the actual TypeScript type for additional
  * introspection.
  *
  * @param checker The typescript compiler checker.
@@ -65,7 +65,7 @@ export function serializeSymbol(
 }
 
 /**
- * Convert the Typescript type from the compiler API into a readable textual
+ * Convert the TypeScript type from the compiler API into a readable textual
  * type.
  *
  * @param checker The typescript compiler checker.

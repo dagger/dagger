@@ -67,7 +67,7 @@ ___
 
 ### requestContext
 
- **requestContext**: `GraphQLRequestContext`\<`Variables`\>
+ **requestContext**: `GraphQLRequestContext`
 
 The query and variables, which caused the error.
 
@@ -75,7 +75,7 @@ ___
 
 ### response
 
- **response**: `GraphQLResponse`\<`unknown`\>
+ **response**: `GraphQLResponse`
 
 the GraphQL response containing the error.
 

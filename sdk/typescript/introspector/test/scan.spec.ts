@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDirectory = `${__dirname}/testdata`
 
-describe("scan static Typescript", function () {
+describe("scan static TypeScript", function () {
   it("Should correctly scan a basic class with one method", async function () {
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 

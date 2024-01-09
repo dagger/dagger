@@ -1,24 +1,25 @@
-package nodegenerator
+package typescriptgenerator
 
 import (
 	"bytes"
 	"context"
 	"sort"
 
-	"github.com/dagger/dagger/cmd/codegen/generator"
-	"github.com/dagger/dagger/cmd/codegen/generator/nodejs/templates"
-	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/psanford/memfs"
+
+	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/typescript/templates"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 const ClientGenFile = "client.gen.ts"
 
-type NodeGenerator struct {
+type TypeScriptGenerator struct {
 	Config generator.Config
 }
 
-// Generate will generate the NodeJS SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
+// Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
+func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {

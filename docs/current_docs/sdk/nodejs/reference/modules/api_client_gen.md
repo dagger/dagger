@@ -31,6 +31,7 @@ displayed_sidebar: "current"
 - [GitRef](../classes/api_client_gen.GitRef.md)
 - [GitRepository](../classes/api_client_gen.GitRepository.md)
 - [Host](../classes/api_client_gen.Host.md)
+- [InterfaceTypeDef](../classes/api_client_gen.InterfaceTypeDef.md)
 - [Label](../classes/api_client_gen.Label.md)
 - [ListTypeDef](../classes/api_client_gen.ListTypeDef.md)
 - [ModuleConfig](../classes/api_client_gen.ModuleConfig.md)
@@ -244,18 +245,6 @@ ___
 
 ___
 
-### ContainerWithDefaultArgsOpts
-
- **ContainerWithDefaultArgsOpts**: `Object`
-
-#### Type declaration
-
-| Name | Type | Description |
-| :------ | :------ | :------ |
-| `args?` | `string`[] | Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]). |
-
-___
-
 ### ContainerWithDirectoryOpts
 
  **ContainerWithDirectoryOpts**: `Object`
@@ -267,6 +256,18 @@ ___
 | `exclude?` | `string`[] | Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]). |
 | `include?` | `string`[] | Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]). |
 | `owner?` | `string` | A user:group to set for the directory and its contents. The user and group can either be an ID (1000:1000) or a name (foo:bar). If the group is omitted, it defaults to the same as the user. |
+
+___
+
+### ContainerWithEntrypointOpts
+
+ **ContainerWithEntrypointOpts**: `Object`
+
+#### Type declaration
+
+| Name | Type | Description |
+| :------ | :------ | :------ |
+| `keepDefaultArgs?` | `boolean` | Don't remove the default arguments when setting the entrypoint. |
 
 ___
 
@@ -399,6 +400,18 @@ ___
 | Name | Type | Description |
 | :------ | :------ | :------ |
 | `owner?` | `string` | A user:group to set for the mounted socket. The user and group can either be an ID (1000:1000) or a name (foo:bar). If the group is omitted, it defaults to the same as the user. |
+
+___
+
+### ContainerWithoutEntrypointOpts
+
+ **ContainerWithoutEntrypointOpts**: `Object`
+
+#### Type declaration
+
+| Name | Type | Description |
+| :------ | :------ | :------ |
+| `keepDefaultArgs?` | `boolean` | Don't remove the default arguments when unsetting the entrypoint. |
 
 ___
 
@@ -771,6 +784,18 @@ ___
 | Name | Type | Description |
 | :------ | :------ | :------ |
 | `description?` | `string` | A doc string for the field, if any |
+
+___
+
+### TypeDefWithInterfaceOpts
+
+ **TypeDefWithInterfaceOpts**: `Object`
+
+#### Type declaration
+
+| Name | Type |
+| :------ | :------ |
+| `description?` | `string` |
 
 ___
 

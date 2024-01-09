@@ -137,6 +137,18 @@ The module currently being served in the session, if any.
 
 ___
 
+### currentTypeDefs
+
+**currentTypeDefs**(): `Promise`\<[`TypeDef`](api_client_gen.TypeDef.md)[]\>
+
+The TypeDef representations of the objects currently being served in the session.
+
+#### Returns
+
+`Promise`\<[`TypeDef`](api_client_gen.TypeDef.md)[]\>
+
+___
+
 ### defaultPlatform
 
 **defaultPlatform**(): `Promise`\<[`Platform`](../modules/api_client_gen.md#platform)\>

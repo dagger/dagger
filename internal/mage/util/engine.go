@@ -348,7 +348,7 @@ func pythonSDK(c *dagger.Client) *dagger.Directory {
 }
 
 func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
-	return c.Host().Directory("sdk/nodejs", dagger.HostDirectoryOpts{
+	return c.Host().Directory("sdk/typescript", dagger.HostDirectoryOpts{
 		Include: []string{
 			"**/*.ts",
 			"LICENSE",

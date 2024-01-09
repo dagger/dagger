@@ -63,6 +63,19 @@ ___
 
 ## Methods
 
+### asInterface
+
+**asInterface**(): [`InterfaceTypeDef`](api_client_gen.InterfaceTypeDef.md)
+
+If kind is INTERFACE, the interface-specific type definition.
+If kind is not INTERFACE, this will be null.
+
+#### Returns
+
+[`InterfaceTypeDef`](api_client_gen.InterfaceTypeDef.md)
+
+___
+
 ### asList
 
 **asList**(): [`ListTypeDef`](api_client_gen.ListTypeDef.md)
@@ -185,13 +198,32 @@ ___
 
 **withFunction**(`function_`): [`TypeDef`](api_client_gen.TypeDef.md)
 
-Adds a function for an Object TypeDef, failing if the type is not an object.
+Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 
 #### Parameters
 
 | Name | Type |
 | :------ | :------ |
 | `function_` | [`Function_`](api_client_gen.Function_.md) |
+
+#### Returns
+
+[`TypeDef`](api_client_gen.TypeDef.md)
+
+___
+
+### withInterface
+
+**withInterface**(`name`, `opts?`): [`TypeDef`](api_client_gen.TypeDef.md)
+
+Returns a TypeDef of kind Interface with the provided name.
+
+#### Parameters
+
+| Name | Type |
+| :------ | :------ |
+| `name` | `string` |
+| `opts?` | [`TypeDefWithInterfaceOpts`](../modules/api_client_gen.md#typedefwithinterfaceopts) |
 
 #### Returns
 

@@ -142,6 +142,18 @@ The ID of the module
 
 ___
 
+### interfaces
+
+**interfaces**(): `Promise`\<[`TypeDef`](api_client_gen.TypeDef.md)[]\>
+
+Interfaces served by this module
+
+#### Returns
+
+`Promise`\<[`TypeDef`](api_client_gen.TypeDef.md)[]\>
+
+___
+
 ### name
 
 **name**(): `Promise`\<`string`\>
@@ -229,6 +241,24 @@ This is useful for reusability and readability by not breaking the calling chain
 | Name | Type |
 | :------ | :------ |
 | `arg` | (`param`: [`Module_`](api_client_gen.Module_.md)) => [`Module_`](api_client_gen.Module_.md) |
+
+#### Returns
+
+[`Module_`](api_client_gen.Module_.md)
+
+___
+
+### withInterface
+
+**withInterface**(`iface`): [`Module_`](api_client_gen.Module_.md)
+
+This module plus the given Interface type and associated functions
+
+#### Parameters
+
+| Name | Type |
+| :------ | :------ |
+| `iface` | [`TypeDef`](api_client_gen.TypeDef.md) |
 
 #### Returns
 
