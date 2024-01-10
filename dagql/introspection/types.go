@@ -126,6 +126,9 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return dagql.Null[*Type](), nil
 			}
 		}),
+		dagql.Func("specifiedByURL", func(ctx context.Context, self *Type, args struct{}) (*string, error) {
+			return self.SpecifiedByURL(), nil
+		}),
 	}.Install(srv)
 
 	dagql.Fields[*Directive]{
@@ -323,6 +326,10 @@ func (s *Schema) Type() *ast.Type {
 	}
 }
 
+func (s *Schema) TypeDescription() string {
+	return "A GraphQL schema definition."
+}
+
 var _ dagql.Typed = &Type{}
 
 func (s *Type) Type() *ast.Type {
@@ -330,6 +337,10 @@ func (s *Type) Type() *ast.Type {
 		NamedType: "__Type",
 		NonNull:   true,
 	}
+}
+
+func (s *Type) TypeDescription() string {
+	return "A GraphQL schema type."
 }
 
 var _ dagql.Typed = &Directive{}
@@ -341,6 +352,10 @@ func (s *Directive) Type() *ast.Type {
 	}
 }
 
+func (s *Directive) TypeDescription() string {
+	return "A GraphQL schema directive."
+}
+
 var _ dagql.Typed = &InputValue{}
 
 func (s *InputValue) Type() *ast.Type {
@@ -348,6 +363,10 @@ func (s *InputValue) Type() *ast.Type {
 		NamedType: "__InputValue",
 		NonNull:   true,
 	}
+}
+
+func (s *InputValue) TypeDescription() string {
+	return "A GraphQL schema input field or argument."
 }
 
 var _ dagql.Typed = &Field{}
@@ -359,6 +378,10 @@ func (s *Field) Type() *ast.Type {
 	}
 }
 
+func (s *Field) TypeDescription() string {
+	return "A GraphQL object or input field."
+}
+
 var _ dagql.Typed = &EnumValue{}
 
 func (s *EnumValue) Type() *ast.Type {
@@ -366,6 +389,10 @@ func (s *EnumValue) Type() *ast.Type {
 		NamedType: "__EnumValue",
 		NonNull:   true,
 	}
+}
+
+func (s *EnumValue) TypeDescription() string {
+	return "A possible value of a GraphQL enum."
 }
 
 type TypeKind string
@@ -396,6 +423,10 @@ func (k TypeKind) Type() *ast.Type {
 		NamedType: "__TypeKind",
 		NonNull:   true,
 	}
+}
+
+func (s TypeKind) TypeDescription() string {
+	return "The kind of a GraphQL type."
 }
 
 type DirectiveLocation string
@@ -437,6 +468,10 @@ func (k DirectiveLocation) Type() *ast.Type {
 		NamedType: "__DirectiveLocation",
 		NonNull:   true,
 	}
+}
+
+func (s DirectiveLocation) TypeDescription() string {
+	return "A location that a directive may be applied."
 }
 
 type Type struct {
