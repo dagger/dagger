@@ -55,6 +55,12 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 	}
 
 	dagql.Fields[*Schema]{
+		dagql.Func("description", func(ctx context.Context, self *Schema, args struct{}) (*string, error) {
+			return self.Description(), nil
+		}),
+		dagql.Func("types", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Type], error) {
+			return self.Types(), nil
+		}),
 		dagql.Func("queryType", func(ctx context.Context, self *Schema, args struct{}) (*Type, error) {
 			return self.QueryType(), nil
 		}),
@@ -69,9 +75,6 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return dagql.Null[*Type](), nil
 			}
 			return dagql.NonNull(self.SubscriptionType()), nil
-		}),
-		dagql.Func("types", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Type], error) {
-			return self.Types(), nil
 		}),
 		dagql.Func("directives", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Directive], error) {
 			return self.Directives(), nil

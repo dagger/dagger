@@ -980,6 +980,17 @@
         "name": "__Schema",
         "fields": [
           {
+            "name": "description",
+            "description": "",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String"
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          },
+          {
             "name": "directives",
             "description": "",
             "type": {
