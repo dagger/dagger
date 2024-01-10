@@ -55,7 +55,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 	}
 
 	dagql.Fields[*Schema]{
-		dagql.Func("description", func(ctx context.Context, self *Schema, args struct{}) (*string, error) {
+		dagql.Func("description", func(ctx context.Context, self *Schema, args struct{}) (string, error) {
 			return self.Description(), nil
 		}),
 		dagql.Func("types", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Type], error) {
@@ -92,12 +92,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.NodeFunc("kind", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (TypeKind, error) {
 			return TypeKinds.Lookup(self.Self.Kind())
 		}),
-		dagql.Func("description", func(ctx context.Context, self *Type, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.Description() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.Description())), nil
-			}
+		dagql.Func("description", func(ctx context.Context, self *Type, args struct{}) (string, error) {
+			return self.Description(), nil
 		}),
 		dagql.Func("fields", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
@@ -135,12 +131,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self *Directive, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self *Directive, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.Description() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.Description())), nil
-			}
+		dagql.Func("description", func(ctx context.Context, self *Directive, args struct{}) (string, error) {
+			return self.Description(), nil
 		}),
 		dagql.Func("locations", func(ctx context.Context, self *Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
 			var locations []DirectiveLocation
@@ -162,12 +154,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self *Field, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self *Field, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.Description() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.Description())), nil
-			}
+		dagql.Func("description", func(ctx context.Context, self *Field, args struct{}) (string, error) {
+			return self.Description(), nil
 		}),
 		dagql.Func("args", func(ctx context.Context, self *Field, _ struct{}) (dagql.Array[*InputValue], error) {
 			return self.Args, nil
@@ -187,12 +175,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self *InputValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self *InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.Description() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.Description())), nil
-			}
+		dagql.Func("description", func(ctx context.Context, self *InputValue, args struct{}) (string, error) {
+			return self.Description(), nil
 		}),
 		dagql.Func("type", func(ctx context.Context, self *InputValue, args struct{}) (*Type, error) {
 			return self.Type_, nil
@@ -216,12 +200,8 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("name", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
 		}),
-		dagql.Func("description", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Nullable[dagql.String], error) {
-			if self.Description() == nil {
-				return dagql.Null[dagql.String](), nil
-			} else {
-				return dagql.NonNull(dagql.NewString(*self.Description())), nil
-			}
+		dagql.Func("description", func(ctx context.Context, self *EnumValue, args struct{}) (string, error) {
+			return self.Description(), nil
 		}),
 		dagql.Func("isDeprecated", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
@@ -236,11 +216,8 @@ type Schema struct {
 	schema *ast.Schema
 }
 
-func (s *Schema) Description() *string {
-	if s.schema.Description == "" {
-		return nil
-	}
-	return &s.schema.Description
+func (s *Schema) Description() string {
+	return s.schema.Description
 }
 
 func (s *Schema) Types() []*Type {
@@ -525,11 +502,11 @@ func (t *Type) Name() *string {
 	return &t.def.Name
 }
 
-func (t *Type) Description() *string {
-	if t.def == nil || t.def.Description == "" {
-		return nil
+func (t *Type) Description() string {
+	if t.def == nil {
+		return ""
 	}
-	return &t.def.Description
+	return t.def.Description
 }
 
 func (t *Type) Fields(includeDeprecated bool) []*Field {
@@ -703,11 +680,8 @@ func WrapSchema(schema *ast.Schema) *Schema {
 	return &Schema{schema: schema}
 }
 
-func (f *EnumValue) Description() *string {
-	if f.description == "" {
-		return nil
-	}
-	return &f.description
+func (f *EnumValue) Description() string {
+	return f.description
 }
 
 func (f *EnumValue) IsDeprecated() bool {
@@ -727,11 +701,8 @@ func (f *EnumValue) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
-func (f *Field) Description() *string {
-	if f.description == "" {
-		return nil
-	}
-	return &f.description
+func (f *Field) Description() string {
+	return f.description
 }
 
 func (f *Field) IsDeprecated() bool {
@@ -753,11 +724,8 @@ func (f *Field) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
-func (f *InputValue) Description() *string {
-	if f.description == "" {
-		return nil
-	}
-	return &f.description
+func (f *InputValue) Description() string {
+	return f.description
 }
 
 func (f *InputValue) IsDeprecated() bool {
@@ -777,9 +745,6 @@ func (f *InputValue) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
-func (f *Directive) Description() *string {
-	if f.description == "" {
-		return nil
-	}
-	return &f.description
+func (f *Directive) Description() string {
+	return f.description
 }

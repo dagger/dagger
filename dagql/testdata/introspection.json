@@ -560,6 +560,7 @@
       {
         "kind": "OBJECT",
         "name": "__Directive",
+        "description": "A GraphQL schema directive.",
         "fields": [
           {
             "name": "args",
@@ -585,8 +586,11 @@
             "name": "description",
             "description": "",
             "type": {
-              "kind": "SCALAR",
-              "name": "String"
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
             },
             "args": [],
             "isDeprecated": false,
@@ -631,6 +635,7 @@
       {
         "kind": "ENUM",
         "name": "__DirectiveLocation",
+        "description": "A location that a directive may be applied.",
         "enumValues": [
           {
             "name": "QUERY",
@@ -751,6 +756,7 @@
       {
         "kind": "OBJECT",
         "name": "__EnumValue",
+        "description": "A possible value of a GraphQL enum.",
         "fields": [
           {
             "name": "deprecationReason",
@@ -767,8 +773,11 @@
             "name": "description",
             "description": "",
             "type": {
-              "kind": "SCALAR",
-              "name": "String"
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
             },
             "args": [],
             "isDeprecated": false,
@@ -807,6 +816,7 @@
       {
         "kind": "OBJECT",
         "name": "__Field",
+        "description": "A GraphQL object or input field.",
         "fields": [
           {
             "name": "args",
@@ -843,8 +853,11 @@
             "name": "description",
             "description": "",
             "type": {
-              "kind": "SCALAR",
-              "name": "String"
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
             },
             "args": [],
             "isDeprecated": false,
@@ -897,6 +910,7 @@
       {
         "kind": "OBJECT",
         "name": "__InputValue",
+        "description": "A GraphQL schema input field or argument.",
         "fields": [
           {
             "name": "defaultValue",
@@ -924,8 +938,11 @@
             "name": "description",
             "description": "",
             "type": {
-              "kind": "SCALAR",
-              "name": "String"
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
             },
             "args": [],
             "isDeprecated": false,
@@ -978,13 +995,17 @@
       {
         "kind": "OBJECT",
         "name": "__Schema",
+        "description": "A GraphQL schema definition.",
         "fields": [
           {
             "name": "description",
             "description": "",
             "type": {
-              "kind": "SCALAR",
-              "name": "String"
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
             },
             "args": [],
             "isDeprecated": false,
@@ -1071,13 +1092,17 @@
       {
         "kind": "OBJECT",
         "name": "__Type",
+        "description": "A GraphQL schema type.",
         "fields": [
           {
             "name": "description",
             "description": "",
             "type": {
-              "kind": "SCALAR",
-              "name": "String"
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
             },
             "args": [],
             "isDeprecated": false,
@@ -1242,12 +1267,24 @@
             "args": [],
             "isDeprecated": false,
             "deprecationReason": ""
+          },
+          {
+            "name": "specifiedByURL",
+            "description": "",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String"
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
           }
         ]
       },
       {
         "kind": "ENUM",
         "name": "__TypeKind",
+        "description": "The kind of a GraphQL type.",
         "enumValues": [
           {
             "name": "SCALAR",
