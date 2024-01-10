@@ -1,5 +1,5 @@
 {
-  "name": "typescript-sdk",
-  "sdk": "go",
-  "root": ".."
+  "name": "TypeScriptSDK",
+  "root": "..",
+  "sdk": "go"
 }
