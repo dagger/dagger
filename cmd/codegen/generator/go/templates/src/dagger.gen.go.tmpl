@@ -173,3 +173,14 @@ func (e *ExecError) Message() string {
 func (e *ExecError) Unwrap() error {
 	return e.original
 }
+
+{{ range .Types }}
+{{ if eq .Kind "SCALAR" }}{{ template "_dagger.gen.go/scalar.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "OBJECT" }}{{ template "_dagger.gen.go/object.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "INPUT_OBJECT" }}{{ template "_dagger.gen.go/input.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "ENUM" }}{{ template "_dagger.gen.go/enum.go.tmpl" . }}{{ end }}
+{{ end }}
+
+{{ if IsModuleCode }}
+{{ template "_dagger.gen.go/module.go.tmpl" $.Schema }}
+{{ end }}

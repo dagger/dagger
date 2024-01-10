@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
-	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -29,10 +28,6 @@ import (
 const (
 	// ClientGenFile is the path to write the codegen for the dagger API
 	ClientGenFile = "dagger.gen.go"
-
-	// GlobalClientGenFile is the path to write the codegen for the global "dag"
-	// API client
-	GlobalClientGenFile = "dag/dag.gen.go"
 
 	// StarterTemplateFile is the path to write the default module code
 	StarterTemplateFile = "main.go"
@@ -81,7 +76,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		// generate an initial dagger.gen.go from the base Dagger API
 		baseCfg := g.Config
 		baseCfg.ModuleConfig = nil
-		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, true); err != nil {
+		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
@@ -111,7 +106,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
 
-	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset, false); err != nil {
+	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
@@ -223,27 +218,24 @@ func generateCode(
 	pkgInfo *PackageInfo,
 	pkg *packages.Package,
 	fset *token.FileSet,
-	partial bool,
+	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset)
-	templateFiles := templates.TemplateFiles(funcs)
+	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset, pass)
+	tmpls := templates.Templates(funcs)
 
-	targets := map[string]string{
-		"defs": ClientGenFile,
-	}
-	if !partial && cfg.ModuleConfig == nil {
-		targets["dag"] = GlobalClientGenFile
-	}
-
-	for k, target := range targets {
-		dt, err := renderFile(ctx, cfg, schema, pkgInfo, templateFiles[k])
+	for k, tmpl := range tmpls {
+		dt, err := renderFile(ctx, cfg, schema, pkgInfo, tmpl)
 		if err != nil {
 			return err
 		}
-		if err := mfs.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if dt == nil {
+			// no contents, skip
+			continue
+		}
+		if err := mfs.MkdirAll(filepath.Dir(k), 0o755); err != nil {
 			return err
 		}
-		if err := mfs.WriteFile(target, dt, 0600); err != nil {
+		if err := mfs.WriteFile(k, dt, 0600); err != nil {
 			return err
 		}
 	}
@@ -256,47 +248,29 @@ func renderFile(
 	cfg generator.Config,
 	schema *introspection.Schema,
 	pkgInfo *PackageInfo,
-	templateFile templates.TemplateFile,
+	tmpl *template.Template,
 ) ([]byte, error) {
-	headerData := struct {
+	data := struct {
 		*PackageInfo
 		Schema *introspection.Schema
+		Types  []*introspection.Type
 	}{
 		PackageInfo: pkgInfo,
 		Schema:      schema,
+		Types:       schema.Visit(),
 	}
 
 	var render bytes.Buffer
-
-	if tmpl := templateFile.Header(); tmpl != nil {
-		var header bytes.Buffer
-		if err := tmpl.Execute(&header, headerData); err != nil {
-			return nil, err
-		}
-		header.WriteTo(&render)
-	}
-
-	err := schema.Visit(introspection.VisitHandlers{
-		Scalar: makeVisitor(cfg, templateFile.Scalar(), &render),
-		Object: makeVisitor(cfg, templateFile.Object(), &render),
-		Enum:   makeVisitor(cfg, templateFile.Enum(), &render),
-		Input:  makeVisitor(cfg, templateFile.Input(), &render),
-	})
-	if err != nil {
+	if err := tmpl.Execute(&render, data); err != nil {
 		return nil, err
 	}
 
-	if cfg.ModuleConfig != nil {
-		if tmpl := templateFile.Module(); tmpl != nil {
-			var moduleMain bytes.Buffer
-			if err := tmpl.Execute(&moduleMain, schema); err != nil {
-				return nil, err
-			}
-			moduleMain.WriteTo(&render)
-		}
+	source := render.Bytes()
+	source = bytes.TrimSpace(source)
+	if len(source) == 0 {
+		return nil, nil
 	}
 
-	source := render.Bytes()
 	formatted, err := format.Source(source)
 	if err != nil {
 		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
@@ -306,20 +280,6 @@ func renderFile(
 		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
 	}
 	return formatted, nil
-}
-
-func makeVisitor(cfg generator.Config, tmpl *template.Template, w io.Writer) func(t *introspection.Type) error {
-	if tmpl == nil {
-		return nil
-	}
-	return func(t *introspection.Type) error {
-		var out bytes.Buffer
-		if err := tmpl.Execute(&out, t); err != nil {
-			return err
-		}
-		_, err := out.WriteTo(w)
-		return err
-	}
 }
 
 func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {

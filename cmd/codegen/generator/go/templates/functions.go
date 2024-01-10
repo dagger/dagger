@@ -23,6 +23,7 @@ func GoTemplateFuncs(
 	module *modules.Config,
 	pkg *packages.Package,
 	fset *token.FileSet,
+	pass int,
 ) template.FuncMap {
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
@@ -31,6 +32,7 @@ func GoTemplateFuncs(
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
+		pass:            pass,
 	}.FuncMap()
 }
 
@@ -41,6 +43,7 @@ type goTemplateFuncs struct {
 	modulePkg  *packages.Package
 	moduleFset *token.FileSet
 	schema     *introspection.Schema
+	pass       int
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
@@ -71,6 +74,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsPointer":               funcs.isPointer,
 		"FormatArrayField":        funcs.formatArrayField,
 		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
+		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 	}
@@ -249,4 +253,9 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	signature += " " + retType
 
 	return signature, nil
+}
+
+// isPartial determines if we are in a first-pass or not
+func (funcs goTemplateFuncs) isPartial() bool {
+	return funcs.pass == 0
 }
