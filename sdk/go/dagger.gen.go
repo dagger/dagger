@@ -248,6 +248,9 @@ type ServiceID string
 // The `SocketID` scalar type represents an identifier for an object of type Socket.
 type SocketID string
 
+// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+type TerminalID string
+
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
@@ -339,19 +342,18 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	envVariable   *string
-	export        *bool
-	id            *ContainerID
-	imageRef      *string
-	label         *string
-	platform      *Platform
-	publish       *string
-	shellEndpoint *string
-	stderr        *string
-	stdout        *string
-	sync          *ContainerID
-	user          *string
-	workdir       *string
+	envVariable *string
+	export      *bool
+	id          *ContainerID
+	imageRef    *string
+	label       *string
+	platform    *Platform
+	publish     *string
+	stderr      *string
+	stdout      *string
+	sync        *ContainerID
+	user        *string
+	workdir     *string
 }
 type WithContainerFunc func(r *Container) *Container
 
@@ -913,19 +915,26 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-//
-// Primarily intended for internal use with the dagger CLI.
-func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
-	if r.shellEndpoint != nil {
-		return *r.shellEndpoint, nil
+// ContainerShellOpts contains options for Container.Shell
+type ContainerShellOpts struct {
+	// If set, override the container's default shell and invoke these arguments instead.
+	Args []string
+}
+
+// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+func (r *Container) Shell(opts ...ContainerShellOpts) *Terminal {
+	q := r.q.Select("shell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
 	}
-	q := r.q.Select("shellEndpoint")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return &Terminal{
+		q: q,
+		c: r.c,
+	}
 }
 
 // The error stream of the last executed command.
@@ -983,6 +992,17 @@ func (r *Container) User(ctx context.Context) (string, error) {
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.q.Select("withDefaultArgs")
+	q = q.Arg("args", args)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Set the default command to invoke for the "shell" API.
+func (r *Container) WithDefaultShell(args []string) *Container {
+	q := r.q.Select("withDefaultShell")
 	q = q.Arg("args", args)
 
 	return &Container{
@@ -4758,6 +4778,17 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	}
 }
 
+// Load a Terminal from its ID.
+func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
+	q := r.q.Select("loadTerminalFromID")
+	q = q.Arg("id", id)
+
+	return &Terminal{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.q.Select("loadTypeDefFromID")
@@ -5137,6 +5168,68 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// An interactive terminal that clients can connect to.
+type Terminal struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id                *TerminalID
+	websocketEndpoint *string
+}
+
+// A unique identifier for this Terminal.
+func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response TerminalID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Terminal) XXX_GraphQLType() string {
+	return "Terminal"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Terminal) XXX_GraphQLIDType() string {
+	return "TerminalID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Terminal) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// An http endpoint at which this terminal can be connected to over a websocket.
+func (r *Terminal) WebsocketEndpoint(ctx context.Context) (string, error) {
+	if r.websocketEndpoint != nil {
+		return *r.websocketEndpoint, nil
+	}
+	q := r.q.Select("websocketEndpoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A definition of a parameter or return type in a Module.

@@ -424,11 +424,19 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.\n\nPrimarily intended for internal use with the dagger CLI."
-    @spec shell_endpoint(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def shell_endpoint(%__MODULE__{} = container) do
-      selection = select(container.selection, "shellEndpoint")
-      execute(selection, container.client)
+    @doc "Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `args` - If set, override the container's default shell and invoke these arguments instead."
+    @spec shell(t(), keyword()) :: Dagger.Terminal.t()
+    def shell(%__MODULE__{} = container, optional_args \\ []) do
+      selection = select(container.selection, "shell")
+
+      selection =
+        if is_nil(optional_args[:args]) do
+          selection
+        else
+          arg(selection, "args", optional_args[:args])
+        end
+
+      %Dagger.Terminal{selection: selection, client: container.client}
     end
   )
 
@@ -473,6 +481,16 @@ defmodule Dagger.Container do
     @spec with_default_args(t(), [Dagger.String.t()]) :: Dagger.Container.t()
     def with_default_args(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withDefaultArgs")
+      selection = arg(selection, "args", args)
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Set the default command to invoke for the \"shell\" API.\n\n## Required Arguments\n\n* `args` - The args of the command to set the default shell to."
+    @spec with_default_shell(t(), [Dagger.String.t()]) :: Dagger.Container.t()
+    def with_default_shell(%__MODULE__{} = container, args) do
+      selection = select(container.selection, "withDefaultShell")
       selection = arg(selection, "args", args)
       %Dagger.Container{selection: selection, client: container.client}
     end

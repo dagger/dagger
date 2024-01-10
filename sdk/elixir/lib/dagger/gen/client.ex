@@ -489,6 +489,16 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a Terminal from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_terminal_from_id(t(), Dagger.Terminal.t()) :: Dagger.Terminal.t()
+    def load_terminal_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadTerminalFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.Terminal{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a TypeDef from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_type_def_from_id(t(), Dagger.TypeDef.t()) :: Dagger.TypeDef.t()
     def load_type_def_from_id(%__MODULE__{} = query, type_def) do
