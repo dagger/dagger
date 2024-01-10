@@ -20,7 +20,6 @@ import (
 // dynamically at runtime.
 type Class[T Typed] struct {
 	inner   T
-	module  *idproto.ID
 	idable  bool
 	fields  map[string]*Field[T]
 	fieldsL *sync.Mutex
@@ -35,9 +34,6 @@ type ClassOpts[T Typed] struct {
 	// In the simple case, we can just use a zero-value, but it is also allowed
 	// to use a dynamic Typed value.
 	Typed T
-
-	// ModuleID is the ID of the module that the class belongs to.
-	ModuleID *idproto.ID
 }
 
 // NewClass returns a new empty class for a given type.
@@ -48,7 +44,6 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 	}
 	class := Class[T]{
 		inner:   opts.Typed,
-		module:  opts.ModuleID,
 		fields:  map[string]*Field[T]{},
 		fieldsL: new(sync.Mutex),
 	}
@@ -262,7 +257,7 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, erro
 		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
 	}
 	id := sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure)
-	id.Module = r.Class.module
+	id.Module = field.Spec.Module
 	return id, nil
 }
 
@@ -387,6 +382,8 @@ type FieldSpec struct {
 	Pure bool
 	// DeprecatedReason deprecates the input and provides a reason.
 	DeprecatedReason string
+	// Module is the module that provides the field's implementation.
+	Module *idproto.ID
 }
 
 func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
