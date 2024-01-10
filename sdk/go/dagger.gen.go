@@ -5,10 +5,12 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/querybuilder"
 )
@@ -78,6 +80,92 @@ func (o *Optional[T]) MarshalJSON() ([]byte, error) {
 func (o *Optional[T]) UnmarshalJSON(dt []byte) error {
 	o.isSet = true
 	return json.Unmarshal(dt, &o.value)
+}
+
+type DaggerObject querybuilder.GraphQLMarshaller
+
+func convertSlice[I any, O any](in []I, f func(I) O) []O {
+	out := make([]O, len(in))
+	for i, v := range in {
+		out[i] = f(v)
+	}
+	return out
+}
+
+func convertOptionalVal[I any, O any](opt Optional[I], f func(I) O) Optional[O] {
+	if !opt.isSet {
+		return Optional[O]{}
+	}
+	return Optional[O]{value: f(opt.value), isSet: true}
+}
+
+// getCustomError parses a GraphQL error into a more specific error type.
+func getCustomError(err error) error {
+	var gqlErr *gqlerror.Error
+
+	if !errors.As(err, &gqlErr) {
+		return nil
+	}
+
+	ext := gqlErr.Extensions
+
+	typ, ok := ext["_type"].(string)
+	if !ok {
+		return nil
+	}
+
+	if typ == "EXEC_ERROR" {
+		e := &ExecError{
+			original: err,
+		}
+		if code, ok := ext["exitCode"].(float64); ok {
+			e.ExitCode = int(code)
+		}
+		if args, ok := ext["cmd"].([]interface{}); ok {
+			cmd := make([]string, len(args))
+			for i, v := range args {
+				cmd[i] = v.(string)
+			}
+			e.Cmd = cmd
+		}
+		if stdout, ok := ext["stdout"].(string); ok {
+			e.Stdout = stdout
+		}
+		if stderr, ok := ext["stderr"].(string); ok {
+			e.Stderr = stderr
+		}
+		return e
+	}
+
+	return nil
+}
+
+// ExecError is an API error from an exec operation.
+type ExecError struct {
+	original error
+	Cmd      []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+func (e *ExecError) Error() string {
+	// As a default when just printing the error, include the stdout
+	// and stderr for visibility
+	return fmt.Sprintf(
+		"%s\nStdout:\n%s\nStderr:\n%s",
+		e.Message(),
+		e.Stdout,
+		e.Stderr,
+	)
+}
+
+func (e *ExecError) Message() string {
+	return e.original.Error()
+}
+
+func (e *ExecError) Unwrap() error {
+	return e.original
 }
 
 // A global cache volume identifier.
@@ -865,21 +953,10 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerWithDefaultArgsOpts contains options for Container.WithDefaultArgs
-type ContainerWithDefaultArgsOpts struct {
-	// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-	Args []string
-}
-
 // Configures default arguments for future commands.
-func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
+func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.q.Select("withDefaultArgs")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
+	q = q.Arg("args", args)
 
 	return &Container{
 		q: q,
@@ -928,9 +1005,21 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	}
 }
 
+// ContainerWithEntrypointOpts contains options for Container.WithEntrypoint
+type ContainerWithEntrypointOpts struct {
+	// Don't remove the default arguments when setting the entrypoint.
+	KeepDefaultArgs bool
+}
+
 // Retrieves this container but with a different command entrypoint.
-func (r *Container) WithEntrypoint(args []string) *Container {
+func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypointOpts) *Container {
 	q := r.q.Select("withEntrypoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `keepDefaultArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KeepDefaultArgs) {
+			q = q.Arg("keepDefaultArgs", opts[i].KeepDefaultArgs)
+		}
+	}
 	q = q.Arg("args", args)
 
 	return &Container{
@@ -1420,6 +1509,38 @@ func (r *Container) WithWorkdir(path string) *Container {
 	}
 }
 
+// Retrieves this container with unset default arguments for future commands.
+func (r *Container) WithoutDefaultArgs() *Container {
+	q := r.q.Select("withoutDefaultArgs")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerWithoutEntrypointOpts contains options for Container.WithoutEntrypoint
+type ContainerWithoutEntrypointOpts struct {
+	// Don't remove the default arguments when unsetting the entrypoint.
+	KeepDefaultArgs bool
+}
+
+// Retrieves this container with an unset command entrypoint.
+func (r *Container) WithoutEntrypoint(opts ...ContainerWithoutEntrypointOpts) *Container {
+	q := r.q.Select("withoutEntrypoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `keepDefaultArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].KeepDefaultArgs) {
+			q = q.Arg("keepDefaultArgs", opts[i].KeepDefaultArgs)
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")
@@ -1504,6 +1625,30 @@ func (r *Container) WithoutRegistryAuth(address string) *Container {
 func (r *Container) WithoutUnixSocket(path string) *Container {
 	q := r.q.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset command user.
+//
+// Should default to root.
+func (r *Container) WithoutUser() *Container {
+	q := r.q.Select("withoutUser")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with an unset working directory.
+//
+// Should default to "/".
+func (r *Container) WithoutWorkdir() *Container {
+	q := r.q.Select("withoutWorkdir")
 
 	return &Container{
 		q: q,
@@ -2955,6 +3100,89 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// A definition of a custom interface defined in a Module.
+type InterfaceTypeDef struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description      *string
+	name             *string
+	sourceModuleName *string
+}
+
+// The doc string for the interface, if any
+func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Functions defined on this interface, if any
+func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
+	q := r.q.Select("functions")
+
+	q = q.Select("id")
+
+	type functions struct {
+		Id FunctionID
+	}
+
+	convert := func(fields []functions) []Function {
+		out := []Function{}
+
+		for i := range fields {
+			val := Function{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []functions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The name of the interface
+func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.q.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	q *querybuilder.Selection
@@ -3133,6 +3361,40 @@ func (r *Module) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Interfaces served by this module
+func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("interfaces")
+
+	q = q.Select("id")
+
+	type interfaces struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []interfaces) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []interfaces
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -3232,6 +3494,18 @@ func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// This module plus the given Interface type and associated functions
+func (r *Module) WithInterface(iface *TypeDef) *Module {
+	assertNotNil("iface", iface)
+	q := r.q.Select("withInterface")
+	q = q.Arg("iface", iface)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This module plus the given Object type and associated functions
 func (r *Module) WithObject(object *TypeDef) *Module {
 	assertNotNil("object", object)
@@ -3328,8 +3602,9 @@ type ObjectTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	name        *string
+	description      *string
+	name             *string
+	sourceModuleName *string
 }
 
 // The function used to construct new instances of this object, if any
@@ -3428,6 +3703,19 @@ func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 		return *r.name, nil
 	}
 	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.q.Select("sourceModuleName")
 
 	var response string
 
@@ -3565,6 +3853,40 @@ func (r *Client) CurrentModule() *Module {
 		q: q,
 		c: r.c,
 	}
+}
+
+// The TypeDef representations of the objects currently being served in the session.
+func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("currentTypeDefs")
+
+	q = q.Select("id")
+
+	type currentTypeDefs struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []currentTypeDefs) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []currentTypeDefs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // The default platform of the builder.
@@ -4262,6 +4584,17 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 	return f(r)
 }
 
+// If kind is INTERFACE, the interface-specific type definition.
+// If kind is not INTERFACE, this will be null.
+func (r *TypeDef) AsInterface() *InterfaceTypeDef {
+	q := r.q.Select("asInterface")
+
+	return &InterfaceTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // If kind is LIST, the list-specific type definition.
 // If kind is not LIST, this will be null.
 func (r *TypeDef) AsList() *ListTypeDef {
@@ -4386,11 +4719,33 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	}
 }
 
-// Adds a function for an Object TypeDef, failing if the type is not an object.
+// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	assertNotNil("function", function)
 	q := r.q.Select("withFunction")
 	q = q.Arg("function", function)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TypeDefWithInterfaceOpts contains options for TypeDef.WithInterface
+type TypeDefWithInterfaceOpts struct {
+	Description string
+}
+
+// Returns a TypeDef of kind Interface with the provided name.
+func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *TypeDef {
+	q := r.q.Select("withInterface")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &TypeDef{
 		q: q,
@@ -4520,6 +4875,11 @@ const (
 
 	// An integer value
 	Integerkind TypeDefKind = "IntegerKind"
+
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	//
+	// Always paired with an InterfaceTypeDef.
+	Interfacekind TypeDefKind = "InterfaceKind"
 
 	// A list of values all having the same type.
 	//

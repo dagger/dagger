@@ -46,8 +46,10 @@ type ManagerConfig struct {
 	EngineID     string
 }
 
+const LocalCacheID = "local"
+
 func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, error) {
-	localCache := solver.NewCacheManager(ctx, "local", managerConfig.KeyStore, managerConfig.ResultStore)
+	localCache := solver.NewCacheManager(ctx, LocalCacheID, managerConfig.KeyStore, managerConfig.ResultStore)
 	m := &manager{
 		ManagerConfig: managerConfig,
 		localCache:    localCache,
@@ -197,6 +199,10 @@ func (m *manager) Export(ctx context.Context) error {
 				return nil
 			}
 			cacheRef := workerRef.ImmutableRef
+			if cacheRef == nil {
+				bklog.G(ctx).Debugf("skipping cache result %s for %s: nil", cacheResult.ID, id)
+				return nil
+			}
 			cacheKey.Results = append(cacheKey.Results, Result{
 				ID:          cacheRef.ID(),
 				CreatedAt:   cacheResult.CreatedAt,

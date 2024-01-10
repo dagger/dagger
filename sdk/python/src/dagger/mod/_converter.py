@@ -89,7 +89,7 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
 
     typ = non_optional(typ)
 
-    if typ is TypeHint(None):
+    if typ is TypeHint(type(None)):
         return td.with_kind(dagger.TypeDefKind.VoidKind)
 
     builtins = {

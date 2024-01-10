@@ -493,6 +493,21 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithWorkdir.WithExec.Stdout, "/usr\n")
 }
 
+func TestContainerExecWithoutWorkdir(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		WithWorkdir("/usr").
+		WithoutWorkdir().
+		WithExec([]string{"pwd"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "/\n", res)
+}
+
 func TestContainerExecWithUser(t *testing.T) {
 	t.Parallel()
 
@@ -596,38 +611,136 @@ func TestContainerExecWithUser(t *testing.T) {
 	})
 }
 
+func TestContainerExecWithoutUser(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		WithUser("daemon").
+		WithoutUser().
+		WithExec([]string{"whoami"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "root\n", res)
+}
+
 func TestContainerExecWithEntrypoint(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 
 	base := c.Container().From(alpineImage)
-	before, err := base.Entrypoint(ctx)
-	require.NoError(t, err)
-	require.Empty(t, before)
-
 	withEntry := base.WithEntrypoint([]string{"sh"})
-	after, err := withEntry.Entrypoint(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"sh"}, after)
 
-	used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "/root\n", used)
+	t.Run("before", func(t *testing.T) {
+		t.Parallel()
+		before, err := base.Entrypoint(ctx)
+		require.NoError(t, err)
+		require.Empty(t, before)
+	})
 
-	_, err = withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
-	require.Error(t, err) // 'sh sh -c echo $HOME' is not valid
+	t.Run("after", func(t *testing.T) {
+		t.Parallel()
+		after, err := withEntry.Entrypoint(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"sh"}, after)
+	})
 
-	skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
-		SkipEntrypoint: true,
-	}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "/root\n", skipped)
+	t.Run("used", func(t *testing.T) {
+		t.Parallel()
+		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/root\n", used)
+	})
 
-	withoutEntry := withEntry.WithEntrypoint(nil)
-	removed, err := withoutEntry.Entrypoint(ctx)
-	require.NoError(t, err)
-	require.Empty(t, removed)
+	t.Run("prepended to exec", func(t *testing.T) {
+		t.Parallel()
+		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "can't open 'sh'")
+	})
+
+	t.Run("skipped", func(t *testing.T) {
+		t.Parallel()
+		skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
+			SkipEntrypoint: true,
+		}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/root\n", skipped)
+	})
+
+	t.Run("unset default args", func(t *testing.T) {
+		t.Parallel()
+		removed, err := base.
+			WithDefaultArgs([]string{"foobar"}).
+			WithEntrypoint([]string{"echo"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "\n", removed)
+	})
+
+	t.Run("kept default args", func(t *testing.T) {
+		t.Parallel()
+		kept, err := base.
+			WithDefaultArgs([]string{"foobar"}).
+			WithEntrypoint([]string{"echo"}, dagger.ContainerWithEntrypointOpts{
+				KeepDefaultArgs: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", kept)
+	})
+
+	t.Run("cleared", func(t *testing.T) {
+		t.Parallel()
+		withoutEntry := withEntry.WithEntrypoint(nil)
+		removed, err := withoutEntry.Entrypoint(ctx)
+		require.NoError(t, err)
+		require.Empty(t, removed)
+	})
+}
+
+func TestContainerExecWithoutEntrypoint(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	t.Run("cleared entrypoint", func(t *testing.T) {
+		res, err := c.Container().
+			From(alpineImage).
+			// if not unset this would return an error
+			WithEntrypoint([]string{"foo"}).
+			WithoutEntrypoint().
+			WithExec([]string{"echo", "-n", "foobar"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", res)
+	})
+
+	t.Run("cleared entrypoint with default args", func(t *testing.T) {
+		res, err := c.Container().
+			From(alpineImage).
+			WithEntrypoint([]string{"foo"}).
+			WithDefaultArgs([]string{"echo", "-n", "foobar"}).
+			WithoutEntrypoint().
+			Stdout(ctx)
+		require.ErrorContains(t, err, "no command has been set")
+		require.Empty(t, res)
+	})
+
+	t.Run("cleared entrypoint without default args", func(t *testing.T) {
+		res, err := c.Container().
+			From(alpineImage).
+			WithEntrypoint([]string{"foo"}).
+			WithDefaultArgs([]string{"echo", "-n", "foobar"}).
+			WithoutEntrypoint(dagger.ContainerWithoutEntrypointOpts{
+				KeepDefaultArgs: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", res)
+	})
 }
 
 func TestContainerWithDefaultArgs(t *testing.T) {
@@ -669,7 +782,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 				from(address: "`+alpineImage+`") {
 					entrypoint
 					defaultArgs
-					withDefaultArgs {
+					withDefaultArgs(args: []) {
 						entrypoint
 						defaultArgs
 					}
@@ -707,7 +820,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 
 	t.Run("with entrypoint set", func(t *testing.T) {
 		require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
-		require.Equal(t, []string{"/bin/sh"}, res.Container.From.WithEntrypoint.DefaultArgs)
+		require.Empty(t, res.Container.From.WithEntrypoint.DefaultArgs)
 	})
 
 	t.Run("with exec args", func(t *testing.T) {
@@ -720,6 +833,22 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 
 		require.Equal(t, "uid=0(root) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)\n", res.Container.From.WithEntrypoint.WithDefaultArgs.WithExec.Stdout)
 	})
+}
+
+func TestContainerExecWithoutDefaultArgs(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	res, err := c.Container().
+		From(alpineImage).
+		WithEntrypoint([]string{"echo", "-n"}).
+		WithDefaultArgs([]string{"foo"}).
+		WithoutDefaultArgs().
+		WithExec([]string{}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "", res)
 }
 
 func TestContainerExecWithEnvVariable(t *testing.T) {
@@ -2496,7 +2625,6 @@ func TestContainerPublish(t *testing.T) {
 
 	entrypoint := []string{"echo", "im-a-entrypoint"}
 	ctr := c.Container().From(alpineImage).
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
 		WithEntrypoint(entrypoint)
 	pushedRef, err := ctr.Publish(ctx, testRef)
 	require.NoError(t, err)
@@ -2754,7 +2882,6 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 				ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 					From(alpineImage).
 					WithExec([]string{"uname", "-m"}).
-					WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
 					WithEntrypoint([]string{"echo", uname})
 				variants = append(variants, ctr)
 			}
@@ -2825,7 +2952,6 @@ func TestContainerMultiPlatformPublish(t *testing.T) {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithExec([]string{"uname", "-m"}).
-			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
 			WithEntrypoint([]string{"echo", uname})
 		variants = append(variants, ctr)
 	}
@@ -3210,9 +3336,7 @@ func TestContainerNoExec(t *testing.T) {
 
 	_, err = c.Container().
 		From(alpineImage).
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-			Args: nil,
-		}).
+		WithoutDefaultArgs().
 		Stdout(ctx)
 
 	require.Error(t, err)

@@ -41,6 +41,7 @@ jobs:
       size: dagger-runner-16c-64g
       dev-engine: true
 
+
   test-publish-cli:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit

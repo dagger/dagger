@@ -19,17 +19,33 @@ export async function load(files: string[]): Promise<void> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadArg(value: string): Promise<any> {
-  const trimmedValue = value.slice(1, value.length - 1)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsedValue: any
 
-  const [source] = trimmedValue.split(":")
+  const isString = (): boolean =>
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith(`'`) && value.endsWith(`'`))
+  const isArray = (): boolean => value.startsWith("[") && value.endsWith("]")
 
-  const [origin, type] = source.split(".")
-  if (origin === "core") {
-    // Workaround to call get any object that has an id
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    return dag[`load${type}FromID`](trimmedValue as ID)
+  // Apply JSON parse to parse array or string if the value is wrapped into a string or array
+  if (isString() || isArray()) {
+    parsedValue = JSON.parse(value)
   } else {
-    return trimmedValue
+    parsedValue = value
   }
+
+  // If it's a string, it might contain an identifier to load ,or it might be a hidden array
+  if (typeof parsedValue === "string") {
+    const [source] = parsedValue.split(":")
+
+    const [origin, type] = source.split(".")
+    if (origin === "core") {
+      // Workaround to call get any object that has an id
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      return dag[`load${type}FromID`](parsedValue as ID)
+    }
+  }
+
+  return parsedValue
 }

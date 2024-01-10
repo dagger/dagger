@@ -8,11 +8,11 @@
   ignore = "false"
 
 [[redirects]]
-    # Embargoes compliance. DO NOT REMOVE
+  # Embargoes compliance. DO NOT REMOVE
   conditions = {Country = ["CU", "IR", "KP", "SY", "UA-43"]}
-    from = "/*"
-    to = "/restricted"
-    status = 302
+  from = "/*"
+  to = "/restricted"
+  status = 302
   force = true
 
 [[redirects]]
@@ -524,17 +524,22 @@
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
 [[redirects]]
-    from = "/embed/*"
-    to = "https://play.dagger.cloud/embed/:splat"
-    status = 200
+  from = "/embed/*"
+  to = "https://play.dagger.cloud/embed/:splat"
+  status = 200
 
 # redirect to the playground's Next.js build artifacts
 [[redirects]]
-    from = "/_next/*"
-    to = "https://play.dagger.cloud/_next/:splat"
-    status = 200
+  from = "/_next/*"
+  to = "https://play.dagger.cloud/_next/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/current/sdk/nodejs/*"
+  to = "/sdk/nodejs/:splat"
+  status = 302
 
 [[headers]]
   for = "/*"
   [headers.values]
-    Referrer-policy = "no-referrer-when-downgrade"
+  Referrer-policy = "no-referrer-when-downgrade"

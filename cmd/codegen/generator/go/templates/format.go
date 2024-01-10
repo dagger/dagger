@@ -1,10 +1,25 @@
 package templates
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/dagger/dagger/cmd/codegen/generator"
+)
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
 // to format GraphQL type into Golang.
-type FormatTypeFunc struct{}
+type FormatTypeFunc struct {
+	scope string
+}
+
+func (f *FormatTypeFunc) WithScope(scope string) generator.FormatTypeFuncs {
+	if scope != "" {
+		scope += "."
+	}
+	clone := *f
+	clone.scope = scope
+	return &clone
+}
 
 func (f *FormatTypeFunc) FormatKindList(representation string) string {
 	representation = "[]" + representation
@@ -33,25 +48,25 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
 	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
-		representation += "*" + obj
+		representation += "*" + f.scope + obj
 	} else {
-		representation += refName
+		representation += f.scope + refName
 	}
 
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindObject(representation string, refName string, input bool) string {
-	representation += formatName(refName)
+	representation += f.scope + formatName(refName)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindInputObject(representation string, refName string, input bool) string {
-	representation += formatName(refName)
+	representation += f.scope + formatName(refName)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindEnum(representation string, refName string) string {
-	representation += refName
+	representation += f.scope + refName
 	return representation
 }

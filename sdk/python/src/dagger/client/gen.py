@@ -135,6 +135,12 @@ class TypeDefKind(Enum):
     IntegerKind = "IntegerKind"
     """An integer value"""
 
+    InterfaceKind = "InterfaceKind"
+    """A named type of functions that can be matched+implemented by other objects+interfaces.
+
+    Always paired with an InterfaceTypeDef.
+    """
+
     ListKind = "ListKind"
     """A list of values all having the same type.
 
@@ -932,11 +938,7 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     @typecheck
-    def with_default_args(
-        self,
-        *,
-        args: Sequence[str] | None = None,
-    ) -> "Container":
+    def with_default_args(self, args: Sequence[str]) -> "Container":
         """Configures default arguments for future commands.
 
         Parameters
@@ -946,7 +948,7 @@ class Container(Type):
             cache"]).
         """
         _args = [
-            Arg("args", args, None),
+            Arg("args", args),
         ]
         _ctx = self._select("withDefaultArgs", _args)
         return Container(_ctx)
@@ -992,16 +994,24 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_entrypoint(self, args: Sequence[str]) -> "Container":
+    def with_entrypoint(
+        self,
+        args: Sequence[str],
+        *,
+        keep_default_args: bool | None = False,
+    ) -> "Container":
         """Retrieves this container but with a different command entrypoint.
 
         Parameters
         ----------
         args:
             Entrypoint to use for future executions (e.g., ["go", "run"]).
+        keep_default_args:
+            Don't remove the default arguments when setting the entrypoint.
         """
         _args = [
             Arg("args", args),
+            Arg("keepDefaultArgs", keep_default_args, False),
         ]
         _ctx = self._select("withEntrypoint", _args)
         return Container(_ctx)
@@ -1531,6 +1541,34 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def without_default_args(self) -> "Container":
+        """Retrieves this container with unset default arguments for future
+        commands.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutDefaultArgs", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_entrypoint(
+        self,
+        *,
+        keep_default_args: bool | None = False,
+    ) -> "Container":
+        """Retrieves this container with an unset command entrypoint.
+
+        Parameters
+        ----------
+        keep_default_args:
+            Don't remove the default arguments when unsetting the entrypoint.
+        """
+        _args = [
+            Arg("keepDefaultArgs", keep_default_args, False),
+        ]
+        _ctx = self._select("withoutEntrypoint", _args)
+        return Container(_ctx)
+
+    @typecheck
     def without_env_variable(self, name: str) -> "Container":
         """Retrieves this container minus the given environment variable.
 
@@ -1643,6 +1681,26 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutUnixSocket", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_user(self) -> "Container":
+        """Retrieves this container with an unset command user.
+
+        Should default to root.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutUser", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_workdir(self) -> "Container":
+        """Retrieves this container with an unset working directory.
+
+        Should default to "/".
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutWorkdir", _args)
         return Container(_ctx)
 
     @typecheck
@@ -3229,6 +3287,88 @@ class Host(Type):
         return Socket(_ctx)
 
 
+class InterfaceTypeDef(Type):
+    """A definition of a custom interface defined in a Module."""
+
+    @typecheck
+    async def description(self) -> str | None:
+        """The doc string for the interface, if any
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str | None)
+
+    @typecheck
+    async def functions(self) -> list[Function]:
+        """Functions defined on this interface, if any"""
+        _args: list[Arg] = []
+        _ctx = self._select("functions", _args)
+        _ctx = Function(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[Function])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the interface
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def source_module_name(self) -> str | None:
+        """If this InterfaceTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str | None)
+
+
 class Label(Type):
     """A simple key value object that represents a label."""
 
@@ -3412,6 +3552,17 @@ class Module(Type):
         return await _ctx.execute(ModuleID)
 
     @typecheck
+    async def interfaces(self) -> list["TypeDef"]:
+        """Interfaces served by this module"""
+        _args: list[Arg] = []
+        _ctx = self._select("interfaces", _args)
+        _ctx = TypeDef(_ctx)._select_multiple(
+            _kind="kind",
+            _optional="optional",
+        )
+        return await _ctx.execute(list[TypeDef])
+
+    @typecheck
     async def name(self) -> str:
         """The name of the module
 
@@ -3527,6 +3678,15 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceDirectorySubPath", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    def with_interface(self, iface: "TypeDef") -> "Module":
+        """This module plus the given Interface type and associated functions"""
+        _args = [
+            Arg("iface", iface),
+        ]
+        _ctx = self._select("withInterface", _args)
+        return Module(_ctx)
 
     @typecheck
     def with_object(self, object: "TypeDef") -> "Module":
@@ -3760,6 +3920,29 @@ class ObjectTypeDef(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    @typecheck
+    async def source_module_name(self) -> str | None:
+        """If this ObjectTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str | None)
+
 
 class Port(Type):
     """A port exposed by a container."""
@@ -3928,6 +4111,19 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("currentModule", _args)
         return Module(_ctx)
+
+    @typecheck
+    async def current_type_defs(self) -> list["TypeDef"]:
+        """The TypeDef representations of the objects currently being served in
+        the session.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentTypeDefs", _args)
+        _ctx = TypeDef(_ctx)._select_multiple(
+            _kind="kind",
+            _optional="optional",
+        )
+        return await _ctx.execute(list[TypeDef])
 
     @typecheck
     async def default_platform(self) -> Platform:
@@ -4545,6 +4741,15 @@ class TypeDef(Type):
     _optional: bool | None
 
     @typecheck
+    def as_interface(self) -> InterfaceTypeDef:
+        """If kind is INTERFACE, the interface-specific type definition.
+        If kind is not INTERFACE, this will be null.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asInterface", _args)
+        return InterfaceTypeDef(_ctx)
+
+    @typecheck
     def as_list(self) -> ListTypeDef:
         """If kind is LIST, the list-specific type definition.
         If kind is not LIST, this will be null.
@@ -4669,13 +4874,28 @@ class TypeDef(Type):
 
     @typecheck
     def with_function(self, function: Function) -> "TypeDef":
-        """Adds a function for an Object TypeDef, failing if the type is not an
-        object.
+        """Adds a function for an Object or Interface TypeDef, failing if the
+        type is not one of those kinds.
         """
         _args = [
             Arg("function", function),
         ]
         _ctx = self._select("withFunction", _args)
+        return TypeDef(_ctx)
+
+    @typecheck
+    def with_interface(
+        self,
+        name: str,
+        *,
+        description: str | None = None,
+    ) -> "TypeDef":
+        """Returns a TypeDef of kind Interface with the provided name."""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withInterface", _args)
         return TypeDef(_ctx)
 
     @typecheck
@@ -4769,6 +4989,7 @@ __all__ = [
     "Host",
     "ImageLayerCompression",
     "ImageMediaTypes",
+    "InterfaceTypeDef",
     "JSON",
     "Label",
     "ListTypeDef",

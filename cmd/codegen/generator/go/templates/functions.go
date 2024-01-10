@@ -23,6 +23,7 @@ func GoTemplateFuncs(
 	module *modules.Config,
 	pkg *packages.Package,
 	fset *token.FileSet,
+	pass int,
 ) template.FuncMap {
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
@@ -31,6 +32,7 @@ func GoTemplateFuncs(
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
+		pass:            pass,
 	}.FuncMap()
 }
 
@@ -41,6 +43,7 @@ type goTemplateFuncs struct {
 	modulePkg  *packages.Package
 	moduleFset *token.FileSet
 	schema     *introspection.Schema
+	pass       int
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
@@ -71,6 +74,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsPointer":               funcs.isPointer,
 		"FormatArrayField":        funcs.formatArrayField,
 		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
+		"IsPartial":               funcs.isPartial,
+		"IsModuleCode":            funcs.isModuleCode,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 	}
 }
@@ -163,21 +168,25 @@ func (funcs goTemplateFuncs) formatArrayToSingleType(arrType string) string {
 }
 
 // fieldOptionsStructName returns the options struct name for a given field
-func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field) string {
+func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field, scopes ...string) string {
 	// Exception: `Query` option structs are not prefixed by `Query`.
 	// This is just so that they're nicer to work with, e.g.
 	// `ContainerOpts` rather than `QueryContainerOpts`
 	// The structure name will not clash with others since everybody else
 	// is prefixed by object name.
-	if f.ParentObject.Name == generator.QueryStructName {
-		return formatName(f.Name) + "Opts"
+	scope := strings.Join(scopes, "")
+	if scope != "" {
+		scope += "."
 	}
-	return formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
+	if f.ParentObject.Name == generator.QueryStructName {
+		return scope + formatName(f.Name) + "Opts"
+	}
+	return scope + formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
 }
 
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
-func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) (string, error) {
+func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool, scopes ...string) (string, error) {
 	// don't create methods on query for the env itself,
 	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
 	// TODO(vito): still needed? we codegen against the module's schema view,
@@ -190,8 +199,11 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) (string, error
 	// }
 
 	structName := formatName(f.ParentObject.Name)
-	signature := fmt.Sprintf(`func (r *%s) %s`,
-		structName, formatName(f.Name))
+	signature := "func "
+	if !topLevel {
+		signature += `(r *` + structName + `) `
+	}
+	signature += formatName(f.Name)
 
 	// Generate arguments
 	args := []string{}
@@ -206,13 +218,13 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) (string, error
 		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
 		// scalar (DirectoryID) rather than an object (*Directory).
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
-			outType, err := funcs.FormatOutputType(arg.TypeRef)
+			outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
 			if err != nil {
 				return "", err
 			}
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 		} else {
-			inType, err := funcs.FormatInputType(arg.TypeRef)
+			inType, err := funcs.FormatInputType(arg.TypeRef, scopes...)
 			if err != nil {
 				return "", err
 			}
@@ -224,12 +236,12 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) (string, error
 	if f.Args.HasOptionals() {
 		args = append(
 			args,
-			fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)),
+			fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f, scopes...)),
 		)
 	}
 	signature += "(" + strings.Join(args, ", ") + ")"
 
-	retType, err := funcs.FormatReturnType(f)
+	retType, err := funcs.FormatReturnType(f, scopes...)
 	if err != nil {
 		return "", err
 	}
@@ -241,4 +253,9 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field) (string, error
 	signature += " " + retType
 
 	return signature, nil
+}
+
+// isPartial determines if we are in a first-pass or not
+func (funcs goTemplateFuncs) isPartial() bool {
+	return funcs.pass == 0
 }

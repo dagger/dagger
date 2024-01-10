@@ -1,0 +1,8 @@
+{
+  "name": "caller",
+  "sdk": "go",
+  "dependencies": [
+    "impl",
+    "test"
+  ]
+}

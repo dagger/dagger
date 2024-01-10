@@ -290,7 +290,7 @@ func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error
 		// by default, serve both deps and the module's own API to itself
 		depMods := append([]Mod{fn.mod}, fn.mod.deps.mods...)
 		var err error
-		deps, err = newModDeps(fn.api, depMods)
+		deps, err = newModDeps(depMods)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get deps: %w", err)
 		}
@@ -343,6 +343,18 @@ func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error
 	return returnValue, nil
 }
 
+func (fn *UserModFunction) ReturnType() (ModType, error) {
+	return fn.returnType, nil
+}
+
+func (fn *UserModFunction) ArgType(argName string) (ModType, error) {
+	arg, ok := fn.args[gqlArgName(argName)]
+	if !ok {
+		return nil, fmt.Errorf("failed to find arg %q", argName)
+	}
+	return arg.modType, nil
+}
+
 // If the result of a Function call contains IDs of resources, we need to ensure that the cache entry for the
 // Function call is linked for the cache entries of those resources if those entries aren't reproducible.
 // Right now, the only unreproducible output are local dir imports, which are represented as blob:// sources.
@@ -353,10 +365,15 @@ func (fn *UserModFunction) Call(ctx context.Context, opts *CallOpts) (any, error
 // source without pruning the function call cache entry. That would result callers being able to evaluate the
 // result of a function call but hitting an error about missing content.
 func (fn *UserModFunction) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value any, typeDef *core.TypeDef) error {
+	if value == nil {
+		return nil
+	}
+
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger,
 		core.TypeDefKindBoolean, core.TypeDefKindVoid:
 		return nil
+
 	case core.TypeDefKindList:
 		listValue, ok := value.([]any)
 		if !ok {
@@ -368,6 +385,7 @@ func (fn *UserModFunction) linkDependencyBlobs(ctx context.Context, cacheResult 
 			}
 		}
 		return nil
+
 	case core.TypeDefKindObject:
 		if mapValue, ok := value.(map[string]any); ok {
 			// This object is not a core type but we still need to check its
@@ -412,6 +430,20 @@ func (fn *UserModFunction) linkDependencyBlobs(ctx context.Context, cacheResult 
 
 		// no dependency blobs to handle
 		return nil
+
+	case core.TypeDefKindInterface:
+		runtimeVal, ok := value.(*interfaceRuntimeValue)
+		if !ok {
+			return fmt.Errorf("expected interface runtime val, got %T", value)
+		}
+
+		// TODO: handle core types too
+		userModObj, ok := runtimeVal.UnderlyingType.(*UserModObject)
+		if !ok {
+			return fmt.Errorf("expected user mod object, got %T", runtimeVal.UnderlyingType)
+		}
+		return fn.linkDependencyBlobs(ctx, cacheResult, runtimeVal.Value, userModObj.typeDef)
+
 	default:
 		return fmt.Errorf("unhandled type def kind %q", typeDef.Kind)
 	}

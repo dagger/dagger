@@ -133,6 +133,13 @@ type Container {
     name: String!
   ): Container!
 
+  """
+  Retrieves this container with an unset command user.
+
+  Should default to root.
+  """
+  withoutUser: Container!
+
   "Retrieves the working directory for all commands."
   workdir: String
 
@@ -145,6 +152,13 @@ type Container {
     """
     path: String!
   ): Container!
+
+  """
+  Retrieves this container with an unset working directory.
+
+  Should default to "/".
+  """
+  withoutWorkdir: Container!
 
   "Retrieves the list of environment variables passed to commands."
   envVariables: [EnvVariable!]!
@@ -247,6 +261,21 @@ type Container {
     Entrypoint to use for future executions (e.g., ["go", "run"]).
     """
     args: [String!]!
+
+    """
+    Don't remove the default arguments when setting the entrypoint.
+    """
+    keepDefaultArgs: Boolean = false
+  ): Container!
+
+  """
+  Retrieves this container with an unset command entrypoint.
+  """
+  withoutEntrypoint(
+    """
+    Don't remove the default arguments when unsetting the entrypoint.
+    """
+    keepDefaultArgs: Boolean = false
   ): Container!
 
   "Retrieves default arguments for future commands."
@@ -259,8 +288,13 @@ type Container {
     """
     Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     """
-    args: [String!]
+    args: [String!]!
   ): Container!
+
+  """
+  Retrieves this container with unset default arguments for future commands.
+  """
+  withoutDefaultArgs: Container!
 
   "Retrieves the list of paths where a directory is mounted."
   mounts: [String!]!

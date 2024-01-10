@@ -423,12 +423,6 @@ pub struct ContainerPublishOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerWithDefaultArgsOpts<'a> {
-    /// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-    #[builder(setter(into, strip_option), default)]
-    pub args: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
     #[builder(setter(into, strip_option), default)]
@@ -441,6 +435,12 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithEntrypointOpts {
+    /// Don't remove the default arguments when setting the entrypoint.
+    #[builder(setter(into, strip_option), default)]
+    pub keep_default_args: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
@@ -564,6 +564,12 @@ pub struct ContainerWithUnixSocketOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutEntrypointOpts {
+    /// Don't remove the default arguments when unsetting the entrypoint.
+    #[builder(setter(into, strip_option), default)]
+    pub keep_default_args: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutExposedPortOpts {
@@ -1037,25 +1043,13 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_default_args(&self) -> Container {
-        let query = self.selection.select("withDefaultArgs");
-        return Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Configures default arguments for future commands.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_default_args_opts<'a>(&self, opts: ContainerWithDefaultArgsOpts<'a>) -> Container {
+    /// * `args` - Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+    pub fn with_default_args(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1127,12 +1121,38 @@ impl Container {
     /// # Arguments
     ///
     /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_entrypoint(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withEntrypoint");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container but with a different command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_entrypoint_opts(
+        &self,
+        args: Vec<impl Into<String>>,
+        opts: ContainerWithEntrypointOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withEntrypoint");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(keep_default_args) = opts.keep_default_args {
+            query = query.arg("keepDefaultArgs", keep_default_args);
+        }
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1837,6 +1857,44 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Retrieves this container with unset default arguments for future commands.
+    pub fn without_default_args(&self) -> Container {
+        let query = self.selection.select("withoutDefaultArgs");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_entrypoint(&self) -> Container {
+        let query = self.selection.select("withoutEntrypoint");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_entrypoint_opts(&self, opts: ContainerWithoutEntrypointOpts) -> Container {
+        let mut query = self.selection.select("withoutEntrypoint");
+        if let Some(keep_default_args) = opts.keep_default_args {
+            query = query.arg("keepDefaultArgs", keep_default_args);
+        }
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Retrieves this container minus the given environment variable.
     ///
     /// # Arguments
@@ -1950,6 +2008,26 @@ impl Container {
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
         query = query.arg("path", path.into());
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset command user.
+    /// Should default to root.
+    pub fn without_user(&self) -> Container {
+        let query = self.selection.select("withoutUser");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container with an unset working directory.
+    /// Should default to "/".
+    pub fn without_workdir(&self) -> Container {
+        let query = self.selection.select("withoutWorkdir");
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3218,6 +3296,38 @@ impl Host {
     }
 }
 #[derive(Clone)]
+pub struct InterfaceTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl InterfaceTypeDef {
+    /// The doc string for the interface, if any
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Functions defined on this interface, if any
+    pub fn functions(&self) -> Vec<Function> {
+        let query = self.selection.select("functions");
+        return vec![Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+    /// The name of the interface
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct Label {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -3292,6 +3402,15 @@ impl Module {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Interfaces served by this module
+    pub fn interfaces(&self) -> Vec<TypeDef> {
+        let query = self.selection.select("interfaces");
+        return vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -3331,6 +3450,22 @@ impl Module {
     pub async fn source_directory_sub_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceDirectorySubPath");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// This module plus the given Interface type and associated functions
+    pub fn with_interface(&self, iface: TypeDef) -> Module {
+        let mut query = self.selection.select("withInterface");
+        query = query.arg_lazy(
+            "iface",
+            Box::new(move || {
+                let iface = iface.clone();
+                Box::pin(async move { iface.id().await.unwrap().quote() })
+            }),
+        );
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// This module plus the given Object type and associated functions
     pub fn with_object(&self, object: TypeDef) -> Module {
@@ -3429,6 +3564,11 @@ impl ObjectTypeDef {
     /// The name of the object
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -3596,6 +3736,15 @@ impl Query {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// The TypeDef representations of the objects currently being served in the session.
+    pub fn current_type_defs(&self) -> Vec<TypeDef> {
+        let query = self.selection.select("currentTypeDefs");
+        return vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
     }
     /// The default platform of the builder.
     pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
@@ -4279,11 +4428,26 @@ pub struct TypeDefWithFieldOpts<'a> {
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithInterfaceOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithObjectOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
 impl TypeDef {
+    /// If kind is INTERFACE, the interface-specific type definition.
+    /// If kind is not INTERFACE, this will be null.
+    pub fn as_interface(&self) -> InterfaceTypeDef {
+        let query = self.selection.select("asInterface");
+        return InterfaceTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// If kind is LIST, the list-specific type definition.
     /// If kind is not LIST, this will be null.
     pub fn as_list(&self) -> ListTypeDef {
@@ -4388,7 +4552,7 @@ impl TypeDef {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Adds a function for an Object TypeDef, failing if the type is not an object.
+    /// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
     pub fn with_function(&self, function: Function) -> TypeDef {
         let mut query = self.selection.select("withFunction");
         query = query.arg_lazy(
@@ -4398,6 +4562,41 @@ impl TypeDef {
                 Box::pin(async move { function.id().await.unwrap().quote() })
             }),
         );
+        return TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Returns a TypeDef of kind Interface with the provided name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_interface(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withInterface");
+        query = query.arg("name", name.into());
+        return TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Returns a TypeDef of kind Interface with the provided name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_interface_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: TypeDefWithInterfaceOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withInterface");
+        query = query.arg("name", name.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
         return TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -4509,6 +4708,7 @@ pub enum NetworkProtocol {
 pub enum TypeDefKind {
     BooleanKind,
     IntegerKind,
+    InterfaceKind,
     ListKind,
     ObjectKind,
     StringKind,

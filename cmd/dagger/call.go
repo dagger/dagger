@@ -21,8 +21,7 @@ var callCmd = &FuncCommand{
 		case File:
 			c.Select("contents")
 		default:
-			// TODO: Check if it's a core object and sub-select `id` by default.
-			return fmt.Errorf("return type not supported: %s", name)
+			return fmt.Errorf("return type %q requires a sub-command", name)
 		}
 		return nil
 	},

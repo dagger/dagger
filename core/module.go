@@ -36,6 +36,9 @@ type Module struct {
 	// The module's objects
 	Objects []*TypeDef `json:"objects,omitempty"`
 
+	// The module's interfaces
+	Interfaces []*TypeDef `json:"interfaces,omitempty"`
+
 	// The module's SDK, as set in the module config file
 	SDK string `json:"sdk,omitempty"`
 }
@@ -48,11 +51,12 @@ func (mod *Module) Digest() (digest.Digest, error) {
 	return stableDigest(mod)
 }
 
-// BaseDigest gives a digest after unsetting Objects, which is useful
+// BaseDigest gives a digest after unsetting Objects/Interfaces, which is useful
 // as a digest of the "base" Module that's stable before+after loading TypeDefs
 func (mod *Module) BaseDigest() (digest.Digest, error) {
 	mod = mod.Clone()
 	mod.Objects = nil
+	mod.Interfaces = nil
 	return stableDigest(mod)
 }
 
@@ -78,6 +82,10 @@ func (mod Module) Clone() *Module {
 	for i, def := range mod.Objects {
 		cp.Objects[i] = def.Clone()
 	}
+	cp.Interfaces = make([]*TypeDef, len(mod.Interfaces))
+	for i, def := range mod.Interfaces {
+		cp.Interfaces[i] = def.Clone()
+	}
 	return &cp
 }
 
@@ -87,6 +95,15 @@ func (mod *Module) WithObject(def *TypeDef) (*Module, error) {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}
 	mod.Objects = append(mod.Objects, def)
+	return mod, nil
+}
+
+func (mod *Module) WithInterface(def *TypeDef) (*Module, error) {
+	mod = mod.Clone()
+	if def.AsInterface == nil {
+		return nil, fmt.Errorf("expected interface type def, got %s: %+v", def.Kind, def)
+	}
+	mod.Interfaces = append(mod.Interfaces, def)
 	return mod, nil
 }
 

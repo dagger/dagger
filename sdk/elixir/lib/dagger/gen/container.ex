@@ -448,18 +448,11 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Configures default arguments for future commands.\n\n\n\n## Optional Arguments\n\n* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."
-    @spec with_default_args(t(), keyword()) :: Dagger.Container.t()
-    def with_default_args(%__MODULE__{} = container, optional_args \\ []) do
+    @doc "Configures default arguments for future commands.\n\n## Required Arguments\n\n* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."
+    @spec with_default_args(t(), [Dagger.String.t()]) :: Dagger.Container.t()
+    def with_default_args(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withDefaultArgs")
-
-      selection =
-        if is_nil(optional_args[:args]) do
-          selection
-        else
-          arg(selection, "args", optional_args[:args])
-        end
-
+      selection = arg(selection, "args", args)
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -503,11 +496,19 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"])."
-    @spec with_entrypoint(t(), [Dagger.String.t()]) :: Dagger.Container.t()
-    def with_entrypoint(%__MODULE__{} = container, args) do
+    @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"]).\n\n## Optional Arguments\n\n* `keep_default_args` - Don't remove the default arguments when setting the entrypoint."
+    @spec with_entrypoint(t(), [Dagger.String.t()], keyword()) :: Dagger.Container.t()
+    def with_entrypoint(%__MODULE__{} = container, args, optional_args \\ []) do
       selection = select(container.selection, "withEntrypoint")
       selection = arg(selection, "args", args)
+
+      selection =
+        if is_nil(optional_args[:keep_default_args]) do
+          selection
+        else
+          arg(selection, "keepDefaultArgs", optional_args[:keep_default_args])
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -934,6 +935,32 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Retrieves this container with unset default arguments for future commands."
+    @spec without_default_args(t()) :: Dagger.Container.t()
+    def without_default_args(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutDefaultArgs")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with an unset command entrypoint.\n\n\n\n## Optional Arguments\n\n* `keep_default_args` - Don't remove the default arguments when unsetting the entrypoint."
+    @spec without_entrypoint(t(), keyword()) :: Dagger.Container.t()
+    def without_entrypoint(%__MODULE__{} = container, optional_args \\ []) do
+      selection = select(container.selection, "withoutEntrypoint")
+
+      selection =
+        if is_nil(optional_args[:keep_default_args]) do
+          selection
+        else
+          arg(selection, "keepDefaultArgs", optional_args[:keep_default_args])
+        end
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Retrieves this container minus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\")."
     @spec without_env_variable(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_env_variable(%__MODULE__{} = container, name) do
@@ -1006,6 +1033,24 @@ defmodule Dagger.Container do
     def without_unix_socket(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withoutUnixSocket")
       selection = arg(selection, "path", path)
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with an unset command user.\n\nShould default to root."
+    @spec without_user(t()) :: Dagger.Container.t()
+    def without_user(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutUser")
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with an unset working directory.\n\nShould default to \"/\"."
+    @spec without_workdir(t()) :: Dagger.Container.t()
+    def without_workdir(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutWorkdir")
       %Dagger.Container{selection: selection, client: container.client}
     end
   )

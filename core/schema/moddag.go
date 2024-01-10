@@ -32,16 +32,16 @@ type Mod interface {
 	// The direct dependencies of this module
 	Dependencies() []Mod
 
-	// The schema+resolvers exposed by this module (does not include dependencies)
+	// The schema+resolvers *provided* by this module (does not include dependencies)
 	Schema(context.Context) ([]SchemaResolvers, error)
-
-	// The introspection json for this module's schema
-	SchemaIntrospectionJSON(context.Context) (string, error)
 
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error)
+
+	// All the TypeDefs exposed by this module (does not include dependencies)
+	TypeDefs(ctx context.Context) ([]*core.TypeDef, error)
 }
 
 /*
@@ -49,7 +49,6 @@ ModDeps represents a set of dependencies for a module or for a caller depending 
 particular set of modules to be served.
 */
 type ModDeps struct {
-	api       *APIServer
 	mods      []Mod
 	dagDigest digest.Digest
 
@@ -60,7 +59,7 @@ type ModDeps struct {
 	loadSchemaLock                sync.Mutex
 }
 
-func newModDeps(api *APIServer, mods []Mod) (*ModDeps, error) {
+func newModDeps(mods []Mod) (*ModDeps, error) {
 	seen := map[digest.Digest]struct{}{}
 	finalMods := make([]Mod, 0, len(mods))
 	for _, mod := range mods {
@@ -81,7 +80,6 @@ func newModDeps(api *APIServer, mods []Mod) (*ModDeps, error) {
 	dagDigest := digest.FromString(strings.Join(dagDigests, " "))
 
 	return &ModDeps{
-		api:       api,
 		mods:      mods,
 		dagDigest: dagDigest,
 	}, nil
@@ -126,15 +124,44 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *CompiledS
 	}()
 
 	var schemas []SchemaResolvers
+	var objects []*UserModObject
+	var ifaces []*InterfaceType
 	modNames := make([]string, 0, len(d.mods)) // for debugging+error messages
 	for _, mod := range d.mods {
+		modNames = append(modNames, mod.Name())
+
 		modSchemas, err := mod.Schema(ctx)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 		schemas = append(schemas, modSchemas...)
-		modNames = append(modNames, mod.Name())
+
+		// TODO: support core types too
+		if userMod, ok := mod.(*UserMod); ok {
+			modObjects, err := userMod.Objects(ctx)
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to get objects for module %q: %w", mod.Name(), err)
+			}
+			objects = append(objects, modObjects...)
+			modIfaces, err := userMod.Interfaces(ctx)
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to get interfaces for module %q: %w", mod.Name(), err)
+			}
+			ifaces = append(ifaces, modIfaces...)
+		}
 	}
+
+	// add any extensions to objects for the interfaces they implement (if any)
+	for _, obj := range objects {
+		ifaceExtensionSchema, err := obj.InterfaceExtensionsSchema(ctx, ifaces)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get interface extensions schema for object %q: %w", obj.typeDef.AsObject.Name, err)
+		}
+		if ifaceExtensionSchema != nil {
+			schemas = append(schemas, ifaceExtensionSchema)
+		}
+	}
+
 	schema, err := mergeSchemaResolvers(schemas...)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to merge schemas of %+v: %w", modNames, err)
@@ -162,4 +189,17 @@ func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *core.TypeDef) (ModTyp
 		return modType, true, nil
 	}
 	return nil, false, nil
+}
+
+// All the TypeDefs exposed by this set of dependencies
+func (d *ModDeps) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	var typeDefs []*core.TypeDef
+	for _, mod := range d.mods {
+		modTypeDefs, err := mod.TypeDefs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
+		}
+		typeDefs = append(typeDefs, modTypeDefs...)
+	}
+	return typeDefs, nil
 }

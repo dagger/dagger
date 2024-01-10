@@ -206,13 +206,6 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerWithDefaultArgsOpts = {
-  /**
-   * Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-   */
-  args?: string[]
-}
-
 export type ContainerWithDirectoryOpts = {
   /**
    * Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
@@ -232,6 +225,13 @@ export type ContainerWithDirectoryOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+}
+
+export type ContainerWithEntrypointOpts = {
+  /**
+   * Don't remove the default arguments when setting the entrypoint.
+   */
+  keepDefaultArgs?: boolean
 }
 
 export type ContainerWithEnvVariableOpts = {
@@ -408,6 +408,13 @@ export type ContainerWithUnixSocketOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+}
+
+export type ContainerWithoutEntrypointOpts = {
+  /**
+   * Don't remove the default arguments when unsetting the entrypoint.
+   */
+  keepDefaultArgs?: boolean
 }
 
 export type ContainerWithoutExposedPortOpts = {
@@ -808,6 +815,10 @@ export type TypeDefWithFieldOpts = {
   description?: string
 }
 
+export type TypeDefWithInterfaceOpts = {
+  description?: string
+}
+
 export type TypeDefWithObjectOpts = {
   description?: string
 }
@@ -830,6 +841,13 @@ export enum TypeDefKind {
    * An integer value
    */
   Integerkind = "IntegerKind",
+
+  /**
+   * A named type of functions that can be matched+implemented by other objects+interfaces.
+   *
+   * Always paired with an InterfaceTypeDef.
+   */
+  Interfacekind = "InterfaceKind",
 
   /**
    * A list of values all having the same type.
@@ -1663,15 +1681,15 @@ export class Container extends BaseClient {
 
   /**
    * Configures default arguments for future commands.
-   * @param opts.args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+   * @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */
-  withDefaultArgs = (opts?: ContainerWithDefaultArgsOpts): Container => {
+  withDefaultArgs = (args: string[]): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withDefaultArgs",
-          args: { ...opts },
+          args: { args },
         },
       ],
       ctx: this._ctx,
@@ -1710,14 +1728,18 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container but with a different command entrypoint.
    * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
+   * @param opts.keepDefaultArgs Don't remove the default arguments when setting the entrypoint.
    */
-  withEntrypoint = (args: string[]): Container => {
+  withEntrypoint = (
+    args: string[],
+    opts?: ContainerWithEntrypointOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withEntrypoint",
-          args: { args },
+          args: { args, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -2184,6 +2206,38 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with unset default arguments for future commands.
+   */
+  withoutDefaultArgs = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutDefaultArgs",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container with an unset command entrypoint.
+   * @param opts.keepDefaultArgs Don't remove the default arguments when unsetting the entrypoint.
+   */
+  withoutEntrypoint = (opts?: ContainerWithoutEntrypointOpts): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutEntrypoint",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves this container minus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    */
@@ -2306,6 +2360,40 @@ export class Container extends BaseClient {
         {
           operation: "withoutUnixSocket",
           args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container with an unset command user.
+   *
+   * Should default to root.
+   */
+  withoutUser = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutUser",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container with an unset working directory.
+   *
+   * Should default to "/".
+   */
+  withoutWorkdir = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutWorkdir",
         },
       ],
       ctx: this._ctx,
@@ -4016,6 +4104,127 @@ export class Host extends BaseClient {
 }
 
 /**
+ * A definition of a custom interface defined in a Module.
+ */
+export class InterfaceTypeDef extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
+
+  /**
+   * The doc string for the interface, if any
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * Functions defined on this interface, if any
+   */
+  functions = async (): Promise<Function_[]> => {
+    type functions = {
+      id: FunctionID
+    }
+
+    const response: Awaited<functions[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "functions",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new Function_(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * The name of the interface
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+/**
  * A simple key value object that represents a label.
  */
 export class Label extends BaseClient {
@@ -4244,6 +4453,39 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Interfaces served by this module
+   */
+  interfaces = async (): Promise<TypeDef[]> => {
+    type interfaces = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<interfaces[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "interfaces",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {
@@ -4375,6 +4617,22 @@ export class Module_ extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * This module plus the given Interface type and associated functions
+   */
+  withInterface = (iface: TypeDef): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withInterface",
+          args: { iface },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -4548,6 +4806,7 @@ export class ModuleConfig extends BaseClient {
 export class ObjectTypeDef extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4555,12 +4814,14 @@ export class ObjectTypeDef extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _description?: string,
-    _name?: string
+    _name?: string,
+    _sourceModuleName?: string
   ) {
     super(parent)
 
     this._description = _description
     this._name = _name
+    this._sourceModuleName = _sourceModuleName
   }
 
   /**
@@ -4680,6 +4941,27 @@ export class ObjectTypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
         },
       ],
       await this._ctx.connection()
@@ -4880,6 +5162,39 @@ export class Client extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * The TypeDef representations of the objects currently being served in the session.
+   */
+  currentTypeDefs = async (): Promise<TypeDef[]> => {
+    type currentTypeDefs = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<currentTypeDefs[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "currentTypeDefs",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: this.queryTree,
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
   }
 
   /**
@@ -5690,6 +6005,22 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * If kind is INTERFACE, the interface-specific type definition.
+   * If kind is not INTERFACE, this will be null.
+   */
+  asInterface = (): InterfaceTypeDef => {
+    return new InterfaceTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asInterface",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * If kind is LIST, the list-specific type definition.
    * If kind is not LIST, this will be null.
    */
@@ -5805,7 +6136,7 @@ export class TypeDef extends BaseClient {
   }
 
   /**
-   * Adds a function for an Object TypeDef, failing if the type is not an object.
+   * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
    */
   withFunction = (function_: Function_): TypeDef => {
     return new TypeDef({
@@ -5816,6 +6147,22 @@ export class TypeDef extends BaseClient {
           args: {
             function: function_,
           },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind Interface with the provided name.
+   */
+  withInterface = (name: string, opts?: TypeDefWithInterfaceOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withInterface",
+          args: { name, ...opts },
         },
       ],
       ctx: this._ctx,

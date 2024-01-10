@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
@@ -16,7 +15,7 @@ import (
 )
 
 const (
-	goGeneratedAPIPath = "sdk/go/dagger.gen.go"
+	goGeneratedAPIPath = "sdk/go/"
 )
 
 var _ SDK = Go{}
@@ -94,7 +93,7 @@ func (t Go) Generate(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	generated, err := util.GoBase(c).
+	generated := util.GoBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
@@ -102,12 +101,12 @@ func (t Go) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		File(path.Base(goGeneratedAPIPath)).
-		Contents(ctx)
+		Directory(".")
+	_, err = generated.Export(ctx, goGeneratedAPIPath)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0o600)
+	return nil
 }
 
 // Publish publishes the Go SDK
@@ -140,7 +139,7 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 
 	var gitUserEmail = os.Getenv("GIT_USER_EMAIL")
 	if gitUserEmail == "" {
-		gitUserEmail = "hellog@dagger.io"
+		gitUserEmail = "hello@dagger.io"
 	}
 
 	git := util.GoBase(c).

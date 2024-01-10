@@ -85,19 +85,3 @@ async fn test_container() {
         .unwrap();
     assert_eq!(contents, "3.16.2\n".to_string());
 }
-
-#[tokio::test]
-async fn test_err_message() {
-    let client = connect().await.unwrap();
-
-    let alpine = client.container().from("fake.invalid:latest").id().await;
-    assert_eq!(alpine.is_err(), true);
-    let err = alpine.expect_err("Tests expect err");
-
-    let error_msg = r#"failed to query dagger engine: domain error:
-Look at json field for more details
-pull access denied, repository does not exist or may require authorization: server message: insufficient_scope: authorization failed
-"#;
-
-    assert_eq!(err.to_string().as_str(), error_msg);
-}

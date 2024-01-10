@@ -13,7 +13,6 @@ connect(async (client) => {
 
   const prodImage = client.container()
   .from("cgr.dev/chainguard/wolfi-base:latest")
-  .withDefaultArgs() // Set CMD to []
   .withFile("/bin/dagger", build.file("/src/dagger"))
   .withEntrypoint(["/bin/dagger"])
 

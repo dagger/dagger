@@ -37,7 +37,7 @@ async def main():
             .with_workdir("/src")
             .with_exec(["npm", "install"])
             .with_exec(["npm", "run", "build"])
-            .with_default_args(args=["npm", "start"])
+            .with_default_args(["npm", "start"])
         )
 
         # publish image to registry

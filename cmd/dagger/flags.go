@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"reflect"
 	"strconv"
 	"strings"
@@ -59,7 +61,7 @@ type DaggerValue interface {
 	pflag.Value
 
 	// Get returns the final value for the query builder.
-	Get(*dagger.Client) any
+	Get(context.Context, *dagger.Client) (any, error)
 }
 
 // sliceValue is a pflag.Value that builds a slice of DaggerValue instances.
@@ -84,12 +86,16 @@ func (v *sliceValue[T]) String() string {
 	return "[" + out + "]"
 }
 
-func (v *sliceValue[T]) Get(c *dagger.Client) any {
+func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client) (any, error) {
 	out := make([]any, len(v.value))
 	for i, v := range v.value {
-		out[i] = v.Get(c)
+		outV, err := v.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = outV
 	}
-	return out
+	return out, nil
 }
 
 func (v *sliceValue[T]) Set(s string) error {
@@ -143,11 +149,11 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(c *dagger.Client) any {
+func (v *containerValue) Get(_ context.Context, c *dagger.Client) (any, error) {
 	if v.address == "" {
-		return nil
+		return nil, fmt.Errorf("container address cannot be empty")
 	}
-	return c.Container().From(v.String())
+	return c.Container().From(v.String()), nil
 }
 
 // directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
@@ -188,9 +194,9 @@ func parseGit(urlStr string) (*gitutil.GitURL, error) {
 	return u, nil
 }
 
-func (v *directoryValue) Get(dag *dagger.Client) any {
+func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
 	if v.String() == "" {
-		return nil
+		return nil, fmt.Errorf("directory address cannot be empty")
 	}
 
 	// Try parsing as a Git URL
@@ -206,13 +212,13 @@ func (v *directoryValue) Get(dag *dagger.Client) any {
 		if subdir := parsedGit.Fragment.Subdir; subdir != "" {
 			gitDir = gitDir.Directory(subdir)
 		}
-		return gitDir
+		return gitDir, nil
 	}
 
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
 	vStr := v.String()
 	vStr = strings.TrimPrefix(vStr, "file://")
-	return dag.Host().Directory(vStr)
+	return dag.Host().Directory(vStr), nil
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
@@ -236,39 +242,82 @@ func (v *fileValue) String() string {
 	return v.path
 }
 
-func (v *fileValue) Get(c *dagger.Client) any {
+func (v *fileValue) Get(_ context.Context, c *dagger.Client) (any, error) {
 	if v.String() == "" {
-		return nil
+		return nil, fmt.Errorf("file path cannot be empty")
 	}
-	return c.Host().File(v.String())
+	return c.Host().File(v.String()), nil
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
 // plaintext value.
 type secretValue struct {
-	name      string
-	plaintext string
+	secretSource string
+	sourceVal    string
 }
+
+const (
+	envSecretSource     = "env"
+	fileSecretSource    = "file"
+	commandSecretSource = "cmd"
+)
 
 func (v *secretValue) Type() string {
 	return Secret
 }
 
 func (v *secretValue) Set(s string) error {
-	// NB: If we allow getting the name from the dagger.Secret instance,
-	// it can be vulnerable to brute force attacks.
-	hash := sha256.Sum256([]byte(s))
-	v.name = hex.EncodeToString(hash[:])
-	v.plaintext = s
+	secretSource, val, ok := strings.Cut(s, ":")
+	if !ok {
+		// case of e.g. `--token MY_ENV_SECRET`, which is shorthand for `--token env:MY_ENV_SECRET`
+		val = secretSource
+		secretSource = envSecretSource
+	}
+	v.secretSource = secretSource
+	v.sourceVal = val
+
 	return nil
 }
 
 func (v *secretValue) String() string {
-	return v.name
+	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
 }
 
-func (v *secretValue) Get(c *dagger.Client) any {
-	return c.SetSecret(v.name, v.plaintext)
+func (v *secretValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
+	var plaintext string
+
+	switch v.secretSource {
+	case envSecretSource:
+		envPlaintext, ok := os.LookupEnv(v.sourceVal)
+		if !ok {
+			return nil, fmt.Errorf("secret env var not found %q", v.sourceVal)
+		}
+		plaintext = envPlaintext
+
+	case fileSecretSource:
+		filePlaintext, err := os.ReadFile(v.sourceVal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read secret file %q: %w", v.sourceVal, err)
+		}
+		plaintext = string(filePlaintext)
+
+	case commandSecretSource:
+		// #nosec G204
+		stdoutBytes, err := exec.CommandContext(ctx, "sh", "-c", v.sourceVal).Output()
+		if err != nil {
+			return nil, fmt.Errorf("failed to run secret command %q: %w", v.sourceVal, err)
+		}
+		plaintext = string(stdoutBytes)
+
+	default:
+		return nil, fmt.Errorf("unsupported secret arg source: %q", v.secretSource)
+	}
+
+	// NB: If we allow getting the name from the dagger.Secret instance,
+	// it can be vulnerable to brute force attacks.
+	hash := sha256.Sum256([]byte(plaintext))
+	secretName := hex.EncodeToString(hash[:])
+	return c.SetSecret(secretName, plaintext), nil
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port
@@ -333,8 +382,8 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(c *dagger.Client) any {
-	return c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host})
+func (v *serviceValue) Get(_ context.Context, c *dagger.Client) (any, error) {
+	return c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}), nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a

@@ -11,7 +11,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
-	ciconsts "github.com/dagger/dagger/internal/mage/consts"
+	"github.com/dagger/dagger/internal/distconsts"
 )
 
 /*
@@ -77,9 +77,9 @@ func (s *APIServer) builtinSDK(ctx context.Context, sdkName string) (SDK, error)
 	case "go":
 		return &goSDK{APIServer: s}, nil
 	case "python":
-		return s.loadBuiltinSDK(ctx, sdkName, ciconsts.PythonSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, sdkName, distconsts.PythonSDKEngineContainerModulePath)
 	case "typescript":
-		return s.loadBuiltinSDK(ctx, sdkName, ciconsts.TypescriptSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, sdkName, distconsts.TypescriptSDKEngineContainerModulePath)
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}
@@ -93,7 +93,7 @@ type moduleSDK struct {
 }
 
 func (s *APIServer) newModuleSDK(ctx context.Context, sdkModMeta *core.Module) (*moduleSDK, error) {
-	sdkMod, err := s.AddModFromMetadata(ctx, sdkModMeta, nil)
+	sdkMod, err := s.GetOrAddModFromMetadata(ctx, sdkModMeta, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add sdk module to dag: %w", err)
 	}
@@ -116,7 +116,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *UserMod) (*core.Generate
 		return nil, fmt.Errorf("failed to find required Codegen function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
 
-	introspectionJSON, err := mod.SchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Name(), err)
 	}
@@ -170,7 +170,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Containe
 		return nil, fmt.Errorf("failed to find required ModuleRuntime function in SDK module %s: %w", sdk.mod.Name(), err)
 	}
 
-	introspectionJSON, err := mod.SchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Name(), err)
 	}
@@ -341,7 +341,7 @@ func (sdk *goSDK) Runtime(ctx context.Context, mod *UserMod) (*core.Container, e
 }
 
 func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Container, error) {
-	introspectionJSON, err := mod.SchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", mod.Name(), err)
 	}
@@ -401,11 +401,11 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *UserMod) (*core.Cont
 
 func (sdk *goSDK) base(ctx context.Context) (*core.Container, error) {
 	ctx, recorder := progrock.WithGroup(ctx, "load builtin module sdk go")
-	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(ciconsts.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(ciconsts.GoSDKEngineContainerTarballPath)})
+	pbDef, err := sdk.bk.EngineContainerLocalImport(ctx, recorder, sdk.platform, filepath.Dir(distconsts.GoSDKEngineContainerTarballPath), nil, []string{filepath.Base(distconsts.GoSDKEngineContainerTarballPath)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)
 	}
-	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(ciconsts.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
+	tarballFile := core.NewFile(ctx, pbDef, filepath.Base(distconsts.GoSDKEngineContainerTarballPath), nil, sdk.platform, nil)
 	tarballFileID, err := tarballFile.ID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get go module sdk tarball file id: %w", err)

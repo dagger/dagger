@@ -1,0 +1,56 @@
+services:
+
+  cli:
+    build:
+      context: ./docker
+      dockerfile: dev.Dockerfile
+      target: dev
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-33}
+    depends_on:
+      dev-dagger-engine:
+        condition: service_completed_successfully
+    environment:
+        _EXPERIMENTAL_DAGGER_RUNNER_HOST: 'docker-container://dagger-engine.dev'
+        _EXPERIMENTAL_DAGGER_CLI_BIN: '/usr/local/bin/dagger'
+        DOCKER_HOST: 'tcp://docker:2375'
+    tty: true
+    working_dir: /srv
+    volumes:
+      - .:/srv
+      - ../../bin/dagger:/usr/local/bin/dagger
+
+  docker:
+    build:
+      context: ./docker
+      dockerfile: dev.Dockerfile
+      target: dev
+    command: [ 'socat', '-d', 'TCP-L:2375,fork', 'UNIX:/var/run/docker.sock' ]
+    expose:
+      - 2375
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  dev-dagger-engine:
+    build:
+      context: ./docker
+      dockerfile: dev.Dockerfile
+      target: dev-dagger-engine
+      args:
+        UID: ${UID:-1000}
+    command:
+      - ./hack/dev
+    container_name: dev-dagger-engine
+    privileged: true
+    depends_on:
+      - docker
+    environment:
+      DOCKER_HOST: 'tcp://docker:2375'
+    volumes:
+      - ../../:/srv
+      - go-cache:/home/dagger/.cache
+
+volumes:
+  go-cache:

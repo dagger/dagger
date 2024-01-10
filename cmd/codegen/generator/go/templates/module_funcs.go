@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
-	"github.com/iancoleman/strcase"
 )
 
 const errorTypeName = "error"
@@ -18,12 +17,12 @@ var voidDef = Qual("dag", "TypeDef").Call().
 	Dot("WithKind").Call(Id("Voidkind")).
 	Dot("WithOptional").Call(Lit(true))
 
-func (ps *parseState) parseGoFunc(receiverTypeName string, fn *types.Func) (*funcTypeSpec, error) {
+func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
 		name: fn.Name(),
 	}
 
-	funcDecl, err := ps.declForFunc(fn)
+	funcDecl, err := ps.declForFunc(parentType, fn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
@@ -35,15 +34,19 @@ func (ps *parseState) parseGoFunc(receiverTypeName string, fn *types.Func) (*fun
 	}
 	spec.goType = sig
 
-	spec.argSpecs, err = ps.parseParamSpecs(fn)
+	spec.argSpecs, err = ps.parseParamSpecs(parentType, fn)
 	if err != nil {
 		return nil, err
 	}
-	// stash away the method signature so we can remember details on how it's
-	// invoked (e.g. no error return, no ctx arg, error-only return, etc)
-	// TODO: clean up w/ new approach of everything being a TypeSpec?
-	if receiverTypeName != "" {
-		ps.methods[receiverTypeName] = append(ps.methods[receiverTypeName], method{fn: fn, paramSpecs: spec.argSpecs})
+
+	if parentType != nil {
+		if _, ok := parentType.Underlying().(*types.Struct); ok {
+			// stash away the method signature so we can remember details on how it's
+			// invoked (e.g. no error return, no ctx arg, error-only return, etc)
+			// TODO: clean up w/ new approach of everything being a TypeSpec?
+			receiverTypeName := parentType.Obj().Name()
+			ps.methods[receiverTypeName] = append(ps.methods[receiverTypeName], method{fn: fn, paramSpecs: spec.argSpecs})
+		}
 	}
 
 	results := sig.Results()
@@ -56,14 +59,14 @@ func (ps *parseState) parseGoFunc(receiverTypeName string, fn *types.Func) (*fun
 			spec.returnsError = true
 			break
 		}
-		spec.returnSpec, err = ps.parseGoTypeReference(result, nil)
+		spec.returnSpec, err = ps.parseGoTypeReference(result, nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse return type: %w", err)
 		}
 	case 2:
 		spec.returnsError = true
 		result := results.At(0).Type()
-		spec.returnSpec, err = ps.parseGoTypeReference(result, nil)
+		spec.returnSpec, err = ps.parseGoTypeReference(result, nil, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse return type: %w", err)
 		}
@@ -139,7 +142,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		}
 
 		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
-		argTypeDefArgCode := []Code{Lit(argSpec.graphqlName()), argTypeDefCode}
+		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
 		if len(argOptsCode) > 0 {
 			argTypeDefArgCode = append(argTypeDefArgCode, Id("FunctionWithArgOpts").Values(argOptsCode...))
 		}
@@ -168,7 +171,7 @@ func (spec *funcTypeSpec) GoSubTypes() []types.Type {
 	return types
 }
 
-func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
+func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) ([]paramSpec, error) {
 	sig := fn.Type().(*types.Signature)
 	params := sig.Params()
 	if params.Len() == 0 {
@@ -188,7 +191,7 @@ func (ps *parseState) parseParamSpecs(fn *types.Func) ([]paramSpec, error) {
 		i++
 	}
 
-	fnDecl, err := ps.declForFunc(fn)
+	fnDecl, err := ps.declForFunc(parentType, fn)
 	if err != nil {
 		return nil, err
 	}
@@ -246,30 +249,33 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 
 	paramType := field.Type()
 	baseType := paramType
+	isPtr := false
 	for {
 		ptr, ok := baseType.(*types.Pointer)
 		if !ok {
 			break
 		}
+		isPtr = true
 		baseType = ptr.Elem()
 	}
 
 	optional := false
 	defaultValue := ""
 
-	if named, ok := ps.isOptionalWrapper(baseType); ok {
-		typeArgs := named.TypeArgs()
-		if typeArgs.Len() != 1 {
-			return paramSpec{}, fmt.Errorf("optional type must have exactly one type argument")
-		}
+	wrappedType, isOptionalType, err := ps.isOptionalWrapper(baseType)
+	if err != nil {
+		return paramSpec{}, fmt.Errorf("failed to check if type is optional: %w", err)
+	}
+	if isOptionalType {
 		optional = true
-
-		baseType = typeArgs.At(0)
+		baseType = wrappedType
+		isPtr = false
 		for {
 			ptr, ok := baseType.(*types.Pointer)
 			if !ok {
 				break
 			}
+			isPtr = true
 			baseType = ptr.Elem()
 		}
 	}
@@ -296,22 +302,31 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	}
 
 	// ignore ctx arg for parsing type reference
+	isContext := paramType.String() == contextTypename
 	var typeSpec ParsedType
-	if paramType.String() != contextTypename {
+	if !isContext {
 		var err error
-		typeSpec, err = ps.parseGoTypeReference(baseType, nil)
+		typeSpec, err = ps.parseGoTypeReference(baseType, nil, isPtr)
 		if err != nil {
 			return paramSpec{}, fmt.Errorf("failed to parse type reference: %w", err)
 		}
 	}
 
+	name := field.Name()
+	if name == "" && typeSpec != nil {
+		// emulate struct behaviour, where a field with no name gets the type name
+		name = typeSpec.GoType().String()
+	}
+
 	return paramSpec{
-		name:         field.Name(),
-		paramType:    paramType,
-		typeSpec:     typeSpec,
-		optional:     optional,
-		defaultValue: defaultValue,
-		description:  comment,
+		name:               name,
+		paramType:          paramType,
+		typeSpec:           typeSpec,
+		optional:           optional,
+		hasOptionalWrapper: isOptionalType,
+		isContext:          isContext,
+		defaultValue:       defaultValue,
+		description:        comment,
 	}, nil
 }
 
@@ -321,6 +336,10 @@ type paramSpec struct {
 
 	optional bool
 	variadic bool
+	// hasOptionalWrapper is true if the type is wrapped in the Optional generic type
+	hasOptionalWrapper bool
+	// isContext is true if the type is context.Context
+	isContext bool
 
 	defaultValue string
 
@@ -334,8 +353,4 @@ type paramSpec struct {
 	// parent is set if this paramSpec is nested inside a parent inline struct,
 	// and is used to create a declaration of the entire inline struct
 	parent *paramSpec
-}
-
-func (spec *paramSpec) graphqlName() string {
-	return strcase.ToLowerCamel(spec.name)
 }

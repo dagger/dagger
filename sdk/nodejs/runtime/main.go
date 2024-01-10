@@ -30,11 +30,10 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 
 	return ctr.
 		// Install dependencies
-		WithExec([]string{"yarn", "install", "--network-concurrency", "1"}).
+		WithExec([]string{"npm", "install"}).
 		// Add tsx to execute the entrypoint
-		WithExec([]string{"yarn", "global", "add", "tsx"}).
-		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}).
-		WithDefaultArgs(), nil
+		WithExec([]string{"npm", "install", "-g", "tsx"}).
+		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}), nil
 }
 
 // Codegen returns the generated API client based on user's module
@@ -44,17 +43,6 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *Directory, subPa
 	if err != nil {
 		return nil, err
 	}
-
-	// Add the SDK source into the container at genDir path
-	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
-		Exclude: []string{
-			"node_modules",
-			"dist",
-			"codegen",
-			"**/test",
-			"runtime",
-		},
-	})
 
 	// Compare difference to improve performances
 	modified := ctr.Directory(ModSourceDirPath)
@@ -77,7 +65,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
 
-	return t.Base("").
+	ctr := t.Base("").
 		// Add sdk directory without runtime nor codegen binary
 		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
 			Exclude: []string{"runtime, codegen"},
@@ -102,14 +90,24 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-			SkipEntrypoint:                true,
 		}).
 		// If it's an init, add the template and replace the QuickStart class name
 		// with the user's module name
 		WithExec([]string{"sh", "-c",
 			fmt.Sprintf("[ -f package.json ] || cp -r /opt/runtime/template/* . && sed -i -e 's/QuickStart/%s/g' ./src/index.ts", strcase.ToCamel(name))},
 			ContainerWithExecOpts{SkipEntrypoint: true},
-		), nil
+		)
+
+	// Add SDK src to the generated directory
+	return ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
+		Exclude: []string{
+			"node_modules",
+			"dist",
+			"codegen",
+			"**/test",
+			"runtime",
+		},
+	}), nil
 }
 
 // Base returns a Node container with cache setup for yarn
@@ -120,7 +118,8 @@ func (t *TypescriptSdk) Base(version string) *Container {
 
 	return dag.Container().
 		From(fmt.Sprintf("node:%s", version)).
-		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("mod-yarn-cache-"+version))
+		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version)).
+		WithoutEntrypoint()
 }
 
 // TODO: fix .. restriction

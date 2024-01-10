@@ -42,13 +42,15 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", version))
 	}
 
+	ctr, err := publishEnv(ctx, c)
+	if err != nil {
+		return err
+	}
 	wd := c.Host().Directory(".")
-	_, err = c.Container().
-		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
-		WithEntrypoint([]string{}).
-		WithExec([]string{"apk", "add", "aws-cli"}).
+	_, err = ctr.
 		WithWorkdir("/app").
 		WithMountedDirectory("/app", wd).
+		With(util.HostVar(c, "GH_ORG_NAME")).
 		With(util.HostSecretVar(c, "GITHUB_TOKEN")).
 		With(util.HostSecretVar(c, "GORELEASER_KEY")).
 		With(util.HostSecretVar(c, "AWS_ACCESS_KEY_ID")).
@@ -56,7 +58,6 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		With(util.HostSecretVar(c, "AWS_REGION")).
 		With(util.HostSecretVar(c, "AWS_BUCKET")).
 		With(util.HostSecretVar(c, "ARTEFACTS_FQDN")).
-		With(util.HostSecretVar(c, "HOMEBREW_TAP_OWNER")).
 		With(func(ctr *dagger.Container) *dagger.Container {
 			if devRelease {
 				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
@@ -103,5 +104,40 @@ func (cl Cli) TestPublish(ctx context.Context) error {
 			})
 		}
 	}
+
+	eg.Go(func() error {
+		env, err := publishEnv(ctx, c)
+		if err != nil {
+			return err
+		}
+		_, err = env.Sync(ctx)
+		return err
+	})
+
 	return eg.Wait()
+}
+
+func publishEnv(ctx context.Context, c *dagger.Client) (*dagger.Container, error) {
+	ctr := c.Container().
+		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
+		WithEntrypoint([]string{}).
+		WithExec([]string{"apk", "add", "aws-cli"})
+
+	// install nix
+	ctr = ctr.
+		WithExec([]string{"apk", "add", "xz"}).
+		WithDirectory("/nix", c.Directory()).
+		WithNewFile("/etc/nix/nix.conf", dagger.ContainerWithNewFileOpts{
+			Contents: `build-users-group =`,
+		}).
+		WithExec([]string{"sh", "-c", "curl -L https://nixos.org/nix/install | sh -s -- --no-daemon"})
+	path, err := ctr.EnvVariable(ctx, "PATH")
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.WithEnvVariable("PATH", path+":/nix/var/nix/profiles/default/bin")
+	// goreleaser requires nix-prefetch-url, so check we can run it
+	ctr = ctr.WithExec([]string{"sh", "-c", "nix-prefetch-url 2>&1 | grep 'error: you must specify a URL'"})
+
+	return ctr, nil
 }

@@ -37,29 +37,51 @@ async function entrypoint() {
       } else {
         // Invocation
         const fnName = await fnCall.name()
-        const parentJson = await fnCall.parent()
+        const parentJson = JSON.parse(await fnCall.parent())
         const fnArgs = await fnCall.inputArgs()
 
         const args: Args = {}
+        const parentArgs: Args = {}
 
         for (const arg of fnArgs) {
           args[await arg.name()] = await loadArg(await arg.value())
         }
 
+        if (parentJson) {
+          for (const [key, value] of Object.entries(parentJson)) {
+            parentArgs[key] = await loadArg(value as string)
+          }
+        }
+
         await load(files)
 
-        result = await invoke(parentName, fnName, JSON.parse(parentJson), args)
+        result = await invoke(parentName, fnName, parentArgs, args)
 
         // Load ID if it's a Dagger type with an id
-        if (result.id && typeof result.id === "function") {
+        if (typeof result?.id === "function") {
           result = await result.id()
+        }
+
+        // Load its field ID if there are
+        if (typeof result === "object") {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const [key, value] of Object.entries<any>(result)) {
+            if (value.id && typeof value.id === "function") {
+              result[key] = await value.id()
+            }
+          }
         }
       }
 
+      // If result is set, we stringify it
+      if (result !== undefined && result !== null) {
+        result = JSON.stringify(result)
+      } else {
+        result = "null"
+      }
+
       // Send the result to Dagger
-      await fnCall.returnValue(
-        JSON.stringify(result) as string & { __JSON: never }
-      )
+      await fnCall.returnValue(result as string & { __JSON: never })
     },
     { LogOutput: process.stdout }
   )

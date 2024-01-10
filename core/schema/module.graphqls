@@ -16,6 +16,11 @@ extend type Query {
   The module currently being served in the session, if any.
   """
   currentModule: Module
+
+  """
+  The TypeDef representations of the objects currently being served in the session.
+  """
+  currentTypeDefs: [TypeDef!]
 }
 
 type Module {
@@ -49,8 +54,14 @@ type Module {
   "Objects served by this module"
   objects: [TypeDef!]
 
+  "Interfaces served by this module"
+  interfaces: [TypeDef!]
+
   "This module plus the given Object type and associated functions"
   withObject(object: TypeDefID!): Module! # TODO: ObjectTypeDefID?
+  "This module plus the given Interface type and associated functions"
+  withInterface(iface: TypeDefID!): Module!
+
   """
   Serve a module's API in the current session.
       Note: this can only be called once per session.

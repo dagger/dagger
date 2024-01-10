@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/labels"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
@@ -24,6 +25,12 @@ const (
 	MediaTypeAttr = "daggerBlobSourceMediaType"
 	SizeAttr      = "daggerBlobSourceSize"
 )
+
+// blob annotations are annotations to preserve
+var blobAnnotations = map[string]struct{}{
+	// uncompressed label is required by GetByBlob
+	labels.LabelUncompressed: {},
+}
 
 type Opt struct {
 	CacheAccessor cache.Accessor
@@ -52,7 +59,9 @@ func LLB(desc ocispecs.Descriptor) llb.State {
 		SizeAttr:      strconv.Itoa(int(desc.Size)),
 	}
 	for k, v := range desc.Annotations {
-		attrs[k] = v
+		if _, ok := blobAnnotations[k]; ok {
+			attrs[k] = v
+		}
 	}
 	return llb.NewState(llb.NewSource(
 		fmt.Sprintf("%s://%s", BlobScheme, desc.Digest.String()),

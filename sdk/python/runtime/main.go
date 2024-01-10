@@ -17,6 +17,8 @@ const (
 	genDir                = "sdk"
 	genPath               = "src/dagger/client/gen.py"
 	schemaPath            = "/schema.json"
+	defaultPythonVersion  = "3.11-slim"
+	defaultPythonDigest   = "sha256:8f64a67710f3d981cf3008d6f9f1dbe61accd7927f165f4e37ea3f8b883ccc3f"
 )
 
 //go:embed scripts/runtime.py
@@ -30,8 +32,7 @@ func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string, introspe
 			Contents:    runtimeTmpl,
 			Permissions: 0755,
 		}).
-		WithEntrypoint([]string{RuntimeExecutablePath}).
-		WithDefaultArgs()
+		WithEntrypoint([]string{RuntimeExecutablePath})
 }
 
 func (m *PythonSdk) Codegen(modSource *Directory, subPath string, introspectionJson string) *GeneratedCode {
@@ -79,7 +80,7 @@ func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string, introspect
 
 func (m *PythonSdk) Base(version string) *Container {
 	if version == "" {
-		version = "3.11-slim"
+		version = defaultPythonVersion + "@" + defaultPythonDigest
 	}
 	return dag.Container().
 		From("python:"+version).
