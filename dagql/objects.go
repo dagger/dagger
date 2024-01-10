@@ -256,9 +256,7 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, erro
 	if !ok {
 		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
 	}
-	id := sel.AppendTo(r.ID(), field.Spec.Type.Type(), !field.Spec.Pure)
-	id.Module = field.Spec.Module
-	return id, nil
+	return sel.AppendTo(r.ID(), field.Spec), nil
 }
 
 // Select calls a field on the instance.
@@ -417,6 +415,9 @@ type InputSpec struct {
 	Default Input
 	// DeprecatedReason deprecates the input and provides a reason.
 	DeprecatedReason string
+	// Sensitive indicates that the value of this arg is sensitive and should be
+	// omitted from telemetry.
+	Sensitive bool
 }
 
 type InputSpecs []InputSpec
@@ -554,6 +555,16 @@ func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
 	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
 }
 
+func (field Field[T]) ArgSensitive(name string) Field[T] {
+	for i, arg := range field.Spec.Args {
+		if arg.Name == name {
+			field.Spec.Args[i].Sensitive = true
+			return field
+		}
+	}
+	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
+}
+
 func FormatDescription(paras ...string) string {
 	for i, p := range paras {
 		paras[i] = strings.Join(strings.Fields(strings.TrimSpace(p)), " ")
@@ -670,6 +681,7 @@ func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Type:             input,
 			Default:          inputDef,
 			DeprecatedReason: field.Field.Tag.Get("deprecated"),
+			Sensitive:        field.Field.Tag.Get("sensitive") == "true",
 		}
 	}
 	return specs, nil

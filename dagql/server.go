@@ -677,11 +677,16 @@ func (sel Selector) String() string {
 	return str
 }
 
-func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *idproto.ID {
+func (sel Selector) AppendTo(id *idproto.ID, spec FieldSpec) *idproto.ID {
+	astType := spec.Type.Type()
+	tainted := !spec.Pure
 	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
 	for _, arg := range sel.Args {
 		if arg.Value == nil {
 			// we don't include null arguments, since they would needlessly bust caches
+			continue
+		}
+		if arg, found := spec.Args.Lookup(arg.Name); found && arg.Sensitive {
 			continue
 		}
 		idArgs = append(idArgs, &idproto.Argument{
@@ -698,6 +703,7 @@ func (sel Selector) AppendTo(id *idproto.ID, astType *ast.Type, tainted bool) *i
 		sel.Field,
 		idArgs...,
 	)
+	appended.Module = spec.Module
 	if appended.IsTainted() != tainted {
 		appended.SetTainted(tainted)
 	}
