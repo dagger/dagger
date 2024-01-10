@@ -530,6 +530,112 @@ func TestIDsReflectQuery(t *testing.T) {
 	}
 }
 
+func TestIDsDoNotContainSensitiveValues(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	dagql.Fields[*points.Point]{
+		dagql.Func("loginTag", func(ctx context.Context, self *points.Point, _ struct {
+			Password string `sensitive:"true"`
+		}) (*points.Point, error) {
+			return self, nil
+		}),
+		dagql.Func("loginTagFalse", func(ctx context.Context, self *points.Point, _ struct {
+			Password string `sensitive:"false"`
+		}) (*points.Point, error) {
+			return self, nil
+		}),
+		dagql.Func("loginChain", func(ctx context.Context, self *points.Point, _ struct {
+			Password string
+		}) (*points.Point, error) {
+			return self, nil
+		}).ArgSensitive("password"),
+	}.Install(srv)
+
+	var res struct {
+		Point struct {
+			LoginTag, LoginTagFalse, LoginChain struct {
+				Id string
+			}
+		}
+	}
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			loginTag(password: "hunter2") {
+				id
+			}
+			loginTagFalse(password: "hunter2") {
+				id
+			}
+			loginChain(password: "hunter2") {
+				id
+			}
+		}
+	}`, &res)
+
+	pointT := (&points.Point{}).Type()
+	expectedID := idproto.New().
+		Append(
+			pointT,
+			"point",
+			&idproto.Argument{
+				Name:  "x",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+			},
+			&idproto.Argument{
+				Name:  "y",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+			},
+		).
+		Append(pointT, "loginTag")
+	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
+	assert.NilError(t, err)
+
+	eqIDs(t, res.Point.LoginTag.Id, expectedEnc)
+	expectedID = idproto.New().
+		Append(
+			pointT,
+			"point",
+			&idproto.Argument{
+				Name:  "x",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+			},
+			&idproto.Argument{
+				Name:  "y",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+			},
+		).
+		Append(pointT, "loginChain")
+	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
+	assert.NilError(t, err)
+	eqIDs(t, res.Point.LoginChain.Id, expectedEnc)
+
+	expectedID = idproto.New().
+		Append(
+			pointT,
+			"point",
+			&idproto.Argument{
+				Name:  "x",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
+			},
+			&idproto.Argument{
+				Name:  "y",
+				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
+			},
+		).
+		Append(pointT, "loginTagFalse",
+			&idproto.Argument{
+				Name:  "password",
+				Value: &idproto.Literal{Value: &idproto.Literal_String_{String_: "hunter2"}},
+			},
+		)
+	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
+	assert.NilError(t, err)
+	eqIDs(t, res.Point.LoginTagFalse.Id, expectedEnc)
+}
+
 func TestEmptyID(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
