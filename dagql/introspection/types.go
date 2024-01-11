@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func Install[T dagql.Typed](srv *dagql.Server) {
@@ -309,66 +309,66 @@ func (s *Schema) TypeDescription() string {
 
 var _ dagql.Typed = &Type{}
 
-func (s *Type) Type() *ast.Type {
+func (t *Type) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Type",
 		NonNull:   true,
 	}
 }
 
-func (s *Type) TypeDescription() string {
+func (t *Type) TypeDescription() string {
 	return "A GraphQL schema type."
 }
 
 var _ dagql.Typed = &Directive{}
 
-func (s *Directive) Type() *ast.Type {
+func (d *Directive) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Directive",
 		NonNull:   true,
 	}
 }
 
-func (s *Directive) TypeDescription() string {
+func (d *Directive) TypeDescription() string {
 	return "A GraphQL schema directive."
 }
 
 var _ dagql.Typed = &InputValue{}
 
-func (s *InputValue) Type() *ast.Type {
+func (i *InputValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__InputValue",
 		NonNull:   true,
 	}
 }
 
-func (s *InputValue) TypeDescription() string {
+func (i *InputValue) TypeDescription() string {
 	return "A GraphQL schema input field or argument."
 }
 
 var _ dagql.Typed = &Field{}
 
-func (s *Field) Type() *ast.Type {
+func (f *Field) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__Field",
 		NonNull:   true,
 	}
 }
 
-func (s *Field) TypeDescription() string {
+func (f *Field) TypeDescription() string {
 	return "A GraphQL object or input field."
 }
 
 var _ dagql.Typed = &EnumValue{}
 
-func (s *EnumValue) Type() *ast.Type {
+func (e *EnumValue) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__EnumValue",
 		NonNull:   true,
 	}
 }
 
-func (s *EnumValue) TypeDescription() string {
+func (e *EnumValue) TypeDescription() string {
 	return "A possible value of a GraphQL enum."
 }
 
@@ -402,7 +402,7 @@ func (k TypeKind) Type() *ast.Type {
 	}
 }
 
-func (s TypeKind) TypeDescription() string {
+func (k TypeKind) TypeDescription() string {
 	return "The kind of a GraphQL type."
 }
 
@@ -430,24 +430,24 @@ var DirectiveLocations = dagql.NewEnum[DirectiveLocation](
 	"INPUT_FIELD_DEFINITION",
 )
 
-func (k DirectiveLocation) Decoder() dagql.InputDecoder {
+func (l DirectiveLocation) Decoder() dagql.InputDecoder {
 	return DirectiveLocations
 }
 
-func (k DirectiveLocation) ToLiteral() *idproto.Literal {
-	return DirectiveLocations.Literal(k)
+func (l DirectiveLocation) ToLiteral() *idproto.Literal {
+	return DirectiveLocations.Literal(l)
 }
 
 var _ dagql.Typed = DirectiveLocation("")
 
-func (k DirectiveLocation) Type() *ast.Type {
+func (l DirectiveLocation) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "__DirectiveLocation",
 		NonNull:   true,
 	}
 }
 
-func (s DirectiveLocation) TypeDescription() string {
+func (l DirectiveLocation) TypeDescription() string {
 	return "A location that a directive may be applied."
 }
 
@@ -680,20 +680,20 @@ func WrapSchema(schema *ast.Schema) *Schema {
 	return &Schema{schema: schema}
 }
 
-func (f *EnumValue) Description() string {
-	return f.description
+func (e *EnumValue) Description() string {
+	return e.description
 }
 
-func (f *EnumValue) IsDeprecated() bool {
-	return f.deprecation != nil
+func (e *EnumValue) IsDeprecated() bool {
+	return e.deprecation != nil
 }
 
-func (f *EnumValue) DeprecationReason() *string {
-	if f.deprecation == nil {
+func (e *EnumValue) DeprecationReason() *string {
+	if e.deprecation == nil {
 		return nil
 	}
 
-	reason := f.deprecation.Arguments.ForName("reason")
+	reason := e.deprecation.Arguments.ForName("reason")
 	if reason == nil {
 		return nil
 	}
@@ -724,20 +724,20 @@ func (f *Field) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
-func (f *InputValue) Description() string {
-	return f.description
+func (i *InputValue) Description() string {
+	return i.description
 }
 
-func (f *InputValue) IsDeprecated() bool {
-	return f.deprecation != nil
+func (i *InputValue) IsDeprecated() bool {
+	return i.deprecation != nil
 }
 
-func (f *InputValue) DeprecationReason() *string {
-	if f.deprecation == nil {
+func (i *InputValue) DeprecationReason() *string {
+	if i.deprecation == nil {
 		return nil
 	}
 
-	reason := f.deprecation.Arguments.ForName("reason")
+	reason := i.deprecation.Arguments.ForName("reason")
 	if reason == nil {
 		return nil
 	}
@@ -745,6 +745,6 @@ func (f *InputValue) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
-func (f *Directive) Description() string {
-	return f.description
+func (d *Directive) Description() string {
+	return d.description
 }

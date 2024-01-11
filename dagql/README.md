@@ -46,13 +46,24 @@ into the Dagger account.
 ## TODO
 
 * [x] parallel query execution
-* [ ] figure out whether constructor patterns are enshrined or ad-hoc
-* [x] figure out how to return objects that already have an ID (e.g. `loadFooFromID` should not have itself in the returned ID)
-* [ ] implement caching semantics, including `@impure` and `@meta`
-* [ ] figure out telemetry
-* [ ] support schema docs for everything (types, fields, args, enum values, etc)
+* [x] figure out whether constructor patterns are enshrined or ad-hoc
+    * ad-hoc; you can now Extend any ObjectType in the Server.
+* [x] figure out how to return objects that already have an ID (e.g.
+  `loadFooFromID` should not have itself in the returned ID)
+    * if resolvers return an Object no further wrapping/ID-ing is required
+* [x] implement caching semantics, including `@impure` and `@meta`
+* [x] figure out telemetry
+    * resolvers can be wrapped, have access to the current `*idproto.ID`
+* [x] support schema docs for everything (types, fields, args, enum values, etc)
 * [ ] figure out how interfaces work
-* [ ] IDs should also contain module info
+    * don't need this yet, but might be a next step for Dagger interfaces
+* [x] IDs should also contain module info
+    * IDs can now contain a reference to a single module ID which provides the
+      implementation of the field that the ID resolves
+    * all modules contained recursively by an ID (i.e. in parents or arguments)
+      are loaded prior to evaluating the ID
+      * technically we might not need to load _all_ modules, since arguably
+        arguments could be evaluated in a vacuum; TBD
 * [ ] IDs should also contain digest of result (stretch goal, this is higher
   level, e.g. we want literal file checksums for objects that represent a file)
 * [x] get rid of Identified in favor of Object? (see interfaces + wrapping concern below)

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/dagger/dagger/dagql/idproto"
 )
 
 // Class is a class of Object types.
@@ -635,11 +635,12 @@ func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Input, error) {
 	args := make(map[string]Input, len(field.Args))
 	for _, arg := range field.Args {
 		val, ok := inputs.Lookup(arg.Name)
-		if ok {
+		switch {
+		case ok:
 			args[arg.Name] = val
-		} else if arg.Default != nil {
+		case arg.Default != nil:
 			args[arg.Name] = arg.Default
-		} else if arg.Type.Type().NonNull {
+		case arg.Type.Type().NonNull:
 			return nil, fmt.Errorf("missing required argument: %q", arg.Name)
 		}
 	}

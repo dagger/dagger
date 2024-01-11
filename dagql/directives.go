@@ -1,8 +1,8 @@
 package dagql
 
 import (
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type DirectiveSpec struct {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -11,13 +10,13 @@ import (
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/dagql/ioctx"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
 )
 
@@ -64,7 +63,7 @@ func main() {
 	}
 	defer l.Close()
 
-	log.Fatal(progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) (err error) {
+	if err := progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) (err error) {
 		vtx := rec.Vertex("dagql", "server")
 		fmt.Fprintf(vtx.Stdout(), "connect to http://localhost:%s for GraphQL playground", port)
 		defer vtx.Done(err)
@@ -72,8 +71,10 @@ func main() {
 			<-ctx.Done()
 			l.Close()
 		}()
-		return http.Serve(l, nil)
-	}))
+		return http.Serve(l, nil) // nolint: gosec
+	}); err != nil {
+		panic(err)
+	}
 }
 
 func TelemetryFunc(rec *progrock.Recorder) dagql.AroundFunc {

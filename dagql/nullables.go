@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Derefable is a type that wraps another type.
@@ -62,46 +62,43 @@ func NoOpt[I Input]() Optional[I] {
 	return Optional[I]{}
 }
 
-func (n Optional[I]) ToNullable() Nullable[I] {
-	return Nullable[I]{
-		Value: n.Value,
-		Valid: n.Valid,
-	}
+func (o Optional[I]) ToNullable() Nullable[I] {
+	return Nullable[I](o)
 }
 
-func (n Optional[I]) Decoder() InputDecoder {
-	return n
+func (o Optional[I]) Decoder() InputDecoder {
+	return o
 }
 
-func (i Optional[I]) ToLiteral() *idproto.Literal {
-	if !i.Valid {
+func (o Optional[I]) ToLiteral() *idproto.Literal {
+	if !o.Valid {
 		return &idproto.Literal{
 			Value: &idproto.Literal_Null{
 				Null: true,
 			},
 		}
 	}
-	return i.Value.ToLiteral()
+	return o.Value.ToLiteral()
 }
 
-func (i Optional[I]) MarshalJSON() ([]byte, error) {
-	if !i.Valid {
+func (o Optional[I]) MarshalJSON() ([]byte, error) {
+	if !o.Valid {
 		return json.Marshal(nil)
 	}
-	return json.Marshal(i.Value)
+	return json.Marshal(o.Value)
 }
 
 var _ Typed = Optional[Input]{}
 
-func (n Optional[I]) Type() *ast.Type {
-	nullable := *n.Value.Type()
+func (o Optional[I]) Type() *ast.Type {
+	nullable := *o.Value.Type()
 	nullable.NonNull = false
 	return &nullable
 }
 
 var _ Derefable = Optional[Input]{}
 
-func (n Optional[I]) DecodeInput(val any) (Input, error) {
+func (o Optional[I]) DecodeInput(val any) (Input, error) {
 	if val == nil {
 		return Optional[I]{}, nil
 	}
@@ -116,12 +113,12 @@ func (n Optional[I]) DecodeInput(val any) (Input, error) {
 	}, nil
 }
 
-func (n Optional[I]) Deref() (Typed, bool) {
-	return n.Value, n.Valid
+func (o Optional[I]) Deref() (Typed, bool) {
+	return o.Value, o.Valid
 }
 
-func (i *Optional[I]) UnmarshalJSON(p []byte) error {
-	if err := json.Unmarshal(p, &i.Value); err != nil {
+func (o *Optional[I]) UnmarshalJSON(p []byte) error {
+	if err := json.Unmarshal(p, &o.Value); err != nil {
 		return err
 	}
 	return nil
@@ -135,42 +132,42 @@ type DynamicOptional struct {
 
 var _ Input = DynamicOptional{}
 
-func (d DynamicOptional) Type() *ast.Type {
-	cp := *d.Elem.Type()
+func (o DynamicOptional) Type() *ast.Type {
+	cp := *o.Elem.Type()
 	cp.NonNull = false
 	return &cp
 }
 
-func (d DynamicOptional) Decoder() InputDecoder {
-	return d
+func (o DynamicOptional) Decoder() InputDecoder {
+	return o
 }
 
-func (d DynamicOptional) ToLiteral() *idproto.Literal {
-	if !d.Valid {
+func (o DynamicOptional) ToLiteral() *idproto.Literal {
+	if !o.Valid {
 		return &idproto.Literal{
 			Value: &idproto.Literal_Null{
 				Null: true,
 			},
 		}
 	}
-	return d.Value.ToLiteral()
+	return o.Value.ToLiteral()
 }
 
 var _ InputDecoder = DynamicOptional{}
 
-func (n DynamicOptional) DecodeInput(val any) (Input, error) {
+func (o DynamicOptional) DecodeInput(val any) (Input, error) {
 	if val == nil {
 		return DynamicOptional{
-			Elem:  n,
+			Elem:  o,
 			Valid: false,
 		}, nil
 	}
-	input, err := n.Elem.Decoder().DecodeInput(val)
+	input, err := o.Elem.Decoder().DecodeInput(val)
 	if err != nil {
 		return nil, err
 	}
 	return DynamicOptional{
-		Elem:  n.Elem,
+		Elem:  o.Elem,
 		Value: input,
 		Valid: true,
 	}, nil
@@ -178,19 +175,19 @@ func (n DynamicOptional) DecodeInput(val any) (Input, error) {
 
 var _ Setter = DynamicOptional{}
 
-func (n DynamicOptional) SetField(val reflect.Value) error {
+func (o DynamicOptional) SetField(val reflect.Value) error {
 	switch val.Kind() {
 	case reflect.Ptr:
-		if n.Valid {
+		if o.Valid {
 			ptr := reflect.New(val.Type().Elem())
-			if err := assign(ptr.Elem(), n.Value); err != nil {
+			if err := assign(ptr.Elem(), o.Value); err != nil {
 				return fmt.Errorf("dynamic optional pointer: %w", err)
 			}
 			val.Set(ptr)
 		}
 	default:
-		if n.Valid {
-			if err := assign(val, n.Value); err != nil {
+		if o.Valid {
+			if err := assign(val, o.Value); err != nil {
 				return fmt.Errorf("dynamic optional: %w", err)
 			}
 			return nil
@@ -201,15 +198,15 @@ func (n DynamicOptional) SetField(val reflect.Value) error {
 
 var _ Derefable = DynamicOptional{}
 
-func (n DynamicOptional) Deref() (Typed, bool) {
-	return n.Value, n.Valid
+func (o DynamicOptional) Deref() (Typed, bool) {
+	return o.Value, o.Valid
 }
 
-func (i DynamicOptional) MarshalJSON() ([]byte, error) {
-	if !i.Valid {
+func (o DynamicOptional) MarshalJSON() ([]byte, error) {
+	if !o.Valid {
 		return json.Marshal(nil)
 	}
-	optional, err := json.Marshal(i.Value)
+	optional, err := json.Marshal(o.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -249,15 +246,15 @@ func (n Nullable[T]) Deref() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
-func (i Nullable[T]) MarshalJSON() ([]byte, error) {
-	if !i.Valid {
+func (n Nullable[T]) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
 		return json.Marshal(nil)
 	}
-	return json.Marshal(i.Value)
+	return json.Marshal(n.Value)
 }
 
-func (i *Nullable[T]) UnmarshalJSON(p []byte) error {
-	if err := json.Unmarshal(p, &i.Value); err != nil {
+func (n *Nullable[T]) UnmarshalJSON(p []byte) error {
+	if err := json.Unmarshal(p, &n.Value); err != nil {
 		return err
 	}
 	return nil
@@ -271,8 +268,8 @@ type DynamicNullable struct {
 
 var _ Typed = DynamicNullable{}
 
-func (d DynamicNullable) Type() *ast.Type {
-	cp := *d.Elem.Type()
+func (n DynamicNullable) Type() *ast.Type {
+	cp := *n.Elem.Type()
 	cp.NonNull = false
 	return &cp
 }
@@ -283,15 +280,15 @@ func (n DynamicNullable) Deref() (Typed, bool) {
 	return n.Value, n.Valid
 }
 
-func (i DynamicNullable) MarshalJSON() ([]byte, error) {
-	if !i.Valid {
+func (n DynamicNullable) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
 		return json.Marshal(nil)
 	}
-	return json.Marshal(i.Value)
+	return json.Marshal(n.Value)
 }
 
-func (i *DynamicNullable) UnmarshalJSON(p []byte) error {
-	if err := json.Unmarshal(p, &i.Value); err != nil {
+func (n *DynamicNullable) UnmarshalJSON(p []byte) error {
+	if err := json.Unmarshal(p, &n.Value); err != nil {
 		return err
 	}
 	return nil

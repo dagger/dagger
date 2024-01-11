@@ -4,9 +4,9 @@ import (
 	"context"
 	"math"
 
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Point struct {
@@ -77,12 +77,12 @@ func (Direction) TypeDescription() string {
 func Install[R dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[R]{
 		dagql.Func("point", func(ctx context.Context, self R, args struct {
-			X dagql.Int `default:"0"`
-			Y dagql.Int `default:"0"`
+			X int `default:"0"`
+			Y int `default:"0"`
 		}) (*Point, error) {
 			return &Point{
-				X: int(args.X.Int()),
-				Y: int(args.Y.Int()),
+				X: args.X,
+				Y: args.Y,
 			}, nil
 		}),
 	}.Install(srv)
@@ -92,26 +92,26 @@ func Install[R dagql.Typed](srv *dagql.Server) {
 			return self, nil
 		}),
 		dagql.Func("shiftLeft", func(ctx context.Context, self *Point, args struct {
-			Amount dagql.Int `default:"1"`
+			Amount int `default:"1"`
 		}) (*Point, error) {
 			shifted := *self
-			shifted.X -= args.Amount.Int()
+			shifted.X -= args.Amount
 			return &shifted, nil
 		}), // TODO @deprecate
 		dagql.Func("shift", func(ctx context.Context, self *Point, args struct {
 			Direction Direction
-			Amount    dagql.Int `default:"1"`
+			Amount    int `default:"1"`
 		}) (*Point, error) {
 			shifted := *self
 			switch args.Direction {
 			case DirectionUp:
-				shifted.Y += args.Amount.Int()
+				shifted.Y += args.Amount
 			case DirectionDown:
-				shifted.Y -= args.Amount.Int()
+				shifted.Y -= args.Amount
 			case DirectionLeft:
-				shifted.X -= args.Amount.Int()
+				shifted.X -= args.Amount
 			case DirectionRight:
-				shifted.X += args.Amount.Int()
+				shifted.X += args.Amount
 			}
 			return &shifted, nil
 		}),

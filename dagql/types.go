@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"runtime/debug"
 	"strconv"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 )
 
@@ -246,7 +245,7 @@ func (Float) DecodeInput(val any) (Input, error) {
 	case float32:
 		return NewFloat(float64(x)), nil
 	case float64:
-		return NewFloat(float64(x)), nil
+		return NewFloat(x), nil
 	case json.Number:
 		i, err := x.Float64()
 		if err != nil {
@@ -558,7 +557,6 @@ func (i ID[T]) DecodeInput(val any) (Input, error) {
 		}
 		return i, nil
 	default:
-		debug.PrintStack()
 		return nil, fmt.Errorf("cannot create ID[%T] from %T: %#v", i.inner, x, x)
 	}
 }
