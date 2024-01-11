@@ -12,12 +12,12 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/dagql"
-	"github.com/vito/dagql/idproto"
-	"github.com/vito/dagql/internal/pipes"
-	"github.com/vito/dagql/internal/points"
-	"github.com/vito/dagql/introspection"
-	"github.com/vito/dagql/ioctx"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/internal/pipes"
+	"github.com/dagger/dagger/dagql/internal/points"
+	"github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/vito/progrock"
 )
 

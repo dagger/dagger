@@ -11,7 +11,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/dagql/idproto"
+	"github.com/dagger/dagger/dagql/idproto"
 )
 
 // Class is a class of Object types.
