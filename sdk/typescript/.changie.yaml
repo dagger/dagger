@@ -1,0 +1,41 @@
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+versionFormat: '## sdk/typescript/{{.Version}} - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+changeFormat: '- {{.Body}} by @{{.Custom.Author}} in https://github.com/dagger/dagger/pull/{{.Custom.PR}}'
+custom:
+  - key: PR
+    label: GitHub PR
+    type: int
+  - key: Author
+    label: GitHub Author
+    type: string
+kinds:
+  - label: Breaking
+    format: '### 🔥 Breaking Changes'
+  - label: Added
+  - label: Changed
+  - label: Deprecated
+  - label: Removed
+  - label: Fixed
+  - label: Security
+  - label: Dependencies
+headerFormat: |
+  This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
+
+  ⬢ https://www.npmjs.com/package/@dagger.io/dagger
+  📒 https://docs.dagger.io/sdk/nodejs/reference/modules/api_client_gen
+footerFormat: |
+  ### What to do next
+  - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
+  - Join our [Discord server](https://discord.gg/dagger-io)
+  - Follow us on [Twitter](https://twitter.com/dagger_io)
+newlines:
+  afterChangelogHeader: 3
+  afterVersion: 1
+  beforeKind: 1
+  beforeFooterTemplate: 1
+envPrefix: CHANGIE_
