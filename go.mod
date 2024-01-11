@@ -13,7 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.31.3 // indirect
 	github.com/charmbracelet/bubbles v0.17.1
 	github.com/charmbracelet/bubbletea v0.25.0
-	github.com/containerd/containerd v1.7.8
+	github.com/containerd/containerd v1.7.11
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.6
 	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.1.2
@@ -75,7 +75,7 @@ require (
 	github.com/moby/sys/mount v0.3.3
 	github.com/muesli/termenv v0.15.2
 	github.com/nxadm/tail v1.4.8
-	github.com/opencontainers/runc v1.1.9
+	github.com/opencontainers/runc v1.1.11
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.12.0
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
@@ -223,7 +223,7 @@ require (
 require (
 	github.com/Khan/genqlient v0.6.0
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/Microsoft/hcsshim v0.11.1 // indirect
+	github.com/Microsoft/hcsshim v0.11.4 // indirect
 	github.com/adrg/xdg v0.4.0
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1
