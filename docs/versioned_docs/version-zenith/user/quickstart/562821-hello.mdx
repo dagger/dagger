@@ -31,8 +31,8 @@ Update the generated `main.go` file with the following code:
 
 This module defines a function named `Hello()` which returns a string. This function performs the following operations:
 
-- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is `node:18-slim`. This method returns a `Container` representing an OCI-compatible container image.
-- It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `WithExec()` method returns a revised Container with the results of command execution.
+- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is `node:18-slim`. This method returns a `Container` initialized from that base image.
+- It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `WithExec()` method returns an updated Container with the results of command execution.
 - It retrieves the output stream of the command with the `Container.Stdout()` method and assigns it to a variable. Since the `Container.Stdout()` method uses the `Context` type, the module imports the `context` package.
 - It returns a message interpolating the variable (the Node version number) into a longer string.
 
