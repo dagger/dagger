@@ -34,6 +34,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &secretValue{}
 	case Service:
 		return &serviceValue{}
+	case PortForward:
+		return &portForwardValue{}
 	}
 	return nil
 }
@@ -51,6 +53,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*secretValue]{}
 	case Service:
 		return &sliceValue[*serviceValue]{}
+	case PortForward:
+		return &sliceValue[*portForwardValue]{}
 	}
 	return nil
 }
@@ -397,6 +401,52 @@ func (v *serviceValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
 	return svc, nil
 }
 
+// portForwardValue is a pflag.Value that builds a dagger.
+type portForwardValue struct {
+	frontend int
+	backend  int
+}
+
+func (v *portForwardValue) Type() string {
+	return PortForward
+}
+
+func (v *portForwardValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("portForward setting cannot be empty")
+	}
+
+	frontendStr, backendStr, ok := strings.Cut(s, ":")
+	if !ok {
+		return fmt.Errorf("portForward setting not in the form of frontend:backend: %q", s)
+	}
+
+	frontend, err := strconv.Atoi(frontendStr)
+	if err != nil {
+		return fmt.Errorf("portForward frontend not a valid integer: %q", frontendStr)
+	}
+	v.frontend = frontend
+
+	backend, err := strconv.Atoi(backendStr)
+	if err != nil {
+		return fmt.Errorf("portForward backend not a valid integer: %q", backendStr)
+	}
+	v.backend = backend
+
+	return nil
+}
+
+func (v *portForwardValue) String() string {
+	return fmt.Sprintf("%d:%d", v.frontend, v.backend)
+}
+
+func (v *portForwardValue) Get(_ context.Context, c *dagger.Client) (any, error) {
+	return &dagger.PortForward{
+		Frontend: v.frontend,
+		Backend:  v.backend,
+	}, nil
+}
+
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
 func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any, error) {
@@ -472,7 +522,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 		case dagger.InputKind:
 			inputName := elementType.AsInput.Name
 
-			if val := GetCustomFlagValue(inputName); val != nil {
+			if val := GetCustomFlagValueSlice(inputName); val != nil {
 				flags.Var(val, name, usage)
 				return val, nil
 			}

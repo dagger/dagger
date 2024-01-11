@@ -20,12 +20,13 @@ import (
 )
 
 const (
-	Directory string = "Directory"
-	Container string = "Container"
-	File      string = "File"
-	Secret    string = "Secret"
-	Service   string = "Service"
-	Terminal  string = "Terminal"
+	Directory   string = "Directory"
+	Container   string = "Container"
+	File        string = "File"
+	Secret      string = "Secret"
+	Service     string = "Service"
+	Terminal    string = "Terminal"
+	PortForward string = "PortForward"
 )
 
 var funcGroup = &cobra.Group{
@@ -36,7 +37,6 @@ var funcGroup = &cobra.Group{
 var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
-	upCmd,
 }
 
 var funcListCmd = &FuncCommand{

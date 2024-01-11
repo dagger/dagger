@@ -4896,6 +4896,13 @@ pub struct ServiceEndpointOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub scheme: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ServiceUpOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub native: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub ports: Option<Vec<PortForward>>,
+}
 impl Service {
     /// Retrieves an endpoint that clients can use to reach this container.
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
@@ -4956,6 +4963,30 @@ impl Service {
     /// Stop the service.
     pub async fn stop(&self) -> Result<ServiceId, DaggerError> {
         let query = self.selection.select("stop");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Creates a tunnel that forwards traffic from the caller's network to this service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("up");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Creates a tunnel that forwards traffic from the caller's network to this service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("up");
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
+        }
+        if let Some(native) = opts.native {
+            query = query.arg("native", native);
+        }
         query.execute(self.graphql_client.clone()).await
     }
 }

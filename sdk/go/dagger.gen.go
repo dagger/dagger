@@ -5093,6 +5093,7 @@ type Service struct {
 	id       *ServiceID
 	start    *ServiceID
 	stop     *ServiceID
+	up       *Void
 }
 
 // ServiceEndpointOpts contains options for Service.Endpoint
@@ -5231,6 +5232,36 @@ func (r *Service) Stop(ctx context.Context) (*Service, error) {
 	q := r.q.Select("stop")
 
 	return r, q.Execute(ctx, r.c)
+}
+
+// ServiceUpOpts contains options for Service.Up
+type ServiceUpOpts struct {
+	Ports []PortForward
+
+	Native bool
+}
+
+// Creates a tunnel that forwards traffic from the caller's network to this service.
+func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
+	if r.up != nil {
+		return *r.up, nil
+	}
+	q := r.q.Select("up")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
+		}
+		// `native` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Native) {
+			q = q.Arg("native", opts[i].Native)
+		}
+	}
+
+	var response Void
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.

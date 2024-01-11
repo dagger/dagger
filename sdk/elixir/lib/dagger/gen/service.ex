@@ -84,4 +84,28 @@ defmodule Dagger.Service do
       execute(selection, service.client)
     end
   )
+
+  (
+    @doc "Creates a tunnel that forwards traffic from the caller's network to this service.\n\n\n\n## Optional Arguments\n\n* `ports` - \n* `native` -"
+    @spec up(t(), keyword()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
+    def up(%__MODULE__{} = service, optional_args \\ []) do
+      selection = select(service.selection, "up")
+
+      selection =
+        if is_nil(optional_args[:ports]) do
+          selection
+        else
+          arg(selection, "ports", optional_args[:ports])
+        end
+
+      selection =
+        if is_nil(optional_args[:native]) do
+          selection
+        else
+          arg(selection, "native", optional_args[:native])
+        end
+
+      execute(selection, service.client)
+    end
+  )
 end

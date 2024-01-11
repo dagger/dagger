@@ -13,9 +13,6 @@ import (
 )
 
 func TestModuleDaggerUp(t *testing.T) {
-	// TODO: only testing `--native` right now because `--port` appears to have a bug:
-	// https://github.com/dagger/dagger/issues/6303
-
 	ctx := context.Background()
 
 	modDir := t.TempDir()
@@ -52,34 +49,69 @@ type Test struct {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
-	cmd := hostDaggerCommand(ctx, t, modDir, "up", "--native", "ctr")
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	t.Run("native", func(t *testing.T) {
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--native")
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
-	err = cmd.Start()
-	require.NoError(t, err)
-	defer cmd.Process.Kill()
-
-	for {
-		select {
-		case <-ctx.Done():
-			require.FailNow(t, "timed out waiting for container to start")
-		default:
-		}
-
-		resp, err := http.Get("http://127.0.0.1:23457")
-		if err != nil {
-			t.Logf("waiting for container to start: %s", err)
-			time.Sleep(time.Second)
-			continue
-		}
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode)
-
-		body, err := io.ReadAll(resp.Body)
+		err = cmd.Start()
 		require.NoError(t, err)
-		require.Equal(t, "hey there", string(body))
-		break
-	}
+		defer cmd.Process.Kill()
+
+		for {
+			select {
+			case <-ctx.Done():
+				require.FailNow(t, "timed out waiting for container to start")
+			default:
+			}
+
+			resp, err := http.Get("http://127.0.0.1:23457")
+			if err != nil {
+				t.Logf("waiting for container to start: %s", err)
+				time.Sleep(time.Second)
+				continue
+			}
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, "hey there", string(body))
+			break
+		}
+	})
+
+	t.Run("port map", func(t *testing.T) {
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--ports", "23458:23457")
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err = cmd.Start()
+		require.NoError(t, err)
+		defer cmd.Process.Kill()
+
+		for {
+			select {
+			case <-ctx.Done():
+				require.FailNow(t, "timed out waiting for container to start")
+			default:
+			}
+
+			resp, err := http.Get("http://127.0.0.1:23458")
+			if err != nil {
+				t.Logf("waiting for container to start: %s", err)
+				time.Sleep(time.Second)
+				continue
+			}
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, "hey there", string(body))
+			break
+		}
+	})
 }

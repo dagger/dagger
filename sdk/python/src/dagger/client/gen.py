@@ -5268,6 +5268,36 @@ class Service(Type):
         _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
         return Service(_ctx)
 
+    @typecheck
+    async def up(
+        self,
+        *,
+        ports: Sequence[PortForward] | None = [],
+        native: bool | None = False,
+    ) -> Void | None:
+        """Creates a tunnel that forwards traffic from the caller's network to
+        this service.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("ports", ports, []),
+            Arg("native", native, False),
+        ]
+        _ctx = self._select("up", _args)
+        return await _ctx.execute(Void | None)
+
 
 class Socket(Type):
     """A Unix or TCP/IP socket that can be mounted into a container."""

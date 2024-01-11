@@ -844,6 +844,11 @@ export type ServiceEndpointOpts = {
   scheme?: string
 }
 
+export type ServiceUpOpts = {
+  ports?: PortForward[]
+  native?: boolean
+}
+
 /**
  * The `ServiceID` scalar type represents an identifier for an object of type Service.
  */
@@ -6314,6 +6319,7 @@ export class Service extends BaseClient {
   private readonly _hostname?: string = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
+  private readonly _up?: Void = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -6324,7 +6330,8 @@ export class Service extends BaseClient {
     _endpoint?: string,
     _hostname?: string,
     _start?: ServiceID,
-    _stop?: ServiceID
+    _stop?: ServiceID,
+    _up?: Void
   ) {
     super(parent)
 
@@ -6333,6 +6340,7 @@ export class Service extends BaseClient {
     this._hostname = _hostname
     this._start = _start
     this._stop = _stop
+    this._up = _up
   }
 
   /**
@@ -6477,6 +6485,28 @@ export class Service extends BaseClient {
     )
 
     return this
+  }
+
+  /**
+   * Creates a tunnel that forwards traffic from the caller's network to this service.
+   */
+  up = async (opts?: ServiceUpOpts): Promise<Void> => {
+    if (this._up) {
+      return this._up
+    }
+
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "up",
+          args: { ...opts },
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
   }
 }
 
