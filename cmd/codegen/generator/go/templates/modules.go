@@ -103,7 +103,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			continue
 		}
 
-		tps = append(tps, obj.Type())
+		if ps.isMainModuleObject(obj.Name()) || ps.isDaggerGenerated(obj) {
+			tps = append(tps, obj.Type())
+		}
 	}
 
 	if ps.daggerObjectIfaceType == nil {
@@ -111,7 +113,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	}
 
 	added := map[string]struct{}{}
-	topLevel := true
 
 	implementationCode := Empty()
 	for len(tps) != 0 {
@@ -129,10 +130,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			}
 			if !obj.Exported() {
 				// the type must be exported
-				if !topLevel {
-					return "", fmt.Errorf("cannot code-generate unexported type %s", obj.Name())
-				}
-				continue
+				return "", fmt.Errorf("cannot code-generate unexported type %s", obj.Name())
 			}
 
 			// avoid adding a struct definition twice (if it's referenced in two function signatures)
@@ -157,11 +155,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 					return "", fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
 				}
 
-				if topLevel && !ps.isMainModuleObject(obj.Name()) {
-					// don't add a non-main object at the top-level (wait till it comes up as a sub-object)
-					continue
-				}
-
 				// Add the object to the module
 				objTypeDefCode, err := objTypeSpec.TypeDefCode()
 				if err != nil {
@@ -182,11 +175,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 			case *types.Interface:
 				iface := underlyingObj
-				if topLevel {
-					// refrain from adding interfaces to the module typedefs unless it's referenced by a object/function in the module
-					continue
-				}
-
 				ifaceTypeSpec, err := ps.parseGoIface(iface, named)
 				if err != nil {
 					return "", err
@@ -217,7 +205,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 		}
 
 		tps, nextTps = nextTps, nil
-		topLevel = false
 	}
 
 	return strings.Join([]string{
