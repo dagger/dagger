@@ -168,11 +168,14 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.clientCallMu.RLock()
 	callContext, ok := s.clientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
+		s.clientCallMu.RUnlock()
 		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest), http.StatusInternalServerError)
 		return
 	}
+	s.clientCallMu.RUnlock()
 
 	schema, err := callContext.deps.Schema(ctx)
 	if err != nil {
@@ -421,10 +424,14 @@ func (s *APIServer) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	s.clientCallMu.RLock()
+	defer s.clientCallMu.RUnlock()
 	callCtx, ok := s.clientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
+
 	return callCtx.deps, nil
 }
 
