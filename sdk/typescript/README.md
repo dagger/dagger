@@ -4,7 +4,7 @@ A client package for running [Dagger](https://dagger.io/) pipelines.
 
 ## What is the Dagger TypeScript SDK?
 
-The Dagger TypeScript SDK contains everything you need to develop CI/CD pipelines in TypeScript of Javascript, and run them on any OCI-compatible container runtime.
+The Dagger TypeScript SDK contains everything you need to develop CI/CD pipelines in TypeScript or Javascript, and run them on any OCI-compatible container runtime.
 
 ## Install
 
