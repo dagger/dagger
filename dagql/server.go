@@ -16,7 +16,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
-	"github.com/vito/dagql/idproto"
+	"github.com/dagger/dagger/dagql/idproto"
 )
 
 type AroundFunc func(

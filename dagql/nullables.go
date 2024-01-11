@@ -6,7 +6,7 @@ import (
 	"reflect"
 
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/dagql/idproto"
+	"github.com/dagger/dagger/dagql/idproto"
 )
 
 // Derefable is a type that wraps another type.

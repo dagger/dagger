@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/dagql"
-	"github.com/vito/dagql/ioctx"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/ioctx"
 )
 
 type Pipe struct {
