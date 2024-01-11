@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -11,8 +12,8 @@ type Literate interface {
 	ToLiteral() *Literal
 }
 
-func (arg *Literal) Modules() []*ID {
-	switch v := arg.Value.(type) {
+func (lit *Literal) Modules() []*ID {
+	switch v := lit.Value.(type) {
 	case *Literal_Id:
 		return v.Id.Modules()
 	case *Literal_List:
@@ -29,6 +30,51 @@ func (arg *Literal) Modules() []*ID {
 		return mods
 	default:
 		return nil
+	}
+}
+
+// Canonical returns the literal with any contained IDs canonicalized.
+func (lit *Literal) Canonical() *Literal {
+	switch v := lit.Value.(type) {
+	case *Literal_Id:
+		return &Literal{Value: &Literal_Id{Id: v.Id.Canonical()}}
+	case *Literal_List:
+		list := make([]*Literal, len(v.List.Values))
+		for i, val := range v.List.Values {
+			list[i] = val.Canonical()
+		}
+		return &Literal{Value: &Literal_List{List: &List{Values: list}}}
+	case *Literal_Object:
+		args := make([]*Argument, len(v.Object.Values))
+		for i, arg := range v.Object.Values {
+			args[i] = arg.Canonical()
+		}
+		return &Literal{Value: &Literal_Object{Object: &Object{Values: args}}}
+	default:
+		return lit
+	}
+}
+
+func (lit *Literal) Tainted() bool {
+	switch v := lit.Value.(type) {
+	case *Literal_Id:
+		return v.Id.IsTainted()
+	case *Literal_List:
+		for _, val := range v.List.Values {
+			if val.Tainted() {
+				return true
+			}
+		}
+		return false
+	case *Literal_Object:
+		for _, arg := range v.Object.Values {
+			if arg.Tainted() {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
 	}
 }
 
@@ -175,4 +221,20 @@ func (lit *Literal) ToAST() *ast.Value {
 	default:
 		panic(fmt.Sprintf("unsupported literal type %T", x))
 	}
+}
+
+func truncate(s string, length int) string {
+	if len(s) <= length {
+		return s
+	}
+
+	if length < 5 {
+		return s[:length]
+	}
+
+	dig := digest.FromString(s)
+	prefixLength := (length - 3) / 2
+	suffixLength := length - 3 - prefixLength
+	abbrev := s[:prefixLength] + "..." + s[len(s)-suffixLength:]
+	return fmt.Sprintf("%s:%d:%s", dig, len(s), abbrev)
 }

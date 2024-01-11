@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func builtinOrTyped(val any) (Typed, error) {
@@ -106,7 +106,7 @@ func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
 }
 
 func builtinOrInput(val any) (Input, error) {
-	switch x := any(val).(type) {
+	switch x := val.(type) {
 	case Input:
 		return x, nil
 	case string:

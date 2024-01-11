@@ -10,21 +10,15 @@ import (
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
-	"github.com/dagger/dagger/dagql/idproto"
+	"golang.org/x/sync/errgroup"
 )
-
-type AroundFunc func(
-	context.Context,
-	Object,
-	*idproto.ID,
-	func(context.Context) (Typed, error),
-) func(context.Context) (Typed, error)
 
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
@@ -43,6 +37,17 @@ type Server struct {
 	// TODO: copy-on-write
 	Cache Cache
 }
+
+// AroundFunc is a function that is called around every non-cached selection.
+//
+// It's a little funny looking. I may have goofed it. This will be cleaned up
+// soon.
+type AroundFunc func(
+	context.Context,
+	Object,
+	*idproto.ID,
+	func(context.Context) (Typed, error),
+) func(context.Context) (Typed, error)
 
 // Cache stores results of pure selections against Server.
 type Cache interface {
@@ -458,14 +463,22 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
-	var out []T
-	for _, id := range ids {
-		// TODO(vito): parallelize, in case these IDs haven't been seen before
-		val, err := id.Load(ctx, srv)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, val.Self)
+	out := make([]T, len(ids))
+	eg := new(errgroup.Group)
+	for i, id := range ids {
+		i := i
+		id := id
+		eg.Go(func() error {
+			val, err := id.Load(ctx, srv)
+			if err != nil {
+				return err
+			}
+			out[i] = val.Self
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

@@ -13,12 +13,12 @@ import (
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
+	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
 	"gotest.tools/v3/golden"
@@ -36,7 +36,6 @@ func init() {
 }
 
 type Query struct {
-	dagql.Objectable
 }
 
 func (Query) Type() *ast.Type {
@@ -64,11 +63,11 @@ func TestBasic(t *testing.T) {
 			X         int
 			Y         int
 			ShiftLeft struct {
-				Id        string
+				ID        string
 				Ecks      int
 				Why       int
 				Neighbors []struct {
-					Id string
+					ID string
 					X  int
 					Y  int
 				}
@@ -113,18 +112,14 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 7, res.Point.Y)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Ecks)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Why)
-	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.Id)
-	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[0].Id)
+	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.ID)
 	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
 	assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[0].X)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Neighbors[0].Y)
-	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[1].Id)
 	assert.Equal(t, 6, res.Point.ShiftLeft.Neighbors[1].X)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Neighbors[1].Y)
-	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[2].Id)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Neighbors[2].X)
 	assert.Equal(t, 6, res.Point.ShiftLeft.Neighbors[2].Y)
-	// assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[3].Id)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Neighbors[3].X)
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
 }
@@ -204,7 +199,7 @@ func TestNullableResults(t *testing.T) {
 	t.Run("nullable objects", func(t *testing.T) {
 		var getPoint struct {
 			Point struct {
-				Id string
+				ID string
 			}
 		}
 		req(t, gql, `query {
@@ -217,7 +212,7 @@ func TestNullableResults(t *testing.T) {
 			NotPresent *points.Point
 		}
 		req(t, gql, `query {
-			present: nullablePoint(point: "`+getPoint.Point.Id+`") {
+			present: nullablePoint(point: "`+getPoint.Point.ID+`") {
 				x
 				y
 			}
@@ -262,7 +257,7 @@ func TestNullableResults(t *testing.T) {
 		var getPoints struct {
 			Point struct {
 				Neighbors []struct {
-					Id string
+					ID string
 				}
 			}
 		}
@@ -275,7 +270,7 @@ func TestNullableResults(t *testing.T) {
 		}`, &getPoints)
 		ids := []*string{}
 		for _, neighbor := range getPoints.Point.Neighbors {
-			id := neighbor.Id
+			id := neighbor.ID
 			ids = append(ids, &id)
 			ids = append(ids, nil)
 		}
@@ -283,7 +278,7 @@ func TestNullableResults(t *testing.T) {
 		assert.NilError(t, err)
 		var res struct {
 			ArrayOfNullablePoints []*struct {
-				Id string
+				ID string
 				X  int
 				Y  int
 			}
@@ -325,7 +320,7 @@ func TestNullableResults(t *testing.T) {
 					Loaded points.Point
 				}
 				req(t, gql, `query {
-					loaded: loadPointFromID(id: "`+point.Id+`") {
+					loaded: loadPointFromID(id: "`+point.ID+`") {
 						x
 						y
 					}
@@ -353,15 +348,15 @@ func TestLoadingFromID(t *testing.T) {
 			X         int
 			Y         int
 			ShiftLeft struct {
-				Id        string
+				ID        string
 				Ecks      int
 				Why       int
 				Neighbors []struct {
-					Id        string
+					ID        string
 					X         int
 					Y         int
 					Neighbors []struct {
-						Id string
+						ID string
 						X  int
 						Y  int
 					}
@@ -394,20 +389,20 @@ func TestLoadingFromID(t *testing.T) {
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
 			LoadPointFromID struct {
-				Id string
+				ID string
 				X  int
 				Y  int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+neighbor.Id+`") {
+			loadPointFromID(id: "`+neighbor.ID+`") {
 				id
 				x
 				y
 			}
 		}`, &res)
 
-		assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
+		assert.Equal(t, neighbor.ID, res.LoadPointFromID.ID)
 		assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
 		assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
 		switch i {
@@ -428,20 +423,20 @@ func TestLoadingFromID(t *testing.T) {
 		for _, neighbor := range neighbor.Neighbors {
 			var res struct {
 				LoadPointFromID struct {
-					Id string
+					ID string
 					X  int
 					Y  int
 				}
 			}
 			req(t, gql, `query {
-				loadPointFromID(id: "`+neighbor.Id+`") {
+				loadPointFromID(id: "`+neighbor.ID+`") {
 					id
 					x
 					y
 				}
 			}`, &res)
 
-			assert.Equal(t, neighbor.Id, res.LoadPointFromID.Id)
+			assert.Equal(t, neighbor.ID, res.LoadPointFromID.ID)
 			assert.Equal(t, neighbor.X, res.LoadPointFromID.X)
 			assert.Equal(t, neighbor.Y, res.LoadPointFromID.Y)
 		}
@@ -457,9 +452,9 @@ func TestIDsReflectQuery(t *testing.T) {
 	var res struct {
 		Point struct {
 			ShiftLeft struct {
-				Id        string
+				ID        string
 				Neighbors []struct {
-					Id string
+					ID string
 				}
 			}
 		}
@@ -492,26 +487,26 @@ func TestIDsReflectQuery(t *testing.T) {
 		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.ShiftLeft.Id, expectedEnc)
+	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
 
 	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
 	for i, neighbor := range res.Point.ShiftLeft.Neighbors {
 		var res struct {
 			LoadPointFromID struct {
-				Id string
+				ID string
 				X  int
 				Y  int
 			}
 		}
 		req(t, gql, `query {
-			loadPointFromID(id: "`+neighbor.Id+`") {
+			loadPointFromID(id: "`+neighbor.ID+`") {
 				id
 				x
 				y
 			}
 		}`, &res)
 
-		eqIDs(t, res.LoadPointFromID.Id, neighbor.Id)
+		eqIDs(t, res.LoadPointFromID.ID, neighbor.ID)
 
 		switch i {
 		case 0:
@@ -557,7 +552,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 	var res struct {
 		Point struct {
 			LoginTag, LoginTagFalse, LoginChain struct {
-				Id string
+				ID string
 			}
 		}
 	}
@@ -593,7 +588,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 
-	eqIDs(t, res.Point.LoginTag.Id, expectedEnc)
+	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 	expectedID = idproto.New().
 		Append(
 			pointT,
@@ -610,7 +605,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 		Append(pointT, "loginChain")
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.LoginChain.Id, expectedEnc)
+	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
 	expectedID = idproto.New().
 		Append(
@@ -633,7 +628,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 		)
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
-	eqIDs(t, res.Point.LoginTagFalse.Id, expectedEnc)
+	eqIDs(t, res.Point.LoginTagFalse.ID, expectedEnc)
 }
 
 func TestEmptyID(t *testing.T) {
@@ -675,7 +670,7 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	var res struct {
 		Point struct {
 			Snitch struct {
-				Id string
+				ID string
 			}
 		}
 	}
@@ -691,20 +686,20 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 
 	var loaded struct {
 		LoadPointFromID struct {
-			Id string
+			ID string
 			X  int
 			Y  int
 		}
 	}
 	req(t, gql, `query {
-		loadPointFromID(id: "`+res.Point.Snitch.Id+`") {
+		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
 			id
 			x
 			y
 		}
 	}`, &loaded)
 
-	assert.Equal(t, loaded.LoadPointFromID.Id, res.Point.Snitch.Id)
+	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
 	assert.Equal(t, loaded.LoadPointFromID.X, 6)
 	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
 
@@ -728,7 +723,7 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	var res struct {
 		Point struct {
 			Snitch struct {
-				Id string
+				ID string
 			}
 		}
 	}
@@ -744,20 +739,20 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 
 	var loaded struct {
 		LoadPointFromID struct {
-			Id string
+			ID string
 			X  int
 			Y  int
 		}
 	}
 	req(t, gql, `query {
-		loadPointFromID(id: "`+res.Point.Snitch.Id+`") {
+		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
 			id
 			x
 			y
 		}
 	}`, &loaded)
 
-	assert.Equal(t, loaded.LoadPointFromID.Id, res.Point.Snitch.Id)
+	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
 	assert.Equal(t, loaded.LoadPointFromID.X, 6)
 	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
 
@@ -772,7 +767,7 @@ func TestPassingObjectsAround(t *testing.T) {
 
 	var res struct {
 		Point struct {
-			Id string
+			ID string
 		}
 	}
 	req(t, gql, `query {
@@ -781,7 +776,7 @@ func TestPassingObjectsAround(t *testing.T) {
 		}
 	}`, &res)
 
-	id67 := res.Point.Id
+	id67 := res.Point.ID
 
 	var res2 struct {
 		Point struct {
@@ -810,7 +805,7 @@ func TestEnums(t *testing.T) {
 	t.Run("outputs", func(t *testing.T) {
 		var res struct {
 			Point struct {
-				Id string
+				ID string
 			}
 		}
 		req(t, gql, `query {
@@ -819,7 +814,7 @@ func TestEnums(t *testing.T) {
 			}
 		}`, &res)
 
-		id67 := res.Point.Id
+		id67 := res.Point.ID
 
 		var res2 struct {
 			Point struct {
@@ -1029,10 +1024,10 @@ func TestInputObjects(t *testing.T) {
 	t.Run("inputs with embedded structs in IDs", func(t *testing.T) {
 		var idRes struct {
 			MyInput struct {
-				Id string
+				ID string
 			}
 			DifferentEmbedded struct {
-				Id string
+				ID string
 			}
 		}
 		req(t, gql, `query {
@@ -1045,9 +1040,9 @@ func TestInputObjects(t *testing.T) {
 		}`, &idRes)
 
 		var id1, id2 idproto.ID
-		err := id1.Decode(idRes.MyInput.Id)
+		err := id1.Decode(idRes.MyInput.ID)
 		assert.NilError(t, err)
-		err = id2.Decode(idRes.DifferentEmbedded.Id)
+		err = id2.Decode(idRes.DifferentEmbedded.ID)
 		assert.NilError(t, err)
 
 		t.Logf("id1: %s", id1.Display())
@@ -1058,7 +1053,7 @@ func TestInputObjects(t *testing.T) {
 			LoadDefaultsFromID values
 		}
 		req(t, gql, `query {
-			loadDefaultsFromID(id: "`+idRes.MyInput.Id+`") {
+			loadDefaultsFromID(id: "`+idRes.MyInput.ID+`") {
 				boolean
 				int
 				string
@@ -1288,7 +1283,7 @@ func TestParallelism(t *testing.T) {
 			Pipe struct {
 				Write struct {
 					Write struct {
-						Id string
+						ID string
 					}
 					Read string
 				}
@@ -1546,11 +1541,4 @@ func debugID(t *testing.T, msgf string, idStr string, args ...any) {
 	err := id.Decode(idStr)
 	assert.NilError(t, err)
 	t.Logf(msgf, append([]any{id.Display()}, args...)...)
-}
-
-func eqID(t *testing.T, idStr string, expected string) {
-	var id idproto.ID
-	err := id.Decode(idStr)
-	assert.NilError(t, err)
-	assert.Equal(t, id.Display(), expected)
 }

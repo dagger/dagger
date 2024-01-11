@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/ioctx"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Pipe struct {
