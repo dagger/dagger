@@ -88,6 +88,8 @@ func (d DynamicArrayOutput) Type() *ast.Type {
 	}
 }
 
+var _ Enumerable = DynamicArrayOutput{}
+
 func (d DynamicArrayOutput) Len() int {
 	return len(d.Values)
 }
@@ -224,4 +226,17 @@ func (d DynamicArrayInput) SetField(val reflect.Value) error {
 		}
 	}
 	return nil
+}
+
+var _ Enumerable = DynamicArrayInput{}
+
+func (d DynamicArrayInput) Len() int {
+	return len(d.Values)
+}
+
+func (d DynamicArrayInput) Nth(i int) (Typed, error) {
+	if i < 1 || i > len(d.Values) {
+		return nil, fmt.Errorf("index %d out of bounds", i)
+	}
+	return d.Values[i-1], nil
 }

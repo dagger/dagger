@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/dagql/idproto"
-	"golang.org/x/exp/slog"
 )
 
 // Class is a class of Object types.

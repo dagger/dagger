@@ -199,6 +199,12 @@ func (n DynamicOptional) SetField(val reflect.Value) error {
 	return nil
 }
 
+var _ Derefable = DynamicOptional{}
+
+func (n DynamicOptional) Deref() (Typed, bool) {
+	return n.Value, n.Valid
+}
+
 func (i DynamicOptional) MarshalJSON() ([]byte, error) {
 	if !i.Valid {
 		return json.Marshal(nil)
