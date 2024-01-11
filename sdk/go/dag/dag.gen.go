@@ -218,6 +218,12 @@ func LoadHostFromID(id dagger.HostID) *dagger.Host {
 	return client.LoadHostFromID(id)
 }
 
+// Load a InputTypeDef from its ID.
+func LoadInputTypeDefFromID(id dagger.InputTypeDefID) *dagger.InputTypeDef {
+	client := initClient()
+	return client.LoadInputTypeDefFromID(id)
+}
+
 // Load a InterfaceTypeDef from its ID.
 func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceTypeDef {
 	client := initClient()

@@ -79,6 +79,11 @@ class HostID(Scalar):
     type Host."""
 
 
+class InputTypeDefID(Scalar):
+    """The `InputTypeDefID` scalar type represents an identifier for an
+    object of type InputTypeDef."""
+
+
 class InterfaceTypeDefID(Scalar):
     """The `InterfaceTypeDefID` scalar type represents an identifier for
     an object of type InterfaceTypeDef."""
@@ -200,6 +205,9 @@ class TypeDefKind(Enum):
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
+
+    INPUT_KIND = "INPUT_KIND"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
@@ -3482,6 +3490,69 @@ class Host(Type):
         return Socket(_ctx)
 
 
+class InputTypeDef(Type):
+    """A graphql input type, which is essentially just a group of named
+    args. This is currently only used to represent pre-existing usage of
+    graphql input types in the core API. It is not used by user modules
+    and shouldn't ever be as user module accept input objects via their id
+    rather than graphql input types."""
+
+    @typecheck
+    async def fields(self) -> list[FieldTypeDef]:
+        _args: list[Arg] = []
+        _ctx = self._select("fields", _args)
+        _ctx = FieldTypeDef(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[FieldTypeDef])
+
+    @typecheck
+    async def id(self) -> InputTypeDefID:
+        """A unique identifier for this InputTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        InputTypeDefID
+            The `InputTypeDefID` scalar type represents an identifier for an
+            object of type InputTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(InputTypeDefID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
 class InterfaceTypeDef(Type):
     """A definition of a custom interface defined in a Module."""
 
@@ -4771,6 +4842,15 @@ class Client(Root):
         return Host(_ctx)
 
     @typecheck
+    def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
+        """Load a InputTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadInputTypeDefFromID", _args)
+        return InputTypeDef(_ctx)
+
+    @typecheck
     def load_interface_type_def_from_id(
         self, id: InterfaceTypeDefID
     ) -> InterfaceTypeDef:
@@ -5282,6 +5362,12 @@ class TypeDef(Type):
     _optional: bool | None
 
     @typecheck
+    def as_input(self) -> InputTypeDef:
+        _args: list[Arg] = []
+        _ctx = self._select("asInput", _args)
+        return InputTypeDef(_ctx)
+
+    @typecheck
     def as_interface(self) -> InterfaceTypeDef:
         _args: list[Arg] = []
         _ctx = self._select("asInterface", _args)
@@ -5523,6 +5609,8 @@ __all__ = [
     "HostID",
     "ImageLayerCompression",
     "ImageMediaTypes",
+    "InputTypeDef",
+    "InputTypeDefID",
     "InterfaceTypeDef",
     "InterfaceTypeDefID",
     "JSON",

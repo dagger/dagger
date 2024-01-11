@@ -210,6 +210,9 @@ type GitRepositoryID string
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
+// The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+type InputTypeDefID string
+
 // The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
 type InterfaceTypeDefID string
 
@@ -3315,6 +3318,103 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// A graphql input type, which is essentially just a group of named args.
+// This is currently only used to represent pre-existing usage of graphql input types
+// in the core API. It is not used by user modules and shouldn't ever be as user
+// module accept input objects via their id rather than graphql input types.
+type InputTypeDef struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id   *InputTypeDefID
+	name *string
+}
+
+func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
+	q := r.q.Select("fields")
+
+	q = q.Select("id")
+
+	type fields struct {
+		Id FieldTypeDefID
+	}
+
+	convert := func(fields []fields) []FieldTypeDef {
+		out := []FieldTypeDef{}
+
+		for i := range fields {
+			val := FieldTypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []fields
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this InputTypeDef.
+func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response InputTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *InputTypeDef) XXX_GraphQLType() string {
+	return "InputTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *InputTypeDef) XXX_GraphQLIDType() string {
+	return "InputTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *InputTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *InputTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A definition of a custom interface defined in a Module.
 type InterfaceTypeDef struct {
 	q *querybuilder.Selection
@@ -4668,6 +4768,17 @@ func (r *Client) LoadHostFromID(id HostID) *Host {
 	}
 }
 
+// Load a InputTypeDef from its ID.
+func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
+	q := r.q.Select("loadInputTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &InputTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a InterfaceTypeDef from its ID.
 func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
 	q := r.q.Select("loadInterfaceTypeDefFromID")
@@ -5250,6 +5361,15 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 	return f(r)
 }
 
+func (r *TypeDef) AsInput() *InputTypeDef {
+	q := r.q.Select("asInput")
+
+	return &InputTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
 func (r *TypeDef) AsInterface() *InterfaceTypeDef {
 	q := r.q.Select("asInterface")
 
@@ -5526,6 +5646,9 @@ func (TypeDefKind) IsEnum() {}
 const (
 	// A boolean value.
 	BooleanKind TypeDefKind = "BOOLEAN_KIND"
+
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	InputKind TypeDefKind = "INPUT_KIND"
 
 	// An integer value.
 	IntegerKind TypeDefKind = "INTEGER_KIND"

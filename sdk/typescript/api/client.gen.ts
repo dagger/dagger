@@ -665,6 +665,11 @@ export enum ImageMediaTypes {
   Ocimediatypes = "OCIMediaTypes",
 }
 /**
+ * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+ */
+export type InputTypeDefID = string & { __InputTypeDefID: never }
+
+/**
  * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
  */
 export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
@@ -882,6 +887,11 @@ export enum TypeDefKind {
    * A boolean value.
    */
   BooleanKind = "BOOLEAN_KIND",
+
+  /**
+   * A graphql input type, used only when representing the core API via TypeDefs.
+   */
+  InputKind = "INPUT_KIND",
 
   /**
    * An integer value.
@@ -4212,6 +4222,103 @@ export class Host extends BaseClient {
 }
 
 /**
+ * A graphql input type, which is essentially just a group of named args.
+ * This is currently only used to represent pre-existing usage of graphql input types
+ * in the core API. It is not used by user modules and shouldn't ever be as user
+ * module accept input objects via their id rather than graphql input types.
+ */
+export class InputTypeDef extends BaseClient {
+  private readonly _id?: InputTypeDefID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: InputTypeDefID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this InputTypeDef.
+   */
+  id = async (): Promise<InputTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<InputTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+  fields = async (): Promise<FieldTypeDef[]> => {
+    type fields = {
+      id: FieldTypeDefID
+    }
+
+    const response: Awaited<fields[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "fields",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new FieldTypeDef(
+          {
+            queryTree: [
+              {
+                operation: "loadFieldTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+/**
  * A definition of a custom interface defined in a Module.
  */
 export class InterfaceTypeDef extends BaseClient {
@@ -5796,6 +5903,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a InputTypeDef from its ID.
+   */
+  loadInputTypeDefFromID = (id: InputTypeDefID): InputTypeDef => {
+    return new InputTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadInputTypeDefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a InterfaceTypeDef from its ID.
    */
   loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
@@ -6504,6 +6627,17 @@ export class TypeDef extends BaseClient {
     )
 
     return response
+  }
+  asInput = (): InputTypeDef => {
+    return new InputTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asInput",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
   asInterface = (): InterfaceTypeDef => {
     return new InterfaceTypeDef({

@@ -431,6 +431,17 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 		// TODO: default to JSON?
 		return nil, fmt.Errorf("unsupported object type %q for flag: %s", objName, name)
 
+	case dagger.InputKind:
+		inputName := r.TypeDef.AsInput.Name
+
+		if val := GetCustomFlagValue(inputName); val != nil {
+			flags.Var(val, name, usage)
+			return val, nil
+		}
+
+		// TODO: default to JSON?
+		return nil, fmt.Errorf("unsupported input type %q for flag: %s", inputName, name)
+
 	case dagger.ListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
 
@@ -457,6 +468,17 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 
 			// TODO: default to JSON?
 			return nil, fmt.Errorf("unsupported list of objects %q for flag: %s", objName, name)
+
+		case dagger.InputKind:
+			inputName := elementType.AsInput.Name
+
+			if val := GetCustomFlagValue(inputName); val != nil {
+				flags.Var(val, name, usage)
+				return val, nil
+			}
+
+			// TODO: default to JSON?
+			return nil, fmt.Errorf("unsupported list of input type %q for flag: %s", inputName, name)
 
 		case dagger.ListKind:
 			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)

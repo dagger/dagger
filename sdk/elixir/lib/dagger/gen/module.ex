@@ -84,7 +84,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
+          "asInput asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -118,7 +118,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
+          "asInput asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
