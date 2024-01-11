@@ -44,8 +44,7 @@ func (m *MyModule) Publish(ctx context.Context) (string, error) {
 
 // create a service from the production image
 func (m *MyModule) PackageService() *Service {
-	return m.Package().
-		AsService()
+	return m.Package().AsService()
 }
 
 // build a base image
