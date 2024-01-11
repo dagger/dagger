@@ -50,8 +50,8 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
 
 - In `docs/` sub-directory:
-  -  Replace `/img` paths with `/0.1/img` paths
-- Run `npm run build:withoutAuth` and store the `build/`` directory as `site/0.1`
+  - Replace `/img` paths with `/0.1/img` paths
+- Run `npm run build:withoutAuth` and store the `build/` directory as `site/0.1`
 
 ## Build 0.2 sub-site
 
