@@ -4,10 +4,10 @@ import (
 	"context"
 )
 
-type Mymodule struct{}
+type MyModule struct{}
 
 // say hello
-func (m *Mymodule) Hello(ctx context.Context) string {
+func (m *MyModule) HelloFromDagger(ctx context.Context) string {
 	version, err := dag.Container().From("node:18-slim").WithExec([]string{"node", "-v"}).Stdout(ctx)
 	if err != nil {
 		panic(err)
@@ -16,21 +16,21 @@ func (m *Mymodule) Hello(ctx context.Context) string {
 }
 
 // run unit tests
-func (m *Mymodule) Test(ctx context.Context) (string, error) {
+func (m *MyModule) Test(ctx context.Context) (string, error) {
 	return m.buildBaseImage().
 		Run([]string{"run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 
 // create a production build
-func (m *Mymodule) Build() *Directory {
+func (m *MyModule) Build() *Directory {
 	return m.buildBaseImage().
 		Build().
 		Container().
 		Directory("./dist")
 }
 
-func (m *Mymodule) buildBaseImage() *Node {
+func (m *MyModule) buildBaseImage() *Node {
 	return dag.Node().
 		WithVersion("18").
 		WithNpm().

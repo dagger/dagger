@@ -4,10 +4,10 @@ import (
 	"context"
 )
 
-type Mymodule struct{}
+type MyModule struct{}
 
 // say hello
-func (m *Mymodule) Hello(ctx context.Context) string {
+func (m *MyModule) HelloFromDagger(ctx context.Context) string {
 	version, err := dag.Container().From("node:18-slim").WithExec([]string{"node", "-v"}).Stdout(ctx)
 	if err != nil {
 		panic(err)
@@ -16,14 +16,14 @@ func (m *Mymodule) Hello(ctx context.Context) string {
 }
 
 // run unit tests
-func (m *Mymodule) Test(ctx context.Context) (string, error) {
+func (m *MyModule) Test(ctx context.Context) (string, error) {
 	return m.buildBaseImage().
 		Run([]string{"run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 
 // create a production build
-func (m *Mymodule) Build() *Directory {
+func (m *MyModule) Build() *Directory {
 	return m.buildBaseImage().
 		Build().
 		Container().
@@ -31,25 +31,25 @@ func (m *Mymodule) Build() *Directory {
 }
 
 // create a production image
-func (m *Mymodule) Package() *Container {
+func (m *MyModule) Package() *Container {
 	return dag.Container().From("nginx:1.23-alpine").
 		WithDirectory("/usr/share/nginx/html", m.Build()).
 		WithExposedPort(80)
 }
 
 // publish an image
-func (m *Mymodule) Publish(ctx context.Context) (string, error) {
+func (m *MyModule) Publish(ctx context.Context) (string, error) {
 	return dag.Ttlsh().Publish(ctx, m.Package())
 }
 
 // create a service from the production image
-func (m *Mymodule) PackageService() *Service {
+func (m *MyModule) PackageService() *Service {
 	return m.Package().
 		AsService()
 }
 
 // build a base image
-func (m *Mymodule) buildBaseImage() *Node {
+func (m *MyModule) buildBaseImage() *Node {
 	return dag.Node().
 		WithVersion("18").
 		WithNpm().

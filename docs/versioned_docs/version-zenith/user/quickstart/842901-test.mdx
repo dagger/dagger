@@ -23,7 +23,7 @@ The [Daggerverse](https://daggerverse.dev) is an online catalog of Dagger module
 Begin by adding the `node` module as a dependency:
 
 ```shell
-dagger mod install github.com/quartz-technology/daggerverse/node
+dagger mod install github.com/quartz-technology/daggerverse/node/go
 ```
 
 Then, add a new `Test()` function to `main.go`, which runs the application's unit test suite:
@@ -35,7 +35,12 @@ This function does the following:
 
 - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
 - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
-- It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules. The `dag.Host().Directory()` method queries the host environment and returns a reference to the application source code directory on the host after excluding the `.git` and `node_modules` sub-directories.
+- It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules. The `dag.Host().Directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+
+  :::note
+  It is important to note that the `dag.Host().Directory()` method does not read from the CLI caller's filesystem, but from the module container's filesystem. When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In the context of this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.Host().Directory()`.
+  :::
+
 - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
 - It calls the module's `Node.Run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
 - It uses the `Container.Stdout()` function to return the output stream of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
@@ -49,23 +54,21 @@ dagger call test
 Here's an example of the output you will see:
 
 ```shell
-✔ dagger call test [1m20.7s]
+✔ dagger call test [1m14.2s]
 ┃
-┃ > test1@0.0.0 test:unit
+┃ > hello-dagger@0.0.0 test:unit
 ┃ > vitest run
 ┃
+┃  RUN  v1.1.0 /src
 ┃
-┃  RUN  v1.0.4 /src
-┃
-┃  ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 149ms
+┃  ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 65ms
 ┃
 ┃  Test Files  1 passed (1)
 ┃       Tests  1 passed (1)
-┃    Start at  20:01:59
-┃    Duration  9.59s (transform 859ms, setup 0ms, collect 1.16s, tests 149ms, environment 5.35s, prepare 1.
-┃ 06s)
-• Engine: 378cfbb9549c (version v0.9.3)
-⧗ 2m8.0s ✔ 107 ∅ 13
+┃    Start at  15:46:12
+┃    Duration  8.85s (transform 751ms, setup 0ms, collect 1.04s, tests 65ms, environment 4.51s, prepare 1.19s)
+• Engine: 148c9e82df08 (version v0.9.5)
+⧗ 1m56.9s ✔ 104 ∅ 9
 ```
 
 :::tip

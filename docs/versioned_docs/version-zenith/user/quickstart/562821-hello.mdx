@@ -19,17 +19,17 @@ Begin by running `dagger mod init` in your application directory to bootstrap a 
 
 ```shell
 cd hello-dagger
-dagger mod init --name=mymodule --sdk=go
+dagger mod init --name=my-module --sdk=go
 ```
 
-This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `internal` folder for the generated module code.
+This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
 
 Update the generated `main.go` file with the following code:
 
 ```go file=snippets/hello/main.go
 ```
 
-This module defines a function named `Hello()` which returns a string. This function performs the following operations:
+This module defines a function named `HelloFromDagger()` which returns a string. This function performs the following operations:
 
 - It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is `node:18-slim`. This method returns a `Container` initialized from that base image.
 - It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `WithExec()` method returns an updated Container with the results of command execution.
@@ -43,7 +43,7 @@ This module defines a function named `Hello()` which returns a string. This func
 Call the new function using the Dagger CLI:
 
 ```shell
-dagger call hello
+dagger call hello-from-dagger
 ```
 
 :::info
