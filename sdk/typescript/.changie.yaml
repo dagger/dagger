@@ -3,7 +3,7 @@ unreleasedDir: unreleased
 headerPath: header.tpl.md
 changelogPath: CHANGELOG.md
 versionExt: md
-versionFormat: '## sdk/nodejs/{{.Version}} - {{.Time.Format "2006-01-02"}}'
+versionFormat: '## sdk/typescript/{{.Version}} - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
 changeFormat: '- {{.Body}} by @{{.Custom.Author}} in https://github.com/dagger/dagger/pull/{{.Custom.PR}}'
 custom:

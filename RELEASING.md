@@ -310,7 +310,7 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
 ```console
 cd sdk/typescript && export TYPESCRIPT_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${NODEJS_SDK_VERSION}
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${TYPESCRIPT_SDK_VERSION}
 ```
 
 This will trigger the [`Publish TypeScript SDK`

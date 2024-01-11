@@ -1,0 +1,6 @@
+kind: Added
+body: Rename Node.js SDK to TypeScript SDK
+time: 2024-01-11T14:01:58.204679+01:00
+custom:
+  Author: TomChv
+  PR: "6381"
