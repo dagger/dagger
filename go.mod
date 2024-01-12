@@ -6,7 +6,7 @@ replace dagger.io/dagger => ./sdk/go
 
 require (
 	dagger.io/dagger v0.9.5
-	github.com/99designs/gqlgen v0.17.34 // indirect
+	github.com/99designs/gqlgen v0.17.41
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
@@ -82,11 +82,13 @@ require (
 	github.com/rs/cors v1.10.0
 	github.com/rs/zerolog v1.30.0
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
+	github.com/sourcegraph/conc v0.3.0
 	github.com/vito/midterm v0.1.4
 	github.com/vito/progrock v0.10.2-0.20230913234310-64b4a1cfb007
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/oauth2 v0.15.0
 	golang.org/x/tools v0.15.0
+	gotest.tools/v3 v3.5.1
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
 
@@ -166,6 +168,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.3 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
@@ -180,6 +183,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mazznoer/csscolorparser v0.1.3 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/sys/user v0.1.0 // indirect
@@ -194,6 +198,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/skeema/knownhosts v1.2.1 // indirect
+	github.com/sosodev/duration v1.1.0 // indirect
 	github.com/spdx/tools-golang v0.5.1 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -264,7 +269,7 @@ require (
 	github.com/tidwall/gjson v1.17.0
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/vbatts/tar-split v0.11.5 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.6
+	github.com/vektah/gqlparser/v2 v2.5.10
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.19.0
 	golang.org/x/text v0.14.0
