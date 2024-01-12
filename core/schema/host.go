@@ -35,7 +35,7 @@ func (s *hostSchema) Install() {
 				Digest:    digest.Digest(args.Digest),
 				Size:      args.Size,
 				Annotations: map[string]string{
-					labels.LabelUncompressed: args.Uncompressed, // TODO ???
+					labels.LabelUncompressed: args.Uncompressed, // uncompressed label is required to be set by buildkit's GetByBlob implementation
 				},
 			}).Marshal(ctx)
 			if err != nil {
