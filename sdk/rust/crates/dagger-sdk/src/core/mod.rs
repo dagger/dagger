@@ -1,4 +1,4 @@
-pub const DAGGER_ENGINE_VERSION: &'static str = "0.9.5";
+pub const DAGGER_ENGINE_VERSION: &'static str = "0.9.6";
 
 pub mod cli_session;
 pub mod config;
