@@ -13,10 +13,10 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/dagger/dagger/dagql"
 )
 
 type containerSchema struct {
@@ -328,7 +328,7 @@ func (s *containerSchema) Install() {
 		dagql.Func("platform", s.platform).
 			Doc(`The platform this container executes and publishes as.`),
 
-		dagql.Func("export", s.export).
+		dagql.Func("export", s.export).Impure().
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
 				`Return true on success.`,
 				`It can also export platform variants.`).
