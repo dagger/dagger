@@ -30,12 +30,22 @@ func (s *hostSchema) Install() {
 			MediaType    string `doc:"Media type of the blob"`
 			Uncompressed string `doc:"Digest of the uncompressed blob"`
 		}) (*core.Directory, error) {
+			dig, err := digest.Parse(args.Digest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse digest: %s", err)
+			}
+			uncompressedDig, err := digest.Parse(args.Uncompressed)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse digest: %s", err)
+			}
 			blobDef, err := blob.LLB(specs.Descriptor{
 				MediaType: args.MediaType,
-				Digest:    digest.Digest(args.Digest),
+				Digest:    dig,
 				Size:      args.Size,
 				Annotations: map[string]string{
-					labels.LabelUncompressed: args.Uncompressed, // uncompressed label is required to be set by buildkit's GetByBlob implementation
+					// uncompressed label is required to be set by buildkit's GetByBlob
+					// implementation
+					labels.LabelUncompressed: uncompressedDig.String(),
 				},
 			}).Marshal(ctx)
 			if err != nil {
