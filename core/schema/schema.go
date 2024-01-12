@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/tracing"
@@ -22,7 +23,6 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/dagger/dagger/dagql"
 )
 
 type InitializeArgs struct {

@@ -7,9 +7,9 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/tracing"
 )
 
 const (

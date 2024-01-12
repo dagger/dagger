@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type ModuleObjectType struct {

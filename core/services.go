@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
-	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )

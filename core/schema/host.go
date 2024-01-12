@@ -7,10 +7,10 @@ import (
 
 	"github.com/containerd/containerd/labels"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/dagger/dagger/dagql"
 )
 
 type hostSchema struct {

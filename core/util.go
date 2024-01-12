@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/reffs"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
@@ -20,7 +21,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runc/libcontainer/user"
 	"github.com/pkg/errors"
-	"github.com/dagger/dagger/dagql"
 )
 
 type HasPBDefinitions interface {

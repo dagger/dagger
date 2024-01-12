@@ -10,13 +10,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/engine"
 	"github.com/gorilla/websocket"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/dagger/dagger/dagql/idproto"
 	"golang.org/x/sync/errgroup"
 )
 

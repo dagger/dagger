@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/iancoleman/strcase"
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/iancoleman/strcase"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Function struct {

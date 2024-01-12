@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"github.com/dagger/dagger/dagql/idproto"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -16,7 +17,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/dagger/dagger/dagql/idproto"
 	"golang.org/x/sync/errgroup"
 )
 

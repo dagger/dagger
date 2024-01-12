@@ -3,8 +3,8 @@ package schema
 import (
 	"context"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
 type Evaluatable interface {

@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pkg/errors"
-	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/pkg/errors"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // CacheVolume is a persistent volume with a globally scoped identifier.

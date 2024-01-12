@@ -6,9 +6,9 @@ import (
 	"io"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
-	"github.com/dagger/dagger/dagql/idproto"
 )
 
 func TestSecretEnvFromFile(t *testing.T) {

@@ -19,6 +19,8 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -30,8 +32,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
