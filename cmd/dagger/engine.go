@@ -9,6 +9,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tui"
@@ -166,7 +167,7 @@ func inlineTUI(
 	tape.RevealErrored(revealErrored)
 
 	if os.Getenv("IDS") != "" {
-		tape.RenderIDs(true)
+		tape.SetFrontend(idtui.New())
 	}
 
 	if debug {

@@ -81,7 +81,7 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/sourcegraph/conc v0.3.0
 	github.com/vito/midterm v0.1.4
-	github.com/vito/progrock v0.10.2-0.20240101100611-2d9fa8bf30ad
+	github.com/vito/progrock v0.10.2-0.20240112170756-062394b3e4ae
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/oauth2 v0.15.0
 	golang.org/x/tools v0.15.0
@@ -193,6 +193,9 @@ require (
 	github.com/prometheus/common v0.44.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/samber/lo v1.38.1 // indirect
+	github.com/samber/slog-common v0.14.0 // indirect
+	github.com/samber/slog-logrus/v2 v2.2.0 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/skeema/knownhosts v1.2.1 // indirect
 	github.com/sosodev/duration v1.1.0 // indirect
@@ -275,7 +278,3 @@ require (
 	google.golang.org/protobuf v1.31.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-// replace github.com/vito/progrock => ./progrock
-
-// replace github.com/vito/dagql => ./dagql
