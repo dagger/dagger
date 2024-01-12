@@ -64,6 +64,7 @@ import (
 	"github.com/moby/buildkit/worker"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -261,19 +262,20 @@ func main() { //nolint:gocyclo
 		}
 
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
-		slogOpts := &slog.HandlerOptions{
-			// AddSource causes the handler to compute the source code position of the
-			// log statement and add a SourceKey attribute to the output.
+
+		// Wire slog up to send to Logrus so engine logs using slog also get sent
+		// to Cloud
+		slogOpts := sloglogrus.Option{
 			AddSource: true,
 		}
 		if cfg.Debug {
 			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
 		}
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, slogOpts)))
 		if cfg.Trace {
 			logrus.SetLevel(logrus.TraceLevel)
 		}
+		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
 		if cfg.GRPC.DebugAddress != "" {
 			if err := setupDebugHandlers(cfg.GRPC.DebugAddress); err != nil {
