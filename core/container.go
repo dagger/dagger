@@ -333,10 +333,8 @@ func (container *Container) Build(
 ) (*Container, error) {
 	container = container.Clone()
 
-	container.Services = cloneSlice(container.Services)
 	container.Services.Merge(contextDir.Services)
 
-	container.Secrets = cloneSlice(container.Secrets)
 	for _, secret := range secrets {
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
