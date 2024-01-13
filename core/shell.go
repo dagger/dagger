@@ -15,14 +15,16 @@ import (
 	"github.com/gorilla/websocket"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"golang.org/x/sync/errgroup"
 )
 
 func (container *Container) ShellEndpoint(svcID *idproto.ID) (string, http.Handler, error) {
-	shellID := identity.NewID()
-	endpoint := "shells/" + shellID
+	shellID, err := svcID.Digest()
+	if err != nil {
+		return "", nil, err
+	}
+	endpoint := "shells/" + shellID.Encoded()
 	return endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
 		if err != nil {

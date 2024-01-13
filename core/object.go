@@ -208,7 +208,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Name: gqlFieldName(mod.Name()),
 				// Description: "TODO", // XXX(vito)
 				Type:   obj,
-				Pure:   true,
 				Module: obj.Module.InstanceID,
 			},
 			func(ctx context.Context, self dagql.Object, _ map[string]dagql.Input) (dagql.Typed, error) {
@@ -242,7 +241,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 
 	spec.Name = gqlFieldName(mod.Name())
-	spec.Pure = true
+	spec.ImpurityReason = "Module functions are currently always impure."
 	spec.Module = obj.Module.InstanceID
 
 	dag.Root().ObjectType().Extend(
@@ -292,7 +291,6 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			Name:        field.Name,
 			Description: field.Description,
 			Type:        field.TypeDef.ToTyped(),
-			Pure:        true,
 			Module:      mod.InstanceID,
 		},
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input) (dagql.Typed, error) {

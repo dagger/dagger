@@ -26,9 +26,11 @@ func (s *serviceSchema) Install() {
 			Doc(`Retrieves a hostname which can be used by clients to reach this container.`),
 
 		dagql.NodeFunc("ports", s.ports).
+			Impure("A tunnel service's ports can change each time it is restarted.").
 			Doc(`Retrieves the list of ports provided by the service.`),
 
 		dagql.NodeFunc("endpoint", s.endpoint).
+			Impure("A tunnel service's endpoint can change if tunnel service is restarted.").
 			Doc(`Retrieves an endpoint that clients can use to reach this container.`,
 				`If no port is specified, the first exposed port is used. If none exist an error is returned.`,
 				`If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.`).
@@ -36,12 +38,12 @@ func (s *serviceSchema) Install() {
 			ArgDoc("scheme", `Return a URL with the given scheme, eg. http for http://`),
 
 		dagql.NodeFunc("start", s.start).
-			Impure().
+			Impure("Imperatively mutates runtime state.").
 			Doc(`Start the service and wait for its health checks to succeed.`,
 				`Services bound to a Container do not need to be manually started.`),
 
 		dagql.NodeFunc("stop", s.stop).
-			Impure().
+			Impure("Imperatively mutates runtime state.").
 			Doc(`Stop the service.`),
 	}.Install(s.srv)
 }

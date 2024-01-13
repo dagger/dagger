@@ -301,7 +301,8 @@ func (s *containerSchema) Install() {
 			Doc(`The error stream of the last executed command.`,
 				`Will execute default command if none is set, or error if there's no default.`),
 
-		dagql.Func("publish", s.publish).Impure().
+		dagql.Func("publish", s.publish).
+			Impure("Writes to the specified Docker registry.").
 			Doc(`Publishes this container as a new image to the specified address.`,
 				`Publish returns a fully qualified ref.`,
 				`It can also publish platform variants.`).
@@ -328,7 +329,8 @@ func (s *containerSchema) Install() {
 		dagql.Func("platform", s.platform).
 			Doc(`The platform this container executes and publishes as.`),
 
-		dagql.Func("export", s.export).Impure().
+		dagql.Func("export", s.export).
+			Impure("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
 				`Return true on success.`,
 				`It can also export platform variants.`).
@@ -424,7 +426,7 @@ func (s *containerSchema) Install() {
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
 				`This is the initial state of all containers.`),
 
-		dagql.NodeFunc("shellEndpoint", s.shellEndpoint).Impure().
+		dagql.NodeFunc("shellEndpoint", s.shellEndpoint).
 			Doc(`Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.`,
 				`Primarily intended for internal use with the dagger CLI.`),
 

@@ -57,14 +57,20 @@ func (s *hostSchema) Install() {
 
 	dagql.Fields[*core.Host]{
 		dagql.Func("directory", s.directory).
-			Impure().
+			Impure("The `directory` field loads data from the local machine.",
+				`Despite being impure, this field returns a pure Directory object. It
+				does this by uploading the requested path to the internal content store
+				and returning a content-addressed Directory using the `+"`blob()` API.").
 			Doc(`Accesses a directory on the host.`).
 			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 
 		dagql.Func("file", s.file).
-			Impure().
+			Impure("The `field` field loads data from the local machine.",
+				`Despite being impure, this field returns a pure File object. It does
+				this by uploading the requested path to the internal content store and
+				returning a content-addressed File using from the `+"`blob()` API.").
 			Doc(`Accesses a file on the host.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
@@ -96,8 +102,11 @@ func (s *hostSchema) Install() {
 				`An empty set of ports is not valid; an error will be returned.`).
 			ArgDoc("host", `Upstream host to forward traffic to.`),
 
-		dagql.Func("setSecretFile", s.setSecretFile).Impure().
-			Doc(`Sets a secret given a user-defined name and the file path on the host, and returns the secret.`,
+		dagql.Func("setSecretFile", s.setSecretFile).
+			Impure("`setSecretFile` reads its value from the local machine.").
+			Doc(
+				`Sets a secret given a user-defined name and the file path on the host,
+				and returns the secret.`,
 				`The file is limited to a size of 512000 bytes.`).
 			ArgDoc("name", `The user defined name for this secret.`).
 			ArgDoc("path", `Location of the file to set as a secret.`),

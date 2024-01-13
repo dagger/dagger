@@ -2,7 +2,13 @@
 Indicates that a field may resolve to different values when called repeatedly
 with the same inputs, or that the field has side effects. Impure fields are never cached.
 """
-directive @impure on FIELD_DEFINITION
+directive @impure(
+  """
+  Explains why this element is impure, i.e. whether it performs side effects or
+  yield a different result with the same arguments.
+  """
+  reason: String!
+) on FIELD_DEFINITION
 
 """
 Indicates that a field's selection can be removed from any query without

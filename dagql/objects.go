@@ -54,7 +54,6 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
-					Pure:        true,
 				},
 				Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 					return NewDynamicID[T](self.ID(), opts.Typed), nil
@@ -342,7 +341,6 @@ func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, s
 			Name: name,
 			Args: inputs,
 			Type: ret,
-			Pure: true, // default to pure
 		},
 		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input) (Typed, error) {
 			if argsErr != nil {
@@ -375,10 +373,9 @@ type FieldSpec struct {
 	Type Typed
 	// Meta indicates that the field has no impact on the field's result.
 	Meta bool
-	// Pure indicates that the field is a pure function of its arguments, and
-	// thus can be cached indefinitely.
-	Pure bool
-	// DeprecatedReason deprecates the input and provides a reason.
+	// ImpurityReason indicates that the field's result may change over time.
+	ImpurityReason string
+	// DeprecatedReason deprecates the field and provides a reason.
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
 	Module *idproto.ID
@@ -394,8 +391,8 @@ func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
 	if spec.DeprecatedReason != "" {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
 	}
-	if !spec.Pure {
-		def.Directives = append(def.Directives, impure())
+	if spec.ImpurityReason != "" {
+		def.Directives = append(def.Directives, impure(spec.ImpurityReason))
 	}
 	if spec.Meta {
 		def.Directives = append(def.Directives, meta())
@@ -503,7 +500,6 @@ func (fields Fields[T]) Install(server *Server) {
 			Spec: FieldSpec{
 				Name: name,
 				Type: field.Value,
-				Pure: true,
 			},
 			Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 				t, found, err := getField(self.Self, false, name)
@@ -588,8 +584,8 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 
 // Impure marks the field as "impure", meaning its result may change over time,
 // or it has side effects.
-func (field Field[T]) Impure() Field[T] {
-	field.Spec.Pure = false
+func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
+	field.Spec.ImpurityReason = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 
@@ -597,12 +593,6 @@ func (field Field[T]) Impure() Field[T] {
 // or it has side effects.
 func (field Field[T]) Meta() Field[T] {
 	field.Spec.Meta = true
-	return field
-}
-
-// WithPurity sets the purity of the field.
-func (field Field[T]) WithPurity(purity bool) Field[T] {
-	field.Spec.Pure = purity
 	return field
 }
 

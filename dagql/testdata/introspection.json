@@ -1371,7 +1371,22 @@
         "locations": [
           "FIELD_DEFINITION"
         ],
-        "args": [],
+        "args": [
+          {
+            "name": "reason",
+            "description": "Explains why this element is impure, i.e. whether it performs side effects or yield a different result with the same arguments.",
+            "defaultValue": null,
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": ""
+          }
+        ],
         "isRepeatable": false
       },
       {

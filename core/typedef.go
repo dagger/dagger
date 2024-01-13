@@ -67,10 +67,10 @@ func (fn Function) Clone() *Function {
 
 func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
-		Name:        fn.Name,
-		Description: formatGqlDescription(fn.Description),
-		Type:        fn.ReturnType.ToTyped(),
-		Pure:        false, // TODO
+		Name:           fn.Name,
+		Description:    formatGqlDescription(fn.Description),
+		Type:           fn.ReturnType.ToTyped(),
+		ImpurityReason: "Module functions are currently always impure.", // TODO
 	}
 	for _, arg := range fn.Args {
 		input := arg.TypeDef.ToInput()

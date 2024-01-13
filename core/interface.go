@@ -267,10 +267,10 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// override loadFooFromID to allow any ID that implements this interface
 	dag.Root().ObjectType().Extend(
 		dagql.FieldSpec{
-			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-			Type:        class.Typed(),
-			Pure:        false, // no need to cache this; what if the ID is impure?
+			Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
+			Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+			Type:           class.Typed(),
+			ImpurityReason: "The given ID ultimately determines the purity of its result.",
 			Args: []dagql.InputSpec{
 				{
 					Name: "id",

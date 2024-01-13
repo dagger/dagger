@@ -16,19 +16,20 @@ var _ SchemaResolvers = &secretSchema{}
 func (s *secretSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("setSecret", s.setSecret).
+			Impure("`setSecret` mutates state in the internal secret store.").
 			Doc(`Sets a secret given a user defined name to its plaintext and returns the secret.`,
 				`The plaintext value is limited to a size of 128000 bytes.`).
 			ArgDoc("name", `The user defined name for this secret`).
 			ArgDoc("plaintext", `The plaintext of the secret`).
-			ArgSensitive("plaintext").
-			Impure(),
+			ArgSensitive("plaintext"),
 
 		dagql.Func("secret", s.secret).
 			Doc(`Reference a secret by name.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Secret]{
-		dagql.Func("plaintext", s.plaintext).Impure().
+		dagql.Func("plaintext", s.plaintext).
+			Impure("A secret's `plaintext` value in the internal secret store state can change.").
 			Doc(`The value of this secret.`),
 	}.Install(s.srv)
 }

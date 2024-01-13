@@ -39,15 +39,15 @@ func (s *moduleSchema) Install() {
 			ArgDoc("returnType", `Return type of the function.`),
 
 		dagql.Func("currentModule", s.currentModule).
-			Impure().
+			Impure(`Changes depending on which module is calling it.`).
 			Doc(`The module currently being served in the session, if any.`),
 
 		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			Impure().
+			Impure(`Changes depending on which modules are currently installed.`).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.Func("currentFunctionCall", s.currentFunctionCall).
-			Impure().
+			Impure(`Changes depending on which function calls it.`).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
@@ -67,7 +67,7 @@ func (s *moduleSchema) Install() {
 
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
-			Impure().
+			Impure(`Updates internal engine state with the given value.`).
 			Doc(`Set the return value of the function call to the provided value.`).
 			ArgDoc("value", `JSON serialization of the return value.`),
 	}.Install(s.dag)
@@ -95,7 +95,8 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
 
-		dagql.NodeFunc("serve", s.moduleServe).Impure().
+		dagql.NodeFunc("serve", s.moduleServe).
+			Impure(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`),
 	}.Install(s.dag)
