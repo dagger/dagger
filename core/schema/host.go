@@ -96,7 +96,7 @@ func (s *hostSchema) Install() {
 				`An empty set of ports is not valid; an error will be returned.`).
 			ArgDoc("host", `Upstream host to forward traffic to.`),
 
-		dagql.Func("setSecretFile", s.setSecretFile).
+		dagql.Func("setSecretFile", s.setSecretFile).Impure().
 			Doc(`Sets a secret given a user-defined name and the file path on the host, and returns the secret.`,
 				`The file is limited to a size of 512000 bytes.`).
 			ArgDoc("name", `The user defined name for this secret.`).
@@ -109,8 +109,8 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (*core.Secret, error) {
-	return host.SetSecretFile(ctx, args.Name, args.Path)
+func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (dagql.Instance[*core.Secret], error) {
+	return host.SetSecretFile(ctx, s.srv, args.Name, args.Path)
 }
 
 type hostDirectoryArgs struct {
