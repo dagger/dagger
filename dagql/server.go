@@ -136,6 +136,15 @@ var coreDirectives = []DirectiveSpec{
 			`Indicates that a field may resolve to different values when called
 			repeatedly with the same inputs, or that the field has side effects.
 			Impure fields are never cached.`),
+		Args: []InputSpec{
+			{
+				Name: "reason",
+				Description: FormatDescription(
+					`Explains why this element is impure, i.e. whether it performs side
+					effects or yield a different result with the same arguments.`),
+				Type: String(""),
+			},
+		},
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
 		},
@@ -175,10 +184,10 @@ func (s *Server) installObjectLocked(class ObjectType) {
 		s.scalars[idType.TypeName()] = idType
 		s.Root().ObjectType().Extend(
 			FieldSpec{
-				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:        class.Typed(),
-				Pure:        false, // no need to cache this; what if the ID is impure?
+				Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
+				Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+				Type:           class.Typed(),
+				ImpurityReason: "The given ID ultimately determines the purity of its result.",
 				Args: []InputSpec{
 					{
 						Name: "id",
@@ -692,7 +701,7 @@ func (sel Selector) String() string {
 
 func (sel Selector) AppendTo(id *idproto.ID, spec FieldSpec) *idproto.ID {
 	astType := spec.Type.Type()
-	tainted := !spec.Pure
+	tainted := spec.ImpurityReason != ""
 	idArgs := make([]*idproto.Argument, 0, len(sel.Args))
 	for _, arg := range sel.Args {
 		if arg.Value == nil {

@@ -208,9 +208,9 @@ func TestIface(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "aother", str)
 	})
-	t.Run("otherIfaceList", func(t *testing.T) {
+	t.Run("staticOtherIfaceList", func(t *testing.T) {
 		t.Parallel()
-		ifaces, err := test.OtherIfaceList(ctx, impl.AsTestCustomIface())
+		ifaces, err := test.StaticOtherIfaceList(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 		require.Len(t, ifaces, 2)
 		str1, err := ifaces[0].Foo(ctx)
@@ -219,6 +219,54 @@ func TestIface(t *testing.T) {
 		str2, err := ifaces[1].Foo(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "aother2", str2)
+	})
+
+	t.Run("dynamicOtherIfaceList", func(t *testing.T) {
+		t.Parallel()
+		ifaces, err := test.DynamicOtherIfaceList(ctx, impl.AsTestCustomIface())
+		require.NoError(t, err)
+		require.Len(t, ifaces, 0)
+		ifaces, err = test.DynamicOtherIfaceList(ctx,
+			test.WithOtherIface(
+				test.WithOtherIface(
+					impl.AsTestCustomIface(),
+					impl.WithStr("arg1").OtherIface().AsTestOtherIface(),
+				),
+				impl.WithStr("arg2").OtherIface().AsTestOtherIface(),
+			),
+		)
+		require.NoError(t, err)
+		require.Len(t, ifaces, 2)
+		str1, err := ifaces[0].Foo(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "arg1other", str1)
+		str2, err := ifaces[1].Foo(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "arg2other", str2)
+	})
+
+	t.Run("dynamicOtherIfaceByIfaceList", func(t *testing.T) {
+		t.Parallel()
+		ifaces, err := test.DynamicOtherIfaceByIfaceList(ctx, impl.AsTestCustomIface())
+		require.NoError(t, err)
+		require.Len(t, ifaces, 0)
+		ifaces, err = test.DynamicOtherIfaceByIfaceList(ctx,
+			test.WithOtherIfaceByIface(
+				test.WithOtherIfaceByIface(
+					impl.AsTestCustomIface(),
+					impl.WithStr("arg1").OtherIface().AsTestOtherIface(),
+				),
+				impl.WithStr("arg2").OtherIface().AsTestOtherIface(),
+			),
+		)
+		require.NoError(t, err)
+		require.Len(t, ifaces, 2)
+		str1, err := ifaces[0].Foo(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "arg1other", str1)
+		str2, err := ifaces[1].Foo(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "arg2other", str2)
 	})
 
 	t.Run("ifaceListArgs", func(t *testing.T) {

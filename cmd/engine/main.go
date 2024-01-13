@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/user"
@@ -63,6 +64,7 @@ import (
 	"github.com/moby/buildkit/worker"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -260,12 +262,20 @@ func main() { //nolint:gocyclo
 		}
 
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+
+		// Wire slog up to send to Logrus so engine logs using slog also get sent
+		// to Cloud
+		slogOpts := sloglogrus.Option{
+			AddSource: true,
+		}
 		if cfg.Debug {
+			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
 		}
 		if cfg.Trace {
 			logrus.SetLevel(logrus.TraceLevel)
 		}
+		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
 		if cfg.GRPC.DebugAddress != "" {
 			if err := setupDebugHandlers(cfg.GRPC.DebugAddress); err != nil {
@@ -292,8 +302,8 @@ func main() { //nolint:gocyclo
 		stream := grpc_middleware.ChainStreamServer(streamTracer, grpcerrors.StreamServerInterceptor)
 
 		bklog.G(ctx).Debug("creating engine GRPC server")
-		opts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
-		server := grpc.NewServer(opts...)
+		grpcOpts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
+		server := grpc.NewServer(grpcOpts...)
 
 		// relative path does not work with nightlyone/lockfile
 		root, err := filepath.Abs(cfg.Root)

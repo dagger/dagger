@@ -42,7 +42,7 @@ func (t Go) Lint(ctx context.Context) error {
 		return err
 	}
 
-	return lintGeneratedCode(func() error {
+	return util.LintGeneratedCode(func() error {
 		return t.Generate(ctx)
 	}, goGeneratedAPIPath)
 }

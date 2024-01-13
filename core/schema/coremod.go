@@ -4,69 +4,79 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
-	"github.com/opencontainers/go-digest"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/idproto"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	compiledSchema *CompiledSchema
+	dag *dagql.Server
 }
 
-var _ Mod = (*CoreMod)(nil)
+var _ core.Mod = (*CoreMod)(nil)
 
 func (m *CoreMod) Name() string {
-	return coreModuleName
+	return core.ModuleName
 }
 
-func (m *CoreMod) DagDigest() digest.Digest {
-	// core is always a leaf, so we just return a static digest
-	return digest.FromString(coreModuleName)
-}
-
-func (m *CoreMod) Dependencies() []Mod {
+func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
 }
 
-func (m *CoreMod) Schema(_ context.Context) ([]SchemaResolvers, error) {
-	return []SchemaResolvers{m.compiledSchema}, nil
+func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
+	for _, schema := range []SchemaResolvers{
+		&querySchema{dag},
+		&directorySchema{dag},
+		&fileSchema{dag},
+		&gitSchema{dag},
+		&containerSchema{dag},
+		&cacheSchema{dag},
+		&secretSchema{dag},
+		&serviceSchema{dag},
+		&hostSchema{dag},
+		&httpSchema{dag},
+		&platformSchema{dag},
+		&socketSchema{dag},
+		&moduleSchema{dag},
+	} {
+		schema.Install()
+	}
+	return nil
 }
 
-func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDirectDeps bool) (core.ModType, bool, error) {
+	var modType core.ModType
+
 	switch typeDef.Kind {
 	case core.TypeDefKindString, core.TypeDefKindInteger, core.TypeDefKindBoolean, core.TypeDefKindVoid:
-		return &PrimitiveType{kind: typeDef.Kind}, true, nil
+		modType = &core.PrimitiveType{Def: typeDef}
 
 	case core.TypeDefKindList:
-		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.ElementTypeDef, checkDirectDeps)
+		underlyingType, ok, err := m.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
 		}
 		if !ok {
 			return nil, false, nil
 		}
-		return &ListType{underlying: underlyingType}, true, nil
+		modType = &core.ListType{
+			Elem:       typeDef.AsList.Value.ElementTypeDef,
+			Underlying: underlyingType,
+		}
 
 	case core.TypeDefKindObject:
-		typeName := gqlObjectName(typeDef.AsObject.Name)
-		resolver, ok := m.compiledSchema.Resolvers()[typeName]
+		_, ok := m.dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}
-		idableResolver, ok := resolver.(IDableObjectResolver)
-		if !ok {
-			return nil, false, nil
-		}
-		return &CoreModObject{
-			coreMod:  m,
-			name:     typeName,
-			resolver: idableResolver,
-		}, true, nil
+		modType = &CoreModObject{coreMod: m}
 
 	case core.TypeDefKindInterface:
 		// core does not yet defined any interfaces
@@ -75,10 +85,19 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
+
+	if typeDef.Optional {
+		modType = &core.NullableType{
+			InnerDef: typeDef.WithOptional(false),
+			Inner:    modType,
+		}
+	}
+
+	return modType, true, nil
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, *m.compiledSchema.Compiled)
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
 	}
@@ -127,7 +146,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 				}
 
 				if introspectionArg.DefaultValue != nil {
-					fnArg.DefaultValue = *introspectionArg.DefaultValue
+					fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
 				}
 
 				argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
@@ -151,7 +170,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 
 		objTypeDefs = append(objTypeDefs, &core.TypeDef{
 			Kind:     core.TypeDefKindObject,
-			AsObject: typeDef,
+			AsObject: dagql.NonNull(typeDef),
 		})
 	}
 	return objTypeDefs, nil
@@ -159,32 +178,48 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 
 // CoreModObject represents objects from core (Container, Directory, etc.)
 type CoreModObject struct {
-	coreMod  *CoreMod
-	name     string
-	resolver IDableObjectResolver
+	coreMod *CoreMod
+	name    string
 }
 
-var _ ModType = (*CoreModObject)(nil)
+var _ core.ModType = (*CoreModObject)(nil)
 
-func (obj *CoreModObject) ConvertFromSDKResult(_ context.Context, value any) (any, error) {
+func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
 	if value == nil {
+		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
+		slog.Warn("CoreModObject.ConvertFromSDKResult: got nil value")
 		return nil, nil
 	}
 	id, ok := value.(string)
 	if !ok {
-		return value, nil
+		return nil, fmt.Errorf("expected string, got %T", value)
 	}
-	return obj.resolver.FromID(id)
+	var idp idproto.ID
+	if err := idp.Decode(id); err != nil {
+		return nil, err
+	}
+	val, err := obj.coreMod.dag.Load(ctx, &idp)
+	if err != nil {
+		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
+	}
+	return val, nil
 }
 
-func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value any) (any, error) {
+func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
 	if value == nil {
 		return nil, nil
 	}
-	return obj.resolver.ToID(value)
+	switch x := value.(type) {
+	case dagql.Input:
+		return x, nil
+	case dagql.Object:
+		return x.ID().Encode()
+	default:
+		return nil, fmt.Errorf("%T.ConvertToSDKInput: unknown type %T", obj, value)
+	}
 }
 
-func (obj *CoreModObject) SourceMod() Mod {
+func (obj *CoreModObject) SourceMod() core.Mod {
 	return obj.coreMod
 }
 
@@ -193,9 +228,9 @@ func (obj *CoreModObject) TypeDef() *core.TypeDef {
 	// this out with the functions rather than just name
 	return &core.TypeDef{
 		Kind: core.TypeDefKindObject,
-		AsObject: &core.ObjectTypeDef{
+		AsObject: dagql.NonNull(&core.ObjectTypeDef{
 			Name: obj.name,
-		},
+		}),
 	}
 }
 
@@ -211,9 +246,9 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 			return &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
 				Optional: !nonNull,
-				AsObject: &core.ObjectTypeDef{
+				AsObject: dagql.NonNull(&core.ObjectTypeDef{
 					Name: objName,
-				},
+				}),
 			}, true, nil
 		}
 
@@ -252,18 +287,18 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 		return &core.TypeDef{
 			Kind:     core.TypeDefKindList,
 			Optional: !nonNull,
-			AsList: &core.ListTypeDef{
+			AsList: dagql.NonNull(&core.ListTypeDef{
 				ElementTypeDef: elementTypeDef,
-			},
+			}),
 		}, true, nil
 
 	case introspection.TypeKindObject:
 		return &core.TypeDef{
 			Kind:     core.TypeDefKindObject,
 			Optional: !nonNull,
-			AsObject: &core.ObjectTypeDef{
+			AsObject: dagql.NonNull(&core.ObjectTypeDef{
 				Name: introspectionType.Name,
-			},
+			}),
 		}, true, nil
 
 	case introspection.TypeKindInputObject:

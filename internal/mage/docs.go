@@ -13,8 +13,12 @@ import (
 
 type Docs mg.Namespace
 
+const (
+	generatedSchemaPath = "docs/docs-graphql/schema.graphqls"
+)
+
 // Lint lints documentation files
-func (Docs) Lint(ctx context.Context) error {
+func (d Docs) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
@@ -45,9 +49,41 @@ func (Docs) Lint(ctx context.Context) error {
 		return err
 	})
 
+	eg.Go(func() error {
+		return util.LintGeneratedCode(func() error {
+			return d.Generate(ctx)
+		}, generatedSchemaPath)
+	})
+
 	// Go is already linted by engine:lint
 	// Python is already linted by sdk:python:lint
 	// TypeScript is already linted at sdk:typescript:lint
 
 	return eg.Wait()
+}
+
+func (d Docs) Generate(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("docs").Pipeline("generate-sdl")
+
+	introspectionJSON :=
+		util.GoBase(c).
+			WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
+				RedirectStdout: "introspection.json",
+			}).
+			File("introspection.json")
+
+	_, err = c.Container().
+		From("node:16-alpine").
+		WithExec([]string{"npm", "install", "-g", "graphql-json-to-sdl"}).
+		WithMountedFile("/src/schema.json", introspectionJSON).
+		WithExec([]string{"graphql-json-to-sdl", "/src/schema.json", "/src/schema.graphql"}).
+		File("/src/schema.graphql").
+		Export(ctx, generatedSchemaPath)
+	return err
 }

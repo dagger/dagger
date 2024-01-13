@@ -717,7 +717,7 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
 			called++
 			return self, nil
-		}).Impure(),
+		}).Impure("Increments internal state on each call."),
 	}.Install(srv)
 
 	var res struct {
@@ -1510,7 +1510,7 @@ func TestIntrospection(t *testing.T) {
 
 		dagql.Func("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return time.Now().String(), nil
-		}).Impure(),
+		}).Impure("Because I said so."),
 
 		dagql.Func("metaField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return "whoa", nil

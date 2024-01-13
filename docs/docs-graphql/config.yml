@@ -8,7 +8,7 @@ spectaql:
 
 introspection:
   removeTrailingPeriodFromDescriptions: false
-  schemaFile: ../core/schema/*.graphqls
+  schemaFile: docs-graphql/schema.graphqls
   fieldExpansionDepth: 1
   metadatas: true
   hideMutationsWithUndocumentedReturnType: false
@@ -20,9 +20,9 @@ extensions:
 
 info:
   title: Dagger GraphQL API Reference
-  docs-url: https://docs.dagger.io 
+  docs-url: https://docs.dagger.io
   # x-introItems:
-  #   - title: Welcome! 
+  #   - title: Welcome!
   #     description: We are using a GraphQL server as the API to interact with our engine. This allows us to make interoperation between programming languages possible.
   x-url: https://api.dagger.cloud/playgrounds
   x-hideIsDeprecated: false

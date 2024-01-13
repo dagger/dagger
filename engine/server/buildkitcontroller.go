@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -141,6 +142,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		// a panic would indicate a bug, but we don't want to take down the entire server
 		if err := recover(); err != nil {
 			bklog.G(context.Background()).WithError(fmt.Errorf("%v", err)).Errorf("panic in session call")
+			debug.PrintStack()
 			rerr = fmt.Errorf("panic in session call, please report a bug: %v %s", err, string(debug.Stack()))
 		}
 	}()
@@ -189,7 +191,11 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		}
 		e.serverMu.Unlock()
 		bklog.G(ctx).Debugf("forwarding client to server")
-		return srv.ServeClientConn(ctx, opts, conn)
+		err = srv.ServeClientConn(ctx, opts, conn)
+		if errors.Is(err, io.ErrClosedPipe) {
+			return nil
+		}
+		return fmt.Errorf("serve clientConn: %w", err)
 	}
 
 	bklog.G(ctx).Debugf("registering client")
@@ -199,7 +205,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Trace("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
 		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
-		return err
+		return fmt.Errorf("handleConn: %w", err)
 	})
 
 	e.serverMu.Lock()
@@ -212,7 +218,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		caller, err := e.SessionManager.Get(getSessionCtx, opts.ClientID, false)
 		if err != nil {
 			e.serverMu.Unlock()
-			return err
+			return fmt.Errorf("get session: %w", err)
 		}
 		bklog.G(ctx).Debugf("connected new server session")
 
@@ -251,7 +257,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		})
 		if err != nil {
 			e.serverMu.Unlock()
-			return err
+			return fmt.Errorf("new Buildkit client: %w", err)
 		}
 
 		bklog.G(ctx).Debugf("initialized new server buildkit client")
@@ -263,7 +269,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels)
 		if err != nil {
 			e.serverMu.Unlock()
-			return err
+			return fmt.Errorf("new Dagger server: %w", err)
 		}
 		e.servers[opts.ServerID] = srv
 
@@ -298,13 +304,16 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Trace("waiting for server")
 		err := srv.Wait(egctx)
 		bklog.G(ctx).WithError(err).Trace("server done")
-		return err
+		return fmt.Errorf("srv.Wait: %w", err)
 	})
 	err = eg.Wait()
 	if errors.Is(err, context.Canceled) {
 		err = nil
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("wait: %w", err)
+	}
+	return nil
 }
 
 // Solve is currently only used for triggering upstream remote cache exports on a dagger server

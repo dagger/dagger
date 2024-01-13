@@ -11,7 +11,7 @@ export type BaseTypeDef = {
  * Extends the base type def if it's an object to add its name.
  */
 export type ObjectTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.Objectkind
+  kind: TypeDefKind.ObjectKind
   name: string
 }
 
@@ -19,7 +19,7 @@ export type ObjectTypeDef = BaseTypeDef & {
  * Extends the base if it's a list to add its subtype.
  */
 export type ListTypeDef = BaseTypeDef & {
-  kind: TypeDefKind.Listkind
+  kind: TypeDefKind.ListKind
   typeDef: TypeDef<TypeDefKind>
 }
 
@@ -31,9 +31,9 @@ export type ListTypeDef = BaseTypeDef & {
  * If it's a type of kind list, it transforms the BaseTypeDef into a ListTypeDef.
  */
 export type TypeDef<T extends BaseTypeDef["kind"]> =
-  T extends TypeDefKind.Objectkind
+  T extends TypeDefKind.ObjectKind
     ? ObjectTypeDef
-    : T extends TypeDefKind.Listkind
+    : T extends TypeDefKind.ListKind
     ? ListTypeDef
     : BaseTypeDef
 

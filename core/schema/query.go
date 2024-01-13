@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core"
@@ -14,56 +16,65 @@ import (
 )
 
 type querySchema struct {
-	*APIServer
+	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &querySchema{}
 
-func (s *querySchema) Name() string {
-	return "query"
-}
+func (s *querySchema) Install() {
+	introspection.Install[*core.Query](s.srv)
 
-func (s *querySchema) Schema() string {
-	return Query
-}
+	s.srv.InstallScalar(core.JSON{})
+	s.srv.InstallScalar(core.Void{})
 
-func (s *querySchema) Resolvers() Resolvers {
-	return Resolvers{
-		"JSON": jsonResolver,
-		"Void": voidScalarResolver,
-		"Query": ObjectResolver{
-			"pipeline":                  ToResolver(s.pipeline),
-			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),
-		},
-		"Port": ObjectResolver{
-			"protocol": ToResolver(s.portProtocolHack),
-		},
-	}
+	core.NetworkProtocols.Install(s.srv)
+	core.ImageLayerCompressions.Install(s.srv)
+	core.ImageMediaTypesEnum.Install(s.srv)
+	core.CacheSharingModes.Install(s.srv)
+	core.TypeDefKinds.Install(s.srv)
+
+	dagql.MustInputSpec(pipeline.Label{}).Install(s.srv)
+	dagql.MustInputSpec(core.PortForward{}).Install(s.srv)
+	dagql.MustInputSpec(core.BuildArg{}).Install(s.srv)
+
+	dagql.Fields[EnvVariable]{}.Install(s.srv)
+
+	dagql.Fields[core.Port]{}.Install(s.srv)
+
+	dagql.Fields[Label]{}.Install(s.srv)
+
+	dagql.Fields[*core.Query]{
+		dagql.Func("pipeline", s.pipeline).
+			Doc(`Creates a named sub-pipeline.`).
+			ArgDoc("name", "Name of the sub-pipeline.").
+			ArgDoc("description", "Description of the sub-pipeline.").
+			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
+
+		dagql.Func("checkVersionCompatibility", s.checkVersionCompatibility).
+			Doc(`Checks if the current Dagger Engine is compatible with an SDK's required version.`).
+			ArgDoc("version", "Version required by the SDK."),
+	}.Install(s.srv)
 }
 
 type pipelineArgs struct {
 	Name        string
-	Description string
-	Labels      []pipeline.Label
+	Description string `default:""`
+	Labels      dagql.Optional[dagql.ArrayInput[dagql.InputObject[pipeline.Label]]]
 }
 
 func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
-	if parent == nil {
-		parent = &core.Query{}
-	}
-	parent.Pipeline = parent.Pipeline.Add(pipeline.Pipeline{
-		Name:        args.Name,
-		Description: args.Description,
-		Labels:      args.Labels,
-	})
-	return parent, nil
+	return parent.WithPipeline(
+		args.Name,
+		args.Description,
+		collectInputs(args.Labels),
+	), nil
 }
 
 type checkVersionCompatibilityArgs struct {
 	Version string
 }
 
-func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
+func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (dagql.Boolean, error) {
 	recorder := progrock.FromContext(ctx)
 
 	// Skip development version
@@ -108,11 +119,4 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	}
 
 	return true, nil
-}
-
-func (s *querySchema) portProtocolHack(ctx context.Context, port core.Port, args any) (string, error) {
-	// HACK(vito): this is a little counter-intuitive, but we need to return a
-	// string instead of the core.NetworkProtocol value so the resolver layer can
-	// lookup the enum value by name.
-	return port.Protocol.EnumName(), nil
 }

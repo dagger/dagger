@@ -174,7 +174,7 @@ func (c *Client) ContainerImageToTarball(
 	}
 
 	ctx, recorder := progrock.WithGroup(ctx, "container image to tarball")
-	pbDef, err := c.EngineContainerLocalImport(ctx, recorder, engineHostPlatform, tmpDir, nil, []string{fileName})
+	pbDef, _, err := c.EngineContainerLocalImport(ctx, recorder, engineHostPlatform, tmpDir, nil, []string{fileName})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %s", err)
 	}

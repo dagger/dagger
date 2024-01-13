@@ -31,6 +31,7 @@ func TestPipeline(t *testing.T) {
 
 		require.NoError(t, c.Close()) // close + flush logs
 
+		t.Log(logs.String())
 		require.Contains(t, logs.String(), "container pipeline")
 	})
 
@@ -52,6 +53,7 @@ func TestPipeline(t *testing.T) {
 
 		require.NoError(t, c.Close()) // close + flush logs
 
+		t.Log(logs.String())
 		require.Contains(t, logs.String(), "directory pipeline")
 	})
 
@@ -77,6 +79,7 @@ func TestPipeline(t *testing.T) {
 
 		require.NoError(t, c.Close()) // close + flush logs
 
+		t.Log(logs.String())
 		require.Contains(t, logs.String(), "service "+hostname)
 		require.Regexp(t, `start python -m http.server.*DONE`, logs.String())
 	})

@@ -4470,12 +4470,12 @@ type TypeDefKind string
 func (TypeDefKind) IsEnum() {}
 
 const (
-	Booleankind TypeDefKind = "BooleanKind"
-	Integerkind TypeDefKind = "IntegerKind"
-	Listkind    TypeDefKind = "ListKind"
-	Objectkind  TypeDefKind = "ObjectKind"
-	Stringkind  TypeDefKind = "StringKind"
-	Voidkind    TypeDefKind = "VoidKind"
+	BooleanKind TypeDefKind = "BooleanKind"
+	IntegerKind TypeDefKind = "IntegerKind"
+	ListKind    TypeDefKind = "ListKind"
+	ObjectKind  TypeDefKind = "ObjectKind"
+	StringKind  TypeDefKind = "StringKind"
+	VoidKind    TypeDefKind = "VoidKind"
 )
 
 type Client struct {
@@ -4644,12 +4644,12 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				dag.TypeDef().WithObject("Trivy").
 					WithFunction(
 						dag.Function("ScanImage",
-							dag.TypeDef().WithKind(Stringkind)).
+							dag.TypeDef().WithKind(StringKind)).
 							WithDescription("pull the official Trivy image\nsend the trivy CLI an image ref to scan\n").
-							WithArg("imageRef", dag.TypeDef().WithKind(Stringkind)).
-							WithArg("severity", dag.TypeDef().WithKind(Stringkind).WithOptional(true)).
-							WithArg("exitCode", dag.TypeDef().WithKind(Integerkind).WithOptional(true)).
-							WithArg("format", dag.TypeDef().WithKind(Stringkind).WithOptional(true)))), nil
+							WithArg("imageRef", dag.TypeDef().WithKind(StringKind)).
+							WithArg("severity", dag.TypeDef().WithKind(StringKind).WithOptional(true)).
+							WithArg("exitCode", dag.TypeDef().WithKind(IntegerKind).WithOptional(true)).
+							WithArg("format", dag.TypeDef().WithKind(StringKind).WithOptional(true)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

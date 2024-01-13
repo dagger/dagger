@@ -1574,7 +1574,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		Directory struct {
 			WithNewFile struct {
 				Directory struct {
-					ID core.FileID
+					ID core.DirectoryID
 				}
 			}
 		}
@@ -1783,6 +1783,11 @@ func TestContainerWithNewFile(t *testing.T) {
 func TestContainerMountsWithoutMount(t *testing.T) {
 	t.Parallel()
 
+	c, ctx := connect(t)
+
+	scratchID, err := c.Directory().ID(ctx)
+	require.NoError(t, err)
+
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -1793,7 +1798,7 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err = testutil.Query(
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -1831,10 +1836,10 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 		}
 	}{}
 	err = testutil.Query(
-		`query Test($id: DirectoryID!) {
+		`query Test($id: DirectoryID!, $scratch: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
-					withDirectory(path: "/mnt/dir", directory: "") {
+					withDirectory(path: "/mnt/dir", directory: $scratch) {
 						withMountedTemp(path: "/mnt/tmp") {
 							mounts
 							withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -1854,7 +1859,8 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 				}
 			}
 		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
-			"id": id,
+			"id":      id,
+			"scratch": scratchID,
 		}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithDirectory.WithMountedTemp.Mounts)
@@ -3239,7 +3245,7 @@ func TestContainerBuildNilContextError(t *testing.T) {
 				}
 			}
 		}`, &map[any]any{}, nil)
-	require.ErrorContains(t, err, "invalid nil input definition to definition op")
+	require.ErrorContains(t, err, "cannot decode empty string as ID")
 }
 
 func TestContainerInsecureRootCapabilites(t *testing.T) {
@@ -3759,7 +3765,7 @@ func TestContainerMediaTypes(t *testing.T) {
 
 					tarPath := filepath.Join(t.TempDir(), "export.tar")
 					if useAsTarball {
-						_, err = c.Container().
+						_, err := c.Container().
 							From(alpineImage).
 							AsTarball(dagger.ContainerAsTarballOpts{
 								MediaTypes: tc.mediaTypes,
@@ -3767,7 +3773,7 @@ func TestContainerMediaTypes(t *testing.T) {
 							Export(ctx, tarPath)
 						require.NoError(t, err)
 					} else {
-						_, err = c.Container().
+						_, err := c.Container().
 							From(alpineImage).
 							Export(ctx, tarPath, dagger.ContainerExportOpts{
 								MediaTypes: tc.mediaTypes,

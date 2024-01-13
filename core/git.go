@@ -3,49 +3,65 @@ package core
 import (
 	"context"
 
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/core/resourceid"
-	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type GitRepository struct {
+	Query *Query
+
 	URL string `json:"url"`
 
 	KeepGitDir bool `json:"keepGitDir"`
 
-	SSHKnownHosts string    `json:"sshKnownHosts"`
-	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
+	SSHKnownHosts string  `json:"sshKnownHosts"`
+	SSHAuthSocket *Socket `json:"sshAuthSocket"`
 
 	Services ServiceBindings `json:"services"`
-	Pipeline pipeline.Path   `json:"pipeline"`
-	Platform specs.Platform  `json:"platform,omitempty"`
+	Platform Platform        `json:"platform,omitempty"`
 }
 
-func (repo *GitRepository) ID() (GitRepositoryID, error) {
-	return resourceid.Encode(repo)
+func (*GitRepository) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitRepository",
+		NonNull:   true,
+	}
+}
+
+func (*GitRepository) TypeDescription() string {
+	return "A git repository."
 }
 
 type GitRef struct {
+	Query *Query
+
 	Ref  string         `json:"ref"`
 	Repo *GitRepository `json:"repository"`
 }
 
-func (ref *GitRef) ID() (GitRefID, error) {
-	return resourceid.Encode(ref)
+func (*GitRef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitRef",
+		NonNull:   true,
+	}
 }
 
-func (ref *GitRef) Tree(ctx context.Context, bk *buildkit.Client) (*Directory, error) {
+func (*GitRef) TypeDescription() string {
+	return "A git ref (tag, branch, or commit)."
+}
+
+func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
+	bk := ref.Query.Buildkit
 	st := ref.getState(ctx, bk)
-	return NewDirectorySt(ctx, *st, "", ref.Repo.Pipeline, ref.Repo.Platform, ref.Repo.Services)
+	return NewDirectorySt(ctx, ref.Query, *st, "", ref.Repo.Platform, ref.Repo.Services)
 }
 
-func (ref *GitRef) Commit(ctx context.Context, bk *buildkit.Client) (string, error) {
+func (ref *GitRef) Commit(ctx context.Context) (string, error) {
+	bk := ref.Query.Buildkit
 	st := ref.getState(ctx, bk)
 	p, err := resolveProvenance(ctx, bk, *st)
 	if err != nil {
@@ -66,8 +82,8 @@ func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State
 	if ref.Repo.SSHKnownHosts != "" {
 		opts = append(opts, llb.KnownSSHHosts(ref.Repo.SSHKnownHosts))
 	}
-	if ref.Repo.SSHAuthSocket != "" {
-		opts = append(opts, llb.MountSSHSock(string(ref.Repo.SSHAuthSocket)))
+	if ref.Repo.SSHAuthSocket != nil {
+		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.SSHID()))
 	}
 
 	useDNS := len(ref.Repo.Services) > 0

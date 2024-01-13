@@ -114,7 +114,7 @@ public class Field {
         + ", optionalArgs="
         + optionalArgs
         + ", parentObject="
-        + parentObject.getName()
+        + (parentObject != null ? parentObject.getName() : "null")
         + '}';
   }
 }

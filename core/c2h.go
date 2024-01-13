@@ -7,7 +7,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -50,20 +49,17 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 	args := []string{"tunnel"}
 
 	for _, port := range d.tunnelServicePorts {
-		frontend := port.Frontend
-		if frontend == 0 {
+		var frontend int
+		if port.Frontend != nil {
+			frontend = *port.Frontend
+		} else {
 			frontend = port.Backend
 		}
 
-		upstream := socket.NewHostIPSocket(
+		upstream := NewHostIPSocket(
 			port.Protocol.Network(),
 			fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
 		)
-
-		upstreamID, err := upstream.ID()
-		if err != nil {
-			return err
-		}
 
 		sockPath := fmt.Sprintf("/upstream.%d.sock", frontend)
 
@@ -71,7 +67,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 			Dest:      sockPath,
 			MountType: pb.MountType_SSH,
 			SSHOpt: &pb.SSHOpt{
-				ID: upstreamID.String(),
+				ID: upstream.SSHID(),
 			},
 		})
 

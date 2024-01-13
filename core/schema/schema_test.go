@@ -5,243 +5,8 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMergeObjects(t *testing.T) {
-	t.Parallel()
-	merged, err := mergeSchemaResolvers(
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			type Query {
-				typeA: TypeA
-			}
-
-			type TypeA {
-				fieldA: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ObjectResolver{
-					"fieldA": nil,
-				},
-			},
-		}),
-
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			extend type Query {
-				typeB: TypeB
-			}
-
-			type TypeB {
-				fieldB: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeB": ObjectResolver{
-					"fieldB": nil,
-				},
-			},
-		}),
-	)
-	require.NoError(t, err)
-
-	require.Contains(t, merged.Schema(), "TypeA")
-	require.Contains(t, merged.Schema(), "TypeB")
-
-	require.Contains(t, merged.Resolvers(), "TypeA")
-	require.Contains(t, merged.Resolvers(), "TypeB")
-
-	require.Contains(t, merged.Resolvers(), "TypeA")
-	require.IsType(t, merged.Resolvers()["TypeA"], ObjectResolver{})
-	require.Contains(t, merged.Resolvers()["TypeA"], "fieldA")
-
-	require.Contains(t, merged.Resolvers(), "TypeB")
-	require.IsType(t, merged.Resolvers()["TypeB"], ObjectResolver{})
-	require.Contains(t, merged.Resolvers()["TypeB"], "fieldB")
-}
-
-func TestMergeFieldExtend(t *testing.T) {
-	t.Parallel()
-	merged, err := mergeSchemaResolvers(
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			type Query {
-				typeA: TypeA
-			}
-
-			type TypeA {
-				fieldA: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ObjectResolver{
-					"fieldA": nil,
-				},
-			},
-		}),
-
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			extend type TypeA {
-				fieldB: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ObjectResolver{
-					"fieldB": nil,
-				},
-			},
-		}),
-	)
-	require.NoError(t, err)
-	require.NotNil(t, merged)
-
-	require.Contains(t, merged.Resolvers(), "TypeA")
-	require.IsType(t, merged.Resolvers()["TypeA"], ObjectResolver{})
-	require.Contains(t, merged.Resolvers()["TypeA"], "fieldA")
-	require.Contains(t, merged.Resolvers()["TypeA"], "fieldB")
-}
-
-func TestMergeFieldConflict(t *testing.T) {
-	t.Parallel()
-	_, err := mergeSchemaResolvers(
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			type TypeA {
-				fieldA: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ObjectResolver{
-					"fieldA": nil,
-				},
-			},
-		}),
-
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			extend TypeA {
-				fieldA: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ObjectResolver{
-					"fieldA": nil,
-				},
-			},
-		}),
-	)
-	require.ErrorIs(t, err, ErrMergeFieldConflict)
-}
-
-func TestMergeTypeConflict(t *testing.T) {
-	_, err := mergeSchemaResolvers(
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			type TypeA {
-				fieldA: String
-			}
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ObjectResolver{
-					"fieldA": nil,
-				},
-			},
-		}),
-
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			scalar TypeA
-			`,
-			Resolvers: Resolvers{
-				"TypeA": ScalarResolver{},
-			},
-		}),
-	)
-	require.ErrorIs(t, err, ErrMergeTypeConflict)
-}
-
-func TestMergeScalars(t *testing.T) {
-	t.Parallel()
-	merged, err := mergeSchemaResolvers(
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			type Query {
-				typeA: TypeA
-			}
-
-			scalar TypeA
-			`,
-			Resolvers: Resolvers{
-				"TypeA": stringResolver[string](),
-			},
-		}),
-
-		StaticSchema(StaticSchemaParams{
-			Schema: `
-			extend type Query {
-				typeB: TypeB
-			}
-
-			scalar TypeB
-			`,
-			Resolvers: Resolvers{
-				"TypeB": jsonResolver,
-			},
-		}),
-	)
-	require.NoError(t, err)
-
-	require.Contains(t, merged.Resolvers(), "TypeA")
-	require.IsType(t, merged.Resolvers()["TypeA"], ScalarResolver{})
-
-	require.Contains(t, merged.Resolvers(), "TypeB")
-	require.IsType(t, merged.Resolvers()["TypeB"], ScalarResolver{})
-}
-
-func TestMergeScalarConflict(t *testing.T) {
-	t.Parallel()
-	_, err := mergeSchemaResolvers(
-		StaticSchema(StaticSchemaParams{
-			Schema: `scalar TypeA`,
-			Resolvers: Resolvers{
-				"TypeA": ScalarResolver{},
-			},
-		}),
-
-		StaticSchema(StaticSchemaParams{
-			Schema: `scalar TypeA`,
-			Resolvers: Resolvers{
-				"TypeA": ScalarResolver{},
-			},
-		}),
-	)
-	require.ErrorIs(t, err, ErrMergeScalarConflict)
-}
-
-func TestWithMountedCacheSeen(t *testing.T) {
-	t.Parallel()
-
-	cs := &containerSchema{
-		APIServer: &APIServer{bk: &buildkit.Client{}},
-	}
-
-	cid, err := core.NewCache("test-seen").ID()
-	require.NoError(t, err)
-
-	_, err = cs.withMountedCache(
-		context.Background(),
-		&core.Container{},
-		containerWithMountedCacheArgs{Path: "/foo", Cache: cid},
-	)
-	require.NoError(t, err)
-
-	_, ok := core.SeenCacheKeys.Load("test-seen")
-	require.True(t, ok)
-}
 
 func TestNamespaceObjects(t *testing.T) {
 	t.Parallel()
@@ -295,15 +60,15 @@ func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	api, err := New(ctx, InitializeArgs{})
 	require.NoError(t, err)
-	require.NotNil(t, api.core)
+	require.NotNil(t, api.root)
 
-	typeDefs, err := api.core.TypeDefs(ctx)
+	typeDefs, err := api.root.DefaultDeps.TypeDefs(ctx)
 	require.NoError(t, err)
 
 	objByName := make(map[string]*core.TypeDef)
 	for _, typeDef := range typeDefs {
 		require.Equal(t, core.TypeDefKindObject, typeDef.Kind)
-		objByName[typeDef.AsObject.Name] = typeDef
+		objByName[typeDef.AsObject.Value.Name] = typeDef
 	}
 
 	// just verify some subset of objects+functions as a sanity check
@@ -311,7 +76,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	// Container
 	ctrTypeDef, ok := objByName["Container"]
 	require.True(t, ok)
-	ctrObj := ctrTypeDef.AsObject
+	ctrObj := ctrTypeDef.AsObject.Value
 
 	_, ok = ctrObj.FunctionByName("id")
 	require.False(t, ok)
@@ -319,7 +84,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	fileFn, ok := ctrObj.FunctionByName("file")
 	require.True(t, ok)
 	require.Equal(t, core.TypeDefKindObject, fileFn.ReturnType.Kind)
-	require.Equal(t, "File", fileFn.ReturnType.AsObject.Name)
+	require.Equal(t, "File", fileFn.ReturnType.AsObject.Value.Name)
 	require.Len(t, fileFn.Args, 1)
 
 	fileFnPathArg := fileFn.Args[0]
@@ -338,7 +103,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	withMountedDirectoryFnSourceArg := withMountedDirectoryFn.Args[1]
 	require.Equal(t, "source", withMountedDirectoryFnSourceArg.Name)
 	require.Equal(t, core.TypeDefKindObject, withMountedDirectoryFnSourceArg.TypeDef.Kind)
-	require.Equal(t, "Directory", withMountedDirectoryFnSourceArg.TypeDef.AsObject.Name)
+	require.Equal(t, "Directory", withMountedDirectoryFnSourceArg.TypeDef.AsObject.Value.Name)
 	require.False(t, withMountedDirectoryFnSourceArg.TypeDef.Optional)
 
 	withMountedDirectoryFnOwnerArg := withMountedDirectoryFn.Args[2]
@@ -349,7 +114,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	// File
 	fileTypeDef, ok := objByName["File"]
 	require.True(t, ok)
-	fileObj := fileTypeDef.AsObject
+	fileObj := fileTypeDef.AsObject.Value
 
 	_, ok = fileObj.FunctionByName("id")
 	require.False(t, ok)

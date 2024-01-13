@@ -56,7 +56,13 @@ type CustomIface interface {
 	SelfIfaceList(ctx context.Context) ([]CustomIface, error)
 
 	OtherIface() OtherIface
-	OtherIfaceList(ctx context.Context) ([]OtherIface, error)
+	StaticOtherIfaceList(ctx context.Context) ([]OtherIface, error)
+
+	WithOtherIface(other OtherIface) CustomIface
+	DynamicOtherIfaceList(ctx context.Context) ([]OtherIface, error)
+
+	WithOtherIfaceByIface(other OtherIface) CustomIface
+	DynamicOtherIfaceByIfaceList(ctx context.Context) ([]OtherIface, error)
 }
 
 type OtherIface interface {
@@ -169,8 +175,24 @@ func (m *Test) OtherIface(ifaceArg CustomIface) OtherIface {
 	return ifaceArg.OtherIface()
 }
 
-func (m *Test) OtherIfaceList(ctx context.Context, ifaceArg CustomIface) ([]OtherIface, error) {
-	return ifaceArg.OtherIfaceList(ctx)
+func (m *Test) StaticOtherIfaceList(ctx context.Context, ifaceArg CustomIface) ([]OtherIface, error) {
+	return ifaceArg.StaticOtherIfaceList(ctx)
+}
+
+func (m *Test) WithOtherIface(ctx context.Context, ifaceArg CustomIface, other OtherIface) CustomIface {
+	return ifaceArg.WithOtherIface(other)
+}
+
+func (m *Test) DynamicOtherIfaceList(ctx context.Context, ifaceArg CustomIface) ([]OtherIface, error) {
+	return ifaceArg.DynamicOtherIfaceList(ctx)
+}
+
+func (m *Test) WithOtherIfaceByIface(ctx context.Context, ifaceArg CustomIface, other OtherIface) CustomIface {
+	return ifaceArg.WithOtherIfaceByIface(other)
+}
+
+func (m *Test) DynamicOtherIfaceByIfaceList(ctx context.Context, ifaceArg CustomIface) ([]OtherIface, error) {
+	return ifaceArg.DynamicOtherIfaceByIfaceList(ctx)
 }
 
 func (m *Test) IfaceListArgs(ctx context.Context, ifaces []CustomIface, otherIfaces []OtherIface) ([]string, error) {
