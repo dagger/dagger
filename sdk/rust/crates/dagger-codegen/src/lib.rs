@@ -18,7 +18,7 @@ fn set_schema_parents(mut schema: Schema) -> Schema {
         }
     }
 
-    return schema;
+    schema
 }
 
 pub fn generate(schema: Schema, generator: DynGenerator) -> eyre::Result<String> {
