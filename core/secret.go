@@ -58,15 +58,7 @@ func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []
 	return nil
 }
 
-// GetSecret returns the plaintext secret value.
-//
-// Its argument may either be the user defined name originally specified within
-// a SecretID, or a full SecretID value.
-//
-// A user defined name will be received when secrets are used in a Dockerfile
-// build.
-//
-// In all other cases, a SecretID is expected.
+// GetSecret returns the plaintext secret value for a user defined secret name.
 func (store *SecretStore) GetSecret(ctx context.Context, name string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
