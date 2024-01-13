@@ -138,28 +138,9 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 		if ok {
 			// NB: this is defense-in-depth to prevent SDKs or some other future
 			// component from allowing modules to extend external objects.
-
-			slog.Warn("found existing module type",
-				"name", mod.Name(),
-				"object", objDef.Name,
-				"sourceSame", modType.SourceMod() == mod,
-				"definesFields", len(objDef.Fields) > 0,
-				"definesFunctions", len(objDef.Functions) > 0,
-			)
-
-			if modType.SourceMod() != mod {
-				// modules can reference types from core/other modules as types, but they
-				// can't attach any new fields or functions to them
-				//
-				// TODO: what does "referencing" mean in this context? do we even get
-				// here without fields or functions? is there any utility in defining
-				// such a type in a module? if not, should we just simplify this to
-				// some sort of name conflict error?
-				if len(objDef.Fields) > 0 || len(objDef.Functions) > 0 {
-					return fmt.Errorf("cannot attach new fields or functions to object %q from outside module", objDef.Name)
-				}
-				return nil
-			}
+			return fmt.Errorf("type %q is already defined by module %q",
+				objDef.Name,
+				modType.SourceMod().Name())
 		}
 
 		obj := &ModuleObject{
@@ -341,8 +322,10 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			if sourceMod := fieldType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// already validated, skip
+			sourceMod := fieldType.SourceMod()
+			// fields can reference core types and local types, but not types from
+			// other modules
+			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
 				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
 					obj.OriginalName,
 					field.OriginalName,
