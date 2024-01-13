@@ -88,8 +88,8 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 
 	if typeDef.Optional {
 		modType = &core.NullableType{
-			Elem:       typeDef.WithOptional(false),
-			Underlying: modType,
+			InnerDef: typeDef.WithOptional(false),
+			Inner:    modType,
 		}
 	}
 

@@ -114,16 +114,16 @@ func (t *ListType) TypeDef() *TypeDef {
 }
 
 type NullableType struct {
-	Elem       *TypeDef
-	Underlying ModType
+	InnerDef *TypeDef
+	Inner    ModType
 }
 
 func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
 	nullable := dagql.DynamicNullable{
-		Elem: t.Elem.ToTyped(),
+		Elem: t.InnerDef.ToTyped(),
 	}
 	if value != nil {
-		val, err := t.Underlying.ConvertFromSDKResult(ctx, value)
+		val, err := t.Inner.ConvertFromSDKResult(ctx, value)
 		if err != nil {
 			return nil, err
 		}
@@ -145,7 +145,7 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	if !present {
 		return nil, nil
 	}
-	result, err := t.Underlying.ConvertToSDKInput(ctx, val)
+	result, err := t.Inner.ConvertToSDKInput(ctx, val)
 	if err != nil {
 		return nil, err
 	}
@@ -153,11 +153,11 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 }
 
 func (t *NullableType) SourceMod() Mod {
-	return t.Underlying.SourceMod()
+	return t.Inner.SourceMod()
 }
 
 func (t *NullableType) TypeDef() *TypeDef {
-	cp := t.Elem.Clone()
+	cp := t.InnerDef.Clone()
 	cp.Optional = true
 	return cp
 }

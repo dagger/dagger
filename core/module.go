@@ -296,8 +296,8 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 
 	if typeDef.Optional {
 		modType = &NullableType{
-			Elem:       typeDef.WithOptional(false),
-			Underlying: modType,
+			InnerDef: typeDef.WithOptional(false),
+			Inner:    modType,
 		}
 	}
 
