@@ -30,7 +30,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 	// TODO: this seems expensive
 	fromID := func(id *idproto.ID) (dagql.Typed, error) {
-		deps, err := iface.mod.Query.IDDeps(ctx, iface.mod.Deps.Prepend(iface.mod), id)
+		deps, err := iface.mod.Query.IDDeps(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("schema: %w", err)
 		}

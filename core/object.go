@@ -51,7 +51,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case DynamicID:
-		deps, err := t.mod.Query.IDDeps(ctx, t.mod.Deps.Prepend(t.mod), x.ID())
+		deps, err := t.mod.Query.IDDeps(ctx, x.ID())
 		if err != nil {
 			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
 		}

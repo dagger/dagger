@@ -274,13 +274,17 @@ func (q *Query) NewHostService(upstream string, ports []PortForward) *Service {
 	}
 }
 
-func (q *Query) IDDeps(ctx context.Context, baseDeps *ModDeps, id *idproto.ID) (*ModDeps, error) {
-	deps := baseDeps
+// IDDeps loads the module dependencies of a given ID.
+//
+// The returned ModDeps extends the inner DefaultDeps with all modules found in
+// the ID, loaded by using the DefaultDeps schema.
+func (q *Query) IDDeps(ctx context.Context, id *idproto.ID) (*ModDeps, error) {
+	bootstrap, err := q.DefaultDeps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap schema: %w", err)
+	}
+	deps := q.DefaultDeps
 	for _, modID := range id.Modules() {
-		bootstrap, err := q.DefaultDeps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("bootstrap schema: %w", err)
-		}
 		mod, err := dagql.NewID[*Module](modID).Load(ctx, bootstrap)
 		if err != nil {
 			return nil, fmt.Errorf("load source mod: %w", err)
