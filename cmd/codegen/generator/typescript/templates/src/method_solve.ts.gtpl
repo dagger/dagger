@@ -99,7 +99,12 @@
     return response.map(
       (r) => new {{ . | FormatReturnType | ToSingleType }}(
       {
-        queryTree: this.queryTree,
+        queryTree: [
+          {
+            operation: "load{{. | FormatReturnType | ToSingleType}}FromID",
+            args: { id: r.id }
+          }
+        ],
         ctx: this._ctx
       },
         {{- range $v := . | GetArrayField }}

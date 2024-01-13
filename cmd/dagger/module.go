@@ -386,7 +386,7 @@ func updateModuleConfig(
 		return fmt.Errorf("failed to write module config: %w", err)
 	}
 
-	mod, err := modFlag.AsModule(ctx, dag)
+	mod, err := modFlag.AsUninitializedModule(ctx, dag)
 	if err != nil {
 		return fmt.Errorf("failed to load module: %w", err)
 	}
@@ -687,9 +687,9 @@ func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module
 	modDef := &moduleDef{Name: res.Mod.Name}
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
-		case dagger.Objectkind:
+		case dagger.ObjectKind:
 			modDef.Objects = append(modDef.Objects, typeDef)
-		case dagger.Interfacekind:
+		case dagger.InterfaceKind:
 			modDef.Interfaces = append(modDef.Interfaces, typeDef)
 		}
 	}

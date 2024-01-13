@@ -4470,12 +4470,12 @@ type TypeDefKind string
 func (TypeDefKind) IsEnum() {}
 
 const (
-	Booleankind TypeDefKind = "BooleanKind"
-	Integerkind TypeDefKind = "IntegerKind"
-	Listkind    TypeDefKind = "ListKind"
-	Objectkind  TypeDefKind = "ObjectKind"
-	Stringkind  TypeDefKind = "StringKind"
-	Voidkind    TypeDefKind = "VoidKind"
+	BooleanKind TypeDefKind = "BooleanKind"
+	IntegerKind TypeDefKind = "IntegerKind"
+	ListKind    TypeDefKind = "ListKind"
+	ObjectKind  TypeDefKind = "ObjectKind"
+	StringKind  TypeDefKind = "StringKind"
+	VoidKind    TypeDefKind = "VoidKind"
 )
 
 type Client struct {
@@ -4628,9 +4628,9 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				dag.TypeDef().WithObject("Potato").
 					WithFunction(
 						dag.Function("HelloWorld",
-							dag.TypeDef().WithKind(Stringkind)).
-							WithArg("count", dag.TypeDef().WithKind(Integerkind), FunctionWithArgOpts{Description: "the number of potatoes to process"}).
-							WithArg("mashed", dag.TypeDef().WithKind(Booleankind).WithOptional(true), FunctionWithArgOpts{Description: "whether the potatoes are mashed (this is an optional parameter!)"}))), nil
+							dag.TypeDef().WithKind(StringKind)).
+							WithArg("count", dag.TypeDef().WithKind(IntegerKind), FunctionWithArgOpts{Description: "the number of potatoes to process"}).
+							WithArg("mashed", dag.TypeDef().WithKind(BooleanKind).WithOptional(true), FunctionWithArgOpts{Description: "whether the potatoes are mashed (this is an optional parameter!)"}))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

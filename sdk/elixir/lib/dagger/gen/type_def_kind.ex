@@ -2,66 +2,66 @@
 defmodule Dagger.TypeDefKind do
   @moduledoc "Distinguishes the different kinds of TypeDefs."
   @type t() ::
-          :BooleanKind
-          | :IntegerKind
-          | :InterfaceKind
-          | :ListKind
-          | :ObjectKind
-          | :StringKind
-          | :VoidKind
+          :BOOLEAN_KIND
+          | :INTEGER_KIND
+          | :INTERFACE_KIND
+          | :LIST_KIND
+          | :OBJECT_KIND
+          | :STRING_KIND
+          | :VOID_KIND
   (
-    @doc "A boolean value"
-    @spec boolean_kind() :: :BooleanKind
+    @doc "A boolean value."
+    @spec boolean_kind() :: :BOOLEAN_KIND
     def boolean_kind() do
-      :BooleanKind
+      :BOOLEAN_KIND
     end
   )
 
   (
-    @doc "An integer value"
-    @spec integer_kind() :: :IntegerKind
+    @doc "An integer value."
+    @spec integer_kind() :: :INTEGER_KIND
     def integer_kind() do
-      :IntegerKind
+      :INTEGER_KIND
     end
   )
 
   (
     @doc "A named type of functions that can be matched+implemented by other objects+interfaces.\n\nAlways paired with an InterfaceTypeDef."
-    @spec interface_kind() :: :InterfaceKind
+    @spec interface_kind() :: :INTERFACE_KIND
     def interface_kind() do
-      :InterfaceKind
+      :INTERFACE_KIND
     end
   )
 
   (
     @doc "A list of values all having the same type.\n\nAlways paired with a ListTypeDef."
-    @spec list_kind() :: :ListKind
+    @spec list_kind() :: :LIST_KIND
     def list_kind() do
-      :ListKind
+      :LIST_KIND
     end
   )
 
   (
     @doc "A named type defined in the GraphQL schema, with fields and functions.\n\nAlways paired with an ObjectTypeDef."
-    @spec object_kind() :: :ObjectKind
+    @spec object_kind() :: :OBJECT_KIND
     def object_kind() do
-      :ObjectKind
+      :OBJECT_KIND
     end
   )
 
   (
-    @doc "A string value"
-    @spec string_kind() :: :StringKind
+    @doc "A string value."
+    @spec string_kind() :: :STRING_KIND
     def string_kind() do
-      :StringKind
+      :STRING_KIND
     end
   )
 
   (
-    @doc "A special kind used to signify that no value is returned.\n\nThis is used for functions that have no return value. The outer TypeDef\nspecifying this Kind is always Optional, as the Void is never actually\nrepresented."
-    @spec void_kind() :: :VoidKind
+    @doc "A special kind used to signify that no value is returned.\n\nThis is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented."
+    @spec void_kind() :: :VOID_KIND
     def void_kind() do
-      :VoidKind
+      :VOID_KIND
     end
   )
 end

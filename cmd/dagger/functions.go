@@ -79,17 +79,17 @@ func printReturnType(returnType *modTypeDef) (n string) {
 		}
 	}()
 	switch returnType.Kind {
-	case dagger.Stringkind:
+	case dagger.StringKind:
 		return "String"
-	case dagger.Integerkind:
+	case dagger.IntegerKind:
 		return "Int"
-	case dagger.Booleankind:
+	case dagger.BooleanKind:
 		return "Boolean"
-	case dagger.Objectkind:
+	case dagger.ObjectKind:
 		return returnType.AsObject.Name
-	case dagger.Interfacekind:
+	case dagger.InterfaceKind:
 		return returnType.AsInterface.Name
-	case dagger.Listkind:
+	case dagger.ListKind:
 		return fmt.Sprintf("[%s]", printReturnType(returnType.AsList.ElementTypeDef))
 	default:
 		return ""
@@ -507,7 +507,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			switch fn.ReturnType.Kind {
-			case dagger.Objectkind, dagger.Interfacekind:
+			case dagger.ObjectKind, dagger.InterfaceKind:
 				if fc.OnSelectObjectLeaf == nil {
 					// there is no handling of this object and no further selections, error out
 					fc.showUsage = true
@@ -521,7 +521,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
 				}
 
-			case dagger.Listkind:
+			case dagger.ListKind:
 				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
 					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
@@ -554,7 +554,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
 			}
 
-			if fn.ReturnType.Kind != dagger.Voidkind {
+			if fn.ReturnType.Kind != dagger.VoidKind {
 				cmd.Println(response)
 			}
 

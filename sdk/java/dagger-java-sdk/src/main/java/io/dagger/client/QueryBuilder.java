@@ -186,4 +186,31 @@ class QueryBuilder {
     List<T> rv = jsonb.fromJson(array.toString(), TypeUtils.parameterize(List.class, klass));
     return rv;
   }
+
+  <T> List<QueryBuilder> executeObjectListQuery(Class<T> klass)
+      throws ExecutionException, InterruptedException, DaggerQueryException {
+    List<String> pathElts =
+        StreamSupport.stream(
+                Spliterators.spliteratorUnknownSize(parts.descendingIterator(), 0), false)
+            .map(QueryPart::getOperation)
+            .toList();
+    Document document = buildDocument();
+    Response response = executeQuery(document);
+    JsonObject obj = response.getData();
+    for (int i = 0; i < pathElts.size() - 1; i++) {
+      obj = obj.getJsonObject(pathElts.get(i));
+    }
+    JsonArray array = obj.getJsonArray(pathElts.get(pathElts.size() - 1));
+    List<QueryBuilder> rv = new ArrayList<>();
+    for (int i = 0; i < array.size(); i++) {
+      String id = array.getJsonObject(i).getString("id");
+      QueryBuilder qb =
+          new QueryBuilder(this.client)
+              .chain(
+                  String.format("load%sFromID", klass.getSimpleName()),
+                  Arguments.newBuilder().add("id", id).build());
+      rv.add(qb);
+    }
+    return rv;
+  }
 }

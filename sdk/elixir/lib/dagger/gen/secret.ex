@@ -6,7 +6,7 @@ defmodule Dagger.Secret do
   defstruct [:selection, :client]
 
   (
-    @doc "The identifier for this secret."
+    @doc "A unique identifier for this Secret."
     @spec id(t()) :: {:ok, Dagger.SecretID.t()} | {:error, term()}
     def id(%__MODULE__{} = secret) do
       selection = select(secret.selection, "id")

@@ -1,14 +1,16 @@
 package core
 
 import (
-	"github.com/dagger/dagger/core/resourceid"
-	"github.com/opencontainers/go-digest"
+	"context"
+
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type GeneratedCode struct {
-	Code              *Directory `json:"code"`
-	VCSIgnoredPaths   []string   `json:"vcsIgnoredPaths,omitempty"`
-	VCSGeneratedPaths []string   `json:"vcsGeneratedPaths,omitempty"`
+	Code              *Directory `field:"true" doc:"The directory containing the generated code."`
+	VCSIgnoredPaths   []string   `field:"true" name:"vcsIgnoredPaths" doc:"List of paths to ignore in version control (i.e. .gitignore)."`
+	VCSGeneratedPaths []string   `field:"true" name:"vcsGeneratedPaths" doc:"List of paths to mark generated in version control (i.e. .gitattributes)."`
 }
 
 func NewGeneratedCode(code *Directory) *GeneratedCode {
@@ -17,12 +19,15 @@ func NewGeneratedCode(code *Directory) *GeneratedCode {
 	}
 }
 
-func (code *GeneratedCode) ID() (GeneratedCodeID, error) {
-	return resourceid.Encode(code)
+func (*GeneratedCode) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GeneratedCode",
+		NonNull:   true,
+	}
 }
 
-func (code *GeneratedCode) Digest() (digest.Digest, error) {
-	return stableDigest(code)
+func (*GeneratedCode) TypeDescription() string {
+	return "The result of running an SDK's codegen."
 }
 
 func (code GeneratedCode) Clone() *GeneratedCode {
@@ -43,4 +48,10 @@ func (code *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode 
 	code = code.Clone()
 	code.VCSGeneratedPaths = paths
 	return code
+}
+
+var _ HasPBDefinitions = (*GeneratedCode)(nil)
+
+func (code *GeneratedCode) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	return code.Code.PBDefinitions(ctx)
 }

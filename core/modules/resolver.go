@@ -122,9 +122,32 @@ func (ref *Ref) Config(ctx context.Context, c *dagger.Client) (*Config, error) {
 }
 
 func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
+	src, subPath, err := ref.source(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return src.AsModule(dagger.DirectoryAsModuleOpts{
+		SourceSubpath: subPath,
+	}), nil
+}
+
+func (ref *Ref) AsUninitializedModule(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
+	src, subPath, err := ref.source(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.Module().
+		WithSource(src, dagger.ModuleWithSourceOpts{
+			Subpath: subPath,
+		}), nil
+}
+
+func (ref *Ref) source(ctx context.Context, c *dagger.Client) (*dagger.Directory, string, error) {
 	cfg, err := ref.Config(ctx, c)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module config: %w", err)
+		return nil, "", fmt.Errorf("failed to get module config: %w", err)
 	}
 
 	switch {
@@ -141,28 +164,27 @@ func (ref *Ref) AsModule(ctx context.Context, c *dagger.Client) (*dagger.Module,
 
 		modRootDir, subdirRelPath, err := cfg.RootAndSubpath(localSrc)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get module root: %w", err)
+			return nil, "", fmt.Errorf("failed to get module root: %w", err)
 		}
 
-		return c.Host().Directory(modRootDir, dagger.HostDirectoryOpts{
-			Include: cfg.Include,
-			Exclude: cfg.Exclude,
-		}).AsModule(dagger.DirectoryAsModuleOpts{
-			SourceSubpath: subdirRelPath,
-		}), nil
+		return c.Host().
+				Directory(modRootDir, dagger.HostDirectoryOpts{
+					Include: cfg.Include,
+					Exclude: cfg.Exclude,
+				}),
+			subdirRelPath, nil
 
 	case ref.Git != nil:
 		rootPath, relSubPath, err := cfg.RootAndSubpath(ref.SubPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get module root: %w", err)
+			return nil, "", fmt.Errorf("failed to get module root: %w", err)
 		}
 
 		return c.Git(ref.Git.CloneURL).Commit(ref.Version).Tree().
-			Directory(rootPath).
-			AsModule(dagger.DirectoryAsModuleOpts{SourceSubpath: relSubPath}), nil
-
+				Directory(rootPath),
+			relSubPath, nil
 	default:
-		return nil, fmt.Errorf("invalid module (local=%t, git=%t)", ref.Local, ref.Git != nil)
+		return nil, "", fmt.Errorf("invalid module (local=%t, git=%t)", ref.Local, ref.Git != nil)
 	}
 }
 

@@ -62,7 +62,7 @@ func (t TypeScript) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return lintGeneratedCode(func() error {
+		return util.LintGeneratedCode(func() error {
 			return t.Generate(gctx)
 		}, typescriptGeneratedAPIPath)
 	})

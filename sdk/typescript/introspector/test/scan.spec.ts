@@ -26,13 +26,13 @@ describe("scan static TypeScript", function () {
             {
               name: "helloWorld",
               returnType: {
-                kind: TypeDefKind.Stringkind,
+                kind: TypeDefKind.StringKind,
               },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
@@ -75,14 +75,14 @@ describe("scan static TypeScript", function () {
             {
               name: "exec",
               description: "Execute the command and return its result",
-              returnType: { kind: TypeDefKind.Stringkind },
+              returnType: { kind: TypeDefKind.StringKind },
               args: [
                 {
                   name: "cmd",
                   typeDef: {
-                    kind: TypeDefKind.Listkind,
+                    kind: TypeDefKind.ListKind,
                     typeDef: {
-                      kind: TypeDefKind.Stringkind,
+                      kind: TypeDefKind.StringKind,
                     },
                   },
                   description: "Command to execute",
@@ -103,7 +103,7 @@ describe("scan static TypeScript", function () {
               name: "bar",
               description: "Return Bar object",
               returnType: {
-                kind: TypeDefKind.Objectkind,
+                kind: TypeDefKind.ObjectKind,
                 name: "Bar",
               },
               args: [],
@@ -131,12 +131,12 @@ describe("scan static TypeScript", function () {
           methods: [
             {
               name: "greeting",
-              returnType: { kind: TypeDefKind.Stringkind },
+              returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
@@ -145,12 +145,12 @@ describe("scan static TypeScript", function () {
             },
             {
               name: "helloWorld",
-              returnType: { kind: TypeDefKind.Stringkind },
+              returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
@@ -180,9 +180,9 @@ describe("scan static TypeScript", function () {
             {
               name: "packages",
               typeDef: {
-                kind: TypeDefKind.Listkind,
+                kind: TypeDefKind.ListKind,
                 typeDef: {
-                  kind: TypeDefKind.Stringkind,
+                  kind: TypeDefKind.StringKind,
                 },
               },
               description: "packages to install",
@@ -190,7 +190,7 @@ describe("scan static TypeScript", function () {
             {
               name: "ctr",
               typeDef: {
-                kind: TypeDefKind.Objectkind,
+                kind: TypeDefKind.ObjectKind,
                 name: "Container",
               },
               description: "",
@@ -200,14 +200,14 @@ describe("scan static TypeScript", function () {
             {
               name: "base",
               returnType: {
-                kind: TypeDefKind.Objectkind,
+                kind: TypeDefKind.ObjectKind,
                 name: "Alpine",
               },
               description: "Returns a base Alpine container",
               args: [
                 {
                   name: "version",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "version to use (default to: 3.16.2)",
                   optional: true,
                   defaultValue: undefined,
@@ -217,7 +217,7 @@ describe("scan static TypeScript", function () {
             {
               name: "install",
               returnType: {
-                kind: TypeDefKind.Objectkind,
+                kind: TypeDefKind.ObjectKind,
                 name: "Alpine",
               },
               description: "",
@@ -225,9 +225,9 @@ describe("scan static TypeScript", function () {
                 {
                   name: "pkgs",
                   typeDef: {
-                    kind: TypeDefKind.Listkind,
+                    kind: TypeDefKind.ListKind,
                     typeDef: {
-                      kind: TypeDefKind.Stringkind,
+                      kind: TypeDefKind.StringKind,
                     },
                   },
                   description: "",
@@ -238,15 +238,15 @@ describe("scan static TypeScript", function () {
             },
             {
               name: "exec",
-              returnType: { kind: TypeDefKind.Stringkind },
+              returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: [
                 {
                   name: "cmd",
                   typeDef: {
-                    kind: TypeDefKind.Listkind,
+                    kind: TypeDefKind.ListKind,
                     typeDef: {
-                      kind: TypeDefKind.Stringkind,
+                      kind: TypeDefKind.StringKind,
                     },
                   },
                   description: "",
@@ -278,12 +278,12 @@ describe("scan static TypeScript", function () {
           methods: [
             {
               name: "helloWorld",
-              returnType: { kind: TypeDefKind.Stringkind },
+              returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: true,
                   defaultValue: undefined,
@@ -292,12 +292,12 @@ describe("scan static TypeScript", function () {
             },
             {
               name: "isTrue",
-              returnType: { kind: TypeDefKind.Booleankind },
+              returnType: { kind: TypeDefKind.BooleanKind },
               description: "",
               args: [
                 {
                   name: "value",
-                  typeDef: { kind: TypeDefKind.Booleankind },
+                  typeDef: { kind: TypeDefKind.BooleanKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
@@ -306,19 +306,19 @@ describe("scan static TypeScript", function () {
             },
             {
               name: "add",
-              returnType: { kind: TypeDefKind.Integerkind },
+              returnType: { kind: TypeDefKind.IntegerKind },
               description: "",
               args: [
                 {
                   name: "a",
-                  typeDef: { kind: TypeDefKind.Integerkind },
+                  typeDef: { kind: TypeDefKind.IntegerKind },
                   description: "",
                   optional: true,
                   defaultValue: "0",
                 },
                 {
                   name: "b",
-                  typeDef: { kind: TypeDefKind.Integerkind },
+                  typeDef: { kind: TypeDefKind.IntegerKind },
                   description: "",
                   optional: true,
                   defaultValue: "0",
@@ -348,12 +348,12 @@ describe("scan static TypeScript", function () {
           methods: [
             {
               name: "helloWorld",
-              returnType: { kind: TypeDefKind.Voidkind },
+              returnType: { kind: TypeDefKind.VoidKind },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
@@ -362,12 +362,12 @@ describe("scan static TypeScript", function () {
             },
             {
               name: "asyncHelloWorld",
-              returnType: { kind: TypeDefKind.Voidkind },
+              returnType: { kind: TypeDefKind.VoidKind },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: true,
                   defaultValue: undefined,
@@ -397,7 +397,7 @@ describe("scan static TypeScript", function () {
             args: [
               {
                 name: "name",
-                typeDef: { kind: TypeDefKind.Stringkind },
+                typeDef: { kind: TypeDefKind.StringKind },
                 description: "",
                 defaultValue: '"world"',
                 optional: true,
@@ -408,13 +408,13 @@ describe("scan static TypeScript", function () {
             {
               name: "sayHello",
               returnType: {
-                kind: TypeDefKind.Stringkind,
+                kind: TypeDefKind.StringKind,
               },
               description: "",
               args: [
                 {
                   name: "name",
-                  typeDef: { kind: TypeDefKind.Stringkind },
+                  typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
