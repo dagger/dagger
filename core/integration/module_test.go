@@ -960,7 +960,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 	})
 
-	t.Run("echoMaybe(msg: string, isQuestion = false): string", func (t *testing.T) {
+	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
 		t.Parallel()
 
 		out, err := modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi")}}`)).Stdout(ctx)
