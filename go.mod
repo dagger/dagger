@@ -5,7 +5,7 @@ go 1.21
 replace dagger.io/dagger => ./sdk/go
 
 require (
-	dagger.io/dagger v0.9.5
+	dagger.io/dagger v0.9.6
 	github.com/99designs/gqlgen v0.17.41
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
