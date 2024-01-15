@@ -1,4 +1,6 @@
-import { dag } from "../api/client.gen.js"
+import { dag, TypeDefKind } from "../api/client.gen.js"
+import { ScanResult } from "../introspector/scanner/scan.js"
+import { TypeDef } from "../introspector/scanner/typeDefs.js"
 
 /**
  * Import all given typescript files so that trigger their decorators
@@ -11,41 +13,102 @@ export async function load(files: string[]): Promise<void> {
 }
 
 /**
- * Load argument as Dagger type.
+ * Load the argument type from the scan result.
  *
- * This function remove the quote from the identifier and checks
- * if it's a Dagger type, if it is, it loads it according to
- * its type.
+ * @param scanResult Result of the scan
+ * @param parentName Class called
+ * @param fnName Function called
+ * @param argName Argument name
+ * @returns The type of the argument
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function loadArg(value: string): Promise<any> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let parsedValue: any
-
-  const isString = (): boolean =>
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith(`'`) && value.endsWith(`'`))
-  const isArray = (): boolean => value.startsWith("[") && value.endsWith("]")
-
-  // Apply JSON parse to parse array or string if the value is wrapped into a string or array
-  if (isString() || isArray()) {
-    parsedValue = JSON.parse(value)
-  } else {
-    parsedValue = value
+export function loadArgType(
+  scanResult: ScanResult,
+  parentName: string,
+  fnName: string,
+  argName: string
+): TypeDef<TypeDefKind> {
+  const classTypeDef = scanResult.classes.find((c) => c.name === parentName)
+  if (!classTypeDef) {
+    throw new Error(`could not find class ${parentName}`)
   }
 
-  // If it's a string, it might contain an identifier to load, or it might be a hidden array
-  if (typeof parsedValue === "string") {
-    const [source] = parsedValue.split(":")
+  const methodTypeDef = classTypeDef.methods.find((m) => m.name === fnName)
+  if (!methodTypeDef) {
+    throw new Error(`could not find method ${fnName}`)
+  }
 
-    const [origin, type] = source.split(".")
-    if (origin === "core") {
+  const argTypeDef = methodTypeDef.args.find((a) => a.name === argName)
+  if (!argTypeDef) {
+    throw new Error(`could not find argument ${argName} type`)
+  }
+
+  return argTypeDef.typeDef
+}
+
+/**
+ * Load the property type from the scan result.
+ *
+ * @param scanResult Result of the scan
+ * @param parentName Class called
+ * @param propertyName property of the class
+ * @returns the type of the property
+ */
+export function loadPropertyType(
+  scanResult: ScanResult,
+  parentName: string,
+  propertyName: string
+): TypeDef<TypeDefKind> {
+  const classTypeDef = scanResult.classes.find((c) => c.name === parentName)
+  if (!classTypeDef) {
+    throw new Error(`could not find class ${parentName}`)
+  }
+
+  const propertyTypeDef = classTypeDef.fields.find(
+    (p) => p.name === propertyName
+  )
+  if (!propertyTypeDef) {
+    throw new Error(`could not find property ${propertyName} type`)
+  }
+
+  return propertyTypeDef.typeDef
+}
+
+/**
+ * This function load the argument as a Dagger type.
+ *
+ * Note: The JSON.parse() is required to remove extra quotes
+ */
+export async function loadArg(
+  value: string,
+  type: TypeDef<TypeDefKind>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
+  switch (type.kind) {
+    case TypeDefKind.ListKind:
+      return JSON.parse(value)
+    case TypeDefKind.ObjectKind: {
+      const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
+
+      // This ID might be wrapped in quotes depending on the source.
+      // We need to remove them to be able to call the loading function.
+      if (value.startsWith('"') && value.endsWith('"')) {
+        value = JSON.parse(value)
+      }
+
       // Workaround to call get any object that has an id
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      return dag[`load${type}FromID`](parsedValue)
+      return dag[`load${objectType}FromID`](value)
     }
+    case TypeDefKind.StringKind:
+      return JSON.parse(value)
+    case TypeDefKind.IntegerKind:
+      return Number(value)
+    case TypeDefKind.BooleanKind:
+      return value === "true" // Return false if string is different than true
+    case TypeDefKind.InterfaceKind:
+      throw new Error("interface not supported")
+    case TypeDefKind.VoidKind:
+      return null
   }
-
-  return parsedValue
 }

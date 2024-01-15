@@ -6,7 +6,7 @@ import {
   TypeDef,
   TypeDefKind,
 } from "../api/client.gen"
-import { scan } from "../introspector/scanner/scan.js"
+import { ScanResult } from "../introspector/scanner/scan.js"
 import {
   ConstructorTypeDef,
   FunctionArg,
@@ -19,10 +19,10 @@ import {
 /**
  * Register the module files and returns its ID
  */
-export async function register(files: string[]): Promise<ModuleID> {
-  // Scan all files
-  const scanResult = await scan(files)
-
+export async function register(
+  files: string[],
+  scanResult: ScanResult
+): Promise<ModuleID> {
   // Get the current module
   let mod = dag.currentModule()
 
