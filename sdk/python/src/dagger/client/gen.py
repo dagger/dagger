@@ -3179,7 +3179,15 @@ class GitRef(Type):
         ssh_known_hosts: str | None = None,
         ssh_auth_socket: "Socket | None" = None,
     ) -> Directory:
-        """The filesystem tree at this ref."""
+        """The filesystem tree at this ref.
+
+        Parameters
+        ----------
+        ssh_known_hosts:
+            DEPRECATED: This option should be passed to git() instead.
+        ssh_auth_socket:
+            DEPRECATED: This option should be passed to git() instead.
+        """
         _args = [
             Arg("sshKnownHosts", ssh_known_hosts, None),
             Arg("sshAuthSocket", ssh_auth_socket, None),
@@ -4402,6 +4410,7 @@ class Client(Root):
         Parameters
         ----------
         id:
+            DEPRECATED: Use loadContainerFromID instead.
         platform:
             Platform to initialize the container with.
         """
@@ -4468,7 +4477,13 @@ class Client(Root):
 
     @typecheck
     def directory(self, *, id: DirectoryID | None = None) -> Directory:
-        """Creates an empty directory."""
+        """Creates an empty directory.
+
+        Parameters
+        ----------
+        id:
+            DEPRECATED: Use loadDirectoryFromID isntead.
+        """
         _args = [
             Arg("id", id, None),
         ]
