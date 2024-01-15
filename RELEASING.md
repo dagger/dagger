@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-December%2021,%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2011,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -206,7 +206,6 @@ cd ../..
 - [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
       branch that you are about to release. This will usually be the commit that
       bumps the Engine version, the one that you merged earlier.
-- [ ] Tag & publish:
 
 ```console
 git checkout main
@@ -214,6 +213,11 @@ git pull "${DAGGER_REPO_REMOTE:?must be set}"
 git branch -D bump-engine
 
 export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
+```
+
+- [ ] Tag & publish:
+
+```console
 cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push "${DAGGER_REPO_REMOTE:?must be set}" "sdk/go/${GO_SDK_VERSION:?must be set}"
@@ -231,7 +235,7 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
 ```console
 cd internal/mage
-go get dagger.io/dagger@${GO_SDK_VERSION:?must be set}
+go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require github.com/dagger/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
 
 # Check that the most important workflow works locally:
