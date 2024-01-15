@@ -113,7 +113,7 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	}
 }
 
-// Definition returns the schema definition of the class.
+// TypeDefinition returns the schema definition of the class.
 //
 // The definition is derived from the type name, description, and fields. The
 // type may implement Definitive or Descriptive to provide more information.
@@ -666,7 +666,7 @@ func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 				}
 			}
 		}
-		specs[i] = InputSpec{
+		spec := InputSpec{
 			Name:             field.Name,
 			Description:      field.Field.Tag.Get("doc"),
 			Type:             input,
@@ -674,6 +674,10 @@ func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			DeprecatedReason: field.Field.Tag.Get("deprecated"),
 			Sensitive:        field.Field.Tag.Get("sensitive") == "true",
 		}
+		if spec.Description == "" && spec.DeprecatedReason != "" {
+			spec.Description = fmt.Sprintf("DEPRECATED: %s", spec.DeprecatedReason)
+		}
+		specs[i] = spec
 	}
 	return specs, nil
 }

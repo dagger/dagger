@@ -529,7 +529,7 @@ func (i ID[T]) ID() *idproto.ID {
 
 var _ ScalarType = ID[Typed]{}
 
-// Definition returns the GraphQL definition of the type.
+// TypeDefinition returns the GraphQL definition of the type.
 func (i ID[T]) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,

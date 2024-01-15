@@ -1497,9 +1497,9 @@ func TestIntrospection(t *testing.T) {
 		}).ArgDoc("documentedArg", "a really cool argument"),
 
 		dagql.Func("deprecatedField", func(ctx context.Context, self Query, args struct {
-			DeprecatedArg string
+			Foo string
 		}) (string, error) {
-			return args.DeprecatedArg, nil
+			return args.Foo, nil
 		}).Deprecated("use something else", "another para"),
 
 		dagql.Func("deprecatedArg", func(ctx context.Context, self Query, args struct {

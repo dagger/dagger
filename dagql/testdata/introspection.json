@@ -368,7 +368,7 @@
             "args": [
               {
                 "name": "deprecatedArg",
-                "description": "",
+                "description": "DEPRECATED: use something else",
                 "defaultValue": null,
                 "type": {
                   "kind": "NON_NULL",
@@ -396,7 +396,7 @@
             },
             "args": [
               {
-                "name": "deprecatedArg",
+                "name": "foo",
                 "description": "",
                 "defaultValue": null,
                 "type": {
