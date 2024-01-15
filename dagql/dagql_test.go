@@ -1508,6 +1508,12 @@ func TestIntrospection(t *testing.T) {
 			return args.DeprecatedArg, nil
 		}),
 
+		dagql.Func("deprecatedArgChain", func(ctx context.Context, self Query, args struct {
+			DeprecatedArg string
+		}) (string, error) {
+			return args.DeprecatedArg, nil
+		}).ArgDeprecated("deprecatedArg", "because I said so"),
+
 		dagql.Func("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return time.Now().String(), nil
 		}).Impure("Because I said so."),

@@ -3184,9 +3184,9 @@ class GitRef(Type):
         Parameters
         ----------
         ssh_known_hosts:
-            DEPRECATED: This option should be passed to git() instead.
+            DEPRECATED: This option should be passed to `git` instead.
         ssh_auth_socket:
-            DEPRECATED: This option should be passed to git() instead.
+            DEPRECATED: This option should be passed to `git` instead.
         """
         _args = [
             Arg("sshKnownHosts", ssh_known_hosts, None),
@@ -4410,7 +4410,7 @@ class Client(Root):
         Parameters
         ----------
         id:
-            DEPRECATED: Use loadContainerFromID instead.
+            DEPRECATED: Use `loadContainerFromID` instead.
         platform:
             Platform to initialize the container with.
         """
@@ -4482,7 +4482,7 @@ class Client(Root):
         Parameters
         ----------
         id:
-            DEPRECATED: Use loadDirectoryFromID isntead.
+            DEPRECATED: Use `loadDirectoryFromID` isntead.
         """
         _args = [
             Arg("id", id, None),
@@ -4493,10 +4493,10 @@ class Client(Root):
     @typecheck
     def file(self, id: FileID) -> File:
         """.. deprecated::
-        Use loadFileFromID instead.
+        Use :py:meth:`load_file_from_id` instead.
         """
         warnings.warn(
-            'Method "file" is deprecated: Use loadFileFromID instead.',
+            'Method "file" is deprecated: Use "load_file_from_id" instead.',
             DeprecationWarning,
             stacklevel=4,
         )

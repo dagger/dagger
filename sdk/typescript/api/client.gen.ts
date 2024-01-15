@@ -568,12 +568,12 @@ export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 export type GitRefTreeOpts = {
   /**
-   * DEPRECATED: This option should be passed to git() instead.
+   * DEPRECATED: This option should be passed to `git` instead.
    */
   sshKnownHosts?: string
 
   /**
-   * DEPRECATED: This option should be passed to git() instead.
+   * DEPRECATED: This option should be passed to `git` instead.
    */
   sshAuthSocket?: Socket
 }
@@ -753,7 +753,7 @@ export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
   /**
-   * DEPRECATED: Use loadContainerFromID instead.
+   * DEPRECATED: Use `loadContainerFromID` instead.
    */
   id?: ContainerID
 
@@ -765,7 +765,7 @@ export type ClientContainerOpts = {
 
 export type ClientDirectoryOpts = {
   /**
-   * DEPRECATED: Use loadDirectoryFromID isntead.
+   * DEPRECATED: Use `loadDirectoryFromID` isntead.
    */
   id?: DirectoryID
 }
@@ -3897,8 +3897,8 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref.
-   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to git() instead.
-   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to git() instead.
+   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to `git` instead.
+   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to `git` instead.
    */
   tree = (opts?: GitRefTreeOpts): Directory => {
     return new Directory({
@@ -5297,7 +5297,7 @@ export class Client extends BaseClient {
    * Creates a scratch container.
    *
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-   * @param opts.id DEPRECATED: Use loadContainerFromID instead.
+   * @param opts.id DEPRECATED: Use `loadContainerFromID` instead.
    * @param opts.platform Platform to initialize the container with.
    */
   container = (opts?: ClientContainerOpts): Container => {
@@ -5402,7 +5402,7 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
-   * @param opts.id DEPRECATED: Use loadDirectoryFromID isntead.
+   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` isntead.
    */
   directory = (opts?: ClientDirectoryOpts): Directory => {
     return new Directory({

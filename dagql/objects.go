@@ -561,6 +561,20 @@ func (field Field[T]) ArgSensitive(name string) Field[T] {
 	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
 }
 
+func (field Field[T]) ArgDeprecated(name string, paras ...string) Field[T] {
+	for i, arg := range field.Spec.Args {
+		if arg.Name == name {
+			reason := FormatDescription(paras...)
+			field.Spec.Args[i].DeprecatedReason = reason
+			if field.Spec.Args[i].Description == "" {
+				field.Spec.Args[i].Description = deprecationDescription(reason)
+			}
+			return field
+		}
+	}
+	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
+}
+
 func FormatDescription(paras ...string) string {
 	for i, p := range paras {
 		paras[i] = strings.Join(strings.Fields(strings.TrimSpace(p)), " ")
@@ -675,11 +689,15 @@ func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Sensitive:        field.Field.Tag.Get("sensitive") == "true",
 		}
 		if spec.Description == "" && spec.DeprecatedReason != "" {
-			spec.Description = fmt.Sprintf("DEPRECATED: %s", spec.DeprecatedReason)
+			spec.Description = deprecationDescription(spec.DeprecatedReason)
 		}
 		specs[i] = spec
 	}
 	return specs, nil
+}
+
+func deprecationDescription(reason string) string {
+	return fmt.Sprintf("DEPRECATED: %s", reason)
 }
 
 func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error)) ([]reflectField[T], error) {

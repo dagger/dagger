@@ -3000,9 +3000,9 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 
 // GitRefTreeOpts contains options for GitRef.Tree
 type GitRefTreeOpts struct {
-	// DEPRECATED: This option should be passed to git() instead.
+	// DEPRECATED: This option should be passed to `git` instead.
 	SSHKnownHosts string
-	// DEPRECATED: This option should be passed to git() instead.
+	// DEPRECATED: This option should be passed to `git` instead.
 	SSHAuthSocket *Socket
 }
 
@@ -4254,7 +4254,7 @@ func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) 
 
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
-	// DEPRECATED: Use loadContainerFromID instead.
+	// DEPRECATED: Use `loadContainerFromID` instead.
 	ID ContainerID
 	// Platform to initialize the container with.
 	Platform Platform
@@ -4350,7 +4350,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 // DirectoryOpts contains options for Client.Directory
 type DirectoryOpts struct {
-	// DEPRECATED: Use loadDirectoryFromID isntead.
+	// DEPRECATED: Use `loadDirectoryFromID` isntead.
 	ID DirectoryID
 }
 
@@ -4370,7 +4370,7 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	}
 }
 
-// Deprecated: Use loadFileFromID instead.
+// Deprecated: Use LoadFileFromID instead.
 func (r *Client) File(id FileID) *File {
 	q := r.q.Select("file")
 	q = q.Arg("id", id)
