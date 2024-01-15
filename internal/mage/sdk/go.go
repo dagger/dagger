@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/moby/buildkit/identity"
 
 	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
@@ -152,6 +153,7 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		})
 
 	repository := git.
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
 		WithWorkdir("/src/dagger")
 

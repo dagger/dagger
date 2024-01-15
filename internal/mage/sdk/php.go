@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/moby/buildkit/identity"
 
 	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
@@ -78,6 +79,7 @@ func (t PHP) Publish(ctx context.Context, tag string) error {
 			"sh", "-c",
 			`git config --global http.https://github.com/.extraheader "AUTHORIZATION: Basic $GITHUB_PAT"`,
 		}).
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
 		WithWorkdir("/src/dagger").
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
