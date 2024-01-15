@@ -66,7 +66,7 @@ type RunningService struct {
 // ServiceKey is a unique identifier for a service.
 type ServiceKey struct {
 	Digest   digest.Digest
-	ClientID string
+	ServerID string
 }
 
 // NewServices returns a new Services.
@@ -96,7 +96,7 @@ func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, e
 
 	key := ServiceKey{
 		Digest:   dig,
-		ClientID: clientMetadata.ClientID,
+		ServerID: clientMetadata.ServerID,
 	}
 
 	notRunningErr := fmt.Errorf("service %s is not running", network.HostHash(dig))
@@ -146,7 +146,7 @@ func (ss *Services) Start(ctx context.Context, id *idproto.ID, svc Startable) (*
 
 	key := ServiceKey{
 		Digest:   dig,
-		ClientID: clientMetadata.ClientID,
+		ServerID: clientMetadata.ServerID,
 	}
 
 dance:
@@ -265,7 +265,7 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID) error {
 
 	key := ServiceKey{
 		Digest:   dig,
-		ClientID: clientMetadata.ClientID,
+		ServerID: clientMetadata.ServerID,
 	}
 
 	ss.l.Lock()
@@ -305,7 +305,7 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 
 	eg := new(errgroup.Group)
 	for _, svc := range ss.running {
-		if svc.Key.ClientID != client.ClientID {
+		if svc.Key.ServerID != client.ServerID {
 			continue
 		}
 

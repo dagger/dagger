@@ -325,7 +325,7 @@ func (f *fakeStartable) Succeed() *core.RunningService {
 	running := &core.RunningService{
 		Key: core.ServiceKey{
 			Digest:   f.digest,
-			ClientID: "doesnt-matter",
+			ServerID: "doesnt-matter",
 		},
 		Host: f.name + "-host",
 	}
