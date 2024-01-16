@@ -726,7 +726,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		return nil, nil, err
 	}
 
-	tc, err := detect.Exporter()
+	tc, _, err := detect.Exporter()
 	if err != nil {
 		// just log it, this can happen when there's mismatching versions of otel libraries in your
 		// module dependency DAG...
