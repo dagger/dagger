@@ -838,7 +838,7 @@ type Directory {
     
     If not set, the module source code is loaded from the root of the directory.
     """
-    sourceSubpath: String = ""
+    sourceSubpath: String = "/"
   ): Module!
 
   """Gets the difference between this directory and an another directory."""
@@ -1201,6 +1201,26 @@ The `GeneratedCodeID` scalar type represents an identifier for an object of type
 """
 scalar GeneratedCodeID
 
+"""Module source originating from a git repo."""
+type GitModuleSource {
+  """The URL from which the source's git repo can be cloned from"""
+  cloneURL: String!
+  commit: String!
+
+  """The URL to the source's git repo in a web browser"""
+  htmlURL: String!
+
+  """A unique identifier for this GitModuleSource."""
+  id: GitModuleSourceID!
+  sourceSubpath: String!
+  version: String!
+}
+
+"""
+The `GitModuleSourceID` scalar type represents an identifier for an object of type GitModuleSource.
+"""
+scalar GitModuleSourceID
+
 """A git ref (tag, branch, or commit)."""
 type GitRef {
   """The resolved commit id at this ref."""
@@ -1428,12 +1448,34 @@ The `ListTypeDefID` scalar type represents an identifier for an object of type L
 """
 scalar ListTypeDefID
 
+"""
+Module source that that originates from a path locally relative to an arbitrary directory.
+"""
+type LocalModuleSource {
+  """A unique identifier for this LocalModuleSource."""
+  id: LocalModuleSourceID!
+  sourceSubpath: String!
+}
+
+"""
+The `LocalModuleSourceID` scalar type represents an identifier for an object of type LocalModuleSource.
+"""
+scalar LocalModuleSourceID
+
 """A Dagger module."""
 type Module {
   dependencies: [Module!]!
-  dependencyConfig: [String!]!
+  dependencyConfig: [ModuleDependency!]!
   description: String!
-  generatedCode: GeneratedCode!
+
+  """
+  The module's root directory containing the config file for it and its source
+  
+  (possibly as a subdir). It includes any generated code or updated config files
+  
+  created after initial load.
+  """
+  generatedSourceDirectory: Directory!
 
   """A unique identifier for this Module."""
   id: ModuleID!
@@ -1452,8 +1494,13 @@ type Module {
   a stream or service to remove the side effect.
   """
   serve: Void
-  sourceDirectory: Directory!
-  sourceDirectorySubpath: String!
+  source: ModuleSource!
+
+  """Update the module configuration to use the given dependencies."""
+  withDependencies(
+    """The module sources of dependencies to use."""
+    dependencies: [ModuleSourceID!]!
+  ): Module!
 
   """Retrieves the module with the given description"""
   withDescription(
@@ -1464,53 +1511,85 @@ type Module {
   """This module plus the given Interface type and associated functions"""
   withInterface(iface: TypeDefID!): Module!
 
+  """Update the module configuration to use the given name."""
+  withName(
+    """The name to use."""
+    name: String!
+  ): Module!
+
   """This module plus the given Object type and associated functions."""
   withObject(object: TypeDefID!): Module!
+
+  """Update the module configuration to use the given sdk."""
+  withSDK(
+    """The sdk to use."""
+    sdk: String!
+  ): Module!
 
   """
   Retrieves the module with basic configuration loaded, ready for initialization.
   """
   withSource(
-    """The directory containing the module's source code."""
-    directory: DirectoryID!
-
-    """
-    An optional subpath of the directory which contains the module's source code.
-    
-    This is needed when the module code is in a subdirectory but requires parent
-    directories to be loaded in order to execute. For example, the module source
-    code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-    
-    If not set, the module source code is loaded from the root of the directory.
-    """
-    subpath: String = ""
+    """The module source to initialize from."""
+    source: ModuleSourceID!
   ): Module!
 }
 
-"""
-Static configuration for a module (e.g. parsed contents of dagger.json)
-"""
-type ModuleConfig {
-  dependencies: [String!]!
-  exclude: [String!]!
-
-  """A unique identifier for this ModuleConfig."""
-  id: ModuleConfigID!
-  include: [String!]!
-  name: String!
-  root: String!
-  sdk: String!
+"""The configuration of dependency of a module."""
+type ModuleDependency {
+  """A unique identifier for this ModuleDependency."""
+  id: ModuleDependencyID!
+  source: ModuleSource!
 }
 
 """
-The `ModuleConfigID` scalar type represents an identifier for an object of type ModuleConfig.
+The `ModuleDependencyID` scalar type represents an identifier for an object of type ModuleDependency.
 """
-scalar ModuleConfigID
+scalar ModuleDependencyID
 
 """
 The `ModuleID` scalar type represents an identifier for an object of type Module.
 """
 scalar ModuleID
+
+"""
+The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
+"""
+type ModuleSource {
+  asGitSource: GitModuleSource
+  asLocalSource: LocalModuleSource
+
+  """
+  Load the source as a module. If this is a local source, the parent directory
+  must have been provided during module source creation
+  """
+  asModule: Module!
+
+  """A human readable ref string to this module source."""
+  asString: String!
+  dependency(dep: ModuleSourceID!): ModuleSource!
+
+  """A unique identifier for this ModuleSource."""
+  id: ModuleSourceID!
+  kind: ModuleSourceKind!
+  rootDirectory: Directory!
+
+  """
+  The path to the module subdirectory containing the actual module's source code.
+  """
+  sourceSubpath: String!
+}
+
+"""
+The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
+"""
+scalar ModuleSourceID
+
+"""The kind of module source."""
+enum ModuleSourceKind {
+  LocalSource
+  GitSource
+}
 
 """Transport layer network protocol associated to a port."""
 enum NetworkProtocol {
@@ -1737,6 +1816,9 @@ type Query {
   """Load a GeneratedCode from its ID."""
   loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
 
+  """Load a GitModuleSource from its ID."""
+  loadGitModuleSourceFromID(id: GitModuleSourceID!): GitModuleSource!
+
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!
 
@@ -1758,11 +1840,17 @@ type Query {
   """Load a ListTypeDef from its ID."""
   loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
 
-  """Load a ModuleConfig from its ID."""
-  loadModuleConfigFromID(id: ModuleConfigID!): ModuleConfig!
+  """Load a LocalModuleSource from its ID."""
+  loadLocalModuleSourceFromID(id: LocalModuleSourceID!): LocalModuleSource!
+
+  """Load a ModuleDependency from its ID."""
+  loadModuleDependencyFromID(id: ModuleDependencyID!): ModuleDependency!
 
   """Load a Module from its ID."""
   loadModuleFromID(id: ModuleID!): Module!
+
+  """Load a ModuleSource from its ID."""
+  loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!
 
   """Load a ObjectTypeDef from its ID."""
   loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
@@ -1788,10 +1876,23 @@ type Query {
   """Create a new module."""
   module: Module!
 
-  """
-  Load the static configuration for a module from the given source directory and optional subpath.
-  """
-  moduleConfig(sourceDirectory: DirectoryID!, subpath: String = ""): ModuleConfig!
+  """Create a new module source instance from a source ref string."""
+  moduleSource(
+    """The string ref representation of the module source"""
+    refString: String!
+
+    """
+    An explicitly set root directory for the module source. This is required to
+    load local sources as modules, other source types implicitly encode the root
+    directory and do not require this.
+    """
+    rootDirectory: DirectoryID
+
+    """
+    If true, enforce that the source is a stable version for source kinds that support versioning.
+    """
+    stable: Boolean = false
+  ): ModuleSource!
 
   """Creates a named sub-pipeline."""
   pipeline(

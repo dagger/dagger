@@ -194,6 +194,23 @@ impl GeneratedCodeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GitModuleSourceId(pub String);
+impl Into<GitModuleSourceId> for &str {
+    fn into(self) -> GitModuleSourceId {
+        GitModuleSourceId(self.to_string())
+    }
+}
+impl Into<GitModuleSourceId> for String {
+    fn into(self) -> GitModuleSourceId {
+        GitModuleSourceId(self.clone())
+    }
+}
+impl GitModuleSourceId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GitRefId(pub String);
 impl Into<GitRefId> for &str {
     fn into(self) -> GitRefId {
@@ -330,18 +347,35 @@ impl ListTypeDefId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct ModuleConfigId(pub String);
-impl Into<ModuleConfigId> for &str {
-    fn into(self) -> ModuleConfigId {
-        ModuleConfigId(self.to_string())
+pub struct LocalModuleSourceId(pub String);
+impl Into<LocalModuleSourceId> for &str {
+    fn into(self) -> LocalModuleSourceId {
+        LocalModuleSourceId(self.to_string())
     }
 }
-impl Into<ModuleConfigId> for String {
-    fn into(self) -> ModuleConfigId {
-        ModuleConfigId(self.clone())
+impl Into<LocalModuleSourceId> for String {
+    fn into(self) -> LocalModuleSourceId {
+        LocalModuleSourceId(self.clone())
     }
 }
-impl ModuleConfigId {
+impl LocalModuleSourceId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ModuleDependencyId(pub String);
+impl Into<ModuleDependencyId> for &str {
+    fn into(self) -> ModuleDependencyId {
+        ModuleDependencyId(self.to_string())
+    }
+}
+impl Into<ModuleDependencyId> for String {
+    fn into(self) -> ModuleDependencyId {
+        ModuleDependencyId(self.clone())
+    }
+}
+impl ModuleDependencyId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -359,6 +393,23 @@ impl Into<ModuleId> for String {
     }
 }
 impl ModuleId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ModuleSourceId(pub String);
+impl Into<ModuleSourceId> for &str {
+    fn into(self) -> ModuleSourceId {
+        ModuleSourceId(self.to_string())
+    }
+}
+impl Into<ModuleSourceId> for String {
+    fn into(self) -> ModuleSourceId {
+        ModuleSourceId(self.clone())
+    }
+}
+impl ModuleSourceId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -3222,6 +3273,41 @@ impl GeneratedCode {
     }
 }
 #[derive(Clone)]
+pub struct GitModuleSource {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl GitModuleSource {
+    /// The URL from which the source's git repo can be cloned from
+    pub async fn clone_url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("cloneURL");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn commit(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("commit");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The URL to the source's git repo in a web browser
+    pub async fn html_url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("htmlURL");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this GitModuleSource.
+    pub async fn id(&self) -> Result<GitModuleSourceId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn source_subpath(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceSubpath");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct GitRef {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -3651,18 +3737,27 @@ impl ListTypeDef {
     }
 }
 #[derive(Clone)]
-pub struct Module {
+pub struct LocalModuleSource {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleWithSourceOpts<'a> {
-    /// An optional subpath of the directory which contains the module's source code.
-    /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-    /// If not set, the module source code is loaded from the root of the directory.
-    #[builder(setter(into, strip_option), default)]
-    pub subpath: Option<&'a str>,
+impl LocalModuleSource {
+    /// A unique identifier for this LocalModuleSource.
+    pub async fn id(&self) -> Result<LocalModuleSourceId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn source_subpath(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceSubpath");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Module {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
 }
 impl Module {
     pub fn dependencies(&self) -> Vec<Module> {
@@ -3673,17 +3768,24 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
-    pub async fn dependency_config(&self) -> Result<Vec<String>, DaggerError> {
+    pub fn dependency_config(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencyConfig");
-        query.execute(self.graphql_client.clone()).await
+        return vec![ModuleDependency {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
     }
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
-    pub fn generated_code(&self) -> GeneratedCode {
-        let query = self.selection.select("generatedCode");
-        return GeneratedCode {
+    /// The module's root directory containing the config file for it and its source
+    /// (possibly as a subdir). It includes any generated code or updated config files
+    /// created after initial load.
+    pub fn generated_source_directory(&self) -> Directory {
+        let query = self.selection.select("generatedSourceDirectory");
+        return Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -3733,17 +3835,27 @@ impl Module {
         let query = self.selection.select("serve");
         query.execute(self.graphql_client.clone()).await
     }
-    pub fn source_directory(&self) -> Directory {
-        let query = self.selection.select("sourceDirectory");
-        return Directory {
+    pub fn source(&self) -> ModuleSource {
+        let query = self.selection.select("source");
+        return ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
     }
-    pub async fn source_directory_subpath(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceDirectorySubpath");
-        query.execute(self.graphql_client.clone()).await
+    /// Update the module configuration to use the given dependencies.
+    ///
+    /// # Arguments
+    ///
+    /// * `dependencies` - The module sources of dependencies to use.
+    pub fn with_dependencies(&self, dependencies: Vec<ModuleSourceId>) -> Module {
+        let mut query = self.selection.select("withDependencies");
+        query = query.arg("dependencies", dependencies);
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// Retrieves the module with the given description
     ///
@@ -3775,6 +3887,20 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Update the module configuration to use the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name to use.
+    pub fn with_name(&self, name: impl Into<String>) -> Module {
+        let mut query = self.selection.select("withName");
+        query = query.arg("name", name.into());
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// This module plus the given Object type and associated functions.
     pub fn with_object(&self, object: TypeDef) -> Module {
         let mut query = self.selection.select("withObject");
@@ -3791,21 +3917,14 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Retrieves the module with basic configuration loaded, ready for initialization.
+    /// Update the module configuration to use the given sdk.
     ///
     /// # Arguments
     ///
-    /// * `directory` - The directory containing the module's source code.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_source(&self, directory: Directory) -> Module {
-        let mut query = self.selection.select("withSource");
-        query = query.arg_lazy(
-            "directory",
-            Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
-            }),
-        );
+    /// * `sdk` - The sdk to use.
+    pub fn with_sdk(&self, sdk: impl Into<String>) -> Module {
+        let mut query = self.selection.select("withSDK");
+        query = query.arg("sdk", sdk.into());
         return Module {
             proc: self.proc.clone(),
             selection: query,
@@ -3816,24 +3935,16 @@ impl Module {
     ///
     /// # Arguments
     ///
-    /// * `directory` - The directory containing the module's source code.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_source_opts<'a>(
-        &self,
-        directory: Directory,
-        opts: ModuleWithSourceOpts<'a>,
-    ) -> Module {
+    /// * `source` - The module source to initialize from.
+    pub fn with_source(&self, source: ModuleSource) -> Module {
         let mut query = self.selection.select("withSource");
         query = query.arg_lazy(
-            "directory",
+            "source",
             Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
+                let source = source.clone();
+                Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        if let Some(subpath) = opts.subpath {
-            query = query.arg("subpath", subpath);
-        }
         return Module {
             proc: self.proc.clone(),
             selection: query,
@@ -3842,39 +3953,98 @@ impl Module {
     }
 }
 #[derive(Clone)]
-pub struct ModuleConfig {
+pub struct ModuleDependency {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-impl ModuleConfig {
-    pub async fn dependencies(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("dependencies");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn exclude(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("exclude");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ModuleConfig.
-    pub async fn id(&self) -> Result<ModuleConfigId, DaggerError> {
+impl ModuleDependency {
+    /// A unique identifier for this ModuleDependency.
+    pub async fn id(&self) -> Result<ModuleDependencyId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    pub async fn include(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("include");
+    pub fn source(&self) -> ModuleSource {
+        let query = self.selection.select("source");
+        return ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+}
+#[derive(Clone)]
+pub struct ModuleSource {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ModuleSource {
+    pub fn as_git_source(&self) -> GitModuleSource {
+        let query = self.selection.select("asGitSource");
+        return GitModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    pub fn as_local_source(&self) -> LocalModuleSource {
+        let query = self.selection.select("asLocalSource");
+        return LocalModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+    pub fn as_module(&self) -> Module {
+        let query = self.selection.select("asModule");
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// A human readable ref string to this module source.
+    pub async fn as_string(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
+    pub fn dependency(&self, dep: ModuleSource) -> ModuleSource {
+        let mut query = self.selection.select("dependency");
+        query = query.arg_lazy(
+            "dep",
+            Box::new(move || {
+                let dep = dep.clone();
+                Box::pin(async move { dep.id().await.unwrap().quote() })
+            }),
+        );
+        return ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// A unique identifier for this ModuleSource.
+    pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
+        let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    pub async fn root(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("root");
+    pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
+        let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
     }
-    pub async fn sdk(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sdk");
+    pub fn root_directory(&self) -> Directory {
+        let query = self.selection.select("rootDirectory");
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// The path to the module subdirectory containing the actual module's source code.
+    pub async fn source_subpath(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceSubpath");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -3999,9 +4169,13 @@ pub struct QueryHttpOpts {
     pub experimental_service_host: Option<ServiceId>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryModuleConfigOpts<'a> {
+pub struct QueryModuleSourceOpts {
+    /// An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.
     #[builder(setter(into, strip_option), default)]
-    pub subpath: Option<&'a str>,
+    pub root_directory: Option<DirectoryId>,
+    /// If true, enforce that the source is a stable version for source kinds that support versioning.
+    #[builder(setter(into, strip_option), default)]
+    pub stable: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryPipelineOpts<'a> {
@@ -4486,6 +4660,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load a GitModuleSource from its ID.
+    pub fn load_git_module_source_from_id(&self, id: GitModuleSource) -> GitModuleSource {
+        let mut query = self.selection.select("loadGitModuleSourceFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return GitModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Load a GitRef from its ID.
     pub fn load_git_ref_from_id(&self, id: GitRef) -> GitRef {
         let mut query = self.selection.select("loadGitRefFromID");
@@ -4598,9 +4788,9 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load a ModuleConfig from its ID.
-    pub fn load_module_config_from_id(&self, id: ModuleConfig) -> ModuleConfig {
-        let mut query = self.selection.select("loadModuleConfigFromID");
+    /// Load a LocalModuleSource from its ID.
+    pub fn load_local_module_source_from_id(&self, id: LocalModuleSource) -> LocalModuleSource {
+        let mut query = self.selection.select("loadLocalModuleSourceFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
@@ -4608,7 +4798,23 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return ModuleConfig {
+        return LocalModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a ModuleDependency from its ID.
+    pub fn load_module_dependency_from_id(&self, id: ModuleDependency) -> ModuleDependency {
+        let mut query = self.selection.select("loadModuleDependencyFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4625,6 +4831,22 @@ impl Query {
             }),
         );
         return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a ModuleSource from its ID.
+    pub fn load_module_source_from_id(&self, id: ModuleSource) -> ModuleSource {
+        let mut query = self.selection.select("loadModuleSourceFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4751,48 +4973,41 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load the static configuration for a module from the given source directory and optional subpath.
+    /// Create a new module source instance from a source ref string.
     ///
     /// # Arguments
     ///
+    /// * `ref_string` - The string ref representation of the module source
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_config(&self, source_directory: Directory) -> ModuleConfig {
-        let mut query = self.selection.select("moduleConfig");
-        query = query.arg_lazy(
-            "sourceDirectory",
-            Box::new(move || {
-                let source_directory = source_directory.clone();
-                Box::pin(async move { source_directory.id().await.unwrap().quote() })
-            }),
-        );
-        return ModuleConfig {
+    pub fn module_source(&self, ref_string: impl Into<String>) -> ModuleSource {
+        let mut query = self.selection.select("moduleSource");
+        query = query.arg("refString", ref_string.into());
+        return ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Load the static configuration for a module from the given source directory and optional subpath.
+    /// Create a new module source instance from a source ref string.
     ///
     /// # Arguments
     ///
+    /// * `ref_string` - The string ref representation of the module source
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_config_opts<'a>(
+    pub fn module_source_opts(
         &self,
-        source_directory: Directory,
-        opts: QueryModuleConfigOpts<'a>,
-    ) -> ModuleConfig {
-        let mut query = self.selection.select("moduleConfig");
-        query = query.arg_lazy(
-            "sourceDirectory",
-            Box::new(move || {
-                let source_directory = source_directory.clone();
-                Box::pin(async move { source_directory.id().await.unwrap().quote() })
-            }),
-        );
-        if let Some(subpath) = opts.subpath {
-            query = query.arg("subpath", subpath);
+        ref_string: impl Into<String>,
+        opts: QueryModuleSourceOpts,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("moduleSource");
+        query = query.arg("refString", ref_string.into());
+        if let Some(root_directory) = opts.root_directory {
+            query = query.arg("rootDirectory", root_directory);
         }
-        return ModuleConfig {
+        if let Some(stable) = opts.stable {
+            query = query.arg("stable", stable);
+        }
+        return ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5356,6 +5571,13 @@ pub enum ImageMediaTypes {
     DockerMediaTypes,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ModuleSourceKind {
+    #[serde(rename = "GitSource")]
+    GitSource,
+    #[serde(rename = "LocalSource")]
+    LocalSource,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {

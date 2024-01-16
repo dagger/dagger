@@ -47,13 +47,12 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *Directory, subPa
 
 	// Compare difference to improve performances
 	modified := ctr.Directory(ModSourceDirPath)
-	diff := modSource.Diff(modified).Directory(subPath)
+	diff := modSource.Diff(modified)
 
 	// Return the difference and fill .gitignore
 	return dag.GeneratedCode(diff).
-		WithVCSIgnoredPaths([]string{
-			genDir,
-			"node_modules",
+		WithVCSGeneratedPaths([]string{
+			genDir + "/**",
 		}), nil
 }
 
@@ -61,7 +60,9 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *Directory, subPa
 // and the user's code with a generated API based on what he did.
 func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
 	// Load module name for the template class
-	name, err := dag.ModuleConfig(modSource.Directory(subPath)).Name(ctx)
+	name, err := dag.ModuleSource(subPath, ModuleSourceOpts{
+		RootDirectory: modSource,
+	}).AsModule().Name(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
@@ -87,7 +88,9 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		WithExec([]string{
 			codegenBinPath,
 			"--lang", "typescript",
+			"--module-config-dir", ModSourceDirPath,
 			"--output", genPath,
+			"--module-name", name,
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,

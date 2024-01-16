@@ -380,14 +380,19 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 		}
 	}()
 
+	modConf, err := getDefaultModuleConfiguration(ctx, dag)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
+	}
+	if !modConf.Exists {
+		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
+	}
 	load := vtx.Task("loading module")
-	mod, err := loadMod(ctx, dag)
+	mod := modConf.Mod.Initialize()
+	_, err = mod.Serve(ctx)
 	load.Done(err)
 	if err != nil {
 		return nil, nil, err
-	}
-	if mod == nil {
-		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
 	}
 
 	load = vtx.Task("loading objects")

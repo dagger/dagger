@@ -1,8 +1,14 @@
 {
-  "name": "bad-sibling-dep",
-  "sdk": "go",
-  "root": ".",
-  "dependencies": [
-    "../good-base"
+  "modules": [
+    {
+      "name": "bad-sibling-dep",
+      "sdk": "go",
+      "source": ".",
+      "dependencies": [
+        {
+          "ref": "../good-base"
+        }
+      ]
+    }
   ]
 }

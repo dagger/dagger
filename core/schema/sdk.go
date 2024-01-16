@@ -10,7 +10,6 @@ import (
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/internal/distconsts"
 )
 
@@ -19,8 +18,7 @@ func (s *moduleSchema) sdkForModule(
 	ctx context.Context,
 	root *core.Query,
 	sdk string,
-	sourceDir dagql.Instance[*core.Directory],
-	subPath string,
+	parentDir dagql.Instance[*core.Directory],
 ) (core.SDK, error) {
 	builtinSDK, err := s.builtinSDK(ctx, root, sdk)
 	if err == nil {
@@ -29,12 +27,15 @@ func (s *moduleSchema) sdkForModule(
 		return nil, err
 	}
 
-	sdkMod, err := core.LoadRef(
-		ctx,
-		s.dag,
-		sourceDir,
-		subPath,
-		sdk,
+	var sdkMod dagql.Instance[*core.Module]
+	err = s.dag.Select(ctx, s.dag.Root(), &sdkMod,
+		dagql.Selector{
+			Field: "moduleRef",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(sdk)},
+				{Name: "parentDirectory", Value: dagql.NewID[*core.Directory](parentDir.ID())},
+			},
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module %s: %w", sdk, err)
@@ -92,6 +93,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, sourceDir d
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
+
 	var inst dagql.Instance[*core.GeneratedCode]
 	err = sdk.dag.Select(ctx, sdk.sdk, &inst, dagql.Selector{
 		Field: "codegen",
@@ -124,6 +126,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module, sourceDir d
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
+
 	var inst dagql.Instance[*core.Container]
 	err = sdk.dag.Select(ctx, sdk.sdk, &inst, dagql.Selector{
 		Field: "moduleRuntime",
@@ -150,44 +153,33 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module, sourceDir d
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
-func (s *moduleSchema) loadBuiltinSDK(ctx context.Context, root *core.Query, name string, engineContainerModulePath string) (*moduleSDK, error) {
+func (s *moduleSchema) loadBuiltinSDK(
+	ctx context.Context,
+	root *core.Query,
+	name string,
+	engineContainerModulePath string,
+) (*moduleSDK, error) {
 	ctx, recorder := progrock.WithGroup(ctx, fmt.Sprintf("load builtin module sdk %s", name))
 
-	cfgPath := modules.NormalizeConfigPath(engineContainerModulePath)
-	cfgPBDef, _, err := root.Buildkit.EngineContainerLocalImport(
-		ctx,
-		recorder,
-		root.Platform.Spec(),
-		filepath.Dir(cfgPath),
-		nil,
-		[]string{filepath.Base(cfgPath)},
-	)
+	// TODO: currently hardcoding assumption that builtin sdks put module source code at
+	// subdir right under their config dir. Include/exlude won't be used to optimize loading
+	// yet. Can be lifted with some effort.
+	configDirPath := filepath.Dir(engineContainerModulePath)
+	sourceRelPath, err := filepath.Rel(configDirPath, engineContainerModulePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to import module sdk config file %s from engine container filesystem: %w", name, err)
+		return nil, fmt.Errorf("failed to get relative path of module sdk %s: %w", name, err)
 	}
 
-	cfgFile := core.NewFile(root, cfgPBDef, filepath.Base(cfgPath), root.Platform, nil)
-	modCfg, err := core.LoadModuleConfigFromFile(ctx, cfgFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load module sdk config file %s: %w", name, err)
-	}
-
-	modRootPath := filepath.Join(filepath.Dir(cfgPath), modCfg.Root)
 	_, desc, err := root.Buildkit.EngineContainerLocalImport(
 		ctx,
 		recorder,
 		root.Platform.Spec(),
-		modRootPath,
-		modCfg.Exclude,
-		modCfg.Include,
+		configDirPath,
+		nil,
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to import module sdk %s from engine container filesystem: %w", name, err)
-	}
-
-	cfgRelPath, err := filepath.Rel(modRootPath, cfgPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get relative path of module sdk config file %s: %w", name, err)
 	}
 
 	sdkDir, err := core.LoadBlob(ctx, s.dag, desc)
@@ -201,7 +193,7 @@ func (s *moduleSchema) loadBuiltinSDK(ctx context.Context, root *core.Query, nam
 		Args: []dagql.NamedInput{
 			{
 				Name:  "sourceSubpath",
-				Value: dagql.String(filepath.Dir(cfgRelPath)),
+				Value: dagql.String(sourceRelPath),
 			},
 		},
 	})
@@ -232,11 +224,17 @@ type goSDK struct {
 	dag  *dagql.Server
 }
 
-func (sdk *goSDK) Codegen(ctx context.Context, mod *core.Module, sourceDir dagql.Instance[*core.Directory], subPath string) (*core.GeneratedCode, error) {
-	ctr, err := sdk.baseWithCodegen(ctx, mod, sourceDir, subPath)
+func (sdk *goSDK) Codegen(
+	ctx context.Context,
+	mod *core.Module,
+	configDir dagql.Instance[*core.Directory],
+	sourceDirSubpath string,
+) (*core.GeneratedCode, error) {
+	ctr, err := sdk.baseWithCodegen(ctx, mod, configDir, sourceDirSubpath)
 	if err != nil {
 		return nil, err
 	}
+
 	var modifiedSrcDir dagql.Instance[*core.Directory]
 	if err := sdk.dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
 		Field: "directory",
@@ -249,8 +247,9 @@ func (sdk *goSDK) Codegen(ctx context.Context, mod *core.Module, sourceDir dagql
 	}); err != nil {
 		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
 	}
+
 	var generated dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, sourceDir, &generated, dagql.Selector{
+	if err := sdk.dag.Select(ctx, configDir, &generated, dagql.Selector{
 		Field: "diff",
 		Args: []dagql.NamedInput{
 			{
@@ -258,29 +257,26 @@ func (sdk *goSDK) Codegen(ctx context.Context, mod *core.Module, sourceDir dagql
 				Value: dagql.NewID[*core.Directory](modifiedSrcDir.ID()),
 			},
 		},
-	}, dagql.Selector{
-		Field: "directory",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString(subPath),
-			},
-		},
 	}); err != nil {
 		return nil, fmt.Errorf("failed to get generated source directory for go module sdk codegen: %w", err)
 	}
+
 	return &core.GeneratedCode{
-		Code: generated.Self,
-		VCSIgnoredPaths: []string{
+		Code: generated,
+		VCSGeneratedPaths: []string{
 			"dagger.gen.go",
-			"internal/querybuilder/",
-			"querybuilder/", // for old repos
+			"querybuilder/**",
 		},
 	}, nil
 }
 
-func (sdk *goSDK) Runtime(ctx context.Context, mod *core.Module, sourceDir dagql.Instance[*core.Directory], subPath string) (*core.Container, error) {
-	ctr, err := sdk.baseWithCodegen(ctx, mod, sourceDir, subPath)
+func (sdk *goSDK) Runtime(
+	ctx context.Context,
+	mod *core.Module,
+	configDir dagql.Instance[*core.Directory],
+	sourceDirSubpath string,
+) (*core.Container, error) {
+	ctr, err := sdk.baseWithCodegen(ctx, mod, configDir, sourceDirSubpath)
 	if err != nil {
 		return nil, err
 	}
@@ -316,30 +312,42 @@ func (sdk *goSDK) Runtime(ctx context.Context, mod *core.Module, sourceDir dagql
 	return ctr.Self, nil
 }
 
-func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module, sourceDir dagql.Instance[*core.Directory], subPath string) (dagql.Instance[*core.Container], error) {
+func (sdk *goSDK) baseWithCodegen(
+	ctx context.Context,
+	mod *core.Module,
+	configDir dagql.Instance[*core.Directory],
+	sourceDirSubpath string,
+) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
+
 	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", mod.Name(), err)
 	}
+
 	ctr, err = sdk.base(ctx)
 	if err != nil {
 		return ctr, err
 	}
+
 	// Delete dagger.gen.go if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
-	if err := sdk.dag.Select(ctx, sourceDir, &sourceDir, dagql.Selector{
+
+	// need to put this in a separate instance, otherwise the ID won't be updated when used as an arg below
+	var updatedConfigDir dagql.Instance[*core.Directory]
+	if err := sdk.dag.Select(ctx, configDir, &updatedConfigDir, dagql.Selector{
 		Field: "withoutFile",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.String(filepath.Join(subPath, "dagger.gen.go")),
+				Value: dagql.String(filepath.Join(sourceDirSubpath, "dagger.gen.go")),
 			},
 		},
 	}); err != nil {
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
+
 	if err := sdk.dag.Select(ctx, ctr, &ctr, dagql.Selector{
 		Field: "withNewFile",
 		Args: []dagql.NamedInput{
@@ -365,7 +373,7 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module, sourceD
 			},
 			{
 				Name:  "source",
-				Value: dagql.NewID[*core.Directory](sourceDir.ID()),
+				Value: dagql.NewID[*core.Directory](updatedConfigDir.ID()),
 			},
 		},
 	}, dagql.Selector{
@@ -373,7 +381,7 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module, sourceD
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.NewString(filepath.Join(goSDKUserModSourceDirPath, subPath)),
+				Value: dagql.NewString(filepath.Join(goSDKUserModSourceDirPath, sourceDirSubpath)),
 			},
 		},
 	}, dagql.Selector{
@@ -384,7 +392,8 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module, sourceD
 			{
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
-					"--module", ".",
+					"--module-config-dir", goSDKUserModSourceDirPath,
+					"--module-name", dagql.String(mod.NameField),
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},
 			},
@@ -396,6 +405,7 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module, sourceD
 	}); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
+
 	return ctr, nil
 }
 

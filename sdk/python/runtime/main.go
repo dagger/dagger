@@ -44,11 +44,11 @@ func (m *PythonSdk) Codegen(modSource *Directory, subPath string, introspectionJ
 	})
 
 	modified := ctr.Directory(ModSourceDirPath)
-	diff := modSource.Diff(modified).Directory(subPath)
+	diff := modSource.Diff(modified)
 
 	return dag.GeneratedCode(diff).
-		WithVCSIgnoredPaths([]string{
-			genDir,
+		WithVCSGeneratedPaths([]string{
+			genDir + "/**",
 		})
 }
 

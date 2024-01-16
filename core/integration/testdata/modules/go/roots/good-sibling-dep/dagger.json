@@ -1,8 +1,19 @@
 {
-  "name": "good-sibling-dep",
-  "sdk": "go",
-  "root": "..",
-  "dependencies": [
-    "../good-base"
+  "modules": [
+    {
+      "name": "good-depender",
+      "sdk": "go",
+      "source": "good-depender",
+      "dependencies": [
+        {
+          "ref": "good-dep"
+        }
+      ]
+    },
+    {
+      "name": "good-dep",
+      "sdk": "go",
+      "source": "good-dep"
+    }
   ]
 }

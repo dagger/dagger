@@ -201,6 +201,9 @@ type FunctionID string
 // The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
 type GeneratedCodeID string
 
+// The `GitModuleSourceID` scalar type represents an identifier for an object of type GitModuleSource.
+type GitModuleSourceID string
+
 // The `GitRefID` scalar type represents an identifier for an object of type GitRef.
 type GitRefID string
 
@@ -225,11 +228,17 @@ type LabelID string
 // The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
 type ListTypeDefID string
 
-// The `ModuleConfigID` scalar type represents an identifier for an object of type ModuleConfig.
-type ModuleConfigID string
+// The `LocalModuleSourceID` scalar type represents an identifier for an object of type LocalModuleSource.
+type LocalModuleSourceID string
+
+// The `ModuleDependencyID` scalar type represents an identifier for an object of type ModuleDependency.
+type ModuleDependencyID string
 
 // The `ModuleID` scalar type represents an identifier for an object of type Module.
 type ModuleID string
+
+// The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
+type ModuleSourceID string
 
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 type ObjectTypeDefID string
@@ -2979,6 +2988,121 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	}
 }
 
+// Module source originating from a git repo.
+type GitModuleSource struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	cloneURL      *string
+	commit        *string
+	htmlURL       *string
+	id            *GitModuleSourceID
+	sourceSubpath *string
+	version       *string
+}
+
+// The URL from which the source's git repo can be cloned from
+func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
+	if r.cloneURL != nil {
+		return *r.cloneURL, nil
+	}
+	q := r.q.Select("cloneURL")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *GitModuleSource) Commit(ctx context.Context) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.q.Select("commit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The URL to the source's git repo in a web browser
+func (r *GitModuleSource) HTMLURL(ctx context.Context) (string, error) {
+	if r.htmlURL != nil {
+		return *r.htmlURL, nil
+	}
+	q := r.q.Select("htmlURL")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A unique identifier for this GitModuleSource.
+func (r *GitModuleSource) ID(ctx context.Context) (GitModuleSourceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response GitModuleSourceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitModuleSource) XXX_GraphQLType() string {
+	return "GitModuleSource"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitModuleSource) XXX_GraphQLIDType() string {
+	return "GitModuleSourceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *GitModuleSource) SourceSubpath(ctx context.Context) (string, error) {
+	if r.sourceSubpath != nil {
+		return *r.sourceSubpath, nil
+	}
+	q := r.q.Select("sourceSubpath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *GitModuleSource) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.q.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A git ref (tag, branch, or commit).
 type GitRef struct {
 	q *querybuilder.Selection
@@ -3672,17 +3796,77 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Module source that that originates from a path locally relative to an arbitrary directory.
+type LocalModuleSource struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id            *LocalModuleSourceID
+	sourceSubpath *string
+}
+
+// A unique identifier for this LocalModuleSource.
+func (r *LocalModuleSource) ID(ctx context.Context) (LocalModuleSourceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response LocalModuleSourceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LocalModuleSource) XXX_GraphQLType() string {
+	return "LocalModuleSource"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LocalModuleSource) XXX_GraphQLIDType() string {
+	return "LocalModuleSourceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LocalModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LocalModuleSource) SourceSubpath(ctx context.Context) (string, error) {
+	if r.sourceSubpath != nil {
+		return *r.sourceSubpath, nil
+	}
+	q := r.q.Select("sourceSubpath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A Dagger module.
 type Module struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description            *string
-	id                     *ModuleID
-	name                   *string
-	sdk                    *string
-	serve                  *Void
-	sourceDirectorySubpath *string
+	description *string
+	id          *ModuleID
+	name        *string
+	sdk         *string
+	serve       *Void
 }
 type WithModuleFunc func(r *Module) *Module
 
@@ -3726,13 +3910,37 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	return convert(response), nil
 }
 
-func (r *Module) DependencyConfig(ctx context.Context) ([]string, error) {
+func (r *Module) DependencyConfig(ctx context.Context) ([]ModuleDependency, error) {
 	q := r.q.Select("dependencyConfig")
 
-	var response []string
+	q = q.Select("id")
+
+	type dependencyConfig struct {
+		Id ModuleDependencyID
+	}
+
+	convert := func(fields []dependencyConfig) []ModuleDependency {
+		out := []ModuleDependency{}
+
+		for i := range fields {
+			val := ModuleDependency{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dependencyConfig
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 func (r *Module) Description(ctx context.Context) (string, error) {
@@ -3747,10 +3955,15 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-func (r *Module) GeneratedCode() *GeneratedCode {
-	q := r.q.Select("generatedCode")
+// The module's root directory containing the config file for it and its source
+//
+// (possibly as a subdir). It includes any generated code or updated config files
+//
+// created after initial load.
+func (r *Module) GeneratedSourceDirectory() *Directory {
+	q := r.q.Select("generatedSourceDirectory")
 
-	return &GeneratedCode{
+	return &Directory{
 		q: q,
 		c: r.c,
 	}
@@ -3911,25 +4124,24 @@ func (r *Module) Serve(ctx context.Context) (Void, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-func (r *Module) SourceDirectory() *Directory {
-	q := r.q.Select("sourceDirectory")
+func (r *Module) Source() *ModuleSource {
+	q := r.q.Select("source")
 
-	return &Directory{
+	return &ModuleSource{
 		q: q,
 		c: r.c,
 	}
 }
 
-func (r *Module) SourceDirectorySubpath(ctx context.Context) (string, error) {
-	if r.sourceDirectorySubpath != nil {
-		return *r.sourceDirectorySubpath, nil
+// Update the module configuration to use the given dependencies.
+func (r *Module) WithDependencies(dependencies []*ModuleSource) *Module {
+	q := r.q.Select("withDependencies")
+	q = q.Arg("dependencies", dependencies)
+
+	return &Module{
+		q: q,
+		c: r.c,
 	}
-	q := r.q.Select("sourceDirectorySubpath")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the module with the given description
@@ -3955,6 +4167,17 @@ func (r *Module) WithInterface(iface *TypeDef) *Module {
 	}
 }
 
+// Update the module configuration to use the given name.
+func (r *Module) WithName(name string) *Module {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This module plus the given Object type and associated functions.
 func (r *Module) WithObject(object *TypeDef) *Module {
 	assertNotNil("object", object)
@@ -3967,27 +4190,10 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
-// ModuleWithSourceOpts contains options for Module.WithSource
-type ModuleWithSourceOpts struct {
-	// An optional subpath of the directory which contains the module's source code.
-	//
-	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-	//
-	// If not set, the module source code is loaded from the root of the directory.
-	Subpath string
-}
-
-// Retrieves the module with basic configuration loaded, ready for initialization.
-func (r *Module) WithSource(directory *Directory, opts ...ModuleWithSourceOpts) *Module {
-	assertNotNil("directory", directory)
-	q := r.q.Select("withSource")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `subpath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Subpath) {
-			q = q.Arg("subpath", opts[i].Subpath)
-		}
-	}
-	q = q.Arg("directory", directory)
+// Update the module configuration to use the given sdk.
+func (r *Module) WithSDK(sdk string) *Module {
+	q := r.q.Select("withSDK")
+	q = q.Arg("sdk", sdk)
 
 	return &Module{
 		q: q,
@@ -3995,60 +4201,51 @@ func (r *Module) WithSource(directory *Directory, opts ...ModuleWithSourceOpts) 
 	}
 }
 
-// Static configuration for a module (e.g. parsed contents of dagger.json)
-type ModuleConfig struct {
+// Retrieves the module with basic configuration loaded, ready for initialization.
+func (r *Module) WithSource(source *ModuleSource) *Module {
+	assertNotNil("source", source)
+	q := r.q.Select("withSource")
+	q = q.Arg("source", source)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The configuration of dependency of a module.
+type ModuleDependency struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id   *ModuleConfigID
-	name *string
-	root *string
-	sdk  *string
+	id *ModuleDependencyID
 }
 
-func (r *ModuleConfig) Dependencies(ctx context.Context) ([]string, error) {
-	q := r.q.Select("dependencies")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-func (r *ModuleConfig) Exclude(ctx context.Context) ([]string, error) {
-	q := r.q.Select("exclude")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// A unique identifier for this ModuleConfig.
-func (r *ModuleConfig) ID(ctx context.Context) (ModuleConfigID, error) {
+// A unique identifier for this ModuleDependency.
+func (r *ModuleDependency) ID(ctx context.Context) (ModuleDependencyID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.q.Select("id")
 
-	var response ModuleConfigID
+	var response ModuleDependencyID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ModuleConfig) XXX_GraphQLType() string {
-	return "ModuleConfig"
+func (r *ModuleDependency) XXX_GraphQLType() string {
+	return "ModuleDependency"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ModuleConfig) XXX_GraphQLIDType() string {
-	return "ModuleConfigID"
+func (r *ModuleDependency) XXX_GraphQLIDType() string {
+	return "ModuleDependencyID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ModuleConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *ModuleDependency) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -4056,7 +4253,7 @@ func (r *ModuleConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *ModuleConfig) MarshalJSON() ([]byte, error) {
+func (r *ModuleDependency) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
 		return nil, err
@@ -4064,20 +4261,68 @@ func (r *ModuleConfig) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-func (r *ModuleConfig) Include(ctx context.Context) ([]string, error) {
-	q := r.q.Select("include")
+func (r *ModuleDependency) Source() *ModuleSource {
+	q := r.q.Select("source")
 
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
 }
 
-func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
+// The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
+type ModuleSource struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	asString      *string
+	id            *ModuleSourceID
+	kind          *ModuleSourceKind
+	sourceSubpath *string
+}
+type WithModuleSourceFunc func(r *ModuleSource) *ModuleSource
+
+// With calls the provided function with current ModuleSource.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
+	return f(r)
+}
+
+func (r *ModuleSource) AsGitSource() *GitModuleSource {
+	q := r.q.Select("asGitSource")
+
+	return &GitModuleSource{
+		q: q,
+		c: r.c,
 	}
-	q := r.q.Select("name")
+}
+
+func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
+	q := r.q.Select("asLocalSource")
+
+	return &LocalModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+func (r *ModuleSource) AsModule() *Module {
+	q := r.q.Select("asModule")
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A human readable ref string to this module source.
+func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
+	if r.asString != nil {
+		return *r.asString, nil
+	}
+	q := r.q.Select("asString")
 
 	var response string
 
@@ -4085,23 +4330,84 @@ func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-func (r *ModuleConfig) Root(ctx context.Context) (string, error) {
-	if r.root != nil {
-		return *r.root, nil
-	}
-	q := r.q.Select("root")
+func (r *ModuleSource) Dependency(dep *ModuleSource) *ModuleSource {
+	assertNotNil("dep", dep)
+	q := r.q.Select("dependency")
+	q = q.Arg("dep", dep)
 
-	var response string
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A unique identifier for this ModuleSource.
+func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response ModuleSourceID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
-func (r *ModuleConfig) SDK(ctx context.Context) (string, error) {
-	if r.sdk != nil {
-		return *r.sdk, nil
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleSource) XXX_GraphQLType() string {
+	return "ModuleSource"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleSource) XXX_GraphQLIDType() string {
+	return "ModuleSourceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
 	}
-	q := r.q.Select("sdk")
+	return string(id), nil
+}
+
+func (r *ModuleSource) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
+	if r.kind != nil {
+		return *r.kind, nil
+	}
+	q := r.q.Select("kind")
+
+	var response ModuleSourceKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *ModuleSource) RootDirectory() *Directory {
+	q := r.q.Select("rootDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The path to the module subdirectory containing the actual module's source code.
+func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
+	if r.sourceSubpath != nil {
+		return *r.sourceSubpath, nil
+	}
+	q := r.q.Select("sourceSubpath")
 
 	var response string
 
@@ -4765,6 +5071,17 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	}
 }
 
+// Load a GitModuleSource from its ID.
+func (r *Client) LoadGitModuleSourceFromID(id GitModuleSourceID) *GitModuleSource {
+	q := r.q.Select("loadGitModuleSourceFromID")
+	q = q.Arg("id", id)
+
+	return &GitModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a GitRef from its ID.
 func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
 	q := r.q.Select("loadGitRefFromID")
@@ -4842,12 +5159,23 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	}
 }
 
-// Load a ModuleConfig from its ID.
-func (r *Client) LoadModuleConfigFromID(id ModuleConfigID) *ModuleConfig {
-	q := r.q.Select("loadModuleConfigFromID")
+// Load a LocalModuleSource from its ID.
+func (r *Client) LoadLocalModuleSourceFromID(id LocalModuleSourceID) *LocalModuleSource {
+	q := r.q.Select("loadLocalModuleSourceFromID")
 	q = q.Arg("id", id)
 
-	return &ModuleConfig{
+	return &LocalModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a ModuleDependency from its ID.
+func (r *Client) LoadModuleDependencyFromID(id ModuleDependencyID) *ModuleDependency {
+	q := r.q.Select("loadModuleDependencyFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleDependency{
 		q: q,
 		c: r.c,
 	}
@@ -4859,6 +5187,17 @@ func (r *Client) LoadModuleFromID(id ModuleID) *Module {
 	q = q.Arg("id", id)
 
 	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a ModuleSource from its ID.
+func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
+	q := r.q.Select("loadModuleSourceFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleSource{
 		q: q,
 		c: r.c,
 	}
@@ -4951,24 +5290,30 @@ func (r *Client) Module() *Module {
 	}
 }
 
-// ModuleConfigOpts contains options for Client.ModuleConfig
-type ModuleConfigOpts struct {
-	Subpath string
+// ModuleSourceOpts contains options for Client.ModuleSource
+type ModuleSourceOpts struct {
+	// An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.
+	RootDirectory *Directory
+	// If true, enforce that the source is a stable version for source kinds that support versioning.
+	Stable bool
 }
 
-// Load the static configuration for a module from the given source directory and optional subpath.
-func (r *Client) ModuleConfig(sourceDirectory *Directory, opts ...ModuleConfigOpts) *ModuleConfig {
-	assertNotNil("sourceDirectory", sourceDirectory)
-	q := r.q.Select("moduleConfig")
+// Create a new module source instance from a source ref string.
+func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
+	q := r.q.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `subpath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Subpath) {
-			q = q.Arg("subpath", opts[i].Subpath)
+		// `rootDirectory` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RootDirectory) {
+			q = q.Arg("rootDirectory", opts[i].RootDirectory)
+		}
+		// `stable` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Stable) {
+			q = q.Arg("stable", opts[i].Stable)
 		}
 	}
-	q = q.Arg("sourceDirectory", sourceDirectory)
+	q = q.Arg("refString", refString)
 
-	return &ModuleConfig{
+	return &ModuleSource{
 		q: q,
 		c: r.c,
 	}
@@ -5700,6 +6045,16 @@ const (
 	Dockermediatypes ImageMediaTypes = "DockerMediaTypes"
 
 	Ocimediatypes ImageMediaTypes = "OCIMediaTypes"
+)
+
+type ModuleSourceKind string
+
+func (ModuleSourceKind) IsEnum() {}
+
+const (
+	Gitsource ModuleSourceKind = "GitSource"
+
+	Localsource ModuleSourceKind = "LocalSource"
 )
 
 type NetworkProtocol string

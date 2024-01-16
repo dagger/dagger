@@ -1,5 +1,9 @@
 {
-  "name": "bad-self-dir",
-  "sdk": "go",
-  "root": "../bad-self-dir"
+  "modules": [
+    {
+      "name": "bad-self-dir",
+      "sdk": "go",
+      "source": "../bad-self-dir"
+    }
+  ]
 }

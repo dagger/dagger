@@ -200,6 +200,12 @@ func LoadGeneratedCodeFromID(id dagger.GeneratedCodeID) *dagger.GeneratedCode {
 	return client.LoadGeneratedCodeFromID(id)
 }
 
+// Load a GitModuleSource from its ID.
+func LoadGitModuleSourceFromID(id dagger.GitModuleSourceID) *dagger.GitModuleSource {
+	client := initClient()
+	return client.LoadGitModuleSourceFromID(id)
+}
+
 // Load a GitRef from its ID.
 func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 	client := initClient()
@@ -242,16 +248,28 @@ func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	return client.LoadListTypeDefFromID(id)
 }
 
-// Load a ModuleConfig from its ID.
-func LoadModuleConfigFromID(id dagger.ModuleConfigID) *dagger.ModuleConfig {
+// Load a LocalModuleSource from its ID.
+func LoadLocalModuleSourceFromID(id dagger.LocalModuleSourceID) *dagger.LocalModuleSource {
 	client := initClient()
-	return client.LoadModuleConfigFromID(id)
+	return client.LoadLocalModuleSourceFromID(id)
+}
+
+// Load a ModuleDependency from its ID.
+func LoadModuleDependencyFromID(id dagger.ModuleDependencyID) *dagger.ModuleDependency {
+	client := initClient()
+	return client.LoadModuleDependencyFromID(id)
 }
 
 // Load a Module from its ID.
 func LoadModuleFromID(id dagger.ModuleID) *dagger.Module {
 	client := initClient()
 	return client.LoadModuleFromID(id)
+}
+
+// Load a ModuleSource from its ID.
+func LoadModuleSourceFromID(id dagger.ModuleSourceID) *dagger.ModuleSource {
+	client := initClient()
+	return client.LoadModuleSourceFromID(id)
 }
 
 // Load a ObjectTypeDef from its ID.
@@ -302,10 +320,10 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
-// Load the static configuration for a module from the given source directory and optional subpath.
-func ModuleConfig(sourceDirectory *dagger.Directory, opts ...dagger.ModuleConfigOpts) *dagger.ModuleConfig {
+// Create a new module source instance from a source ref string.
+func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()
-	return client.ModuleConfig(sourceDirectory, opts...)
+	return client.ModuleSource(refString, opts...)
 }
 
 // Creates a named sub-pipeline.

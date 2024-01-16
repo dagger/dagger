@@ -1,0 +1,9 @@
+{
+  "modules": [
+    {
+      "name": "python-sdk",
+      "source": "runtime",
+      "sdk": "go"
+    }
+  ]
+}
