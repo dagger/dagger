@@ -54,6 +54,44 @@ func (m *Test) Fn() BadIface {
 	})
 }
 
+func TestModuleIfaceGoDanglingInterface(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+type Test struct {}
+
+func (test *Test) Hello() string {
+	return "hello"
+}
+
+type DanglingObject struct {}
+
+func (obj *DanglingObject) Hello(x DanglingIface) DanglingIface {
+	return x
+}
+
+type DanglingIface interface {
+	DoThing() (error)
+}
+	`,
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	out, err := modGen.
+		With(daggerQuery(`{test{hello}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
+}
+
 func TestModuleIfaceDaggerCall(t *testing.T) {
 	t.Parallel()
 

@@ -31,7 +31,6 @@ impl Generator for RustGenerator {
             handlers: VisitHandlers {
                 visit_scalar: Arc::new({
                     let render = render.clone();
-                    let _common_funcs = common_funcs.clone();
 
                     move |t| {
                         println!("generating scalar");

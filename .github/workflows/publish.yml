@@ -14,7 +14,7 @@ on:
     paths:
       - sdk/go/internal/engineconn/version.gen.go
       - sdk/python/src/dagger/_engine/_version.py
-      - sdk/nodejs/provisioning/default.ts
+      - sdk/typescript/provisioning/default.ts
       - sdk/rust/src/crates/dagger-sdk/src/core/mod.rs
 
 jobs:
@@ -143,9 +143,9 @@ jobs:
         with:
           node-version: 16
 
-      - name: "Test NodeJS SDK"
+      - name: "Test TypeScript SDK"
         run: |
-          cd sdk/nodejs
+          cd sdk/typescript
           yarn install
           yarn test -g 'Automatic Provisioned CLI Binary'
 
@@ -251,8 +251,8 @@ jobs:
         if: always()
         run: sudo dmesg
 
-  test-provision-nodejs-linux:
-    name: "Test SDK Provision / nodejs / linux"
+  test-provision-typescript-linux:
+    name: "Test SDK Provision / TypeScript / linux"
     needs: [publish]
     if: |
       always() &&
@@ -284,9 +284,9 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: 16
-      - name: "Test NodeJS SDK"
+      - name: "Test TypeScript SDK"
         run: |
-          cd sdk/nodejs
+          cd sdk/typescript
           yarn install
           yarn test -g 'Automatic Provisioned CLI Binary'
       - name: "ALWAYS print engine logs - especially useful on failure"

@@ -28,7 +28,7 @@ const (
 	golangVersion = "1.21.3"
 	alpineVersion = "3.18"
 	ubuntuVersion = "22.04"
-	runcVersion   = "v1.1.9"
+	runcVersion   = "v1.1.11"
 	cniVersion    = "v1.3.0"
 	qemuBinImage  = "tonistiigi/binfmt@sha256:e06789462ac7e2e096b53bfd9e607412426850227afeb1d0f5dfa48a731e0ba5"
 
@@ -348,7 +348,7 @@ func pythonSDK(c *dagger.Client) *dagger.Directory {
 }
 
 func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
-	return c.Host().Directory("sdk/nodejs", dagger.HostDirectoryOpts{
+	return c.Host().Directory("sdk/typescript", dagger.HostDirectoryOpts{
 		Include: []string{
 			"**/*.ts",
 			"LICENSE",

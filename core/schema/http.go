@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/client/llb"
@@ -13,30 +14,21 @@ import (
 var _ SchemaResolvers = &httpSchema{}
 
 type httpSchema struct {
-	*APIServer
-
-	svcs *core.Services
+	srv *dagql.Server
 }
 
-func (s *httpSchema) Name() string {
-	return "http"
-}
-
-func (s *httpSchema) Schema() string {
-	return HTTP
-}
-
-func (s *httpSchema) Resolvers() Resolvers {
-	return Resolvers{
-		"Query": ObjectResolver{
-			"http": ToResolver(s.http),
-		},
-	}
+func (s *httpSchema) Install() {
+	dagql.Fields[*core.Query]{
+		dagql.Func("http", s.http).
+			Doc(`Returns a file containing an http remote url content.`).
+			ArgDoc("url", `HTTP url to get the content from (e.g., "https://docs.dagger.io").`).
+			ArgDoc("experimentalServiceHost", `A service which must be started before the URL is fetched.`),
+	}.Install(s.srv)
 }
 
 type httpArgs struct {
-	URL                     string          `json:"url"`
-	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
+	URL                     string
+	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 }
 
 func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs) (*core.File, error) {
@@ -47,17 +39,18 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 	filename := digest.FromString(args.URL).Encoded()
 
 	svcs := core.ServiceBindings{}
-	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.Decode()
+	if args.ExperimentalServiceHost.Valid {
+		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
 		if err != nil {
 			return nil, err
 		}
-		host, err := svc.Hostname(ctx, s.svcs)
+		host, err := svc.Self.Hostname(ctx, svc.ID())
 		if err != nil {
 			return nil, err
 		}
 		svcs = append(svcs, core.ServiceBinding{
-			Service:  svc,
+			ID:       svc.ID(),
+			Service:  svc.Self,
 			Hostname: host,
 		})
 	}
@@ -87,5 +80,5 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 		st = llb.HTTP(args.URL, opts...)
 	}
 
-	return core.NewFileSt(ctx, st, filename, parent.PipelinePath(), s.platform, svcs)
+	return core.NewFileSt(ctx, parent, st, filename, parent.Platform, svcs)
 }

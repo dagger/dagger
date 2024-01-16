@@ -32,6 +32,17 @@ local `${HOME}/.m2` repository
 ./mvnw clean install 
 ```
 
+### Troubleshoot generated code
+
+To inspect the code that gets generated, run:
+
+```bash
+./mvnw package
+```
+
+The generated code will exist under
+`sdk/java/dagger-java-sdk/target/generated-sources/dagger/io/dagger/client`.
+
 ### Javadoc
 
 To generate the Javadoc (site and jar), use the `javadoc` profile.

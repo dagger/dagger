@@ -90,7 +90,7 @@ class ObjectVisitor extends AbstractVisitor {
       buildFieldMethod(classBuilder, field, false);
     }
 
-    if (List.of("Container", "Directoy").contains(type.getName())) {
+    if (List.of("Container", "Directory").contains(type.getName())) {
       ClassName thisType = ClassName.bestGuess(Helpers.formatName(type));
       String argName = type.getName().toLowerCase() + "Func";
       classBuilder.addMethod(
@@ -172,15 +172,14 @@ class ObjectVisitor extends AbstractVisitor {
     }
 
     if (field.getTypeRef().isListOfObject()) {
-      List<Field> arrayFields = Helpers.getArrayField(field, getSchema());
-      CodeBlock block =
-          arrayFields.stream()
-              .map(f -> CodeBlock.of("$S", f.getName()))
-              .collect(CodeBlock.joining(",", "List.of(", ")"));
-      fieldMethodBuilder.addStatement("nextQueryBuilder = nextQueryBuilder.chain($L)", block);
+      String objName = field.getTypeRef().getListElementType().getName();
       fieldMethodBuilder.addStatement(
-          "return nextQueryBuilder.executeListQuery($L.class)",
-          field.getTypeRef().getListElementType().getName());
+          "nextQueryBuilder = nextQueryBuilder.chain(List.of($S))", "id");
+      fieldMethodBuilder.addStatement(
+          "List<QueryBuilder> builders = nextQueryBuilder.executeObjectListQuery($L.class)",
+          objName);
+      fieldMethodBuilder.addStatement(
+          "return builders.stream().map(qb -> new $L(qb)).toList()", objName);
       fieldMethodBuilder
           .addException(InterruptedException.class)
           .addException(ExecutionException.class)

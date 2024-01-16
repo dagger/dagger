@@ -382,8 +382,12 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(_ context.Context, c *dagger.Client) (any, error) {
-	return c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}), nil
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
+	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start service: %w", err)
+	}
+	return svc, nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
@@ -397,19 +401,19 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 	}
 
 	switch r.TypeDef.Kind {
-	case dagger.Stringkind:
+	case dagger.StringKind:
 		val, _ := getDefaultValue[string](r)
 		return flags.String(name, val, usage), nil
 
-	case dagger.Integerkind:
+	case dagger.IntegerKind:
 		val, _ := getDefaultValue[int](r)
 		return flags.Int(name, val, usage), nil
 
-	case dagger.Booleankind:
+	case dagger.BooleanKind:
 		val, _ := getDefaultValue[bool](r)
 		return flags.Bool(name, val, usage), nil
 
-	case dagger.Objectkind:
+	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
 		if val := GetCustomFlagValue(objName); val != nil {
@@ -420,23 +424,23 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 		// TODO: default to JSON?
 		return nil, fmt.Errorf("unsupported object type %q for flag: %s", objName, name)
 
-	case dagger.Listkind:
+	case dagger.ListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
 
 		switch elementType.Kind {
-		case dagger.Stringkind:
+		case dagger.StringKind:
 			val, _ := getDefaultValue[[]string](r)
 			return flags.StringSlice(name, val, usage), nil
 
-		case dagger.Integerkind:
+		case dagger.IntegerKind:
 			val, _ := getDefaultValue[[]int](r)
 			return flags.IntSlice(name, val, usage), nil
 
-		case dagger.Booleankind:
+		case dagger.BooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
 			return flags.BoolSlice(name, val, usage), nil
 
-		case dagger.Objectkind:
+		case dagger.ObjectKind:
 			objName := elementType.AsObject.Name
 
 			if val := GetCustomFlagValueSlice(objName); val != nil {
@@ -447,7 +451,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 			// TODO: default to JSON?
 			return nil, fmt.Errorf("unsupported list of objects %q for flag: %s", objName, name)
 
-		case dagger.Listkind:
+		case dagger.ListKind:
 			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)
 		}
 	}

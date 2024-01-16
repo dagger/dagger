@@ -403,7 +403,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 	for _, argSpec := range method.argSpecs {
 		if argSpec.isContext {
 			// ctx context.Context case
-			methodArgs = append(methodArgs, Id(argSpec.name).Qual("context", "Context"))
+			methodArgs = append(methodArgs, Id("ctx").Qual("context", "Context"))
 			continue
 		}
 

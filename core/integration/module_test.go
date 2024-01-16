@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -742,14 +743,14 @@ func TestModuleGoSignatures(t *testing.T) {
 
 	t.Run("func Echoes([]string) []string", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
 	t.Run("func EchoesVariadic(...string) string", func(t *testing.T) {
 		t.Parallel()
-		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
@@ -886,7 +887,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	t.Run("echoes(msgs: string[]): string[]", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
@@ -909,7 +910,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	t.Run("echoesVariadic(...msgs: string[]): string", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: "hello")}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
@@ -1741,7 +1742,7 @@ class Minimal:
 			require.JSONEq(t, `{"minimal":{"set":{"foo": "abc"}}}`, out)
 
 			_, err = modGen.With(daggerQuery(`{minimal{set(foo: "abc", bar: "xyz"){bar}}}`)).Stdout(ctx)
-			require.ErrorContains(t, err, `Cannot query field "bar"`)
+			require.ErrorContains(t, err, `Minimal has no such field: "bar"`)
 		})
 	}
 }
@@ -1756,7 +1757,7 @@ func TestModuleGoExtendCore(t *testing.T) {
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		With(daggerExec("mod", "init", "--name=container", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
@@ -1767,11 +1768,11 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 }
 `,
 		}).
-		With(daggerExec("mod", "sync")).
+		With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 		Sync(ctx)
-
 	require.Error(t, err)
 	require.NoError(t, c.Close())
+	t.Log(logs.String())
 	require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
 }
 
@@ -2394,7 +2395,11 @@ class Foo:
 			out, err = modGen.With(daggerQuery(`{foo{set(data: "abc"){id}}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			id := gjson.Get(out, "foo.set.id").String()
-			require.Contains(t, id, "moddata:")
+
+			var idp idproto.ID
+			err = idp.Decode(id)
+			require.NoError(t, err)
+			require.Equal(t, idp.Display(), `foo.set(data: "abc"): Foo!`)
 
 			out, err = modGen.With(daggerQuery(`{loadFooFromID(id: "%s"){get}}`, id)).Stdout(ctx)
 			require.NoError(t, err)
@@ -2490,7 +2495,10 @@ class Foo:
 			out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			id := gjson.Get(out, "foo.sayHello.id").String()
-			require.Contains(t, id, "moddata:")
+			var idp idproto.ID
+			err = idp.Decode(id)
+			require.NoError(t, err)
+			require.Equal(t, idp.Display(), `foo.sayHello(name: "world"): FooMessage!`)
 
 			out, err = modGen.With(daggerQuery(`{foo{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
 			require.NoError(t, err)
@@ -2898,10 +2906,10 @@ class Test:
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
-				"object %q function %q cannot return external type from dependency module %q",
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "dep",
-			))
+			), err.Error())
 		})
 
 		t.Run("list", func(t *testing.T) {
@@ -2920,10 +2928,10 @@ class Test:
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
-				"object %q function %q cannot return external type from dependency module %q",
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "dep",
-			))
+			), err.Error())
 		})
 	})
 
@@ -2945,10 +2953,10 @@ class Test:
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
-				"object %q function %q arg %q cannot reference external type from dependency module %q",
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "obj", "dep",
-			))
+			), err.Error())
 		})
 
 		t.Run("list", func(t *testing.T) {
@@ -2966,10 +2974,10 @@ class Test:
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
-				"object %q function %q arg %q cannot reference external type from dependency module %q",
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "obj", "dep",
-			))
+			), err.Error())
 		})
 	})
 
@@ -2996,10 +3004,10 @@ class Test:
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
-				"object %q field %q cannot reference external type from dependency module %q",
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Obj", "foo", "dep",
-			))
+			), err.Error())
 		})
 
 		t.Run("list", func(t *testing.T) {
@@ -3022,10 +3030,10 @@ class Test:
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
-				"object %q field %q cannot reference external type from dependency module %q",
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Obj", "foo", "dep",
-			))
+			), err.Error())
 		})
 	})
 }
@@ -3103,7 +3111,7 @@ func TestModuleUseLocal(t *testing.T) {
 			// cannot use transitive dependency directly
 			_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, `Cannot query field "dep" on type "Query".`)
+			require.ErrorContains(t, err, `Query has no such field: "dep"`)
 		})
 	}
 }
@@ -3589,6 +3597,10 @@ class Test:
 
 				_, err := ctr.With(daggerCall("foo")).Stdout(ctx)
 				require.Error(t, err)
+
+				require.NoError(t, c.Close())
+
+				t.Log(logs.String())
 				require.Contains(t, logs.String(), "too bad")
 			})
 		}

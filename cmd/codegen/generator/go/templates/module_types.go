@@ -113,17 +113,21 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	var kind Code
 	switch spec.goType.Info() {
 	case types.IsString:
-		kind = Id("Stringkind")
+		kind = Id("StringKind")
 	case types.IsInteger:
-		kind = Id("Integerkind")
+		kind = Id("IntegerKind")
 	case types.IsBoolean:
-		kind = Id("Booleankind")
+		kind = Id("BooleanKind")
 	default:
 		return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 	}
-	return Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
+	def := Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
 		kind,
-	), nil
+	)
+	if spec.isPtr {
+		def = def.Dot("WithOptional").Call(Lit(true))
+	}
+	return def, nil
 }
 
 func (spec *parsedPrimitiveType) GoType() types.Type {

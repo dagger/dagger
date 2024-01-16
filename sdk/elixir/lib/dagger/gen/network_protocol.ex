@@ -3,7 +3,7 @@ defmodule Dagger.NetworkProtocol do
   @moduledoc "Transport layer network protocol associated to a port."
   @type t() :: :TCP | :UDP
   (
-    @doc "TCP (Transmission Control Protocol)"
+    @doc ""
     @spec tcp() :: :TCP
     def tcp() do
       :TCP
@@ -11,7 +11,7 @@ defmodule Dagger.NetworkProtocol do
   )
 
   (
-    @doc "UDP (User Datagram Protocol)"
+    @doc ""
     @spec udp() :: :UDP
     def udp() do
       :UDP

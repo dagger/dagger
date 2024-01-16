@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
@@ -65,7 +66,7 @@ type RunningService struct {
 // ServiceKey is a unique identifier for a service.
 type ServiceKey struct {
 	Digest   digest.Digest
-	ClientID string
+	ServerID string
 }
 
 // NewServices returns a new Services.
@@ -82,20 +83,20 @@ func NewServices(bk *buildkit.Client) *Services {
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
 // is returned.
-func (ss *Services) Get(ctx context.Context, svc Startable) (*RunningService, error) {
+func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dig, err := svc.Digest()
+	dig, err := id.Digest()
 	if err != nil {
 		return nil, err
 	}
 
 	key := ServiceKey{
 		Digest:   dig,
-		ClientID: clientMetadata.ClientID,
+		ServerID: clientMetadata.ServerID,
 	}
 
 	notRunningErr := fmt.Errorf("service %s is not running", network.HostHash(dig))
@@ -118,12 +119,9 @@ func (ss *Services) Get(ctx context.Context, svc Startable) (*RunningService, er
 }
 
 type Startable interface {
-	Digest() (digest.Digest, error)
-
 	Start(
 		ctx context.Context,
-		bk *buildkit.Client,
-		svcs *Services,
+		id *idproto.ID,
 		interactive bool,
 		forwardStdin func(io.Writer, bkgw.ContainerProcess),
 		forwardStdout func(io.Reader),
@@ -135,20 +133,20 @@ type Startable interface {
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, svc Startable) (*RunningService, error) {
+func (ss *Services) Start(ctx context.Context, id *idproto.ID, svc Startable) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dig, err := svc.Digest()
+	dig, err := id.Digest()
 	if err != nil {
 		return nil, err
 	}
 
 	key := ServiceKey{
 		Digest:   dig,
-		ClientID: clientMetadata.ClientID,
+		ServerID: clientMetadata.ServerID,
 	}
 
 dance:
@@ -183,7 +181,7 @@ dance:
 		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 	}
 
-	running, err := svc.Start(svcCtx, ss.bk, ss, false, nil, nil, nil)
+	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
 	if err != nil {
 		stop()
 		ss.l.Lock()
@@ -205,7 +203,7 @@ dance:
 
 // StartBindings starts each of the bound services in parallel and returns a
 // function that will detach from all of them after 10 seconds.
-func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
+func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	running := []*RunningService{}
 	detach := func() {
 		go func() {
@@ -229,7 +227,7 @@ func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bind
 	for _, bnd := range bindings {
 		bnd := bnd
 		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.Service)
+			runningSvc, err := ss.Start(ctx, bnd.ID, bnd.Service)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
@@ -254,20 +252,20 @@ func (ss *Services) StartBindings(ctx context.Context, bk *buildkit.Client, bind
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, bk *buildkit.Client, svc *Service) error {
+func (ss *Services) Stop(ctx context.Context, id *idproto.ID) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	dig, err := svc.Digest()
+	dig, err := id.Digest()
 	if err != nil {
 		return err
 	}
 
 	key := ServiceKey{
 		Digest:   dig,
-		ClientID: clientMetadata.ClientID,
+		ServerID: clientMetadata.ServerID,
 	}
 
 	ss.l.Lock()
@@ -307,7 +305,7 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 
 	eg := new(errgroup.Group)
 	for _, svc := range ss.running {
-		if svc.Key.ClientID != client.ClientID {
+		if svc.Key.ServerID != client.ServerID {
 			continue
 		}
 

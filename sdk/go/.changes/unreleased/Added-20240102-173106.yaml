@@ -1,6 +1,0 @@
-kind: Added
-body: Add a default global client at dagger.io/dagger/dag
-time: 2024-01-02T17:31:06.82804106Z
-custom:
-  Author: jedevc
-  PR: "6326"

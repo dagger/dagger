@@ -10,48 +10,107 @@ from .base import Enum, Input, Scalar, Type
 
 
 class CacheVolumeID(Scalar):
-    """A global cache volume identifier."""
+    """The `CacheVolumeID` scalar type represents an identifier for an
+    object of type CacheVolume."""
 
 
 class ContainerID(Scalar):
-    """A unique container identifier. Null designates an empty container
-    (scratch)."""
+    """The `ContainerID` scalar type represents an identifier for an
+    object of type Container."""
 
 
 class DirectoryID(Scalar):
-    """A content-addressed directory identifier."""
+    """The `DirectoryID` scalar type represents an identifier for an
+    object of type Directory."""
+
+
+class EnvVariableID(Scalar):
+    """The `EnvVariableID` scalar type represents an identifier for an
+    object of type EnvVariable."""
+
+
+class FieldTypeDefID(Scalar):
+    """The `FieldTypeDefID` scalar type represents an identifier for an
+    object of type FieldTypeDef."""
 
 
 class FileID(Scalar):
-    """A file identifier."""
+    """The `FileID` scalar type represents an identifier for an object of
+    type File."""
 
 
 class FunctionArgID(Scalar):
-    """A reference to a FunctionArg."""
+    """The `FunctionArgID` scalar type represents an identifier for an
+    object of type FunctionArg."""
+
+
+class FunctionCallArgValueID(Scalar):
+    """The `FunctionCallArgValueID` scalar type represents an identifier
+    for an object of type FunctionCallArgValue."""
+
+
+class FunctionCallID(Scalar):
+    """The `FunctionCallID` scalar type represents an identifier for an
+    object of type FunctionCall."""
 
 
 class FunctionID(Scalar):
-    """A reference to a Function."""
+    """The `FunctionID` scalar type represents an identifier for an object
+    of type Function."""
 
 
 class GeneratedCodeID(Scalar):
-    """A reference to GeneratedCode."""
+    """The `GeneratedCodeID` scalar type represents an identifier for an
+    object of type GeneratedCode."""
 
 
 class GitRefID(Scalar):
-    """A git reference identifier."""
+    """The `GitRefID` scalar type represents an identifier for an object
+    of type GitRef."""
 
 
 class GitRepositoryID(Scalar):
-    """A git repository identifier."""
+    """The `GitRepositoryID` scalar type represents an identifier for an
+    object of type GitRepository."""
+
+
+class HostID(Scalar):
+    """The `HostID` scalar type represents an identifier for an object of
+    type Host."""
+
+
+class InterfaceTypeDefID(Scalar):
+    """The `InterfaceTypeDefID` scalar type represents an identifier for
+    an object of type InterfaceTypeDef."""
 
 
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
 
+class LabelID(Scalar):
+    """The `LabelID` scalar type represents an identifier for an object of
+    type Label."""
+
+
+class ListTypeDefID(Scalar):
+    """The `ListTypeDefID` scalar type represents an identifier for an
+    object of type ListTypeDef."""
+
+
+class ModuleConfigID(Scalar):
+    """The `ModuleConfigID` scalar type represents an identifier for an
+    object of type ModuleConfig."""
+
+
 class ModuleID(Scalar):
-    """A reference to a Module."""
+    """The `ModuleID` scalar type represents an identifier for an object
+    of type Module."""
+
+
+class ObjectTypeDefID(Scalar):
+    """The `ObjectTypeDefID` scalar type represents an identifier for an
+    object of type ObjectTypeDef."""
 
 
 class Platform(Scalar):
@@ -60,24 +119,33 @@ class Platform(Scalar):
     "windows/amd64", "linux/arm64")."""
 
 
+class PortID(Scalar):
+    """The `PortID` scalar type represents an identifier for an object of
+    type Port."""
+
+
 class SecretID(Scalar):
-    """A unique identifier for a secret."""
+    """The `SecretID` scalar type represents an identifier for an object
+    of type Secret."""
 
 
 class ServiceID(Scalar):
-    """A unique service identifier."""
+    """The `ServiceID` scalar type represents an identifier for an object
+    of type Service."""
 
 
 class SocketID(Scalar):
-    """A content-addressed socket identifier."""
+    """The `SocketID` scalar type represents an identifier for an object
+    of type Socket."""
 
 
 class TypeDefID(Scalar):
-    """A reference to a TypeDef."""
+    """The `TypeDefID` scalar type represents an identifier for an object
+    of type TypeDef."""
 
 
 class Void(Scalar):
-    """The absense of a value.  A Null Void is used as a placeholder for
+    """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
 
 
@@ -85,9 +153,7 @@ class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
     LOCKED = "LOCKED"
-    """Shares the cache volume amongst many build pipelines,
-    but will serialize the writes
-    """
+    """Shares the cache volume amongst many build pipelines, but will serialize the writes"""
 
     PRIVATE = "PRIVATE"
     """Keeps a cache volume for a single build pipeline"""
@@ -120,48 +186,44 @@ class NetworkProtocol(Enum):
     """Transport layer network protocol associated to a port."""
 
     TCP = "TCP"
-    """TCP (Transmission Control Protocol)"""
 
     UDP = "UDP"
-    """UDP (User Datagram Protocol)"""
 
 
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
-    BooleanKind = "BooleanKind"
-    """A boolean value"""
+    BOOLEAN_KIND = "BOOLEAN_KIND"
+    """A boolean value."""
 
-    IntegerKind = "IntegerKind"
-    """An integer value"""
+    INTEGER_KIND = "INTEGER_KIND"
+    """An integer value."""
 
-    InterfaceKind = "InterfaceKind"
+    INTERFACE_KIND = "INTERFACE_KIND"
     """A named type of functions that can be matched+implemented by other objects+interfaces.
 
     Always paired with an InterfaceTypeDef.
     """
 
-    ListKind = "ListKind"
+    LIST_KIND = "LIST_KIND"
     """A list of values all having the same type.
 
     Always paired with a ListTypeDef.
     """
 
-    ObjectKind = "ObjectKind"
+    OBJECT_KIND = "OBJECT_KIND"
     """A named type defined in the GraphQL schema, with fields and functions.
 
     Always paired with an ObjectTypeDef.
     """
 
-    StringKind = "StringKind"
-    """A string value"""
+    STRING_KIND = "STRING_KIND"
+    """A string value."""
 
-    VoidKind = "VoidKind"
+    VOID_KIND = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
-    This is used for functions that have no return value. The outer TypeDef
-    specifying this Kind is always Optional, as the Void is never actually
-    represented.
+    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
     """
 
 
@@ -178,7 +240,7 @@ class BuildArg(Input):
 
 @dataclass(slots=True)
 class PipelineLabel(Input):
-    """Key value object that represents a Pipeline label."""
+    """Key value object that represents a pipeline label."""
 
     name: str
     """Label name."""
@@ -197,8 +259,8 @@ class PortForward(Input):
     frontend: int | None = None
     """Port to expose to clients. If unspecified, a default will be chosen."""
 
-    protocol: NetworkProtocol | None = None
-    """Protocol to use for traffic."""
+    protocol: NetworkProtocol | None = "TCP"
+    """Transport layer protocol to use for traffic."""
 
 
 class CacheVolume(Type):
@@ -206,14 +268,17 @@ class CacheVolume(Type):
 
     @typecheck
     async def id(self) -> CacheVolumeID:
-        """Note
+        """A unique identifier for this CacheVolume.
+
+        Note
         ----
         This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
         CacheVolumeID
-            A global cache volume identifier.
+            The `CacheVolumeID` scalar type represents an identifier for an
+            object of type CacheVolume.
 
         Raises
         ------
@@ -228,7 +293,7 @@ class CacheVolume(Type):
 
 
 class Container(Type):
-    """An OCI-compatible container, also known as a docker container."""
+    """An OCI-compatible container, also known as a Docker container."""
 
     @typecheck
     def as_service(self) -> "Service":
@@ -244,9 +309,9 @@ class Container(Type):
     def as_tarball(
         self,
         *,
-        platform_variants: Sequence["Container"] | None = None,
+        platform_variants: Sequence["Container"] | None = [],
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = None,
+        media_types: ImageMediaTypes | None = "OCIMediaTypes",
     ) -> "File":
         """Returns a File representing the container serialized to a tarball.
 
@@ -254,28 +319,25 @@ class Container(Type):
         ----------
         platform_variants:
             Identifiers for other platform specific containers.
-            Used for multi-platform image.
+            Used for multi-platform images.
         forced_compression:
             Force each layer of the image to use the specified compression
             algorithm.
             If this is unset, then if a layer already has a compressed blob in
-            the engine's
-            cache, that will be used (this can result in a mix of compression
-            algorithms for
-            different layers). If this is unset and a layer has no compressed
-            blob in the
-            engine's cache, then it will be compressed using Gzip.
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
         media_types:
-            Use the specified media types for the image's layers. Defaults to
-            OCI, which
-            is largely compatible with most recent container runtimes, but
-            Docker may be needed
-            for older runtimes without OCI support.
+            Use the specified media types for the image's layers.
+            Defaults to OCI, which is largely compatible with most recent
+            container runtimes, but Docker may be needed for older runtimes
+            without OCI support.
         """
         _args = [
-            Arg("platformVariants", platform_variants, None),
+            Arg("platformVariants", platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, None),
+            Arg("mediaTypes", media_types, "OCIMediaTypes"),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -285,10 +347,10 @@ class Container(Type):
         self,
         context: "Directory",
         *,
-        dockerfile: str | None = None,
-        build_args: Sequence[BuildArg] | None = None,
-        target: str | None = None,
-        secrets: Sequence["Secret"] | None = None,
+        dockerfile: str | None = "Dockerfile",
+        target: str | None = "",
+        build_args: Sequence[BuildArg] | None = [],
+        secrets: Sequence["Secret"] | None = [],
     ) -> "Container":
         """Initializes this container from a Dockerfile build.
 
@@ -298,38 +360,36 @@ class Container(Type):
             Directory context used by the Dockerfile.
         dockerfile:
             Path to the Dockerfile to use.
-            Default: './Dockerfile'.
-        build_args:
-            Additional build arguments.
         target:
             Target build stage to build.
+        build_args:
+            Additional build arguments.
         secrets:
             Secrets to pass to the build.
             They will be mounted at /run/secrets/[secret-name] in the build
             container
             They can be accessed in the Dockerfile using the "secret" mount
-            type
-            and mount path /run/secrets/[secret-name]
-            e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat
-            /run/secrets/my-secret)"
+            type and mount path /run/secrets/[secret-name], e.g. RUN
+            --mount=type=secret,id=my-secret curl
+            http://example.com?token=$(cat /run/secrets/my-secret)
         """
         _args = [
             Arg("context", context),
-            Arg("dockerfile", dockerfile, None),
-            Arg("buildArgs", build_args, None),
-            Arg("target", target, None),
-            Arg("secrets", secrets, None),
+            Arg("dockerfile", dockerfile, "Dockerfile"),
+            Arg("target", target, ""),
+            Arg("buildArgs", build_args, []),
+            Arg("secrets", secrets, []),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
 
     @typecheck
-    async def default_args(self) -> list[str] | None:
+    async def default_args(self) -> list[str]:
         """Retrieves default arguments for future commands.
 
         Returns
         -------
-        list[str] | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -343,7 +403,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultArgs", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
     def directory(self, path: str) -> "Directory":
@@ -363,12 +423,12 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    async def entrypoint(self) -> list[str] | None:
+    async def entrypoint(self) -> list[str]:
         """Retrieves entrypoint to be prepended to the arguments of all commands.
 
         Returns
         -------
-        list[str] | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -382,7 +442,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
     async def env_variable(self, name: str) -> str | None:
@@ -428,8 +488,9 @@ class Container(Type):
     def experimental_with_all_gp_us(self) -> "Container":
         """EXPERIMENTAL API! Subject to change/removal at any time.
 
-        experimentalWithAllGPUs configures all available GPUs on the host to
-        be accessible to this container.
+        Configures all available GPUs on the host to be accessible to this
+        container.
+
         This currently works for Nvidia devices only.
         """
         _args: list[Arg] = []
@@ -440,9 +501,15 @@ class Container(Type):
     def experimental_with_gpu(self, devices: Sequence[str]) -> "Container":
         """EXPERIMENTAL API! Subject to change/removal at any time.
 
-        experimentalWithGPU configures the provided list of devices to be
-        accesible to this container.
+        Configures the provided list of devices to be accesible to this
+        container.
+
         This currently works for Nvidia devices only.
+
+        Parameters
+        ----------
+        devices:
+            List of devices to be accessible to this container.
         """
         _args = [
             Arg("devices", devices),
@@ -455,15 +522,16 @@ class Container(Type):
         self,
         path: str,
         *,
-        platform_variants: Sequence["Container"] | None = None,
+        platform_variants: Sequence["Container"] | None = [],
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = None,
+        media_types: ImageMediaTypes | None = "OCIMediaTypes",
     ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
-        the host for the specified platform variants.
+        the host.
 
         Return true on success.
-        It can also publishes platform variants.
+
+        It can also export platform variants.
 
         Parameters
         ----------
@@ -477,18 +545,15 @@ class Container(Type):
             Force each layer of the exported image to use the specified
             compression algorithm.
             If this is unset, then if a layer already has a compressed blob in
-            the engine's
-            cache, that will be used (this can result in a mix of compression
-            algorithms for
-            different layers). If this is unset and a layer has no compressed
-            blob in the
-            engine's cache, then it will be compressed using Gzip.
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
         media_types:
             Use the specified media types for the exported image's layers.
-            Defaults to OCI, which
-            is largely compatible with most recent container runtimes, but
-            Docker may be needed
-            for older runtimes without OCI support.
+            Defaults to OCI, which is largely compatible with most recent
+            container runtimes, but Docker may be needed for older runtimes
+            without OCI support.
 
         Returns
         -------
@@ -504,9 +569,9 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("platformVariants", platform_variants, None),
+            Arg("platformVariants", platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, None),
+            Arg("mediaTypes", media_types, "OCIMediaTypes"),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
@@ -563,7 +628,7 @@ class Container(Type):
 
     @typecheck
     async def id(self) -> ContainerID:
-        """A unique identifier for this container.
+        """A unique identifier for this Container.
 
         Note
         ----
@@ -572,8 +637,8 @@ class Container(Type):
         Returns
         -------
         ContainerID
-            A unique container identifier. Null designates an empty container
-            (scratch).
+            The `ContainerID` scalar type represents an identifier for an
+            object of type Container.
 
         Raises
         ------
@@ -587,13 +652,13 @@ class Container(Type):
         return await _ctx.execute(ContainerID)
 
     @typecheck
-    async def image_ref(self) -> str | None:
+    async def image_ref(self) -> str:
         """The unique image reference which can only be retrieved immediately
         after the 'Container.From' call.
 
         Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -607,21 +672,16 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("imageRef", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     def import_(
         self,
         source: "File",
         *,
-        tag: str | None = None,
+        tag: str | None = "",
     ) -> "Container":
         """Reads the container from an OCI tarball.
-
-        NOTE: this involves unpacking the tarball to an OCI store on the host
-        at
-        $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you
-        like.
 
         Parameters
         ----------
@@ -629,12 +689,11 @@ class Container(Type):
             File to read the container from.
         tag:
             Identifies the tag to import from the archive, if the archive
-            bundles
-            multiple tags.
+            bundles multiple tags.
         """
         _args = [
             Arg("source", source),
-            Arg("tag", tag, None),
+            Arg("tag", tag, ""),
         ]
         _ctx = self._select("import", _args)
         return Container(_ctx)
@@ -642,6 +701,12 @@ class Container(Type):
     @typecheck
     async def label(self, name: str) -> str | None:
         """Retrieves the value of the specified label.
+
+        Parameters
+        ----------
+        name:
+            The name of the label (e.g.,
+            "org.opencontainers.artifact.created").
 
         Returns
         -------
@@ -701,24 +766,24 @@ class Container(Type):
         self,
         name: str,
         *,
-        description: str | None = None,
-        labels: Sequence[PipelineLabel] | None = None,
+        description: str | None = "",
+        labels: Sequence[PipelineLabel] | None = [],
     ) -> "Container":
-        """Creates a named sub-pipeline
+        """Creates a named sub-pipeline.
 
         Parameters
         ----------
         name:
-            Pipeline name.
+            Name of the sub-pipeline.
         description:
-            Pipeline description.
+            Description of the sub-pipeline.
         labels:
-            Pipeline labels.
+            Labels to apply to the sub-pipeline.
         """
         _args = [
             Arg("name", name),
-            Arg("description", description, None),
-            Arg("labels", labels, None),
+            Arg("description", description, ""),
+            Arg("labels", labels, []),
         ]
         _ctx = self._select("pipeline", _args)
         return Container(_ctx)
@@ -750,13 +815,14 @@ class Container(Type):
         self,
         address: str,
         *,
-        platform_variants: Sequence["Container"] | None = None,
+        platform_variants: Sequence["Container"] | None = [],
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = None,
+        media_types: ImageMediaTypes | None = "OCIMediaTypes",
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
         Publish returns a fully qualified ref.
+
         It can also publish platform variants.
 
         Parameters
@@ -772,18 +838,15 @@ class Container(Type):
             Force each layer of the published image to use the specified
             compression algorithm.
             If this is unset, then if a layer already has a compressed blob in
-            the engine's
-            cache, that will be used (this can result in a mix of compression
-            algorithms for
-            different layers). If this is unset and a layer has no compressed
-            blob in the
-            engine's cache, then it will be compressed using Gzip.
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
         media_types:
             Use the specified media types for the published image's layers.
-            Defaults to OCI, which
-            is largely compatible with most recent registries, but Docker may
-            be needed for older
-            registries without OCI support.
+            Defaults to OCI, which is largely compatible with most recent
+            registries, but Docker may be needed for older registries without
+            OCI support.
 
         Returns
         -------
@@ -801,9 +864,9 @@ class Container(Type):
         """
         _args = [
             Arg("address", address),
-            Arg("platformVariants", platform_variants, None),
+            Arg("platformVariants", platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, None),
+            Arg("mediaTypes", media_types, "OCIMediaTypes"),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -818,8 +881,7 @@ class Container(Type):
     @typecheck
     async def shell_endpoint(self) -> str:
         """Return a websocket endpoint that, if connected to, will start the
-        container with a TTY streamed
-        over the websocket.
+        container with a TTY streamed over the websocket.
 
         Primarily intended for internal use with the dagger CLI.
 
@@ -916,12 +978,12 @@ class Container(Type):
         return self.sync().__await__()
 
     @typecheck
-    async def user(self) -> str | None:
+    async def user(self) -> str:
         """Retrieves the user to be set for all commands.
 
         Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -935,7 +997,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     def with_default_args(self, args: Sequence[str]) -> "Container":
@@ -959,9 +1021,9 @@ class Container(Type):
         path: str,
         directory: "Directory",
         *,
-        exclude: Sequence[str] | None = None,
-        include: Sequence[str] | None = None,
-        owner: str | None = None,
+        exclude: Sequence[str] | None = [],
+        include: Sequence[str] | None = [],
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus a directory written at the given path.
 
@@ -972,10 +1034,10 @@ class Container(Type):
         directory:
             Identifier of the directory to write
         exclude:
-            Patterns to exclude in the written directory (e.g.,
+            Patterns to exclude in the written directory (e.g.
             ["node_modules/**", ".gitignore", ".git/"]).
         include:
-            Patterns to include in the written directory (e.g., ["*.go",
+            Patterns to include in the written directory (e.g. ["*.go",
             "go.mod", "go.sum"]).
         owner:
             A user:group to set for the directory and its contents.
@@ -986,9 +1048,9 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
-            Arg("owner", owner, None),
+            Arg("exclude", exclude, []),
+            Arg("include", include, []),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -1022,7 +1084,7 @@ class Container(Type):
         name: str,
         value: str,
         *,
-        expand: bool | None = None,
+        expand: bool | None = False,
     ) -> "Container":
         """Retrieves this container plus the given environment variable.
 
@@ -1033,14 +1095,14 @@ class Container(Type):
         value:
             The value of the environment variable. (e.g., "localhost").
         expand:
-            Replace `${VAR}` or $VAR in the value according to the current
-            environment
-            variables defined in the container (e.g., "/opt/bin:$PATH").
+            Replace `${VAR}` or `$VAR` in the value according to the current
+            environment variables defined in the container (e.g.,
+            "/opt/bin:$PATH").
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
-            Arg("expand", expand, None),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withEnvVariable", _args)
         return Container(_ctx)
@@ -1050,12 +1112,12 @@ class Container(Type):
         self,
         args: Sequence[str],
         *,
-        skip_entrypoint: bool | None = None,
-        stdin: str | None = None,
-        redirect_stdout: str | None = None,
-        redirect_stderr: str | None = None,
-        experimental_privileged_nesting: bool | None = None,
-        insecure_root_capabilities: bool | None = None,
+        skip_entrypoint: bool | None = False,
+        stdin: str | None = "",
+        redirect_stdout: str | None = "",
+        redirect_stderr: str | None = "",
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
     ) -> "Container":
         """Retrieves this container after executing the specified command inside
         it.
@@ -1081,26 +1143,25 @@ class Container(Type):
         experimental_privileged_nesting:
             Provides dagger access to the executed command.
             Do not use this option unless you trust the command being
-            executed.
-            The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
-            HOST FILESYSTEM.
+            executed; the command being executed WILL BE GRANTED FULL ACCESS
+            TO YOUR HOST FILESYSTEM.
         insecure_root_capabilities:
             Execute the command with all root capabilities. This is similar to
-            running a command
-            with "sudo" or executing `docker run` with the `--privileged`
-            flag. Containerization
-            does not provide any security guarantees when using this option.
-            It should only be used
-            when absolutely necessary and only with trusted commands.
+            running a command with "sudo" or executing "docker run" with the "
+            --privileged" flag. Containerization does not provide any security
+            guarantees when using this option. It should only be used when
+            absolutely necessary and only with trusted commands.
         """
         _args = [
             Arg("args", args),
-            Arg("skipEntrypoint", skip_entrypoint, None),
-            Arg("stdin", stdin, None),
-            Arg("redirectStdout", redirect_stdout, None),
-            Arg("redirectStderr", redirect_stderr, None),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
+            Arg("skipEntrypoint", skip_entrypoint, False),
+            Arg("stdin", stdin, ""),
+            Arg("redirectStdout", redirect_stdout, ""),
+            Arg("redirectStderr", redirect_stderr, ""),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
@@ -1110,7 +1171,7 @@ class Container(Type):
         self,
         port: int,
         *,
-        protocol: NetworkProtocol | None = None,
+        protocol: NetworkProtocol | None = "TCP",
         description: str | None = None,
     ) -> "Container":
         """Expose a network port.
@@ -1118,6 +1179,7 @@ class Container(Type):
         Exposed ports serve two purposes:
 
         - For health checks and introspection, when running services
+
         - For setting the EXPOSE OCI field when publishing the container
 
         Parameters
@@ -1131,7 +1193,7 @@ class Container(Type):
         """
         _args = [
             Arg("port", port),
-            Arg("protocol", protocol, None),
+            Arg("protocol", protocol, "TCP"),
             Arg("description", description, None),
         ]
         _ctx = self._select("withExposedPort", _args)
@@ -1144,7 +1206,7 @@ class Container(Type):
         source: "File",
         *,
         permissions: int | None = None,
-        owner: str | None = None,
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus the contents of the given file copied to
         the given path.
@@ -1157,7 +1219,6 @@ class Container(Type):
             Identifier of the file to copy.
         permissions:
             Permission given to the copied file (e.g., 0600).
-            Default: 0644.
         owner:
             A user:group to set for the file.
             The user and group can either be an ID (1000:1000) or a name
@@ -1168,7 +1229,7 @@ class Container(Type):
             Arg("path", path),
             Arg("source", source),
             Arg("permissions", permissions, None),
-            Arg("owner", owner, None),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -1176,8 +1237,7 @@ class Container(Type):
     @typecheck
     def with_focus(self) -> "Container":
         """Indicate that subsequent operations should be featured more
-        prominently in
-        the UI.
+        prominently in the UI.
         """
         _args: list[Arg] = []
         _ctx = self._select("withFocus", _args)
@@ -1209,8 +1269,8 @@ class Container(Type):
         cache: CacheVolume,
         *,
         source: "Directory | None" = None,
-        sharing: CacheSharingMode | None = None,
-        owner: str | None = None,
+        sharing: CacheSharingMode | None = "SHARED",
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus a cache volume mounted at the given
         path.
@@ -1228,10 +1288,8 @@ class Container(Type):
         owner:
             A user:group to set for the mounted cache directory.
             Note that this changes the ownership of the specified mount along
-            with the
-            initial filesystem provided by source (if any). It does not have
-            any effect
-            if/when the cache has already been created.
+            with the initial filesystem provided by source (if any). It does
+            not have any effect if/when the cache has already been created.
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
@@ -1240,8 +1298,8 @@ class Container(Type):
             Arg("path", path),
             Arg("cache", cache),
             Arg("source", source, None),
-            Arg("sharing", sharing, None),
-            Arg("owner", owner, None),
+            Arg("sharing", sharing, "SHARED"),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withMountedCache", _args)
         return Container(_ctx)
@@ -1252,7 +1310,7 @@ class Container(Type):
         path: str,
         source: "Directory",
         *,
-        owner: str | None = None,
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus a directory mounted at the given path.
 
@@ -1271,7 +1329,7 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("source", source),
-            Arg("owner", owner, None),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withMountedDirectory", _args)
         return Container(_ctx)
@@ -1282,7 +1340,7 @@ class Container(Type):
         path: str,
         source: "File",
         *,
-        owner: str | None = None,
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus a file mounted at the given path.
 
@@ -1301,7 +1359,7 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("source", source),
-            Arg("owner", owner, None),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
@@ -1312,8 +1370,8 @@ class Container(Type):
         path: str,
         source: "Secret",
         *,
-        owner: str | None = None,
-        mode: int | None = None,
+        owner: str | None = "",
+        mode: int | None = 256,
     ) -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
         given path.
@@ -1332,13 +1390,12 @@ class Container(Type):
         mode:
             Permission given to the mounted secret (e.g., 0600).
             This option requires an owner to be set to be active.
-            Default: 0400.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
-            Arg("owner", owner, None),
-            Arg("mode", mode, None),
+            Arg("owner", owner, ""),
+            Arg("mode", mode, 256),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)
@@ -1364,9 +1421,9 @@ class Container(Type):
         self,
         path: str,
         *,
-        contents: str | None = None,
-        permissions: int | None = None,
-        owner: str | None = None,
+        contents: str | None = "",
+        permissions: int | None = 420,
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus a new file written at the given path.
 
@@ -1378,7 +1435,6 @@ class Container(Type):
             Content of the file to write (e.g., "Hello world!").
         permissions:
             Permission given to the written file (e.g., 0600).
-            Default: 0644.
         owner:
             A user:group to set for the file.
             The user and group can either be an ID (1000:1000) or a name
@@ -1387,9 +1443,9 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("contents", contents, None),
-            Arg("permissions", permissions, None),
-            Arg("owner", owner, None),
+            Arg("contents", contents, ""),
+            Arg("permissions", permissions, 420),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
@@ -1425,7 +1481,13 @@ class Container(Type):
 
     @typecheck
     def with_rootfs(self, directory: "Directory") -> "Container":
-        """Initializes this container from this DirectoryID."""
+        """Retrieves the container with the given directory mounted to /.
+
+        Parameters
+        ----------
+        directory:
+            Directory to mount.
+        """
         _args = [
             Arg("directory", directory),
         ]
@@ -1456,8 +1518,8 @@ class Container(Type):
         """Establish a runtime dependency on a service.
 
         The service will be started automatically when needed and detached
-        when it is
-        no longer needed, executing the default command if none is set.
+        when it is no longer needed, executing the default command if none is
+        set.
 
         The service will be reachable from the container via the provided
         hostname alias.
@@ -1485,7 +1547,7 @@ class Container(Type):
         path: str,
         source: "Socket",
         *,
-        owner: str | None = None,
+        owner: str | None = "",
     ) -> "Container":
         """Retrieves this container plus a socket forwarded to the given Unix
         socket path.
@@ -1505,7 +1567,7 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("source", source),
-            Arg("owner", owner, None),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withUnixSocket", _args)
         return Container(_ctx)
@@ -1588,7 +1650,7 @@ class Container(Type):
         self,
         port: int,
         *,
-        protocol: NetworkProtocol | None = None,
+        protocol: NetworkProtocol | None = "TCP",
     ) -> "Container":
         """Unexpose a previously exposed port.
 
@@ -1601,7 +1663,7 @@ class Container(Type):
         """
         _args = [
             Arg("port", port),
-            Arg("protocol", protocol, None),
+            Arg("protocol", protocol, "TCP"),
         ]
         _ctx = self._select("withoutExposedPort", _args)
         return Container(_ctx)
@@ -1609,8 +1671,7 @@ class Container(Type):
     @typecheck
     def without_focus(self) -> "Container":
         """Indicate that subsequent operations should not be featured more
-        prominently
-        in the UI.
+        prominently in the UI.
 
         This is the initial state of all containers.
         """
@@ -1704,12 +1765,12 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    async def workdir(self) -> str | None:
+    async def workdir(self) -> str:
         """Retrieves the working directory for all commands.
 
         Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -1723,7 +1784,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("workdir", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     def with_(self, cb: Callable[["Container"], "Container"]) -> "Container":
         """Call the provided callable with current Container.
@@ -1737,31 +1798,23 @@ class Directory(Type):
     """A directory."""
 
     @typecheck
-    def as_module(
-        self,
-        *,
-        source_subpath: str | None = None,
-    ) -> "Module":
+    def as_module(self, *, source_subpath: str | None = "") -> "Module":
         """Load the directory as a Dagger module
 
         Parameters
         ----------
         source_subpath:
             An optional subpath of the directory which contains the module's
-            source
-            code.
+            source code.
             This is needed when the module code is in a subdirectory but
-            requires
-            parent directories to be loaded in order to execute. For example,
-            the
-            module source code may need a go.mod, project.toml, package.json,
-            etc. file
-            from a parent directory.
+            requires parent directories to be loaded in order to execute. For
+            example, the module source code may need a go.mod, project.toml,
+            package.json, etc. file from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
         """
         _args = [
-            Arg("sourceSubpath", source_subpath, None),
+            Arg("sourceSubpath", source_subpath, ""),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -1800,35 +1853,34 @@ class Directory(Type):
     def docker_build(
         self,
         *,
-        dockerfile: str | None = None,
         platform: Platform | None = None,
-        build_args: Sequence[BuildArg] | None = None,
-        target: str | None = None,
-        secrets: Sequence["Secret"] | None = None,
+        dockerfile: str | None = "Dockerfile",
+        target: str | None = "",
+        build_args: Sequence[BuildArg] | None = [],
+        secrets: Sequence["Secret"] | None = [],
     ) -> Container:
         """Builds a new Docker container from this directory.
 
         Parameters
         ----------
-        dockerfile:
-            Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
-            Defaults: './Dockerfile'.
         platform:
             The platform to build.
-        build_args:
-            Build arguments to use in the build.
+        dockerfile:
+            Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
         target:
             Target build stage to build.
+        build_args:
+            Build arguments to use in the build.
         secrets:
             Secrets to pass to the build.
             They will be mounted at /run/secrets/[secret-name].
         """
         _args = [
-            Arg("dockerfile", dockerfile, None),
             Arg("platform", platform, None),
-            Arg("buildArgs", build_args, None),
-            Arg("target", target, None),
-            Arg("secrets", secrets, None),
+            Arg("dockerfile", dockerfile, "Dockerfile"),
+            Arg("target", target, ""),
+            Arg("buildArgs", build_args, []),
+            Arg("secrets", secrets, []),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
@@ -1935,7 +1987,7 @@ class Directory(Type):
 
     @typecheck
     async def id(self) -> DirectoryID:
-        """The content-addressed identifier of the directory.
+        """A unique identifier for this Directory.
 
         Note
         ----
@@ -1944,7 +1996,8 @@ class Directory(Type):
         Returns
         -------
         DirectoryID
-            A content-addressed directory identifier.
+            The `DirectoryID` scalar type represents an identifier for an
+            object of type Directory.
 
         Raises
         ------
@@ -1962,24 +2015,24 @@ class Directory(Type):
         self,
         name: str,
         *,
-        description: str | None = None,
-        labels: Sequence[PipelineLabel] | None = None,
+        description: str | None = "",
+        labels: Sequence[PipelineLabel] | None = [],
     ) -> "Directory":
-        """Creates a named sub-pipeline
+        """Creates a named sub-pipeline.
 
         Parameters
         ----------
         name:
-            Pipeline name.
+            Name of the sub-pipeline.
         description:
-            Pipeline description.
+            Description of the sub-pipeline.
         labels:
-            Pipeline labels.
+            Labels to apply to the sub-pipeline.
         """
         _args = [
             Arg("name", name),
-            Arg("description", description, None),
-            Arg("labels", labels, None),
+            Arg("description", description, ""),
+            Arg("labels", labels, []),
         ]
         _ctx = self._select("pipeline", _args)
         return Directory(_ctx)
@@ -2012,8 +2065,8 @@ class Directory(Type):
         path: str,
         directory: "Directory",
         *,
-        exclude: Sequence[str] | None = None,
-        include: Sequence[str] | None = None,
+        exclude: Sequence[str] | None = [],
+        include: Sequence[str] | None = [],
     ) -> "Directory":
         """Retrieves this directory plus a directory written at the given path.
 
@@ -2033,8 +2086,8 @@ class Directory(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
+            Arg("exclude", exclude, []),
+            Arg("include", include, []),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -2058,7 +2111,6 @@ class Directory(Type):
             Identifier of the file to copy.
         permissions:
             Permission given to the copied file (e.g., 0600).
-            Default: 0644.
         """
         _args = [
             Arg("path", path),
@@ -2073,7 +2125,7 @@ class Directory(Type):
         self,
         path: str,
         *,
-        permissions: int | None = None,
+        permissions: int | None = 420,
     ) -> "Directory":
         """Retrieves this directory plus a new directory created at the given
         path.
@@ -2084,11 +2136,10 @@ class Directory(Type):
             Location of the directory created (e.g., "/logs").
         permissions:
             Permission granted to the created directory (e.g., 0777).
-            Default: 0755.
         """
         _args = [
             Arg("path", path),
-            Arg("permissions", permissions, None),
+            Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
@@ -2099,7 +2150,7 @@ class Directory(Type):
         path: str,
         contents: str,
         *,
-        permissions: int | None = None,
+        permissions: int | None = 420,
     ) -> "Directory":
         """Retrieves this directory plus a new file written at the given path.
 
@@ -2111,12 +2162,11 @@ class Directory(Type):
             Content of the written file (e.g., "Hello world!").
         permissions:
             Permission given to the copied file (e.g., 0600).
-            Default: 0644.
         """
         _args = [
             Arg("path", path),
             Arg("contents", contents),
-            Arg("permissions", permissions, None),
+            Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
@@ -2177,8 +2227,7 @@ class Directory(Type):
 
 
 class EnvVariable(Type):
-    """A simple key value object that represents an environment
-    variable."""
+    """An environment variable name and value."""
 
     __slots__ = (
         "_name",
@@ -2189,10 +2238,33 @@ class EnvVariable(Type):
     _value: str | None
 
     @typecheck
-    async def name(self) -> str:
-        """The environment variable name.
+    async def id(self) -> EnvVariableID:
+        """A unique identifier for this EnvVariable.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
+        -------
+        EnvVariableID
+            The `EnvVariableID` scalar type represents an identifier for an
+            object of type EnvVariable.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnvVariableID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2214,9 +2286,7 @@ class EnvVariable(Type):
 
     @typecheck
     async def value(self) -> str:
-        """The environment variable value.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2238,7 +2308,7 @@ class EnvVariable(Type):
 
 
 class FieldTypeDef(Type):
-    """A definition of a field on a custom object defined in a Module. A
+    """A definition of a field on a custom object defined in a Module.  A
     field on an object has a static value, as opposed to a function on an
     object whose value is computed by invoking code (and can accept
     arguments)."""
@@ -2252,12 +2322,10 @@ class FieldTypeDef(Type):
     _name: str | None
 
     @typecheck
-    async def description(self) -> str | None:
-        """A doc string for the field, if any
-
-        Returns
+    async def description(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2273,13 +2341,36 @@ class FieldTypeDef(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def id(self) -> FieldTypeDefID:
+        """A unique identifier for this FieldTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        FieldTypeDefID
+            The `FieldTypeDefID` scalar type represents an identifier for an
+            object of type FieldTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(FieldTypeDefID)
 
     @typecheck
     async def name(self) -> str:
-        """The name of the field in the object
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2301,7 +2392,6 @@ class FieldTypeDef(Type):
 
     @typecheck
     def type_def(self) -> "TypeDef":
-        """The type of the field"""
         _args: list[Arg] = []
         _ctx = self._select("typeDef", _args)
         return TypeDef(_ctx)
@@ -2337,7 +2427,7 @@ class File(Type):
         self,
         path: str,
         *,
-        allow_parent_dir_path: bool | None = None,
+        allow_parent_dir_path: bool | None = False,
     ) -> bool:
         """Writes the file to a file path on the host.
 
@@ -2347,8 +2437,8 @@ class File(Type):
             Location of the written directory (e.g., "output.txt").
         allow_parent_dir_path:
             If allowParentDirPath is true, the path argument can be a
-            directory path, in which case
-            the file will be created in that directory.
+            directory path, in which case the file will be created in that
+            directory.
 
         Returns
         -------
@@ -2364,14 +2454,14 @@ class File(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("allowParentDirPath", allow_parent_dir_path, None),
+            Arg("allowParentDirPath", allow_parent_dir_path, False),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
 
     @typecheck
     async def id(self) -> FileID:
-        """Retrieves the content-addressed identifier of the file.
+        """A unique identifier for this File.
 
         Note
         ----
@@ -2380,7 +2470,8 @@ class File(Type):
         Returns
         -------
         FileID
-            A file identifier.
+            The `FileID` scalar type represents an identifier for an object of
+            type File.
 
         Raises
         ------
@@ -2395,7 +2486,7 @@ class File(Type):
 
     @typecheck
     async def size(self) -> int:
-        """Gets the size of the file, in bytes.
+        """Retrieves the size of the file, in bytes.
 
         Returns
         -------
@@ -2475,7 +2566,6 @@ class Function(Type):
 
     @typecheck
     async def args(self) -> list["FunctionArg"]:
-        """Arguments accepted by this function, if any"""
         _args: list[Arg] = []
         _ctx = self._select("args", _args)
         _ctx = FunctionArg(_ctx)._select_multiple(
@@ -2486,12 +2576,10 @@ class Function(Type):
         return await _ctx.execute(list[FunctionArg])
 
     @typecheck
-    async def description(self) -> str | None:
-        """A doc string for the function, if any
-
-        Returns
+    async def description(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2507,11 +2595,11 @@ class Function(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     async def id(self) -> FunctionID:
-        """The ID of the function
+        """A unique identifier for this Function.
 
         Note
         ----
@@ -2520,7 +2608,8 @@ class Function(Type):
         Returns
         -------
         FunctionID
-            A reference to a Function.
+            The `FunctionID` scalar type represents an identifier for an
+            object of type Function.
 
         Raises
         ------
@@ -2535,9 +2624,7 @@ class Function(Type):
 
     @typecheck
     async def name(self) -> str:
-        """The name of the function
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2559,7 +2646,6 @@ class Function(Type):
 
     @typecheck
     def return_type(self) -> "TypeDef":
-        """The type returned by this function"""
         _args: list[Arg] = []
         _ctx = self._select("returnType", _args)
         return TypeDef(_ctx)
@@ -2570,7 +2656,7 @@ class Function(Type):
         name: str,
         type_def: "TypeDef",
         *,
-        description: str | None = None,
+        description: str | None = "",
         default_value: JSON | None = None,
     ) -> "Function":
         """Returns the function with the provided argument
@@ -2590,7 +2676,7 @@ class Function(Type):
         _args = [
             Arg("name", name),
             Arg("typeDef", type_def),
-            Arg("description", description, None),
+            Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
         ]
         _ctx = self._select("withArg", _args)
@@ -2598,7 +2684,13 @@ class Function(Type):
 
     @typecheck
     def with_description(self, description: str) -> "Function":
-        """Returns the function with the doc string"""
+        """Returns the function with the given doc string.
+
+        Parameters
+        ----------
+        description:
+            The doc string to set.
+        """
         _args = [
             Arg("description", description),
         ]
@@ -2629,13 +2721,10 @@ class FunctionArg(Type):
     _name: str | None
 
     @typecheck
-    async def default_value(self) -> JSON | None:
-        """A default value to use for this argument when not explicitly set by
-        the caller, if any
-
-        Returns
+    async def default_value(self) -> JSON:
+        """Returns
         -------
-        JSON | None
+        JSON
             An arbitrary JSON-encoded value.
 
         Raises
@@ -2649,15 +2738,13 @@ class FunctionArg(Type):
             return self._default_value
         _args: list[Arg] = []
         _ctx = self._select("defaultValue", _args)
-        return await _ctx.execute(JSON | None)
+        return await _ctx.execute(JSON)
 
     @typecheck
-    async def description(self) -> str | None:
-        """A doc string for the argument, if any
-
-        Returns
+    async def description(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2673,11 +2760,11 @@ class FunctionArg(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     async def id(self) -> FunctionArgID:
-        """The ID of the argument
+        """A unique identifier for this FunctionArg.
 
         Note
         ----
@@ -2686,7 +2773,8 @@ class FunctionArg(Type):
         Returns
         -------
         FunctionArgID
-            A reference to a FunctionArg.
+            The `FunctionArgID` scalar type represents an identifier for an
+            object of type FunctionArg.
 
         Raises
         ------
@@ -2701,9 +2789,7 @@ class FunctionArg(Type):
 
     @typecheck
     async def name(self) -> str:
-        """The name of the argument
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2725,16 +2811,41 @@ class FunctionArg(Type):
 
     @typecheck
     def type_def(self) -> "TypeDef":
-        """The type of the argument"""
         _args: list[Arg] = []
         _ctx = self._select("typeDef", _args)
         return TypeDef(_ctx)
 
 
 class FunctionCall(Type):
+    """An active function call."""
+
+    @typecheck
+    async def id(self) -> FunctionCallID:
+        """A unique identifier for this FunctionCall.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        FunctionCallID
+            The `FunctionCallID` scalar type represents an identifier for an
+            object of type FunctionCall.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(FunctionCallID)
+
     @typecheck
     async def input_args(self) -> list["FunctionCallArgValue"]:
-        """The argument values the function is being invoked with."""
         _args: list[Arg] = []
         _ctx = self._select("inputArgs", _args)
         _ctx = FunctionCallArgValue(_ctx)._select_multiple(
@@ -2745,9 +2856,7 @@ class FunctionCall(Type):
 
     @typecheck
     async def name(self) -> str:
-        """The name of the function being called.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2767,11 +2876,7 @@ class FunctionCall(Type):
 
     @typecheck
     async def parent(self) -> JSON:
-        """The value of the parent object of the function being called.
-        If the function is "top-level" to the module, this is always an empty
-        object.
-
-        Returns
+        """Returns
         -------
         JSON
             An arbitrary JSON-encoded value.
@@ -2789,11 +2894,7 @@ class FunctionCall(Type):
 
     @typecheck
     async def parent_name(self) -> str:
-        """The name of the parent object of the function being called.
-        If the function is "top-level" to the module, this is the name of the
-        module.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2814,13 +2915,16 @@ class FunctionCall(Type):
     @typecheck
     async def return_value(self, value: JSON) -> Void | None:
         """Set the return value of the function call to the provided value.
-        The value should be a string of the JSON serialization of the return
-        value.
+
+        Parameters
+        ----------
+        value:
+            JSON serialization of the return value.
 
         Returns
         -------
         Void | None
-            The absense of a value.  A Null Void is used as a placeholder for
+            The absence of a value.  A Null Void is used as a placeholder for
             resolvers that do not return anything.
 
         Raises
@@ -2838,6 +2942,8 @@ class FunctionCall(Type):
 
 
 class FunctionCallArgValue(Type):
+    """A value passed as a named argument to a function call."""
+
     __slots__ = (
         "_name",
         "_value",
@@ -2847,10 +2953,33 @@ class FunctionCallArgValue(Type):
     _value: JSON | None
 
     @typecheck
-    async def name(self) -> str:
-        """The name of the argument.
+    async def id(self) -> FunctionCallArgValueID:
+        """A unique identifier for this FunctionCallArgValue.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
+        -------
+        FunctionCallArgValueID
+            The `FunctionCallArgValueID` scalar type represents an identifier
+            for an object of type FunctionCallArgValue.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(FunctionCallArgValueID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2872,10 +3001,7 @@ class FunctionCallArgValue(Type):
 
     @typecheck
     async def value(self) -> JSON:
-        """The value of the argument represented as a string of the JSON
-        serialization.
-
-        Returns
+        """Returns
         -------
         JSON
             An arbitrary JSON-encoded value.
@@ -2895,23 +3021,27 @@ class FunctionCallArgValue(Type):
 
 
 class GeneratedCode(Type):
+    """The result of running an SDK's codegen."""
+
     @typecheck
     def code(self) -> Directory:
-        """The directory containing the generated code"""
         _args: list[Arg] = []
         _ctx = self._select("code", _args)
         return Directory(_ctx)
 
     @typecheck
     async def id(self) -> GeneratedCodeID:
-        """Note
+        """A unique identifier for this GeneratedCode.
+
+        Note
         ----
         This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
         GeneratedCodeID
-            A reference to GeneratedCode.
+            The `GeneratedCodeID` scalar type represents an identifier for an
+            object of type GeneratedCode.
 
         Raises
         ------
@@ -2925,13 +3055,10 @@ class GeneratedCode(Type):
         return await _ctx.execute(GeneratedCodeID)
 
     @typecheck
-    async def vcs_generated_paths(self) -> list[str] | None:
-        """List of paths to mark generated in version control (i.e.
-        .gitattributes)
-
-        Returns
+    async def vcs_generated_paths(self) -> list[str]:
+        """Returns
         -------
-        list[str] | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2945,15 +3072,13 @@ class GeneratedCode(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("vcsGeneratedPaths", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
-    async def vcs_ignored_paths(self) -> list[str] | None:
-        """List of paths to ignore in version control (i.e. .gitignore)
-
-        Returns
+    async def vcs_ignored_paths(self) -> list[str]:
+        """Returns
         -------
-        list[str] | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -2967,11 +3092,11 @@ class GeneratedCode(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("vcsIgnoredPaths", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
     def with_vcs_generated_paths(self, paths: Sequence[str]) -> "GeneratedCode":
-        """Set the list of paths to mark generated in version control"""
+        """Set the list of paths to mark generated in version control."""
         _args = [
             Arg("paths", paths),
         ]
@@ -2980,7 +3105,7 @@ class GeneratedCode(Type):
 
     @typecheck
     def with_vcs_ignored_paths(self, paths: Sequence[str]) -> "GeneratedCode":
-        """Set the list of paths to ignore in version control"""
+        """Set the list of paths to ignore in version control."""
         _args = [
             Arg("paths", paths),
         ]
@@ -2998,7 +3123,7 @@ class GeneratedCode(Type):
 
 
 class GitRef(Type):
-    """A git ref (tag, branch or commit)."""
+    """A git ref (tag, branch, or commit)."""
 
     @typecheck
     async def commit(self) -> str:
@@ -3024,7 +3149,7 @@ class GitRef(Type):
 
     @typecheck
     async def id(self) -> GitRefID:
-        """Retrieves the content-addressed identifier of the git ref.
+        """A unique identifier for this GitRef.
 
         Note
         ----
@@ -3033,7 +3158,8 @@ class GitRef(Type):
         Returns
         -------
         GitRefID
-            A git reference identifier.
+            The `GitRefID` scalar type represents an identifier for an object
+            of type GitRef.
 
         Raises
         ------
@@ -3067,7 +3193,7 @@ class GitRepository(Type):
 
     @typecheck
     def branch(self, name: str) -> GitRef:
-        """Returns details on one branch.
+        """Returns details of a branch.
 
         Parameters
         ----------
@@ -3082,7 +3208,7 @@ class GitRepository(Type):
 
     @typecheck
     def commit(self, id: str) -> GitRef:
-        """Returns details on one commit.
+        """Returns details of a commit.
 
         Parameters
         ----------
@@ -3098,7 +3224,7 @@ class GitRepository(Type):
 
     @typecheck
     async def id(self) -> GitRepositoryID:
-        """Retrieves the content-addressed identifier of the git repository.
+        """A unique identifier for this GitRepository.
 
         Note
         ----
@@ -3107,7 +3233,8 @@ class GitRepository(Type):
         Returns
         -------
         GitRepositoryID
-            A git repository identifier.
+            The `GitRepositoryID` scalar type represents an identifier for an
+            object of type GitRepository.
 
         Raises
         ------
@@ -3122,7 +3249,7 @@ class GitRepository(Type):
 
     @typecheck
     def tag(self, name: str) -> GitRef:
-        """Returns details on one tag.
+        """Returns details of a tag.
 
         Parameters
         ----------
@@ -3137,15 +3264,15 @@ class GitRepository(Type):
 
 
 class Host(Type):
-    """Information about the host execution environment."""
+    """Information about the host environment."""
 
     @typecheck
     def directory(
         self,
         path: str,
         *,
-        exclude: Sequence[str] | None = None,
-        include: Sequence[str] | None = None,
+        exclude: Sequence[str] | None = [],
+        include: Sequence[str] | None = [],
     ) -> Directory:
         """Accesses a directory on the host.
 
@@ -3162,8 +3289,8 @@ class Host(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
+            Arg("exclude", exclude, []),
+            Arg("include", include, []),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -3184,6 +3311,31 @@ class Host(Type):
         return File(_ctx)
 
     @typecheck
+    async def id(self) -> HostID:
+        """A unique identifier for this Host.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        HostID
+            The `HostID` scalar type represents an identifier for an object of
+            type Host.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(HostID)
+
+    @typecheck
     def service(
         self,
         ports: Sequence[PortForward],
@@ -3199,8 +3351,7 @@ class Host(Type):
             Ports to expose via the service, forwarding through the host
             network.
             If a port's frontend is unspecified or 0, it defaults to the same
-            as the
-            backend port.
+            as the backend port.
             An empty set of ports is not valid; an error will be returned.
         host:
             Upstream host to forward traffic to.
@@ -3216,6 +3367,7 @@ class Host(Type):
     def set_secret_file(self, name: str, path: str) -> "Secret":
         """Sets a secret given a user-defined name and the file path on the host,
         and returns the secret.
+
         The file is limited to a size of 512000 bytes.
 
         Parameters
@@ -3237,8 +3389,8 @@ class Host(Type):
         self,
         service: "Service",
         *,
+        ports: Sequence[PortForward] | None = [],
         native: bool | None = False,
-        ports: Sequence[PortForward] | None = None,
     ) -> "Service":
         """Creates a tunnel that forwards traffic from the host to a service.
 
@@ -3246,27 +3398,24 @@ class Host(Type):
         ----------
         service:
             Service to send traffic from the tunnel.
-        native:
-            Map each service port to the same port on the host, as if the
-            service were
-            running natively.
-            Note: enabling may result in port conflicts.
         ports:
             Configure explicit port forwarding rules for the tunnel.
             If a port's frontend is unspecified or 0, a random port will be
-            chosen by
-            the host.
+            chosen by the host.
             If no ports are given, all of the service's ports are forwarded.
-            If native
-            is true, each port maps to the same port on the host. If native is
-            false,
-            each port maps to a random port chosen by the host.
+            If native is true, each port maps to the same port on the host. If
+            native is false, each port maps to a random port chosen by the
+            host.
             If ports are given and native is true, the ports are additive.
+        native:
+            Map each service port to the same port on the host, as if the
+            service were running natively.
+            Note: enabling may result in port conflicts.
         """
         _args = [
             Arg("service", service),
+            Arg("ports", ports, []),
             Arg("native", native, False),
-            Arg("ports", ports, None),
         ]
         _ctx = self._select("tunnel", _args)
         return Service(_ctx)
@@ -3291,12 +3440,10 @@ class InterfaceTypeDef(Type):
     """A definition of a custom interface defined in a Module."""
 
     @typecheck
-    async def description(self) -> str | None:
-        """The doc string for the interface, if any
-
-        Returns
+    async def description(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3310,11 +3457,10 @@ class InterfaceTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     async def functions(self) -> list[Function]:
-        """Functions defined on this interface, if any"""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
         _ctx = Function(_ctx)._select_multiple(
@@ -3324,10 +3470,33 @@ class InterfaceTypeDef(Type):
         return await _ctx.execute(list[Function])
 
     @typecheck
-    async def name(self) -> str:
-        """The name of the interface
+    async def id(self) -> InterfaceTypeDefID:
+        """A unique identifier for this InterfaceTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
+        -------
+        InterfaceTypeDefID
+            The `InterfaceTypeDefID` scalar type represents an identifier for
+            an object of type InterfaceTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(InterfaceTypeDefID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3346,13 +3515,10 @@ class InterfaceTypeDef(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def source_module_name(self) -> str | None:
-        """If this InterfaceTypeDef is associated with a Module, the name of the
-        module. Unset otherwise.
-
-        Returns
+    async def source_module_name(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3366,7 +3532,7 @@ class InterfaceTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
 
 class Label(Type):
@@ -3381,10 +3547,33 @@ class Label(Type):
     _value: str | None
 
     @typecheck
-    async def name(self) -> str:
-        """The label name.
+    async def id(self) -> LabelID:
+        """A unique identifier for this Label.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
+        -------
+        LabelID
+            The `LabelID` scalar type represents an identifier for an object
+            of type Label.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(LabelID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3406,9 +3595,7 @@ class Label(Type):
 
     @typecheck
     async def value(self) -> str:
-        """The label value.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3434,20 +3621,46 @@ class ListTypeDef(Type):
 
     @typecheck
     def element_type_def(self) -> "TypeDef":
-        """The type of the elements in the list"""
         _args: list[Arg] = []
         _ctx = self._select("elementTypeDef", _args)
         return TypeDef(_ctx)
 
+    @typecheck
+    async def id(self) -> ListTypeDefID:
+        """A unique identifier for this ListTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ListTypeDefID
+            The `ListTypeDefID` scalar type represents an identifier for an
+            object of type ListTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ListTypeDefID)
+
 
 class Module(Type):
+    """A Dagger module."""
+
     __slots__ = (
         "_dependency_config",
         "_description",
         "_name",
         "_sdk",
         "_serve",
-        "_source_directory_sub_path",
+        "_source_directory_subpath",
     )
 
     _dependency_config: str | None
@@ -3455,11 +3668,10 @@ class Module(Type):
     _name: str | None
     _sdk: str | None
     _serve: Void | None
-    _source_directory_sub_path: str | None
+    _source_directory_subpath: str | None
 
     @typecheck
     async def dependencies(self) -> list["Module"]:
-        """Modules used by this module"""
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
         _ctx = Module(_ctx)._select_multiple(
@@ -3468,15 +3680,13 @@ class Module(Type):
             _name="name",
             _sdk="sdk",
             _serve="serve",
-            _source_directory_sub_path="sourceDirectorySubPath",
+            _source_directory_subpath="sourceDirectorySubpath",
         )
         return await _ctx.execute(list[Module])
 
     @typecheck
     async def dependency_config(self) -> list[str]:
-        """The dependencies as configured by the module
-
-        Returns
+        """Returns
         -------
         list[str]
             The `String` scalar type represents textual data, represented as
@@ -3498,9 +3708,7 @@ class Module(Type):
 
     @typecheck
     async def description(self) -> str | None:
-        """The doc string of the module, if any
-
-        Returns
+        """Returns
         -------
         str | None
             The `String` scalar type represents textual data, represented as
@@ -3522,14 +3730,13 @@ class Module(Type):
 
     @typecheck
     def generated_code(self) -> GeneratedCode:
-        """The code generated by the SDK's runtime"""
         _args: list[Arg] = []
         _ctx = self._select("generatedCode", _args)
         return GeneratedCode(_ctx)
 
     @typecheck
     async def id(self) -> ModuleID:
-        """The ID of the module
+        """A unique identifier for this Module.
 
         Note
         ----
@@ -3538,7 +3745,8 @@ class Module(Type):
         Returns
         -------
         ModuleID
-            A reference to a Module.
+            The `ModuleID` scalar type represents an identifier for an object
+            of type Module.
 
         Raises
         ------
@@ -3552,8 +3760,14 @@ class Module(Type):
         return await _ctx.execute(ModuleID)
 
     @typecheck
+    def initialize(self) -> "Module":
+        """Retrieves the module with the objects loaded via its SDK."""
+        _args: list[Arg] = []
+        _ctx = self._select("initialize", _args)
+        return Module(_ctx)
+
+    @typecheck
     async def interfaces(self) -> list["TypeDef"]:
-        """Interfaces served by this module"""
         _args: list[Arg] = []
         _ctx = self._select("interfaces", _args)
         _ctx = TypeDef(_ctx)._select_multiple(
@@ -3564,9 +3778,7 @@ class Module(Type):
 
     @typecheck
     async def name(self) -> str:
-        """The name of the module
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3588,7 +3800,6 @@ class Module(Type):
 
     @typecheck
     async def objects(self) -> list["TypeDef"]:
-        """Objects served by this module"""
         _args: list[Arg] = []
         _ctx = self._select("objects", _args)
         _ctx = TypeDef(_ctx)._select_multiple(
@@ -3599,10 +3810,7 @@ class Module(Type):
 
     @typecheck
     async def sdk(self) -> str:
-        """The SDK used by this module. Either a name of a builtin SDK or a
-        module ref pointing to the SDK's implementation.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3625,14 +3833,14 @@ class Module(Type):
     @typecheck
     async def serve(self) -> Void | None:
         """Serve a module's API in the current session.
-            Note: this can only be called once per session.
-            In the future, it could return a stream or service to remove the
-        side effect.
+
+        Note: this can only be called once per session. In the future, it
+        could return a stream or service to remove the side effect.
 
         Returns
         -------
         Void | None
-            The absense of a value.  A Null Void is used as a placeholder for
+            The absence of a value.  A Null Void is used as a placeholder for
             resolvers that do not return anything.
 
         Raises
@@ -3650,16 +3858,13 @@ class Module(Type):
 
     @typecheck
     def source_directory(self) -> Directory:
-        """The directory containing the module's source code"""
         _args: list[Arg] = []
         _ctx = self._select("sourceDirectory", _args)
         return Directory(_ctx)
 
     @typecheck
-    async def source_directory_sub_path(self) -> str:
-        """The module's subpath within the source directory
-
-        Returns
+    async def source_directory_subpath(self) -> str:
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3673,10 +3878,10 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_source_directory_sub_path"):
-            return self._source_directory_sub_path
+        if hasattr(self, "_source_directory_subpath"):
+            return self._source_directory_subpath
         _args: list[Arg] = []
-        _ctx = self._select("sourceDirectorySubPath", _args)
+        _ctx = self._select("sourceDirectorySubpath", _args)
         return await _ctx.execute(str)
 
     @typecheck
@@ -3690,11 +3895,42 @@ class Module(Type):
 
     @typecheck
     def with_object(self, object: "TypeDef") -> "Module":
-        """This module plus the given Object type and associated functions"""
+        """This module plus the given Object type and associated functions."""
         _args = [
             Arg("object", object),
         ]
         _ctx = self._select("withObject", _args)
+        return Module(_ctx)
+
+    @typecheck
+    def with_source(
+        self,
+        directory: Directory,
+        *,
+        subpath: str | None = "",
+    ) -> "Module":
+        """Retrieves the module with basic configuration loaded, ready for
+        initialization.
+
+        Parameters
+        ----------
+        directory:
+            The directory containing the module's source code.
+        subpath:
+            An optional subpath of the directory which contains the module's
+            source code.
+            This is needed when the module code is in a subdirectory but
+            requires parent directories to be loaded in order to execute. For
+            example, the module source code may need a go.mod, project.toml,
+            package.json, etc. file from a parent directory.
+            If not set, the module source code is loaded from the root of the
+            directory.
+        """
+        _args = [
+            Arg("directory", directory),
+            Arg("subpath", subpath, ""),
+        ]
+        _ctx = self._select("withSource", _args)
         return Module(_ctx)
 
     def with_(self, cb: Callable[["Module"], "Module"]) -> "Module":
@@ -3710,12 +3946,10 @@ class ModuleConfig(Type):
     dagger.json)"""
 
     @typecheck
-    async def dependencies(self) -> list[str] | None:
-        """Modules that this module depends on.
-
-        Returns
+    async def dependencies(self) -> list[str]:
+        """Returns
         -------
-        list[str] | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3729,15 +3963,13 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
-    async def exclude(self) -> list[str] | None:
-        """Exclude these file globs when loading the module root.
-
-        Returns
+    async def exclude(self) -> list[str]:
+        """Returns
         -------
-        list[str] | None
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3751,15 +3983,38 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exclude", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
-    async def include(self) -> list[str] | None:
-        """Include only these file globs when loading the module root.
+    async def id(self) -> ModuleConfigID:
+        """A unique identifier for this ModuleConfig.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
-        list[str] | None
+        ModuleConfigID
+            The `ModuleConfigID` scalar type represents an identifier for an
+            object of type ModuleConfig.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ModuleConfigID)
+
+    @typecheck
+    async def include(self) -> list[str]:
+        """Returns
+        -------
+        list[str]
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3773,13 +4028,11 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("include", _args)
-        return await _ctx.execute(list[str] | None)
+        return await _ctx.execute(list[str])
 
     @typecheck
     async def name(self) -> str:
-        """The name of the module.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3798,13 +4051,10 @@ class ModuleConfig(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def root(self) -> str | None:
-        """The root directory of the module's project, which may be above the
-        module source code.
-
-        Returns
+    async def root(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3818,14 +4068,11 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("root", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     async def sdk(self) -> str:
-        """Either the name of a built-in SDK ('go', 'python', etc.) OR a module
-        reference pointing to the SDK's module implementation.
-
-        Returns
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3849,18 +4096,15 @@ class ObjectTypeDef(Type):
 
     @typecheck
     def constructor(self) -> Function:
-        """The function used to construct new instances of this object, if any"""
         _args: list[Arg] = []
         _ctx = self._select("constructor", _args)
         return Function(_ctx)
 
     @typecheck
-    async def description(self) -> str | None:
-        """The doc string for the object, if any
-
-        Returns
+    async def description(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3874,11 +4118,10 @@ class ObjectTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     async def fields(self) -> list[FieldTypeDef]:
-        """Static fields defined on this object, if any"""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
         _ctx = FieldTypeDef(_ctx)._select_multiple(
@@ -3889,7 +4132,6 @@ class ObjectTypeDef(Type):
 
     @typecheck
     async def functions(self) -> list[Function]:
-        """Functions defined on this object, if any"""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
         _ctx = Function(_ctx)._select_multiple(
@@ -3899,10 +4141,33 @@ class ObjectTypeDef(Type):
         return await _ctx.execute(list[Function])
 
     @typecheck
-    async def name(self) -> str:
-        """The name of the object
+    async def id(self) -> ObjectTypeDefID:
+        """A unique identifier for this ObjectTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
+        -------
+        ObjectTypeDefID
+            The `ObjectTypeDefID` scalar type represents an identifier for an
+            object of type ObjectTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ObjectTypeDefID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3921,13 +4186,10 @@ class ObjectTypeDef(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    async def source_module_name(self) -> str | None:
-        """If this ObjectTypeDef is associated with a Module, the name of the
-        module. Unset otherwise.
-
-        Returns
+    async def source_module_name(self) -> str:
+        """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3941,7 +4203,7 @@ class ObjectTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
 
 class Port(Type):
@@ -3959,9 +4221,7 @@ class Port(Type):
 
     @typecheck
     async def description(self) -> str | None:
-        """The port description.
-
-        Returns
+        """Returns
         -------
         str | None
             The `String` scalar type represents textual data, represented as
@@ -3982,10 +4242,33 @@ class Port(Type):
         return await _ctx.execute(str | None)
 
     @typecheck
-    async def port(self) -> int:
-        """The port number.
+    async def id(self) -> PortID:
+        """A unique identifier for this Port.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
 
         Returns
+        -------
+        PortID
+            The `PortID` scalar type represents an identifier for an object of
+            type Port.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(PortID)
+
+    @typecheck
+    async def port(self) -> int:
+        """Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -4007,9 +4290,7 @@ class Port(Type):
 
     @typecheck
     async def protocol(self) -> NetworkProtocol:
-        """The transport layer network protocol.
-
-        Returns
+        """Returns
         -------
         NetworkProtocol
             Transport layer network protocol associated to a port.
@@ -4029,6 +4310,38 @@ class Port(Type):
 
 
 class Client(Root):
+    """The root of the DAG."""
+
+    @typecheck
+    def blob(
+        self,
+        digest: str,
+        size: int,
+        media_type: str,
+        uncompressed: str,
+    ) -> Directory:
+        """Retrieves a content-addressed blob.
+
+        Parameters
+        ----------
+        digest:
+            Digest of the blob
+        size:
+            Size of the blob
+        media_type:
+            Media type of the blob
+        uncompressed:
+            Digest of the uncompressed blob
+        """
+        _args = [
+            Arg("digest", digest),
+            Arg("size", size),
+            Arg("mediaType", media_type),
+            Arg("uncompressed", uncompressed),
+        ]
+        _ctx = self._select("blob", _args)
+        return Directory(_ctx)
+
     @typecheck
     def cache_volume(self, key: str) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
@@ -4053,7 +4366,7 @@ class Client(Root):
         Parameters
         ----------
         version:
-            The SDK's required version.
+            Version required by the SDK.
 
         Returns
         -------
@@ -4080,11 +4393,17 @@ class Client(Root):
         id: ContainerID | None = None,
         platform: Platform | None = None,
     ) -> Container:
-        """Creates a scratch container or loads one by ID.
+        """Creates a scratch container.
 
         Optional platform argument initializes new containers to execute and
-        publish
-        as that platform. Platform defaults to that of the builder's host.
+        publish as that platform. Platform defaults to that of the builder's
+        host.
+
+        Parameters
+        ----------
+        id:
+        platform:
+            Platform to initialize the container with.
         """
         _args = [
             Arg("id", id, None),
@@ -4097,9 +4416,9 @@ class Client(Root):
     def current_function_call(self) -> FunctionCall:
         """The FunctionCall context that the SDK caller is currently executing
         in.
+
         If the caller is not currently executing in a function, this will
-        return
-        an error.
+        return an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("currentFunctionCall", _args)
@@ -4127,7 +4446,7 @@ class Client(Root):
 
     @typecheck
     async def default_platform(self) -> Platform:
-        """The default platform of the builder.
+        """The default platform of the engine.
 
         Returns
         -------
@@ -4149,7 +4468,7 @@ class Client(Root):
 
     @typecheck
     def directory(self, *, id: DirectoryID | None = None) -> Directory:
-        """Creates an empty directory or loads one by ID."""
+        """Creates an empty directory."""
         _args = [
             Arg("id", id, None),
         ]
@@ -4158,13 +4477,11 @@ class Client(Root):
 
     @typecheck
     def file(self, id: FileID) -> File:
-        """Loads a file by ID.
-
-        .. deprecated::
-            Use :py:meth:`load_file_from_id` instead.
+        """.. deprecated::
+        Use loadFileFromID instead.
         """
         warnings.warn(
-            'Method "file" is deprecated: Use "load_file_from_id" instead.',
+            'Method "file" is deprecated: Use loadFileFromID instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -4176,7 +4493,16 @@ class Client(Root):
 
     @typecheck
     def function(self, name: str, return_type: "TypeDef") -> Function:
-        """Create a function."""
+        """Creates a function.
+
+        Parameters
+        ----------
+        name:
+            Name of the function, in its original format from the
+            implementation language.
+        return_type:
+            Return type of the function.
+        """
         _args = [
             Arg("name", name),
             Arg("returnType", return_type),
@@ -4187,8 +4513,7 @@ class Client(Root):
     @typecheck
     def generated_code(self, code: Directory) -> GeneratedCode:
         """Create a code generation result, given a directory containing the
-        generated
-        code.
+        generated code.
         """
         _args = [
             Arg("code", code),
@@ -4201,35 +4526,35 @@ class Client(Root):
         self,
         url: str,
         *,
-        keep_git_dir: bool | None = None,
-        ssh_known_hosts: str | None = None,
-        ssh_auth_socket: "Socket | None" = None,
+        keep_git_dir: bool | None = False,
         experimental_service_host: "Service | None" = None,
+        ssh_known_hosts: str | None = "",
+        ssh_auth_socket: "Socket | None" = None,
     ) -> GitRepository:
-        """Queries a git repository.
+        """Queries a Git repository.
 
         Parameters
         ----------
         url:
-            Url of the git repository.
+            URL of the git repository.
             Can be formatted as `https://{host}/{owner}/{repo}`,
-            `git@{host}:{owner}/{repo}`
+            `git@{host}:{owner}/{repo}`.
             Suffix ".git" is optional.
         keep_git_dir:
             Set to true to keep .git directory.
+        experimental_service_host:
+            A service which must be started before the repo is fetched.
         ssh_known_hosts:
             Set SSH known hosts
         ssh_auth_socket:
             Set SSH auth socket
-        experimental_service_host:
-            A service which must be started before the repo is fetched.
         """
         _args = [
             Arg("url", url),
-            Arg("keepGitDir", keep_git_dir, None),
-            Arg("sshKnownHosts", ssh_known_hosts, None),
-            Arg("sshAuthSocket", ssh_auth_socket, None),
+            Arg("keepGitDir", keep_git_dir, False),
             Arg("experimentalServiceHost", experimental_service_host, None),
+            Arg("sshKnownHosts", ssh_known_hosts, ""),
+            Arg("sshAuthSocket", ssh_auth_socket, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
@@ -4275,7 +4600,7 @@ class Client(Root):
 
     @typecheck
     def load_container_from_id(self, id: ContainerID) -> Container:
-        """Loads a container from an ID."""
+        """Load a Container from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4292,6 +4617,24 @@ class Client(Root):
         return Directory(_ctx)
 
     @typecheck
+    def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
+        """Load a EnvVariable from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnvVariableFromID", _args)
+        return EnvVariable(_ctx)
+
+    @typecheck
+    def load_field_type_def_from_id(self, id: FieldTypeDefID) -> FieldTypeDef:
+        """Load a FieldTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFieldTypeDefFromID", _args)
+        return FieldTypeDef(_ctx)
+
+    @typecheck
     def load_file_from_id(self, id: FileID) -> File:
         """Load a File from its ID."""
         _args = [
@@ -4302,7 +4645,7 @@ class Client(Root):
 
     @typecheck
     def load_function_arg_from_id(self, id: FunctionArgID) -> FunctionArg:
-        """Load a function argument by ID."""
+        """Load a FunctionArg from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4310,8 +4653,28 @@ class Client(Root):
         return FunctionArg(_ctx)
 
     @typecheck
+    def load_function_call_arg_value_from_id(
+        self, id: FunctionCallArgValueID
+    ) -> FunctionCallArgValue:
+        """Load a FunctionCallArgValue from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFunctionCallArgValueFromID", _args)
+        return FunctionCallArgValue(_ctx)
+
+    @typecheck
+    def load_function_call_from_id(self, id: FunctionCallID) -> FunctionCall:
+        """Load a FunctionCall from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFunctionCallFromID", _args)
+        return FunctionCall(_ctx)
+
+    @typecheck
     def load_function_from_id(self, id: FunctionID) -> Function:
-        """Load a function by ID."""
+        """Load a Function from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4320,7 +4683,7 @@ class Client(Root):
 
     @typecheck
     def load_generated_code_from_id(self, id: GeneratedCodeID) -> GeneratedCode:
-        """Load a GeneratedCode by ID."""
+        """Load a GeneratedCode from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4329,7 +4692,7 @@ class Client(Root):
 
     @typecheck
     def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
-        """Load a git ref from its ID."""
+        """Load a GitRef from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4338,7 +4701,7 @@ class Client(Root):
 
     @typecheck
     def load_git_repository_from_id(self, id: GitRepositoryID) -> GitRepository:
-        """Load a git repository from its ID."""
+        """Load a GitRepository from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4346,13 +4709,78 @@ class Client(Root):
         return GitRepository(_ctx)
 
     @typecheck
+    def load_host_from_id(self, id: HostID) -> Host:
+        """Load a Host from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHostFromID", _args)
+        return Host(_ctx)
+
+    @typecheck
+    def load_interface_type_def_from_id(
+        self, id: InterfaceTypeDefID
+    ) -> InterfaceTypeDef:
+        """Load a InterfaceTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadInterfaceTypeDefFromID", _args)
+        return InterfaceTypeDef(_ctx)
+
+    @typecheck
+    def load_label_from_id(self, id: LabelID) -> Label:
+        """Load a Label from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadLabelFromID", _args)
+        return Label(_ctx)
+
+    @typecheck
+    def load_list_type_def_from_id(self, id: ListTypeDefID) -> ListTypeDef:
+        """Load a ListTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadListTypeDefFromID", _args)
+        return ListTypeDef(_ctx)
+
+    @typecheck
+    def load_module_config_from_id(self, id: ModuleConfigID) -> ModuleConfig:
+        """Load a ModuleConfig from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleConfigFromID", _args)
+        return ModuleConfig(_ctx)
+
+    @typecheck
     def load_module_from_id(self, id: ModuleID) -> Module:
-        """Load a module by ID."""
+        """Load a Module from its ID."""
         _args = [
             Arg("id", id),
         ]
         _ctx = self._select("loadModuleFromID", _args)
         return Module(_ctx)
+
+    @typecheck
+    def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
+        """Load a ObjectTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadObjectTypeDefFromID", _args)
+        return ObjectTypeDef(_ctx)
+
+    @typecheck
+    def load_port_from_id(self, id: PortID) -> Port:
+        """Load a Port from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadPortFromID", _args)
+        return Port(_ctx)
 
     @typecheck
     def load_secret_from_id(self, id: SecretID) -> "Secret":
@@ -4365,7 +4793,7 @@ class Client(Root):
 
     @typecheck
     def load_service_from_id(self, id: ServiceID) -> "Service":
-        """Loads a service from ID."""
+        """Load a Service from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4383,7 +4811,7 @@ class Client(Root):
 
     @typecheck
     def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
-        """Load a TypeDef by ID."""
+        """Load a TypeDef from its ID."""
         _args = [
             Arg("id", id),
         ]
@@ -4402,14 +4830,14 @@ class Client(Root):
         self,
         source_directory: Directory,
         *,
-        subpath: str | None = None,
+        subpath: str | None = "",
     ) -> ModuleConfig:
         """Load the static configuration for a module from the given source
         directory and optional subpath.
         """
         _args = [
             Arg("sourceDirectory", source_directory),
-            Arg("subpath", subpath, None),
+            Arg("subpath", subpath, ""),
         ]
         _ctx = self._select("moduleConfig", _args)
         return ModuleConfig(_ctx)
@@ -4419,7 +4847,7 @@ class Client(Root):
         self,
         name: str,
         *,
-        description: str | None = None,
+        description: str | None = "",
         labels: Sequence[PipelineLabel] | None = None,
     ) -> "Client":
         """Creates a named sub-pipeline.
@@ -4427,34 +4855,25 @@ class Client(Root):
         Parameters
         ----------
         name:
-            Pipeline name.
+            Name of the sub-pipeline.
         description:
-            Pipeline description.
+            Description of the sub-pipeline.
         labels:
-            Pipeline labels.
+            Labels to apply to the sub-pipeline.
         """
         _args = [
             Arg("name", name),
-            Arg("description", description, None),
+            Arg("description", description, ""),
             Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Client(_ctx)
 
     @typecheck
-    def secret(self, id: SecretID) -> "Secret":
-        """Loads a secret from its ID.
-
-        .. deprecated::
-            Use :py:meth:`load_secret_from_id` instead
-        """
-        warnings.warn(
-            'Method "secret" is deprecated: Use "load_secret_from_id" instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+    def secret(self, name: str) -> "Secret":
+        """Reference a secret by name."""
         _args = [
-            Arg("id", id),
+            Arg("name", name),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
@@ -4463,6 +4882,7 @@ class Client(Root):
     def set_secret(self, name: str, plaintext: str) -> "Secret":
         """Sets a secret given a user defined name to its plaintext and returns
         the secret.
+
         The plaintext value is limited to a size of 128000 bytes.
 
         Parameters
@@ -4480,7 +4900,7 @@ class Client(Root):
         return Secret(_ctx)
 
     @typecheck
-    def socket(self, *, id: SocketID | None = None) -> "Socket":
+    def socket(self, id: SocketID) -> "Socket":
         """Loads a socket by its ID.
 
         .. deprecated::
@@ -4492,7 +4912,7 @@ class Client(Root):
             stacklevel=4,
         )
         _args = [
-            Arg("id", id, None),
+            Arg("id", id),
         ]
         _ctx = self._select("socket", _args)
         return Socket(_ctx)
@@ -4518,7 +4938,7 @@ class Secret(Type):
 
     @typecheck
     async def id(self) -> SecretID:
-        """The identifier for this secret.
+        """A unique identifier for this Secret.
 
         Note
         ----
@@ -4527,7 +4947,8 @@ class Secret(Type):
         Returns
         -------
         SecretID
-            A unique identifier for a secret.
+            The `SecretID` scalar type represents an identifier for an object
+            of type Secret.
 
         Raises
         ------
@@ -4564,12 +4985,14 @@ class Secret(Type):
 
 
 class Service(Type):
+    """A content-addressed service providing TCP connectivity."""
+
     @typecheck
     async def endpoint(
         self,
         *,
         port: int | None = None,
-        scheme: str | None = None,
+        scheme: str | None = "",
     ) -> str:
         """Retrieves an endpoint that clients can use to reach this container.
 
@@ -4602,7 +5025,7 @@ class Service(Type):
         """
         _args = [
             Arg("port", port, None),
-            Arg("scheme", scheme, None),
+            Arg("scheme", scheme, ""),
         ]
         _ctx = self._select("endpoint", _args)
         return await _ctx.execute(str)
@@ -4632,7 +5055,7 @@ class Service(Type):
 
     @typecheck
     async def id(self) -> ServiceID:
-        """A unique identifier for this service.
+        """A unique identifier for this Service.
 
         Note
         ----
@@ -4641,7 +5064,8 @@ class Service(Type):
         Returns
         -------
         ServiceID
-            A unique service identifier.
+            The `ServiceID` scalar type represents an identifier for an object
+            of type Service.
 
         Raises
         ------
@@ -4704,9 +5128,11 @@ class Service(Type):
 
 
 class Socket(Type):
+    """A Unix or TCP/IP socket that can be mounted into a container."""
+
     @typecheck
     async def id(self) -> SocketID:
-        """The content-addressed identifier of the socket.
+        """A unique identifier for this Socket.
 
         Note
         ----
@@ -4715,7 +5141,8 @@ class Socket(Type):
         Returns
         -------
         SocketID
-            A content-addressed socket identifier.
+            The `SocketID` scalar type represents an identifier for an object
+            of type Socket.
 
         Raises
         ------
@@ -4742,41 +5169,35 @@ class TypeDef(Type):
 
     @typecheck
     def as_interface(self) -> InterfaceTypeDef:
-        """If kind is INTERFACE, the interface-specific type definition.
-        If kind is not INTERFACE, this will be null.
-        """
         _args: list[Arg] = []
         _ctx = self._select("asInterface", _args)
         return InterfaceTypeDef(_ctx)
 
     @typecheck
     def as_list(self) -> ListTypeDef:
-        """If kind is LIST, the list-specific type definition.
-        If kind is not LIST, this will be null.
-        """
         _args: list[Arg] = []
         _ctx = self._select("asList", _args)
         return ListTypeDef(_ctx)
 
     @typecheck
     def as_object(self) -> ObjectTypeDef:
-        """If kind is OBJECT, the object-specific type definition.
-        If kind is not OBJECT, this will be null.
-        """
         _args: list[Arg] = []
         _ctx = self._select("asObject", _args)
         return ObjectTypeDef(_ctx)
 
     @typecheck
     async def id(self) -> TypeDefID:
-        """Note
+        """A unique identifier for this TypeDef.
+
+        Note
         ----
         This is lazily evaluated, no operation is actually run.
 
         Returns
         -------
         TypeDefID
-            A reference to a TypeDef.
+            The `TypeDefID` scalar type represents an identifier for an object
+            of type TypeDef.
 
         Raises
         ------
@@ -4790,12 +5211,10 @@ class TypeDef(Type):
         return await _ctx.execute(TypeDefID)
 
     @typecheck
-    async def kind(self) -> TypeDefKind | None:
-        """The kind of type this is (e.g. primitive, list, object)
-
-        Returns
+    async def kind(self) -> TypeDefKind:
+        """Returns
         -------
-        TypeDefKind | None
+        TypeDefKind
             Distinguishes the different kinds of TypeDefs.
 
         Raises
@@ -4809,13 +5228,11 @@ class TypeDef(Type):
             return self._kind
         _args: list[Arg] = []
         _ctx = self._select("kind", _args)
-        return await _ctx.execute(TypeDefKind | None)
+        return await _ctx.execute(TypeDefKind)
 
     @typecheck
     async def optional(self) -> bool:
-        """Whether this type can be set to null. Defaults to false.
-
-        Returns
+        """Returns
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
@@ -4850,7 +5267,7 @@ class TypeDef(Type):
         name: str,
         type_def: "TypeDef",
         *,
-        description: str | None = None,
+        description: str | None = "",
     ) -> "TypeDef":
         """Adds a static field for an Object TypeDef, failing if the type is not
         an object.
@@ -4867,7 +5284,7 @@ class TypeDef(Type):
         _args = [
             Arg("name", name),
             Arg("typeDef", type_def),
-            Arg("description", description, None),
+            Arg("description", description, ""),
         ]
         _ctx = self._select("withField", _args)
         return TypeDef(_ctx)
@@ -4888,12 +5305,12 @@ class TypeDef(Type):
         self,
         name: str,
         *,
-        description: str | None = None,
+        description: str | None = "",
     ) -> "TypeDef":
         """Returns a TypeDef of kind Interface with the provided name."""
         _args = [
             Arg("name", name),
-            Arg("description", description, None),
+            Arg("description", description, ""),
         ]
         _ctx = self._select("withInterface", _args)
         return TypeDef(_ctx)
@@ -4923,19 +5340,17 @@ class TypeDef(Type):
         self,
         name: str,
         *,
-        description: str | None = None,
+        description: str | None = "",
     ) -> "TypeDef":
         """Returns a TypeDef of kind Object with the provided name.
 
         Note that an object's fields and functions may be omitted if the
-        intent is
-        only to refer to an object. This is how functions are able to return
-        their
-        own object, or any other circular reference.
+        intent is only to refer to an object. This is how functions are able
+        to return their own object, or any other circular reference.
         """
         _args = [
             Arg("name", name),
-            Arg("description", description, None),
+            Arg("description", description, ""),
         ]
         _ctx = self._select("withObject", _args)
         return TypeDef(_ctx)
@@ -4971,7 +5386,9 @@ __all__ = [
     "Directory",
     "DirectoryID",
     "EnvVariable",
+    "EnvVariableID",
     "FieldTypeDef",
+    "FieldTypeDefID",
     "File",
     "FileID",
     "Function",
@@ -4979,6 +5396,8 @@ __all__ = [
     "FunctionArgID",
     "FunctionCall",
     "FunctionCallArgValue",
+    "FunctionCallArgValueID",
+    "FunctionCallID",
     "FunctionID",
     "GeneratedCode",
     "GeneratedCodeID",
@@ -4987,21 +5406,28 @@ __all__ = [
     "GitRepository",
     "GitRepositoryID",
     "Host",
+    "HostID",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InterfaceTypeDef",
+    "InterfaceTypeDefID",
     "JSON",
     "Label",
+    "LabelID",
     "ListTypeDef",
+    "ListTypeDefID",
     "Module",
     "ModuleConfig",
+    "ModuleConfigID",
     "ModuleID",
     "NetworkProtocol",
     "ObjectTypeDef",
+    "ObjectTypeDefID",
     "PipelineLabel",
     "Platform",
     "Port",
     "PortForward",
+    "PortID",
     "Secret",
     "SecretID",
     "Service",

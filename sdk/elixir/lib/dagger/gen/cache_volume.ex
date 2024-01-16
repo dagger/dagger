@@ -6,7 +6,7 @@ defmodule Dagger.CacheVolume do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "A unique identifier for this CacheVolume."
     @spec id(t()) :: {:ok, Dagger.CacheVolumeID.t()} | {:error, term()}
     def id(%__MODULE__{} = cache_volume) do
       selection = select(cache_volume.selection, "id")

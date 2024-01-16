@@ -90,12 +90,12 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
     typ = non_optional(typ)
 
     if typ is TypeHint(type(None)):
-        return td.with_kind(dagger.TypeDefKind.VoidKind)
+        return td.with_kind(dagger.TypeDefKind.VOID_KIND)
 
     builtins = {
-        str: dagger.TypeDefKind.StringKind,
-        int: dagger.TypeDefKind.IntegerKind,
-        bool: dagger.TypeDefKind.BooleanKind,
+        str: dagger.TypeDefKind.STRING_KIND,
+        int: dagger.TypeDefKind.INTEGER_KIND,
+        bool: dagger.TypeDefKind.BOOLEAN_KIND,
     }
 
     if typ.hint in builtins:

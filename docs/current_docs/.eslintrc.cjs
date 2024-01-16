@@ -1,6 +1,6 @@
 module.exports = {
   extends: [
-    require.resolve("../../sdk/nodejs/.eslintrc.cjs"),
+    require.resolve("../../sdk/typescript/.eslintrc.cjs"),
   ],
   overrides: [
     {

@@ -1,19 +1,18 @@
 [package]
 name = "dagger-bootstrap"
 description = "A bootstrapper for orchestrating codegen for the rust sdk"
-version.workspace = true 
-edition.workspace = true 
-readme.workspace = true 
-license-file.workspace = true 
-authors.workspace = true 
-repository.workspace = true 
 publish = true
+readme = "README.md"
+license-file = "LICENSE"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
 
 [dependencies]
-dagger-codegen = { workspace = true, default-features = false }
-dagger-sdk = { workspace = true, default-features = false }
+dagger-codegen = { workspace = true}
+dagger-sdk = { workspace = true }
 
 eyre = { workspace = true }
 color-eyre = { workspace = true }

@@ -1,10 +1,10 @@
 module github.com/dagger/dagger/internal/mage
 
-go 1.21
+go 1.21.3
 
 require (
-	dagger.io/dagger v0.9.5
-	github.com/dagger/dagger v0.9.5
+	dagger.io/dagger v0.9.6
+	github.com/dagger/dagger v0.9.6
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.15.0
@@ -15,12 +15,14 @@ require (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.34 // indirect
+	github.com/99designs/gqlgen v0.17.41 // indirect
 	github.com/Khan/genqlient v0.6.0 // indirect
 	github.com/adrg/xdg v0.4.0 // indirect
+	github.com/google/uuid v1.5.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.6 // indirect
+	github.com/sosodev/duration v1.1.0 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.10 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 )
 

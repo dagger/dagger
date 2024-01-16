@@ -6,7 +6,7 @@ defmodule Dagger.GitRepository do
   defstruct [:selection, :client]
 
   (
-    @doc "Returns details on one branch.\n\n## Required Arguments\n\n* `name` - Branch's name (e.g., \"main\")."
+    @doc "Returns details of a branch.\n\n## Required Arguments\n\n* `name` - Branch's name (e.g., \"main\")."
     @spec branch(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def branch(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "branch")
@@ -16,7 +16,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Returns details on one commit.\n\n## Required Arguments\n\n* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\")."
+    @doc "Returns details of a commit.\n\n## Required Arguments\n\n* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\")."
     @spec commit(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def commit(%__MODULE__{} = git_repository, id) do
       selection = select(git_repository.selection, "commit")
@@ -26,7 +26,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Retrieves the content-addressed identifier of the git repository."
+    @doc "A unique identifier for this GitRepository."
     @spec id(t()) :: {:ok, Dagger.GitRepositoryID.t()} | {:error, term()}
     def id(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "id")
@@ -35,7 +35,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Returns details on one tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\")."
+    @doc "Returns details of a tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\")."
     @spec tag(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def tag(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "tag")

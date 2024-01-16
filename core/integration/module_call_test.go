@@ -17,12 +17,15 @@ func TestModuleDaggerCallArgTypes(t *testing.T) {
 	t.Run("service args", func(t *testing.T) {
 		t.Parallel()
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+		t.Run("used as service binding", func(t *testing.T) {
+			t.Parallel()
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
 import (
 	"context"
 )
@@ -36,19 +39,69 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 		Stdout(ctx)
 }
 `,
-			})
+				})
 
-		logGen(ctx, t, modGen.Directory("."))
+			logGen(ctx, t, modGen.Directory("."))
 
-		httpServer, _ := httpService(ctx, t, c, "im up")
-		endpoint, err := httpServer.Endpoint(ctx)
-		require.NoError(t, err)
+			httpServer, _ := httpService(ctx, t, c, "im up")
+			endpoint, err := httpServer.Endpoint(ctx)
+			require.NoError(t, err)
 
-		out, err := modGen.
-			WithServiceBinding("testserver", httpServer).
-			With(daggerCall("fn", "--svc", "tcp://"+endpoint)).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, strings.TrimSpace(out), "im up")
+			out, err := modGen.
+				WithServiceBinding("testserver", httpServer).
+				With(daggerCall("fn", "--svc", "tcp://"+endpoint)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, strings.TrimSpace(out), "im up")
+		})
+
+		t.Run("used directly", func(t *testing.T) {
+			t.Parallel()
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
+	ports, err := svc.Ports(ctx)
+	if err != nil {
+		return "", err
+	}
+	var out []string
+	out = append(out, fmt.Sprintf("%d exposed ports:", len(ports)))
+	for _, port := range ports {
+		number, err := port.Port(ctx)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, fmt.Sprintf("- TCP/%d", number))
+	}
+	return strings.Join(out, "\n"), nil
+}
+`,
+				})
+
+			logGen(ctx, t, modGen.Directory("."))
+
+			httpServer, _ := httpService(ctx, t, c, "im up")
+			endpoint, err := httpServer.Endpoint(ctx)
+			require.NoError(t, err)
+
+			out, err := modGen.
+				WithServiceBinding("testserver", httpServer).
+				With(daggerCall("fn", "--svc", "tcp://"+endpoint)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, strings.TrimSpace(out), "1 exposed ports:\n- TCP/8000")
+		})
 	})
 
 	t.Run("list args", func(t *testing.T) {

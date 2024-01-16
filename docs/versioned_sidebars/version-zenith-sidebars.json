@@ -89,7 +89,7 @@
         },
         {
           "type": "category",
-          "label": "Typescript",
+          "label": "TypeScript",
           "items": [
             {
               "type": "doc",
