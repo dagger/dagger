@@ -21,8 +21,8 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 	rec := progrock.FromContext(ctx)
 
 	var vtxName string
-	if cfg.ModuleConfig != nil {
-		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleConfig.Name)
+	if cfg.ModuleName != "" {
+		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleName)
 	} else {
 		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
 	}

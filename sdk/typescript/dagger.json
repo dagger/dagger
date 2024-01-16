@@ -1,0 +1,9 @@
+{
+  "modules": [
+    {
+      "name": "TypeScriptSDK",
+      "source": "runtime",
+      "sdk": "go"
+    }
+  ]
+}

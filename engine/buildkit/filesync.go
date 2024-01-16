@@ -85,8 +85,17 @@ func (c *Client) LocalImport(
 
 	RecordVertexes(recorder, copyPB)
 
+	return c.DefToBlob(ctx, copyPB)
+}
+
+// TODO: move somewhere more logical
+// TODO: doc more, important note that right now all layers need to be squashed (can lift with more effort)
+func (c *Client) DefToBlob(
+	ctx context.Context,
+	pbDef *bksolverpb.Definition,
+) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
 	res, err := c.Solve(ctx, bkgw.SolveRequest{
-		Definition: copyPB,
+		Definition: pbDef,
 		Evaluate:   true,
 	})
 	if err != nil {
@@ -144,7 +153,7 @@ func (c *Client) LocalImport(
 	}
 	blobPB := blobDef.ToPB()
 
-	// do a sync solve right now so we can release the cache ref for the local import
+	// do a sync solve right now so we can release the cache ref for the first solve
 	// without giving up the lease on the blob
 	_, err = c.Solve(ctx, bkgw.SolveRequest{
 		Definition: blobPB,

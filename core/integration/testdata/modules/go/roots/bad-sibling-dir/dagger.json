@@ -1,5 +1,9 @@
 {
-  "name": "bad-sibling-dir",
-  "sdk": "go",
-  "root": "../root"
+  "modules": [
+    {
+      "name": "bad-sibling-dir",
+      "sdk": "go",
+      "source": "../root"
+    }
+  ]
 }
