@@ -365,10 +365,24 @@ func (m *Minimal) Fn() []*Foo {
 			})
 
 		logGen(ctx, t, modGen.Directory("."))
+		expected := "0\n1\n2"
 
-		out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, strings.TrimSpace(out), "0\n1\n2")
+		t.Run("print", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expected, strings.TrimSpace(out))
+		})
+
+		t.Run("output", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.
+				With(daggerCall("fn", "bar", "-o", "./outfile")).
+				File("./outfile").
+				Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expected, strings.TrimSpace(out))
+		})
 	})
 
 	t.Run("return container", func(t *testing.T) {
@@ -391,9 +405,25 @@ type Test struct {
 `,
 			})
 
-		out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello world", strings.TrimSpace(out))
+		logGen(ctx, t, modGen.Directory("."))
+
+		t.Run("print", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello world", strings.TrimSpace(out))
+		})
+
+		t.Run("output", func(t *testing.T) {
+			t.Parallel()
+			modGen, err := modGen.With(daggerCall("ctr", "-o", "./container.tar")).Sync(ctx)
+			require.NoError(t, err)
+			size, err := modGen.File("./container.tar").Size(ctx)
+			require.NoError(t, err)
+			require.Greater(t, size, 0)
+			_, err = modGen.WithExec([]string{"tar", "tf", "./container.tar", "oci-layout"}).Sync(ctx)
+			require.NoError(t, err)
+		})
 	})
 
 	t.Run("return directory", func(t *testing.T) {
@@ -418,9 +448,31 @@ type Test struct {
 `,
 			})
 
-		out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "bar.txt\nfoo.txt", strings.TrimSpace(out))
+		logGen(ctx, t, modGen.Directory("."))
+
+		t.Run("print", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "bar.txt\nfoo.txt", strings.TrimSpace(out))
+		})
+
+		t.Run("output", func(t *testing.T) {
+			t.Parallel()
+			modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
+			require.NoError(t, err)
+			entries, err := modGen.Directory("./outdir").Entries(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
+
+			foo, err := modGen.Directory("./outdir").File("foo.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "foo", strings.TrimSpace(foo))
+
+			bar, err := modGen.Directory("./outdir").File("bar.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "bar", strings.TrimSpace(bar))
+		})
 	})
 
 	t.Run("return file", func(t *testing.T) {
@@ -445,9 +497,24 @@ type Test struct {
 `,
 			})
 
-		out, err := modGen.With(daggerCall("file")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "foo", strings.TrimSpace(out))
+		logGen(ctx, t, modGen.Directory("."))
+
+		t.Run("print", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.With(daggerCall("file")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "foo", strings.TrimSpace(out))
+		})
+
+		t.Run("output", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.
+				With(daggerCall("file", "-o", "./outfile")).
+				File("./outfile").
+				Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "foo", strings.TrimSpace(out))
+		})
 	})
 
 	t.Run("sync", func(t *testing.T) {
@@ -594,5 +661,64 @@ type Test struct {
 			require.NoError(t, err)
 			require.Equal(t, "foo", strings.TrimSpace(contents))
 		})
+	})
+}
+
+func TestModuleDaggerCallSaveOutput(t *testing.T) {
+	// NB: Normal usage is tested in TestModuleDaggerCallReturnTypes.
+
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Test struct {
+}
+
+func (t *Test) Hello() string {
+    return "hello"
+}
+
+func (t *Test) File() *File {
+    return dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt")
+}
+`,
+		})
+
+	logGen(ctx, t, modGen.Directory("."))
+
+	t.Run("truncate file", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.
+			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
+				Contents: "foobar",
+			}).
+			With(daggerCall("hello", "-o", "foo.txt")).
+			File("foo.txt").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
+
+	t.Run("not a file", func(t *testing.T) {
+		t.Parallel()
+		_, err := modGen.With(daggerCall("hello", "-o", ".")).Sync(ctx)
+		require.ErrorContains(t, err, "is a directory")
+	})
+
+	t.Run("allow dir for file", func(t *testing.T) {
+		t.Parallel()
+		out, err := modGen.
+			With(daggerCall("file", "-o", ".")).
+			File("foo.txt").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", strings.TrimSpace(out))
 	})
 }
