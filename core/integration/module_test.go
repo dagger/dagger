@@ -3847,10 +3847,10 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"hasPkgJson":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("Add dagger dependencies to the existing package.json", func(t *testing.T) {
-			pkgJson, err := modGen.File("/work/package.json").Contents(ctx)
+			pkgJSON, err := modGen.File("/work/package.json").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, pkgJson, `"@dagger.io/dagger":`)
-			require.Contains(t, pkgJson, `"name": "my-module"`)
+			require.Contains(t, pkgJSON, `"@dagger.io/dagger":`)
+			require.Contains(t, pkgJSON, `"name": "my-module"`)
 		})
 	})
 
