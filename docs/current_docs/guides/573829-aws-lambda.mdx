@@ -37,90 +37,90 @@ The first step is to create a Dagger pipeline to build a ZIP archive of the func
 
 1. In the function directory, install the Dagger SDK:
 
-  ```shell
-  go get dagger.io/dagger
-  ```
+    ```shell
+    go get dagger.io/dagger
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
 
-  ```go file=./snippets/aws-lambda/main.go
-  ```
+    ```go file=./snippets/aws-lambda/main.go
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger SDK.
-    - It checks for AWS credentials and configuration in the host environment.
-    - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `SetSecret()` method to set the AWS credentials as secrets for the Dagger pipeline.
-    - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `ci` directory. This reference is stored in the `source` variable.
-    - It uses the client's `Container().From()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
-    - It chains together a series of `WithExec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
-    - It uses the client's `Container().From()` method to initialize a new `aws-cli` AWS CLI container image.
-    - It uses the `Container` object's `WithSecretVariable()` and `WithEnvVariable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
-    - It copies the ZIP archive containing the new AWS Lambda function code from the previous `node:18-alpine` container image into the `aws-cli` container image.
-    - It uses `WithExec()` method calls to execute AWS CLI commands in the container image to upload and deploy the ZIP archive and get the function's public URL. If these operations complete successfully, it prints a success message with the URL to the console.
+    This file performs the following operations:
+      - It imports the Dagger SDK.
+      - It checks for AWS credentials and configuration in the host environment.
+      - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `SetSecret()` method to set the AWS credentials as secrets for the Dagger pipeline.
+      - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `ci` directory. This reference is stored in the `source` variable.
+      - It uses the client's `Container().From()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
+      - It chains together a series of `WithExec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
+      - It uses the client's `Container().From()` method to initialize a new `aws-cli` AWS CLI container image.
+      - It uses the `Container` object's `WithSecretVariable()` and `WithEnvVariable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
+      - It copies the ZIP archive containing the new AWS Lambda function code from the previous `node:18-alpine` container image into the `aws-cli` container image.
+      - It uses `WithExec()` method calls to execute AWS CLI commands in the container image to upload and deploy the ZIP archive and get the function's public URL. If these operations complete successfully, it prints a success message with the URL to the console.
 
 1. Run the following command to update `go.sum`:
 
-  ```shell
-  go mod tidy
-  ```
+    ```shell
+    go mod tidy
+    ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 1. In the function directory, install the Dagger SDK:
 
-  ```shell
-  npm install @dagger.io/dagger@latest --save-dev
-  ```
+    ```shell
+    npm install @dagger.io/dagger@latest --save-dev
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it.
 
-  ```javascript file=./snippets/aws-lambda/index.mjs
-  ```
+    ```javascript file=./snippets/aws-lambda/index.mjs
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger SDK.
-    - It checks for AWS credentials and configuration in the host environment.
-    - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `setSecret()` method to set the AWS credentials as secrets for the Dagger pipeline.
-    - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `container().from()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
-    - It chains together a series of `withExec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
-    - It uses the client's `container().from()` method to initialize a new `aws-cli` AWS CLI container image.
-    - It uses the `Container` object's `withSecretVariable()` and `withEnvVariable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
-    - It copies the ZIP archive containing the new AWS Lambda function code from the previous `node:18-alpine` container image into the `aws-cli` container image.
-    - It uses `withExec()` method calls to execute AWS CLI commands in the container image to upload and deploy the ZIP archive and get the function's public URL. If these operations complete successfully, it prints a success message with the URL to the console.
+    This file performs the following operations:
+      - It imports the Dagger SDK.
+      - It checks for AWS credentials and configuration in the host environment.
+      - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `setSecret()` method to set the AWS credentials as secrets for the Dagger pipeline.
+      - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `container().from()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
+      - It chains together a series of `withExec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
+      - It uses the client's `container().from()` method to initialize a new `aws-cli` AWS CLI container image.
+      - It uses the `Container` object's `withSecretVariable()` and `withEnvVariable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
+      - It copies the ZIP archive containing the new AWS Lambda function code from the previous `node:18-alpine` container image into the `aws-cli` container image.
+      - It uses `withExec()` method calls to execute AWS CLI commands in the container image to upload and deploy the ZIP archive and get the function's public URL. If these operations complete successfully, it prints a success message with the URL to the console.
 
 </TabItem>
 <TabItem value="Python">
 
 1. In the function directory, create a virtual environment and install the Dagger SDK:
 
-  ```shell
-  pip install dagger-io
-  ```
+    ```shell
+    pip install dagger-io
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.py` and add the following code to it.
 
-  ```python file=./snippets/aws-lambda/main.py
-  ```
+    ```python file=./snippets/aws-lambda/main.py
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger SDK.
-    - It checks for AWS credentials and configuration in the host environment.
-    - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `set_secret()` method to set the AWS credentials as secrets for the Dagger pipeline.
-    - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `packages`, `.venv` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `container().from_()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
-    - It chains together a series of `with_exec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
-    - It uses the client's `container().from_()` method to initialize a new `aws-cli` AWS CLI container image.
-    - It uses the `Container` object's `with_secret_variable()` and `with_env_variable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
-    - It copies the ZIP archive containing the new AWS Lambda function code from the previous `node:18-alpine` container image into the `aws-cli` container image.
-    - It uses `with_exec()` method calls to execute AWS CLI commands in the container image to upload and deploy the ZIP archive and get the function's public URL. If these operations complete successfully, it prints a success message with the URL to the console.
+    This file performs the following operations:
+      - It imports the Dagger SDK.
+      - It checks for AWS credentials and configuration in the host environment.
+      - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `set_secret()` method to set the AWS credentials as secrets for the Dagger pipeline.
+      - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `packages`, `.venv` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `container().from_()` method to initialize a new container image from a base  `node:18-alpine` image. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
+      - It chains together a series of `with_exec()` method calls to install dependencies and build a ZIP deployment archive containing the function and all its dependencies.
+      - It uses the client's `container().from_()` method to initialize a new `aws-cli` AWS CLI container image.
+      - It uses the `Container` object's `with_secret_variable()` and `with_env_variable()` methods to inject the AWS credentials (as secrets) and configuration into the container environment, so that they can be used by the AWS CLI.
+      - It copies the ZIP archive containing the new AWS Lambda function code from the previous `node:18-alpine` container image into the `aws-cli` container image.
+      - It uses `with_exec()` method calls to execute AWS CLI commands in the container image to upload and deploy the ZIP archive and get the function's public URL. If these operations complete successfully, it prints a success message with the URL to the console.
 
 </TabItem>
 </Tabs>

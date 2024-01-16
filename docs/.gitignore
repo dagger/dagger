@@ -7,6 +7,9 @@
 # Generated files
 .docusaurus
 .cache-loader
+current_docs/sdk/typescript/reference/*
+current_docs/sdk/nodejs/reference/*
+static/guides.json
 
 # Misc
 .DS_Store
