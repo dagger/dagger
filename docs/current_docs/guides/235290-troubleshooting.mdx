@@ -22,22 +22,22 @@ To resolve this error, you must stop and remove the Dagger Engine container and 
 
 1. Stop and remove the Dagger Engine container:
 
-  ```shell
-  DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
-  docker container stop "$DAGGER_ENGINE_DOCKER_CONTAINER"
-  docker container rm "$DAGGER_ENGINE_DOCKER_CONTAINER"
-  ```
+    ```shell
+    DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
+    docker container stop "$DAGGER_ENGINE_DOCKER_CONTAINER"
+    docker container rm "$DAGGER_ENGINE_DOCKER_CONTAINER"
+    ```
 
 1. Clear unused volumes and data:
 
-  :::info
-  This step is optional. It will remove the cache and result in a slow first run when the container is re-provisioned.
-  :::
+    :::info
+    This step is optional. It will remove the cache and result in a slow first run when the container is re-provisioned.
+    :::
 
-  ```shell
-  docker volume prune
-  docker system prune
-  ```
+    ```shell
+    docker volume prune
+    docker system prune
+    ```
 
 You should now be able to re-run your Dagger pipeline successfully.
 

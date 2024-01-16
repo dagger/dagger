@@ -102,103 +102,103 @@ This approach involves publishing the container image to a local registry, and t
 
 1. Deploy a local container registry with Docker. This local registry must be configured to run in the same network as the Dagger Engine container, and must use a host volume for the registry data.
 
-  :::tip
-  At this point, the local registry must run in the same network as the Dagger Engine container so that Dagger is able to communicate with it using the `localhost` or `127.0.0.1` network address.
-  :::
+    :::tip
+    At this point, the local registry must run in the same network as the Dagger Engine container so that Dagger is able to communicate with it using the `localhost` or `127.0.0.1` network address.
+    :::
 
-  ```shell
-  DAGGER_CONTAINER_NETWORK_NAME=`docker ps --filter "name=^dagger-engine-*" --format '{{.Names}}'`
+    ```shell
+    DAGGER_CONTAINER_NETWORK_NAME=`docker ps --filter "name=^dagger-engine-*" --format '{{.Names}}'`
 
-  docker run -d --rm --name registry --network container:$DAGGER_CONTAINER_NETWORK_NAME -v /opt/docker-registry/data:/var/lib/registry registry:2
-  ```
+    docker run -d --rm --name registry --network container:$DAGGER_CONTAINER_NETWORK_NAME -v /opt/docker-registry/data:/var/lib/registry registry:2
+    ```
 
 1. Create a Dagger pipeline to build and push a container image to the local registry:
 
-  <Tabs groupId="language">
-  <TabItem value="Go">
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
-  ```go file=./snippets/load-images-local-docker-engine/push/main.go
-  ```
+    ```go file=./snippets/load-images-local-docker-engine/push/main.go
+    ```
 
-  This code listing performs the following operations:
-    - It imports the Dagger client library.
-    - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `Container().From()` method to initialize a new container from a base image (`nginx:1.23-alpine`). The additional `Platform` argument to the `Container()` method instructs Dagger to build for a specific architecture (`linux/amd64`). This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `WithNewFile()` method to create a new file at the NGINX web server root and return the result as a new `Container`.
-    - It uses the `Publish()` method to publish the final container image to the local registry.
+    This code listing performs the following operations:
+      - It imports the Dagger client library.
+      - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `Container().From()` method to initialize a new container from a base image (`nginx:1.23-alpine`). The additional `Platform` argument to the `Container()` method instructs Dagger to build for a specific architecture (`linux/amd64`). This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `WithNewFile()` method to create a new file at the NGINX web server root and return the result as a new `Container`.
+      - It uses the `Publish()` method to publish the final container image to the local registry.
 
-  </TabItem>
-  <TabItem value="Node.js">
+    </TabItem>
+    <TabItem value="Node.js">
 
-  ```javascript file=./snippets/load-images-local-docker-engine/push/index.mjs
-  ```
+    ```javascript file=./snippets/load-images-local-docker-engine/push/index.mjs
+    ```
 
-  This code listing performs the following operations:
-    - It imports the Dagger client library.
-    - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `container().from()` method to initialize a new container from a base image (`nginx:1.23-alpine`). The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture (`linux/amd64`). This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `withNewFile()` method to create a new file at the NGINX web server root and return the result as a new `Container`.
-    - It uses the `publish()` method to publish the final container image to the local registry.
+    This code listing performs the following operations:
+      - It imports the Dagger client library.
+      - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `container().from()` method to initialize a new container from a base image (`nginx:1.23-alpine`). The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture (`linux/amd64`). This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `withNewFile()` method to create a new file at the NGINX web server root and return the result as a new `Container`.
+      - It uses the `publish()` method to publish the final container image to the local registry.
 
-  </TabItem>
-  <TabItem value="Python">
+    </TabItem>
+    <TabItem value="Python">
 
-  ```python file=./snippets/load-images-local-docker-engine/push/main.py
-  ```
+    ```python file=./snippets/load-images-local-docker-engine/push/main.py
+    ```
 
-  This code listing performs the following operations:
-    - It imports the Dagger client library.
-    - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `container().from_()` method to initialize a new container from a base image (`nginx:1.23-alpine`). The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture (`linux/amd64`). This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `with_new_file()` method to create a new file at the NGINX web server root and return the result as a new `Container`.
-    - It uses the `publish()` method to publish the final container image to the local registry.
+    This code listing performs the following operations:
+      - It imports the Dagger client library.
+      - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `container().from_()` method to initialize a new container from a base image (`nginx:1.23-alpine`). The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture (`linux/amd64`). This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `with_new_file()` method to create a new file at the NGINX web server root and return the result as a new `Container`.
+      - It uses the `publish()` method to publish the final container image to the local registry.
 
-  </TabItem>
-  </Tabs>
+    </TabItem>
+    </Tabs>
 
 1. Run the Dagger pipeline:
 
-  <Tabs groupId="language">
-  <TabItem value="Go">
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
-  ```shell
-  dagger run go run ci/main.go
-  ```
+    ```shell
+    dagger run go run ci/main.go
+    ```
 
-  </TabItem>
-  <TabItem value="Node.js">
+    </TabItem>
+    <TabItem value="Node.js">
 
-  ```shell
-  dagger run node ci/index.mjs
-  ```
+    ```shell
+    dagger run node ci/index.mjs
+    ```
 
-  </TabItem>
-  <TabItem value="Python">
+    </TabItem>
+    <TabItem value="Python">
 
-  ```shell
-  dagger run python ci/main.py
-  ```
+    ```shell
+    dagger run python ci/main.py
+    ```
 
-  </TabItem>
-  </Tabs>
+    </TabItem>
+    </Tabs>
 
-  The `dagger run` command executes the script in a Dagger session and displays live progress. At the end of the process, the built container is pushed to the local registry and a message similar to the one below appears in the console output:
+    The `dagger run` command executes the script in a Dagger session and displays live progress. At the end of the process, the built container is pushed to the local registry and a message similar to the one below appears in the console output:
 
-  ```shell
-  Published at: 127.0.0.1:5000/my-nginx:1.0@sha256:c59a...
-  ```
+    ```shell
+    Published at: 127.0.0.1:5000/my-nginx:1.0@sha256:c59a...
+    ```
 
 1. Stop the local registry, then restart it after detaching it from the Dagger Engine container network and publishing the registry server port so that it can be used from the Docker host.
 
-  :::tip
-  At this point, the local registry must run in the same network as the host so that you can use it via the `localhost` or `127.0.0.1` network address.
-  :::
+    :::tip
+    At this point, the local registry must run in the same network as the host so that you can use it via the `localhost` or `127.0.0.1` network address.
+    :::
 
-  ```shell
-  docker stop registry
+    ```shell
+    docker stop registry
 
-  docker run -d --rm --name registry -p 5000:5000 -v /opt/docker-registry/data:/var/lib/registry  registry:2
-  ```
+    docker run -d --rm --name registry -p 5000:5000 -v /opt/docker-registry/data:/var/lib/registry  registry:2
+    ```
 
 The image can now be pulled from the registry and used like any other Docker image. For example, to run the sample image above, use the following `docker run` command:
 
