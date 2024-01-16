@@ -56,6 +56,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Interfaces served by this module
+     */
+    public function interfaces(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interfaces');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'interfaces');
+    }
+
+    /**
      * The name of the module
      */
     public function name(): string
@@ -109,6 +118,16 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDirectorySubPath');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceDirectorySubPath');
+    }
+
+    /**
+     * This module plus the given Interface type and associated functions
+     */
+    public function withInterface(TypeDefId|TypeDef $iface): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
+        $innerQueryBuilder->setArgument('iface', $iface);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

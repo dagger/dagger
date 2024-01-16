@@ -389,12 +389,10 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Configures default arguments for future commands.
      */
-    public function withDefaultArgs(?array $args = null): Container
+    public function withDefaultArgs(array $args): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultArgs');
-        if (null !== $args) {
         $innerQueryBuilder->setArgument('args', $args);
-        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -14,6 +14,16 @@ namespace Dagger;
 class TypeDef extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * If kind is INTERFACE, the interface-specific type definition.
+     * If kind is not INTERFACE, this will be null.
+     */
+    public function asInterface(): InterfaceTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');
+        return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * If kind is LIST, the list-specific type definition.
      * If kind is not LIST, this will be null.
      */
@@ -82,12 +92,25 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Adds a function for an Object TypeDef, failing if the type is not an object.
+     * Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
      */
     public function withFunction(FunctionId|Function_ $function): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFunction');
         $innerQueryBuilder->setArgument('function', $function);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind Interface with the provided name.
+     */
+    public function withInterface(string $name, ?string $description = null): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -20,6 +20,13 @@ enum TypeDefKind: string
     case IntegerKind = 'IntegerKind';
 
     /**
+     * A named type of functions that can be matched+implemented by other objects+interfaces.
+     *
+     * Always paired with an InterfaceTypeDef.
+     */
+    case InterfaceKind = 'InterfaceKind';
+
+    /**
      * A list of values all having the same type.
      *
      * Always paired with a ListTypeDef.
