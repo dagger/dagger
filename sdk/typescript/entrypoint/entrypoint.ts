@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename)
 
 const moduleSrcDirectory = `${__dirname}/../../src/`
 
-async function entrypoint() {
+export async function entrypoint() {
   // Pre list all files of the modules since we need it either for a registration
   // or an invocation
   const files = await listFiles(moduleSrcDirectory)
@@ -97,5 +97,3 @@ async function entrypoint() {
     { LogOutput: process.stdout }
   )
 }
-
-entrypoint()

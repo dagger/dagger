@@ -3808,13 +3808,118 @@ func TestModuleTypescriptInit(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=My-Module", "--sdk=go"))
+			With(daggerExec("mod", "init", "--name=My-Module", "--sdk=typescript"))
 
 		out, err := modGen.
 			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("respect existing package.json", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/package.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{
+  "name": "my-module",
+  "version": "1.0.0",
+  "description": "My module",
+  "main": "index.js",
+  "scripts": {
+	"test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "John doe",
+  "license": "MIT"
+	}`,
+			}).
+			With(daggerExec("mod", "init", "--name=hasPkgJson", "--sdk=typescript"))
+
+		out, err := modGen.
+			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasPkgJson":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("Add dagger dependencies to the existing package.json", func(t *testing.T) {
+			pkgJson, err := modGen.File("/work/package.json").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, pkgJson, `"@dagger.io/dagger":`)
+			require.Contains(t, pkgJson, `"name": "my-module"`)
+		})
+	})
+
+	t.Run("respect existing tsconfig.json", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/tsconfig.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{
+	"compilerOptions": {
+	  "target": "ES2022",
+	  "moduleResolution": "Node",
+	  "experimentalDecorators": true
+	}
+		}`,
+			}).
+			With(daggerExec("mod", "init", "--name=hasTsConfig", "--sdk=typescript"))
+
+		out, err := modGen.
+			With(daggerQuery(`{hasTsConfig{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("Add dagger paths to the existing tsconfig.json", func(t *testing.T) {
+			tsConfig, err := modGen.File("/work/tsconfig.json").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, tsConfig, `"@dagger.io/dagger":`)
+		})
+	})
+
+	t.Run("respect existing src/index.ts", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithDirectory("/work/src", c.Directory()).
+			WithNewFile("/work/src/index.ts", dagger.ContainerWithNewFileOpts{
+				Contents: `
+				import { dag, Container, object, func } from "@dagger.io/dagger"
+
+				@object
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				class ExistingSource {
+				  /**
+				   * example usage: "dagger call container-echo --string-arg yo"
+				   */
+				  @func
+				  helloWorld(stringArg: string): Container {
+					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+				  }
+				}
+					
+				`,
+			}).
+			With(daggerExec("mod", "init", "--name=existingSource", "--sdk=typescript"))
+
+		out, err := modGen.
+			With(daggerQuery(`{existingSource{helloWorld(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
 	})
 }
 
