@@ -48,39 +48,39 @@ Since the application is a Node.js application, it's convenient to use the [`nod
 
 1. Add the `node` module as a dependency:
 
-  ```shell
-  dagger mod install github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f
-  ```
+    ```shell
+    dagger mod install github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f
+    ```
 
 1. Update the generated `main.go` file with the following code:
 
-  ```go
-  package main
+    ```go
+    package main
 
-  type Mymod struct {}
+    type Mymod struct {}
 
-  const defaultNodeVersion = "16"
+    const defaultNodeVersion = "16"
 
-  func (m *Mymod) buildBase(nodeVersion Optional[string]) *Node {
-    return dag.Node().
-      WithVersion(nodeVersion.GetOr(defaultNodeVersion)).
-      WithNpm().
-      WithSource(dag.Host().Directory(".", HostDirectoryOpts{
-        Exclude: []string{".git", "**/node_modules"},
-      })).
-      Install(nil)
-  }
-  ```
+    func (m *Mymod) buildBase(nodeVersion Optional[string]) *Node {
+      return dag.Node().
+        WithVersion(nodeVersion.GetOr(defaultNodeVersion)).
+        WithNpm().
+        WithSource(dag.Host().Directory(".", HostDirectoryOpts{
+          Exclude: []string{".git", "**/node_modules"},
+        })).
+        Install(nil)
+    }
+    ```
 
-  This function does the following:
-    - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
-    - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
-    - It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
-    - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+    This function does the following:
+      - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+      - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+      - It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
+      - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
 
-  :::note
-  `dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
-  :::
+    :::note
+    `dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
+    :::
 
 ## Step 3: Add a function to test the application
 
@@ -188,29 +188,29 @@ One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The
 
 1. Add the `ttlsh` module as a dependency in your module:
 
-  ```shell
-  dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
-  ```
+    ```shell
+    dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
+    ```
 
 1. Update the module and add new `Package()` and `Publish()` functions to copy the built application into an NGINX web server container image and deliver the result to the registry:
 
-  ```go
-  func (m *Mymod) Package(nodeVersion Optional[string]) *Container {
-    return dag.Container().From("nginx:1.23-alpine").
-      WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion)).
-      WithExposedPort(80)
-  }
+    ```go
+    func (m *Mymod) Package(nodeVersion Optional[string]) *Container {
+      return dag.Container().From("nginx:1.23-alpine").
+        WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion)).
+        WithExposedPort(80)
+    }
 
-  func (m *Mymod) Publish(ctx context.Context, nodeVersion Optional[string]) (string, error) {
-    return dag.Ttlsh().Publish(ctx, m.Package(nodeVersion))
-  }
-  ```
+    func (m *Mymod) Publish(ctx context.Context, nodeVersion Optional[string]) (string, error) {
+      return dag.Ttlsh().Publish(ctx, m.Package(nodeVersion))
+    }
+    ```
 
-  This code listing contains two functions:
-    - The `Package()` function calls the `dag` client's `Container().From()` function to initialize a new container from a base image - here, the `nginx:1.23-alpine` image.The `From()` function returns a new `Container` object with the result.
-      - It uses the `Container.WithDirectory()` function to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
-      - It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.23-alpine` image) and return a revised `Container`.
-    - The `Publish()` function accepts a `Container` as input. It calls the `ttlsh` module's `Publish()` function to publish the container image to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+    This code listing contains two functions:
+      - The `Package()` function calls the `dag` client's `Container().From()` function to initialize a new container from a base image - here, the `nginx:1.23-alpine` image.The `From()` function returns a new `Container` object with the result.
+        - It uses the `Container.WithDirectory()` function to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+        - It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.23-alpine` image) and return a revised `Container`.
+      - The `Publish()` function accepts a `Container` as input. It calls the `ttlsh` module's `Publish()` function to publish the container image to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
 
 Test the code by running the command below:
 
