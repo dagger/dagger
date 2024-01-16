@@ -382,8 +382,12 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(_ context.Context, c *dagger.Client) (any, error) {
-	return c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}), nil
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
+	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start service: %w", err)
+	}
+	return svc, nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a

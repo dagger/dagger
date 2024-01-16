@@ -58,7 +58,7 @@ func TestServicesStartHappy(t *testing.T) {
 	})
 }
 
-func TestServicesStartHappyDifferentClients(t *testing.T) {
+func TestServicesStartHappyDifferentServers(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -68,9 +68,9 @@ func TestServicesStartHappyDifferentClients(t *testing.T) {
 
 	svc := newStartable("fake")
 
-	startOne := func(t *testing.T, stub *fakeStartable, clientID string) {
+	startOne := func(t *testing.T, stub *fakeStartable, serverID string) {
 		ctx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
-			ClientID: clientID,
+			ServerID: serverID,
 		})
 
 		expected := stub.Succeed()
@@ -88,11 +88,11 @@ func TestServicesStartHappyDifferentClients(t *testing.T) {
 	}
 
 	t.Run("start one", func(t *testing.T) {
-		startOne(t, svc, "client-1")
+		startOne(t, svc, "server-1")
 	})
 
 	t.Run("start another", func(t *testing.T) {
-		startOne(t, svc, "client-2")
+		startOne(t, svc, "server-2")
 	})
 }
 
@@ -325,7 +325,7 @@ func (f *fakeStartable) Succeed() *core.RunningService {
 	running := &core.RunningService{
 		Key: core.ServiceKey{
 			Digest:   f.digest,
-			ClientID: "doesnt-matter",
+			ServerID: "doesnt-matter",
 		},
 		Host: f.name + "-host",
 	}

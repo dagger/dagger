@@ -450,7 +450,7 @@ func (svc *Service) startContainer(
 			Ports:   ctr.Ports,
 			Key: ServiceKey{
 				Digest:   dig,
-				ClientID: clientMetadata.ClientID,
+				ServerID: clientMetadata.ServerID,
 			},
 			Stop: stopSvc,
 			Wait: func(ctx context.Context) error {
@@ -573,7 +573,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 		Service: svc,
 		Key: ServiceKey{
 			Digest:   dig,
-			ClientID: clientMetadata.ClientID,
+			ServerID: clientMetadata.ServerID,
 		},
 		Host:  dialHost,
 		Ports: ports,
@@ -656,7 +656,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *idproto.ID) (run
 			Service: svc,
 			Key: ServiceKey{
 				Digest:   dig,
-				ClientID: clientMetadata.ClientID,
+				ServerID: clientMetadata.ServerID,
 			},
 			Host:  fullHost,
 			Ports: checkPorts,
