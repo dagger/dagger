@@ -32,31 +32,31 @@ This quickstart assumes that:
 
 1. Create a new directory on your filesystem and run `dagger mod init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
 
-```sh
-mkdir potato/
-cd potato/
+    ```sh
+    mkdir potato/
+    cd potato/
 
-# initialize Dagger module
-dagger mod init --name=potato --sdk=typescript
-```
+    # initialize Dagger module
+    dagger mod init --name=potato --sdk=typescript
+    ```
 
-This will generate a `dagger.json` module file, initial `src/index.ts` and typescript basic setup with a `package.json`, a `tsconfig.json` and a `yarn.lock`, as well as a generated `sdk` folder for local development.
+    This will generate a `dagger.json` module file, initial `src/index.ts` and typescript basic setup with a `package.json`, a `tsconfig.json` and a `yarn.lock`, as well as a generated `sdk` folder for local development.
 
 2. Test the module. Run the generated `index.ts` with the `dagger call` command:
 
-```sh
-dagger call container-echo --string-arg 'Hello daggernauts!'
-```
+    ```sh
+    dagger call container-echo --string-arg 'Hello daggernauts!'
+    ```
 
-:::tip
-When using `dagger call` to call module functions, do not explicitly use the name of the module.
-:::
+    :::tip
+    When using `dagger call` to call module functions, do not explicitly use the name of the module.
+    :::
 
-An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
+    An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
 
-```sh
-echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
-```
+    ```sh
+    echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
+    ```
 
 :::note
 When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
@@ -70,22 +70,22 @@ Let's try changing the `src/index.ts` file.
 
 1. Let's replace the auto-generated template with something simpler:
 
-```typescript file=./snippets/quickstart/step2/index.ts
-```
+    ```typescript file=./snippets/quickstart/step2/index.ts
+    ```
 
-The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
+    The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
 
 2. Test the new function, once again using `dagger call` or `dagger query`:
 
-```sh
-dagger call hello-world
-```
+    ```sh
+    dagger call hello-world
+    ```
 
-or
+    or
 
-```sh
-echo '{potato{helloWorld}}' | dagger query
-```
+    ```sh
+    echo '{potato{helloWorld}}' | dagger query
+    ```
 
 ## Step 3: Use input parameters and return types
 
@@ -93,42 +93,42 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to accept multiple parameters (some of which are optional):
 
-```typescript file=./snippets/quickstart/step3a/index.ts
-```
+    ```typescript file=./snippets/quickstart/step3a/index.ts
+    ```
 
-You can use [jsDoc](https://jsdoc.app/) to document the parameter in the API.
+    You can use [jsDoc](https://jsdoc.app/) to document the parameter in the API.
 
-Here's an example of calling the function with optional parameters:
+    Here's an example of calling the function with optional parameters:
 
-```sh
-dagger call hello-world --count 10 --mashed
-```
+    ```sh
+    dagger call hello-world --count 10 --mashed
+    ```
 
-or
+    or
 
-```sh
-echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
-```
+    ```sh
+    echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
+    ```
 
 2. Update the function to return a custom `PotatoMessage` type:
 
-```typescript file=./snippets/quickstart/step3b/index.ts
-```
+    ```typescript file=./snippets/quickstart/step3b/index.ts
+    ```
 
-Test it using `dagger call` or `dagger query`:
+    Test it using `dagger call` or `dagger query`:
 
-```sh
-dagger call hello-world --message "I am a potato" message
-dagger call hello-world --message "I am a potato" from
-```
+    ```sh
+    dagger call hello-world --message "I am a potato" message
+    dagger call hello-world --message "I am a potato" from
+    ```
 
-or
+    or
 
-```sh
-echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
-```
+    ```sh
+    echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
+    ```
 
-Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
+    Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
 
 :::tip
 Use `dagger call --help` to get help on the commands and flags available.
@@ -140,33 +140,33 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Initialize a new module:
 
-```shell
-mkdir trivy/
+    ```shell
+    mkdir trivy/
 
-cd trivy/
+    cd trivy/
 
-dagger mod init --name=trivy --sdk=python
-```
+    dagger mod init --name=trivy --sdk=python
+    ```
 
 2. Replace the generated `index.ts` file with the following code:
 
-```typescript file=./snippets/quickstart/trivy/index.ts
-```
+    ```typescript file=./snippets/quickstart/trivy/index.ts
+    ```
 
-In this example, the `scanImage()` function accepts four parameters:
-  - A reference to the container image to be scanned (required);
-  - A severity filter (optional);
-  - The exit code to use if scanning finds vulnerabilities (optional);
-  - The reporting format (optional).
+    In this example, the `scanImage()` function accepts four parameters:
+      - A reference to the container image to be scanned (required);
+      - A severity filter (optional);
+      - The exit code to use if scanning finds vulnerabilities (optional);
+      - The reporting format (optional).
 
-The function code performs the following operations:
-  - It uses the default `dagger` client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
-  - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `withExec()` method returns a revised `Container` with the results of command execution.
-  - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
+    The function code performs the following operations:
+      - It uses the default `dagger` client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `withExec()` method returns a revised `Container` with the results of command execution.
+      - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
 
 3. Test the function using `dagger call`:
 
-<PartialDeveloperQuickstartTrivyTest />
+    <PartialDeveloperQuickstartTrivyTest />
 
 ## Conclusion
 

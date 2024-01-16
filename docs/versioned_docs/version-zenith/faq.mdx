@@ -119,49 +119,49 @@ Follow these steps:
 
 1. Remove the Dagger CLI using the following command:
 
-  ```shell
-  sudo rm /usr/local/bin/dagger
-  ```
+    ```shell
+    sudo rm /usr/local/bin/dagger
+    ```
 
-  Homebrew users can alternatively use the following command:
+    Homebrew users can alternatively use the following command:
 
-  ```shell
-  brew uninstall dagger
-  ```
+    ```shell
+    brew uninstall dagger
+    ```
 
 1. Remove the Dagger container using the following commands:
 
-  ```shell
-  docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
-  ```
+    ```shell
+    docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
+    ```
 
 1. Remove the `dagger` sub-directory of your local cache and configuration directories (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux or the equivalent for other platforms):
 
-  <Tabs>
-  <TabItem value="macOS">
+    <Tabs>
+    <TabItem value="macOS">
 
-  ```shell
-  rm -rf ~/Library/Caches/dagger
-  rm -rf ~/Library/Application\ Support/dagger
-  ```
+    ```shell
+    rm -rf ~/Library/Caches/dagger
+    rm -rf ~/Library/Application\ Support/dagger
+    ```
 
-  </TabItem>
-  <TabItem value="Linux">
+    </TabItem>
+    <TabItem value="Linux">
 
-  ```shell
-  rm -rf ~/.cache/dagger
-  rm -rf ~/.config/dagger
-  ```
+    ```shell
+    rm -rf ~/.cache/dagger
+    rm -rf ~/.config/dagger
+    ```
 
-  </TabItem>
-  </Tabs>
+    </TabItem>
+    </Tabs>
 
-  :::note
-  The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
-    - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
-    - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
-    - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
-  :::
+    :::note
+    The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
+      - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
+      - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
+      - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
+    :::
 
 ### What are Dagger's caching features?
 

@@ -31,31 +31,31 @@ This quickstart assumes that:
 
 1. Create a new directory on your filesystem and run `dagger mod init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
 
-  ```sh
-  mkdir potato/
-  cd potato/
+    ```sh
+    mkdir potato/
+    cd potato/
 
-  # initialize Dagger module
-  dagger mod init --name=potato --sdk=python
-  ```
+    # initialize Dagger module
+    dagger mod init --name=potato --sdk=python
+    ```
 
-  This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
+    This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
 
 1. Test the module. Run the generated `main.py` with the `dagger call` command:
 
-  ```sh
-  dagger call container-echo --string-arg 'Hello daggernauts!'
-  ```
+    ```sh
+    dagger call container-echo --string-arg 'Hello daggernauts!'
+    ```
 
-  :::tip
-  When using `dagger call` to call module functions, do not explicitly use the name of the module.
-  :::
+    :::tip
+    When using `dagger call` to call module functions, do not explicitly use the name of the module.
+    :::
 
-  An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
+    An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
 
-  ```sh
-  echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
-  ```
+    ```sh
+    echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
+    ```
 
 :::note
 When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
@@ -89,20 +89,20 @@ Let's try changing the `src/main.py` file.
 
 1. Let's replace the auto-generated template with something simpler:
 
-  ```python file=./snippets/quickstart/step2/main.py
-  ```
+    ```python file=./snippets/quickstart/step2/main.py
+    ```
 
 1. Test the new function, once again using `dagger call` or `dagger query`:
 
-  ```sh
-  dagger call hello-world
-  ```
+    ```sh
+    dagger call hello-world
+    ```
 
-  or
+    or
 
-  ```sh
-  echo '{potato{helloWorld}}' | dagger query
-  ```
+    ```sh
+    echo '{potato{helloWorld}}' | dagger query
+    ```
 
 ## Step 4: Use input parameters and return types
 
@@ -110,45 +110,45 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to accept multiple parameters (some of which are optional):
 
-  ```python file=./snippets/quickstart/step3a/main.py
-  ```
+    ```python file=./snippets/quickstart/step3a/main.py
+    ```
 
-  The type annotation with the [Doc() metadata](https://peps.python.org/pep-0727/#specification) is used to document the parameter in the API.
+    The type annotation with the [Doc() metadata](https://peps.python.org/pep-0727/#specification) is used to document the parameter in the API.
 
-  Here's an example of calling the function with optional parameters:
+    Here's an example of calling the function with optional parameters:
 
-  ```sh
-  dagger call hello-world --count 10 --mashed
-  ```
+    ```sh
+    dagger call hello-world --count 10 --mashed
+    ```
 
-  or
+    or
 
-  ```sh
-  echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
-  ```
+    ```sh
+    echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
+    ```
 
 1. Update the function to return a custom `PotatoMessage` type:
 
-  ```python file=./snippets/quickstart/step3b/main.py
-  ```
+    ```python file=./snippets/quickstart/step3b/main.py
+    ```
 
-  Test it using `dagger call` or `dagger query`:
+    Test it using `dagger call` or `dagger query`:
 
-  ```sh
-  dagger call hello-world --message "I am a potato" message
-  dagger call hello-world --message "I am a potato" from
-  ```
+    ```sh
+    dagger call hello-world --message "I am a potato" message
+    dagger call hello-world --message "I am a potato" from
+    ```
 
-  or
+    or
 
-  ```sh
-  echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
-  ```
+    ```sh
+    echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
+    ```
 
-  [dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
-  is only needed to allow accessing the field directly via the API. Otherwise,
-  it will still be used during serialization/deserialization when passing the
-  object instance to other functions.
+    [dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
+    is only needed to allow accessing the field directly via the API. Otherwise,
+    it will still be used during serialization/deserialization when passing the
+    object instance to other functions.
 
 :::tip
 Use `dagger call --help` to get help on the commands and flags available.
@@ -160,31 +160,31 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Initialize a new module:
 
-  ```shell
-  mkdir trivy/
-  cd trivy/
-  dagger mod init --name=trivy --sdk=python
-  ```
+    ```shell
+    mkdir trivy/
+    cd trivy/
+    dagger mod init --name=trivy --sdk=python
+    ```
 
 1. Replace the generated `main.py` file with the following code:
 
-  ```python file=./snippets/quickstart/trivy/main.py
-  ```
+    ```python file=./snippets/quickstart/trivy/main.py
+    ```
 
-  In this example, the `scan_image()` function accepts four parameters:
-    - A reference to the container image to be scanned (required);
-    - A severity filter (optional);
-    - The exit code to use if scanning finds vulnerabilities (optional);
-    - The reporting format (optional).
+    In this example, the `scan_image()` function accepts four parameters:
+      - A reference to the container image to be scanned (required);
+      - A severity filter (optional);
+      - The exit code to use if scanning finds vulnerabilities (optional);
+      - The reporting format (optional).
 
-  The function code performs the following operations:
-    - It uses the default `dagger` client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `with_exec()` method returns a revised `Container` with the results of command execution.
-    - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
+    The function code performs the following operations:
+      - It uses the default `dagger` client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `with_exec()` method returns a revised `Container` with the results of command execution.
+      - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
 
 1. Test the function using `dagger call`:
 
-<PartialDeveloperQuickstartTrivyTest />
+    <PartialDeveloperQuickstartTrivyTest />
 
 ## Conclusion
 

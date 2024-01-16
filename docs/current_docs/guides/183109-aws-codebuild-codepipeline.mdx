@@ -96,85 +96,85 @@ The next step is to create a Dagger pipeline to build a container image of the a
 
 1. In the application directory, install the Dagger SDK:
 
-  ```shell
-  go mod init main
-  go get dagger.io/dagger@latest
-  ```
+    ```shell
+    go mod init main
+    go get dagger.io/dagger@latest
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
 
-  ```go file=./snippets/aws-codebuild-codepipeline/main.go
-  ```
+    ```go file=./snippets/aws-codebuild-codepipeline/main.go
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger SDK.
-    - It checks for registry credentials in the host environment.
-    - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `SetSecret()` method to set the registry password as a secret for the Dagger pipeline.
-    - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `Container().From()` method to initialize a new container image from a base image. The additional `platform` argument to the `Container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
-    - It chains the `WithExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `WithDefaultArgs()` method.
-    - It uses the `WithRegistryAuth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
-    - It invokes the `Publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
+    This file performs the following operations:
+      - It imports the Dagger SDK.
+      - It checks for registry credentials in the host environment.
+      - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `SetSecret()` method to set the registry password as a secret for the Dagger pipeline.
+      - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `Container().From()` method to initialize a new container image from a base image. The additional `platform` argument to the `Container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
+      - It chains the `WithExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `WithDefaultArgs()` method.
+      - It uses the `WithRegistryAuth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
+      - It invokes the `Publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
 
 1. Run the following command to update `go.sum`:
 
-  ```shell
-  go mod tidy
-  ```
+    ```shell
+    go mod tidy
+    ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 1. In the application directory, install the Dagger SDK:
 
-  ```shell
-  npm install @dagger.io/dagger@latest--save-dev
-  ```
+    ```shell
+    npm install @dagger.io/dagger@latest--save-dev
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it.
 
-  ```javascript file=./snippets/aws-codebuild-codepipeline/index.mjs
-  ```
+    ```javascript file=./snippets/aws-codebuild-codepipeline/index.mjs
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger SDK.
-    - It checks for registry credentials in the host environment.
-    - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `setSecret()` method to set the registry password as a secret for the Dagger pipeline.
-    - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `container().from()` method to initialize a new container image from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
-    - It chains the `withExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `withDefaultArgs()` method.
-    - It uses the `withRegistryAuth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
-    - It invokes the `publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
+    This file performs the following operations:
+      - It imports the Dagger SDK.
+      - It checks for registry credentials in the host environment.
+      - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `setSecret()` method to set the registry password as a secret for the Dagger pipeline.
+      - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `container().from()` method to initialize a new container image from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
+      - It chains the `withExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `withDefaultArgs()` method.
+      - It uses the `withRegistryAuth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
+      - It invokes the `publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
 
 </TabItem>
 <TabItem value="Python">
 
 1. In the application directory, create a virtual environment and install the Dagger SDK:
 
-  ```shell
-  pip install dagger-io
-  ```
+    ```shell
+    pip install dagger-io
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.py` and add the following code to it.
 
-  ```python file=./snippets/aws-codebuild-codepipeline/main.py
-  ```
+    ```python file=./snippets/aws-codebuild-codepipeline/main.py
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger SDK.
-    - It checks for registry credentials in the host environment.
-    - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `set_secret()` method to set the registry password as a secret for the Dagger pipeline.
-    - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `container().from_()` method to initialize a new container image from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
-    - It chains the `with_exec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `with_default_args()` method.
-    - It uses the `with_registry_auth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
-    - It invokes the `publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
+    This file performs the following operations:
+      - It imports the Dagger SDK.
+      - It checks for registry credentials in the host environment.
+      - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `set_secret()` method to set the registry password as a secret for the Dagger pipeline.
+      - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `container().from_()` method to initialize a new container image from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
+      - It chains the `with_exec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `with_default_args()` method.
+      - It uses the `with_registry_auth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
+      - It invokes the `publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
 
 </TabItem>
 </Tabs>
@@ -189,41 +189,41 @@ AWS CodeBuild relies on a [build specification file](https://docs.aws.amazon.com
 
 1. In the application directory, create a new file at `buildspec.yml` with the following content:
 
-  <Tabs groupId="language">
-  <TabItem value="Go">
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
-  ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-go.yml
-  ```
+    ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-go.yml
+    ```
 
-  </TabItem>
-  <TabItem value="Node.js">
+    </TabItem>
+    <TabItem value="Node.js">
 
-  ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-nodejs.yml
-  ```
+    ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-nodejs.yml
+    ```
 
-  </TabItem>
-  <TabItem value="Python">
+    </TabItem>
+    <TabItem value="Python">
 
-  ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-python.yml
-  ```
+    ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-python.yml
+    ```
 
-  </TabItem>
-  </Tabs>
+    </TabItem>
+    </Tabs>
 
-  This build specification defines four steps, as below:
-    - The first step installs the Dagger SDK on the CI runner.
-    - The second step installs the Dagger CLI on the CI runner.
-    - The third step executes the Dagger pipeline.
-    - The fourth step displays a message with the date and time of build completion.
+    This build specification defines four steps, as below:
+      - The first step installs the Dagger SDK on the CI runner.
+      - The second step installs the Dagger CLI on the CI runner.
+      - The third step executes the Dagger pipeline.
+      - The fourth step displays a message with the date and time of build completion.
 
 1. Commit the Dagger pipeline and build specification file to the repository:
 
-  ```shell
-  git add buildspec.yml
-  git add ci/*
-  git commit -a -m "Added Dagger pipeline and build specification"
-  git push
-  ```
+    ```shell
+    git add buildspec.yml
+    git add ci/*
+    git commit -a -m "Added Dagger pipeline and build specification"
+    git push
+    ```
 
 ## Step 4: Create an AWS CodePipeline for Dagger
 
@@ -310,30 +310,30 @@ This tutorial assumes that you have an AWS CodeCommit repository with a Node.js 
 
 1. Create a directory for the Next.js application:
 
-  ```shell
-  mkdir myapp
-  cd myapp
-  ```
+    ```shell
+    mkdir myapp
+    cd myapp
+    ```
 
 1. Create a skeleton Express application:
 
-  ```shell
-  npx create-next-app --js --src-dir --eslint --no-tailwind --no-app --import-alias "@/*" .
-  ```
+    ```shell
+    npx create-next-app --js --src-dir --eslint --no-tailwind --no-app --import-alias "@/*" .
+    ```
 
 1. Initialize a local Git repository for the application:
 
-  ```shell
-  git init
-  ```
+    ```shell
+    git init
+    ```
 
 1. Add a `.gitignore` file and commit the application code:
 
-  ```shell
-  echo node_modules >> .gitignore
-  git add .
-  git commit -a -m "Initial commit"
-  ```
+    ```shell
+    echo node_modules >> .gitignore
+    git add .
+    git commit -a -m "Initial commit"
+    ```
 
 1. Log in to the [AWS console](https://console.aws.amazon.com/) and perform the following steps:
     - [Create a new AWS CodeCommit repository](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-create-repository.html).
@@ -342,7 +342,7 @@ This tutorial assumes that you have an AWS CodeCommit repository with a Node.js 
 
 1. Add the AWS CodeCommit repository as a remote and push the application code to it. Replace the `SSH-URL` placeholder with the SSH clone URL for the repository.
 
-  ```shell
-  git remote add origin SSH-URL
-  git push -u origin --all
-  ```
+    ```shell
+    git remote add origin SSH-URL
+    git push -u origin --all
+    ```
