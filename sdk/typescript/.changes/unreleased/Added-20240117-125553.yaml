@@ -1,0 +1,6 @@
+kind: Added
+body: Supports initialization on existing TypeScript project
+time: 2024-01-17T12:55:53.50619+01:00
+custom:
+  Author: TomChv
+  PR: "6433"
