@@ -959,6 +959,18 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 	})
+
+	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
+
+		out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi", isQuestion: true)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi?...hi?...hi?..."}}`, out)
+	})
 }
 
 func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {

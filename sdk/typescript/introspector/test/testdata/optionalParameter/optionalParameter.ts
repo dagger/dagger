@@ -19,4 +19,9 @@ export class HelloWorld {
     add(a = 0, b = 0): number {
         return a + b
     }
+
+    @func
+    sayBool(value = false): boolean {
+        return value
+    }
 }
