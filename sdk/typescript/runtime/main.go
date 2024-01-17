@@ -66,7 +66,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
 
-	ctr := t.Base("", name).
+	ctr := t.Base("").
 		// Add sdk directory without runtime nor codegen binary
 		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
 			Exclude: []string{"runtime", "codegen"},
@@ -94,7 +94,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		})
 
 	// Add SDK src to the generated directory
-	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
+	return ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
 		Exclude: []string{
 			"node_modules",
 			"dist",
@@ -102,37 +102,34 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 			"**/test",
 			"runtime",
 		},
-	})
-
-	ctr = ctr.
+	}).
 		// Add tsx to execute the entrypoint
 		WithExec([]string{"npm", "install", "-g", "tsx"}).
 		// Check if the project has existing source:
 		// if it does: add sdk as dev dependency
 		// if not: copy the template and replace QuickStart with the module name
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/runtime/bin/__tsconfig.updator.ts; else cp -r /opt/runtime/template/*.json /opt/runtime/template/yarn.lock  .; fi")},
+			"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/runtime/bin/__tsconfig.updator.ts; else cp -r /opt/runtime/template/*.json .; fi",
+		},
 			ContainerWithExecOpts{SkipEntrypoint: true},
 		).
 		// Check if there's a src directory with .ts files in it.
 		// If not, add the template file and replace QuickStart with the module name
 		// This cover the case where there's a package.json but no src directory.
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/runtime/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))}, 
-			ContainerWithExecOpts{SkipEntrypoint: true})
-
-	return ctr, nil
+			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/runtime/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
+			ContainerWithExecOpts{SkipEntrypoint: true}), nil
 }
 
 // Base returns a Node container with cache setup for yarn
-func (t *TypeScriptSdk) Base(version string, pkgName string) *Container {
+func (t *TypeScriptSdk) Base(version string) *Container {
 	if version == "" {
 		version = "21.3-alpine"
 	}
 
 	return dag.Container().
 		From(fmt.Sprintf("node:%s", version)).
-		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version+"-"+pkgName)).
+		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version)).
 		WithoutEntrypoint()
 }
 

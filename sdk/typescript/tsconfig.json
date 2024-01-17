@@ -25,5 +25,5 @@
     "declarationMap": true
   },
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "dagger-nodejs-sdk",
+  "display": "dagger-nodejs-sdk"
 }
