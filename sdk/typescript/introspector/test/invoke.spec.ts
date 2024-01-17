@@ -29,7 +29,10 @@ describe("Invoke typescript function", function () {
       objectName: "HelloWorld",
       methodName: "helloWorld",
       state: {},
-      inputs: { name: "world" },
+      inputs: {
+        order: ["name"],
+        values: { name: "world" },
+      },
     }
 
     const result = await invoke(
@@ -57,8 +60,11 @@ describe("Invoke typescript function", function () {
       methodName: "exec",
       state: {},
       inputs: {
-        // string[]
-        cmd: ["echo", "-n", "hello world"],
+        order: ["cmd"],
+        values: {
+          // string[]
+          cmd: ["echo", "-n", "hello world"],
+        },
       },
     }
 
@@ -92,7 +98,10 @@ describe("Invoke typescript function", function () {
           objectName: "Alpine",
           methodName: "base",
           state: {},
-          inputs: { version: ["3.16.0"] },
+          inputs: {
+            order: ["version"],
+            values: { version: ["3.16.0"] },
+          },
         }
 
         const inputBaseResult = await invoke(
@@ -108,7 +117,8 @@ describe("Invoke typescript function", function () {
           // Would be fetched from dagger and loaded from the container ID
           state: inputBaseResult,
           inputs: {
-            pkgs: ["jq"],
+            order: ["pkgs"],
+            values: { pkgs: ["jq"] },
           },
         }
 
@@ -126,7 +136,8 @@ describe("Invoke typescript function", function () {
           // Would be fetched from dagger and loaded from the container ID
           state: inputInstallResult,
           inputs: {
-            cmd: ["jq", "-h"],
+            order: ["cmd"],
+            values: { cmd: ["jq", "-h"] },
           },
         }
 

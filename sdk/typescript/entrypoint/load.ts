@@ -13,6 +13,32 @@ export async function load(files: string[]): Promise<void> {
 }
 
 /**
+ * Load the argument order from the scan result.
+ *
+ * @param scanResult Result of the scan
+ * @param parentName Class called
+ * @param fnName Function called
+ * @returns The order of the arguments
+ */
+export function loadArgOrder(
+  scanResult: ScanResult,
+  parentName: string,
+  fnName: string
+): string[] {
+  const classTypeDef = scanResult.classes.find((c) => c.name === parentName)
+  if (!classTypeDef) {
+    throw new Error(`could not find class ${parentName}`)
+  }
+
+  const methodTypeDef = classTypeDef.methods.find((m) => m.name === fnName)
+  if (!methodTypeDef) {
+    throw new Error(`could not find method ${fnName}`)
+  }
+
+  return methodTypeDef.args.map((a) => a.name)
+}
+
+/**
  * Load the argument type from the scan result.
  *
  * @param scanResult Result of the scan

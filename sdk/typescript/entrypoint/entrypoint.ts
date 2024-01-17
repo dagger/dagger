@@ -3,11 +3,17 @@ import { fileURLToPath } from "url"
 
 import { dag } from "../api/client.gen.js"
 import { connection } from "../connect.js"
-import { Args } from "../introspector/registry/registry"
+import { Args, State } from "../introspector/registry/registry"
 import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
-import { load, loadArg, loadArgType, loadPropertyType } from "./load.js"
+import {
+  load,
+  loadArg,
+  loadArgOrder,
+  loadArgType,
+  loadPropertyType,
+} from "./load.js"
 import { register } from "./register.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -43,13 +49,16 @@ async function entrypoint() {
         const parentJson = JSON.parse(await fnCall.parent())
         const fnArgs = await fnCall.inputArgs()
 
-        const args: Args = {}
-        const parentArgs: Args = {}
+        const args: Args = {
+          order: loadArgOrder(scanResult, parentName, fnName),
+          values: {},
+        }
+        const parentArgs: State = {}
 
         for (const arg of fnArgs) {
           const name = await arg.name()
 
-          args[name] = await loadArg(
+          args.values[name] = await loadArg(
             await arg.value(),
             loadArgType(scanResult, parentName, fnName, name)
           )

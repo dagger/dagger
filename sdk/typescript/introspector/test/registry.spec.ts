@@ -22,7 +22,8 @@ describe("Registry", function () {
       "greeting",
       {},
       {
-        name: "world",
+        order: ["name"],
+        values: { name: "world" },
       }
     )
     assert.equal(result, "Hello world")
@@ -45,7 +46,8 @@ describe("Registry", function () {
       "asyncGreeting",
       {},
       {
-        name: "world",
+        order: ["name"],
+        values: { name: "world" },
       }
     )
     assert.equal(result, "Hello world")
@@ -73,7 +75,8 @@ describe("Registry", function () {
       "asyncGreeting",
       {},
       {
-        name: "world",
+        order: ["name"],
+        values: { name: "world" },
       }
     )
     assert.equal(resultAsyncGreeting, "Hello world")
@@ -83,7 +86,8 @@ describe("Registry", function () {
       "greeting",
       {},
       {
-        name: "world",
+        order: ["name"],
+        values: { name: "world" },
       }
     )
     assert.equal(resultGreeting, "Hello world")
@@ -109,7 +113,8 @@ describe("Registry", function () {
       {},
 
       {
-        name: "world",
+        order: ["name"],
+        values: { name: "world" },
       }
     )
     assert.equal(result, "Hello world")
@@ -137,7 +142,8 @@ describe("Registry", function () {
         prefix: "Hey",
       },
       {
-        name: "world",
+        order: ["name"],
+        values: { name: "world" },
       }
     )
 
@@ -161,7 +167,12 @@ describe("Registry", function () {
       }
     }
 
-    const result = await registry.getResult("HelloWorld", "greeting", {}, {})
+    const result = await registry.getResult(
+      "HelloWorld",
+      "greeting",
+      {},
+      { order: [], values: {} }
+    )
 
     assert.deepEqual(result, { prefix: "self" })
   })
@@ -198,7 +209,8 @@ describe("Registry", function () {
       "container",
       {},
       {
-        ctr: ctr,
+        order: ["ctr"],
+        values: { ctr: ctr },
       }
     )
 
@@ -222,10 +234,13 @@ describe("Registry", function () {
       "compute",
       {},
       {
-        // Send argument in disorder to ensure we order them back
-        c: 3,
-        b: 2,
-        a: 1,
+        order: ["a", "b", "c"],
+        values: {
+          // Send argument in disorder to ensure we order them back
+          c: 3,
+          b: 2,
+          a: 1,
+        },
       }
     )
 
@@ -268,9 +283,20 @@ describe("Registry", function () {
     }
 
     await connection(async () => {
-      const fooResult = await registry.getResult("Foo", "foo", {}, {})
+      const fooResult = await registry.getResult(
+        "Foo",
+        "foo",
+        {},
+        {
+          order: [],
+          values: {},
+        }
+      )
 
-      const result = await registry.getResult("Bar", "bar", fooResult, {})
+      const result = await registry.getResult("Bar", "bar", fooResult, {
+        order: [],
+        values: {},
+      })
 
       assert.equal(result, "Hello Dagger")
     })
@@ -302,7 +328,8 @@ describe("Registry", function () {
       "",
       {},
       {
-        msg: "Dagger",
+        order: ["msg"],
+        values: { msg: "Dagger" },
       }
     )
     assert.deepEqual(constructorResult, { msg: "Dagger" })
@@ -311,7 +338,10 @@ describe("Registry", function () {
       "HelloWorld",
       "sayHi",
       constructorResult,
-      {}
+      {
+        order: [],
+        values: {},
+      }
     )
     assert.deepEqual(result, "Hello Dagger")
   })
@@ -334,7 +364,10 @@ describe("Registry", function () {
       "HelloWorld",
       "sayHi",
       {},
-      {}
+      {
+        order: [],
+        values: {},
+      }
     )
     assert.deepEqual(defaultResult, "foobar")
 
@@ -343,7 +376,8 @@ describe("Registry", function () {
       "sayHi",
       {},
       {
-        msg: ["hello", "there"],
+        order: ["msg"],
+        values: { msg: ["hello", "there"] },
       }
     )
     assert.deepEqual(result, "hello there")

@@ -958,6 +958,12 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
+
+		t.Run("execute with unordered args", func(t *testing.T) {
+			out, err = modGen.With(daggerQuery(`{minimal{echoOpts(times: 2, msg: "order", suffix: "?")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"minimal":{"echoOpts":"order?order?"}}`, out)
+		})
 	})
 
 	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
@@ -970,6 +976,12 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi", isQuestion: true)}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi?...hi?...hi?..."}}`, out)
+
+		t.Run("execute with unordered args", func(t *testing.T) {
+			out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(isQuestion: false, msg: "hi")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)			
+		})
 	})
 }
 
