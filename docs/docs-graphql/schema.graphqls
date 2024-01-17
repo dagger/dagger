@@ -1043,6 +1043,9 @@ type File {
   """A unique identifier for this File."""
   id: FileID!
 
+  """Retrieves the name of the file."""
+  name: String!
+
   """Retrieves the size of the file, in bytes."""
   size: Int!
 
