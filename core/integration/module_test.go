@@ -3444,6 +3444,57 @@ class Test:
         return await self.dir.entries()
 `,
 			},
+			{
+				sdk: "typescript",
+				source: `
+import { Directory, object, func, field } from '@dagger.io/dagger';
+
+@object
+class Test {
+	@field
+	foo: string
+				
+	@field
+	dir: Directory
+				
+	@field
+	bar: number
+				
+	@field
+	baz: string[]
+				
+	@field
+	neverSetDir?: Directory = undefined
+				
+	constructor(foo: string, dir: Directory, bar = 42, baz: string[] = []) {
+		this.foo = foo;
+		this.dir = dir;
+		this.bar = bar;
+		this.baz = baz;
+	}
+				
+	@func
+	gimmeFoo(): string {
+		return this.foo;
+	}
+				
+	@func
+	gimmeBar(): number {
+		return this.bar;
+	}
+				
+	@func
+	gimmeBaz(): string[] {
+		return this.baz;
+	}
+				
+	@func
+	async gimmeDirEnts(): Promise<string[]> {
+		return this.dir.entries();
+	}
+}					
+`,
+			},
 		} {
 			tc := tc
 
@@ -4449,6 +4500,8 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 			sourcePath = "main.go"
 		case "python":
 			sourcePath = "src/main.py"
+		case "typescript":
+			sourcePath = "src/index.ts"
 		default:
 			return c
 		}

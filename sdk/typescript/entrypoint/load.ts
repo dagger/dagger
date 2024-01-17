@@ -99,9 +99,12 @@ export async function loadArg(
 ): Promise<any> {
   switch (type.kind) {
     case TypeDefKind.ListKind:
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return value.map((v: any) =>
-        loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef)
+      return Promise.all(
+        value.map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          async (v: any) =>
+            await loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef)
+        )
       )
     case TypeDefKind.ObjectKind: {
       const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
