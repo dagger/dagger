@@ -1,6 +1,0 @@
-kind: Added
-body: Improve arguments loading by getting its type prior to the value
-time: 2024-01-17T12:53:00.242714+01:00
-custom:
-  Author: TomChv
-  PR: "6423"
