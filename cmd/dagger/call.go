@@ -54,55 +54,56 @@ var callCmd = &FuncCommand{
 		return nil
 	},
 	AfterResponse: func(_ *FuncCommand, cmd *cobra.Command, _ *modTypeDef, response any) error {
-		if outputExport {
+		writer := cmd.OutOrStdout()
+
+		if outputPath != "" {
 			path, err := filepath.Abs(outputPath)
 			if err != nil {
 				path = outputPath
 			}
-			// If not successful should return error before getting to this point.
-			cmd.Printf("Exported to %q\n", path)
-			return nil
-		}
 
-		if outputPath != "" {
-			orig := cmd.OutOrStdout()
+			// Exported successfully if it got to this point.
+			if outputExport {
+				// Not actually an error but stderr is also used for log messages.
+				cmd.PrintErrf("Exported to %q.\n", path)
+				return nil
+			}
 
 			file, err := os.Create(outputPath)
 			if err != nil {
-				// TODO: should we print the response to stdout anyway?
 				return err
 			}
-			defer file.Close()
 
-			// Print to screen as well.
-			out := io.MultiWriter(orig, file)
-			cmd.SetOut(out)
+			defer func() {
+				file.Close()
+				cmd.PrintErrf("Saved result to %q.\n", path)
+			}()
 
-			// TODO: print "Saved result to %q"?
+			writer = io.MultiWriter(writer, file)
 		}
 
-		return printResponse(cmd, response)
+		return printFunctionResult(writer, response)
 	},
 }
 
-func printResponse(cmd *cobra.Command, r any) error {
+func printFunctionResult(w io.Writer, r any) error {
 	switch t := r.(type) {
 	case []any:
 		for _, v := range t {
-			if err := printResponse(cmd, v); err != nil {
+			if err := printFunctionResult(w, v); err != nil {
 				return err
 			}
 		}
 		return nil
 	case map[string]any:
 		for _, v := range t {
-			if err := printResponse(cmd, v); err != nil {
+			if err := printFunctionResult(w, v); err != nil {
 				return err
 			}
 		}
 		return nil
 	default:
-		cmd.Printf("%+v\n", t)
+		fmt.Fprintf(w, "%+v\n", t)
 	}
 	return nil
 }
