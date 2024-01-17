@@ -32,6 +32,19 @@ export function loadArgType(
     throw new Error(`could not find class ${parentName}`)
   }
 
+  // Call for the constructor
+  if (fnName === "") {
+    const argTypeDef = classTypeDef.constructor?.args.find(
+      (a) => a.name === argName
+    )
+
+    if (!argTypeDef) {
+      throw new Error(`could not find argument ${argName} type in constructor`)
+    }
+
+    return argTypeDef.typeDef
+  }
+
   const methodTypeDef = classTypeDef.methods.find((m) => m.name === fnName)
   if (!methodTypeDef) {
     throw new Error(`could not find method ${fnName}`)
@@ -79,36 +92,39 @@ export function loadPropertyType(
  * Note: The JSON.parse() is required to remove extra quotes
  */
 export async function loadArg(
-  value: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  value: any,
   type: TypeDef<TypeDefKind>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   switch (type.kind) {
     case TypeDefKind.ListKind:
-      return JSON.parse(value)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return value.map((v: any) =>
+        loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef)
+      )
     case TypeDefKind.ObjectKind: {
       const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
-
-      // This ID might be wrapped in quotes depending on the source.
-      // We need to remove them to be able to call the loading function.
-      if (value.startsWith('"') && value.endsWith('"')) {
-        value = JSON.parse(value)
-      }
 
       // Workaround to call get any object that has an id
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      return dag[`load${objectType}FromID`](value)
+      if (dag[`load${objectType}FromID`]) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        return dag[`load${objectType}FromID`](value)
+      }
+
+      // TODO(supports subfields serialization)
+      return value
     }
+    // Cannot use , to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
-      return JSON.parse(value)
     case TypeDefKind.IntegerKind:
-      return Number(value)
     case TypeDefKind.BooleanKind:
-      return value === "true" // Return false if string is different than true
-    case TypeDefKind.InterfaceKind:
-      throw new Error("interface not supported")
     case TypeDefKind.VoidKind:
-      return null
+      return value
+    default:
+      throw new Error(`unsupported type ${type.kind}`)
   }
 }

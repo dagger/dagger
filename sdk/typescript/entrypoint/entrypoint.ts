@@ -50,7 +50,7 @@ export async function entrypoint() {
           const name = await arg.name()
 
           args[name] = await loadArg(
-            await arg.value(),
+            JSON.parse(await arg.value()),
             loadArgType(scanResult, parentName, fnName, name)
           )
         }
@@ -58,7 +58,7 @@ export async function entrypoint() {
         if (parentJson) {
           for (const [key, value] of Object.entries(parentJson)) {
             parentArgs[key] = await loadArg(
-              value as string,
+              value,
               loadPropertyType(scanResult, parentName, key)
             )
           }

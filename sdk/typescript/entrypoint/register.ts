@@ -46,7 +46,9 @@ export async function register(
     })
 
     if (modClass.constructor) {
-      typeDef.withConstructor(addConstructor(modClass.constructor, typeDef))
+      typeDef = typeDef.withConstructor(
+        addConstructor(modClass.constructor, typeDef)
+      )
     }
 
     // Add it to the module object
