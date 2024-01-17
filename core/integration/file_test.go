@@ -112,6 +112,68 @@ func TestFileSize(t *testing.T) {
 	require.Equal(t, len("some-content"), res.Directory.WithNewFile.File.Size)
 }
 
+func TestFileName(t *testing.T) {
+	t.Parallel()
+
+	wd := t.TempDir()
+
+	c, ctx := connect(t, dagger.WithWorkdir(wd))
+
+	t.Run("new file", func(t *testing.T) {
+		t.Parallel()
+
+		file := c.Directory().WithNewFile("/foo/bar", "content1").File("foo/bar")
+
+		name, err := file.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", name)
+	})
+
+	t.Run("container file", func(t *testing.T) {
+		t.Parallel()
+
+		file := c.Container().From(alpineImage).File("/etc/alpine-release")
+
+		name, err := file.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "alpine-release", name)
+	})
+
+	t.Run("container file in dir", func(t *testing.T) {
+		t.Parallel()
+
+		file := c.Container().From(alpineImage).Directory("/etc").File("/alpine-release")
+
+		name, err := file.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "alpine-release", name)
+	})
+
+	t.Run("host file", func(t *testing.T) {
+		t.Parallel()
+
+		err := os.WriteFile(filepath.Join(wd, "file.txt"), []byte{}, 0o600)
+		require.NoError(t, err)
+
+		name, err := c.Host().File("file.txt").Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file.txt", name)
+	})
+
+	t.Run("host file in dir", func(t *testing.T) {
+		t.Parallel()
+
+		err := os.MkdirAll(filepath.Join(wd, "path/to/"), 0o700)
+		require.NoError(t, err)
+		err = os.WriteFile(filepath.Join(wd, "path/to/file.txt"), []byte{}, 0o600)
+		require.NoError(t, err)
+
+		name, err := c.Host().Directory("path").File("to/file.txt").Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file.txt", name)
+	})
+}
+
 func TestFileExport(t *testing.T) {
 	t.Parallel()
 
