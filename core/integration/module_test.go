@@ -980,7 +980,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		t.Run("execute with unordered args", func(t *testing.T) {
 			out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(isQuestion: false, msg: "hi")}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)			
+			require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
 		})
 	})
 }
