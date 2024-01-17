@@ -518,6 +518,18 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	entries, err = filesDir.Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"some-dir"}, entries)
+
+	// verify WithoutFile works when dir has be selected to a subdir
+	subdirWithout := c.Directory().
+		WithDirectory("subdir", c.Directory().
+			WithNewFile("some-file", "delete me").
+			WithNewFile("some-other-file", "keep me"),
+		).
+		Directory("subdir").
+		WithoutFile("some-file")
+	entries, err = subdirWithout.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-other-file"}, entries)
 }
 
 func TestDirectoryDiff(t *testing.T) {
