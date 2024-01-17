@@ -2834,6 +2834,11 @@ impl File {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Retrieves the name of the file.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Retrieves the size of the file, in bytes.
     pub async fn size(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("size");

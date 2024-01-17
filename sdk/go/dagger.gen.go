@@ -2234,6 +2234,7 @@ type File struct {
 	contents *string
 	export   *bool
 	id       *FileID
+	name     *string
 	size     *int
 	sync     *FileID
 }
@@ -2323,6 +2324,19 @@ func (r *File) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Retrieves the name of the file.
+func (r *File) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the size of the file, in bytes.

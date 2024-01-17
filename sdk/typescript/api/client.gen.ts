@@ -2646,6 +2646,27 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Retrieves the name of the file.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
    * Creates a named sub-pipeline.
    * @param name Name of the sub-pipeline.
    * @param opts.description Description of the sub-pipeline.
@@ -3015,6 +3036,7 @@ export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
   private readonly _export?: boolean = undefined
+  private readonly _name?: string = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
 
@@ -3026,6 +3048,7 @@ export class File extends BaseClient {
     _id?: FileID,
     _contents?: string,
     _export?: boolean,
+    _name?: string,
     _size?: number,
     _sync?: FileID
   ) {
@@ -3034,6 +3057,7 @@ export class File extends BaseClient {
     this._id = _id
     this._contents = _contents
     this._export = _export
+    this._name = _name
     this._size = _size
     this._sync = _sync
   }
@@ -3096,6 +3120,27 @@ export class File extends BaseClient {
         {
           operation: "export",
           args: { path, ...opts },
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves the name of the file.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
         },
       ],
       await this._ctx.connection()
