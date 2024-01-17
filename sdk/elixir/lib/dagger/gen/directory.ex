@@ -157,6 +157,15 @@ defmodule Dagger.Directory do
   )
 
   (
+    @doc "Retrieves the name of the file."
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def name(%__MODULE__{} = directory) do
+      selection = select(directory.selection, "name")
+      execute(selection, directory.client)
+    end
+  )
+
+  (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Name of the sub-pipeline.\n\n## Optional Arguments\n\n* `description` - Description of the sub-pipeline.\n* `labels` - Labels to apply to the sub-pipeline."
     @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def pipeline(%__MODULE__{} = directory, name, optional_args \\ []) do

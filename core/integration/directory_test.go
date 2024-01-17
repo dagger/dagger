@@ -2,6 +2,7 @@ package core
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -69,6 +70,56 @@ func TestDirectoryWithNewFile(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Directory.WithNewFile.ID)
 	require.Equal(t, []string{"some-file"}, res.Directory.WithNewFile.Entries)
+}
+
+func TestDirectoryName(t *testing.T) {
+	t.Parallel()
+
+	wd := t.TempDir()
+
+	c, ctx := connect(t, dagger.WithWorkdir(wd))
+
+	t.Run("empty dir", func(t *testing.T) {
+		dir := c.Directory()
+
+		name, err := dir.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/", name)
+	})
+
+	t.Run("container dir", func(t *testing.T) {
+		dir := c.Container().From(alpineImage).Directory("/usr/bin")
+
+		name, err := dir.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bin", name)
+	})
+
+	t.Run("container dir in dir", func(t *testing.T) {
+		file := c.Container().From(alpineImage).Directory("/usr").Directory("/bin")
+
+		name, err := file.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bin", name)
+	})
+
+	t.Run("host dir", func(t *testing.T) {
+		err := os.MkdirAll(filepath.Join(wd, "dir"), 0o700)
+		require.NoError(t, err)
+
+		name, err := c.Host().Directory("dir").Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".", name)
+	})
+
+	t.Run("host dir in dir", func(t *testing.T) {
+		err := os.MkdirAll(filepath.Join(wd, "path/to/dir"), 0o700)
+		require.NoError(t, err)
+
+		name, err := c.Host().Directory("path").Directory("to/dir").Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "dir", name)
+	})
 }
 
 func TestDirectoryEntries(t *testing.T) {

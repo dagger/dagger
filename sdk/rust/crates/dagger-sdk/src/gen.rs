@@ -2452,6 +2452,11 @@ impl Directory {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Retrieves the name of the file.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Creates a named sub-pipeline.
     ///
     /// # Arguments

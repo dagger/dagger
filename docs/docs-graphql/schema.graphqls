@@ -889,6 +889,9 @@ type Directory {
   """A unique identifier for this Directory."""
   id: DirectoryID!
 
+  """Retrieves the name of the file."""
+  name: String!
+
   """Creates a named sub-pipeline."""
   pipeline(
     """Description of the sub-pipeline."""

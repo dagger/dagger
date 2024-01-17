@@ -2450,6 +2450,7 @@ export class Container extends BaseClient {
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _export?: boolean = undefined
+  private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2459,12 +2460,14 @@ export class Directory extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: DirectoryID,
     _export?: boolean,
+    _name?: string,
     _sync?: DirectoryID
   ) {
     super(parent)
 
     this._id = _id
     this._export = _export
+    this._name = _name
     this._sync = _sync
   }
 
