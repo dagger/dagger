@@ -20,6 +20,15 @@ class Minimal {
 	}
 
 	@func
+	echoMaybe(msg: string, isQuestion = false): string {
+		if (isQuestion) {
+			return this.echo(msg + "?")
+		}
+
+		return this.echo(msg)
+	}
+
+	@func
 	echoOptional(msg = "default"): string {
 		return this.echo(msg)
 	}

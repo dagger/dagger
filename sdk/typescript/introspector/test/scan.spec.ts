@@ -325,6 +325,20 @@ describe("scan static TypeScript", function () {
                 },
               ],
             },
+            {
+              name: "sayBool",
+              returnType: { kind: TypeDefKind.BooleanKind },
+              description: "",
+              args: [
+                {
+                  name: "value",
+                  typeDef: { kind: TypeDefKind.BooleanKind },
+                  description: "",
+                  optional: true,
+                  defaultValue: "false",
+                },
+              ],
+            },
           ],
         },
       ],
