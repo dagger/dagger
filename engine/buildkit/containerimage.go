@@ -46,12 +46,12 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, opts)
+	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
 	}
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, c.ID())
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %s", err)
 	}
@@ -93,7 +93,7 @@ func (c *Client) ExportContainerImage(
 		return nil, err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, opts)
+	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
 	}
@@ -109,7 +109,7 @@ func (c *Client) ExportContainerImage(
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, clientMetadata.ClientID)
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %s", err)
 	}
@@ -147,7 +147,7 @@ func (c *Client) ContainerImageToTarball(
 		return nil, err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, opts)
+	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
 	}
@@ -165,7 +165,7 @@ func (c *Client) ContainerImageToTarball(
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, combinedResult, c.ID())
+	_, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %s", err)
 	}
