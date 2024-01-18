@@ -7,7 +7,7 @@ import { Args } from "../introspector/registry/registry"
 import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
-import { load, loadArg, loadArgType, loadPropertyType } from "./load.js"
+import { load } from "./load.js"
 import { register } from "./register.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -44,44 +44,20 @@ export async function entrypoint() {
         const fnArgs = await fnCall.inputArgs()
 
         const args: Args = {}
-        const parentArgs: Args = {}
+        const parentArgs: Args = parentJson ?? {}
 
         for (const arg of fnArgs) {
-          const name = await arg.name()
-
-          args[name] = await loadArg(
-            JSON.parse(await arg.value()),
-            loadArgType(scanResult, parentName, fnName, name)
-          )
-        }
-
-        if (parentJson) {
-          for (const [key, value] of Object.entries(parentJson)) {
-            parentArgs[key] = await loadArg(
-              value,
-              loadPropertyType(scanResult, parentName, key)
-            )
-          }
+          args[await arg.name()] = JSON.parse(await arg.value())
         }
 
         await load(files)
 
-        result = await invoke(parentName, fnName, parentArgs, args)
-
-        // Load ID if it's a Dagger type with an id
-        if (typeof result?.id === "function") {
-          result = await result.id()
-        }
-
-        // Load its field ID if there are
-        if (typeof result === "object") {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          for (const [key, value] of Object.entries<any>(result)) {
-            if (value.id && typeof value.id === "function") {
-              result[key] = await value.id()
-            }
-          }
-        }
+        result = await invoke(scanResult, {
+          parentName,
+          fnName,
+          parentArgs,
+          fnArgs: args,
+        })
       }
 
       // If result is set, we stringify it

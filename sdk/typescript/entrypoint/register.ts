@@ -27,22 +27,24 @@ export async function register(
   let mod = dag.currentModule()
 
   // For each class scanned, register its type, method and properties in the module.
-  scanResult.classes.forEach((modClass) => {
+  Object.values(scanResult.classes).map((modClass) => {
     // Register the class Typedef object in Dagger
     let typeDef = dag.typeDef().withObject(modClass.name, {
       description: modClass.description,
     })
 
     // Register all functions (methods) to this object
-    modClass.methods.forEach((method) => {
+    Object.values(modClass.methods).forEach((method) => {
       typeDef = typeDef.withFunction(addFunction(method))
     })
 
     // Register all fields that belong to this object
-    modClass.fields.forEach((field) => {
-      typeDef = typeDef.withField(field.name, addTypeDef(field.typeDef), {
-        description: field.description,
-      })
+    Object.values(modClass.fields).forEach((field) => {
+      if (field.isExposed) {
+        typeDef = typeDef.withField(field.name, addTypeDef(field.typeDef), {
+          description: field.description,
+        })
+      }
     })
 
     if (modClass.constructor) {
@@ -82,9 +84,11 @@ function addFunction(fct: FunctionTypedef): Function_ {
 /**
  * Register all arguments in the function.
  */
-function addArg(args: FunctionArg[]): (fct: Function_) => Function_ {
+function addArg(args: {
+  [name: string]: FunctionArg
+}): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {
-    args.forEach((arg) => {
+    Object.values(args).forEach((arg) => {
       const opts: FunctionWithArgOpts = {
         description: arg.description,
       }

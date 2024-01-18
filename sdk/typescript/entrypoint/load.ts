@@ -13,6 +13,38 @@ export async function load(files: string[]): Promise<void> {
 }
 
 /**
+ * Load the order of arguments for a given function from the scan result.
+ *
+ * @param scanResult The result of the scan.
+ * @param parentName The name of the class.
+ * @param fnName The name of the function.
+ *
+ * @returns An array of strings representing the order of arguments.
+ */
+export function loadArgOrder(
+  scanResult: ScanResult,
+  parentName: string,
+  fnName: string
+): string[] {
+  const classTypeDef = scanResult.classes[parentName]
+  if (!classTypeDef) {
+    throw new Error(`could not find class ${parentName}`)
+  }
+
+  // Call for the constructor
+  if (fnName === "") {
+    return Object.keys(classTypeDef.constructor?.args ?? {})
+  }
+
+  const methodTypeDef = classTypeDef.methods[fnName]
+  if (!methodTypeDef) {
+    throw new Error(`could not find method ${fnName}`)
+  }
+
+  return Object.keys(methodTypeDef.args)
+}
+
+/**
  * Load the argument type from the scan result.
  *
  * @param scanResult Result of the scan
@@ -27,17 +59,14 @@ export function loadArgType(
   fnName: string,
   argName: string
 ): TypeDef<TypeDefKind> {
-  const classTypeDef = scanResult.classes.find((c) => c.name === parentName)
+  const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
     throw new Error(`could not find class ${parentName}`)
   }
 
   // Call for the constructor
   if (fnName === "") {
-    const argTypeDef = classTypeDef.constructor?.args.find(
-      (a) => a.name === argName
-    )
-
+    const argTypeDef = classTypeDef.constructor?.args[argName]
     if (!argTypeDef) {
       throw new Error(`could not find argument ${argName} type in constructor`)
     }
@@ -45,12 +74,12 @@ export function loadArgType(
     return argTypeDef.typeDef
   }
 
-  const methodTypeDef = classTypeDef.methods.find((m) => m.name === fnName)
+  const methodTypeDef = classTypeDef.methods[fnName]
   if (!methodTypeDef) {
     throw new Error(`could not find method ${fnName}`)
   }
 
-  const argTypeDef = methodTypeDef.args.find((a) => a.name === argName)
+  const argTypeDef = methodTypeDef.args[argName]
   if (!argTypeDef) {
     throw new Error(`could not find argument ${argName} type`)
   }
@@ -71,14 +100,12 @@ export function loadPropertyType(
   parentName: string,
   propertyName: string
 ): TypeDef<TypeDefKind> {
-  const classTypeDef = scanResult.classes.find((c) => c.name === parentName)
+  const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
     throw new Error(`could not find class ${parentName}`)
   }
 
-  const propertyTypeDef = classTypeDef.fields.find(
-    (p) => p.name === propertyName
-  )
+  const propertyTypeDef = classTypeDef.fields[propertyName]
   if (!propertyTypeDef) {
     throw new Error(`could not find property ${propertyName} type`)
   }
@@ -130,4 +157,25 @@ export async function loadArg(
     default:
       throw new Error(`unsupported type ${type.kind}`)
   }
+}
+
+/**
+ * Load subfields of the result and IDable object.
+ *
+ * @param result The result of the invocation.
+ * @returns Loaded result.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function loadResult(result: any): Promise<any> {
+  if (result && typeof result?.id === "function") {
+    result = await result.id()
+  }
+
+  if (typeof result === "object") {
+    for (const [key, value] of Object.entries(result)) {
+      result[key] = await loadResult(value)
+    }
+  }
+
+  return result
 }
