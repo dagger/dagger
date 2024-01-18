@@ -290,7 +290,14 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
 	case envSecretSource:
 		envPlaintext, ok := os.LookupEnv(v.sourceVal)
 		if !ok {
-			return nil, fmt.Errorf("secret env var not found %q", v.sourceVal)
+			// Don't show the entire env var name, in case the user accidentally passed the value instead...
+			// This is important because users originally *did* have to pass the value, before we changed to
+			// passing by name instead.
+			key := v.sourceVal
+			if len(key) >= 4 {
+				key = key[:3] + "..."
+			}
+			return nil, fmt.Errorf("secret env var not found: %q", key)
 		}
 		plaintext = envPlaintext
 
