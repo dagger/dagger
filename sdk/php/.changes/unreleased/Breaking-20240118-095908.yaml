@@ -1,0 +1,6 @@
+kind: Breaking
+body: Flatten namespaces
+time: 2024-01-18T09:59:08.106728-01:00
+custom:
+  Author: zeroware
+  PR: "6330"

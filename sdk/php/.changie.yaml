@@ -26,6 +26,8 @@ kinds:
 headerFormat: |
   This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
 
+  🐘 https://packagist.org/packages/dagger/dagger#{{.Version}}
+
 footerFormat: |
   ### What to do next
   - Read the [documentation](https://docs.dagger.io/)
