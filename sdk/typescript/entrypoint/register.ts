@@ -5,7 +5,7 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
-} from "../api/client.gen"
+} from "../api/client.gen.js"
 import { ScanResult } from "../introspector/scanner/scan.js"
 import {
   ConstructorTypeDef,

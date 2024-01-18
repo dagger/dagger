@@ -14,7 +14,8 @@ type TypeScriptSdk struct{}
 
 const (
 	ModSourceDirPath         = "/src"
-	EntrypointExecutablePath = "sdk/entrypoint/entrypoint.ts"
+	EntrypointExecutableFile = "__dagger.entrypoint.ts"
+	EntrypointExecutablePath = "src/" + EntrypointExecutableFile
 	sdkSrc                   = "/sdk"
 	genDir                   = "sdk"
 	genPath                  = "/sdk/api"
@@ -32,8 +33,7 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 	return ctr.
 		// Install dependencies
 		WithExec([]string{"npm", "install"}).
-		// Add tsx to execute the entrypoint
-		WithExec([]string{"npm", "install", "-g", "tsx"}).
+		WithMountedFile(EntrypointExecutablePath, ctr.Directory("/opt/runtime/bin").File(EntrypointExecutableFile)).
 		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}), nil
 }
 
@@ -75,7 +75,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		WithFile(codegenBinPath, dag.Host().File("/src/codegen")).
 		// Add template directory
 		WithDirectory("/opt", dag.Host().Directory(root(), HostDirectoryOpts{
-			Include: []string{"runtime/template"},
+			Include: []string{"runtime/template", "runtime/bin"},
 		})).
 		// Mount users' module
 		WithMountedDirectory(ModSourceDirPath, modSource).
@@ -91,13 +91,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-		}).
-		// If it's an init, add the template and replace the QuickStart class name
-		// with the user's module name
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("[ -f package.json ] || cp -r /opt/runtime/template/* . && sed -i -e 's/QuickStart/%s/g' ./src/index.ts", strcase.ToCamel(name))},
-			ContainerWithExecOpts{SkipEntrypoint: true},
-		)
+		})
 
 	// Add SDK src to the generated directory
 	return ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
@@ -108,7 +102,23 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 			"**/test",
 			"runtime",
 		},
-	}), nil
+	}).
+		// Add tsx to execute the entrypoint
+		WithExec([]string{"npm", "install", "-g", "tsx"}).
+		// Check if the project has existing source:
+		// if it does: add sdk as dev dependency
+		// if not: copy the template and replace QuickStart with the module name
+		WithExec([]string{"sh", "-c",
+			"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/runtime/bin/__tsconfig.updator.ts; else cp -r /opt/runtime/template/*.json .; fi",
+		},
+			ContainerWithExecOpts{SkipEntrypoint: true},
+		).
+		// Check if there's a src directory with .ts files in it.
+		// If not, add the template file and replace QuickStart with the module name
+		// This cover the case where there's a package.json but no src directory.
+		WithExec([]string{"sh", "-c",
+			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/runtime/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
+			ContainerWithExecOpts{SkipEntrypoint: true}), nil
 }
 
 // Base returns a Node container with cache setup for yarn

@@ -1,3 +1,5 @@
+import "reflect-metadata"
+
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,10 +15,8 @@ export type Args = Record<string, unknown>
  * from the registry and store method's name.
  */
 type RegistryClass = {
-  [key: string]: {
-    class_: Class
-    methods: string[]
-  }
+  class_: Class
+  methods: string[]
 }
 
 /**
@@ -34,8 +34,6 @@ type RegistryClass = {
  * RegistryClass.
  */
 export class Registry {
-  private classes: RegistryClass = {}
-
   /**
    * The definition of the @object decorator that should be on top of any
    * class module that must be exposed to the Dagger API.
@@ -65,8 +63,11 @@ export class Registry {
       proto = Object.getPrototypeOf(proto)
     }
 
-    // Add this to the registry
-    this.classes[constructor.name] = { class_: constructor, methods }
+    Reflect.defineMetadata(
+      constructor.name,
+      { class_: constructor, methods },
+      this
+    )
 
     return constructor
   }
@@ -116,7 +117,7 @@ export class Registry {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<any> {
     // Retrieve the resolver class from its key
-    const resolver = this.classes[object]
+    const resolver = Reflect.getMetadata(object, this) as RegistryClass
     if (!resolver) {
       throw new UnknownDaggerError(
         `${object} is not register as a resolver`,
