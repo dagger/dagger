@@ -277,7 +277,7 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			t.Run("sad", func(t *testing.T) {
 				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
-				require.ErrorContains(t, err, `secret env var not found "NOWHERETOBEFOUND"`)
+				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
@@ -292,7 +292,7 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			t.Run("sad", func(t *testing.T) {
 				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
-				require.ErrorContains(t, err, `secret env var not found "NOWHERETOBEFOUND"`)
+				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
