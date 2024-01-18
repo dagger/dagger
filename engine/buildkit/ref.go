@@ -38,7 +38,8 @@ const (
 	// MaxFileContentsChunkSize sets the maximum chunk size for ReadFile calls
 	// Equals around 95% of the max message size (4MB) in
 	// order to keep space for any Protocol Buffers overhead:
-	MaxFileContentsChunkSize = 3984588
+	// MaxFileContentsChunkSize = 3984588
+	MaxFileContentsChunkSize = 3 * 1024 * 1024
 
 	// MaxFileContentsSize sets the limit of the maximum file size
 	// that can be retrieved using File.Contents, currently set to 128MB:
