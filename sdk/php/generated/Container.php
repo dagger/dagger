@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * An OCI-compatible container, also known as a docker container.
+ * An OCI-compatible container, also known as a Docker container.
  */
 class Container extends Client\AbstractObject implements Client\IdAble
 {
@@ -51,9 +51,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function build(
         DirectoryId|Directory $context,
-        ?string $dockerfile = null,
+        ?string $dockerfile = 'Dockerfile',
+        ?string $target = '',
         ?array $buildArgs = null,
-        ?string $target = null,
         ?array $secrets = null,
     ): Container
     {
@@ -62,11 +62,11 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $dockerfile) {
         $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
         }
-        if (null !== $buildArgs) {
-        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
-        }
         if (null !== $target) {
         $innerQueryBuilder->setArgument('target', $target);
+        }
+        if (null !== $buildArgs) {
+        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
         }
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
@@ -126,7 +126,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * EXPERIMENTAL API! Subject to change/removal at any time.
      *
-     * experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
+     * Configures all available GPUs on the host to be accessible to this container.
+     *
      * This currently works for Nvidia devices only.
      */
     public function experimentalWithAllGPUs(): Container
@@ -138,7 +139,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * EXPERIMENTAL API! Subject to change/removal at any time.
      *
-     * experimentalWithGPU configures the provided list of devices to be accesible to this container.
+     * Configures the provided list of devices to be accesible to this container.
+     *
      * This currently works for Nvidia devices only.
      */
     public function experimentalWithGPU(array $devices): Container
@@ -149,10 +151,11 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
+     * Writes the container as an OCI tarball to the destination file path on the host.
      *
      * Return true on success.
-     * It can also publishes platform variants.
+     *
+     * It can also export platform variants.
      */
     public function export(
         string $path,
@@ -178,8 +181,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves the list of exposed ports.
      *
-     * This includes ports already exposed by the image, even if not
-     * explicitly added with dagger.
+     * This includes ports already exposed by the image, even if not explicitly added with dagger.
      */
     public function exposedPorts(): array
     {
@@ -210,7 +212,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A unique identifier for this container.
+     * A unique identifier for this Container.
      */
     public function id(): ContainerId
     {
@@ -229,11 +231,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
 
     /**
      * Reads the container from an OCI tarball.
-     *
-     * NOTE: this involves unpacking the tarball to an OCI store on the host at
-     * $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
      */
-    public function import(FileId|File $source, ?string $tag = null): Container
+    public function import(FileId|File $source, ?string $tag = ''): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('import');
         $innerQueryBuilder->setArgument('source', $source);
@@ -272,9 +271,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Creates a named sub-pipeline
+     * Creates a named sub-pipeline.
      */
-    public function pipeline(string $name, ?string $description = null, ?array $labels = null): Container
+    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
         $innerQueryBuilder->setArgument('name', $name);
@@ -300,6 +299,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      * Publishes this container as a new image to the specified address.
      *
      * Publish returns a fully qualified ref.
+     *
      * It can also publish platform variants.
      */
     public function publish(
@@ -333,8 +333,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
-     * over the websocket.
+     * Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
      *
      * Primarily intended for internal use with the dagger CLI.
      */
@@ -404,7 +403,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         DirectoryId|Directory $directory,
         ?array $exclude = null,
         ?array $include = null,
-        ?string $owner = null,
+        ?string $owner = '',
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
@@ -438,7 +437,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus the given environment variable.
      */
-    public function withEnvVariable(string $name, string $value, ?bool $expand = null): Container
+    public function withEnvVariable(string $name, string $value, ?bool $expand = false): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvVariable');
         $innerQueryBuilder->setArgument('name', $name);
@@ -454,12 +453,12 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withExec(
         array $args,
-        ?bool $skipEntrypoint = null,
-        ?string $stdin = null,
-        ?string $redirectStdout = null,
-        ?string $redirectStderr = null,
-        ?bool $experimentalPrivilegedNesting = null,
-        ?bool $insecureRootCapabilities = null,
+        ?bool $skipEntrypoint = false,
+        ?string $stdin = '',
+        ?string $redirectStdout = '',
+        ?string $redirectStderr = '',
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExec');
@@ -491,6 +490,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      * Exposed ports serve two purposes:
      *
      * - For health checks and introspection, when running services
+     *
      * - For setting the EXPOSE OCI field when publishing the container
      */
     public function withExposedPort(
@@ -517,7 +517,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         string $path,
         FileId|File $source,
         ?int $permissions = null,
-        ?string $owner = null,
+        ?string $owner = '',
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
@@ -533,8 +533,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Indicate that subsequent operations should be featured more prominently in
-     * the UI.
+     * Indicate that subsequent operations should be featured more prominently in the UI.
      */
     public function withFocus(): Container
     {
@@ -561,7 +560,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         CacheVolumeId|CacheVolume $cache,
         DirectoryId|Directory|null $source = null,
         ?CacheSharingMode $sharing = null,
-        ?string $owner = null,
+        ?string $owner = '',
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedCache');
@@ -582,11 +581,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus a directory mounted at the given path.
      */
-    public function withMountedDirectory(
-        string $path,
-        DirectoryId|Directory $source,
-        ?string $owner = null,
-    ): Container
+    public function withMountedDirectory(string $path, DirectoryId|Directory $source, ?string $owner = ''): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedDirectory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -600,7 +595,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus a file mounted at the given path.
      */
-    public function withMountedFile(string $path, FileId|File $source, ?string $owner = null): Container
+    public function withMountedFile(string $path, FileId|File $source, ?string $owner = ''): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
         $innerQueryBuilder->setArgument('path', $path);
@@ -617,8 +612,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function withMountedSecret(
         string $path,
         SecretId|Secret $source,
-        ?string $owner = null,
-        ?int $mode = null,
+        ?string $owner = '',
+        ?int $mode = 256,
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedSecret');
@@ -648,9 +643,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withNewFile(
         string $path,
-        ?string $contents = null,
-        ?int $permissions = null,
-        ?string $owner = null,
+        ?string $contents = '',
+        ?int $permissions = 420,
+        ?string $owner = '',
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
@@ -680,7 +675,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Initializes this container from this DirectoryID.
+     * Retrieves the container with the given directory mounted to /.
      */
     public function withRootfs(DirectoryId|Directory $directory): Container
     {
@@ -703,8 +698,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Establish a runtime dependency on a service.
      *
-     * The service will be started automatically when needed and detached when it is
-     * no longer needed, executing the default command if none is set.
+     * The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
      *
      * The service will be reachable from the container via the provided hostname alias.
      *
@@ -721,7 +715,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus a socket forwarded to the given Unix socket path.
      */
-    public function withUnixSocket(string $path, SocketId|Socket $source, ?string $owner = null): Container
+    public function withUnixSocket(string $path, SocketId|Socket $source, ?string $owner = ''): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUnixSocket');
         $innerQueryBuilder->setArgument('path', $path);
@@ -797,8 +791,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Indicate that subsequent operations should not be featured more prominently
-     * in the UI.
+     * Indicate that subsequent operations should not be featured more prominently in the UI.
      *
      * This is the initial state of all containers.
      */

@@ -11,20 +11,14 @@ namespace Dagger;
 /**
  * Static configuration for a module (e.g. parsed contents of dagger.json)
  */
-class ModuleConfig extends Client\AbstractObject
+class ModuleConfig extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * Modules that this module depends on.
-     */
     public function dependencies(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
-    /**
-     * Exclude these file globs when loading the module root.
-     */
     public function exclude(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exclude');
@@ -32,35 +26,32 @@ class ModuleConfig extends Client\AbstractObject
     }
 
     /**
-     * Include only these file globs when loading the module root.
+     * A unique identifier for this ModuleConfig.
      */
+    public function id(): ModuleConfigId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\ModuleConfigId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function include(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('include');
         return (array)$this->queryLeaf($leafQueryBuilder, 'include');
     }
 
-    /**
-     * The name of the module.
-     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The root directory of the module's project, which may be above the module source code.
-     */
     public function root(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('root');
         return (string)$this->queryLeaf($leafQueryBuilder, 'root');
     }
 
-    /**
-     * Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
-     */
     public function sdk(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');

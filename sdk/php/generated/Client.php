@@ -8,8 +8,24 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * The root of the DAG.
+ */
 class Client extends Client\AbstractClient
 {
+    /**
+     * Retrieves a content-addressed blob.
+     */
+    public function blob(string $digest, int $size, string $mediaType, string $uncompressed): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
+        $innerQueryBuilder->setArgument('digest', $digest);
+        $innerQueryBuilder->setArgument('size', $size);
+        $innerQueryBuilder->setArgument('mediaType', $mediaType);
+        $innerQueryBuilder->setArgument('uncompressed', $uncompressed);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * Constructs a cache volume for a given cache key.
      */
@@ -31,10 +47,9 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Creates a scratch container or loads one by ID.
+     * Creates a scratch container.
      *
-     * Optional platform argument initializes new containers to execute and publish
-     * as that platform. Platform defaults to that of the builder's host.
+     * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
      */
     public function container(ContainerId|Container|null $id = null, ?Platform $platform = null): Container
     {
@@ -50,8 +65,8 @@ class Client extends Client\AbstractClient
 
     /**
      * The FunctionCall context that the SDK caller is currently executing in.
-     * If the caller is not currently executing in a function, this will return
-     * an error.
+     *
+     * If the caller is not currently executing in a function, this will return an error.
      */
     public function currentFunctionCall(): FunctionCall
     {
@@ -78,7 +93,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * The default platform of the builder.
+     * The default platform of the engine.
      */
     public function defaultPlatform(): Platform
     {
@@ -87,7 +102,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Creates an empty directory or loads one by ID.
+     * Creates an empty directory.
      */
     public function directory(DirectoryId|Directory|null $id = null): Directory
     {
@@ -98,9 +113,6 @@ class Client extends Client\AbstractClient
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    /**
-     * Loads a file by ID.
-     */
     public function file(FileId|File $id): File
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
@@ -109,7 +121,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Create a function.
+     * Creates a function.
      */
     public function function(string $name, TypeDefId|TypeDef $returnType): Function_
     {
@@ -120,8 +132,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Create a code generation result, given a directory containing the generated
-     * code.
+     * Create a code generation result, given a directory containing the generated code.
      */
     public function generatedCode(DirectoryId|Directory $code): GeneratedCode
     {
@@ -131,14 +142,14 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Queries a git repository.
+     * Queries a Git repository.
      */
     public function git(
         string $url,
-        ?bool $keepGitDir = null,
-        ?string $sshKnownHosts = null,
-        SocketId|Socket|null $sshAuthSocket = null,
+        ?bool $keepGitDir = false,
         ServiceId|Service|null $experimentalServiceHost = null,
+        ?string $sshKnownHosts = '',
+        SocketId|Socket|null $sshAuthSocket = null,
     ): GitRepository
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
@@ -146,14 +157,14 @@ class Client extends Client\AbstractClient
         if (null !== $keepGitDir) {
         $innerQueryBuilder->setArgument('keepGitDir', $keepGitDir);
         }
+        if (null !== $experimentalServiceHost) {
+        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
+        }
         if (null !== $sshKnownHosts) {
         $innerQueryBuilder->setArgument('sshKnownHosts', $sshKnownHosts);
         }
         if (null !== $sshAuthSocket) {
         $innerQueryBuilder->setArgument('sshAuthSocket', $sshAuthSocket);
-        }
-        if (null !== $experimentalServiceHost) {
-        $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);
         }
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -191,7 +202,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Loads a container from an ID.
+     * Load a Container from its ID.
      */
     public function loadContainerFromID(ContainerId|Container $id): Container
     {
@@ -211,6 +222,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a EnvVariable from its ID.
+     */
+    public function loadEnvVariableFromID(EnvVariableId|EnvVariable $id): EnvVariable
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvVariableFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EnvVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a FieldTypeDef from its ID.
+     */
+    public function loadFieldTypeDefFromID(FieldTypeDefId|FieldTypeDef $id): FieldTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFieldTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\FieldTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a File from its ID.
      */
     public function loadFileFromID(FileId|File $id): File
@@ -221,7 +252,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a function argument by ID.
+     * Load a FunctionArg from its ID.
      */
     public function loadFunctionArgFromID(FunctionArgId|FunctionArg $id): FunctionArg
     {
@@ -231,7 +262,29 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a function by ID.
+     * Load a FunctionCallArgValue from its ID.
+     */
+    public function loadFunctionCallArgValueFromID(
+        FunctionCallArgValueId|FunctionCallArgValue $id,
+    ): FunctionCallArgValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionCallArgValueFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\FunctionCallArgValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a FunctionCall from its ID.
+     */
+    public function loadFunctionCallFromID(FunctionCallId|FunctionCall $id): FunctionCall
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionCallFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\FunctionCall($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Function from its ID.
      */
     public function loadFunctionFromID(FunctionId|Function_ $id): Function_
     {
@@ -241,7 +294,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a GeneratedCode by ID.
+     * Load a GeneratedCode from its ID.
      */
     public function loadGeneratedCodeFromID(GeneratedCodeId|GeneratedCode $id): GeneratedCode
     {
@@ -251,7 +304,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a git ref from its ID.
+     * Load a GitRef from its ID.
      */
     public function loadGitRefFromID(GitRefId|GitRef $id): GitRef
     {
@@ -261,7 +314,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a git repository from its ID.
+     * Load a GitRepository from its ID.
      */
     public function loadGitRepositoryFromID(GitRepositoryId|GitRepository $id): GitRepository
     {
@@ -271,13 +324,83 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a module by ID.
+     * Load a Host from its ID.
+     */
+    public function loadHostFromID(HostId|Host $id): Host
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadHostFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Host($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a InterfaceTypeDef from its ID.
+     */
+    public function loadInterfaceTypeDefFromID(InterfaceTypeDefId|InterfaceTypeDef $id): InterfaceTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadInterfaceTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Label from its ID.
+     */
+    public function loadLabelFromID(LabelId|Label $id): Label
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLabelFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Label($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a ListTypeDef from its ID.
+     */
+    public function loadListTypeDefFromID(ListTypeDefId|ListTypeDef $id): ListTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadListTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a ModuleConfig from its ID.
+     */
+    public function loadModuleConfigFromID(ModuleConfigId|ModuleConfig $id): ModuleConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleConfigFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ModuleConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Module from its ID.
      */
     public function loadModuleFromID(ModuleId|Module $id): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a ObjectTypeDef from its ID.
+     */
+    public function loadObjectTypeDefFromID(ObjectTypeDefId|ObjectTypeDef $id): ObjectTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadObjectTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Port from its ID.
+     */
+    public function loadPortFromID(PortId|Port $id): Port
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadPortFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Port($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -291,7 +414,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Loads a service from ID.
+     * Load a Service from its ID.
      */
     public function loadServiceFromID(ServiceId|Service $id): Service
     {
@@ -311,7 +434,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a TypeDef by ID.
+     * Load a TypeDef from its ID.
      */
     public function loadTypeDefFromID(TypeDefId|TypeDef $id): TypeDef
     {
@@ -332,7 +455,7 @@ class Client extends Client\AbstractClient
     /**
      * Load the static configuration for a module from the given source directory and optional subpath.
      */
-    public function moduleConfig(DirectoryId|Directory $sourceDirectory, ?string $subpath = null): ModuleConfig
+    public function moduleConfig(DirectoryId|Directory $sourceDirectory, ?string $subpath = ''): ModuleConfig
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleConfig');
         $innerQueryBuilder->setArgument('sourceDirectory', $sourceDirectory);
@@ -345,7 +468,7 @@ class Client extends Client\AbstractClient
     /**
      * Creates a named sub-pipeline.
      */
-    public function pipeline(string $name, ?string $description = null, ?array $labels = null): Client
+    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Client
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
         $innerQueryBuilder->setArgument('name', $name);
@@ -359,17 +482,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Loads a secret from its ID.
+     * Reference a secret by name.
      */
-    public function secret(SecretId|Secret $id): Secret
+    public function secret(string $name): Secret
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
-        $innerQueryBuilder->setArgument('id', $id);
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Sets a secret given a user defined name to its plaintext and returns the secret.
+     *
      * The plaintext value is limited to a size of 128000 bytes.
      */
     public function setSecret(string $name, string $plaintext): Secret
@@ -383,12 +507,10 @@ class Client extends Client\AbstractClient
     /**
      * Loads a socket by its ID.
      */
-    public function socket(SocketId|Socket|null $id = null): Socket
+    public function socket(SocketId|Socket $id): Socket
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('socket');
-        if (null !== $id) {
         $innerQueryBuilder->setArgument('id', $id);
-        }
         return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A unique container identifier. Null designates an empty container (scratch).
+ * The `ContainerID` scalar type represents an identifier for an object of type Container.
  */
 readonly class ContainerId extends Client\AbstractId
 {

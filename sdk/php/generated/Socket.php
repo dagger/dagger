@@ -8,10 +8,13 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * A Unix or TCP/IP socket that can be mounted into a container.
+ */
 class Socket extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The content-addressed identifier of the socket.
+     * A unique identifier for this Socket.
      */
     public function id(): SocketId
     {

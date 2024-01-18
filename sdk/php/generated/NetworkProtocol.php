@@ -13,9 +13,6 @@ namespace Dagger;
  */
 enum NetworkProtocol: string
 {
-    /** TCP (Transmission Control Protocol) */
     case TCP = 'TCP';
-
-    /** UDP (User Datagram Protocol) */
     case UDP = 'UDP';
 }

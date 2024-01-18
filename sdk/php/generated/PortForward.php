@@ -14,8 +14,8 @@ namespace Dagger;
 class PortForward extends Client\AbstractInputObject
 {
     public function __construct(
-        public int $backend,
         public ?int $frontend,
+        public int $backend,
         public ?NetworkProtocol $protocol,
     ) {
     }
