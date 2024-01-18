@@ -368,7 +368,7 @@
             "args": [
               {
                 "name": "deprecatedArg",
-                "description": "",
+                "description": "DEPRECATED: use something else",
                 "defaultValue": null,
                 "type": {
                   "kind": "NON_NULL",
@@ -379,6 +379,35 @@
                 },
                 "isDeprecated": true,
                 "deprecationReason": "use something else"
+              }
+            ],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          },
+          {
+            "name": "deprecatedArgChain",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            "args": [
+              {
+                "name": "deprecatedArg",
+                "description": "DEPRECATED: because I said so",
+                "defaultValue": null,
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String"
+                  }
+                },
+                "isDeprecated": true,
+                "deprecationReason": "because I said so"
               }
             ],
             "isDeprecated": false,
@@ -396,7 +425,7 @@
             },
             "args": [
               {
-                "name": "deprecatedArg",
+                "name": "foo",
                 "description": "",
                 "defaultValue": null,
                 "type": {

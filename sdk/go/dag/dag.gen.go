@@ -98,7 +98,7 @@ func Directory(opts ...dagger.DirectoryOpts) *dagger.Directory {
 	return client.Directory(opts...)
 }
 
-// Deprecated: Use loadFileFromID instead.
+// Deprecated: Use LoadFileFromID instead.
 func File(id dagger.FileID) *dagger.File {
 	client := initClient()
 	return client.File(id)

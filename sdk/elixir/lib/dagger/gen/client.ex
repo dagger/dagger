@@ -41,7 +41,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Creates a scratch container.\n\nOptional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `id` - \n* `platform` - Platform to initialize the container with."
+    @doc "Creates a scratch container.\n\nOptional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `id` - DEPRECATED: Use `loadContainerFromID` instead.\n* `platform` - Platform to initialize the container with."
     @spec container(t(), keyword()) :: Dagger.Container.t()
     def container(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "container")
@@ -118,7 +118,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Creates an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @doc "Creates an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` - DEPRECATED: Use `loadDirectoryFromID` isntead."
     @spec directory(t(), keyword()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "directory")
@@ -137,7 +137,7 @@ defmodule Dagger.Client do
 
   (
     @doc "## Required Arguments\n\n* `id` -"
-    @deprecated "Use loadFileFromID instead"
+    @deprecated "Use `load_file_from_id` instead"
     @spec file(t(), Dagger.FileID.t()) :: Dagger.File.t()
     def file(%__MODULE__{} = query, file) do
       selection = select(query.selection, "file")

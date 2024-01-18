@@ -1197,7 +1197,13 @@ type GitRef {
   id: GitRefID!
 
   """The filesystem tree at this ref."""
-  tree(sshAuthSocket: SocketID, sshKnownHosts: String): Directory!
+  tree(
+    """DEPRECATED: This option should be passed to `git` instead."""
+    sshAuthSocket: SocketID
+
+    """DEPRECATED: This option should be passed to `git` instead."""
+    sshKnownHosts: String
+  ): Directory!
 }
 
 """
@@ -1575,6 +1581,7 @@ type Query {
   as that platform. Platform defaults to that of the builder's host.
   """
   container(
+    """DEPRECATED: Use `loadContainerFromID` instead."""
     id: ContainerID
 
     """Platform to initialize the container with."""
@@ -1600,8 +1607,11 @@ type Query {
   defaultPlatform: Platform!
 
   """Creates an empty directory."""
-  directory(id: DirectoryID): Directory!
-  file(id: FileID!): File! @deprecated(reason: "Use loadFileFromID instead.")
+  directory(
+    """DEPRECATED: Use `loadDirectoryFromID` isntead."""
+    id: DirectoryID
+  ): Directory!
+  file(id: FileID!): File! @deprecated(reason: "Use `loadFileFromID` instead.")
 
   """Creates a function."""
   function(

@@ -42,7 +42,9 @@ func (s *gitSchema) Install() {
 
 	dagql.Fields[*core.GitRef]{
 		dagql.Func("tree", s.tree).
-			Doc(`The filesystem tree at this ref.`),
+			Doc(`The filesystem tree at this ref.`).
+			ArgDeprecated("sshKnownHosts", "This option should be passed to `git` instead.").
+			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
 		dagql.Func("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
 	}.Install(s.srv)
@@ -130,8 +132,8 @@ func (s *gitSchema) tag(ctx context.Context, parent *core.GitRepository, args ta
 }
 
 type treeArgs struct {
-	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts" deprecated:"This option should be passed to git() instead."`
-	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket" deprecated:"This option should be passed to git() instead."`
+	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
+	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, args treeArgs) (*core.Directory, error) {

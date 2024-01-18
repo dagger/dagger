@@ -17,7 +17,7 @@ var _ SchemaResolvers = &fileSchema{}
 func (s *fileSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("file", s.file).
-			Deprecated("Use loadFileFromID instead."),
+			Deprecated("Use `loadFileFromID` instead."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.File]{
