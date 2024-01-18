@@ -13,6 +13,9 @@ namespace Dagger;
  */
 class CacheVolume extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * A unique identifier for this CacheVolume.
+     */
     public function id(): CacheVolumeId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');

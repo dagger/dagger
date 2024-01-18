@@ -8,20 +8,26 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class FunctionCallArgValue extends Client\AbstractObject
+/**
+ * A value passed as a named argument to a function call.
+ */
+class FunctionCallArgValue extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The name of the argument.
+     * A unique identifier for this FunctionCallArgValue.
      */
+    public function id(): FunctionCallArgValueId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\FunctionCallArgValueId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The value of the argument represented as a string of the JSON serialization.
-     */
     public function value(): Json
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');

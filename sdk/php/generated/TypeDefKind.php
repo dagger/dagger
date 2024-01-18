@@ -13,35 +13,40 @@ namespace Dagger;
  */
 enum TypeDefKind: string
 {
-    /** A boolean value */
-    case BooleanKind = 'BooleanKind';
+    /** A string value. */
+    case STRING_KIND = 'STRING_KIND';
 
-    /** An integer value */
-    case IntegerKind = 'IntegerKind';
+    /** An integer value. */
+    case INTEGER_KIND = 'INTEGER_KIND';
+
+    /** A boolean value. */
+    case BOOLEAN_KIND = 'BOOLEAN_KIND';
 
     /**
      * A list of values all having the same type.
      *
      * Always paired with a ListTypeDef.
      */
-    case ListKind = 'ListKind';
+    case LIST_KIND = 'LIST_KIND';
 
     /**
      * A named type defined in the GraphQL schema, with fields and functions.
      *
      * Always paired with an ObjectTypeDef.
      */
-    case ObjectKind = 'ObjectKind';
+    case OBJECT_KIND = 'OBJECT_KIND';
 
-    /** A string value */
-    case StringKind = 'StringKind';
+    /**
+     * A named type of functions that can be matched+implemented by other objects+interfaces.
+     *
+     * Always paired with an InterfaceTypeDef.
+     */
+    case INTERFACE_KIND = 'INTERFACE_KIND';
 
     /**
      * A special kind used to signify that no value is returned.
      *
-     * This is used for functions that have no return value. The outer TypeDef
-     * specifying this Kind is always Optional, as the Void is never actually
-     * represented.
+     * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
      */
-    case VoidKind = 'VoidKind';
+    case VOID_KIND = 'VOID_KIND';
 }

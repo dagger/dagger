@@ -14,7 +14,7 @@ namespace Dagger;
 class GitRepository extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Returns details on one branch.
+     * Returns details of a branch.
      */
     public function branch(string $name): GitRef
     {
@@ -24,7 +24,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns details on one commit.
+     * Returns details of a commit.
      */
     public function commit(string $id): GitRef
     {
@@ -34,7 +34,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the content-addressed identifier of the git repository.
+     * A unique identifier for this GitRepository.
      */
     public function id(): GitRepositoryId
     {
@@ -43,7 +43,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns details on one tag.
+     * Returns details of a tag.
      */
     public function tag(string $name): GitRef
     {

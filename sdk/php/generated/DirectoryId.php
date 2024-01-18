@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A content-addressed directory identifier.
+ * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
  */
 readonly class DirectoryId extends Client\AbstractId
 {

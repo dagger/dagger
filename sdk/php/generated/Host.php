@@ -9,9 +9,9 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * Information about the host execution environment.
+ * Information about the host environment.
  */
-class Host extends Client\AbstractObject
+class Host extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * Accesses a directory on the host.
@@ -40,20 +40,30 @@ class Host extends Client\AbstractObject
     }
 
     /**
+     * A unique identifier for this Host.
+     */
+    public function id(): HostId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\HostId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
      * Creates a service that forwards traffic to a specified address via the host.
      */
-    public function service(array $ports, ?string $host = 'localhost'): Service
+    public function service(?string $host = 'localhost', array $ports): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('service');
-        $innerQueryBuilder->setArgument('ports', $ports);
         if (null !== $host) {
         $innerQueryBuilder->setArgument('host', $host);
         }
+        $innerQueryBuilder->setArgument('ports', $ports);
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+     *
      * The file is limited to a size of 512000 bytes.
      */
     public function setSecretFile(string $name, string $path): Secret
@@ -67,15 +77,15 @@ class Host extends Client\AbstractObject
     /**
      * Creates a tunnel that forwards traffic from the host to a service.
      */
-    public function tunnel(ServiceId|Service $service, ?bool $native = false, ?array $ports = null): Service
+    public function tunnel(ServiceId|Service $service, ?array $ports = null, ?bool $native = false): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tunnel');
         $innerQueryBuilder->setArgument('service', $service);
-        if (null !== $native) {
-        $innerQueryBuilder->setArgument('native', $native);
-        }
         if (null !== $ports) {
         $innerQueryBuilder->setArgument('ports', $ports);
+        }
+        if (null !== $native) {
+        $innerQueryBuilder->setArgument('native', $native);
         }
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

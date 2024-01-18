@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SocketID` scalar type represents an identifier for an object of type Socket.
+ * The `HostID` scalar type represents an identifier for an object of type Host.
  */
-readonly class SocketId extends Client\AbstractId
+readonly class HostId extends Client\AbstractId
 {
 }

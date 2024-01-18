@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * Key value object that represents a Pipeline label.
+ * Key value object that represents a pipeline label.
  */
 class PipelineLabel extends Client\AbstractInputObject
 {
