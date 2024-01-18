@@ -723,6 +723,8 @@ func (dir *Directory) Root() (*Directory, error) {
 	return dir, nil
 }
 
+// AsBlob converts this directory into a stable content addressed blob, valid for the duration of the current
+// session. Currently only used internally to support local module sources.
 func (dir *Directory) AsBlob(
 	ctx context.Context,
 	srv *dagql.Server,

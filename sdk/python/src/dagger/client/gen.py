@@ -3153,41 +3153,12 @@ class GeneratedCode(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
-    async def vcs_ignored_paths(self) -> list[str]:
-        """Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("vcsIgnoredPaths", _args)
-        return await _ctx.execute(list[str])
-
-    @typecheck
     def with_vcs_generated_paths(self, paths: Sequence[str]) -> "GeneratedCode":
         """Set the list of paths to mark generated in version control."""
         _args = [
             Arg("paths", paths),
         ]
         _ctx = self._select("withVCSGeneratedPaths", _args)
-        return GeneratedCode(_ctx)
-
-    @typecheck
-    def with_vcs_ignored_paths(self, paths: Sequence[str]) -> "GeneratedCode":
-        """Set the list of paths to ignore in version control."""
-        _args = [
-            Arg("paths", paths),
-        ]
-        _ctx = self._select("withVCSIgnoredPaths", _args)
         return GeneratedCode(_ctx)
 
     def with_(
@@ -4368,14 +4339,6 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def dependency(self, dep: "ModuleSource") -> "ModuleSource":
-        _args = [
-            Arg("dep", dep),
-        ]
-        _ctx = self._select("dependency", _args)
-        return ModuleSource(_ctx)
-
-    @typecheck
     async def id(self) -> ModuleSourceID:
         """A unique identifier for this ModuleSource.
 
@@ -4419,13 +4382,29 @@ class ModuleSource(Type):
         return await _ctx.execute(ModuleSourceKind)
 
     @typecheck
+    def resolve_dependency(self, dep: "ModuleSource") -> "ModuleSource":
+        """Resolve the provided module source arg as a dependency relative to
+        this module source.
+
+        Parameters
+        ----------
+        dep:
+            The dependency module source to resolve.
+        """
+        _args = [
+            Arg("dep", dep),
+        ]
+        _ctx = self._select("resolveDependency", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
     def root_directory(self) -> Directory:
         _args: list[Arg] = []
         _ctx = self._select("rootDirectory", _args)
         return Directory(_ctx)
 
     @typecheck
-    async def source_subpath(self) -> str:
+    async def subpath(self) -> str:
         """The path to the module subdirectory containing the actual module's
         source code.
 
@@ -4444,7 +4423,7 @@ class ModuleSource(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("sourceSubpath", _args)
+        _ctx = self._select("subpath", _args)
         return await _ctx.execute(str)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":

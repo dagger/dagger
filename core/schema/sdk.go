@@ -163,7 +163,7 @@ func (s *moduleSchema) loadBuiltinSDK(
 
 	// TODO: currently hardcoding assumption that builtin sdks put module source code at
 	// subdir right under their config dir. Include/exlude won't be used to optimize loading
-	// yet. Can be lifted with some effort.
+	// yet. Can be lifted with some effort but currently works for the existing builtin sdks.
 	configDirPath := filepath.Dir(engineContainerModulePath)
 	sourceRelPath, err := filepath.Rel(configDirPath, engineContainerModulePath)
 	if err != nil {
@@ -392,7 +392,7 @@ func (sdk *goSDK) baseWithCodegen(
 			{
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
-					"--module-config-dir", goSDKUserModSourceDirPath,
+					"--module-source-root", goSDKUserModSourceDirPath,
 					"--module-name", dagql.String(mod.NameField),
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},

@@ -78,14 +78,15 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleSource]{
-		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
+		dagql.Func("subpath", s.moduleSourceSubpath).
 			Doc(`The path to the module subdirectory containing the actual module's source code.`),
 
 		dagql.Func("asString", s.moduleSourceAsString).
 			Doc(`A human readable ref string to this module source.`),
 
-		// TODO: doc
-		dagql.NodeFunc("dependency", s.moduleSourceDependency),
+		dagql.NodeFunc("resolveDependency", s.moduleSourceResolveDependency).
+			Doc(`Resolve the provided module source arg as a dependency relative to this module source.`).
+			ArgDoc("dep", `The dependency module source to resolve.`),
 
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
@@ -202,10 +203,6 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
-		// TODO: remove ignored paths
-		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
-			Doc(`Set the list of paths to ignore in version control.`),
-
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
 			Doc(`Set the list of paths to mark generated in version control.`),
 	}.Install(s.dag)
@@ -299,12 +296,6 @@ func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args st
 		return nil, err
 	}
 	return core.NewGeneratedCode(dir), nil
-}
-
-func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
-	Paths []string
-}) (*core.GeneratedCode, error) {
-	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
 func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
@@ -638,7 +629,7 @@ func (s *moduleSchema) updateModuleConfig(ctx context.Context, mod *core.Module)
 		modsCfgPerm = fs.FileMode(cfgFileStat.Mode & 0777)
 	}
 
-	sourceSubpath, err := mod.Source.Self.SourceSubpath()
+	sourceSubpath, err := mod.Source.Self.Subpath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path: %w", err)
 	}
@@ -715,15 +706,6 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 		return nil, fmt.Errorf("failed to get module sdk: %w", err)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO: Double check all other uses of mod.Source.Subpath are fixed
 	sourceSubpath := mod.GeneratedSourceSubpath
 
 	mod.Runtime, err = sdk.Runtime(ctx, mod, mod.GeneratedSourceDirectory, sourceSubpath)
@@ -822,7 +804,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			src.RootDirectory = parentDir
 		}
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
-			SourceSubpath: filepath.Join("/", modPath),
+			Subpath: filepath.Join("/", modPath),
 		})
 	} else {
 		if !isGitHub {
@@ -880,9 +862,9 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource.Value.Commit = gitCommit  // but tell the truth here
 
 		if len(segments) == 4 {
-			src.AsGitSource.Value.SourceSubpath = segments[3]
+			src.AsGitSource.Value.Subpath = segments[3]
 		} else {
-			src.AsGitSource.Value.SourceSubpath = "/"
+			src.AsGitSource.Value.Subpath = "/"
 		}
 
 		err = s.dag.Select(ctx, gitRef, &src.RootDirectory,
@@ -897,14 +879,14 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 }
 
 func (s *moduleSchema) moduleSourceSubpath(ctx context.Context, src *core.ModuleSource, args struct{}) (string, error) {
-	return src.SourceSubpath()
+	return src.Subpath()
 }
 
 func (s *moduleSchema) moduleSourceAsString(ctx context.Context, src *core.ModuleSource, args struct{}) (string, error) {
 	return src.RefString()
 }
 
-func (s *moduleSchema) moduleSourceDependency(
+func (s *moduleSchema) moduleSourceResolveDependency(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
 	args struct {
@@ -924,7 +906,7 @@ func (s *moduleSchema) moduleSourceDependency(
 	// This dep is a local path relative to a src, need to find the src's root
 	// and return a source that points to the full path to this dep
 
-	sourceSubpath, err := src.Self.SourceSubpath()
+	sourceSubpath, err := src.Self.Subpath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path: %w", err)
 	}
@@ -940,7 +922,7 @@ func (s *moduleSchema) moduleSourceDependency(
 	newDepSrc := src
 	newDepSrc.Self = newDepSrc.Self.Clone()
 
-	depSourceSubpath, err := depSrc.Self.SourceSubpath()
+	depSourceSubpath, err := depSrc.Self.Subpath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path: %w", err)
 	}
@@ -948,7 +930,7 @@ func (s *moduleSchema) moduleSourceDependency(
 
 	switch src.Self.Kind {
 	case core.ModuleSourceKindGit:
-		newDepSrc.Self.AsGitSource.Value.SourceSubpath = fullDepSourcePath
+		newDepSrc.Self.AsGitSource.Value.Subpath = fullDepSourcePath
 
 		// preserve the git metadata by just constructing a modified git source ref string
 		// and using that to load the dep
@@ -972,7 +954,7 @@ func (s *moduleSchema) moduleSourceDependency(
 		return newDepSrc.Self, nil
 
 	case core.ModuleSourceKindLocal:
-		newDepSrc.Self.AsLocalSource.Value.SourceSubpath = fullDepSourcePath
+		newDepSrc.Self.AsLocalSource.Value.Subpath = fullDepSourcePath
 
 		err = s.dag.Select(ctx, s.dag.Root(), &newDepSrc,
 			dagql.Selector{
@@ -1032,6 +1014,15 @@ func (s *moduleSchema) gitModuleSourceHTMLURL(
 	return ref.HTMLURL(), nil
 }
 
+/*
+Convert the given module source into a normalized form that is consistent in ID and source dir/subpath, with
+the directory containing dagger.json always present at the root of the returned Directory.
+
+This is needed for a few different cases:
+ 1. If a git module source contains dagger.json at a subdirectory of the repo, we need to "re-root" it so
+ 2. Local modules sources can have many different IDs for equivalent sources due to the fact that the client
+    can load them from arbitrary parent dirs from a filesystem.
+*/
 func (s *moduleSchema) normalizeSourceForModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
@@ -1041,7 +1032,7 @@ func (s *moduleSchema) normalizeSourceForModule(
 	newSourceSubpath string,
 	rerr error,
 ) {
-	sourceSubpath, err := src.Self.SourceSubpath()
+	sourceSubpath, err := src.Self.Subpath()
 	if err != nil {
 		return newSrc, newRootDir, "", fmt.Errorf("failed to get module source subpath: %w", err)
 	}

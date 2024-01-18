@@ -34,7 +34,11 @@ type Module struct {
 	// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load.
 	GeneratedSourceDirectory dagql.Instance[*Directory]
 
-	// TODO: doc
+	// The subpath of the GeneratedSourceDirectory that contains the actual source code of the module (which may be a subdir when dagger.json is a parent dir).
+	// This is not always equal to Source.SourceSubpath in the case where the Source is a directory containing
+	// dagger.json as a subdir.
+	// E.g. if the module is in a git repo where dagger.json is at /foo/dagger.json and then module source code is at
+	// /foo/mymod/, then GeneratedSourceSubpath will be "mymod".
 	GeneratedSourceSubpath string
 
 	// Dependencies as configured by the module
@@ -652,6 +656,9 @@ type Mod interface {
 	// The name of the module
 	Name() string
 
+	// The direct dependencies of this module
+	Dependencies() []Mod
+
 	// TODO describe
 	Install(context.Context, *dagql.Server) error
 
@@ -720,6 +727,11 @@ func (mod Module) Clone() *Module {
 		cp.Source.Self = mod.Source.Self.Clone()
 	}
 
+	if mod.Description != nil {
+		cp.Description = new(string)
+		*cp.Description = *mod.Description
+	}
+
 	if mod.GeneratedSourceDirectory.Self != nil {
 		cp.GeneratedSourceDirectory.Self = mod.GeneratedSourceDirectory.Self.Clone()
 	}
@@ -727,6 +739,20 @@ func (mod Module) Clone() *Module {
 	cp.DependencyConfig = make([]*ModuleDependency, len(mod.DependencyConfig))
 	for i, dep := range mod.DependencyConfig {
 		cp.DependencyConfig[i] = dep.Clone()
+	}
+
+	cp.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependenciesField))
+	for i, dep := range mod.DependenciesField {
+		cp.DependenciesField[i].Self = dep.Self.Clone()
+	}
+
+	if len(mod.DirectoryIncludeConfig) > 0 {
+		cp.DirectoryIncludeConfig = make([]string, len(mod.DirectoryIncludeConfig))
+		copy(cp.DirectoryIncludeConfig, mod.DirectoryIncludeConfig)
+	}
+	if len(mod.DirectoryExcludeConfig) > 0 {
+		cp.DirectoryExcludeConfig = make([]string, len(mod.DirectoryExcludeConfig))
+		copy(cp.DirectoryExcludeConfig, mod.DirectoryExcludeConfig)
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))
@@ -737,15 +763,6 @@ func (mod Module) Clone() *Module {
 	cp.InterfaceDefs = make([]*TypeDef, len(mod.InterfaceDefs))
 	for i, def := range mod.InterfaceDefs {
 		cp.InterfaceDefs[i] = def.Clone()
-	}
-
-	if len(mod.DirectoryIncludeConfig) > 0 {
-		cp.DirectoryIncludeConfig = make([]string, len(mod.DirectoryIncludeConfig))
-		copy(cp.DirectoryIncludeConfig, mod.DirectoryIncludeConfig)
-	}
-	if len(mod.DirectoryExcludeConfig) > 0 {
-		cp.DirectoryExcludeConfig = make([]string, len(mod.DirectoryExcludeConfig))
-		copy(cp.DirectoryExcludeConfig, mod.DirectoryExcludeConfig)
 	}
 
 	return &cp

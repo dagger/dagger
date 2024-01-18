@@ -88,7 +88,7 @@ var moduleCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
-			srcPath, err := mod.Source().SourceSubpath(ctx)
+			srcPath, err := mod.Source().Subpath(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module source directory: %w", err)
 			}
@@ -197,39 +197,7 @@ var moduleInstallCmd = &cobra.Command{
 					depSrc = dag.ModuleSource(depRelPath)
 				}
 
-				// TODO:
-				// TODO:
-				// TODO:
-				// TODO:
-				depSrcRef, err := depSrc.AsString(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module ref: %w", err)
-				}
-				fmt.Printf("DEP REF 1: %s\n", depSrcRef)
-
-				depSrc = modConf.Mod.Source().Dependency(depSrc)
-
-				// TODO:
-				// TODO:
-				// TODO:
-				// TODO:
-				depSrcRef, err = depSrc.AsString(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module ref: %w", err)
-				}
-				fmt.Printf("DEP REF 2: %s\n", depSrcRef)
-				ents, err := depSrc.RootDirectory().Entries(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module entries: %w", err)
-				}
-				fmt.Printf("DEP REF 2 ents: %+v\n", ents)
-				confStr, err := depSrc.RootDirectory().File("dagger.json").Contents(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module config: %w", err)
-				}
-				fmt.Printf("DEP REF 2 conf: %s\n", confStr)
-
-				depSrcs = append(depSrcs, depSrc)
+				depSrcs = append(depSrcs, modConf.Mod.Source().ResolveDependency(depSrc))
 			}
 
 			_, err = modConf.Mod.WithDependencies(depSrcs).GeneratedSourceDirectory().Export(ctx, modConf.LocalSourceRootPath)

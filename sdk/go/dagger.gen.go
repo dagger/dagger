@@ -2957,29 +2957,9 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 	return response, q.Execute(ctx, r.c)
 }
 
-func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
-	q := r.q.Select("vcsIgnoredPaths")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // Set the list of paths to mark generated in version control.
 func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 	q := r.q.Select("withVCSGeneratedPaths")
-	q = q.Arg("paths", paths)
-
-	return &GeneratedCode{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Set the list of paths to ignore in version control.
-func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
-	q := r.q.Select("withVCSIgnoredPaths")
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
@@ -4275,10 +4255,10 @@ type ModuleSource struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	asString      *string
-	id            *ModuleSourceID
-	kind          *ModuleSourceKind
-	sourceSubpath *string
+	asString *string
+	id       *ModuleSourceID
+	kind     *ModuleSourceKind
+	subpath  *string
 }
 type WithModuleSourceFunc func(r *ModuleSource) *ModuleSource
 
@@ -4328,17 +4308,6 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
-}
-
-func (r *ModuleSource) Dependency(dep *ModuleSource) *ModuleSource {
-	assertNotNil("dep", dep)
-	q := r.q.Select("dependency")
-	q = q.Arg("dep", dep)
-
-	return &ModuleSource{
-		q: q,
-		c: r.c,
-	}
 }
 
 // A unique identifier for this ModuleSource.
@@ -4393,6 +4362,18 @@ func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Resolve the provided module source arg as a dependency relative to this module source.
+func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
+	assertNotNil("dep", dep)
+	q := r.q.Select("resolveDependency")
+	q = q.Arg("dep", dep)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
 func (r *ModuleSource) RootDirectory() *Directory {
 	q := r.q.Select("rootDirectory")
 
@@ -4403,11 +4384,11 @@ func (r *ModuleSource) RootDirectory() *Directory {
 }
 
 // The path to the module subdirectory containing the actual module's source code.
-func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
-	if r.sourceSubpath != nil {
-		return *r.sourceSubpath, nil
+func (r *ModuleSource) Subpath(ctx context.Context) (string, error) {
+	if r.subpath != nil {
+		return *r.subpath, nil
 	}
-	q := r.q.Select("sourceSubpath")
+	q := r.q.Select("subpath")
 
 	var response string
 

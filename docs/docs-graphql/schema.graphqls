@@ -1187,13 +1187,9 @@ type GeneratedCode {
   """A unique identifier for this GeneratedCode."""
   id: GeneratedCodeID!
   vcsGeneratedPaths: [String!]!
-  vcsIgnoredPaths: [String!]!
 
   """Set the list of paths to mark generated in version control."""
   withVCSGeneratedPaths(paths: [String!]!): GeneratedCode!
-
-  """Set the list of paths to ignore in version control."""
-  withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
 }
 
 """
@@ -1567,17 +1563,24 @@ type ModuleSource {
 
   """A human readable ref string to this module source."""
   asString: String!
-  dependency(dep: ModuleSourceID!): ModuleSource!
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
   kind: ModuleSourceKind!
+
+  """
+  Resolve the provided module source arg as a dependency relative to this module source.
+  """
+  resolveDependency(
+    """The dependency module source to resolve."""
+    dep: ModuleSourceID!
+  ): ModuleSource!
   rootDirectory: Directory!
 
   """
   The path to the module subdirectory containing the actual module's source code.
   """
-  sourceSubpath: String!
+  subpath: String!
 }
 
 """
