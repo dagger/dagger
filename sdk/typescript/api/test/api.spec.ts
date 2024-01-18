@@ -354,7 +354,6 @@ describe("TypeScript SDK api", function () {
           const result = await ctr.stdout()
           assert.strictEqual(result.trim(), name)
 
-          console.log(result)
           seededPlatformVariants.push(ctr)
         }
 

@@ -1,4 +1,5 @@
 import assert from "assert"
+import { describe, it } from "mocha"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
@@ -16,33 +17,33 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        HelloWorld: {
           name: "HelloWorld",
           description: "HelloWorld class",
-          fields: [],
+          fields: {},
           constructor: undefined,
-          methods: [
-            {
+          methods: {
+            helloWorld: {
               name: "helloWorld",
               returnType: {
                 kind: TypeDefKind.StringKind,
               },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -53,8 +54,8 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [],
-      functions: [],
+      classes: {},
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -65,19 +66,19 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        Bar: {
           name: "Bar",
           description: "Bar class",
           constructor: undefined,
-          fields: [],
-          methods: [
-            {
+          fields: {},
+          methods: {
+            exec: {
               name: "exec",
               description: "Execute the command and return its result",
               returnType: { kind: TypeDefKind.StringKind },
-              args: [
-                {
+              args: {
+                cmd: {
                   name: "cmd",
                   typeDef: {
                     kind: TypeDefKind.ListKind,
@@ -89,29 +90,29 @@ describe("scan static TypeScript", function () {
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-        {
+        Foo: {
           name: "Foo",
           description: "Foo class",
           constructor: undefined,
-          fields: [],
-          methods: [
-            {
+          fields: {},
+          methods: {
+            bar: {
               name: "bar",
               description: "Return Bar object",
               returnType: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Bar",
               },
-              args: [],
+              args: {},
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -122,45 +123,45 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        HelloWorld: {
           name: "HelloWorld",
           description: "HelloWorld class",
           constructor: undefined,
-          fields: [],
-          methods: [
-            {
+          fields: {},
+          methods: {
+            greeting: {
               name: "greeting",
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-            {
+            helloWorld: {
               name: "helloWorld",
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -171,13 +172,13 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        Alpine: {
           name: "Alpine",
           description: "Alpine module",
           constructor: undefined,
-          fields: [
-            {
+          fields: {
+            packages: {
               name: "packages",
               typeDef: {
                 kind: TypeDefKind.ListKind,
@@ -186,43 +187,57 @@ describe("scan static TypeScript", function () {
                 },
               },
               description: "packages to install",
+              isExposed: true,
             },
-            {
+            ctr: {
               name: "ctr",
               typeDef: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Container",
               },
               description: "",
+              isExposed: true,
             },
-          ],
-          methods: [
-            {
+            version: {
+              name: "version",
+              typeDef: { kind: TypeDefKind.StringKind },
+              description: "",
+              isExposed: false,
+            },
+            user: {
+              name: "user",
+              typeDef: { kind: TypeDefKind.StringKind },
+              description: "",
+              isExposed: false,
+            },
+          },
+          methods: {
+            base: {
               name: "base",
               returnType: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Alpine",
               },
               description: "Returns a base Alpine container",
-              args: [
-                {
+              args: {
+                version: {
                   name: "version",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "version to use (default to: 3.16.2)",
                   optional: true,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-            {
+            install: {
               name: "install",
               returnType: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Alpine",
               },
               description: "",
-              args: [
-                {
+              args: {
+                pkgs: {
                   name: "pkgs",
                   typeDef: {
                     kind: TypeDefKind.ListKind,
@@ -234,14 +249,14 @@ describe("scan static TypeScript", function () {
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-            {
+            exec: {
               name: "exec",
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
-              args: [
-                {
+              args: {
+                cmd: {
                   name: "cmd",
                   typeDef: {
                     kind: TypeDefKind.ListKind,
@@ -253,12 +268,12 @@ describe("scan static TypeScript", function () {
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -269,80 +284,80 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        HelloWorld: {
           name: "HelloWorld",
           description: "HelloWorld class",
-          fields: [],
+          fields: {},
           constructor: undefined,
-          methods: [
-            {
+          methods: {
+            helloWorld: {
               name: "helloWorld",
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: true,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-            {
+            isTrue: {
               name: "isTrue",
               returnType: { kind: TypeDefKind.BooleanKind },
               description: "",
-              args: [
-                {
+              args: {
+                value: {
                   name: "value",
                   typeDef: { kind: TypeDefKind.BooleanKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-            {
+            add: {
               name: "add",
               returnType: { kind: TypeDefKind.IntegerKind },
               description: "",
-              args: [
-                {
+              args: {
+                a: {
                   name: "a",
                   typeDef: { kind: TypeDefKind.IntegerKind },
                   description: "",
                   optional: true,
                   defaultValue: "0",
                 },
-                {
+                b: {
                   name: "b",
                   typeDef: { kind: TypeDefKind.IntegerKind },
                   description: "",
                   optional: true,
                   defaultValue: "0",
                 },
-              ],
+              },
             },
-            {
+            sayBool: {
               name: "sayBool",
               returnType: { kind: TypeDefKind.BooleanKind },
               description: "",
-              args: [
-                {
+              args: {
+                value: {
                   name: "value",
                   typeDef: { kind: TypeDefKind.BooleanKind },
                   description: "",
                   optional: true,
                   defaultValue: "false",
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -353,45 +368,45 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        HelloWorld: {
           name: "HelloWorld",
           description: "HelloWorld class",
           constructor: undefined,
-          fields: [],
-          methods: [
-            {
+          fields: {},
+          methods: {
+            helloWorld: {
               name: "helloWorld",
               returnType: { kind: TypeDefKind.VoidKind },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-            {
+            asyncHelloWorld: {
               name: "asyncHelloWorld",
               returnType: { kind: TypeDefKind.VoidKind },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: true,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)
@@ -402,43 +417,52 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
-      classes: [
-        {
+      classes: {
+        HelloWorld: {
           name: "HelloWorld",
           description: "HelloWorld class",
-          fields: [],
+          fields: {
+            name: {
+              description: "",
+              isExposed: false,
+              name: "name",
+              typeDef: {
+                kind: TypeDefKind.StringKind,
+              },
+            },
+          },
           constructor: {
-            args: [
-              {
+            args: {
+              name: {
                 name: "name",
                 typeDef: { kind: TypeDefKind.StringKind },
                 description: "",
                 defaultValue: '"world"',
                 optional: true,
               },
-            ],
+            },
           },
-          methods: [
-            {
+          methods: {
+            sayHello: {
               name: "sayHello",
               returnType: {
                 kind: TypeDefKind.StringKind,
               },
               description: "",
-              args: [
-                {
+              args: {
+                name: {
                   name: "name",
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: false,
                   defaultValue: undefined,
                 },
-              ],
+              },
             },
-          ],
+          },
         },
-      ],
-      functions: [],
+      },
+      functions: {},
     }
 
     assert.deepEqual(result, expected)

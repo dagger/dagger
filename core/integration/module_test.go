@@ -958,6 +958,12 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		out, err = modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi", suffix: "!", times: 2)}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
+
+		t.Run("execute with unordered args", func(t *testing.T) {
+			out, err = modGen.With(daggerQuery(`{minimal{echoOpts(times: 2, msg: "order", suffix: "?")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"minimal":{"echoOpts":"order?order?"}}`, out)
+		})
 	})
 
 	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
@@ -970,6 +976,12 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi", isQuestion: true)}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi?...hi?...hi?..."}}`, out)
+
+		t.Run("execute with unordered args", func(t *testing.T) {
+			out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(isQuestion: false, msg: "hi")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
+		})
 	})
 }
 
@@ -3444,6 +3456,57 @@ class Test:
         return await self.dir.entries()
 `,
 			},
+			{
+				sdk: "typescript",
+				source: `
+import { Directory, object, func, field } from '@dagger.io/dagger';
+
+@object
+class Test {
+	@field
+	foo: string
+				
+	@field
+	dir: Directory
+				
+	@field
+	bar: number
+				
+	@field
+	baz: string[]
+				
+	@field
+	neverSetDir?: Directory = undefined
+				
+	constructor(foo: string, dir: Directory, bar = 42, baz: string[] = []) {
+		this.foo = foo;
+		this.dir = dir;
+		this.bar = bar;
+		this.baz = baz;
+	}
+				
+	@func
+	gimmeFoo(): string {
+		return this.foo;
+	}
+				
+	@func
+	gimmeBar(): number {
+		return this.bar;
+	}
+				
+	@func
+	gimmeBaz(): string[] {
+		return this.baz;
+	}
+				
+	@func
+	async gimmeDirEnts(): Promise<string[]> {
+		return this.dir.entries();
+	}
+}					
+`,
+			},
 		} {
 			tc := tc
 
@@ -4449,6 +4512,8 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 			sourcePath = "main.go"
 		case "python":
 			sourcePath = "src/main.py"
+		case "typescript":
+			sourcePath = "src/index.ts"
 		default:
 			return c
 		}

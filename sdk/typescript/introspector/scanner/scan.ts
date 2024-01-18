@@ -18,8 +18,8 @@ import {
 } from "./utils.js"
 
 export type ScanResult = {
-  classes: ClassTypeDef[]
-  functions: FunctionTypedef[]
+  classes: { [name: string]: ClassTypeDef }
+  functions: { [name: string]: FunctionTypedef }
 }
 
 /**
@@ -42,8 +42,8 @@ export function scan(files: string[]): ScanResult {
   const checker = program.getTypeChecker()
 
   const metadata: ScanResult = {
-    classes: [],
-    functions: [],
+    classes: {},
+    functions: {},
   }
 
   for (const file of program.getSourceFiles()) {
@@ -55,7 +55,9 @@ export function scan(files: string[]): ScanResult {
     ts.forEachChild(file, (node) => {
       // Handle class
       if (ts.isClassDeclaration(node) && isObject(node)) {
-        metadata.classes.push(introspectClass(checker, node))
+        const classTypeDef = introspectClass(checker, node)
+
+        metadata.classes[classTypeDef.name] = classTypeDef
       }
     })
   }
@@ -100,8 +102,8 @@ function introspectClass(
     name,
     description,
     constructor: undefined,
-    fields: [],
-    methods: [],
+    fields: {},
+    methods: {},
   }
 
   // Loop through all members in the class to get their metadata.
@@ -113,13 +115,16 @@ function introspectClass(
 
     // Handle method from the class.
     if (ts.isMethodDeclaration(member) && isFunction(member)) {
-      metadata.methods.push(introspectMethod(checker, member))
+      const fctTypeDef = introspectMethod(checker, member)
+
+      metadata.methods[fctTypeDef.name] = fctTypeDef
     }
 
     // Handle public properties from the class.
-    if (ts.isPropertyDeclaration(member) && isPublicProperty(member)) {
-      // Handle properties
-      metadata.fields.push(introspectProperty(checker, member))
+    if (ts.isPropertyDeclaration(member)) {
+      const fieldTypeDef = introspectProperty(checker, member)
+
+      metadata.fields[fieldTypeDef.name] = fieldTypeDef
     }
   })
 
@@ -151,7 +156,12 @@ function introspectProperty(
     propertySymbol
   )
 
-  return { name, description, typeDef: typeNameToTypedef(typeName) }
+  return {
+    name,
+    description,
+    typeDef: typeNameToTypedef(typeName),
+    isExposed: isPublicProperty(property),
+  }
 }
 
 /**
@@ -161,29 +171,34 @@ function introspectConstructor(
   checker: ts.TypeChecker,
   constructor: ts.ConstructorDeclaration
 ): ConstructorTypeDef {
-  const args = constructor.parameters.map((param): FunctionArg => {
-    const paramSymbol = checker.getSymbolAtLocation(param.name)
-    if (!paramSymbol) {
-      throw new UnknownDaggerError(
-        `could not get constructor param: ${param.name.getText()}`,
-        {}
+  const args = constructor.parameters.reduce(
+    (acc: { [name: string]: FunctionArg }, param) => {
+      const paramSymbol = checker.getSymbolAtLocation(param.name)
+      if (!paramSymbol) {
+        throw new UnknownDaggerError(
+          `could not get constructor param: ${param.name.getText()}`,
+          {}
+        )
+      }
+
+      const { name, typeName, description } = serializeSymbol(
+        checker,
+        paramSymbol
       )
-    }
+      const { optional, defaultValue } = isOptional(paramSymbol)
 
-    const { name, typeName, description } = serializeSymbol(
-      checker,
-      paramSymbol
-    )
-    const { optional, defaultValue } = isOptional(paramSymbol)
+      acc[name] = {
+        name,
+        description,
+        typeDef: typeNameToTypedef(typeName),
+        optional,
+        defaultValue,
+      }
 
-    return {
-      name,
-      description,
-      typeDef: typeNameToTypedef(typeName),
-      optional,
-      defaultValue,
-    }
-  })
+      return acc
+    },
+    {}
+  )
 
   return { args }
 }
@@ -219,14 +234,22 @@ function introspectMethod(
   return {
     name: methodMetadata.name,
     description: methodMetadata.description,
-    args: methodSignature.params.map(
-      ({ name, typeName, description, optional, defaultValue }) => ({
-        name,
-        typeDef: typeNameToTypedef(typeName),
-        description,
-        optional,
-        defaultValue,
-      })
+    args: methodSignature.params.reduce(
+      (
+        acc: { [name: string]: FunctionArg },
+        { name, typeName, description, optional, defaultValue }
+      ) => {
+        acc[name] = {
+          name,
+          typeDef: typeNameToTypedef(typeName),
+          description,
+          optional,
+          defaultValue,
+        }
+
+        return acc
+      },
+      {}
     ),
     returnType: typeNameToTypedef(methodSignature.returnType),
   }
