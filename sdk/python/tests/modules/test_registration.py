@@ -4,6 +4,14 @@ from dagger.mod import Module
 from dagger.mod._exceptions import NameConflictError, UserError
 
 
+def get_resolver(mod: Module, parent_name: str, resolver_name: str):
+    return mod.get_resolver(
+        mod.get_resolvers("foo"),
+        parent_name,
+        resolver_name,
+    )
+
+
 def test_object_type_resolvers():
     mod = Module()
 
@@ -102,3 +110,15 @@ def test_main_object_name(mod_name, class_name):
 
     resolvers = mod.get_resolvers(mod_name)
     assert next(iter(resolvers.keys())).name == class_name
+
+
+def test_func_doc():
+    mod = Module()
+
+    @mod.function
+    def fn_with_doc():
+        """Foo."""
+
+    r = get_resolver(mod, "Foo", "fn_with_doc")
+
+    assert r.doc == "Foo."
