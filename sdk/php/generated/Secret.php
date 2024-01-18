@@ -14,7 +14,7 @@ namespace Dagger;
 class Secret extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The identifier for this secret.
+     * A unique identifier for this Secret.
      */
     public function id(): SecretId
     {

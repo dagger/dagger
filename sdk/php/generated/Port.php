@@ -11,11 +11,8 @@ namespace Dagger;
 /**
  * A port exposed by a container.
  */
-class Port extends Client\AbstractObject
+class Port extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * The port description.
-     */
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
@@ -23,17 +20,20 @@ class Port extends Client\AbstractObject
     }
 
     /**
-     * The port number.
+     * A unique identifier for this Port.
      */
+    public function id(): PortId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\PortId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function port(): int
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('port');
         return (int)$this->queryLeaf($leafQueryBuilder, 'port');
     }
 
-    /**
-     * The transport layer network protocol.
-     */
     public function protocol(): NetworkProtocol
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('protocol');

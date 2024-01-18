@@ -11,14 +11,20 @@ namespace Dagger;
 /**
  * A definition of a list type in a Module.
  */
-class ListTypeDef extends Client\AbstractObject
+class ListTypeDef extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * The type of the elements in the list
-     */
     public function elementTypeDef(): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('elementTypeDef');
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * A unique identifier for this ListTypeDef.
+     */
+    public function id(): ListTypeDefId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\ListTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

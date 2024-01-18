@@ -11,23 +11,16 @@ namespace Dagger;
 /**
  * Function represents a resolver provided by a Module.
  *
- * A function always evaluates against a parent object and is given a set of
- * named arguments.
+ * A function always evaluates against a parent object and is given a set of named arguments.
  */
 class Function_ extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * Arguments accepted by this function, if any
-     */
     public function args(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
         return (array)$this->queryLeaf($leafQueryBuilder, 'args');
     }
 
-    /**
-     * A doc string for the function, if any
-     */
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
@@ -35,7 +28,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The ID of the function
+     * A unique identifier for this Function.
      */
     public function id(): FunctionId
     {
@@ -43,18 +36,12 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
-    /**
-     * The name of the function
-     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The type returned by this function
-     */
     public function returnType(): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('returnType');
@@ -67,7 +54,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     public function withArg(
         string $name,
         TypeDefId|TypeDef $typeDef,
-        ?string $description = null,
+        ?string $description = '',
         ?Json $defaultValue = null,
     ): Function_
     {
@@ -84,7 +71,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns the function with the doc string
+     * Returns the function with the given doc string.
      */
     public function withDescription(string $description): Function_
     {

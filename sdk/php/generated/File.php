@@ -25,7 +25,7 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the file to a file path on the host.
      */
-    public function export(string $path, ?bool $allowParentDirPath = null): bool
+    public function export(string $path, ?bool $allowParentDirPath = false): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
@@ -36,7 +36,7 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the content-addressed identifier of the file.
+     * A unique identifier for this File.
      */
     public function id(): FileId
     {
@@ -45,7 +45,16 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Gets the size of the file, in bytes.
+     * Retrieves the name of the file.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Retrieves the size of the file, in bytes.
      */
     public function size(): int
     {

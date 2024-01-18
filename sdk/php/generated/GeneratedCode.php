@@ -8,35 +8,32 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * The result of running an SDK's codegen.
+ */
 class GeneratedCode extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * The directory containing the generated code
-     */
     public function code(): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('code');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * A unique identifier for this GeneratedCode.
+     */
     public function id(): GeneratedCodeId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
-    /**
-     * List of paths to mark generated in version control (i.e. .gitattributes)
-     */
     public function vcsGeneratedPaths(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsGeneratedPaths');
         return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
     }
 
-    /**
-     * List of paths to ignore in version control (i.e. .gitignore)
-     */
     public function vcsIgnoredPaths(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsIgnoredPaths');
@@ -44,7 +41,7 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Set the list of paths to mark generated in version control
+     * Set the list of paths to mark generated in version control.
      */
     public function withVCSGeneratedPaths(array $paths): GeneratedCode
     {
@@ -54,7 +51,7 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Set the list of paths to ignore in version control
+     * Set the list of paths to ignore in version control.
      */
     public function withVCSIgnoredPaths(array $paths): GeneratedCode
     {

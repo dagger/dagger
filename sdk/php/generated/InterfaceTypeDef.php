@@ -9,26 +9,14 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A definition of a custom object defined in a Module.
+ * A definition of a custom interface defined in a Module.
  */
-class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble
+class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble
 {
-    public function constructor(): Function_
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('constructor');
-        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
-    }
-
-    public function fields(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'fields');
     }
 
     public function functions(): array
@@ -38,12 +26,12 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A unique identifier for this ObjectTypeDef.
+     * A unique identifier for this InterfaceTypeDef.
      */
-    public function id(): ObjectTypeDefId
+    public function id(): InterfaceTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ObjectTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\InterfaceTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     public function name(): string
