@@ -18,8 +18,8 @@ var (
 	propagateLogs         bool
 	introspectionJSONPath string
 
-	moduleConfigDirPath string
-	moduleName          string
+	moduleSourceRootPath string
+	moduleName           string
 )
 
 var rootCmd = &cobra.Command{
@@ -38,7 +38,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&propagateLogs, "propagate-logs", false, "propagate logs directly to progrock.sock")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 
-	rootCmd.Flags().StringVar(&moduleConfigDirPath, "module-config-dir", "", "path to directory containing module config")
+	rootCmd.Flags().StringVar(&moduleSourceRootPath, "module-source-root", "", "path to root directory of module source (i.e. where its dagger.json is located)")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 }
 
@@ -77,10 +77,10 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	if moduleName != "" {
 		cfg.ModuleName = moduleName
 
-		if moduleConfigDirPath == "" {
-			return fmt.Errorf("--module-name requires --module-config-dir")
+		if moduleSourceRootPath == "" {
+			return fmt.Errorf("--module-name requires --module-source-root")
 		}
-		cfg.ModuleConfigDirPath = moduleConfigDirPath
+		cfg.ModuleSourceRootPath = moduleSourceRootPath
 	}
 
 	if introspectionJSONPath != "" {

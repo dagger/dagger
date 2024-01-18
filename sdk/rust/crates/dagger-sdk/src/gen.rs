@@ -3155,26 +3155,9 @@ impl GeneratedCode {
         let query = self.selection.select("vcsGeneratedPaths");
         query.execute(self.graphql_client.clone()).await
     }
-    pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("vcsIgnoredPaths");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Set the list of paths to mark generated in version control.
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
         let mut query = self.selection.select("withVCSGeneratedPaths");
-        query = query.arg(
-            "paths",
-            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
-        );
-        return GeneratedCode {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Set the list of paths to ignore in version control.
-    pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
-        let mut query = self.selection.select("withVCSIgnoredPaths");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -3885,8 +3868,22 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    pub fn dependency(&self, dep: ModuleSource) -> ModuleSource {
-        let mut query = self.selection.select("dependency");
+    /// A unique identifier for this ModuleSource.
+    pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
+        let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Resolve the provided module source arg as a dependency relative to this module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `dep` - The dependency module source to resolve.
+    pub fn resolve_dependency(&self, dep: ModuleSource) -> ModuleSource {
+        let mut query = self.selection.select("resolveDependency");
         query = query.arg_lazy(
             "dep",
             Box::new(move || {
@@ -3900,15 +3897,6 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// A unique identifier for this ModuleSource.
-    pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
-        let query = self.selection.select("kind");
-        query.execute(self.graphql_client.clone()).await
-    }
     pub fn root_directory(&self) -> Directory {
         let query = self.selection.select("rootDirectory");
         return Directory {
@@ -3918,8 +3906,8 @@ impl ModuleSource {
         };
     }
     /// The path to the module subdirectory containing the actual module's source code.
-    pub async fn source_subpath(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sourceSubpath");
+    pub async fn subpath(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("subpath");
         query.execute(self.graphql_client.clone()).await
     }
 }

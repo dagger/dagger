@@ -88,7 +88,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 		WithExec([]string{
 			codegenBinPath,
 			"--lang", "typescript",
-			"--module-config-dir", ModSourceDirPath,
+			"--module-source-root", ModSourceDirPath,
 			"--output", genPath,
 			"--module-name", name,
 			"--introspection-json-path", schemaPath,

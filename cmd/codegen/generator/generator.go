@@ -31,8 +31,8 @@ type Config struct {
 	OutputDir string
 
 	// Name of the module to generate code for
-	ModuleName          string
-	ModuleConfigDirPath string
+	ModuleName           string
+	ModuleSourceRootPath string
 
 	// Optional pre-computed introspection json string
 	IntrospectionJSON string

@@ -33,29 +33,10 @@ defmodule Dagger.GeneratedCode do
   )
 
   (
-    @doc ""
-    @spec vcs_ignored_paths(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
-    def vcs_ignored_paths(%__MODULE__{} = generated_code) do
-      selection = select(generated_code.selection, "vcsIgnoredPaths")
-      execute(selection, generated_code.client)
-    end
-  )
-
-  (
     @doc "Set the list of paths to mark generated in version control.\n\n## Required Arguments\n\n* `paths` -"
     @spec with_vcs_generated_paths(t(), [Dagger.String.t()]) :: Dagger.GeneratedCode.t()
     def with_vcs_generated_paths(%__MODULE__{} = generated_code, paths) do
       selection = select(generated_code.selection, "withVCSGeneratedPaths")
-      selection = arg(selection, "paths", paths)
-      %Dagger.GeneratedCode{selection: selection, client: generated_code.client}
-    end
-  )
-
-  (
-    @doc "Set the list of paths to ignore in version control.\n\n## Required Arguments\n\n* `paths` -"
-    @spec with_vcs_ignored_paths(t(), [Dagger.String.t()]) :: Dagger.GeneratedCode.t()
-    def with_vcs_ignored_paths(%__MODULE__{} = generated_code, paths) do
-      selection = select(generated_code.selection, "withVCSIgnoredPaths")
       selection = arg(selection, "paths", paths)
       %Dagger.GeneratedCode{selection: selection, client: generated_code.client}
     end

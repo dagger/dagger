@@ -3819,19 +3819,6 @@ export class GeneratedCode extends BaseClient {
 
     return response
   }
-  vcsIgnoredPaths = async (): Promise<string[]> => {
-    const response: Awaited<string[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "vcsIgnoredPaths",
-        },
-      ],
-      await this._ctx.connection()
-    )
-
-    return response
-  }
 
   /**
    * Set the list of paths to mark generated in version control.
@@ -3842,22 +3829,6 @@ export class GeneratedCode extends BaseClient {
         ...this._queryTree,
         {
           operation: "withVCSGeneratedPaths",
-          args: { paths },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Set the list of paths to ignore in version control.
-   */
-  withVCSIgnoredPaths = (paths: string[]): GeneratedCode => {
-    return new GeneratedCode({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withVCSIgnoredPaths",
           args: { paths },
         },
       ],
@@ -5157,7 +5128,7 @@ export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
-  private readonly _sourceSubpath?: string = undefined
+  private readonly _subpath?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5167,14 +5138,14 @@ export class ModuleSource extends BaseClient {
     _id?: ModuleSourceID,
     _asString?: string,
     _kind?: ModuleSourceKind,
-    _sourceSubpath?: string
+    _subpath?: string
   ) {
     super(parent)
 
     this._id = _id
     this._asString = _asString
     this._kind = _kind
-    this._sourceSubpath = _sourceSubpath
+    this._subpath = _subpath
   }
 
   /**
@@ -5255,18 +5226,6 @@ export class ModuleSource extends BaseClient {
 
     return response
   }
-  dependency = (dep: ModuleSource): ModuleSource => {
-    return new ModuleSource({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "dependency",
-          args: { dep },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {
       return this._kind
@@ -5284,6 +5243,23 @@ export class ModuleSource extends BaseClient {
 
     return response
   }
+
+  /**
+   * Resolve the provided module source arg as a dependency relative to this module source.
+   * @param dep The dependency module source to resolve.
+   */
+  resolveDependency = (dep: ModuleSource): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "resolveDependency",
+          args: { dep },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
   rootDirectory = (): Directory => {
     return new Directory({
       queryTree: [
@@ -5299,16 +5275,16 @@ export class ModuleSource extends BaseClient {
   /**
    * The path to the module subdirectory containing the actual module's source code.
    */
-  sourceSubpath = async (): Promise<string> => {
-    if (this._sourceSubpath) {
-      return this._sourceSubpath
+  subpath = async (): Promise<string> => {
+    if (this._subpath) {
+      return this._subpath
     }
 
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "sourceSubpath",
+          operation: "subpath",
         },
       ],
       await this._ctx.connection()
