@@ -7,13 +7,14 @@ This describes how to release Dagger:
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
+- [🐘 PHP SDK](#-php-sdk)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
 This is a high-level diagram of how all the pieces fit together:
 
 ```mermaid
-flowchart TD
+flowchart TB
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
     playground["🛝 Playground"]
@@ -33,6 +34,7 @@ flowchart TD
     registry["📦 registry.dagger.io/engine"]
     ghcr["🐙 ghcr.io/dagger/engine"]
     engine --> ghcr --> registry
+
 
     go["🐹 Go SDK"]
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
@@ -54,6 +56,11 @@ flowchart TD
     elixir["🧪 Elixir SDK"]
     hex["🧪 hex.pm/packages/dagger"]
     repo ==> elixir --> hex
+
+    php["🐘 PHP SDK"]
+    php-repo["🐙 github.com/dagger/dagger-php-sdk"]
+    php-pkg["🐘 packagist.org/packages/dagger/dagger"]
+    repo ======> php --> php-repo --> php-pkg
 ```
 
 ## Let the team know
@@ -364,7 +371,7 @@ gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
 
-## 🐘 PHP SDK ⏱ `??mins`
+## 🐘 PHP SDK
 
 - [ ] Tag & publish:
 
