@@ -191,6 +191,11 @@ changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --cust
 changie batch patch
 changie merge
 
+cd ../php
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
+changie batch patch
+changie merge
+
 cd ../..
 ```
 
@@ -353,6 +358,33 @@ which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/pa
 gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/elixir/$ELIXIR_SDK_VERSION \
     --notes-file sdk/elixir/.changes/$ELIXIR_SDK_VERSION.md
+```
+
+- [ ] Check that release notes look good in `Preview`
+- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [ ] Click on **Publish release**
+
+## 🐘 PHP SDK ⏱ `??mins`
+
+- [ ] Tag & publish:
+
+```console
+cd sdk/php && export PHP_SDK_VERSION=$(changie latest) && cd ../..
+git tag "sdk/php/${PHP_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/php/${PHP_SDK_VERSION}
+```
+
+This will trigger the [`Publish PHP SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-php.yml)
+which publishes to
+[github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
+
+- [ ] Upload the release notes by running:
+
+```console
+gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/php/$PHP_SDK_VERSION \
+    --notes-file sdk/php/.changes/$PHP_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`
