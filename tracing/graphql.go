@@ -62,15 +62,26 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			slog.Warn("failed to digest id", "id", id.Display(), "err", err)
 			return next(ctx)
 		}
-		payload, resolveErr := anypb.New(id)
-		if resolveErr != nil {
-			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", resolveErr)
-			return next(ctx)
-		}
-		vtx := rec.Vertex(dig, id.Field, progrock.Internal())
+		// TODO: we don't need this for anything yet
+		// inputs, err := id.Inputs()
+		// if err != nil {
+		// 	slog.Warn("failed to digest inputs", "id", id.Display(), "err", err)
+		// 	return next(ctx)
+		// }
+		vtx := rec.Vertex(dig, id.Field,
+			// progrock.WithInputs(inputs...),
+			// TODO: these really shouldn't be internal, but for backwards
+			// compatibility we don't want to overwhelm the TUI with a bunch of
+			// vertices.
+			progrock.Internal())
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 
+		payload, err := anypb.New(id)
+		if err != nil {
+			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
+			return next(ctx)
+		}
 		// send ID payload to the frontend
 		vtx.Meta("id", payload)
 
