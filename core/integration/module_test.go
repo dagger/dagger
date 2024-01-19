@@ -3476,7 +3476,7 @@ class Test {
 	baz: string[]
 				
 	@field
-	neverSetDir?: Directory = undefined
+	neverSetDir?: Directory
 				
 	constructor(foo: string, dir: Directory, bar = 42, baz: string[] = []) {
 		this.foo = foo;
@@ -3603,6 +3603,29 @@ class Test:
         ))
 `,
 			},
+			{
+				sdk: "typescript",
+				source: `
+import { dag, object, field } from "@dagger.io/dagger"
+
+@object
+class Test {
+  @field
+  alpineVersion: string
+
+  // NOTE: this is standard to do async operations in the constructor.
+  // This is only for testing purpose but it shouldn't be done in real usage.
+  constructor() {
+    return (async () => {
+      this.alpineVersion = await dag.container().from("alpine:3.18.4").file("/etc/alpine-release").contents()
+
+
+      return this; // Return the newly-created instance
+  })();
+  }
+}				
+				`,
+			},
 		} {
 			tc := tc
 
@@ -3654,6 +3677,22 @@ class Test:
     def __init__(self):
         raise ValueError("too bad")
 `,
+			},
+			{
+				sdk: "typescript",
+				source: `
+import { object, field } from "@dagger.io/dagger"
+
+@object
+class Test {
+  @field
+  foo: string
+
+  constructor() {
+    throw new Error("too bad")
+  }
+}				
+				`,
 			},
 		} {
 			tc := tc
@@ -3711,6 +3750,48 @@ class Test:
 		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"sdk": "python"`)
+
+		_, err = ctr.With(daggerCall("bar")).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("typescript: with default factory", func(t *testing.T) {
+		t.Parallel()
+
+		content := identity.NewID()
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/test").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", fmt.Sprintf(`
+import { dag, File, object, field } from "@dagger.io/dagger"
+
+@object
+class Test {
+  @field
+  foo: File = dag.directory().withNewFile("foo.txt", "%s").file("foo.txt")
+
+  @field
+  bar: string[] = []
+
+  // Allow foo to be set through the constructor
+  constructor(foo?: File) {
+    if (foo) {
+      this.foo = foo
+    }
+  }
+}
+`, content),
+			))
+
+		out, err := ctr.With(daggerCall("foo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), content)
+
+		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"sdk": "typescript"`)
 
 		_, err = ctr.With(daggerCall("bar")).Sync(ctx)
 		require.NoError(t, err)

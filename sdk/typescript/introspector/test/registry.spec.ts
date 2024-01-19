@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import assert from "assert"
 
 import { dag, Container } from "../../api/client.gen.js"
@@ -9,7 +10,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.func
       greeting(name: string): string {
@@ -32,7 +32,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.func
       async asyncGreeting(name: string): Promise<string> {
@@ -55,7 +54,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.func
       async asyncGreeting(name: string): Promise<string> {
@@ -93,7 +91,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       prefix = "Hello"
 
@@ -119,7 +116,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.field
       prefix = "placeholder"
@@ -148,7 +144,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.field
       prefix = "placeholder"
@@ -180,7 +175,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.field
       ctr?: Ctr = undefined
@@ -209,7 +203,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.func
       compute(a: number, b: number, c: number): number {
@@ -254,7 +247,6 @@ describe("Registry", function () {
     }
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class Foo {
       @registry.field
       foo(): Bar {
@@ -282,7 +274,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.field
       msg: string
@@ -322,7 +313,6 @@ describe("Registry", function () {
     const registry = new Registry()
 
     @registry.object
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     class HelloWorld {
       @registry.func
       sayHi(msg = ["foobar"]): string {
