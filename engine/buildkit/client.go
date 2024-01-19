@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
-	"github.com/dagger/dagger/tracing"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
