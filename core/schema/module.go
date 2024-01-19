@@ -627,10 +627,7 @@ func (s *moduleSchema) updateModuleConfig(ctx context.Context, mod *core.Module)
 		modsCfgPerm = fs.FileMode(cfgFileStat.Mode & 0777)
 	}
 
-	sourceSubpath, err := mod.Source.Self.Subpath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module source path: %w", err)
-	}
+	sourceSubpath := mod.GeneratedSourceSubpath
 	modSrcRelPath, err := filepath.Rel("/", sourceSubpath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path relative to config: %w", err)
@@ -794,19 +791,21 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		// rule, if it's local we don't need to version it; if it's remote, we do.
 		src.Kind = core.ModuleSourceKindLocal
 
-		if !filepath.IsAbs(modPath) && !filepath.IsLocal(modPath) {
-			return nil, fmt.Errorf("local module source subpath points out of root: %q", modPath)
-		}
-
 		if args.RootDirectory.Valid {
 			parentDir, err := args.RootDirectory.Value.Load(ctx, s.dag)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load parent directory: %w", err)
 			}
 			src.RootDirectory = parentDir
+
+			if !filepath.IsAbs(modPath) && !filepath.IsLocal(modPath) {
+				return nil, fmt.Errorf("local module source subpath points out of root: %q", modPath)
+			}
+			modPath = filepath.Join("/", modPath)
 		}
+
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
-			Subpath: filepath.Join("/", modPath),
+			Subpath: modPath,
 		})
 	} else {
 		if !isGitHub {
@@ -933,6 +932,11 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path: %w", err)
 	}
+	if escapes, err := escapesParentDir(rootPath, depSourceSubpath); err != nil {
+		return nil, fmt.Errorf("failed to check if module source path escapes root: %w", err)
+	} else if escapes {
+		return nil, fmt.Errorf("module dep source path escapes root: %q", depSourceSubpath)
+	}
 	fullDepSourcePath := filepath.Join(rootPath, depSourceSubpath)
 
 	switch src.Self.Kind {
@@ -987,6 +991,10 @@ func (s *moduleSchema) moduleSourceAsModule(
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
 ) (*core.Module, error) {
+	if src.Self.RootDirectory.Self == nil {
+		return nil, fmt.Errorf("cannot load module from module source with no root directory")
+	}
+
 	var mod dagql.Instance[*core.Module]
 	err := s.dag.Select(ctx, s.dag.Root(), &mod,
 		dagql.Selector{
@@ -1144,4 +1152,22 @@ func findUpConfigDir(
 
 	parentDirPath := filepath.Dir(curDirPath)
 	return findUpConfigDir(ctx, dir, parentDirPath)
+}
+
+// checks whether childRelPath goes above parentAbsPath, handling corner cases around
+// the fact that e.g. /../../.. is still /, etc.
+func escapesParentDir(parentAbsPath string, childRelPath string) (bool, error) {
+	if !filepath.IsAbs(parentAbsPath) {
+		return false, fmt.Errorf("parent path is not absolute: %s", parentAbsPath)
+	}
+	if filepath.IsAbs(childRelPath) {
+		return false, fmt.Errorf("child path is not relative: %s", childRelPath)
+	}
+
+	parentRelPath, err := filepath.Rel("/", parentAbsPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to get parent path relative to root: %w", err)
+	}
+	joinedPath := filepath.Join(parentRelPath, childRelPath)
+	return !filepath.IsLocal(joinedPath), nil
 }
