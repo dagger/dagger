@@ -93,7 +93,7 @@ type ModuleConfig struct {
 
 func (modCfg *ModuleConfig) Validate() error {
 	if modCfg.Source != "" {
-		// IsLocal validates that it's absolute but doesn't have any ../'s in it
+		// IsLocal validates that it's not absolute and doesn't have any ../'s in it
 		if !filepath.IsLocal(modCfg.Source) {
 			return fmt.Errorf("%s is not under the module configuration root", modCfg.Source)
 		}

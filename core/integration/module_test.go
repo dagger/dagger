@@ -4109,53 +4109,299 @@ func TestModuleNamespacing(t *testing.T) {
 	require.JSONEq(t, `{"test":{"fn":["*main.Sub1Obj made 1:yo", "*main.Sub2Obj made 2:yo"]}}`, out)
 }
 
-func TestModuleRoots(t *testing.T) {
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	t.Skip("Replace these tests w/ corner cases around source that aren't covered elsewhere")
+func TestModuleSourceConfigs(t *testing.T) {
+	// test dagger.json source configs that aren't inherently covered in other tests
 
 	t.Parallel()
-
 	c, ctx := connect(t)
 
-	moduleSrcPath, err := filepath.Abs("./testdata/modules/go/roots")
-	require.NoError(t, err)
+	t.Run("upgrade from old config", func(t *testing.T) {
+		t.Parallel()
 
-	entries, err := os.ReadDir(moduleSrcPath)
-	require.NoError(t, err)
+		baseWithOldConfig := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{"name": "test", "sdk": "go", "include": ["*"], "exclude": ["bar"], "dependencies": ["dep"]}`,
+			})
 
-	ctr := c.Container().From(alpineImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithMountedDirectory("/work", c.Host().Directory(moduleSrcPath))
+		// verify sync updates config to new format
+		confContents, err := baseWithOldConfig.With(daggerExec("mod", "sync")).File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t,
+			`{"modules":[{"name":"test","sdk":"go","source":".","include":["*"],"exclude":["bar"],"dependencies":[{"ref":"dep"}]}]}`,
+			confContents,
+		)
 
-	for _, entry := range entries {
-		entry := entry
-		if !entry.IsDir() {
-			continue
-		}
-		t.Run(entry.Name(), func(t *testing.T) {
+		// verify call works seamlessly even without explicit sync yet
+		out, err := baseWithOldConfig.With(daggerCall("container-echo", "--string-arg", "hey")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hey", strings.TrimSpace(out))
+	})
+
+	t.Run("old config with root fails", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{"name": "test", "sdk": "go", "root": ".."}`,
+			}).
+			With(daggerCall("container-echo", "--string-arg", "hey")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.Contains(t, `Cannot load module config with legacy "root" setting`, out)
+	})
+
+	t.Run("dep has separate config", func(t *testing.T) {
+		// Verify that if a local dep has its own dagger.json, that's used to load it correctly.
+		t.Parallel()
+
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/subdir/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/subdir/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "-m=test", "--name=test", "--sdk=go")).
+			With(daggerExec("mod", "install", "-m=test", "./subdir/dep")).
+			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
+			`,
+			})
+
+		// try invoking it from a few different paths, just for more corner case coverage
+
+		t.Run("from src dir", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.WithWorkdir("test").With(daggerCall("fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from src root", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.With(daggerCallAt("test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from root", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.WithWorkdir("/").With(daggerCallAt("work/test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from dep parent", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.WithWorkdir("/work/subdir").With(daggerCallAt("../test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from dep dir", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.WithWorkdir("/work/subdir/dep").With(daggerCallAt("../../test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+	})
+
+	t.Run("install dep from weird places", func(t *testing.T) {
+		t.Parallel()
+
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "-m=subdir/dep", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/subdir/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
+			`,
+			}).
+			With(daggerExec("mod", "init", "-m=test", "--name=test", "--sdk=go")).
+			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
+			`,
+			})
+
+		t.Run("from src dir", func(t *testing.T) {
+			// sanity test normal case
+			t.Parallel()
+			out, err := base.
+				WithWorkdir("/work/test").
+				With(daggerExec("mod", "install", "../subdir/dep")).
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from root", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.
+				WithWorkdir("/").
+				With(daggerExec("mod", "install", "-m=./work/test", "./work/subdir/dep")).
+				WithWorkdir("/work/test").
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from dep", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.
+				WithWorkdir("/work/subdir/dep").
+				With(daggerExec("mod", "install", "-m=../../test", ".")).
+				WithWorkdir("/work/test").
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from random place", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.
+				WithWorkdir("/var").
+				With(daggerExec("mod", "install", "-m=../work/test", "../work/subdir/dep")).
+				WithWorkdir("/work/test").
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+	})
+
+	t.Run("install out of tree dep fails", func(t *testing.T) {
+		t.Parallel()
+
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithWorkdir("/work/test").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go"))
+
+		t.Run("from src dir", func(t *testing.T) {
+			t.Parallel()
+			_, err := base.
+				WithWorkdir("/work/test").
+				With(daggerExec("mod", "install", "../dep")).
+				Sync(ctx)
+			require.ErrorContains(t, err, "local module source subpath points out of root")
+		})
+
+		t.Run("from dep dir", func(t *testing.T) {
+			t.Parallel()
+			_, err := base.
+				WithWorkdir("/work/dep").
+				With(daggerExec("mod", "install", "-m=../test", ".")).
+				Sync(ctx)
+			require.ErrorContains(t, err, "local module source subpath points out of root")
+		})
+
+		t.Run("from root", func(t *testing.T) {
+			t.Parallel()
+			_, err := base.
+				WithWorkdir("/").
+				With(daggerExec("mod", "install", "-m=work/test", "work/dep")).
+				Sync(ctx)
+			require.ErrorContains(t, err, "local module source subpath points out of root")
+		})
+	})
+
+	t.Run("malicious config", func(t *testing.T) {
+		// verify a maliciously constructed dagger.json is still handled correctly
+		t.Parallel()
+
+		base := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go"))
+
+		t.Run("source points to root", func(t *testing.T) {
 			t.Parallel()
 
-			ctr := ctr.WithWorkdir("/work/" + entry.Name())
+			base := base.
+				With(configFile(".", &modules.ModulesConfig{
+					Modules: []*modules.ModuleConfig{{
+						Name:   "evil",
+						Source: "..",
+						SDK:    "go",
+					}},
+				}))
 
-			out, err := ctr.
-				// With(daggerQuery(fmt.Sprintf(`{%s{hello}}`, strcase.ToLowerCamel(entry.Name())))).
-				With(daggerCall("hello")).
-				Stdout(ctx)
-			if strings.HasPrefix(entry.Name(), "good-") {
-				require.NoError(t, err)
-				require.JSONEq(t, fmt.Sprintf(`{"%s":{"hello": "hello"}}`, strcase.ToLowerCamel(entry.Name())), out)
-			} else if strings.HasPrefix(entry.Name(), "bad-") {
-				require.Error(t, err)
-				require.Regexp(t, "is not under the module configuration root", err.Error())
-			}
+			_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
+			require.ErrorContains(t, err, ".. is not under the module configuration root")
+
+			_, err = base.With(daggerExec("mod", "sync")).Sync(ctx)
+			require.ErrorContains(t, err, ".. is not under the module configuration root")
+
+			_, err = base.With(daggerExec("mod", "install", "./dep")).Sync(ctx)
+			require.ErrorContains(t, err, ".. is not under the module configuration root")
 		})
-	}
+
+		t.Run("dep points to root", func(t *testing.T) {
+			t.Parallel()
+
+			base := base.
+				With(configFile(".", &modules.ModulesConfig{
+					Modules: []*modules.ModuleConfig{{
+						Name:   "evil",
+						Source: ".",
+						SDK:    "go",
+						Dependencies: []*modules.ModuleConfigDependency{{
+							Ref: "..",
+						}},
+					}},
+				}))
+
+			_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
+			require.ErrorContains(t, err, "local module source subpath points out of root")
+
+			_, err = base.With(daggerExec("mod", "sync")).Sync(ctx)
+			require.ErrorContains(t, err, "local module source subpath points out of root")
+
+			_, err = base.With(daggerExec("mod", "install", "./dep")).Sync(ctx)
+			require.ErrorContains(t, err, "local module source subpath points out of root")
+		})
+	})
 }
 
 func TestModuleLoops(t *testing.T) {
@@ -4401,8 +4647,16 @@ func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContain
 }
 
 func daggerCall(args ...string) dagger.WithContainerFunc {
+	return daggerCallAt("", args...)
+}
+
+func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--debug", "call"}, args...), dagger.ContainerWithExecOpts{
+		execArgs := []string{"dagger", "--debug", "call"}
+		if modPath != "" {
+			execArgs = append(execArgs, "-m", modPath)
+		}
+		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -4412,6 +4666,19 @@ func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug", "functions"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func configFile(dirPath string, cfg *modules.ModulesConfig) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		cfgPath := filepath.Join(dirPath, "dagger.json")
+		cfgBytes, err := json.Marshal(cfg)
+		if err != nil {
+			panic(err)
+		}
+		return c.WithNewFile(cfgPath, dagger.ContainerWithNewFileOpts{
+			Contents: string(cfgBytes),
 		})
 	}
 }

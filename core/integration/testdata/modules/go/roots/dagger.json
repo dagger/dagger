@@ -1,9 +1,0 @@
-{
-  "modules": [
-    {
-      "name": "good-parent-dir",
-      "sdk": "go",
-      "source": "good-parent-dir"
-    }
-  ]
-}

@@ -452,6 +452,7 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, self dagql.Instance
 		if err != nil {
 			return nil, fmt.Errorf("failed to read module config file: %w", err)
 		}
+
 		if err := json.Unmarshal(configBytes, &modsCfg); err != nil {
 			return nil, fmt.Errorf("failed to decode module config: %w", err)
 		}
@@ -463,6 +464,7 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, self dagql.Instance
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path relative to config: %w", err)
 	}
+
 	modCfg, foundModCfg := modsCfg.ModuleConfigByPath(relSubpath)
 	if !foundModCfg {
 		// no config for this module found, need to initialize a new one
@@ -588,9 +590,16 @@ func (s *moduleSchema) moduleGeneratedSourceDirectory(
 	mod *core.Module,
 	args struct{},
 ) (*core.Directory, error) {
-	mod, err := s.updateCodegenAndRuntime(ctx, mod)
+	// update dagger.json in case there were changes
+	mod, err := s.updateModuleConfig(ctx, mod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update codegen/runtime: %w", err)
+		return nil, fmt.Errorf("failed to update module config: %w", err)
+	}
+
+	// run sdk codegen
+	mod, err = s.updateCodegenAndRuntime(ctx, mod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update with sdk codegen and runtime: %w", err)
 	}
 	return mod.GeneratedSourceDirectory.Self, nil
 }
@@ -785,6 +794,10 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		// rule, if it's local we don't need to version it; if it's remote, we do.
 		src.Kind = core.ModuleSourceKindLocal
 
+		if !filepath.IsAbs(modPath) && !filepath.IsLocal(modPath) {
+			return nil, fmt.Errorf("local module source subpath points out of root: %q", modPath)
+		}
+
 		if args.RootDirectory.Valid {
 			parentDir, err := args.RootDirectory.Value.Load(ctx, s.dag)
 			if err != nil {
@@ -855,6 +868,11 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		} else {
 			src.AsGitSource.Value.Subpath = "/"
 		}
+		subPath := src.AsGitSource.Value.Subpath
+		if !filepath.IsAbs(subPath) && !filepath.IsLocal(subPath) {
+			return nil, fmt.Errorf("git module source subpath points out of root: %q", subPath)
+		}
+		src.AsGitSource.Value.Subpath = filepath.Join("/", src.AsGitSource.Value.Subpath)
 
 		err = s.dag.Select(ctx, gitRef, &src.RootDirectory,
 			dagql.Selector{Field: "tree"},
