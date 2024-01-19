@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2011,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2019,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -7,7 +7,7 @@ This describes how to release Dagger:
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
-- [🐘 PHP SDK](#-php-sdk)
+- [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
@@ -371,7 +371,7 @@ gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
 
-## 🐘 PHP SDK
+## 🐘 PHP SDK ⏱ `5mins`
 
 - [ ] Tag & publish:
 
