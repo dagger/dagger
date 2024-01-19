@@ -3855,6 +3855,35 @@ class Wrapper:
 
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { dag, Container, object, func, field } from "@dagger.io/dagger"
+
+@object
+class WrappedContainer {
+  @field
+  unwrap: Container
+
+  constructor(unwrap: Container) {
+    this.unwrap = unwrap
+  }
+
+  @func
+  echo(msg: string): WrappedContainer {
+    return new WrappedContainer(this.unwrap.withExec(["echo", "-n", msg]))
+  }
+}
+
+@object
+class Wrapper {
+  @func
+  container(): WrappedContainer {
+    return new WrappedContainer(dag.container().from("alpine"))
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
@@ -4141,6 +4170,54 @@ def potato_%d() -> str:
 				Contents: mainSrc,
 			}).
 			With(daggerExec("mod", "init", "--name=potatoSack", "--sdk=python"))
+
+		var eg errgroup.Group
+		for i := 0; i < funcCount; i++ {
+			i := i
+			// just verify a subset work
+			if i%10 != 0 {
+				continue
+			}
+			eg.Go(func() error {
+				_, err := modGen.
+					With(daggerCall(fmt.Sprintf("potato%d", i))).
+					Sync(ctx)
+				return err
+			})
+		}
+		require.NoError(t, eg.Wait())
+	})
+
+	t.Run("typescript sdk", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		mainSrc := `
+		import { object, func } from "@dagger.io/dagger"
+
+@object
+class PotatoSack {
+		`
+
+		for i := 0; i < funcCount; i++ {
+			mainSrc += fmt.Sprintf(`
+  @func
+  potato_%d(): string {
+    return "potato #%d"
+  }			
+			`, i, i)
+		}
+
+		mainSrc += "\n}"
+
+		modGen := c.
+			Container().
+			From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(sdkSource("typescript", mainSrc)).
+			With(daggerExec("mod", "init", "--name=potatoSack", "--sdk=typescript"))
 
 		var eg errgroup.Group
 		for i := 0; i < funcCount; i++ {
