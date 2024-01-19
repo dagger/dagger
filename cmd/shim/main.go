@@ -443,12 +443,16 @@ func setupBundle() int {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
 			// keep the env var; we use it at runtime
 			keepEnv = append(keepEnv, env)
+
 			// provide the server id to connect back to
 			if execMetadata.ServerID == "" {
 				fmt.Fprintln(os.Stderr, "missing server id")
 				return errorExitCode
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
+
+			// propagate parent vertex ID
+			keepEnv = append(keepEnv, "_DAGGER_PROGROCK_PARENT="+execMetadata.ProgParent)
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -677,6 +681,10 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("error connecting to progrock: %w", err)
 	}
 	clientParams.ProgrockWriter = progW
+
+	if parentID := os.Getenv("_DAGGER_PROGROCK_PARENT"); parentID != "" {
+		clientParams.ProgrockParent = parentID
+	}
 
 	sess, ctx, err := client.Connect(ctx, clientParams)
 	if err != nil {

@@ -1471,8 +1471,8 @@ github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f h1:p4VB7kIXpOQvV
 github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f/go.mod h1:DD4vA1DwXk04H54A1oHXtwZmA0grkVMdPxx/VGLCah0=
 github.com/vito/midterm v0.1.4 h1:SALq5mQ+AgzeZxjL4loB6Uk5TZc9JMyX2ELA/NVH65c=
 github.com/vito/midterm v0.1.4/go.mod h1:Mm3u6lrpzo2EFSJbwksKOdottTJzYePK8c1KJy4aRbk=
-github.com/vito/progrock v0.10.2-0.20240112170756-062394b3e4ae h1:l5+peCyvBr937ywBwKfsPiCm9hFJwTKlShUNLwWr6BQ=
-github.com/vito/progrock v0.10.2-0.20240112170756-062394b3e4ae/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
+github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291 h1:VcLECqiOXx4PTEzsV0QlWVubUeE+k0ZclAlKpUuejo8=
+github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 h1:qZcnPZbiX8gGs3VmipVc3ft29vPYBZzlox/04Von6+k=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63/go.mod h1:KoQ+3z63GUJzQ7AhU0AWQNU+LPda2EwL/cx1PlbDzVQ=

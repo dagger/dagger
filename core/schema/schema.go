@@ -23,6 +23,7 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/vito/progrock"
 )
 
 type InitializeArgs struct {
@@ -95,6 +96,12 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rec := progrock.FromContext(ctx)
+	if callContext.ProgrockParent != "" {
+		rec = rec.WithParent(callContext.ProgrockParent)
+	}
+	ctx = progrock.ToContext(ctx, rec)
+
 	schema, err := callContext.Deps.Schema(ctx)
 	if err != nil {
 		// TODO: technically this is not *always* bad request, should ideally be more specific and differentiate
@@ -151,6 +158,8 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	s.root.MuxEndpoints(mux)
+
+	r = r.WithContext(ctx)
 
 	var handler http.Handler = mux
 	handler = flushAfterNBytes(buildkit.MaxFileContentsChunkSize)(handler)

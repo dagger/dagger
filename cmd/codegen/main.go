@@ -59,7 +59,12 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		progW = console.NewWriter(os.Stderr, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
 	}
 
-	rec := progrock.NewRecorder(progW)
+	var rec *progrock.Recorder
+	if parent := os.Getenv("_DAGGER_PROGROCK_PARENT"); parent != "" {
+		rec = progrock.NewSubRecorder(progW, parent)
+	} else {
+		rec = progrock.NewRecorder(progW)
+	}
 	defer rec.Complete()
 	defer rec.Close()
 

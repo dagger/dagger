@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/tracing"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -33,6 +34,7 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 )
@@ -248,12 +250,14 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			if execOp.Meta.ProxyEnv == nil {
 				execOp.Meta.ProxyEnv = &bksolverpb.ProxyEnv{}
 			}
-			var err error
-			execOp.Meta.ProxyEnv.FtpProxy, err = ContainerExecUncachedMetadata{
+			execMeta := ContainerExecUncachedMetadata{
 				ParentClientIDs: clientMetadata.ClientIDs(),
 				ServerID:        clientMetadata.ServerID,
 				ProgSockPath:    c.ProgSockPath,
-			}.ToPBFtpProxyVal()
+				ProgParent:      progrock.FromContext(ctx).Parent,
+			}
+			var err error
+			execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 			if err != nil {
 				return err
 			}
@@ -686,7 +690,9 @@ func withOutgoingContext(ctx context.Context) context.Context {
 type ContainerExecUncachedMetadata struct {
 	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
 	ServerID        string   `json:"serverID,omitempty"`
-	ProgSockPath    string   `json:"progSockPath,omitempty"`
+	// Progrock propagation
+	ProgSockPath string `json:"progSockPath,omitempty"`
+	ProgParent   string `json:"progParent,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {

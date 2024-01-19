@@ -81,11 +81,12 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			}
 		}
 
-		// group any future vertices (e.g. from Buildkit) under this one
-		rec = rec.WithGroup(id.Field, progrock.WithGroupID(dig.String()))
+		// group any self-calls or Buildkit vertices beneath this vertex
+		rec = rec.WithParent(dig.String())
 
 		// call the resolver with progrock wired up
 		ctx = progrock.ToContext(ctx, rec)
+
 		res, resolveErr := next(ctx)
 
 		if resolveErr != nil {
@@ -94,8 +95,13 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			slog.Warn("error resolving "+id.Display(), "error", resolveErr)
 		}
 
+		// record an object result as an output of this vertex
+		//
+		// this allows the UI to "simplify" this ID back to its creator ID when it
+		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
+		// instead of the full container().from().[...].stdout() ID
 		if obj, ok := res.(dagql.Object); ok {
-			objDigest, err := obj.ID().Canonical().Digest()
+			objDigest, err := obj.ID().Digest()
 			if err != nil {
 				slog.Error("failed to digest object", "id", id.Display(), "err", err)
 			} else {
