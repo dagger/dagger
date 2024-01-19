@@ -4808,7 +4808,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("mod", "install", "../dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, "local module source subpath points out of root")
+			require.ErrorContains(t, err, `module dep source path escapes root: "../dep"`)
 		})
 
 		t.Run("from dep dir", func(t *testing.T) {
@@ -4817,7 +4817,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 				WithWorkdir("/work/dep").
 				With(daggerExec("mod", "install", "-m=../test", ".")).
 				Sync(ctx)
-			require.ErrorContains(t, err, "local module source subpath points out of root")
+			require.ErrorContains(t, err, `module dep source path escapes root: "../dep"`)
 		})
 
 		t.Run("from root", func(t *testing.T) {
@@ -4826,7 +4826,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 				WithWorkdir("/").
 				With(daggerExec("mod", "install", "-m=work/test", "work/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, "local module source subpath points out of root")
+			require.ErrorContains(t, err, `module dep source path escapes root: "../dep"`)
 		})
 	})
 

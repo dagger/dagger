@@ -179,18 +179,18 @@ var moduleInstallCmd = &cobra.Command{
 
 			var depSrcs []*dagger.ModuleSource
 			for _, depRefStr := range extraArgs {
-				depConf, err := getModuleConfigurationForSourceRef(ctx, dag, depRefStr)
+				depSrc := dag.ModuleSource(depRefStr)
+				depSrcKind, err := depSrc.Kind(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to get configured module: %w", err)
+					return fmt.Errorf("failed to get module ref kind: %w", err)
 				}
-				if !depConf.Exists {
-					return fmt.Errorf("dependency module %s does not exist", depRefStr)
-				}
-
-				depSrc := depConf.Mod.Source()
-				// handle the case where the dep is local but uses a different dagger.json in a subdir
-				if depConf.SourceKind == dagger.Localsource && modConf.LocalSourceRootPath != depConf.LocalSourceRootPath {
-					depRelPath, err := filepath.Rel(modConf.LocalSourceRootPath, depConf.LocalSourceSubpath)
+				if depSrcKind == dagger.Localsource {
+					// need to ensure that local dep paths are relative to the parent root source
+					depAbsPath, err := filepath.Abs(depRefStr)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute path for %s: %w", depRefStr, err)
+					}
+					depRelPath, err := filepath.Rel(modConf.LocalSourceRootPath, depAbsPath)
 					if err != nil {
 						return fmt.Errorf("failed to get relative path: %w", err)
 					}
