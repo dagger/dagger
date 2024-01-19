@@ -1,9 +1,0 @@
-{
-  "modules": [
-    {
-      "name": "bad-sibling-dir",
-      "sdk": "go",
-      "source": "../root"
-    }
-  ]
-}

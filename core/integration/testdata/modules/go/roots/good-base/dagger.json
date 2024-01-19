@@ -1,9 +1,0 @@
-{
-  "modules": [
-    {
-      "name": "good-base",
-      "sdk": "go",
-      "source": "."
-    }
-  ]
-}
