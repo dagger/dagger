@@ -5,7 +5,7 @@ go 1.21
 replace dagger.io/dagger => ./sdk/go
 
 require (
-	dagger.io/dagger v0.9.6
+	dagger.io/dagger v0.9.7
 	github.com/99designs/gqlgen v0.17.41
 	github.com/Khan/genqlient v0.6.0
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
