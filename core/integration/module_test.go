@@ -1036,7 +1036,7 @@ func (b *bar) Hello(name string) string {
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.objects")
+	objs := gjson.Get(out, "host.directory.asModule.initialize.objects")
 
 	require.Equal(t, 1, len(objs.Array()))
 	minimal := objs.Get(`0.asObject`)
@@ -1072,7 +1072,7 @@ func (b *bar) Hello(name string) string {
 
 	out, err = modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	objs = gjson.Get(out, "host.directory.asModule.objects")
+	objs = gjson.Get(out, "host.directory.asModule.initialize.objects")
 
 	require.Equal(t, 2, len(objs.Array()))
 	minimal = objs.Get(`0.asObject`)
@@ -1185,7 +1185,7 @@ func (b *Baz) Hello() (string, error) {
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.objects")
+	objs := gjson.Get(out, "host.directory.asModule.initialize.objects")
 
 	require.Equal(t, 4, len(objs.Array()))
 
@@ -1204,25 +1204,27 @@ query {
   host {
     directory(path: ".") {
       asModule {
-        objects {
-          asObject {
-            name
-            description
-            functions {
-              name
-              description
-              args {
-                name
-                description
-                defaultValue
-              }
-            }
-            fields {
-              name
-              description
-            }
-          }
-        }
+				initialize {
+					objects {
+						asObject {
+							name
+							description
+							functions {
+								name
+								description
+								args {
+									name
+									description
+									defaultValue
+								}
+							}
+							fields {
+								name
+								description
+							}
+						}
+					}
+				}
       }
     }
   }
@@ -1246,7 +1248,7 @@ func TestModuleGoDocs(t *testing.T) {
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
 	require.Equal(t, "Minimal", obj.Get("name").String())
 
 	hello := obj.Get(`functions.#(name="hello")`)
@@ -1356,7 +1358,7 @@ func (m *Minimal) HelloFinal(
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
 	require.Equal(t, "Minimal", obj.Get("name").String())
 	require.Equal(t, "Minimal is a thing", obj.Get("description").String())
 
@@ -1680,7 +1682,7 @@ class Minimal:
 
 			out, err := modGen.With(inspectModule).Stdout(ctx)
 			require.NoError(t, err)
-			obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+			obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
 			require.Equal(t, "Minimal", obj.Get("name").String())
 			require.Len(t, obj.Get(`fields`).Array(), 1)
 			prop := obj.Get(`fields.#(name="foo")`)
