@@ -304,6 +304,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a GitModuleSource from its ID.
+     */
+    public function loadGitModuleSourceFromID(GitModuleSourceId|GitModuleSource $id): GitModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGitModuleSourceFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\GitModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a GitRef from its ID.
      */
     public function loadGitRefFromID(GitRefId|GitRef $id): GitRef
@@ -374,13 +384,23 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a ModuleConfig from its ID.
+     * Load a LocalModuleSource from its ID.
      */
-    public function loadModuleConfigFromID(ModuleConfigId|ModuleConfig $id): ModuleConfig
+    public function loadLocalModuleSourceFromID(LocalModuleSourceId|LocalModuleSource $id): LocalModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleConfigFromID');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLocalModuleSourceFromID');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\ModuleConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LocalModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a ModuleDependency from its ID.
+     */
+    public function loadModuleDependencyFromID(ModuleDependencyId|ModuleDependency $id): ModuleDependency
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleDependencyFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ModuleDependency($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -391,6 +411,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a ModuleSource from its ID.
+     */
+    public function loadModuleSourceFromID(ModuleSourceId|ModuleSource $id): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleSourceFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -473,16 +503,23 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load the static configuration for a module from the given source directory and optional subpath.
+     * Create a new module source instance from a source ref string.
      */
-    public function moduleConfig(DirectoryId|Directory $sourceDirectory, ?string $subpath = ''): ModuleConfig
+    public function moduleSource(
+        string $refString,
+        DirectoryId|Directory|null $rootDirectory = null,
+        ?bool $stable = false,
+    ): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleConfig');
-        $innerQueryBuilder->setArgument('sourceDirectory', $sourceDirectory);
-        if (null !== $subpath) {
-        $innerQueryBuilder->setArgument('subpath', $subpath);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
+        $innerQueryBuilder->setArgument('refString', $refString);
+        if (null !== $rootDirectory) {
+        $innerQueryBuilder->setArgument('rootDirectory', $rootDirectory);
         }
-        return new \Dagger\ModuleConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        if (null !== $stable) {
+        $innerQueryBuilder->setArgument('stable', $stable);
+        }
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

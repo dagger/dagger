@@ -723,8 +723,8 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
-  Gitsource = "GitSource",
-  Localsource = "LocalSource",
+  GitSource = "GIT_SOURCE",
+  LocalSource = "LOCAL_SOURCE",
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -829,7 +829,7 @@ export type ClientHttpOpts = {
 
 export type ClientModuleSourceOpts = {
   /**
-   * An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.
+   * An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
    */
   rootDirectory?: Directory
 
@@ -5206,7 +5206,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * Retrieves the module with basic configuration loaded, ready for initialization.
+   * Retrieves the module with basic configuration loaded if present.
    * @param source The module source to initialize from.
    */
   withSource = (source: ModuleSource): Module_ => {
@@ -5290,6 +5290,7 @@ export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
+  private readonly _moduleName?: string = undefined
   private readonly _subpath?: string = undefined
 
   /**
@@ -5300,6 +5301,7 @@ export class ModuleSource extends BaseClient {
     _id?: ModuleSourceID,
     _asString?: string,
     _kind?: ModuleSourceKind,
+    _moduleName?: string,
     _subpath?: string
   ) {
     super(parent)
@@ -5307,6 +5309,7 @@ export class ModuleSource extends BaseClient {
     this._id = _id
     this._asString = _asString
     this._kind = _kind
+    this._moduleName = _moduleName
     this._subpath = _subpath
   }
 
@@ -5369,7 +5372,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * A human readable ref string to this module source.
+   * A human readable ref string representation of this module source.
    */
   asString = async (): Promise<string> => {
     if (this._asString) {
@@ -5398,6 +5401,27 @@ export class ModuleSource extends BaseClient {
         ...this._queryTree,
         {
           operation: "kind",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * If set, the name of the module this source references
+   */
+  moduleName = async (): Promise<string> => {
+    if (this._moduleName) {
+      return this._moduleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "moduleName",
         },
       ],
       await this._ctx.connection()
@@ -6580,7 +6604,7 @@ export class Client extends BaseClient {
   /**
    * Create a new module source instance from a source ref string.
    * @param refString The string ref representation of the module source
-   * @param opts.rootDirectory An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.
+   * @param opts.rootDirectory An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
    * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
    */
   moduleSource = (

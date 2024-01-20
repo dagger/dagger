@@ -3914,7 +3914,7 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Retrieves the module with basic configuration loaded, ready for initialization.
+    /// Retrieves the module with basic configuration loaded if present.
     ///
     /// # Arguments
     ///
@@ -3988,7 +3988,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// A human readable ref string to this module source.
+    /// A human readable ref string representation of this module source.
     pub async fn as_string(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
@@ -4000,6 +4000,11 @@ impl ModuleSource {
     }
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// If set, the name of the module this source references
+    pub async fn module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("moduleName");
         query.execute(self.graphql_client.clone()).await
     }
     /// Resolve the provided module source arg as a dependency relative to this module source.
@@ -4158,7 +4163,7 @@ pub struct QueryHttpOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts {
-    /// An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.
+    /// An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
     #[builder(setter(into, strip_option), default)]
     pub root_directory: Option<DirectoryId>,
     /// If true, enforce that the source is a stable version for source kinds that support versioning.
@@ -5562,9 +5567,9 @@ pub enum ImageMediaTypes {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {
-    #[serde(rename = "GitSource")]
+    #[serde(rename = "GIT_SOURCE")]
     GitSource,
-    #[serde(rename = "LocalSource")]
+    #[serde(rename = "LOCAL_SOURCE")]
     LocalSource,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]

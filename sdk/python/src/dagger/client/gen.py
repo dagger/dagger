@@ -210,9 +210,9 @@ class ImageMediaTypes(Enum):
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
-    GitSource = "GitSource"
+    GIT_SOURCE = "GIT_SOURCE"
 
-    LocalSource = "LocalSource"
+    LOCAL_SOURCE = "LOCAL_SOURCE"
 
 
 class NetworkProtocol(Enum):
@@ -4234,8 +4234,7 @@ class Module(Type):
 
     @typecheck
     def with_source(self, source: "ModuleSource") -> "Module":
-        """Retrieves the module with basic configuration loaded, ready for
-        initialization.
+        """Retrieves the module with basic configuration loaded if present.
 
         Parameters
         ----------
@@ -4318,7 +4317,7 @@ class ModuleSource(Type):
 
     @typecheck
     async def as_string(self) -> str:
-        """A human readable ref string to this module source.
+        """A human readable ref string representation of this module source.
 
         Returns
         -------
@@ -4380,6 +4379,28 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("kind", _args)
         return await _ctx.execute(ModuleSourceKind)
+
+    @typecheck
+    async def module_name(self) -> str | None:
+        """If set, the name of the module this source references
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("moduleName", _args)
+        return await _ctx.execute(str | None)
 
     @typecheck
     def resolve_dependency(self, dep: "ModuleSource") -> "ModuleSource":
@@ -5262,7 +5283,7 @@ class Client(Root):
             The string ref representation of the module source
         root_directory:
             An explicitly set root directory for the module source. This is
-            required to load local sources as modules, other source types
+            required to load local sources as modules; other source types
             implicitly encode the root directory and do not require this.
         stable:
             If true, enforce that the source is a stable version for source

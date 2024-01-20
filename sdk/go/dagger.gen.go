@@ -4181,7 +4181,7 @@ func (r *Module) WithSDK(sdk string) *Module {
 	}
 }
 
-// Retrieves the module with basic configuration loaded, ready for initialization.
+// Retrieves the module with basic configuration loaded if present.
 func (r *Module) WithSource(source *ModuleSource) *Module {
 	assertNotNil("source", source)
 	q := r.q.Select("withSource")
@@ -4255,10 +4255,11 @@ type ModuleSource struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	asString *string
-	id       *ModuleSourceID
-	kind     *ModuleSourceKind
-	subpath  *string
+	asString   *string
+	id         *ModuleSourceID
+	kind       *ModuleSourceKind
+	moduleName *string
+	subpath    *string
 }
 type WithModuleSourceFunc func(r *ModuleSource) *ModuleSource
 
@@ -4297,7 +4298,7 @@ func (r *ModuleSource) AsModule() *Module {
 	}
 }
 
-// A human readable ref string to this module source.
+// A human readable ref string representation of this module source.
 func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	if r.asString != nil {
 		return *r.asString, nil
@@ -4357,6 +4358,19 @@ func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	q := r.q.Select("kind")
 
 	var response ModuleSourceKind
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// If set, the name of the module this source references
+func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
+	if r.moduleName != nil {
+		return *r.moduleName, nil
+	}
+	q := r.q.Select("moduleName")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -5273,7 +5287,7 @@ func (r *Client) Module() *Module {
 
 // ModuleSourceOpts contains options for Client.ModuleSource
 type ModuleSourceOpts struct {
-	// An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.
+	// An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
 	RootDirectory *Directory
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
@@ -6033,9 +6047,9 @@ type ModuleSourceKind string
 func (ModuleSourceKind) IsEnum() {}
 
 const (
-	Gitsource ModuleSourceKind = "GitSource"
+	GitSource ModuleSourceKind = "GIT_SOURCE"
 
-	Localsource ModuleSourceKind = "LocalSource"
+	LocalSource ModuleSourceKind = "LOCAL_SOURCE"
 )
 
 type NetworkProtocol string

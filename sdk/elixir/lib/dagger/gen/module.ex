@@ -243,7 +243,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "Retrieves the module with basic configuration loaded, ready for initialization.\n\n## Required Arguments\n\n* `source` - The module source to initialize from."
+    @doc "Retrieves the module with basic configuration loaded if present.\n\n## Required Arguments\n\n* `source` - The module source to initialize from."
     @spec with_source(t(), Dagger.ModuleSource.t()) :: Dagger.Module.t()
     def with_source(%__MODULE__{} = module, source) do
       selection = select(module.selection, "withSource")

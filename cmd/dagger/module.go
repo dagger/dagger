@@ -142,7 +142,7 @@ var moduleInitCmd = &cobra.Command{
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
 
-			if modConf.SourceKind != dagger.Localsource {
+			if modConf.SourceKind != dagger.LocalSource {
 				return fmt.Errorf("module must be local")
 			}
 			if modConf.Exists {
@@ -184,7 +184,7 @@ var moduleInstallCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to get module ref kind: %w", err)
 				}
-				if depSrcKind == dagger.Localsource {
+				if depSrcKind == dagger.LocalSource {
 					// need to ensure that local dep paths are relative to the parent root source
 					depAbsPath, err := filepath.Abs(depRefStr)
 					if err != nil {
@@ -197,7 +197,7 @@ var moduleInstallCmd = &cobra.Command{
 					depSrc = dag.ModuleSource(depRelPath)
 				}
 
-				depSrcs = append(depSrcs, modConf.Mod.Source().ResolveDependency(depSrc))
+				depSrcs = append(depSrcs, depSrc)
 			}
 
 			_, err = modConf.Mod.WithDependencies(depSrcs).GeneratedSourceDirectory().Export(ctx, modConf.LocalSourceRootPath)
@@ -392,7 +392,7 @@ func getModuleConfigurationForSourceRef(ctx context.Context, dag *dagger.Client,
 		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
 	}
 
-	if conf.SourceKind == dagger.Localsource {
+	if conf.SourceKind == dagger.LocalSource {
 		conf.LocalSourceSubpath, err = filepath.Abs(srcRefStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)

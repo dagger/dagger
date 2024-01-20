@@ -43,7 +43,7 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "A human readable ref string to this module source."
+    @doc "A human readable ref string representation of this module source."
     @spec as_string(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def as_string(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "asString")
@@ -65,6 +65,15 @@ defmodule Dagger.ModuleSource do
     @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
     def kind(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "kind")
+      execute(selection, module_source.client)
+    end
+  )
+
+  (
+    @doc "If set, the name of the module this source references"
+    @spec module_name(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
+    def module_name(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "moduleName")
       execute(selection, module_source.client)
     end
   )
