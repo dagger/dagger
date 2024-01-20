@@ -147,8 +147,31 @@ func (mod *Module) WithDependencies(
 
 	mod = mod.Clone()
 
-	// first figure out the set of deps, with deps keyed by their symbolic ref string, which
-	// de-dupes equivalent sources at different versions, preferring the version provided
+	// resolve the dependency relative to this module's source
+	var eg errgroup.Group
+	for i, depSrc := range dependencies {
+		i, depSrc := i, depSrc
+		eg.Go(func() error {
+			err := srv.Select(ctx, mod.Source, &dependencies[i],
+				dagql.Selector{
+					Field: "resolveDependency",
+					Args: []dagql.NamedInput{
+						{Name: "dep", Value: dagql.NewID[*ModuleSource](depSrc.ID())},
+					},
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to resolve dependency module: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	// figure out the set of deps, keyed by their symbolic ref string, which de-dupes
+	// equivalent sources at different versions, preferring the version provided
 	// in the dependencies arg here
 	depSet := make(map[string]dagql.Instance[*ModuleSource])
 	for _, depCfg := range mod.DependencyConfig {
@@ -183,8 +206,8 @@ func (mod *Module) WithDependencies(
 		return refStrs[i] < refStrs[j]
 	})
 
-	var eg errgroup.Group
 	mod.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependencyConfig))
+	eg = errgroup.Group{}
 	for i, depCfg := range mod.DependencyConfig {
 		i, depCfg := i, depCfg
 		eg.Go(func() error {
@@ -696,13 +719,13 @@ type SDK interface {
 
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Codegen(context.Context, *Module, dagql.Instance[*Directory], string) (*GeneratedCode, error)
+	Codegen(context.Context, *Module, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
 
 	/* Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
 
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Runtime(context.Context, *Module, dagql.Instance[*Directory], string) (*Container, error)
+	Runtime(context.Context, *Module, dagql.Instance[*ModuleSource]) (*Container, error)
 }
 
 var _ HasPBDefinitions = (*Module)(nil)

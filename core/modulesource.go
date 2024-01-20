@@ -16,8 +16,8 @@ type ModuleSourceKind string
 var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
 
 var (
-	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LocalSource")
-	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GitSource")
+	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
+	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GIT_SOURCE")
 )
 
 func (proto ModuleSourceKind) Type() *ast.Type {

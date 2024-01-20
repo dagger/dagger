@@ -24,8 +24,8 @@ const (
 )
 
 // ModuleRuntime returns a container with the node entrypoint ready to be called.
-func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
-	ctr, err := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
+func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
+	ctr, err := t.CodegenBase(ctx, modSource, introspectionJson)
 	if err != nil {
 		return nil, err
 	}
@@ -38,16 +38,16 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *Directory,
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*GeneratedCode, error) {
+func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*GeneratedCode, error) {
 	// Get base container
-	ctr, err := t.CodegenBase(ctx, modSource, subPath, introspectionJson)
+	ctr, err := t.CodegenBase(ctx, modSource, introspectionJson)
 	if err != nil {
 		return nil, err
 	}
 
 	// Compare difference to improve performances
 	modified := ctr.Directory(ModSourceDirPath)
-	diff := modSource.Diff(modified)
+	diff := modSource.RootDirectory().Diff(modified)
 
 	// Return the difference and fill .gitignore
 	return dag.GeneratedCode(diff).
@@ -58,11 +58,14 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *Directory, subPa
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, subPath string, introspectionJson string) (*Container, error) {
+func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
 	// Load module name for the template class
-	name, err := dag.ModuleSource(subPath, ModuleSourceOpts{
-		RootDirectory: modSource,
-	}).AsModule().Name(ctx)
+	name, err := modSource.ModuleName(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %v", err)
+	}
+
+	subPath, err := modSource.Subpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
@@ -79,7 +82,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *Directory, s
 			Include: []string{"runtime/template", "runtime/bin"},
 		})).
 		// Mount users' module
-		WithMountedDirectory(ModSourceDirPath, modSource).
+		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,

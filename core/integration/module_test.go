@@ -4393,13 +4393,13 @@ func TestModuleSourceConfigs(t *testing.T) {
 				}))
 
 			_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-			require.ErrorContains(t, err, "local module source subpath points out of root")
+			require.ErrorContains(t, err, `module dep source path escapes root: ".."`)
 
 			_, err = base.With(daggerExec("mod", "sync")).Sync(ctx)
-			require.ErrorContains(t, err, "local module source subpath points out of root")
+			require.ErrorContains(t, err, `module dep source path escapes root: ".."`)
 
 			_, err = base.With(daggerExec("mod", "install", "./dep")).Sync(ctx)
-			require.ErrorContains(t, err, "local module source subpath points out of root")
+			require.ErrorContains(t, err, `module dep source path escapes root: ".."`)
 		})
 	})
 }

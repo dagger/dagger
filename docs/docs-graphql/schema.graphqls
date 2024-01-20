@@ -1484,9 +1484,7 @@ type Module {
     sdk: String!
   ): Module!
 
-  """
-  Retrieves the module with basic configuration loaded, ready for initialization.
-  """
+  """Retrieves the module with basic configuration loaded if present."""
   withSource(
     """The module source to initialize from."""
     source: ModuleSourceID!
@@ -1523,12 +1521,15 @@ type ModuleSource {
   """
   asModule: Module!
 
-  """A human readable ref string to this module source."""
+  """A human readable ref string representation of this module source."""
   asString: String!
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
   kind: ModuleSourceKind!
+
+  """If set, the name of the module this source references"""
+  moduleName: String
 
   """
   Resolve the provided module source arg as a dependency relative to this module source.
@@ -1552,8 +1553,8 @@ scalar ModuleSourceID
 
 """The kind of module source."""
 enum ModuleSourceKind {
-  LocalSource
-  GitSource
+  LOCAL_SOURCE
+  GIT_SOURCE
 }
 
 """Transport layer network protocol associated to a port."""
@@ -1841,7 +1842,7 @@ type Query {
 
     """
     An explicitly set root directory for the module source. This is required to
-    load local sources as modules, other source types implicitly encode the root
+    load local sources as modules; other source types implicitly encode the root
     directory and do not require this.
     """
     rootDirectory: DirectoryID

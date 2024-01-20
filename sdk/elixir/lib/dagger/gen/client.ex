@@ -541,7 +541,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Create a new module source instance from a source ref string.\n\n## Required Arguments\n\n* `ref_string` - The string ref representation of the module source\n\n## Optional Arguments\n\n* `root_directory` - An explicitly set root directory for the module source. This is required to load local sources as modules, other source types implicitly encode the root directory and do not require this.\n* `stable` - If true, enforce that the source is a stable version for source kinds that support versioning."
+    @doc "Create a new module source instance from a source ref string.\n\n## Required Arguments\n\n* `ref_string` - The string ref representation of the module source\n\n## Optional Arguments\n\n* `root_directory` - An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.\n* `stable` - If true, enforce that the source is a stable version for source kinds that support versioning."
     @spec module_source(t(), Dagger.String.t(), keyword()) :: Dagger.ModuleSource.t()
     def module_source(%__MODULE__{} = query, ref_string, optional_args \\ []) do
       selection = select(query.selection, "moduleSource")
