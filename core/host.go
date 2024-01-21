@@ -12,9 +12,22 @@ import (
 	"github.com/vito/progrock"
 )
 
-type Host struct {
+type Local struct {
 	Query *Query
 }
+
+func (*Local) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Local",
+		NonNull:   true,
+	}
+}
+
+func (*Local) TypeDescription() string {
+	return "Information about the host environment."
+}
+
+type Host Local
 
 func (*Host) Type() *ast.Type {
 	return &ast.Type{
@@ -24,7 +37,7 @@ func (*Host) Type() *ast.Type {
 }
 
 func (*Host) TypeDescription() string {
-	return "Information about the host environment."
+	return "TODO"
 }
 
 type CopyFilter struct {
@@ -60,7 +73,7 @@ func LoadBlob(ctx context.Context, srv *dagql.Server, desc specs.Descriptor) (i 
 	return
 }
 
-func (host *Host) Directory(
+func (host *Local) Directory(
 	ctx context.Context,
 	srv *dagql.Server,
 	dirPath string,
@@ -88,7 +101,7 @@ func (host *Host) Directory(
 	return LoadBlob(ctx, srv, desc)
 }
 
-func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) (dagql.Instance[*File], error) {
+func (host *Local) File(ctx context.Context, srv *dagql.Server, filePath string) (dagql.Instance[*File], error) {
 	fileDir, fileName := filepath.Split(filePath)
 	var i dagql.Instance[*File]
 	if err := srv.Select(ctx, srv.Root(), &i, dagql.Selector{
@@ -119,7 +132,7 @@ func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) 
 	return i, nil
 }
 
-func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
+func (host *Local) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
 	secretFileContent, err := host.Query.Buildkit.ReadCallerHostFile(ctx, path)
 	if err != nil {
 		return i, fmt.Errorf("read secret file: %w", err)
@@ -139,6 +152,6 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 	return
 }
 
-func (host *Host) Socket(sockPath string) *Socket {
+func (host *Local) Socket(sockPath string) *Socket {
 	return NewHostUnixSocket(sockPath)
 }

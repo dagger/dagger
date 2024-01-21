@@ -21,9 +21,10 @@ var _ SchemaResolvers = &hostSchema{}
 
 func (s *hostSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
-			return parent.NewHost(), nil
+		dagql.Func("local", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Local, error) {
+			return parent.NewLocal(), nil
 		}).Doc(`Queries the host environment.`),
+
 		dagql.Func("blob", func(ctx context.Context, parent *core.Query, args struct {
 			Digest       string `doc:"Digest of the blob"`
 			Size         int64  `doc:"Size of the blob"`
@@ -53,9 +54,13 @@ func (s *hostSchema) Install() {
 			}
 			return core.NewDirectory(parent, blobDef.ToPB(), "", parent.Platform, nil), nil
 		}).Doc("Retrieves a content-addressed blob."),
+
+		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
+			return (*core.Host)(parent.NewLocal()), nil
+		}).Deprecated(`TODO`).Doc(`TODO`),
 	}.Install(s.srv)
 
-	dagql.Fields[*core.Host]{
+	hostFields := dagql.Fields[*core.Local]{
 		dagql.Func("directory", s.directory).
 			Impure("The `directory` field loads data from the local machine.",
 				`Despite being impure, this field returns a pure Directory object. It
@@ -110,7 +115,11 @@ func (s *hostSchema) Install() {
 				`The file is limited to a size of 512000 bytes.`).
 			ArgDoc("name", `The user defined name for this secret.`).
 			ArgDoc("path", `Location of the file to set as a secret.`),
-	}.Install(s.srv)
+	}
+	hostFields.Install(s.srv)
+	dagql.AliasFields[*core.Local, *core.Host](hostFields).Install(s.srv, func(host *core.Host) *core.Local {
+		return (*core.Local)(host)
+	})
 }
 
 type setSecretFileArgs struct {
@@ -118,7 +127,7 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (dagql.Instance[*core.Secret], error) {
+func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Local, args setSecretFileArgs) (dagql.Instance[*core.Secret], error) {
 	return host.SetSecretFile(ctx, s.srv, args.Name, args.Path)
 }
 
@@ -128,7 +137,7 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *hostSchema) directory(ctx context.Context, host *core.Host, args hostDirectoryArgs) (dagql.Instance[*core.Directory], error) {
+func (s *hostSchema) directory(ctx context.Context, host *core.Local, args hostDirectoryArgs) (dagql.Instance[*core.Directory], error) {
 	return host.Directory(ctx, s.srv, args.Path, "host.directory", args.CopyFilter)
 }
 
@@ -136,7 +145,7 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (*core.Socket, error) {
+func (s *hostSchema) socket(ctx context.Context, host *core.Local, args hostSocketArgs) (*core.Socket, error) {
 	return host.Socket(args.Path), nil
 }
 
@@ -144,7 +153,7 @@ type hostFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) file(ctx context.Context, host *core.Host, args hostFileArgs) (dagql.Instance[*core.File], error) {
+func (s *hostSchema) file(ctx context.Context, host *core.Local, args hostFileArgs) (dagql.Instance[*core.File], error) {
 	return host.File(ctx, s.srv, args.Path)
 }
 
@@ -154,7 +163,7 @@ type hostTunnelArgs struct {
 	Native  bool                                  `default:"false"`
 }
 
-func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTunnelArgs) (*core.Service, error) {
+func (s *hostSchema) tunnel(ctx context.Context, parent *core.Local, args hostTunnelArgs) (*core.Service, error) {
 	inst, err := args.Service.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
@@ -205,7 +214,7 @@ type hostServiceArgs struct {
 	Ports []dagql.InputObject[core.PortForward]
 }
 
-func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+func (s *hostSchema) service(ctx context.Context, parent *core.Local, args hostServiceArgs) (*core.Service, error) {
 	if len(args.Ports) == 0 {
 		return nil, errors.New("no ports specified")
 	}

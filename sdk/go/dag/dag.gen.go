@@ -122,7 +122,9 @@ func Git(url string, opts ...dagger.GitOpts) *dagger.GitRepository {
 	return client.Git(url, opts...)
 }
 
-// Queries the host environment.
+// TODO
+//
+// Deprecated: TODO
 func Host() *dagger.Host {
 	client := initClient()
 	return client.Host()
@@ -236,6 +238,12 @@ func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	return client.LoadListTypeDefFromID(id)
 }
 
+// Load a Local from its ID.
+func LoadLocalFromID(id dagger.LocalID) *dagger.Local {
+	client := initClient()
+	return client.LoadLocalFromID(id)
+}
+
 // Load a ModuleConfig from its ID.
 func LoadModuleConfigFromID(id dagger.ModuleConfigID) *dagger.ModuleConfig {
 	client := initClient()
@@ -282,6 +290,12 @@ func LoadSocketFromID(id dagger.SocketID) *dagger.Socket {
 func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	client := initClient()
 	return client.LoadTypeDefFromID(id)
+}
+
+// Queries the host environment.
+func Local() *dagger.Local {
+	client := initClient()
+	return client.Local()
 }
 
 // Create a new module.

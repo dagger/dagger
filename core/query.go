@@ -239,8 +239,8 @@ func (q *Query) NewSecret(name string) *Secret {
 	}
 }
 
-func (q *Query) NewHost() *Host {
-	return &Host{
+func (q *Query) NewLocal() *Local {
+	return &Local{
 		Query: q,
 	}
 }

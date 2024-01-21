@@ -222,6 +222,9 @@ type LabelID string
 // The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
 type ListTypeDefID string
 
+// The `LocalID` scalar type represents an identifier for an object of type Local.
+type LocalID string
+
 // The `ModuleConfigID` scalar type represents an identifier for an object of type ModuleConfig.
 type ModuleConfigID string
 
@@ -3121,12 +3124,12 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	}
 }
 
-// Information about the host environment.
+// TODO
 type Host struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id *HostID
+	id *LocalID
 }
 
 // HostDirectoryOpts contains options for Host.Directory
@@ -3169,14 +3172,14 @@ func (r *Host) File(path string) *File {
 	}
 }
 
-// A unique identifier for this Host.
-func (r *Host) ID(ctx context.Context) (HostID, error) {
+// A unique identifier for this Local.
+func (r *Host) ID(ctx context.Context) (LocalID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.q.Select("id")
 
-	var response HostID
+	var response LocalID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -3189,7 +3192,7 @@ func (r *Host) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Host) XXX_GraphQLIDType() string {
-	return "HostID"
+	return "LocalID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -3544,6 +3547,180 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Information about the host environment.
+type Local struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id *LocalID
+}
+
+// LocalDirectoryOpts contains options for Local.Directory
+type LocalDirectoryOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+	Exclude []string
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+	Include []string
+}
+
+// Accesses a directory on the host.
+func (r *Local) Directory(path string, opts ...LocalDirectoryOpts) *Directory {
+	q := r.q.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Accesses a file on the host.
+func (r *Local) File(path string) *File {
+	q := r.q.Select("file")
+	q = q.Arg("path", path)
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A unique identifier for this Local.
+func (r *Local) ID(ctx context.Context) (LocalID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response LocalID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Local) XXX_GraphQLType() string {
+	return "Local"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Local) XXX_GraphQLIDType() string {
+	return "LocalID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Local) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Local) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// LocalServiceOpts contains options for Local.Service
+type LocalServiceOpts struct {
+	// Upstream host to forward traffic to.
+	Host string
+}
+
+// Creates a service that forwards traffic to a specified address via the host.
+func (r *Local) Service(ports []PortForward, opts ...LocalServiceOpts) *Service {
+	q := r.q.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `host` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Host) {
+			q = q.Arg("host", opts[i].Host)
+		}
+	}
+	q = q.Arg("ports", ports)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+//
+// The file is limited to a size of 512000 bytes.
+func (r *Local) SetSecretFile(name string, path string) *Secret {
+	q := r.q.Select("setSecretFile")
+	q = q.Arg("name", name)
+	q = q.Arg("path", path)
+
+	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
+// LocalTunnelOpts contains options for Local.Tunnel
+type LocalTunnelOpts struct {
+	// Configure explicit port forwarding rules for the tunnel.
+	//
+	// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
+	//
+	// If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
+	//
+	// If ports are given and native is true, the ports are additive.
+	Ports []PortForward
+	// Map each service port to the same port on the host, as if the service were running natively.
+	//
+	// Note: enabling may result in port conflicts.
+	Native bool
+}
+
+// Creates a tunnel that forwards traffic from the host to a service.
+func (r *Local) Tunnel(service *Service, opts ...LocalTunnelOpts) *Service {
+	assertNotNil("service", service)
+	q := r.q.Select("tunnel")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
+		}
+		// `native` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Native) {
+			q = q.Arg("native", opts[i].Native)
+		}
+	}
+	q = q.Arg("service", service)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Accesses a Unix socket on the host.
+func (r *Local) UnixSocket(path string) *Socket {
+	q := r.q.Select("unixSocket")
+	q = q.Arg("path", path)
+
+	return &Socket{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A Dagger module.
@@ -4461,7 +4638,9 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 }
 
-// Queries the host environment.
+// TODO
+//
+// Deprecated: TODO
 func (r *Client) Host() *Host {
 	q := r.q.Select("host")
 
@@ -4681,6 +4860,17 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	}
 }
 
+// Load a Local from its ID.
+func (r *Client) LoadLocalFromID(id LocalID) *Local {
+	q := r.q.Select("loadLocalFromID")
+	q = q.Arg("id", id)
+
+	return &Local{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a ModuleConfig from its ID.
 func (r *Client) LoadModuleConfigFromID(id ModuleConfigID) *ModuleConfig {
 	q := r.q.Select("loadModuleConfigFromID")
@@ -4764,6 +4954,16 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q = q.Arg("id", id)
 
 	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Queries the host environment.
+func (r *Client) Local() *Local {
+	q := r.q.Select("local")
+
+	return &Local{
 		q: q,
 		c: r.c,
 	}

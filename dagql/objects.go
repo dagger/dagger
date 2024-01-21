@@ -528,6 +528,50 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 	return classT
 }
 
+// TODO: doc
+type AliasFields[T Typed, T2 Typed] Fields[T]
+
+func (fields AliasFields[T, T2]) Install(server *Server, conv func(T2) T) {
+	server.installLock.Lock()
+	defer server.installLock.Unlock()
+
+	var t T
+	typeName := t.Type().Name()
+	class := Fields[T](fields).findOrInitializeType(server, typeName)
+
+	var t2 T2
+	type2Name := t2.Type().Name()
+	var class2 Class[T2]
+	class2Obj, ok := server.objects[type2Name]
+	if !ok {
+		class2 = NewClass[T2]()
+		server.installObjectLocked(class2)
+	} else {
+		class2 = class2Obj.(Class[T2])
+	}
+
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	class2.fieldsL.Lock()
+	defer class2.fieldsL.Unlock()
+
+	for _, field := range class.fields {
+		field := field
+		class2.fields[field.Spec.Name] = &Field[T2]{
+			Spec: field.Spec,
+			Func: func(ctx context.Context, aliasParent Instance[T2], args map[string]Input) (Typed, error) {
+				parent := Instance[T]{
+					Constructor: aliasParent.Constructor,
+					Self:        conv(aliasParent.Self),
+					Class:       class,
+					Module:      aliasParent.Module,
+				}
+				return field.Func(ctx, parent, args)
+			},
+		}
+	}
+}
+
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
 	Spec FieldSpec
