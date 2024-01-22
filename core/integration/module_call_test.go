@@ -750,4 +750,35 @@ func (t *Test) File() *File {
 			require.Equal(t, "644", strings.TrimSpace(out))
 		})
 	})
+
+	t.Run("check umask", func(t *testing.T) {
+		t.Parallel()
+
+		ctr, err := modGen.
+			WithNewFile("/entrypoint.sh", dagger.ContainerWithNewFileOpts{
+				Contents: `#!/bin/sh
+umask 027
+exec "$@"
+`,
+				Permissions: 0o750,
+			}).
+			WithEntrypoint([]string{"/entrypoint.sh"}).
+			With(daggerCall("hello", "-o", "/tmp/foo/bar.txt")).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		t.Run("directory", func(t *testing.T) {
+			t.Parallel()
+			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "750", strings.TrimSpace(out))
+		})
+
+		t.Run("file", func(t *testing.T) {
+			t.Parallel()
+			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo/bar.txt"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "640", strings.TrimSpace(out))
+		})
+	})
 }
