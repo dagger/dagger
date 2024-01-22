@@ -21,6 +21,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/engine"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -989,7 +990,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
+		// include the engine version so that these execs get invalidated if the engine/API change
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", engine.Version))
 	}
 
 	if opts.ModuleCallerDigest != "" {
