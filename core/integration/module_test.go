@@ -2134,6 +2134,43 @@ class Playground:
         return Foo(con=dag.container().from_("alpine:latest").with_exec(["echo", "hello world"]))
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { dag, Container, File, object, func, field } from "@dagger.io/dagger"
+
+@object
+class Foo {
+  @field
+  con: Container
+
+  @field
+  usetFile?: File
+
+  constructor(con: Container, usetFile?: File) {
+    this.con = con
+    this.usetFile = usetFile
+  }
+}
+
+@object
+class Playground {
+  @func
+  async mySlice(): Promise<Container[]> {
+    return [
+      dag.container().from("alpine:latest").withExec(["echo", "hello world"])
+    ]
+  }
+
+  @func
+  async myStruct(): Promise<Foo> {
+    return new Foo(
+      dag.container().from("alpine:latest").withExec(["echo", "hello world"])
+    )
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
@@ -2231,6 +2268,53 @@ class Playground:
         )
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { dag, Container, object, func, field } from "@dagger.io/dagger"
+
+@object
+class ScanReport {
+  @field
+  contents: string
+
+  @field
+  authors: string[]
+
+  constructor(contents: string, authors: string[]) {
+    this.contents = contents
+    this.authors = authors
+  }
+}
+
+@object
+class ScanResult {
+  @field
+  targets: Container[]
+
+  @field
+  report: ScanReport
+
+  constructor(containers: Container[], report: ScanReport) {
+    this.targets = containers
+    this.report = report
+  }
+}
+
+@object
+class Playground {
+  @func
+  async scan(): Promise<ScanResult> {
+    return new ScanResult(
+      [
+        dag.container().from("alpine:latest").withExec(["echo", "hello world"])
+      ],
+      new ScanReport("hello world", ["foo", "bar"])
+    )
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
@@ -2321,6 +2405,22 @@ class Foo:
     @function
     async def fn(self) -> str:
         return await SOME_DEFAULT.with_exec(["echo", "foo"]).stdout()
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `
+import { dag, object, func } from "@dagger.io/dagger"
+
+var someDefault = dag.container().from("alpine:latest")
+
+@object
+class Foo {
+  @func
+  async fn(): Promise<string> {
+    return someDefault.withExec(["echo", "foo"]).stdout()
+  }
+}			
 `,
 		},
 	} {
@@ -3245,7 +3345,7 @@ func TestModuleCodegenOnDepChange(t *testing.T) {
 			sdk:      "typescript",
 			source:   useTSOuter,
 			expected: "hellov2",
-			changed:  strings.ReplaceAll(usePythonOuter, `.hello()`, `.hellov2()`),
+			changed:  strings.ReplaceAll(useTSOuter, `.hello()`, `.hellov2()`),
 		},
 	} {
 		tc := tc
