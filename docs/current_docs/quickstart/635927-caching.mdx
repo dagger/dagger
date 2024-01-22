@@ -97,7 +97,7 @@ This revised pipeline produces the same result as before.
 Run the pipeline a few times. Notice that on the first run, the application dependencies are downloaded as usual. However, since the dependencies are cached, subsequent pipeline runs will skip the download operation and be significantly faster (assuming that there are no other changes to the application code).
 
 :::note
-In addition to cache volumes, Dagger has a separate cache for pipeline operations. Changes in cache volumes do not invalidate the Dagger pipeline operations cache.
+In addition to cache volumes, Dagger has a separate cache for pipeline operations. Changes in cache volumes or secrets do not invalidate the Dagger pipeline operations cache.
 :::
 
 </QuickstartDoc>
