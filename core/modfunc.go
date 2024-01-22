@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
@@ -100,6 +101,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 		lg = lg.WithField("object", fn.objDef.Name)
 	}
 	ctx = bklog.WithLogger(ctx, lg)
+
+	analytics.Ctx(ctx).Capture(ctx, "module_call", map[string]any{
+		"module_name":   fn.mod.Name(),
+		"function_name": fn.metadata.Name,
+	})
 
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}

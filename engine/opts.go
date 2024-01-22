@@ -68,6 +68,9 @@ type ClientMetadata struct {
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
+
+	// Disable analytics
+	DoNotTrack bool
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

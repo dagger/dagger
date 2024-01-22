@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/go-git/go-git/v5"
@@ -244,6 +245,60 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
+
+			name, err := depSrc.ModuleName(ctx)
+			if err != nil {
+				return err
+			}
+			sdk, err := depSrc.AsModule().SDK(ctx)
+			if err != nil {
+				return err
+			}
+			if depSrcKind == dagger.GitSource {
+				git := depSrc.AsGitSource()
+				gitURL, err := git.CloneURL(ctx)
+				if err != nil {
+					return err
+				}
+				gitVersion, err := git.Version(ctx)
+				if err != nil {
+					return err
+				}
+				gitCommit, err := git.Commit(ctx)
+				if err != nil {
+					return err
+				}
+				gitSubpath, err := git.SourceSubpath(ctx)
+				if err != nil {
+					return err
+				}
+
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]any{
+					"module_name":   name,
+					"module_sdk":    sdk,
+					"source_kind":   "git",
+					"git_symbolic":  filepath.Join(gitURL, gitSubpath),
+					"git_clone_url": gitURL,
+					"git_subpath":   gitSubpath,
+					"git_version":   gitVersion,
+					"git_commit":    gitCommit,
+				})
+			} else if depSrcKind == dagger.LocalSource {
+				local := depSrc.AsLocalSource()
+				subpath, err := local.SourceSubpath(ctx)
+				if err != nil {
+					return err
+				}
+
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]any{
+					"module_name":   name,
+					"module_sdk":    sdk,
+					"source_kind":   "local",
+					"local_subpath": subpath,
+				})
+
+			}
+
 			return nil
 		})
 	},

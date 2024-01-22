@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
@@ -241,8 +242,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 
-	c.labels = pipeline.LoadVCSLabels(workdir)
-	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
+	labels := pipeline.Labels{}
+	labels.AppendCILabel()
+	labels = append(labels, pipeline.LoadVCSLabels(workdir)...)
+	labels = append(labels, pipeline.LoadClientLabels(engine.Version)...)
+
+	c.labels = labels
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:           c.ID(),
@@ -289,6 +294,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				Labels:                    c.labels,
 				ModuleCallerDigest:        c.ModuleCallerDigest,
+				DoNotTrack:                analytics.DoNotTrack(),
 			}.AppendToMD(meta))
 		})
 	})

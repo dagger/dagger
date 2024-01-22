@@ -14,9 +14,7 @@ import (
 
 const (
 	flushInterval = 100 * time.Millisecond
-	queueSize     = 2048
-
-	pushURL = "https://api.dagger.cloud/events"
+	pushURL       = "https://api.dagger.cloud/events"
 )
 
 type Telemetry struct {

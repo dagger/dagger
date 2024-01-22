@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
@@ -32,6 +33,7 @@ type DaggerServer struct {
 
 	schema      *schema.APIServer
 	recorder    *progrock.Recorder
+	analytics   analytics.Tracker
 	progCleanup func() error
 
 	doneCh    chan struct{}
@@ -50,12 +52,14 @@ func NewDaggerServer(
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
 	rootLabels []pipeline.Label,
+	doNotTrack bool,
 ) (*DaggerServer, error) {
 	srv := &DaggerServer{
-		serverID: serverID,
-		bkClient: bkClient,
-		worker:   worker,
-		doneCh:   make(chan struct{}, 1),
+		serverID:  serverID,
+		bkClient:  bkClient,
+		worker:    worker,
+		analytics: analytics.New(doNotTrack || analytics.DoNotTrack(), rootLabels...),
+		doneCh:    make(chan struct{}, 1),
 	}
 
 	clientConn := caller.Conn()
@@ -118,8 +122,9 @@ func (srv *DaggerServer) Close() {
 	srv.recorder.Complete()
 	// close the recorder so the UI exits
 	srv.recorder.Close()
-
 	srv.progCleanup()
+	// close the analytics recorder
+	srv.analytics.Close()
 }
 
 func (srv *DaggerServer) Wait(ctx context.Context) error {
@@ -182,6 +187,7 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 
 		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
+		req = req.WithContext(analytics.WithContext(req.Context(), srv.analytics))
 
 		srv.schema.ServeHTTP(w, req)
 	}), doneCh, nil
