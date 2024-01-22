@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	engineClientPath    = "/usr/local/bin/dagger"
 	engineServerPath    = "/usr/local/bin/dagger-engine"
 	engineDialStdioPath = "/usr/local/bin/dial-stdio"
 	engineShimPath      = distconsts.EngineShimPath
@@ -137,7 +136,7 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 }
 
 func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Service, string, error) {
-	devEngine := CIDevEngineContainer(c, opts...).AsService()
+	devEngine := CIDevEngineContainer(ctx, c, opts...).AsService()
 
 	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
@@ -157,7 +156,12 @@ var DefaultDevEngineOpts = DevEngineOpts{
 	},
 }
 
-func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Container {
+func CIDevEngineContainer(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) *dagger.Container {
+	versionInfo, err := DevelVersionInfo(ctx, c)
+	if err != nil {
+		panic(err)
+	}
+
 	engineOpts := []DevEngineOpts{}
 
 	engineOpts = append(engineOpts, DefaultDevEngineOpts)
@@ -179,7 +183,7 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 
 	cacheVolumeName = cacheVolumeName + identity.NewID()
 
-	devEngine := devEngineContainer(c, runtime.GOARCH, "", engineOpts...)
+	devEngine := devEngineContainer(ctx, c, runtime.GOARCH, versionInfo.EngineVersion(), engineOpts...)
 
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, c.CacheVolume(cacheVolumeName)).
@@ -192,17 +196,21 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 }
 
 // DevEngineContainer returns a container that runs a dev engine
-func DevEngineContainer(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
-	return devEngineContainers(c, arches, version, opts...)
+func DevEngineContainer(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	return devEngineContainers(ctx, c, arches, version, opts...)
 }
 
 // DevEngineContainerWithGPUSUpport returns a container that runs a dev engine
-func DevEngineContainerWithGPUSupport(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
-	containers := devEngineContainersWithGPUSupport(c, arches, version, opts...)
+func DevEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+	containers := devEngineContainersWithGPUSupport(ctx, c, arches, version, opts...)
 	return containers
 }
 
-func devEngineContainer(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+func devEngineContainer(ctx context.Context, c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+	if version == "" {
+		panic("engine version must be specified")
+	}
+
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
 		panic(err)
@@ -235,7 +243,6 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 		}).
 		WithFile(engineShimPath, shimBin(c, arch)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
-		WithFile(engineClientPath, daggerBin(c, arch, version)).
 		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
@@ -254,10 +261,14 @@ func devEngineContainer(c *dagger.Client, arch string, version string, opts ...D
 	return container.WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 }
 
-func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+func devEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
 	if arch != "amd64" {
 		panic("unsupported architecture")
 	}
+	if version == "" {
+		panic("engine version must be specified")
+	}
+
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
 		panic(err)
@@ -281,7 +292,6 @@ func devEngineContainerWithGPUSupport(c *dagger.Client, arch string, version str
 		}).
 		WithFile(engineShimPath, shimBin(c, arch)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
-		WithFile(engineClientPath, daggerBin(c, arch, version)).
 		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
 		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
@@ -316,19 +326,19 @@ func shellExec(cmd string) dagger.WithContainerFunc {
 	}
 }
 
-func devEngineContainers(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+func devEngineContainers(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		platformVariants = append(platformVariants, devEngineContainer(c, arch, version, opts...))
+		platformVariants = append(platformVariants, devEngineContainer(ctx, c, arch, version, opts...))
 	}
 
 	return platformVariants
 }
 
-func devEngineContainersWithGPUSupport(c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+func devEngineContainersWithGPUSupport(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	// Restrict GPU images to amd64:
-	platformVariants = append(platformVariants, devEngineContainerWithGPUSupport(c, "amd64", version, opts...))
+	platformVariants = append(platformVariants, devEngineContainerWithGPUSupport(ctx, c, "amd64", version, opts...))
 	return platformVariants
 }
 
@@ -528,42 +538,21 @@ func shimBin(c *dagger.Client, arch string) *dagger.File {
 func engineBin(c *dagger.Client, arch string, version string) *dagger.File {
 	buildArgs := []string{
 		"go", "build",
-		"-o", "./bin/" + filepath.Base(engineServerPath),
-		"-ldflags",
+		"-o", "/app/bin/" + filepath.Base(engineServerPath),
 	}
-	ldflags := []string{"-s", "-w"}
-	if version != "" {
-		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+version)
-	}
-	buildArgs = append(buildArgs, strings.Join(ldflags, " "))
-	buildArgs = append(buildArgs, "/app/cmd/engine")
-	return goBase(c).
-		WithEnvVariable("GOOS", "linux").
-		WithEnvVariable("GOARCH", arch).
-		WithExec(buildArgs).
-		File("./bin/" + filepath.Base(engineServerPath))
-}
 
-func daggerBin(c *dagger.Client, arch string, version string) *dagger.File {
-	buildArgs := []string{
-		"go", "build",
-		"-o", "./bin/" + filepath.Base(engineClientPath),
-		"-ldflags",
+	ldflags := []string{
+		"-s", "-w",
+		"-X", "github.com/dagger/dagger/engine.Version=" + version,
 	}
-	ldflags := []string{"-s", "-w"}
-	if version != "" {
-		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+version)
-	}
-	buildArgs = append(buildArgs, strings.Join(ldflags, " "))
-	buildArgs = append(buildArgs, "/app/cmd/dagger")
+	buildArgs = append(buildArgs, "-ldflags", strings.Join(ldflags, " "))
+
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
-		// dagger CLI must be statically linked, because it gets mounted into
-		// containers when nesting is enabled
-		WithEnvVariable("CGO_ENABLED", "0").
+		WithWorkdir("/app/cmd/engine").
 		WithExec(buildArgs).
-		File("./bin/" + filepath.Base(engineClientPath))
+		File("/app/bin/" + filepath.Base(engineServerPath))
 }
 
 func qemuBins(c *dagger.Client, arch string) *dagger.Directory {

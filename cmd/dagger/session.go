@@ -71,9 +71,14 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	port := l.Addr().(*net.TCPAddr).Port
 
+	runnerHost, err := engine.RunnerHost()
+	if err != nil {
+		return err
+	}
+
 	sess, _, err := client.Connect(ctx, client.Params{
 		SecretToken:    sessionToken.String(),
-		RunnerHost:     engine.RunnerHost(),
+		RunnerHost:     runnerHost,
 		UserAgent:      labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
 		ProgrockWriter: console.NewWriter(os.Stderr),
 		JournalFile:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),

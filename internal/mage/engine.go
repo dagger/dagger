@@ -25,16 +25,6 @@ var publishedEngineArches = []string{"amd64", "arm64"}
 
 var publishedGPUEngineArches = []string{"amd64"}
 
-func parseRef(tag string) error {
-	if tag == "main" {
-		return nil
-	}
-	if ok := semver.IsValid(tag); !ok {
-		return fmt.Errorf("invalid semver tag: %s", tag)
-	}
-	return nil
-}
-
 type Engine mg.Namespace
 
 // Connect tests a connection to a Dagger Engine
@@ -47,21 +37,7 @@ func (t Engine) Connect(ctx context.Context) error {
 	return nil
 }
 
-// Build builds the Dagger CLI binary
-func (t Engine) Build(ctx context.Context) error {
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	c = c.Pipeline("engine").Pipeline("build")
-
-	_, err = util.HostDaggerBinary(c).Export(ctx, "./bin/dagger")
-
-	return err
-}
-
-// Lint lints the Engine
+// Lint lints the engine
 func (t Engine) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -84,8 +60,14 @@ func (t Engine) Lint(ctx context.Context) error {
 
 // Publish builds and pushes Engine OCI image to a container registry
 func (t Engine) Publish(ctx context.Context, version string) error {
-	if err := parseRef(version); err != nil {
-		return err
+	if version == "" {
+		return fmt.Errorf("version tag must be specified")
+	}
+	var versionInfo *util.VersionInfo
+	if semver.IsValid(version) {
+		versionInfo = &util.VersionInfo{Tag: version}
+	} else {
+		versionInfo = &util.VersionInfo{Commit: version}
 	}
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
@@ -101,14 +83,14 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		username    = util.GetHostEnv("DAGGER_ENGINE_IMAGE_USERNAME")
 		password    = c.SetSecret("DAGGER_ENGINE_IMAGE_PASSWORD", util.GetHostEnv("DAGGER_ENGINE_IMAGE_PASSWORD"))
 		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
-		ref         = fmt.Sprintf("%s:%s", engineImage, version)
-		gpuRef      = fmt.Sprintf("%s:%s-gpu", engineImage, version)
+		ref         = fmt.Sprintf("%s:%s", engineImage, versionInfo.EngineVersion())
+		gpuRef      = fmt.Sprintf("%s:%s-gpu", engineImage, versionInfo.EngineVersion())
 	)
 
 	digest, err := c.Container().
 		WithRegistryAuth(registry, username, password).
 		Publish(ctx, ref, dagger.ContainerPublishOpts{
-			PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
+			PlatformVariants: util.DevEngineContainer(ctx, c, publishedEngineArches, versionInfo.EngineVersion()),
 			// use gzip to avoid incompatibility w/ older docker versions
 			ForcedCompression: dagger.Gzip,
 		})
@@ -116,13 +98,13 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
-	if semver.IsValid(version) {
+	if versionInfo.Tag != "" {
 		sdks := sdk.All{}
-		if err := sdks.Bump(ctx, version); err != nil {
+		if err := sdks.Bump(ctx, versionInfo.Tag); err != nil {
 			return err
 		}
 	} else {
-		fmt.Printf("'%s' is not a semver version, skipping image bump in SDKs", version)
+		fmt.Printf("skipping image bump in SDKs\n")
 	}
 
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
@@ -130,7 +112,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 
 	// gpu is experimental, not fatal if publish fails
 	gpuDigest, err := c.Container().Publish(ctx, gpuRef, dagger.ContainerPublishOpts{
-		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedGPUEngineArches, version),
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(ctx, c, publishedGPUEngineArches, versionInfo.EngineVersion()),
 	})
 	if err == nil {
 		fmt.Println("PUBLISHED GPU IMAGE REF:", gpuDigest)
@@ -150,17 +132,22 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	versionInfo, err := util.DevelVersionInfo(ctx, c)
+	if err != nil {
+		return err
+	}
+
 	c = c.Pipeline("engine").Pipeline("test-publish")
 
 	_, err = c.Container().Export(ctx, "./engine.tar", dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, ""),
+		PlatformVariants: util.DevEngineContainer(ctx, c, publishedEngineArches, versionInfo.EngineVersion()),
 	})
 	if err != nil {
 		return err
 	}
 
 	_, err = c.Container().Export(ctx, "./engine-gpu.tar", dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainerWithGPUSupport(c, publishedGPUEngineArches, ""),
+		PlatformVariants: util.DevEngineContainerWithGPUSupport(ctx, c, publishedGPUEngineArches, versionInfo.EngineVersion()),
 	})
 	if err != nil {
 		return err
@@ -241,6 +228,11 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("dev")
 
+	versionInfo, err := util.DevelVersionInfo(ctx, c)
+	if err != nil {
+		return err
+	}
+
 	var gpuSupportEnabled bool
 	if v := os.Getenv(util.GPUSupportEnvName); v != "" {
 		gpuSupportEnabled = true
@@ -253,9 +245,9 @@ func (t Engine) Dev(ctx context.Context) error {
 	// Conditionally load GPU enabled image for dev environment if the flag is set:
 	var platformVariants []*dagger.Container
 	if gpuSupportEnabled {
-		platformVariants = util.DevEngineContainerWithGPUSupport(c, arches, "")
+		platformVariants = util.DevEngineContainerWithGPUSupport(ctx, c, arches, versionInfo.EngineVersion())
 	} else {
-		platformVariants = util.DevEngineContainer(c, arches, "")
+		platformVariants = util.DevEngineContainer(ctx, c, arches, versionInfo.EngineVersion())
 	}
 
 	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
@@ -327,7 +319,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	// build the CLI and export locally so it can be used to connect to the Engine
 	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
 	_ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
-	_, err = util.HostDaggerBinary(c).Export(ctx, binDest)
+	_, err = util.HostDaggerBinary(c, versionInfo.EngineVersion()).Export(ctx, binDest)
 	if err != nil {
 		return err
 	}
@@ -385,13 +377,25 @@ func (t Engine) test(ctx context.Context, race bool, testRegex string) error {
 func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Container, func(), error) {
 	c = c.Pipeline("engine").Pipeline("test")
 
+	versionInfo, err := util.DevelVersionInfo(ctx, c)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	opts := util.DevEngineOpts{
 		ConfigEntries: map[string]string{
 			`registry."registry:5000"`:        "http = true",
 			`registry."privateregistry:5000"`: "http = true",
 		},
 	}
-	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, "", util.DefaultDevEngineOpts, opts)[0]
+	devEngine := util.DevEngineContainer(
+		ctx,
+		c.Pipeline("dev-engine"),
+		[]string{runtime.GOARCH},
+		versionInfo.EngineVersion(),
+		util.DefaultDevEngineOpts,
+		opts,
+	)[0]
 
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
@@ -417,7 +421,7 @@ func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Containe
 	// These are used by core/integration/remotecache_test.go
 	testEngineUtils := c.Host().Directory(tmpDir, dagger.HostDirectoryOpts{
 		Include: []string{"engine.tar"},
-	}).WithFile("/dagger", util.DaggerBinary(c), dagger.DirectoryWithFileOpts{
+	}).WithFile("/dagger", util.DaggerBinary(c, versionInfo.EngineVersion()), dagger.DirectoryWithFileOpts{
 		Permissions: 0755,
 	})
 
@@ -457,7 +461,7 @@ func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Containe
 	}
 
 	return tests.
-			WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+			WithMountedFile(cliBinPath, util.DaggerBinary(c, versionInfo.EngineVersion())).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)),

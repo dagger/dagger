@@ -61,7 +61,11 @@ func withEngineAndTUI(
 	fn runClientCallback,
 ) error {
 	if params.RunnerHost == "" {
-		params.RunnerHost = engine.RunnerHost()
+		var err error
+		params.RunnerHost, err = engine.RunnerHost()
+		if err != nil {
+			return err
+		}
 	}
 
 	params.DisableHostRW = disableHostRW
