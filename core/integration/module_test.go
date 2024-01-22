@@ -1733,6 +1733,37 @@ class Minimal:
         return self.foo + self.bar
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object
+class Minimal {
+  @field
+  foo: string
+
+  bar?: string
+
+  constructor(foo?: string, bar?: string) {
+    this.foo = foo
+    this.bar = bar
+  }
+
+  @func
+  set(foo: string, bar: string): Minimal {
+    this.foo = foo
+    this.bar = bar
+    return this
+  }
+
+  @func
+  hello(): string {
+    return this.foo + this.bar
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
@@ -1854,6 +1885,39 @@ def repeater(msg: str, times: int) -> Repeater:
     return Repeater(message=msg, times=times)
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object
+class Repeater {
+  @field
+  message: string
+
+  @field
+  times: number
+
+  constructor(message: string, times: number) {
+    this.message = message
+    this.times = times
+  }
+
+  @func
+  render(): string {
+    return this.message.repeat(this.times)
+  }
+}
+
+@object
+class Test {
+  @func
+  repeater(msg: string, times: number): Repeater {
+    return new Repeater(msg, times)
+  }
+}			
+`,
+		},
 	} {
 		tc := tc
 
@@ -1914,6 +1978,30 @@ class X:
 @function
 def my_function() -> X:
     return X(message="foo")
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object
+class X {
+  @field
+  message: string
+
+  constructor(message: string) {
+    this.message = message;
+  }
+}
+
+@object
+class Foo {
+  @func
+  myFunction(): X {
+    return new X("foo");
+  }
+}
 `,
 		},
 	} {
@@ -1986,6 +2074,42 @@ class Foo:
         return X(message="foo", when="now", to="user", from_="admin")
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object
+class X {
+  @field 
+  message: string
+
+  @field
+  timestamp: string
+
+  @field
+  recipient: string
+
+  @field
+  from: string
+
+  constructor(message: string, timestamp: string, recipient: string, from: string) {
+    this.message = message;
+    this.timestamp = timestamp;
+    this.recipient = recipient;
+    this.from = from;
+  }
+}
+
+@object
+class Foo {
+  @func
+  myFunction(): X {
+    return new X("foo", "now", "user", "admin");
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
@@ -2056,6 +2180,40 @@ class Playground:
     @function
     def my_function(self) -> Foo:
         return Foo(msg_container=Bar(msg="hello world"))
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object
+class Bar {
+  @field
+  msg: string;
+
+  constructor(msg: string) {
+    this.msg = msg;
+  }
+}
+
+@object
+class Foo {
+  @field
+  msgContainer: Bar;
+
+  constructor(msgContainer: Bar) {
+    this.msgContainer = msgContainer;
+  }
+}
+
+@object
+class Playground {
+  @func
+  myFunction(): Foo {
+    return new Foo(new Bar("hello world"));
+  }
+}
 `,
 		},
 	} {
