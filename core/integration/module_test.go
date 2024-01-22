@@ -2395,6 +2395,28 @@ class Foo:
         return self.data
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func } from "@dagger.io/dagger"
+
+@object
+class Foo {
+  data: string = ""
+
+  @func
+  set(data: string): Foo {
+    this.data = data
+    return this
+  }
+
+  @func
+  get(): string {
+    return this.data
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
