@@ -721,4 +721,33 @@ func (t *Test) File() *File {
 		require.NoError(t, err)
 		require.Equal(t, "foo", strings.TrimSpace(out))
 	})
+
+	t.Run("create parent dirs", func(t *testing.T) {
+		t.Parallel()
+
+		ctr, err := modGen.With(daggerCall("hello", "-o", "foo/bar.txt")).Sync(ctx)
+		require.NoError(t, err)
+
+		t.Run("print success", func(t *testing.T) {
+			t.Parallel()
+			// should print success to stderr so it doesn't interfere with piping output
+			out, err := ctr.Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, `Saved output to "/work/foo/bar.txt"`)
+		})
+
+		t.Run("check directory permissions", func(t *testing.T) {
+			t.Parallel()
+			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "755", strings.TrimSpace(out))
+		})
+
+		t.Run("check file permissions", func(t *testing.T) {
+			t.Parallel()
+			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo/bar.txt"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "644", strings.TrimSpace(out))
+		})
+	})
 }

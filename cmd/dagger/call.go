@@ -57,26 +57,19 @@ var callCmd = &FuncCommand{
 		writer := cmd.OutOrStdout()
 
 		if outputPath != "" {
-			path, err := filepath.Abs(outputPath)
-			if err != nil {
-				path = outputPath
-			}
-
-			// Exported successfully if it got to this point.
 			if outputExport {
-				// Not actually an error but stderr is also used for log messages.
-				cmd.PrintErrf("Exported to %q.\n", path)
+				logOutputSuccess(cmd, outputPath)
 				return nil
 			}
 
-			file, err := os.Create(outputPath)
+			file, err := openOutputFile(outputPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("couldn't write output to file: %w", err)
 			}
 
 			defer func() {
 				file.Close()
-				cmd.PrintErrf("Saved result to %q.\n", path)
+				logOutputSuccess(cmd, outputPath)
 			}()
 
 			writer = io.MultiWriter(writer, file)
@@ -84,6 +77,25 @@ var callCmd = &FuncCommand{
 
 		return printFunctionResult(writer, response)
 	},
+}
+
+// openOutputFile opens a file for writing, creating the parent directories if needed.
+func openOutputFile(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+}
+
+// logOutputSuccess prints to stderr the the output path to the user.
+func logOutputSuccess(cmd *cobra.Command, path string) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		// don't fail because at this point the output has been saved successfully
+		cmd.PrintErrf("WARNING: failed to get absolute path: %s\n", err)
+		path = outputPath
+	}
+	cmd.PrintErrf("Saved output to %q.\n", path)
 }
 
 func printFunctionResult(w io.Writer, r any) error {
