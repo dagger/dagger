@@ -1,5 +1,5 @@
 kind: Fixed
-body: Add typescript to required dependencies
+body: Fixes missing production dependencies in SDK package.json.
 time: 2024-01-22T14:01:26.169943+01:00
 custom:
   Author: TomChv
