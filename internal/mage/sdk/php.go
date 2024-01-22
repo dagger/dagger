@@ -93,6 +93,8 @@ func (t PHP) Publish(ctx context.Context, tag string) error {
 
 	c = c.Pipeline("sdk").Pipeline("php").Pipeline("publish")
 
+	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
+
 	var targetTag = strings.TrimPrefix(tag, phpSDKPath+"/")
 
 	var targetRepo = os.Getenv("TARGET_REPO")

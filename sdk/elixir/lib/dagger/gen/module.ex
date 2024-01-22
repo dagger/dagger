@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedContextDiff generatedContextDirectory id initialize interfaces name objects runtime sdk serve source withDescription withInterface withObject withSource"
+          "dependencies dependencyConfig description engineVersion generatedContextDiff generatedContextDirectory id initialize interfaces name objects runtime sdk serve source withDescription withEngineVersion withInterface withObject withSource"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -55,6 +55,15 @@ defmodule Dagger.Module do
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = module) do
       selection = select(module.selection, "description")
+      execute(selection, module.client)
+    end
+  )
+
+  (
+    @doc "The engine version this module was developed with."
+    @spec engine_version(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def engine_version(%__MODULE__{} = module) do
+      selection = select(module.selection, "engineVersion")
       execute(selection, module.client)
     end
   )
@@ -196,6 +205,15 @@ defmodule Dagger.Module do
     def with_description(%__MODULE__{} = module, description) do
       selection = select(module.selection, "withDescription")
       selection = arg(selection, "description", description)
+      %Dagger.Module{selection: selection, client: module.client}
+    end
+  )
+
+  (
+    @doc "Updated the module configuration with the version of this engine."
+    @spec with_engine_version(t()) :: Dagger.Module.t()
+    def with_engine_version(%__MODULE__{} = module) do
+      selection = select(module.selection, "withEngineVersion")
       %Dagger.Module{selection: selection, client: module.client}
     end
   )

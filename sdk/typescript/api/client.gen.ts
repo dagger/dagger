@@ -5164,6 +5164,7 @@ export class LocalModuleSource extends BaseClient {
 export class Module_ extends BaseClient {
   private readonly _id?: ModuleID = undefined
   private readonly _description?: string = undefined
+  private readonly _engineVersion?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sdk?: string = undefined
   private readonly _serve?: Void = undefined
@@ -5175,6 +5176,7 @@ export class Module_ extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ModuleID,
     _description?: string,
+    _engineVersion?: string,
     _name?: string,
     _sdk?: string,
     _serve?: Void
@@ -5183,6 +5185,7 @@ export class Module_ extends BaseClient {
 
     this._id = _id
     this._description = _description
+    this._engineVersion = _engineVersion
     this._name = _name
     this._sdk = _sdk
     this._serve = _serve
@@ -5298,6 +5301,27 @@ export class Module_ extends BaseClient {
         ...this._queryTree,
         {
           operation: "description",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * The engine version this module was developed with.
+   */
+  engineVersion = async (): Promise<string> => {
+    if (this._engineVersion) {
+      return this._engineVersion
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "engineVersion",
         },
       ],
       await this._ctx.connection()
@@ -5533,6 +5557,21 @@ export class Module_ extends BaseClient {
         {
           operation: "withDescription",
           args: { description },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Updated the module configuration with the version of this engine.
+   */
+  withEngineVersion = (): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEngineVersion",
         },
       ],
       ctx: this._ctx,

@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -176,6 +177,9 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
+
+		dagql.Func("withEngineVersion", s.moduleWithEngineVersion).
+			Doc(`Updated the module configuration with the version of this engine.`),
 
 		dagql.NodeFunc("serve", s.moduleServe).
 			Impure(`Mutates the calling session's global schema.`).
@@ -612,6 +616,13 @@ func (s *moduleSchema) moduleInitialize(
 	return mod, nil
 }
 
+func (s *moduleSchema) moduleWithEngineVersion(ctx context.Context, mod *core.Module, args struct {
+	// No args yet, version is always set to the version of this engine.
+	// In future, can add optional arg for explicitly configuring if desired.
+}) (*core.Module, error) {
+	return mod.WithEngineVersion(ctx, engine.Version)
+}
+
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
 	Source core.ModuleSourceID
 }) (*core.Module, error) {
@@ -889,6 +900,7 @@ func (s *moduleSchema) updateDaggerConfig(
 
 	modCfg.Name = mod.OriginalName
 	modCfg.SDK = mod.SDKConfig
+	modCfg.EngineVersion = engine.Version
 
 	sourceRootSubpath, err := src.Self.SourceRootSubpath()
 	if err != nil {

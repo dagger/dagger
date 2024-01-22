@@ -4208,12 +4208,14 @@ class Module(Type):
 
     __slots__ = (
         "_description",
+        "_engine_version",
         "_name",
         "_sdk",
         "_serve",
     )
 
     _description: str | None
+    _engine_version: str | None
     _name: str | None
     _sdk: str | None
     _serve: Void | None
@@ -4225,6 +4227,7 @@ class Module(Type):
         _ctx = self._select("dependencies", _args)
         _ctx = Module(_ctx)._select_multiple(
             _description="description",
+            _engine_version="engineVersion",
             _name="name",
             _sdk="sdk",
             _serve="serve",
@@ -4263,6 +4266,30 @@ class Module(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def engine_version(self) -> str:
+        """The engine version this module was developed with.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_engine_version"):
+            return self._engine_version
+        _args: list[Arg] = []
+        _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
     @typecheck
@@ -4441,6 +4468,13 @@ class Module(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withDescription", _args)
+        return Module(_ctx)
+
+    @typecheck
+    def with_engine_version(self) -> "Module":
+        """Updated the module configuration with the version of this engine."""
+        _args: list[Arg] = []
+        _ctx = self._select("withEngineVersion", _args)
         return Module(_ctx)
 
     @typecheck

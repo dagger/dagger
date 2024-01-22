@@ -1623,6 +1623,7 @@ type Module {
 
   """The doc string of the module, if any"""
   description: String!
+  engineVersion: String!
 
   """
   The generated files and directories made on top of the module source's context directory.
@@ -1676,6 +1677,9 @@ type Module {
     """The description to set"""
     description: String!
   ): Module!
+
+  """Updated the module configuration with the version of this engine."""
+  withEngineVersion: Module!
 
   """This module plus the given Interface type and associated functions"""
   withInterface(iface: TypeDefID!): Module!
