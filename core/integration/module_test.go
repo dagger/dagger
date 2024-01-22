@@ -4417,14 +4417,23 @@ var badIDArgGoSrc string
 //go:embed testdata/modules/python/id/arg/main.py
 var badIDArgPySrc string
 
+//go:embed testdata/modules/typescript/id/arg/index.ts
+var badIDArgTsSrc string
+
 //go:embed testdata/modules/go/id/field/main.go
 var badIDFieldGoSrc string
+
+//go:embed testdata/modules/typescript/id/field/index.ts
+var badIDFieldTsSrc string
 
 //go:embed testdata/modules/go/id/fn/main.go
 var badIDFnGoSrc string
 
 //go:embed testdata/modules/python/id/fn/main.py
 var badIDFnPySrc string
+
+//go:embed testdata/modules/typescript/id/fn/index.ts
+var badIDFnTsSrc string
 
 func TestModuleReservedWords(t *testing.T) {
 	// verify disallowed names are rejected
@@ -4433,94 +4442,113 @@ func TestModuleReservedWords(t *testing.T) {
 
 	c, ctx := connect(t)
 
+	type testCase struct {
+		sdk    string
+		source string
+	}
+
 	t.Run("id", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("arg", func(t *testing.T) {
 			t.Parallel()
 
-			t.Run("go", func(t *testing.T) {
-				t.Parallel()
+			for _, tc := range []testCase{
+				{
+					sdk:    "go",
+					source: badIDArgGoSrc,
+				},
+				{
+					sdk:    "python",
+					source: badIDArgPySrc,
+				},
+				{
+					sdk:    "typescript",
+					source: badIDArgTsSrc,
+				},
+			} {
+				tc := tc
 
-				_, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
-					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-						Contents: badIDArgGoSrc,
-					}).
-					With(daggerQuery(`{test{fn(id:"no")}}`)).
-					Sync(ctx)
-				require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
-			})
+				t.Run(tc.sdk, func(t *testing.T) {
+					t.Parallel()
 
-			t.Run("python", func(t *testing.T) {
-				t.Parallel()
+					_, err := c.Container().From(golangImage).
+						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+						WithWorkdir("/work").
+						With(daggerExec("mod", "init", "--name=test", "--sdk"+tc.sdk)).
+						With(sdkSource(tc.sdk, tc.source)).
+						With(daggerQuery(`{test{fn(id:"no")}}`)).
+						Sync(ctx)
 
-				_, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
-					WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
-						Contents: badIDArgPySrc,
-					}).
-					With(daggerQuery(`{test{fn(id:"no")}}`)).
-					Sync(ctx)
-				require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
-			})
+					require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+				})
+			}
 		})
 
 		t.Run("field", func(t *testing.T) {
 			t.Parallel()
 
-			t.Run("go", func(t *testing.T) {
-				t.Parallel()
+			for _, tc := range []testCase{
+				{
+					sdk:    "go",
+					source: badIDFieldGoSrc,
+				},
+				{
+					sdk:    "typescript",
+					source: badIDFieldTsSrc,
+				},
+			} {
+				tc := tc
 
-				_, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
-					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-						Contents: badIDFieldGoSrc,
-					}).
-					With(daggerQuery(`{test{fn{id}}}`)).
-					Sync(ctx)
-				require.ErrorContains(t, err, "cannot define field with reserved name \"id\"")
-			})
+				t.Run(tc.sdk, func(t *testing.T) {
+					t.Parallel()
+
+					_, err := c.Container().From(golangImage).
+						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+						WithWorkdir("/work").
+						With(daggerExec("mod", "init", "--name=test", "--sdk"+tc.sdk)).
+						With(sdkSource(tc.sdk, tc.source)).
+						With(daggerQuery(`{test{fn{id}}}`)).
+						Sync(ctx)
+
+					require.ErrorContains(t, err, "cannot define field with reserved name \"id\"")
+				})
+			}
 		})
 
 		t.Run("fn", func(t *testing.T) {
 			t.Parallel()
 
-			t.Run("go", func(t *testing.T) {
-				t.Parallel()
+			for _, tc := range []testCase{
+				{
+					sdk:    "go",
+					source: badIDFnGoSrc,
+				},
+				{
+					sdk:    "python",
+					source: badIDFnPySrc,
+				},
+				{
+					sdk:    "typescript",
+					source: badIDFnTsSrc,
+				},
+			} {
+				tc := tc
 
-				_, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
-					WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-						Contents: badIDFnGoSrc,
-					}).
-					With(daggerQuery(`{test{id}}`)).
-					Sync(ctx)
-				require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
-			})
+				t.Run(tc.sdk, func(t *testing.T) {
+					t.Parallel()
 
-			t.Run("python", func(t *testing.T) {
-				t.Parallel()
+					_, err := c.Container().From(golangImage).
+						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+						WithWorkdir("/work").
+						With(daggerExec("mod", "init", "--name=test", "--sdk"+tc.sdk)).
+						With(sdkSource(tc.sdk, tc.source)).
+						With(daggerQuery(`{test{id}}`)).
+						Sync(ctx)
 
-				_, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
-					WithNewFile("/work/src/main.py", dagger.ContainerWithNewFileOpts{
-						Contents: badIDFnPySrc,
-					}).
-					With(daggerQuery(`{test{fn(id:"no")}}`)).
-					Sync(ctx)
-				require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
-			})
+					require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
+				})
+			}
 		})
 	})
 }
@@ -4688,6 +4716,8 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 		return "dagger.gen.go"
 	case "python":
 		return "sdk/src/dagger/client/gen.py"
+	case "typescript":
+		return "sdk/api/client.gen.ts"
 	default:
 		return ""
 	}
