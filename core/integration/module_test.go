@@ -2500,6 +2500,44 @@ class Foo:
         return msg
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object
+class Message {
+  @field
+  content: string
+
+  constructor(content: string) {
+    this.content = content
+  }
+}
+
+@object
+class Foo {
+  @func
+  sayHello(name: string): Message {
+    return new Message("hello " + name)
+  }
+
+  @func
+  upper(msg: Message): Message {
+    msg.content = msg.content.toUpperCase()
+    return msg
+  }
+
+  @func
+  uppers(msg: Message[]): Message[] {
+    for (let i = 0; i < msg.length; i++) {
+      msg[i].content = msg[i].content.toUpperCase()
+    }
+    return msg
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
@@ -3089,6 +3127,18 @@ def use_hello() -> str:
     return dag.dep().hello()
 `
 
+var useTSOuter = `
+import { dag, object, func } from '@dagger.io/dagger'
+
+@object
+class Use {
+	@func
+	async useHello(): Promise<string> {
+		return dag.dep().hello()
+	}
+}
+`
+
 func TestModuleUseLocal(t *testing.T) {
 	t.Parallel()
 
@@ -3107,6 +3157,10 @@ func TestModuleUseLocal(t *testing.T) {
 		{
 			sdk:    "python",
 			source: usePythonOuter,
+		},
+		{
+			sdk:    "typescript",
+			source: useTSOuter,
 		},
 	} {
 		tc := tc
@@ -3162,6 +3216,12 @@ func TestModuleCodegenOnDepChange(t *testing.T) {
 		{
 			sdk:      "python",
 			source:   usePythonOuter,
+			expected: "hellov2",
+			changed:  strings.ReplaceAll(usePythonOuter, `.hello()`, `.hellov2()`),
+		},
+		{
+			sdk:      "typescript",
+			source:   useTSOuter,
 			expected: "hellov2",
 			changed:  strings.ReplaceAll(usePythonOuter, `.hello()`, `.hellov2()`),
 		},
@@ -3229,6 +3289,10 @@ func TestModuleSyncDeps(t *testing.T) {
 		{
 			sdk:    "python",
 			source: usePythonOuter,
+		},
+		{
+			sdk:    "typescript",
+			source: useTSOuter,
 		},
 	} {
 		tc := tc
@@ -3316,6 +3380,20 @@ async def names() -> list[str]:
         await dag.foo().name(),
         await dag.bar().name(),
     ]
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `
+import { dag, object, func } from '@dagger.io/dagger'
+
+@object
+class Use {
+	@func
+	async names(): Promise<string[]> {
+		return [await dag.foo().name(), await dag.bar().name()]
+	}
+}
 `,
 		},
 	} {
@@ -4418,13 +4496,13 @@ var badIDArgGoSrc string
 var badIDArgPySrc string
 
 //go:embed testdata/modules/typescript/id/arg/index.ts
-var badIDArgTsSrc string
+var badIDArgTSSrc string
 
 //go:embed testdata/modules/go/id/field/main.go
 var badIDFieldGoSrc string
 
 //go:embed testdata/modules/typescript/id/field/index.ts
-var badIDFieldTsSrc string
+var badIDFieldTSSrc string
 
 //go:embed testdata/modules/go/id/fn/main.go
 var badIDFnGoSrc string
@@ -4433,7 +4511,7 @@ var badIDFnGoSrc string
 var badIDFnPySrc string
 
 //go:embed testdata/modules/typescript/id/fn/index.ts
-var badIDFnTsSrc string
+var badIDFnTSSrc string
 
 func TestModuleReservedWords(t *testing.T) {
 	// verify disallowed names are rejected
@@ -4464,7 +4542,7 @@ func TestModuleReservedWords(t *testing.T) {
 				},
 				{
 					sdk:    "typescript",
-					source: badIDArgTsSrc,
+					source: badIDArgTSSrc,
 				},
 			} {
 				tc := tc
@@ -4475,7 +4553,7 @@ func TestModuleReservedWords(t *testing.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("mod", "init", "--name=test", "--sdk"+tc.sdk)).
+						With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{test{fn(id:"no")}}`)).
 						Sync(ctx)
@@ -4495,7 +4573,7 @@ func TestModuleReservedWords(t *testing.T) {
 				},
 				{
 					sdk:    "typescript",
-					source: badIDFieldTsSrc,
+					source: badIDFieldTSSrc,
 				},
 			} {
 				tc := tc
@@ -4506,7 +4584,7 @@ func TestModuleReservedWords(t *testing.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("mod", "init", "--name=test", "--sdk"+tc.sdk)).
+						With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{test{fn{id}}}`)).
 						Sync(ctx)
@@ -4530,7 +4608,7 @@ func TestModuleReservedWords(t *testing.T) {
 				},
 				{
 					sdk:    "typescript",
-					source: badIDFnTsSrc,
+					source: badIDFnTSSrc,
 				},
 			} {
 				tc := tc
@@ -4541,7 +4619,7 @@ func TestModuleReservedWords(t *testing.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("mod", "init", "--name=test", "--sdk"+tc.sdk)).
+						With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{test{id}}`)).
 						Sync(ctx)
