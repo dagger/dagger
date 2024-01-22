@@ -5147,9 +5147,9 @@ export class ObjectTypeDef extends BaseClient {
 export class Port extends BaseClient {
   private readonly _id?: PortID = undefined
   private readonly _description?: string = undefined
+  private readonly _experimentalSkipHealthcheck?: boolean = undefined
   private readonly _port?: number = undefined
   private readonly _protocol?: NetworkProtocol = undefined
-  private readonly _skipHealthCheck?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5158,17 +5158,17 @@ export class Port extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: PortID,
     _description?: string,
+    _experimentalSkipHealthcheck?: boolean,
     _port?: number,
-    _protocol?: NetworkProtocol,
-    _skipHealthCheck?: boolean
+    _protocol?: NetworkProtocol
   ) {
     super(parent)
 
     this._id = _id
     this._description = _description
+    this._experimentalSkipHealthcheck = _experimentalSkipHealthcheck
     this._port = _port
     this._protocol = _protocol
-    this._skipHealthCheck = _skipHealthCheck
   }
 
   /**
@@ -5208,6 +5208,23 @@ export class Port extends BaseClient {
 
     return response
   }
+  experimentalSkipHealthcheck = async (): Promise<boolean> => {
+    if (this._experimentalSkipHealthcheck) {
+      return this._experimentalSkipHealthcheck
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "experimentalSkipHealthcheck",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
   port = async (): Promise<number> => {
     if (this._port) {
       return this._port
@@ -5235,23 +5252,6 @@ export class Port extends BaseClient {
         ...this._queryTree,
         {
           operation: "protocol",
-        },
-      ],
-      await this._ctx.connection()
-    )
-
-    return response
-  }
-  skipHealthCheck = async (): Promise<boolean> => {
-    if (this._skipHealthCheck) {
-      return this._skipHealthCheck
-    }
-
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "skipHealthCheck",
         },
       ],
       await this._ctx.connection()

@@ -226,7 +226,7 @@ defmodule Dagger.Container do
     @spec exposed_ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
-      selection = select(selection, "description id port protocol skipHealthCheck")
+      selection = select(selection, "description experimentalSkipHealthcheck id port protocol")
 
       with {:ok, data} <- execute(selection, container.client) do
         {:ok,
@@ -612,7 +612,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n\n- For health checks and introspection, when running services\n\n- For setting the EXPOSE OCI field when publishing the container\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description\n* `skip_health_check` - Skip the health check when run as a service."
+    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n\n- For health checks and introspection, when running services\n\n- For setting the EXPOSE OCI field when publishing the container\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description\n* `experimental_skip_healthcheck` - Skip the health check when run as a service."
     @spec with_exposed_port(t(), Dagger.Int.t(), keyword()) :: Dagger.Container.t()
     def with_exposed_port(%__MODULE__{} = container, port, optional_args \\ []) do
       selection = select(container.selection, "withExposedPort")
@@ -633,10 +633,14 @@ defmodule Dagger.Container do
         end
 
       selection =
-        if is_nil(optional_args[:skip_health_check]) do
+        if is_nil(optional_args[:experimental_skip_healthcheck]) do
           selection
         else
-          arg(selection, "skipHealthCheck", optional_args[:skip_health_check])
+          arg(
+            selection,
+            "experimentalSkipHealthcheck",
+            optional_args[:experimental_skip_healthcheck]
+          )
         end
 
       %Dagger.Container{selection: selection, client: container.client}

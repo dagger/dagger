@@ -52,7 +52,7 @@ defmodule Dagger.Service do
     @spec ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
     def ports(%__MODULE__{} = service) do
       selection = select(service.selection, "ports")
-      selection = select(selection, "description id port protocol skipHealthCheck")
+      selection = select(selection, "description experimentalSkipHealthcheck id port protocol")
 
       with {:ok, data} <- execute(selection, service.client) do
         {:ok,

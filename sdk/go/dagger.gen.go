@@ -4145,11 +4145,11 @@ type Port struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description     *string
-	id              *PortID
-	port            *int
-	protocol        *NetworkProtocol
-	skipHealthCheck *bool
+	description                 *string
+	experimentalSkipHealthcheck *bool
+	id                          *PortID
+	port                        *int
+	protocol                    *NetworkProtocol
 }
 
 func (r *Port) Description(ctx context.Context) (string, error) {
@@ -4159,6 +4159,18 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 	q := r.q.Select("description")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
+	if r.experimentalSkipHealthcheck != nil {
+		return *r.experimentalSkipHealthcheck, nil
+	}
+	q := r.q.Select("experimentalSkipHealthcheck")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -4223,18 +4235,6 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	q := r.q.Select("protocol")
 
 	var response NetworkProtocol
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-func (r *Port) SkipHealthCheck(ctx context.Context) (bool, error) {
-	if r.skipHealthCheck != nil {
-		return *r.skipHealthCheck, nil
-	}
-	q := r.q.Select("skipHealthCheck")
-
-	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)

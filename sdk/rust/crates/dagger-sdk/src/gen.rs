@@ -3819,6 +3819,10 @@ impl Port {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    pub async fn experimental_skip_healthcheck(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("experimentalSkipHealthcheck");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Port.
     pub async fn id(&self) -> Result<PortId, DaggerError> {
         let query = self.selection.select("id");
@@ -3830,10 +3834,6 @@ impl Port {
     }
     pub async fn protocol(&self) -> Result<NetworkProtocol, DaggerError> {
         let query = self.selection.select("protocol");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn skip_health_check(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("skipHealthCheck");
         query.execute(self.graphql_client.clone()).await
     }
 }

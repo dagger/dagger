@@ -400,7 +400,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("port", `Port number to expose`).
 			ArgDoc("protocol", `Transport layer network protocol`).
 			ArgDoc("description", `Optional port description`).
-			ArgDoc("experimentalSkipHealthCheck", `Skip the health check when run as a service.`),
+			ArgDoc("experimentalSkipHealthcheck", `Skip the health check when run as a service.`),
 
 		dagql.Func("withoutExposedPort", s.withoutExposedPort).
 			Doc(`Unexpose a previously exposed port.`).

@@ -587,9 +587,9 @@ class Container(Type):
         _ctx = self._select("exposedPorts", _args)
         _ctx = Port(_ctx)._select_multiple(
             _description="description",
+            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
             _port="port",
             _protocol="protocol",
-            _skip_health_check="skipHealthCheck",
         )
         return await _ctx.execute(list[Port])
 
@@ -4246,15 +4246,15 @@ class Port(Type):
 
     __slots__ = (
         "_description",
+        "_experimental_skip_healthcheck",
         "_port",
         "_protocol",
-        "_skip_health_check",
     )
 
     _description: str | None
+    _experimental_skip_healthcheck: bool | None
     _port: int | None
     _protocol: NetworkProtocol | None
-    _skip_health_check: bool | None
 
     @typecheck
     async def description(self) -> str | None:
@@ -4277,6 +4277,26 @@ class Port(Type):
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str | None)
+
+    @typecheck
+    async def experimental_skip_healthcheck(self) -> bool:
+        """Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_experimental_skip_healthcheck"):
+            return self._experimental_skip_healthcheck
+        _args: list[Arg] = []
+        _ctx = self._select("experimentalSkipHealthcheck", _args)
+        return await _ctx.execute(bool)
 
     @typecheck
     async def id(self) -> PortID:
@@ -4344,26 +4364,6 @@ class Port(Type):
         _args: list[Arg] = []
         _ctx = self._select("protocol", _args)
         return await _ctx.execute(NetworkProtocol)
-
-    @typecheck
-    async def skip_health_check(self) -> bool:
-        """Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        if hasattr(self, "_skip_health_check"):
-            return self._skip_health_check
-        _args: list[Arg] = []
-        _ctx = self._select("skipHealthCheck", _args)
-        return await _ctx.execute(bool)
 
 
 class Client(Root):
@@ -5149,9 +5149,9 @@ class Service(Type):
         _ctx = self._select("ports", _args)
         _ctx = Port(_ctx)._select_multiple(
             _description="description",
+            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
             _port="port",
             _protocol="protocol",
-            _skip_health_check="skipHealthCheck",
         )
         return await _ctx.execute(list[Port])
 

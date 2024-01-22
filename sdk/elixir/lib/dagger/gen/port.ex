@@ -15,6 +15,15 @@ defmodule Dagger.Port do
   )
 
   (
+    @doc ""
+    @spec experimental_skip_healthcheck(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def experimental_skip_healthcheck(%__MODULE__{} = port) do
+      selection = select(port.selection, "experimentalSkipHealthcheck")
+      execute(selection, port.client)
+    end
+  )
+
+  (
     @doc "A unique identifier for this Port."
     @spec id(t()) :: {:ok, Dagger.PortID.t()} | {:error, term()}
     def id(%__MODULE__{} = port) do
@@ -37,15 +46,6 @@ defmodule Dagger.Port do
     @spec protocol(t()) :: {:ok, Dagger.NetworkProtocol.t()} | {:error, term()}
     def protocol(%__MODULE__{} = port) do
       selection = select(port.selection, "protocol")
-      execute(selection, port.client)
-    end
-  )
-
-  (
-    @doc ""
-    @spec skip_health_check(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
-    def skip_health_check(%__MODULE__{} = port) do
-      selection = select(port.selection, "skipHealthCheck")
       execute(selection, port.client)
     end
   )

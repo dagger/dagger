@@ -471,14 +471,14 @@ type Container {
     """Optional port description"""
     description: String
 
+    """Skip the health check when run as a service."""
+    experimentalSkipHealthcheck: Boolean = false
+
     """Port number to expose"""
     port: Int!
 
     """Transport layer network protocol"""
     protocol: NetworkProtocol = TCP
-
-    """Skip the health check when run as a service."""
-    skipHealthCheck: Boolean = false
   ): Container!
 
   """
@@ -1520,12 +1520,12 @@ scalar Platform
 """A port exposed by a container."""
 type Port {
   description: String
+  experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
   id: PortID!
   port: Int!
   protocol: NetworkProtocol!
-  skipHealthCheck: Boolean!
 }
 
 """Port forwarding rules for tunneling network traffic."""
