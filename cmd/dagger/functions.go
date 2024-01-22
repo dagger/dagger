@@ -36,7 +36,6 @@ var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
 	shellCmd,
-	downloadCmd,
 	upCmd,
 }
 
@@ -92,30 +91,6 @@ var funcListCmd = &FuncCommand{
 		}
 		return tw.Flush()
 	},
-}
-
-func printReturnType(returnType *modTypeDef) (n string) {
-	defer func() {
-		if !returnType.Optional {
-			n += "!"
-		}
-	}()
-	switch returnType.Kind {
-	case dagger.StringKind:
-		return "String"
-	case dagger.IntegerKind:
-		return "Int"
-	case dagger.BooleanKind:
-		return "Boolean"
-	case dagger.ObjectKind:
-		return returnType.AsObject.Name
-	case dagger.InterfaceKind:
-		return returnType.AsInterface.Name
-	case dagger.ListKind:
-		return fmt.Sprintf("[%s]", printReturnType(returnType.AsList.ElementTypeDef))
-	default:
-		return ""
-	}
 }
 
 type FuncCommands []*FuncCommand
