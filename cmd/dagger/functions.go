@@ -25,6 +25,7 @@ const (
 	File      string = "File"
 	Secret    string = "Secret"
 	Service   string = "Service"
+	Terminal  string = "Terminal"
 )
 
 var funcGroup = &cobra.Group{
@@ -35,7 +36,6 @@ var funcGroup = &cobra.Group{
 var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
-	shellCmd,
 	upCmd,
 }
 

@@ -197,6 +197,13 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
+export type ContainerShellOpts = {
+  /**
+   * If set, override the container's default shell and invoke these arguments instead.
+   */
+  args?: string[]
+}
+
 export type ContainerWithDirectoryOpts = {
   /**
    * Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -842,6 +849,11 @@ export type ServiceID = string & { __ServiceID: never }
  */
 export type SocketID = string & { __SocketID: never }
 
+/**
+ * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+ */
+export type TerminalID = string & { __TerminalID: never }
+
 export type TypeDefWithFieldOpts = {
   /**
    * A doc string for the field, if any
@@ -975,7 +987,6 @@ export class Container extends BaseClient {
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
-  private readonly _shellEndpoint?: string = undefined
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
   private readonly _sync?: ContainerID = undefined
@@ -994,7 +1005,6 @@ export class Container extends BaseClient {
     _label?: string,
     _platform?: Platform,
     _publish?: string,
-    _shellEndpoint?: string,
     _stderr?: string,
     _stdout?: string,
     _sync?: ContainerID,
@@ -1010,7 +1020,6 @@ export class Container extends BaseClient {
     this._label = _label
     this._platform = _platform
     this._publish = _publish
-    this._shellEndpoint = _shellEndpoint
     this._stderr = _stderr
     this._stdout = _stdout
     this._sync = _sync
@@ -1608,26 +1617,20 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-   *
-   * Primarily intended for internal use with the dagger CLI.
+   * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+   * @param opts.args If set, override the container's default shell and invoke these arguments instead.
    */
-  shellEndpoint = async (): Promise<string> => {
-    if (this._shellEndpoint) {
-      return this._shellEndpoint
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
+  shell = (opts?: ContainerShellOpts): Terminal => {
+    return new Terminal({
+      queryTree: [
         ...this._queryTree,
         {
-          operation: "shellEndpoint",
+          operation: "shell",
+          args: { ...opts },
         },
       ],
-      await this._ctx.connection()
-    )
-
-    return response
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -1726,6 +1729,23 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "withDefaultArgs",
+          args: { args },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Set the default command to invoke for the "shell" API.
+   * @param args The args of the command to set the default shell to.
+   */
+  withDefaultShell = (args: string[]): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDefaultShell",
           args: { args },
         },
       ],
@@ -5936,6 +5956,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Terminal from its ID.
+   */
+  loadTerminalFromID = (id: TerminalID): Terminal => {
+    return new Terminal({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadTerminalFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a TypeDef from its ID.
    */
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
@@ -6352,6 +6388,70 @@ export class Socket extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+/**
+ * An interactive terminal that clients can connect to.
+ */
+export class Terminal extends BaseClient {
+  private readonly _id?: TerminalID = undefined
+  private readonly _websocketEndpoint?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: TerminalID,
+    _websocketEndpoint?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._websocketEndpoint = _websocketEndpoint
+  }
+
+  /**
+   * A unique identifier for this Terminal.
+   */
+  id = async (): Promise<TerminalID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<TerminalID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * An http endpoint at which this terminal can be connected to over a websocket.
+   */
+  websocketEndpoint = async (): Promise<string> => {
+    if (this._websocketEndpoint) {
+      return this._websocketEndpoint
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "websocketEndpoint",
         },
       ],
       await this._ctx.connection()

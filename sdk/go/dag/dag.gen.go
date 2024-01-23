@@ -278,6 +278,12 @@ func LoadSocketFromID(id dagger.SocketID) *dagger.Socket {
 	return client.LoadSocketFromID(id)
 }
 
+// Load a Terminal from its ID.
+func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
+	client := initClient()
+	return client.LoadTerminalFromID(id)
+}
+
 // Load a TypeDef from its ID.
 func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	client := initClient()

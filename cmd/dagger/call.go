@@ -48,34 +48,62 @@ var callCmd = &FuncCommand{
 				return nil
 			}
 			c.Select("contents")
+		case Terminal:
+			c.Select("websocketEndpoint")
 		default:
 			return fmt.Errorf("return type %q requires a sub-command", name)
 		}
 		return nil
 	},
-	AfterResponse: func(_ *FuncCommand, cmd *cobra.Command, _ *modTypeDef, response any) error {
-		writer := cmd.OutOrStdout()
-
-		if outputPath != "" {
-			if outputExport {
-				logOutputSuccess(cmd, outputPath)
-				return nil
-			}
-
-			file, err := openOutputFile(outputPath)
-			if err != nil {
-				return fmt.Errorf("couldn't write output to file: %w", err)
-			}
-
-			defer func() {
-				file.Close()
-				logOutputSuccess(cmd, outputPath)
-			}()
-
-			writer = io.MultiWriter(writer, file)
+	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, modType *modTypeDef) error {
+		if modType.Name() != Terminal {
+			return nil
 		}
 
-		return printFunctionResult(writer, response)
+		// Even though these flags are global, we only check them just before query
+		// execution because you may want to debug an error during loading or for
+		// --help.
+		if silent || !(progress == "auto" && autoTTY || progress == "tty") {
+			return fmt.Errorf("running shell without the TUI is not supported")
+		}
+		if debug {
+			return fmt.Errorf("running shell with --debug is not supported")
+		}
+		return nil
+	},
+	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, modType *modTypeDef, response any) error {
+		switch modType.Name() {
+		case Terminal:
+			termEndpoint, ok := response.(string)
+			if !ok {
+				return fmt.Errorf("unexpected response %T: %+v", response, response)
+			}
+			return attachToShell(cmd.Context(), c.c, termEndpoint)
+		default:
+			writer := cmd.OutOrStdout()
+
+			if outputPath != "" {
+				if outputExport {
+					logOutputSuccess(cmd, outputPath)
+					return nil
+				}
+
+				file, err := openOutputFile(outputPath)
+				if err != nil {
+					return fmt.Errorf("couldn't write output to file: %w", err)
+				}
+
+				defer func() {
+					file.Close()
+					logOutputSuccess(cmd, outputPath)
+				}()
+
+				writer = io.MultiWriter(writer, file)
+			}
+
+			return printFunctionResult(writer, response)
+		}
+
 	},
 }
 

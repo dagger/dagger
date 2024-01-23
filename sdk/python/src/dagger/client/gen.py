@@ -139,6 +139,11 @@ class SocketID(Scalar):
     of type Socket."""
 
 
+class TerminalID(Scalar):
+    """The `TerminalID` scalar type represents an identifier for an object
+    of type Terminal."""
+
+
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
     of type TypeDef."""
@@ -879,29 +884,25 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    async def shell_endpoint(self) -> str:
-        """Return a websocket endpoint that, if connected to, will start the
-        container with a TTY streamed over the websocket.
+    def shell(
+        self,
+        *,
+        args: Sequence[str] | None = None,
+    ) -> "Terminal":
+        """Return an interactive terminal for this container using its configured
+        shell if not overridden by args (or sh as a fallback default).
 
-        Primarily intended for internal use with the dagger CLI.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        Parameters
+        ----------
+        args:
+            If set, override the container's default shell and invoke these
+            arguments instead.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("shellEndpoint", _args)
-        return await _ctx.execute(str)
+        _args = [
+            Arg("args", args, None),
+        ]
+        _ctx = self._select("shell", _args)
+        return Terminal(_ctx)
 
     @typecheck
     async def stderr(self) -> str:
@@ -1013,6 +1014,21 @@ class Container(Type):
             Arg("args", args),
         ]
         _ctx = self._select("withDefaultArgs", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def with_default_shell(self, args: Sequence[str]) -> "Container":
+        """Set the default command to invoke for the "shell" API.
+
+        Parameters
+        ----------
+        args:
+            The args of the command to set the default shell to.
+        """
+        _args = [
+            Arg("args", args),
+        ]
+        _ctx = self._select("withDefaultShell", _args)
         return Container(_ctx)
 
     @typecheck
@@ -4847,6 +4863,15 @@ class Client(Root):
         return Socket(_ctx)
 
     @typecheck
+    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
+        """Load a Terminal from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadTerminalFromID", _args)
+        return Terminal(_ctx)
+
+    @typecheck
     def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
         """Load a TypeDef from its ID."""
         _args = [
@@ -5193,6 +5218,58 @@ class Socket(Type):
         return await _ctx.execute(SocketID)
 
 
+class Terminal(Type):
+    """An interactive terminal that clients can connect to."""
+
+    @typecheck
+    async def id(self) -> TerminalID:
+        """A unique identifier for this Terminal.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        TerminalID
+            The `TerminalID` scalar type represents an identifier for an
+            object of type Terminal.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(TerminalID)
+
+    @typecheck
+    async def websocket_endpoint(self) -> str:
+        """An http endpoint at which this terminal can be connected to over a
+        websocket.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("websocketEndpoint", _args)
+        return await _ctx.execute(str)
+
+
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -5471,6 +5548,8 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
+    "Terminal",
+    "TerminalID",
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",

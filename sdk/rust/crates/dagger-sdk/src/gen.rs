@@ -449,6 +449,23 @@ impl SocketId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct TerminalId(pub String);
+impl Into<TerminalId> for &str {
+    fn into(self) -> TerminalId {
+        TerminalId(self.to_string())
+    }
+}
+impl Into<TerminalId> for String {
+    fn into(self) -> TerminalId {
+        TerminalId(self.clone())
+    }
+}
+impl TerminalId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TypeDefId(pub String);
 impl Into<TypeDefId> for &str {
     fn into(self) -> TypeDefId {
@@ -593,6 +610,12 @@ pub struct ContainerPublishOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerShellOpts<'a> {
+    /// If set, override the container's default shell and invoke these arguments instead.
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
@@ -1176,11 +1199,34 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-    /// Primarily intended for internal use with the dagger CLI.
-    pub async fn shell_endpoint(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("shellEndpoint");
-        query.execute(self.graphql_client.clone()).await
+    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn shell(&self) -> Terminal {
+        let query = self.selection.select("shell");
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn shell_opts<'a>(&self, opts: ContainerShellOpts<'a>) -> Terminal {
+        let mut query = self.selection.select("shell");
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
@@ -1212,6 +1258,23 @@ impl Container {
     /// * `args` - Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     pub fn with_default_args(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Set the default command to invoke for the "shell" API.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The args of the command to set the default shell to.
+    pub fn with_default_shell(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withDefaultShell");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -4565,6 +4628,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load a Terminal from its ID.
+    pub fn load_terminal_from_id(&self, id: Terminal) -> Terminal {
+        let mut query = self.selection.select("loadTerminalFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Load a TypeDef from its ID.
     pub fn load_type_def_from_id(&self, id: TypeDef) -> TypeDef {
         let mut query = self.selection.select("loadTypeDefFromID");
@@ -4832,6 +4911,24 @@ impl Socket {
     /// A unique identifier for this Socket.
     pub async fn id(&self) -> Result<SocketId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Terminal {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Terminal {
+    /// A unique identifier for this Terminal.
+    pub async fn id(&self) -> Result<TerminalId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// An http endpoint at which this terminal can be connected to over a websocket.
+    pub async fn websocket_endpoint(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("websocketEndpoint");
         query.execute(self.graphql_client.clone()).await
     }
 }

@@ -80,6 +80,9 @@ type Container struct {
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
 	Focused bool `json:"focused"`
+
+	// The args to invoke when using the "shell" api on this container.
+	DefaultShell []string `json:"defaultShell,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {

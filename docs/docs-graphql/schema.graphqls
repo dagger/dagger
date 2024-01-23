@@ -319,11 +319,15 @@ type Container {
   rootfs: Directory!
 
   """
-  Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-  
-  Primarily intended for internal use with the dagger CLI.
+  Return an interactive terminal for this container using its configured shell
+  if not overridden by args (or sh as a fallback default).
   """
-  shellEndpoint: String!
+  shell(
+    """
+    If set, override the container's default shell and invoke these arguments instead.
+    """
+    args: [String!]
+  ): Terminal!
 
   """
   The error stream of the last executed command.
@@ -354,6 +358,12 @@ type Container {
     """
     Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     """
+    args: [String!]!
+  ): Container!
+
+  """Set the default command to invoke for the "shell" API."""
+  withDefaultShell(
+    """The args of the command to set the default shell to."""
     args: [String!]!
   ): Container!
 
@@ -1737,6 +1747,9 @@ type Query {
   """Load a Socket from its ID."""
   loadSocketFromID(id: SocketID!): Socket!
 
+  """Load a Terminal from its ID."""
+  loadTerminalFromID(id: TerminalID!): Terminal!
+
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
@@ -1853,6 +1866,22 @@ type Socket {
 The `SocketID` scalar type represents an identifier for an object of type Socket.
 """
 scalar SocketID
+
+"""An interactive terminal that clients can connect to."""
+type Terminal {
+  """A unique identifier for this Terminal."""
+  id: TerminalID!
+
+  """
+  An http endpoint at which this terminal can be connected to over a websocket.
+  """
+  websocketEndpoint: String!
+}
+
+"""
+The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+"""
+scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
