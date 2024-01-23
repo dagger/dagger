@@ -103,6 +103,16 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves the module with the given description
+     */
+    public function withDescription(string $description): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * This module plus the given Interface type and associated functions
      */
     public function withInterface(TypeDefId|TypeDef $iface): Module

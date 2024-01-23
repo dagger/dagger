@@ -3745,6 +3745,20 @@ impl Module {
         let query = self.selection.select("sourceDirectorySubpath");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Retrieves the module with the given description
+    ///
+    /// # Arguments
+    ///
+    /// * `description` - The description to set
+    pub fn with_description(&self, description: impl Into<String>) -> Module {
+        let mut query = self.selection.select("withDescription");
+        query = query.arg("description", description.into());
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// This module plus the given Interface type and associated functions
     pub fn with_interface(&self, iface: TypeDef) -> Module {
         let mut query = self.selection.select("withInterface");

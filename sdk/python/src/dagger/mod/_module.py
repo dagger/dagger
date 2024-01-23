@@ -9,7 +9,7 @@ import types
 import typing
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, MutableMapping
-from typing import Any, TypeAlias, TypeVar
+from typing import Any, Self, TypeAlias, TypeVar
 
 import anyio
 import cattrs
@@ -76,6 +76,11 @@ class Module:
         self._resolvers: list[Resolver] = []
         self._fn_call = dag.current_function_call()
         self._mod = dag.current_module()
+
+    def with_description(self, description: str | None) -> Self:
+        if description:
+            self._mod = self._mod.with_description(description)
+        return self
 
     def add_resolver(self, resolver: Resolver):
         self._resolvers.append(resolver)

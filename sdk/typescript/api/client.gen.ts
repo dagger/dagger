@@ -4892,6 +4892,23 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Retrieves the module with the given description
+   * @param description The description to set
+   */
+  withDescription = (description: string): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * This module plus the given Interface type and associated functions
    */
   withInterface = (iface: TypeDef): Module_ => {

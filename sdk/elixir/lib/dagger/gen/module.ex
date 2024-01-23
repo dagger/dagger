@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedCode id initialize interfaces name objects sdk serve sourceDirectory sourceDirectorySubpath withInterface withObject withSource"
+          "dependencies dependencyConfig description generatedCode id initialize interfaces name objects sdk serve sourceDirectory sourceDirectorySubpath withDescription withInterface withObject withSource"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -41,7 +41,7 @@ defmodule Dagger.Module do
 
   (
     @doc ""
-    @spec description(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
+    @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = module) do
       selection = select(module.selection, "description")
       execute(selection, module.client)
@@ -167,6 +167,16 @@ defmodule Dagger.Module do
     def source_directory_subpath(%__MODULE__{} = module) do
       selection = select(module.selection, "sourceDirectorySubpath")
       execute(selection, module.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the module with the given description\n\n## Required Arguments\n\n* `description` - The description to set"
+    @spec with_description(t(), Dagger.String.t()) :: Dagger.Module.t()
+    def with_description(%__MODULE__{} = module, description) do
+      selection = select(module.selection, "withDescription")
+      selection = arg(selection, "description", description)
+      %Dagger.Module{selection: selection, client: module.client}
     end
   )
 
