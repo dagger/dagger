@@ -363,6 +363,7 @@ func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
 			"dist",
 			"**/test",
 			"**/*.spec.ts",
+			"dev",
 		},
 	}).WithFile("/codegen", goSDKCodegenBin(c, arch))
 }

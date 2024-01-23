@@ -1,12 +1,15 @@
 import * as fs from "fs"
+import * as path from "path"
+import { fileURLToPath } from "url"
 
-const moduleProjectDirectory = `/src/`
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const moduleProjectDirectory = `${__dirname}/../../`
 const tsConfigPath = `${moduleProjectDirectory}/tsconfig.json`
 
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerPath = "./sdk"
-
-console.log(tsConfigPath)
 
 // If the tsconfig.json file doesn't exist, create it with default config.
 if (!fs.existsSync(tsConfigPath)) {
