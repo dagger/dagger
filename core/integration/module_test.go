@@ -2303,7 +2303,7 @@ class Foo {
   con: Container
 
   @field
-  usetFile?: File
+  unsetFile?: File
 
   constructor(con: Container, usetFile?: File) {
     this.con = con
@@ -3977,12 +3977,11 @@ class Test {
     return (async () => {
       this.alpineVersion = await dag.container().from("alpine:3.18.4").file("/etc/alpine-release").contents()
 
-
       return this; // Return the newly-created instance
-  })();
+    })();
   }
 }				
-				`,
+`,
 			},
 		} {
 			tc := tc
@@ -4050,7 +4049,7 @@ class Test {
     throw new Error("too bad")
   }
 }				
-				`,
+`,
 			},
 		} {
 			tc := tc
@@ -4141,7 +4140,7 @@ class Test {
   }
 }
 `, content),
-			))
+		))
 
 		out, err := ctr.With(daggerCall("foo")).Stdout(ctx)
 		require.NoError(t, err)
