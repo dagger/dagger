@@ -13,6 +13,12 @@ namespace Dagger;
  */
 class TypeDef extends Client\AbstractObject implements Client\IdAble
 {
+    public function asInput(): InputTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInput');
+        return new \Dagger\InputTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     public function asInterface(): InterfaceTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');

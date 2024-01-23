@@ -1361,6 +1361,25 @@ enum ImageMediaTypes {
   DockerMediaTypes
 }
 
+"""
+A graphql input type, which is essentially just a group of named args.
+This is currently only used to represent pre-existing usage of graphql input types
+in the core API. It is not used by user modules and shouldn't ever be as user
+module accept input objects via their id rather than graphql input types.
+"""
+type InputTypeDef {
+  fields: [FieldTypeDef!]!
+
+  """A unique identifier for this InputTypeDef."""
+  id: InputTypeDefID!
+  name: String!
+}
+
+"""
+The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+"""
+scalar InputTypeDefID
+
 """A definition of a custom interface defined in a Module."""
 type InterfaceTypeDef {
   description: String!
@@ -1717,6 +1736,9 @@ type Query {
   """Load a Host from its ID."""
   loadHostFromID(id: HostID!): Host!
 
+  """Load a InputTypeDef from its ID."""
+  loadInputTypeDefFromID(id: InputTypeDefID!): InputTypeDef!
+
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
 
@@ -1849,6 +1871,11 @@ type Service {
 
   """Stop the service."""
   stop: ServiceID!
+
+  """
+  Creates a tunnel that forwards traffic from the caller's network to this service.
+  """
+  up(native: Boolean = false, ports: [PortForward!] = []): Void
 }
 
 """
@@ -1885,6 +1912,7 @@ scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
+  asInput: InputTypeDef
   asInterface: InterfaceTypeDef
   asList: ListTypeDef
   asObject: ObjectTypeDef
@@ -1978,6 +2006,11 @@ enum TypeDefKind {
   Always paired with an InterfaceTypeDef.
   """
   INTERFACE_KIND
+
+  """
+  A graphql input type, used only when representing the core API via TypeDefs.
+  """
+  INPUT_KIND
 
   """
   A special kind used to signify that no value is returned.

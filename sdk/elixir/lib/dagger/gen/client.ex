@@ -92,7 +92,7 @@ defmodule Dagger.Client do
       selection =
         select(
           selection,
-          "asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
+          "asInput asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
         )
 
       with {:ok, data} <- execute(selection, query.client) do
@@ -384,6 +384,16 @@ defmodule Dagger.Client do
       selection = select(query.selection, "loadHostFromID")
       selection = arg(selection, "id", host)
       %Dagger.Host{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a InputTypeDef from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_input_type_def_from_id(t(), Dagger.InputTypeDef.t()) :: Dagger.InputTypeDef.t()
+    def load_input_type_def_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadInputTypeDefFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.InputTypeDef{selection: selection, client: query.client}
     end
   )
 

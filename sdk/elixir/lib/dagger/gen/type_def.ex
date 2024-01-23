@@ -7,6 +7,20 @@ defmodule Dagger.TypeDef do
 
   (
     @doc ""
+    @spec as_input(t()) :: {:ok, Dagger.InputTypeDef.t() | nil} | {:error, term()}
+    def as_input(%__MODULE__{} = type_def) do
+      selection = select(type_def.selection, "asInput")
+
+      case execute(selection, type_def.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.InputTypeDef)
+        error -> error
+      end
+    end
+  )
+
+  (
+    @doc ""
     @spec as_interface(t()) :: {:ok, Dagger.InterfaceTypeDef.t() | nil} | {:error, term()}
     def as_interface(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asInterface")

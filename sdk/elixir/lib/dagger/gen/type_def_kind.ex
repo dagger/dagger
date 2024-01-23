@@ -3,6 +3,7 @@ defmodule Dagger.TypeDefKind do
   @moduledoc "Distinguishes the different kinds of TypeDefs."
   @type t() ::
           :BOOLEAN_KIND
+          | :INPUT_KIND
           | :INTEGER_KIND
           | :INTERFACE_KIND
           | :LIST_KIND
@@ -14,6 +15,14 @@ defmodule Dagger.TypeDefKind do
     @spec boolean_kind() :: :BOOLEAN_KIND
     def boolean_kind() do
       :BOOLEAN_KIND
+    end
+  )
+
+  (
+    @doc "A graphql input type, used only when representing the core API via TypeDefs."
+    @spec input_kind() :: :INPUT_KIND
+    def input_kind() do
+      :INPUT_KIND
     end
   )
 

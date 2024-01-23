@@ -245,6 +245,23 @@ impl HostId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct InputTypeDefId(pub String);
+impl Into<InputTypeDefId> for &str {
+    fn into(self) -> InputTypeDefId {
+        InputTypeDefId(self.to_string())
+    }
+}
+impl Into<InputTypeDefId> for String {
+    fn into(self) -> InputTypeDefId {
+        InputTypeDefId(self.clone())
+    }
+}
+impl InputTypeDefId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct InterfaceTypeDefId(pub String);
 impl Into<InterfaceTypeDefId> for &str {
     fn into(self) -> InterfaceTypeDefId {
@@ -3528,6 +3545,31 @@ impl Host {
     }
 }
 #[derive(Clone)]
+pub struct InputTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl InputTypeDef {
+    pub fn fields(&self) -> Vec<FieldTypeDef> {
+        let query = self.selection.select("fields");
+        return vec![FieldTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+    /// A unique identifier for this InputTypeDef.
+    pub async fn id(&self) -> Result<InputTypeDefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct InterfaceTypeDef {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -4468,6 +4510,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load a InputTypeDef from its ID.
+    pub fn load_input_type_def_from_id(&self, id: InputTypeDef) -> InputTypeDef {
+        let mut query = self.selection.select("loadInputTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return InputTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Load a InterfaceTypeDef from its ID.
     pub fn load_interface_type_def_from_id(&self, id: InterfaceTypeDef) -> InterfaceTypeDef {
         let mut query = self.selection.select("loadInterfaceTypeDefFromID");
@@ -4838,6 +4896,13 @@ pub struct ServiceEndpointOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub scheme: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ServiceUpOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub native: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub ports: Option<Vec<PortForward>>,
+}
 impl Service {
     /// Retrieves an endpoint that clients can use to reach this container.
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
@@ -4900,6 +4965,30 @@ impl Service {
         let query = self.selection.select("stop");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Creates a tunnel that forwards traffic from the caller's network to this service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("up");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Creates a tunnel that forwards traffic from the caller's network to this service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("up");
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
+        }
+        if let Some(native) = opts.native {
+            query = query.arg("native", native);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Socket {
@@ -4955,6 +5044,14 @@ pub struct TypeDefWithObjectOpts<'a> {
     pub description: Option<&'a str>,
 }
 impl TypeDef {
+    pub fn as_input(&self) -> InputTypeDef {
+        let query = self.selection.select("asInput");
+        return InputTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     pub fn as_interface(&self) -> InterfaceTypeDef {
         let query = self.selection.select("asInterface");
         return InterfaceTypeDef {
@@ -5225,6 +5322,8 @@ pub enum NetworkProtocol {
 pub enum TypeDefKind {
     #[serde(rename = "BOOLEAN_KIND")]
     BooleanKind,
+    #[serde(rename = "INPUT_KIND")]
+    InputKind,
     #[serde(rename = "INTEGER_KIND")]
     IntegerKind,
     #[serde(rename = "INTERFACE_KIND")]

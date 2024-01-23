@@ -154,6 +154,7 @@ func (s *moduleSchema) Install() {
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 
