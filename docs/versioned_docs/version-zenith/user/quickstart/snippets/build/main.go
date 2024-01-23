@@ -17,27 +17,26 @@ func (m *MyModule) HelloFromDagger(ctx context.Context) string {
 
 // run unit tests
 func (m *MyModule) Test(ctx context.Context) (string, error) {
-	return dag.Node().
-		WithVersion("18").
-		WithNpm().
-		WithSource(dag.Host().Directory(".", HostDirectoryOpts{
-			Exclude: []string{".git", "**/node_modules"},
+	return dag.Container().
+		From("node:18-slim").
+		WithDirectory("/src", dag.Host().Directory(".", HostDirectoryOpts{
+			Exclude: []string{".git", "node_modules/"},
 		})).
-		Install(nil).
-		Run([]string{"run", "test:unit", "run"}).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 
 // create a production build
 func (m *MyModule) Build() *Directory {
-	return dag.Node().
-		WithVersion("18").
-		WithNpm().
-		WithSource(dag.Host().Directory(".", HostDirectoryOpts{
-			Exclude: []string{".git", "**/node_modules"},
+	return dag.Container().
+		From("node:18-slim").
+		WithDirectory("/src", dag.Host().Directory(".", HostDirectoryOpts{
+			Exclude: []string{".git", "node_modules/"},
 		})).
-		Install(nil).
-		Build().
-		Container().
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"}).
 		Directory("./dist")
 }

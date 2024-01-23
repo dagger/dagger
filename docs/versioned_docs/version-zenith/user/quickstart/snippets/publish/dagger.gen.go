@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 
 	"github.com/Khan/genqlient/graphql"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"main/querybuilder"
 )
@@ -84,57 +86,179 @@ func (o *Optional[T]) UnmarshalJSON(dt []byte) error {
 	return json.Unmarshal(dt, &o.value)
 }
 
-// A global cache volume identifier.
+type DaggerObject querybuilder.GraphQLMarshaller
+
+func convertSlice[I any, O any](in []I, f func(I) O) []O {
+	out := make([]O, len(in))
+	for i, v := range in {
+		out[i] = f(v)
+	}
+	return out
+}
+
+func convertOptionalVal[I any, O any](opt Optional[I], f func(I) O) Optional[O] {
+	if !opt.isSet {
+		return Optional[O]{}
+	}
+	return Optional[O]{value: f(opt.value), isSet: true}
+}
+
+// getCustomError parses a GraphQL error into a more specific error type.
+func getCustomError(err error) error {
+	var gqlErr *gqlerror.Error
+
+	if !errors.As(err, &gqlErr) {
+		return nil
+	}
+
+	ext := gqlErr.Extensions
+
+	typ, ok := ext["_type"].(string)
+	if !ok {
+		return nil
+	}
+
+	if typ == "EXEC_ERROR" {
+		e := &ExecError{
+			original: err,
+		}
+		if code, ok := ext["exitCode"].(float64); ok {
+			e.ExitCode = int(code)
+		}
+		if args, ok := ext["cmd"].([]interface{}); ok {
+			cmd := make([]string, len(args))
+			for i, v := range args {
+				cmd[i] = v.(string)
+			}
+			e.Cmd = cmd
+		}
+		if stdout, ok := ext["stdout"].(string); ok {
+			e.Stdout = stdout
+		}
+		if stderr, ok := ext["stderr"].(string); ok {
+			e.Stderr = stderr
+		}
+		return e
+	}
+
+	return nil
+}
+
+// ExecError is an API error from an exec operation.
+type ExecError struct {
+	original error
+	Cmd      []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+func (e *ExecError) Error() string {
+	// As a default when just printing the error, include the stdout
+	// and stderr for visibility
+	return fmt.Sprintf(
+		"%s\nStdout:\n%s\nStderr:\n%s",
+		e.Message(),
+		e.Stdout,
+		e.Stderr,
+	)
+}
+
+func (e *ExecError) Message() string {
+	return e.original.Error()
+}
+
+func (e *ExecError) Unwrap() error {
+	return e.original
+}
+
+// The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
-// A unique container identifier. Null designates an empty container (scratch).
+// The `ContainerID` scalar type represents an identifier for an object of type Container.
 type ContainerID string
 
-// A content-addressed directory identifier.
+// The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
 
-// A file identifier.
+// The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
+type EnvVariableID string
+
+// The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
+type FieldTypeDefID string
+
+// The `FileID` scalar type represents an identifier for an object of type File.
 type FileID string
 
-// A reference to a FunctionArg.
+// The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
 type FunctionArgID string
 
-// A reference to a Function.
+// The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
+type FunctionCallArgValueID string
+
+// The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
+type FunctionCallID string
+
+// The `FunctionID` scalar type represents an identifier for an object of type Function.
 type FunctionID string
 
-// A reference to GeneratedCode.
+// The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
 type GeneratedCodeID string
 
-// A git reference identifier.
+// The `GitRefID` scalar type represents an identifier for an object of type GitRef.
 type GitRefID string
 
-// A git repository identifier.
+// The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
 type GitRepositoryID string
+
+// The `HostID` scalar type represents an identifier for an object of type Host.
+type HostID string
+
+// The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
+type InterfaceTypeDefID string
 
 // An arbitrary JSON-encoded value.
 type JSON string
 
-// A reference to a Module.
+// The `LabelID` scalar type represents an identifier for an object of type Label.
+type LabelID string
+
+// The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
+type ListTypeDefID string
+
+// The `ModuleConfigID` scalar type represents an identifier for an object of type ModuleConfig.
+type ModuleConfigID string
+
+// The `ModuleID` scalar type represents an identifier for an object of type Module.
 type ModuleID string
+
+// The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
+type ObjectTypeDefID string
 
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
 
-// A unique identifier for a secret.
+// The `PortID` scalar type represents an identifier for an object of type Port.
+type PortID string
+
+// The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID string
 
-// A unique service identifier.
+// The `ServiceID` scalar type represents an identifier for an object of type Service.
 type ServiceID string
 
-// A content-addressed socket identifier.
+// The `SocketID` scalar type represents an identifier for an object of type Socket.
 type SocketID string
 
-// A reference to a TypeDef.
+// The `TtlshID` scalar type represents an identifier for an object of type Ttlsh.
+type TtlshID string
+
+// The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
-// The absense of a value.
+// The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
@@ -148,7 +272,7 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
-// Key value object that represents a Pipeline label.
+// Key value object that represents a pipeline label.
 type PipelineLabel struct {
 	// Label name.
 	Name string `json:"name"`
@@ -165,7 +289,7 @@ type PortForward struct {
 	// Port to expose to clients. If unspecified, a default will be chosen.
 	Frontend int `json:"frontend"`
 
-	// Protocol to use for traffic.
+	// Transport layer protocol to use for traffic.
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
@@ -177,6 +301,7 @@ type CacheVolume struct {
 	id *CacheVolumeID
 }
 
+// A unique identifier for this CacheVolume.
 func (r *CacheVolume) ID(ctx context.Context) (CacheVolumeID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -225,7 +350,7 @@ func (r *CacheVolume) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// An OCI-compatible container, also known as a docker container.
+// An OCI-compatible container, also known as a Docker container.
 type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -268,17 +393,16 @@ func (r *Container) AsService() *Service {
 // ContainerAsTarballOpts contains options for Container.AsTarball
 type ContainerAsTarballOpts struct {
 	// Identifiers for other platform specific containers.
-	// Used for multi-platform image.
+	//
+	// Used for multi-platform images.
 	PlatformVariants []*Container
 	// Force each layer of the image to use the specified compression algorithm.
-	// If this is unset, then if a layer already has a compressed blob in the engine's
-	// cache, that will be used (this can result in a mix of compression algorithms for
-	// different layers). If this is unset and a layer has no compressed blob in the
-	// engine's cache, then it will be compressed using Gzip.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Use the specified media types for the image's layers. Defaults to OCI, which
-	// is largely compatible with most recent container runtimes, but Docker may be needed
-	// for older runtimes without OCI support.
+	// Use the specified media types for the image's layers.
+	//
+	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	MediaTypes ImageMediaTypes
 }
 
@@ -309,20 +433,16 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.
-	//
-	// Default: './Dockerfile'.
 	Dockerfile string
-	// Additional build arguments.
-	BuildArgs []BuildArg
 	// Target build stage to build.
 	Target string
+	// Additional build arguments.
+	BuildArgs []BuildArg
 	// Secrets to pass to the build.
 	//
 	// They will be mounted at /run/secrets/[secret-name] in the build container
 	//
-	// They can be accessed in the Dockerfile using the "secret" mount type
-	// and mount path /run/secrets/[secret-name]
-	// e.g. RUN --mount=type=secret,id=my-secret curl url?token=$(cat /run/secrets/my-secret)"
+	// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl http://example.com?token=$(cat /run/secrets/my-secret)
 	Secrets []*Secret
 }
 
@@ -335,13 +455,13 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
 		}
-		// `buildArgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
-			q = q.Arg("buildArgs", opts[i].BuildArgs)
-		}
 		// `target` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Target) {
 			q = q.Arg("target", opts[i].Target)
+		}
+		// `buildArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
+			q = q.Arg("buildArgs", opts[i].BuildArgs)
 		}
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
@@ -407,18 +527,19 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q := r.q.Select("envVariables")
 
-	q = q.Select("name value")
+	q = q.Select("id")
 
 	type envVariables struct {
-		Name  string
-		Value string
+		Id EnvVariableID
 	}
 
 	convert := func(fields []envVariables) []EnvVariable {
 		out := []EnvVariable{}
 
 		for i := range fields {
-			val := EnvVariable{name: &fields[i].Name, value: &fields[i].Value}
+			val := EnvVariable{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			val.c = r.c
 			out = append(out, val)
 		}
 
@@ -438,7 +559,8 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // EXPERIMENTAL API! Subject to change/removal at any time.
 //
-// experimentalWithAllGPUs configures all available GPUs on the host to be accessible to this container.
+// Configures all available GPUs on the host to be accessible to this container.
+//
 // This currently works for Nvidia devices only.
 func (r *Container) ExperimentalWithAllGPUs() *Container {
 	q := r.q.Select("experimentalWithAllGPUs")
@@ -451,7 +573,8 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 
 // EXPERIMENTAL API! Subject to change/removal at any time.
 //
-// experimentalWithGPU configures the provided list of devices to be accesible to this container.
+// Configures the provided list of devices to be accesible to this container.
+//
 // This currently works for Nvidia devices only.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
 	q := r.q.Select("experimentalWithGPU")
@@ -466,24 +589,24 @@ func (r *Container) ExperimentalWithGPU(devices []string) *Container {
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
 	// Identifiers for other platform specific containers.
+	//
 	// Used for multi-platform image.
 	PlatformVariants []*Container
 	// Force each layer of the exported image to use the specified compression algorithm.
-	// If this is unset, then if a layer already has a compressed blob in the engine's
-	// cache, that will be used (this can result in a mix of compression algorithms for
-	// different layers). If this is unset and a layer has no compressed blob in the
-	// engine's cache, then it will be compressed using Gzip.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Use the specified media types for the exported image's layers. Defaults to OCI, which
-	// is largely compatible with most recent container runtimes, but Docker may be needed
-	// for older runtimes without OCI support.
+	// Use the specified media types for the exported image's layers.
+	//
+	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	MediaTypes ImageMediaTypes
 }
 
-// Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
+// Writes the container as an OCI tarball to the destination file path on the host.
 //
 // Return true on success.
-// It can also publishes platform variants.
+//
+// It can also export platform variants.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
@@ -513,24 +636,23 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 
 // Retrieves the list of exposed ports.
 //
-// This includes ports already exposed by the image, even if not
-// explicitly added with dagger.
+// This includes ports already exposed by the image, even if not explicitly added with dagger.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
-	q = q.Select("description port protocol")
+	q = q.Select("id")
 
 	type exposedPorts struct {
-		Description string
-		Port        int
-		Protocol    NetworkProtocol
+		Id PortID
 	}
 
 	convert := func(fields []exposedPorts) []Port {
 		out := []Port{}
 
 		for i := range fields {
-			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
+			val := Port{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.c = r.c
 			out = append(out, val)
 		}
 
@@ -572,7 +694,7 @@ func (r *Container) From(address string) *Container {
 	}
 }
 
-// A unique identifier for this container.
+// A unique identifier for this Container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -636,15 +758,11 @@ func (r *Container) ImageRef(ctx context.Context) (string, error) {
 
 // ContainerImportOpts contains options for Container.Import
 type ContainerImportOpts struct {
-	// Identifies the tag to import from the archive, if the archive bundles
-	// multiple tags.
+	// Identifies the tag to import from the archive, if the archive bundles multiple tags.
 	Tag string
 }
 
 // Reads the container from an OCI tarball.
-//
-// NOTE: this involves unpacking the tarball to an OCI store on the host at
-// $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
 func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
 	assertNotNil("source", source)
 	q := r.q.Select("import")
@@ -680,18 +798,19 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q := r.q.Select("labels")
 
-	q = q.Select("name value")
+	q = q.Select("id")
 
 	type labels struct {
-		Name  string
-		Value string
+		Id LabelID
 	}
 
 	convert := func(fields []labels) []Label {
 		out := []Label{}
 
 		for i := range fields {
-			val := Label{name: &fields[i].Name, value: &fields[i].Value}
+			val := Label{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadLabelFromID").Arg("id", fields[i].Id)
+			val.c = r.c
 			out = append(out, val)
 		}
 
@@ -721,13 +840,13 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 
 // ContainerPipelineOpts contains options for Container.Pipeline
 type ContainerPipelineOpts struct {
-	// Pipeline description.
+	// Description of the sub-pipeline.
 	Description string
-	// Pipeline labels.
+	// Labels to apply to the sub-pipeline.
 	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline
+// Creates a named sub-pipeline.
 func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
 	q := r.q.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -764,23 +883,23 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 // ContainerPublishOpts contains options for Container.Publish
 type ContainerPublishOpts struct {
 	// Identifiers for other platform specific containers.
+	//
 	// Used for multi-platform image.
 	PlatformVariants []*Container
 	// Force each layer of the published image to use the specified compression algorithm.
-	// If this is unset, then if a layer already has a compressed blob in the engine's
-	// cache, that will be used (this can result in a mix of compression algorithms for
-	// different layers). If this is unset and a layer has no compressed blob in the
-	// engine's cache, then it will be compressed using Gzip.
+	//
+	// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
-	// Use the specified media types for the published image's layers. Defaults to OCI, which
-	// is largely compatible with most recent registries, but Docker may be needed for older
-	// registries without OCI support.
+	// Use the specified media types for the published image's layers.
+	//
+	// Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
 	MediaTypes ImageMediaTypes
 }
 
 // Publishes this container as a new image to the specified address.
 //
 // Publish returns a fully qualified ref.
+//
 // It can also publish platform variants.
 func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	if r.publish != nil {
@@ -819,8 +938,7 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed
-// over the websocket.
+// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
 //
 // Primarily intended for internal use with the dagger CLI.
 func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
@@ -887,21 +1005,10 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ContainerWithDefaultArgsOpts contains options for Container.WithDefaultArgs
-type ContainerWithDefaultArgsOpts struct {
-	// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-	Args []string
-}
-
 // Configures default arguments for future commands.
-func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
+func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.q.Select("withDefaultArgs")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
+	q = q.Arg("args", args)
 
 	return &Container{
 		q: q,
@@ -911,9 +1018,9 @@ func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Conta
 
 // ContainerWithDirectoryOpts contains options for Container.WithDirectory
 type ContainerWithDirectoryOpts struct {
-	// Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
+	// Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
 	Exclude []string
-	// Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
+	// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
 	Include []string
 	// A user:group to set for the directory and its contents.
 	//
@@ -975,8 +1082,7 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 
 // ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
 type ContainerWithEnvVariableOpts struct {
-	// Replace `${VAR}` or $VAR in the value according to the current environment
-	// variables defined in the container (e.g., "/opt/bin:$PATH").
+	// Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
 	Expand bool
 }
 
@@ -1010,13 +1116,9 @@ type ContainerWithExecOpts struct {
 	RedirectStderr string
 	// Provides dagger access to the executed command.
 	//
-	// Do not use this option unless you trust the command being executed.
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool
-	// Execute the command with all root capabilities. This is similar to running a command
-	// with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
-	// does not provide any security guarantees when using this option. It should only be used
-	// when absolutely necessary and only with trusted commands.
+	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
 }
 
@@ -1070,6 +1172,7 @@ type ContainerWithExposedPortOpts struct {
 // Exposed ports serve two purposes:
 //
 // - For health checks and introspection, when running services
+//
 // - For setting the EXPOSE OCI field when publishing the container
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
@@ -1094,8 +1197,6 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 // ContainerWithFileOpts contains options for Container.WithFile
 type ContainerWithFileOpts struct {
 	// Permission given to the copied file (e.g., 0600).
-	//
-	// Default: 0644.
 	Permissions int
 	// A user:group to set for the file.
 	//
@@ -1128,8 +1229,7 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 }
 
-// Indicate that subsequent operations should be featured more prominently in
-// the UI.
+// Indicate that subsequent operations should be featured more prominently in the UI.
 func (r *Container) WithFocus() *Container {
 	q := r.q.Select("withFocus")
 
@@ -1159,9 +1259,7 @@ type ContainerWithMountedCacheOpts struct {
 	Sharing CacheSharingMode
 	// A user:group to set for the mounted cache directory.
 	//
-	// Note that this changes the ownership of the specified mount along with the
-	// initial filesystem provided by source (if any). It does not have any effect
-	// if/when the cache has already been created.
+	// Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
 	//
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
@@ -1263,9 +1361,8 @@ type ContainerWithMountedSecretOpts struct {
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
 	// Permission given to the mounted secret (e.g., 0600).
-	// This option requires an owner to be set to be active.
 	//
-	// Default: 0400.
+	// This option requires an owner to be set to be active.
 	Mode int
 }
 
@@ -1308,8 +1405,6 @@ type ContainerWithNewFileOpts struct {
 	// Content of the file to write (e.g., "Hello world!").
 	Contents string
 	// Permission given to the written file (e.g., 0600).
-	//
-	// Default: 0644.
 	Permissions int
 	// A user:group to set for the file.
 	//
@@ -1358,7 +1453,7 @@ func (r *Container) WithRegistryAuth(address string, username string, secret *Se
 	}
 }
 
-// Initializes this container from this DirectoryID.
+// Retrieves the container with the given directory mounted to /.
 func (r *Container) WithRootfs(directory *Directory) *Container {
 	assertNotNil("directory", directory)
 	q := r.q.Select("withRootfs")
@@ -1385,8 +1480,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 
 // Establish a runtime dependency on a service.
 //
-// The service will be started automatically when needed and detached when it is
-// no longer needed, executing the default command if none is set.
+// The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
 //
 // The service will be reachable from the container via the provided hostname alias.
 //
@@ -1520,8 +1614,7 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 	}
 }
 
-// Indicate that subsequent operations should not be featured more prominently
-// in the UI.
+// Indicate that subsequent operations should not be featured more prominently in the UI.
 //
 // This is the initial state of all containers.
 func (r *Container) WithoutFocus() *Container {
@@ -1634,16 +1727,11 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 // DirectoryAsModuleOpts contains options for Directory.AsModule
 type DirectoryAsModuleOpts struct {
-	// An optional subpath of the directory which contains the module's source
-	// code.
+	// An optional subpath of the directory which contains the module's source code.
 	//
-	// This is needed when the module code is in a subdirectory but requires
-	// parent directories to be loaded in order to execute. For example, the
-	// module source code may need a go.mod, project.toml, package.json, etc. file
-	// from a parent directory.
+	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
 	//
-	// If not set, the module source code is loaded from the root of the
-	// directory.
+	// If not set, the module source code is loaded from the root of the directory.
 	SourceSubpath string
 }
 
@@ -1688,16 +1776,14 @@ func (r *Directory) Directory(path string) *Directory {
 
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
-	// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
-	//
-	// Defaults: './Dockerfile'.
-	Dockerfile string
 	// The platform to build.
 	Platform Platform
-	// Build arguments to use in the build.
-	BuildArgs []BuildArg
+	// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+	Dockerfile string
 	// Target build stage to build.
 	Target string
+	// Build arguments to use in the build.
+	BuildArgs []BuildArg
 	// Secrets to pass to the build.
 	//
 	// They will be mounted at /run/secrets/[secret-name].
@@ -1708,21 +1794,21 @@ type DirectoryDockerBuildOpts struct {
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	q := r.q.Select("dockerBuild")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `dockerfile` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
-			q = q.Arg("dockerfile", opts[i].Dockerfile)
-		}
 		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
 		}
-		// `buildArgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
-			q = q.Arg("buildArgs", opts[i].BuildArgs)
+		// `dockerfile` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
+			q = q.Arg("dockerfile", opts[i].Dockerfile)
 		}
 		// `target` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Target) {
 			q = q.Arg("target", opts[i].Target)
+		}
+		// `buildArgs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
+			q = q.Arg("buildArgs", opts[i].BuildArgs)
 		}
 		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
@@ -1794,7 +1880,7 @@ func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) 
 	return response, q.Execute(ctx, r.c)
 }
 
-// The content-addressed identifier of the directory.
+// A unique identifier for this Directory.
 func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -1845,13 +1931,13 @@ func (r *Directory) UnmarshalJSON(bs []byte) error {
 
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
-	// Pipeline description.
+	// Description of the sub-pipeline.
 	Description string
-	// Pipeline labels.
+	// Labels to apply to the sub-pipeline.
 	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline
+// Creates a named sub-pipeline.
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.q.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1913,8 +1999,6 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 // DirectoryWithFileOpts contains options for Directory.WithFile
 type DirectoryWithFileOpts struct {
 	// Permission given to the copied file (e.g., 0600).
-	//
-	// Default: 0644.
 	Permissions int
 }
 
@@ -1940,8 +2024,6 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 // DirectoryWithNewDirectoryOpts contains options for Directory.WithNewDirectory
 type DirectoryWithNewDirectoryOpts struct {
 	// Permission granted to the created directory (e.g., 0777).
-	//
-	// Default: 0755.
 	Permissions int
 }
 
@@ -1965,8 +2047,6 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 // DirectoryWithNewFileOpts contains options for Directory.WithNewFile
 type DirectoryWithNewFileOpts struct {
 	// Permission given to the copied file (e.g., 0600).
-	//
-	// Default: 0644.
 	Permissions int
 }
 
@@ -2021,16 +2101,65 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
-// A simple key value object that represents an environment variable.
+// An environment variable name and value.
 type EnvVariable struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	id    *EnvVariableID
 	name  *string
 	value *string
 }
 
-// The environment variable name.
+// A unique identifier for this EnvVariable.
+func (r *EnvVariable) ID(ctx context.Context) (EnvVariableID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvVariableID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvVariable) XXX_GraphQLType() string {
+	return "EnvVariable"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvVariable) XXX_GraphQLIDType() string {
+	return "EnvVariableID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvVariable) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnvVariable) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EnvVariable) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEnvVariableFromID(EnvVariableID(id))
+	return nil
+}
+
 func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2043,7 +2172,6 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The environment variable value.
 func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -2057,17 +2185,17 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 }
 
 // A definition of a field on a custom object defined in a Module.
-// A field on an object has a static value, as opposed to a function on an
-// object whose value is computed by invoking code (and can accept arguments).
+//
+// A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
 type FieldTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
 	description *string
+	id          *FieldTypeDefID
 	name        *string
 }
 
-// A doc string for the field, if any
 func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -2080,7 +2208,55 @@ func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The name of the field in the object
+// A unique identifier for this FieldTypeDef.
+func (r *FieldTypeDef) ID(ctx context.Context) (FieldTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response FieldTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *FieldTypeDef) XXX_GraphQLType() string {
+	return "FieldTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *FieldTypeDef) XXX_GraphQLIDType() string {
+	return "FieldTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *FieldTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *FieldTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *FieldTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFieldTypeDefFromID(FieldTypeDefID(id))
+	return nil
+}
+
 func (r *FieldTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2093,7 +2269,6 @@ func (r *FieldTypeDef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The type of the field
 func (r *FieldTypeDef) TypeDef() *TypeDef {
 	q := r.q.Select("typeDef")
 
@@ -2111,6 +2286,7 @@ type File struct {
 	contents *string
 	export   *bool
 	id       *FileID
+	name     *string
 	size     *int
 	sync     *FileID
 }
@@ -2138,8 +2314,7 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 
 // FileExportOpts contains options for File.Export
 type FileExportOpts struct {
-	// If allowParentDirPath is true, the path argument can be a directory path, in which case
-	// the file will be created in that directory.
+	// If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
 	AllowParentDirPath bool
 }
 
@@ -2163,7 +2338,7 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieves the content-addressed identifier of the file.
+// A unique identifier for this File.
 func (r *File) ID(ctx context.Context) (FileID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2212,7 +2387,20 @@ func (r *File) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// Gets the size of the file, in bytes.
+// Retrieves the name of the file.
+func (r *File) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Retrieves the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
 		return *r.size, nil
@@ -2245,8 +2433,7 @@ func (r *File) WithTimestamps(timestamp int) *File {
 
 // Function represents a resolver provided by a Module.
 //
-// A function always evaluates against a parent object and is given a set of
-// named arguments.
+// A function always evaluates against a parent object and is given a set of named arguments.
 type Function struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -2264,7 +2451,6 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 	return f(r)
 }
 
-// Arguments accepted by this function, if any
 func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	q := r.q.Select("args")
 
@@ -2298,7 +2484,6 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	return convert(response), nil
 }
 
-// A doc string for the function, if any
 func (r *Function) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -2311,7 +2496,7 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The ID of the function
+// A unique identifier for this Function.
 func (r *Function) ID(ctx context.Context) (FunctionID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2360,7 +2545,6 @@ func (r *Function) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// The name of the function
 func (r *Function) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2373,7 +2557,6 @@ func (r *Function) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The type returned by this function
 func (r *Function) ReturnType() *TypeDef {
 	q := r.q.Select("returnType")
 
@@ -2414,7 +2597,7 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 	}
 }
 
-// Returns the function with the doc string
+// Returns the function with the given doc string.
 func (r *Function) WithDescription(description string) *Function {
 	q := r.q.Select("withDescription")
 	q = q.Arg("description", description)
@@ -2427,8 +2610,7 @@ func (r *Function) WithDescription(description string) *Function {
 
 // An argument accepted by a function.
 //
-// This is a specification for an argument at function definition time, not an
-// argument passed at function call time.
+// This is a specification for an argument at function definition time, not an argument passed at function call time.
 type FunctionArg struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -2439,7 +2621,6 @@ type FunctionArg struct {
 	name         *string
 }
 
-// A default value to use for this argument when not explicitly set by the caller, if any
 func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	if r.defaultValue != nil {
 		return *r.defaultValue, nil
@@ -2452,7 +2633,6 @@ func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// A doc string for the argument, if any
 func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -2465,7 +2645,7 @@ func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The ID of the argument
+// A unique identifier for this FunctionArg.
 func (r *FunctionArg) ID(ctx context.Context) (FunctionArgID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2514,7 +2694,6 @@ func (r *FunctionArg) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// The name of the argument
 func (r *FunctionArg) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2527,7 +2706,6 @@ func (r *FunctionArg) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The type of the argument
 func (r *FunctionArg) TypeDef() *TypeDef {
 	q := r.q.Select("typeDef")
 
@@ -2537,32 +2715,83 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 	}
 }
 
+// An active function call.
 type FunctionCall struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	id          *FunctionCallID
 	name        *string
 	parent      *JSON
 	parentName  *string
 	returnValue *Void
 }
 
-// The argument values the function is being invoked with.
+// A unique identifier for this FunctionCall.
+func (r *FunctionCall) ID(ctx context.Context) (FunctionCallID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response FunctionCallID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *FunctionCall) XXX_GraphQLType() string {
+	return "FunctionCall"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *FunctionCall) XXX_GraphQLIDType() string {
+	return "FunctionCallID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *FunctionCall) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *FunctionCall) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *FunctionCall) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFunctionCallFromID(FunctionCallID(id))
+	return nil
+}
+
 func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, error) {
 	q := r.q.Select("inputArgs")
 
-	q = q.Select("name value")
+	q = q.Select("id")
 
 	type inputArgs struct {
-		Name  string
-		Value JSON
+		Id FunctionCallArgValueID
 	}
 
 	convert := func(fields []inputArgs) []FunctionCallArgValue {
 		out := []FunctionCallArgValue{}
 
 		for i := range fields {
-			val := FunctionCallArgValue{name: &fields[i].Name, value: &fields[i].Value}
+			val := FunctionCallArgValue{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFunctionCallArgValueFromID").Arg("id", fields[i].Id)
+			val.c = r.c
 			out = append(out, val)
 		}
 
@@ -2580,7 +2809,6 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 	return convert(response), nil
 }
 
-// The name of the function being called.
 func (r *FunctionCall) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2593,8 +2821,6 @@ func (r *FunctionCall) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The value of the parent object of the function being called.
-// If the function is "top-level" to the module, this is always an empty object.
 func (r *FunctionCall) Parent(ctx context.Context) (JSON, error) {
 	if r.parent != nil {
 		return *r.parent, nil
@@ -2607,8 +2833,6 @@ func (r *FunctionCall) Parent(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The name of the parent object of the function being called.
-// If the function is "top-level" to the module, this is the name of the module.
 func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 	if r.parentName != nil {
 		return *r.parentName, nil
@@ -2622,7 +2846,6 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 }
 
 // Set the return value of the function call to the provided value.
-// The value should be a string of the JSON serialization of the return value.
 func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) (Void, error) {
 	if r.returnValue != nil {
 		return *r.returnValue, nil
@@ -2636,15 +2859,65 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) (Void, error
 	return response, q.Execute(ctx, r.c)
 }
 
+// A value passed as a named argument to a function call.
 type FunctionCallArgValue struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	id    *FunctionCallArgValueID
 	name  *string
 	value *JSON
 }
 
-// The name of the argument.
+// A unique identifier for this FunctionCallArgValue.
+func (r *FunctionCallArgValue) ID(ctx context.Context) (FunctionCallArgValueID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response FunctionCallArgValueID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *FunctionCallArgValue) XXX_GraphQLType() string {
+	return "FunctionCallArgValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *FunctionCallArgValue) XXX_GraphQLIDType() string {
+	return "FunctionCallArgValueID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *FunctionCallArgValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *FunctionCallArgValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *FunctionCallArgValue) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFunctionCallArgValueFromID(FunctionCallArgValueID(id))
+	return nil
+}
+
 func (r *FunctionCallArgValue) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2657,7 +2930,6 @@ func (r *FunctionCallArgValue) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The value of the argument represented as a string of the JSON serialization.
 func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -2670,6 +2942,7 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The result of running an SDK's codegen.
 type GeneratedCode struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -2685,7 +2958,6 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 	return f(r)
 }
 
-// The directory containing the generated code
 func (r *GeneratedCode) Code() *Directory {
 	q := r.q.Select("code")
 
@@ -2695,6 +2967,7 @@ func (r *GeneratedCode) Code() *Directory {
 	}
 }
 
+// A unique identifier for this GeneratedCode.
 func (r *GeneratedCode) ID(ctx context.Context) (GeneratedCodeID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2743,7 +3016,6 @@ func (r *GeneratedCode) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// List of paths to mark generated in version control (i.e. .gitattributes)
 func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
 	q := r.q.Select("vcsGeneratedPaths")
 
@@ -2753,7 +3025,6 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 	return response, q.Execute(ctx, r.c)
 }
 
-// List of paths to ignore in version control (i.e. .gitignore)
 func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
 	q := r.q.Select("vcsIgnoredPaths")
 
@@ -2763,7 +3034,7 @@ func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Set the list of paths to mark generated in version control
+// Set the list of paths to mark generated in version control.
 func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 	q := r.q.Select("withVCSGeneratedPaths")
 	q = q.Arg("paths", paths)
@@ -2774,7 +3045,7 @@ func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 	}
 }
 
-// Set the list of paths to ignore in version control
+// Set the list of paths to ignore in version control.
 func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	q := r.q.Select("withVCSIgnoredPaths")
 	q = q.Arg("paths", paths)
@@ -2785,7 +3056,7 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	}
 }
 
-// A git ref (tag, branch or commit).
+// A git ref (tag, branch, or commit).
 type GitRef struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -2807,7 +3078,7 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieves the content-addressed identifier of the git ref.
+// A unique identifier for this GitRef.
 func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2858,8 +3129,9 @@ func (r *GitRef) UnmarshalJSON(bs []byte) error {
 
 // GitRefTreeOpts contains options for GitRef.Tree
 type GitRefTreeOpts struct {
+	// DEPRECATED: This option should be passed to `git` instead.
 	SSHKnownHosts string
-
+	// DEPRECATED: This option should be passed to `git` instead.
 	SSHAuthSocket *Socket
 }
 
@@ -2891,7 +3163,7 @@ type GitRepository struct {
 	id *GitRepositoryID
 }
 
-// Returns details on one branch.
+// Returns details of a branch.
 func (r *GitRepository) Branch(name string) *GitRef {
 	q := r.q.Select("branch")
 	q = q.Arg("name", name)
@@ -2902,7 +3174,7 @@ func (r *GitRepository) Branch(name string) *GitRef {
 	}
 }
 
-// Returns details on one commit.
+// Returns details of a commit.
 func (r *GitRepository) Commit(id string) *GitRef {
 	q := r.q.Select("commit")
 	q = q.Arg("id", id)
@@ -2913,7 +3185,7 @@ func (r *GitRepository) Commit(id string) *GitRef {
 	}
 }
 
-// Retrieves the content-addressed identifier of the git repository.
+// A unique identifier for this GitRepository.
 func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -2962,7 +3234,7 @@ func (r *GitRepository) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// Returns details on one tag.
+// Returns details of a tag.
 func (r *GitRepository) Tag(name string) *GitRef {
 	q := r.q.Select("tag")
 	q = q.Arg("name", name)
@@ -2973,10 +3245,12 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	}
 }
 
-// Information about the host execution environment.
+// Information about the host environment.
 type Host struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	id *HostID
 }
 
 // HostDirectoryOpts contains options for Host.Directory
@@ -3019,6 +3293,55 @@ func (r *Host) File(path string) *File {
 	}
 }
 
+// A unique identifier for this Host.
+func (r *Host) ID(ctx context.Context) (HostID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response HostID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Host) XXX_GraphQLType() string {
+	return "Host"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Host) XXX_GraphQLIDType() string {
+	return "HostID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Host) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Host) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Host) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadHostFromID(HostID(id))
+	return nil
+}
+
 // HostServiceOpts contains options for Host.Service
 type HostServiceOpts struct {
 	// Upstream host to forward traffic to.
@@ -3043,6 +3366,7 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 }
 
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+//
 // The file is limited to a size of 512000 bytes.
 func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q := r.q.Select("setSecretFile")
@@ -3057,22 +3381,18 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 
 // HostTunnelOpts contains options for Host.Tunnel
 type HostTunnelOpts struct {
-	// Map each service port to the same port on the host, as if the service were
-	// running natively.
-	//
-	// Note: enabling may result in port conflicts.
-	Native bool
 	// Configure explicit port forwarding rules for the tunnel.
 	//
-	// If a port's frontend is unspecified or 0, a random port will be chosen by
-	// the host.
+	// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
 	//
-	// If no ports are given, all of the service's ports are forwarded. If native
-	// is true, each port maps to the same port on the host. If native is false,
-	// each port maps to a random port chosen by the host.
+	// If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
 	//
 	// If ports are given and native is true, the ports are additive.
 	Ports []PortForward
+	// Map each service port to the same port on the host, as if the service were running natively.
+	//
+	// Note: enabling may result in port conflicts.
+	Native bool
 }
 
 // Creates a tunnel that forwards traffic from the host to a service.
@@ -3080,13 +3400,13 @@ func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	assertNotNil("service", service)
 	q := r.q.Select("tunnel")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `native` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Native) {
-			q = q.Arg("native", opts[i].Native)
-		}
 		// `ports` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ports) {
 			q = q.Arg("ports", opts[i].Ports)
+		}
+		// `native` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Native) {
+			q = q.Arg("native", opts[i].Native)
 		}
 	}
 	q = q.Arg("service", service)
@@ -3108,16 +3428,194 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// A definition of a custom interface defined in a Module.
+type InterfaceTypeDef struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description      *string
+	id               *InterfaceTypeDefID
+	name             *string
+	sourceModuleName *string
+}
+
+func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
+	q := r.q.Select("functions")
+
+	q = q.Select("id")
+
+	type functions struct {
+		Id FunctionID
+	}
+
+	convert := func(fields []functions) []Function {
+		out := []Function{}
+
+		for i := range fields {
+			val := Function{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []functions
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this InterfaceTypeDef.
+func (r *InterfaceTypeDef) ID(ctx context.Context) (InterfaceTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response InterfaceTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *InterfaceTypeDef) XXX_GraphQLType() string {
+	return "InterfaceTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *InterfaceTypeDef) XXX_GraphQLIDType() string {
+	return "InterfaceTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *InterfaceTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *InterfaceTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *InterfaceTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadInterfaceTypeDefFromID(InterfaceTypeDefID(id))
+	return nil
+}
+
+func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.q.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	id    *LabelID
 	name  *string
 	value *string
 }
 
-// The label name.
+// A unique identifier for this Label.
+func (r *Label) ID(ctx context.Context) (LabelID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response LabelID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Label) XXX_GraphQLType() string {
+	return "Label"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Label) XXX_GraphQLIDType() string {
+	return "LabelID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Label) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Label) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Label) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadLabelFromID(LabelID(id))
+	return nil
+}
+
 func (r *Label) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3130,7 +3628,6 @@ func (r *Label) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The label value.
 func (r *Label) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -3147,9 +3644,10 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 type ListTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	id *ListTypeDefID
 }
 
-// The type of the elements in the list
 func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	q := r.q.Select("elementTypeDef")
 
@@ -3159,6 +3657,56 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	}
 }
 
+// A unique identifier for this ListTypeDef.
+func (r *ListTypeDef) ID(ctx context.Context) (ListTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response ListTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ListTypeDef) XXX_GraphQLType() string {
+	return "ListTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ListTypeDef) XXX_GraphQLIDType() string {
+	return "ListTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ListTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ListTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadListTypeDefFromID(ListTypeDefID(id))
+	return nil
+}
+
+// A Dagger module.
 type Module struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -3168,7 +3716,7 @@ type Module struct {
 	name                   *string
 	sdk                    *string
 	serve                  *Void
-	sourceDirectorySubPath *string
+	sourceDirectorySubpath *string
 }
 type WithModuleFunc func(r *Module) *Module
 
@@ -3179,7 +3727,6 @@ func (r *Module) With(f WithModuleFunc) *Module {
 	return f(r)
 }
 
-// Modules used by this module
 func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.q.Select("dependencies")
 
@@ -3213,7 +3760,6 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	return convert(response), nil
 }
 
-// The dependencies as configured by the module
 func (r *Module) DependencyConfig(ctx context.Context) ([]string, error) {
 	q := r.q.Select("dependencyConfig")
 
@@ -3223,7 +3769,6 @@ func (r *Module) DependencyConfig(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The doc string of the module, if any
 func (r *Module) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -3236,7 +3781,6 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The code generated by the SDK's runtime
 func (r *Module) GeneratedCode() *GeneratedCode {
 	q := r.q.Select("generatedCode")
 
@@ -3246,7 +3790,7 @@ func (r *Module) GeneratedCode() *GeneratedCode {
 	}
 }
 
-// The ID of the module
+// A unique identifier for this Module.
 func (r *Module) ID(ctx context.Context) (ModuleID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -3295,7 +3839,49 @@ func (r *Module) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// The name of the module
+// Retrieves the module with the objects loaded via its SDK.
+func (r *Module) Initialize() *Module {
+	q := r.q.Select("initialize")
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("interfaces")
+
+	q = q.Select("id")
+
+	type interfaces struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []interfaces) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []interfaces
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3308,7 +3894,6 @@ func (r *Module) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Objects served by this module
 func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	q := r.q.Select("objects")
 
@@ -3342,7 +3927,6 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation.
 func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
@@ -3357,8 +3941,7 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 
 // Serve a module's API in the current session.
 //
-//	Note: this can only be called once per session.
-//	In the future, it could return a stream or service to remove the side effect.
+// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
 func (r *Module) Serve(ctx context.Context) (Void, error) {
 	if r.serve != nil {
 		return *r.serve, nil
@@ -3371,7 +3954,6 @@ func (r *Module) Serve(ctx context.Context) (Void, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The directory containing the module's source code
 func (r *Module) SourceDirectory() *Directory {
 	q := r.q.Select("sourceDirectory")
 
@@ -3381,12 +3963,11 @@ func (r *Module) SourceDirectory() *Directory {
 	}
 }
 
-// The module's subpath within the source directory
-func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
-	if r.sourceDirectorySubPath != nil {
-		return *r.sourceDirectorySubPath, nil
+func (r *Module) SourceDirectorySubpath(ctx context.Context) (string, error) {
+	if r.sourceDirectorySubpath != nil {
+		return *r.sourceDirectorySubpath, nil
 	}
-	q := r.q.Select("sourceDirectorySubPath")
+	q := r.q.Select("sourceDirectorySubpath")
 
 	var response string
 
@@ -3394,11 +3975,51 @@ func (r *Module) SourceDirectorySubPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// This module plus the given Object type and associated functions
+// This module plus the given Interface type and associated functions
+func (r *Module) WithInterface(iface *TypeDef) *Module {
+	assertNotNil("iface", iface)
+	q := r.q.Select("withInterface")
+	q = q.Arg("iface", iface)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This module plus the given Object type and associated functions.
 func (r *Module) WithObject(object *TypeDef) *Module {
 	assertNotNil("object", object)
 	q := r.q.Select("withObject")
 	q = q.Arg("object", object)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ModuleWithSourceOpts contains options for Module.WithSource
+type ModuleWithSourceOpts struct {
+	// An optional subpath of the directory which contains the module's source code.
+	//
+	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
+	//
+	// If not set, the module source code is loaded from the root of the directory.
+	Subpath string
+}
+
+// Retrieves the module with basic configuration loaded, ready for initialization.
+func (r *Module) WithSource(directory *Directory, opts ...ModuleWithSourceOpts) *Module {
+	assertNotNil("directory", directory)
+	q := r.q.Select("withSource")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `subpath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subpath) {
+			q = q.Arg("subpath", opts[i].Subpath)
+		}
+	}
+	q = q.Arg("directory", directory)
 
 	return &Module{
 		q: q,
@@ -3411,12 +4032,12 @@ type ModuleConfig struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	id   *ModuleConfigID
 	name *string
 	root *string
 	sdk  *string
 }
 
-// Modules that this module depends on.
 func (r *ModuleConfig) Dependencies(ctx context.Context) ([]string, error) {
 	q := r.q.Select("dependencies")
 
@@ -3426,7 +4047,6 @@ func (r *ModuleConfig) Dependencies(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Exclude these file globs when loading the module root.
 func (r *ModuleConfig) Exclude(ctx context.Context) ([]string, error) {
 	q := r.q.Select("exclude")
 
@@ -3436,7 +4056,55 @@ func (r *ModuleConfig) Exclude(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Include only these file globs when loading the module root.
+// A unique identifier for this ModuleConfig.
+func (r *ModuleConfig) ID(ctx context.Context) (ModuleConfigID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response ModuleConfigID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleConfig) XXX_GraphQLType() string {
+	return "ModuleConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleConfig) XXX_GraphQLIDType() string {
+	return "ModuleConfigID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ModuleConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ModuleConfig) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadModuleConfigFromID(ModuleConfigID(id))
+	return nil
+}
+
 func (r *ModuleConfig) Include(ctx context.Context) ([]string, error) {
 	q := r.q.Select("include")
 
@@ -3446,7 +4114,6 @@ func (r *ModuleConfig) Include(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The name of the module.
 func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3459,7 +4126,6 @@ func (r *ModuleConfig) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The root directory of the module's project, which may be above the module source code.
 func (r *ModuleConfig) Root(ctx context.Context) (string, error) {
 	if r.root != nil {
 		return *r.root, nil
@@ -3472,7 +4138,6 @@ func (r *ModuleConfig) Root(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Either the name of a built-in SDK ('go', 'python', etc.) OR a module reference pointing to the SDK's module implementation.
 func (r *ModuleConfig) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
@@ -3490,11 +4155,12 @@ type ObjectTypeDef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	name        *string
+	description      *string
+	id               *ObjectTypeDefID
+	name             *string
+	sourceModuleName *string
 }
 
-// The function used to construct new instances of this object, if any
 func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.q.Select("constructor")
 
@@ -3504,7 +4170,6 @@ func (r *ObjectTypeDef) Constructor() *Function {
 	}
 }
 
-// The doc string for the object, if any
 func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -3517,22 +4182,22 @@ func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Static fields defined on this object, if any
 func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q := r.q.Select("fields")
 
-	q = q.Select("description name")
+	q = q.Select("id")
 
 	type fields struct {
-		Description string
-		Name        string
+		Id FieldTypeDefID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
 		out := []FieldTypeDef{}
 
 		for i := range fields {
-			val := FieldTypeDef{description: &fields[i].Description, name: &fields[i].Name}
+			val := FieldTypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
 			out = append(out, val)
 		}
 
@@ -3550,7 +4215,6 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	return convert(response), nil
 }
 
-// Functions defined on this object, if any
 func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q := r.q.Select("functions")
 
@@ -3584,12 +4248,72 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	return convert(response), nil
 }
 
-// The name of the object
+// A unique identifier for this ObjectTypeDef.
+func (r *ObjectTypeDef) ID(ctx context.Context) (ObjectTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response ObjectTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ObjectTypeDef) XXX_GraphQLType() string {
+	return "ObjectTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ObjectTypeDef) XXX_GraphQLIDType() string {
+	return "ObjectTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ObjectTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ObjectTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ObjectTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadObjectTypeDefFromID(ObjectTypeDefID(id))
+	return nil
+}
+
 func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
 	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.q.Select("sourceModuleName")
 
 	var response string
 
@@ -3603,11 +4327,11 @@ type Port struct {
 	c graphql.Client
 
 	description *string
+	id          *PortID
 	port        *int
 	protocol    *NetworkProtocol
 }
 
-// The port description.
 func (r *Port) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -3620,7 +4344,55 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The port number.
+// A unique identifier for this Port.
+func (r *Port) ID(ctx context.Context) (PortID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response PortID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Port) XXX_GraphQLType() string {
+	return "Port"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Port) XXX_GraphQLIDType() string {
+	return "PortID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Port) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Port) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Port) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadPortFromID(PortID(id))
+	return nil
+}
+
 func (r *Port) Port(ctx context.Context) (int, error) {
 	if r.port != nil {
 		return *r.port, nil
@@ -3633,7 +4405,6 @@ func (r *Port) Port(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The transport layer network protocol.
 func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	if r.protocol != nil {
 		return *r.protocol, nil
@@ -3653,6 +4424,20 @@ type WithClientFunc func(r *Client) *Client
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *Client) With(f WithClientFunc) *Client {
 	return f(r)
+}
+
+// Retrieves a content-addressed blob.
+func (r *Client) Blob(digest string, size int, mediaType string, uncompressed string) *Directory {
+	q := r.q.Select("blob")
+	q = q.Arg("digest", digest)
+	q = q.Arg("size", size)
+	q = q.Arg("mediaType", mediaType)
+	q = q.Arg("uncompressed", uncompressed)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // Constructs a cache volume for a given cache key.
@@ -3679,15 +4464,15 @@ func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) 
 
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
+	// DEPRECATED: Use `loadContainerFromID` instead.
 	ID ContainerID
-
+	// Platform to initialize the container with.
 	Platform Platform
 }
 
-// Creates a scratch container or loads one by ID.
+// Creates a scratch container.
 //
-// Optional platform argument initializes new containers to execute and publish
-// as that platform. Platform defaults to that of the builder's host.
+// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
 func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.q.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3708,8 +4493,8 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 }
 
 // The FunctionCall context that the SDK caller is currently executing in.
-// If the caller is not currently executing in a function, this will return
-// an error.
+//
+// If the caller is not currently executing in a function, this will return an error.
 func (r *Client) CurrentFunctionCall() *FunctionCall {
 	q := r.q.Select("currentFunctionCall")
 
@@ -3729,7 +4514,41 @@ func (r *Client) CurrentModule() *Module {
 	}
 }
 
-// The default platform of the builder.
+// The TypeDef representations of the objects currently being served in the session.
+func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+	q := r.q.Select("currentTypeDefs")
+
+	q = q.Select("id")
+
+	type currentTypeDefs struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []currentTypeDefs) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []currentTypeDefs
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The default platform of the engine.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
 
@@ -3741,10 +4560,11 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 // DirectoryOpts contains options for Client.Directory
 type DirectoryOpts struct {
+	// DEPRECATED: Use `loadDirectoryFromID` isntead.
 	ID DirectoryID
 }
 
-// Creates an empty directory or loads one by ID.
+// Creates an empty directory.
 func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	q := r.q.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -3760,8 +4580,6 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	}
 }
 
-// Loads a file by ID.
-//
 // Deprecated: Use LoadFileFromID instead.
 func (r *Client) File(id FileID) *File {
 	q := r.q.Select("file")
@@ -3773,7 +4591,7 @@ func (r *Client) File(id FileID) *File {
 	}
 }
 
-// Create a function.
+// Creates a function.
 func (r *Client) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
 	q := r.q.Select("function")
@@ -3786,8 +4604,7 @@ func (r *Client) Function(name string, returnType *TypeDef) *Function {
 	}
 }
 
-// Create a code generation result, given a directory containing the generated
-// code.
+// Create a code generation result, given a directory containing the generated code.
 func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 	assertNotNil("code", code)
 	q := r.q.Select("generatedCode")
@@ -3803,21 +4620,25 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
+	// A service which must be started before the repo is fetched.
+	ExperimentalServiceHost *Service
 	// Set SSH known hosts
 	SSHKnownHosts string
 	// Set SSH auth socket
 	SSHAuthSocket *Socket
-	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Service
 }
 
-// Queries a git repository.
+// Queries a Git repository.
 func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.q.Select("git")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+		}
+		// `experimentalServiceHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 		}
 		// `sshKnownHosts` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
@@ -3826,10 +4647,6 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `sshAuthSocket` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
 			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
-		}
-		// `experimentalServiceHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
-			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 		}
 	}
 	q = q.Arg("url", url)
@@ -3884,7 +4701,7 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	}
 }
 
-// Loads a container from an ID.
+// Load a Container from its ID.
 func (r *Client) LoadContainerFromID(id ContainerID) *Container {
 	q := r.q.Select("loadContainerFromID")
 	q = q.Arg("id", id)
@@ -3906,6 +4723,28 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 	}
 }
 
+// Load a EnvVariable from its ID.
+func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
+	q := r.q.Select("loadEnvVariableFromID")
+	q = q.Arg("id", id)
+
+	return &EnvVariable{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a FieldTypeDef from its ID.
+func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
+	q := r.q.Select("loadFieldTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &FieldTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a File from its ID.
 func (r *Client) LoadFileFromID(id FileID) *File {
 	q := r.q.Select("loadFileFromID")
@@ -3917,7 +4756,7 @@ func (r *Client) LoadFileFromID(id FileID) *File {
 	}
 }
 
-// Load a function argument by ID.
+// Load a FunctionArg from its ID.
 func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 	q := r.q.Select("loadFunctionArgFromID")
 	q = q.Arg("id", id)
@@ -3928,7 +4767,29 @@ func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 	}
 }
 
-// Load a function by ID.
+// Load a FunctionCallArgValue from its ID.
+func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
+	q := r.q.Select("loadFunctionCallArgValueFromID")
+	q = q.Arg("id", id)
+
+	return &FunctionCallArgValue{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a FunctionCall from its ID.
+func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
+	q := r.q.Select("loadFunctionCallFromID")
+	q = q.Arg("id", id)
+
+	return &FunctionCall{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a Function from its ID.
 func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
 	q := r.q.Select("loadFunctionFromID")
 	q = q.Arg("id", id)
@@ -3939,7 +4800,7 @@ func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
 	}
 }
 
-// Load a GeneratedCode by ID.
+// Load a GeneratedCode from its ID.
 func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	q := r.q.Select("loadGeneratedCodeFromID")
 	q = q.Arg("id", id)
@@ -3950,7 +4811,7 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	}
 }
 
-// Load a git ref from its ID.
+// Load a GitRef from its ID.
 func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
 	q := r.q.Select("loadGitRefFromID")
 	q = q.Arg("id", id)
@@ -3961,7 +4822,7 @@ func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
 	}
 }
 
-// Load a git repository from its ID.
+// Load a GitRepository from its ID.
 func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	q := r.q.Select("loadGitRepositoryFromID")
 	q = q.Arg("id", id)
@@ -3972,12 +4833,89 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
-// Load a module by ID.
+// Load a Host from its ID.
+func (r *Client) LoadHostFromID(id HostID) *Host {
+	q := r.q.Select("loadHostFromID")
+	q = q.Arg("id", id)
+
+	return &Host{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a InterfaceTypeDef from its ID.
+func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
+	q := r.q.Select("loadInterfaceTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &InterfaceTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a Label from its ID.
+func (r *Client) LoadLabelFromID(id LabelID) *Label {
+	q := r.q.Select("loadLabelFromID")
+	q = q.Arg("id", id)
+
+	return &Label{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a ListTypeDef from its ID.
+func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
+	q := r.q.Select("loadListTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &ListTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a ModuleConfig from its ID.
+func (r *Client) LoadModuleConfigFromID(id ModuleConfigID) *ModuleConfig {
+	q := r.q.Select("loadModuleConfigFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleConfig{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a Module from its ID.
 func (r *Client) LoadModuleFromID(id ModuleID) *Module {
 	q := r.q.Select("loadModuleFromID")
 	q = q.Arg("id", id)
 
 	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a ObjectTypeDef from its ID.
+func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
+	q := r.q.Select("loadObjectTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &ObjectTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a Port from its ID.
+func (r *Client) LoadPortFromID(id PortID) *Port {
+	q := r.q.Select("loadPortFromID")
+	q = q.Arg("id", id)
+
+	return &Port{
 		q: q,
 		c: r.c,
 	}
@@ -3994,7 +4932,7 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
-// Loads a service from ID.
+// Load a Service from its ID.
 func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 	q := r.q.Select("loadServiceFromID")
 	q = q.Arg("id", id)
@@ -4016,7 +4954,18 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	}
 }
 
-// Load a TypeDef by ID.
+// Load a Ttlsh from its ID.
+func (r *Client) LoadTtlshFromID(id TtlshID) *Ttlsh {
+	q := r.q.Select("loadTtlshFromID")
+	q = q.Arg("id", id)
+
+	return &Ttlsh{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.q.Select("loadTypeDefFromID")
 	q = q.Arg("id", id)
@@ -4062,9 +5011,9 @@ func (r *Client) ModuleConfig(sourceDirectory *Directory, opts ...ModuleConfigOp
 
 // PipelineOpts contains options for Client.Pipeline
 type PipelineOpts struct {
-	// Pipeline description.
+	// Description of the sub-pipeline.
 	Description string
-	// Pipeline labels.
+	// Labels to apply to the sub-pipeline.
 	Labels []PipelineLabel
 }
 
@@ -4089,12 +5038,10 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 }
 
-// Loads a secret from its ID.
-//
-// Deprecated: Use LoadSecretFromID instead
-func (r *Client) Secret(id SecretID) *Secret {
+// Reference a secret by name.
+func (r *Client) Secret(name string) *Secret {
 	q := r.q.Select("secret")
-	q = q.Arg("id", id)
+	q = q.Arg("name", name)
 
 	return &Secret{
 		q: q,
@@ -4103,6 +5050,7 @@ func (r *Client) Secret(id SecretID) *Secret {
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
+//
 // The plaintext value is limited to a size of 128000 bytes.
 func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	q := r.q.Select("setSecret")
@@ -4115,24 +5063,23 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	}
 }
 
-// SocketOpts contains options for Client.Socket
-type SocketOpts struct {
-	ID SocketID
-}
-
 // Loads a socket by its ID.
 //
 // Deprecated: Use LoadSocketFromID instead.
-func (r *Client) Socket(opts ...SocketOpts) *Socket {
+func (r *Client) Socket(id SocketID) *Socket {
 	q := r.q.Select("socket")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
+	q = q.Arg("id", id)
 
 	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Client) Ttlsh() *Ttlsh {
+	q := r.q.Select("ttlsh")
+
+	return &Ttlsh{
 		q: q,
 		c: r.c,
 	}
@@ -4157,7 +5104,7 @@ type Secret struct {
 	plaintext *string
 }
 
-// The identifier for this secret.
+// A unique identifier for this Secret.
 func (r *Secret) ID(ctx context.Context) (SecretID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -4219,6 +5166,7 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// A content-addressed service providing TCP connectivity.
 type Service struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -4278,7 +5226,7 @@ func (r *Service) Hostname(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// A unique identifier for this service.
+// A unique identifier for this Service.
 func (r *Service) ID(ctx context.Context) (ServiceID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -4331,19 +5279,19 @@ func (r *Service) UnmarshalJSON(bs []byte) error {
 func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("ports")
 
-	q = q.Select("description port protocol")
+	q = q.Select("id")
 
 	type ports struct {
-		Description string
-		Port        int
-		Protocol    NetworkProtocol
+		Id PortID
 	}
 
 	convert := func(fields []ports) []Port {
 		out := []Port{}
 
 		for i := range fields {
-			val := Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol}
+			val := Port{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.c = r.c
 			out = append(out, val)
 		}
 
@@ -4377,6 +5325,7 @@ func (r *Service) Stop(ctx context.Context) (*Service, error) {
 	return r, q.Execute(ctx, r.c)
 }
 
+// A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -4384,7 +5333,7 @@ type Socket struct {
 	id *SocketID
 }
 
-// The content-addressed identifier of the socket.
+// A unique identifier for this Socket.
 func (r *Socket) ID(ctx context.Context) (SocketID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -4433,6 +5382,101 @@ func (r *Socket) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+// A Dagger module to publish containers to ttl.sh, a throaway public registry
+type Ttlsh struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id      *TtlshID
+	publish *string
+}
+
+// A unique identifier for this Ttlsh.
+func (r *Ttlsh) ID(ctx context.Context) (TtlshID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response TtlshID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Ttlsh) XXX_GraphQLType() string {
+	return "Ttlsh"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Ttlsh) XXX_GraphQLIDType() string {
+	return "TtlshID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Ttlsh) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Ttlsh) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *Ttlsh) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadTtlshFromID(TtlshID(id))
+	return nil
+}
+
+// TtlshPublishOpts contains options for Ttlsh.Publish
+type TtlshPublishOpts struct {
+	//
+	// the repo to publish to, defaults to a random name
+	//
+	Repo string
+	//
+	// the tag to publish to, defaults to 10m
+	//
+	Tag string
+}
+
+// Publish a container to ttl.sh
+func (r *Ttlsh) Publish(ctx context.Context, ctr *Container, opts ...TtlshPublishOpts) (string, error) {
+	assertNotNil("ctr", ctr)
+	if r.publish != nil {
+		return *r.publish, nil
+	}
+	q := r.q.Select("publish")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `repo` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Repo) {
+			q = q.Arg("repo", opts[i].Repo)
+		}
+		// `tag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Tag) {
+			q = q.Arg("tag", opts[i].Tag)
+		}
+	}
+	q = q.Arg("ctr", ctr)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	q *querybuilder.Selection
@@ -4451,8 +5495,15 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 	return f(r)
 }
 
-// If kind is LIST, the list-specific type definition.
-// If kind is not LIST, this will be null.
+func (r *TypeDef) AsInterface() *InterfaceTypeDef {
+	q := r.q.Select("asInterface")
+
+	return &InterfaceTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
 func (r *TypeDef) AsList() *ListTypeDef {
 	q := r.q.Select("asList")
 
@@ -4462,8 +5513,6 @@ func (r *TypeDef) AsList() *ListTypeDef {
 	}
 }
 
-// If kind is OBJECT, the object-specific type definition.
-// If kind is not OBJECT, this will be null.
 func (r *TypeDef) AsObject() *ObjectTypeDef {
 	q := r.q.Select("asObject")
 
@@ -4473,6 +5522,7 @@ func (r *TypeDef) AsObject() *ObjectTypeDef {
 	}
 }
 
+// A unique identifier for this TypeDef.
 func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
@@ -4521,7 +5571,6 @@ func (r *TypeDef) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// The kind of type this is (e.g. primitive, list, object)
 func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
@@ -4534,7 +5583,6 @@ func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Whether this type can be set to null. Defaults to false.
 func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 	if r.optional != nil {
 		return *r.optional, nil
@@ -4584,11 +5632,33 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	}
 }
 
-// Adds a function for an Object TypeDef, failing if the type is not an object.
+// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	assertNotNil("function", function)
 	q := r.q.Select("withFunction")
 	q = q.Arg("function", function)
+
+	return &TypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TypeDefWithInterfaceOpts contains options for TypeDef.WithInterface
+type TypeDefWithInterfaceOpts struct {
+	Description string
+}
+
+// Returns a TypeDef of kind Interface with the provided name.
+func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *TypeDef {
+	q := r.q.Select("withInterface")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &TypeDef{
 		q: q,
@@ -4626,9 +5696,7 @@ type TypeDefWithObjectOpts struct {
 
 // Returns a TypeDef of kind Object with the provided name.
 //
-// Note that an object's fields and functions may be omitted if the intent is
-// only to refer to an object. This is how functions are able to return their
-// own object, or any other circular reference.
+// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
 func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDef {
 	q := r.q.Select("withObject")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -4661,8 +5729,7 @@ type CacheSharingMode string
 func (CacheSharingMode) IsEnum() {}
 
 const (
-	// Shares the cache volume amongst many build pipelines,
-	// but will serialize the writes
+	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	Locked CacheSharingMode = "LOCKED"
 
 	// Keeps a cache volume for a single build pipeline
@@ -4701,10 +5768,8 @@ type NetworkProtocol string
 func (NetworkProtocol) IsEnum() {}
 
 const (
-	// TCP (Transmission Control Protocol)
 	Tcp NetworkProtocol = "TCP"
 
-	// UDP (User Datagram Protocol)
 	Udp NetworkProtocol = "UDP"
 )
 
@@ -4713,31 +5778,34 @@ type TypeDefKind string
 func (TypeDefKind) IsEnum() {}
 
 const (
-	// A boolean value
-	Booleankind TypeDefKind = "BooleanKind"
+	// A boolean value.
+	BooleanKind TypeDefKind = "BOOLEAN_KIND"
 
-	// An integer value
-	Integerkind TypeDefKind = "IntegerKind"
+	// An integer value.
+	IntegerKind TypeDefKind = "INTEGER_KIND"
+
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	//
+	// Always paired with an InterfaceTypeDef.
+	InterfaceKind TypeDefKind = "INTERFACE_KIND"
 
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
-	Listkind TypeDefKind = "ListKind"
+	ListKind TypeDefKind = "LIST_KIND"
 
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
-	Objectkind TypeDefKind = "ObjectKind"
+	ObjectKind TypeDefKind = "OBJECT_KIND"
 
-	// A string value
-	Stringkind TypeDefKind = "StringKind"
+	// A string value.
+	StringKind TypeDefKind = "STRING_KIND"
 
 	// A special kind used to signify that no value is returned.
 	//
-	// This is used for functions that have no return value. The outer TypeDef
-	// specifying this Kind is always Optional, as the Void is never actually
-	// represented.
-	Voidkind TypeDefKind = "VoidKind"
+	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+	VoidKind TypeDefKind = "VOID_KIND"
 )
 
 type Client struct {
@@ -4786,7 +5854,7 @@ func getClientParams() (graphql.Client, *querybuilder.Selection) {
 			return dialTransport.RoundTrip(r)
 		}),
 	}
-	gqlClient := graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)
+	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
 
 	return gqlClient, querybuilder.Query()
 }
@@ -4796,6 +5864,30 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+type errorWrappedClient struct {
+	graphql.Client
+}
+
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *MyModule) UnmarshalJSON(bs []byte) error {
+	var concrete struct{}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func main() {
@@ -4863,42 +5955,23 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			var parent MyModule
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*MyModule).HelloFromDagger(&parent, ctx), nil
 		case "Test":
 			var parent MyModule
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*MyModule).Test(&parent, ctx)
 		case "Build":
 			var parent MyModule
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*MyModule).Build(&parent), nil
-		case "Package":
-			var parent MyModule
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
-			}
-			return (*MyModule).Package(&parent), nil
-		case "Publish":
-			var parent MyModule
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
-			}
-			return (*MyModule).Publish(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -4908,24 +5981,16 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				dag.TypeDef().WithObject("MyModule").
 					WithFunction(
 						dag.Function("HelloFromDagger",
-							dag.TypeDef().WithKind(Stringkind)).
+							dag.TypeDef().WithKind(StringKind)).
 							WithDescription("say hello")).
 					WithFunction(
 						dag.Function("Test",
-							dag.TypeDef().WithKind(Stringkind)).
+							dag.TypeDef().WithKind(StringKind)).
 							WithDescription("run unit tests")).
 					WithFunction(
 						dag.Function("Build",
 							dag.TypeDef().WithObject("Directory")).
-							WithDescription("create a production build")).
-					WithFunction(
-						dag.Function("Package",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("create a production image")).
-					WithFunction(
-						dag.Function("Publish",
-							dag.TypeDef().WithKind(Stringkind)).
-							WithDescription("publish an image"))), nil
+							WithDescription("create a production build"))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

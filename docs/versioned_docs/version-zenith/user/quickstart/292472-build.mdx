@@ -21,12 +21,12 @@ Add a new `Build()` function that creates a production build of the example appl
 
 This new function does the following:
 
-- It starts off like the previous `Test()` function and obtains a `Node` object with the application source code, Node.js runtime and cache volumes.
-- It calls the module's `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image.
+- It starts off like the previous `Test()` function and obtains a `Container` object with the application source code, Node.js runtime and dependencies.
+- It uses the `Container.WithExec()` method to set the `npm run build` command in the container. This command builds the application and places the build in a `dist/` directory in the container filesystem.
 - It obtains a reference to the `dist/` directory in the container with the `Container.Directory()` function. This function returns a `Directory` object.
 
 :::note
-The `npm run build` command is appropriate for a Vue application, but other applications are likely to use different commands. Modify your function code accordingly. Remember that you can use the module's `Node.Run()` function to customize the command to be run.
+The `npm run build` command is appropriate for a Vue application, but other applications are likely to use different commands. Modify your function code accordingly.
 :::
 
 Call the new function using the Dagger CLI:
@@ -42,7 +42,7 @@ Here's an example of the output you will see:
 ┃ assets
 ┃ favicon.ico
 ┃ index.html
-• Engine: 148c9e82df08 (version v0.9.5)
+• Engine: de1d2d726b64 (version v0.9.7)
 ⧗ 2m5.1s ✔ 120 ∅ 9
 ```
 
@@ -54,7 +54,7 @@ Update your module with a new, private `buildBaseImage()` function that performs
 ```
 
 :::info
-The `buildBaseImage()` function uses the `node` module and returns a custom `Node` object representing a container image with the application source code, Node.js runtime and cache volumes. This `Node` object can then be "chained" into other functions, in the same style as the [core Dagger API](https://docs.dagger.io/api/reference).
+The `buildBaseImage()` function returns a custom `Container` object representing a container image with the application source code, Node.js runtime and dependencies. This `Container` object can then be "chained" into other functions, in the same style as the [core Dagger API](https://docs.dagger.io/api/reference).
 :::
 
 After updating the module, test and build the application again:

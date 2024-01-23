@@ -11,9 +11,13 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 ## Add functions to publish the application
 
-At this point, your Dagger module has functions to test and build the application. However, the Dagger API has built-in support to publish container images to remote registries.
+At this point, your Dagger module has functions to test and build the application. The next (and final) step is to publish it as a container image to a registry.
 
 One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The [Daggerverse](https://daggerverse.dev) already includes a [`ttlsh` module](https://daggerverse.dev/mod/github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473) to publish to this registry.
+
+:::info
+The [Daggerverse](https://daggerverse.dev) is an online catalog that enables users to easily discover and use modules created by the Dagger community.
+:::
 
 Add the `ttlsh` module as a dependency in your module:
 
@@ -43,4 +47,6 @@ Here's an example of the output you will see:
 ```shell
 ✔ dagger call publish [2m4.3s]
 ┃ ttl.sh/clever_wing:10m@sha256:71a62cabdc46a818ec20377f72ce908125c32da9605d54d3c3688524d0bbb08c
+• Engine: de1d2d726b64 (version v0.9.7)
+⧗ 20m48.5s ✔ 141 ∅ 13
 ```

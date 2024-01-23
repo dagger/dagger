@@ -14,36 +14,23 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 The function in the previous example was illustrative - you wouldn't ever use it in the real world! So, the next step is to write a Dagger function to do something more useful, like running an application's tests.
 
-Since the application is a Node.js application, it's convenient to start with the [`node` module](https://daggerverse.dev/mod/github.com/quartz-technology/daggerverse/node) from the [Daggerverse](https://daggerverse.dev), which provides a set of ready-made functions to manage a Node.js project.
-
-:::info
-The [Daggerverse](https://daggerverse.dev) is an online catalog of Dagger modules that enables users to easily discover and use modules created by the Dagger community.
-:::
-
-Begin by adding the `node` module as a dependency:
-
-```shell
-dagger mod install github.com/quartz-technology/daggerverse/node/go
-```
-
-Then, add a new `Test()` function to `main.go`, which runs the application's unit test suite:
+Add a new `Test()` function to `main.go`, which runs the application's unit test suite:
 
 ```go file=snippets/test/main.go
 ```
 
 This function does the following:
 
-- It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
-- It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
-- It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules. The `dag.Host().Directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is again `node:18-slim`. This method returns a `Container` initialized from that base image.
+- When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.Host().Directory()`.
+    - The function code uses the `Container.WithDirectory()` method to mount the source code directory from the module container's filesystem at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
+    - The `dag.Host().Directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+- It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
+- It uses the `Container.Stdout()` method to return the output of the last executed command (the test results). If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
 
-  :::note
-  It is important to note that the `dag.Host().Directory()` method does not read from the CLI caller's filesystem, but from the module container's filesystem. When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In the context of this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.Host().Directory()`.
-  :::
-
-- It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
-- It calls the module's `Node.Run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
-- It uses the `Container.Stdout()` function to return the output stream of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+:::note
+It is important to note that the `dag.Host().Directory()` method does not read from the CLI caller's filesystem, but from the module container's filesystem.
+:::
 
 Call the new function using the Dagger CLI:
 
@@ -67,10 +54,6 @@ Here's an example of the output you will see:
 ┃       Tests  1 passed (1)
 ┃    Start at  15:46:12
 ┃    Duration  8.85s (transform 751ms, setup 0ms, collect 1.04s, tests 65ms, environment 4.51s, prepare 1.19s)
-• Engine: 148c9e82df08 (version v0.9.5)
+• Engine: de1d2d726b64 (version v0.9.7)
 ⧗ 1m56.9s ✔ 104 ∅ 9
 ```
-
-:::tip
-This example uses the `node` module's `Node.Run().Stdout()` function to explicitly specify the test command and print its output stream. As an alternative, the `node` module also exposes a `Node.Test()` function, which executes the `npm run test` command and prints its output stream.
-:::

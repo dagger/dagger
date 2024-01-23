@@ -1,4 +1,7 @@
 {
   "name": "my-module",
-  "sdk": "go"
+  "sdk": "go",
+  "dependencies": [
+    "github.com/shykes/daggerverse/ttlsh@3d43167457b0de8c8929a9de411480daddddab7f"
+  ]
 }
