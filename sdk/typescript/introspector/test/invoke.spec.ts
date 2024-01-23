@@ -4,7 +4,7 @@ import * as path from "path"
 import { fileURLToPath } from "url"
 
 import { connection } from "../../connect.js"
-import { invoke } from "../../entrypoint/invoke.js"
+import { InvokeCtx, invoke } from "../../entrypoint/invoke.js"
 import { load } from "../../entrypoint/load.js"
 import { scan } from "../scanner/scan.js"
 import { listFiles } from "../utils/files.js"
@@ -168,5 +168,81 @@ describe("Invoke typescript function", function () {
       },
       { LogOutput: process.stderr }
     )
+  })
+
+  it("Should correctly invoke variadic functions", async function () {
+    this.timeout(60000)
+
+    const files = await listFiles(`${rootDirectory}/variadic`)
+
+    // Load function
+    await load(files)
+
+    const scanResult = scan(files)
+
+    type Case = {
+      [name: string]: { ctx: InvokeCtx; expected: string | number }
+    }
+
+    const cases: Case = {
+      "invoke full variadic string function": {
+        expected: "hello world",
+        ctx: {
+          parentName: "Variadic",
+          fnName: "fullVariadicStr",
+          parentArgs: {},
+          fnArgs: {
+            vars: ["hello", "world"],
+          },
+        },
+      },
+      "invoke variadic function with fixed first argument": {
+        expected: "hello+world",
+        ctx: {
+          parentName: "Variadic",
+          fnName: "semiVariadicStr",
+          parentArgs: {},
+          fnArgs: {
+            separator: "+",
+            vars: ["hello", "world"],
+          },
+        },
+      },
+      "invoke full variadic number function": {
+        expected: 3,
+        ctx: {
+          parentName: "Variadic",
+          fnName: "fullVariadicNum",
+          parentArgs: {},
+          fnArgs: {
+            vars: [1, 2],
+          },
+        },
+      },
+      "only invoke variadic function with fixed first argument": {
+        expected: 12,
+        ctx: {
+          parentName: "Variadic",
+          fnName: "semiVariadicNum",
+          parentArgs: {},
+          fnArgs: {
+            mul: 2,
+            vars: [1, 1, 1, 2, 1], // 6
+          },
+        },
+      },
+    }
+
+    for (const [name, { ctx, expected }] of Object.entries(cases)) {
+      it(name, async function () {
+        // We wrap the execution into a Dagger connection
+        await connection(async () => {
+          const result = await invoke(scanResult, ctx)
+
+          // We verify the result
+          assert.equal(result, expected)
+        })
+      })
+    }
   })
 })

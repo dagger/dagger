@@ -204,6 +204,7 @@ function introspectConstructor(
         typeDef: typeNameToTypedef(typeName),
         optional,
         defaultValue,
+        isVariadic: false,
       }
 
       return acc
@@ -248,7 +249,7 @@ function introspectMethod(
     args: methodSignature.params.reduce(
       (
         acc: { [name: string]: FunctionArg },
-        { name, typeName, description, optional, defaultValue }
+        { name, typeName, description, optional, defaultValue, isVariadic }
       ) => {
         acc[name] = {
           name,
@@ -256,6 +257,7 @@ function introspectMethod(
           description,
           optional,
           defaultValue,
+          isVariadic,
         }
 
         return acc

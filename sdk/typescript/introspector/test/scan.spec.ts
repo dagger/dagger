@@ -40,6 +40,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -97,6 +98,7 @@ describe("scan static TypeScript", function () {
                   description: "Command to execute",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -152,6 +154,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -166,6 +169,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -241,6 +245,7 @@ describe("scan static TypeScript", function () {
                   description: "version to use (default to: 3.16.2)",
                   optional: true,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -263,6 +268,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -282,6 +288,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -320,6 +327,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -334,6 +342,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -348,6 +357,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: "0",
+                  isVariadic: false,
                 },
                 b: {
                   name: "b",
@@ -355,6 +365,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: "0",
+                  isVariadic: false,
                 },
               },
             },
@@ -369,6 +380,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: "false",
+                  isVariadic: false,
                 },
               },
             },
@@ -407,6 +419,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -421,6 +434,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -463,6 +477,7 @@ describe("scan static TypeScript", function () {
                 description: "",
                 defaultValue: '"world"',
                 optional: true,
+                isVariadic: false,
               },
             },
           },
@@ -480,6 +495,124 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
+                },
+              },
+            },
+          },
+        },
+      },
+      functions: {},
+    }
+
+    assert.deepEqual(result, expected)
+  })
+
+  it("Should correctly scan variadic arguments", async function () {
+    const files = await listFiles(`${rootDirectory}/variadic`)
+
+    const result = scan(files)
+    const expected: ScanResult = {
+      classes: {
+        Variadic: {
+          name: "Variadic",
+          description: "",
+          fields: {},
+          constructor: undefined,
+          methods: {
+            fullVariadicStr: {
+              name: "fullVariadicStr",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.StringKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
+                },
+              },
+            },
+            semiVariadicStr: {
+              name: "semiVariadicStr",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {
+                separator: {
+                  name: "separator",
+                  typeDef: { kind: TypeDefKind.StringKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.StringKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
+                },
+              },
+            },
+            fullVariadicNum: {
+              name: "fullVariadicNum",
+              returnType: {
+                kind: TypeDefKind.IntegerKind,
+              },
+              description: "",
+              args: {
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.IntegerKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
+                },
+              },
+            },
+            semiVariadicNum: {
+              name: "semiVariadicNum",
+              returnType: {
+                kind: TypeDefKind.IntegerKind,
+              },
+              description: "",
+              args: {
+                mul: {
+                  name: "mul",
+                  typeDef: { kind: TypeDefKind.IntegerKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.IntegerKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
                 },
               },
             },
