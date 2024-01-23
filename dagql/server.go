@@ -545,15 +545,6 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		return nil, nil
 	}
 
-	if len(sel.Subselections) == 0 {
-		return val, nil
-		// if lit, ok := val.(idproto.Literate); ok {
-		// 	// there are no sub-selections; we're done
-		// 	return lit.ToLiteral().ToInput(), nil
-		// }
-		// return nil, fmt.Errorf("%s must have sub-selections", val.Type())
-	}
-
 	enum, ok := val.(Enumerable)
 	if ok {
 		// we're sub-selecting into an enumerable value, so we need to resolve each
@@ -573,19 +564,27 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 					continue
 				}
 			}
-			nthID := chainedID.Clone()
-			nthID.SelectNth(nth)
-			node, err := s.toSelectable(nthID, val)
-			if err != nil {
-				return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
+			if len(sel.Subselections) == 0 {
+				results = append(results, val)
+			} else {
+				nthID := chainedID.Clone()
+				nthID.SelectNth(nth)
+				node, err := s.toSelectable(nthID, val)
+				if err != nil {
+					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
+				}
+				res, err := s.Resolve(ctx, node, sel.Subselections...)
+				if err != nil {
+					return nil, err
+				}
+				results = append(results, res)
 			}
-			res, err := s.Resolve(ctx, node, sel.Subselections...)
-			if err != nil {
-				return nil, err
-			}
-			results = append(results, res)
 		}
 		return results, nil
+	}
+
+	if len(sel.Subselections) == 0 {
+		return val, nil
 	}
 
 	// instantiate the return value so we can sub-select
