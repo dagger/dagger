@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -10,44 +11,36 @@ import (
 )
 
 var outputPath string
-var outputExport bool
+var jsonOutput bool
 
 var callCmd = &FuncCommand{
 	Name:  "call",
 	Short: "Call a module function",
-	Long:  "Call a module function and print the result.\n\nOn a container, the stdout will be returned. On a directory, the list of entries, and on a file, its contents.",
+	Long: `Call a module function and print the result
+
+If the last argument is either Container, Directory, or File, the pipeline
+will be evaluated (the result of calling *sync*) without presenting any output.
+Providing the --output option (shorthand: -o) is equivalent to calling *export*
+instead. To print a property of these core objects, continue chaining by
+appending it to the end of the command (for example, *stdout*, *entries*, or
+*contents*).
+`,
 	Init: func(cmd *cobra.Command) {
+		cmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Present result as JSON")
 		cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Path in the host to save the result to")
 	},
 	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
 		switch name {
-		case Container:
+		case Container, Directory, File:
 			if outputPath != "" {
 				c.Select("export")
 				c.Arg("path", outputPath)
-				outputExport = true
+				if name == File {
+					c.Arg("allowParentDirPath", true)
+				}
 				return nil
 			}
-			// TODO: Combined `output` in the API. Querybuilder
-			// doesn't support querying sibling fields.
-			c.Select("stdout")
-		case Directory:
-			if outputPath != "" {
-				c.Select("export")
-				c.Arg("path", outputPath)
-				outputExport = true
-				return nil
-			}
-			c.Select("entries")
-		case File:
-			if outputPath != "" {
-				c.Select("export")
-				c.Arg("path", outputPath)
-				c.Arg("allowParentDirPath", true)
-				outputExport = true
-				return nil
-			}
-			c.Select("contents")
+			c.Select("sync")
 		case Terminal:
 			c.Select("websocketEndpoint")
 		default:
@@ -69,6 +62,9 @@ var callCmd = &FuncCommand{
 		if debug {
 			return fmt.Errorf("running shell with --debug is not supported")
 		}
+		if outputPath != "" {
+			return fmt.Errorf("running shell with --output is not supported")
+		}
 		return nil
 	},
 	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, modType *modTypeDef, response any) error {
@@ -79,15 +75,18 @@ var callCmd = &FuncCommand{
 				return fmt.Errorf("unexpected response %T: %+v", response, response)
 			}
 			return attachToShell(cmd.Context(), c.c, termEndpoint)
+		case Container, Directory, File:
+			if outputPath != "" {
+				logOutputSuccess(cmd, outputPath)
+				return nil
+			}
+			// Just `sync`, don't print the result (id), but let user know.
+			cmd.PrintErrf("%s evaluated. Use \"%s --help\" to see available sub-commands.\n", modType.Name(), cmd.CommandPath())
+			return nil
 		default:
 			writer := cmd.OutOrStdout()
 
 			if outputPath != "" {
-				if outputExport {
-					logOutputSuccess(cmd, outputPath)
-					return nil
-				}
-
 				file, err := openOutputFile(outputPath)
 				if err != nil {
 					return fmt.Errorf("couldn't write output to file: %w", err)
@@ -101,9 +100,17 @@ var callCmd = &FuncCommand{
 				writer = io.MultiWriter(writer, file)
 			}
 
+			if jsonOutput {
+				jb, err := json.MarshalIndent(response, "", "    ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(writer, "%s\n", jb)
+				return nil
+			}
+
 			return printFunctionResult(writer, response)
 		}
-
 	},
 }
 
