@@ -687,6 +687,9 @@ pub struct ContainerWithExposedPortOpts<'a> {
     /// Optional port description
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Skip the health check when run as a service.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_skip_healthcheck: Option<bool>,
     /// Transport layer network protocol
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
@@ -1555,6 +1558,9 @@ impl Container {
         }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(experimental_skip_healthcheck) = opts.experimental_skip_healthcheck {
+            query = query.arg("experimentalSkipHealthcheck", experimental_skip_healthcheck);
         }
         return Container {
             proc: self.proc.clone(),
@@ -3916,6 +3922,10 @@ pub struct Port {
 impl Port {
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn experimental_skip_healthcheck(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("experimentalSkipHealthcheck");
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Port.

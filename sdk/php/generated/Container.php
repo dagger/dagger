@@ -508,6 +508,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         int $port,
         ?NetworkProtocol $protocol = null,
         ?string $description = null,
+        ?bool $experimentalSkipHealthcheck = false,
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExposedPort');
@@ -517,6 +518,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $experimentalSkipHealthcheck) {
+        $innerQueryBuilder->setArgument('experimentalSkipHealthcheck', $experimentalSkipHealthcheck);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

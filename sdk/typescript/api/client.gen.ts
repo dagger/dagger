@@ -283,6 +283,11 @@ export type ContainerWithExposedPortOpts = {
    * Optional port description
    */
   description?: string
+
+  /**
+   * Skip the health check when run as a service.
+   */
+  experimentalSkipHealthcheck?: boolean
 }
 
 export type ContainerWithFileOpts = {
@@ -1879,6 +1884,7 @@ export class Container extends BaseClient {
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
+   * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
    */
   withExposedPort = (
     port: number,
@@ -5273,6 +5279,7 @@ export class ObjectTypeDef extends BaseClient {
 export class Port extends BaseClient {
   private readonly _id?: PortID = undefined
   private readonly _description?: string = undefined
+  private readonly _experimentalSkipHealthcheck?: boolean = undefined
   private readonly _port?: number = undefined
   private readonly _protocol?: NetworkProtocol = undefined
 
@@ -5283,6 +5290,7 @@ export class Port extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: PortID,
     _description?: string,
+    _experimentalSkipHealthcheck?: boolean,
     _port?: number,
     _protocol?: NetworkProtocol
   ) {
@@ -5290,6 +5298,7 @@ export class Port extends BaseClient {
 
     this._id = _id
     this._description = _description
+    this._experimentalSkipHealthcheck = _experimentalSkipHealthcheck
     this._port = _port
     this._protocol = _protocol
   }
@@ -5324,6 +5333,23 @@ export class Port extends BaseClient {
         ...this._queryTree,
         {
           operation: "description",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+  experimentalSkipHealthcheck = async (): Promise<boolean> => {
+    if (this._experimentalSkipHealthcheck) {
+      return this._experimentalSkipHealthcheck
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "experimentalSkipHealthcheck",
         },
       ],
       await this._ctx.connection()

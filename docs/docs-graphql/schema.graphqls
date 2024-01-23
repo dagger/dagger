@@ -481,6 +481,9 @@ type Container {
     """Optional port description"""
     description: String
 
+    """Skip the health check when run as a service."""
+    experimentalSkipHealthcheck: Boolean = false
+
     """Port number to expose"""
     port: Int!
 
@@ -1546,6 +1549,7 @@ scalar Platform
 """A port exposed by a container."""
 type Port {
   description: String
+  experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
   id: PortID!

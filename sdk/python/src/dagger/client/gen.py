@@ -600,6 +600,7 @@ class Container(Type):
         _ctx = self._select("exposedPorts", _args)
         _ctx = Port(_ctx)._select_multiple(
             _description="description",
+            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
             _port="port",
             _protocol="protocol",
         )
@@ -1197,6 +1198,7 @@ class Container(Type):
         *,
         protocol: NetworkProtocol | None = "TCP",
         description: str | None = None,
+        experimental_skip_healthcheck: bool | None = False,
     ) -> "Container":
         """Expose a network port.
 
@@ -1214,11 +1216,14 @@ class Container(Type):
             Transport layer network protocol
         description:
             Optional port description
+        experimental_skip_healthcheck:
+            Skip the health check when run as a service.
         """
         _args = [
             Arg("port", port),
             Arg("protocol", protocol, "TCP"),
             Arg("description", description, None),
+            Arg("experimentalSkipHealthcheck", experimental_skip_healthcheck, False),
         ]
         _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)
@@ -4328,11 +4333,13 @@ class Port(Type):
 
     __slots__ = (
         "_description",
+        "_experimental_skip_healthcheck",
         "_port",
         "_protocol",
     )
 
     _description: str | None
+    _experimental_skip_healthcheck: bool | None
     _port: int | None
     _protocol: NetworkProtocol | None
 
@@ -4357,6 +4364,26 @@ class Port(Type):
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str | None)
+
+    @typecheck
+    async def experimental_skip_healthcheck(self) -> bool:
+        """Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_experimental_skip_healthcheck"):
+            return self._experimental_skip_healthcheck
+        _args: list[Arg] = []
+        _ctx = self._select("experimentalSkipHealthcheck", _args)
+        return await _ctx.execute(bool)
 
     @typecheck
     async def id(self) -> PortID:
@@ -5227,6 +5254,7 @@ class Service(Type):
         _ctx = self._select("ports", _args)
         _ctx = Port(_ctx)._select_multiple(
             _description="description",
+            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
             _port="port",
             _protocol="protocol",
         )

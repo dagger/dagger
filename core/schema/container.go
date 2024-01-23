@@ -399,7 +399,8 @@ func (s *containerSchema) Install() {
 				`- For setting the EXPOSE OCI field when publishing the container`).
 			ArgDoc("port", `Port number to expose`).
 			ArgDoc("protocol", `Transport layer network protocol`).
-			ArgDoc("description", `Optional port description`),
+			ArgDoc("description", `Optional port description`).
+			ArgDoc("experimentalSkipHealthcheck", `Skip the health check when run as a service.`),
 
 		dagql.Func("withoutExposedPort", s.withoutExposedPort).
 			Doc(`Unexpose a previously exposed port.`).
@@ -1214,16 +1215,18 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.C
 }
 
 type containerWithExposedPortArgs struct {
-	Port        int
-	Protocol    core.NetworkProtocol `default:"TCP"`
-	Description *string
+	Port                        int
+	Protocol                    core.NetworkProtocol `default:"TCP"`
+	Description                 *string
+	ExperimentalSkipHealthcheck bool `default:"false"`
 }
 
 func (s *containerSchema) withExposedPort(ctx context.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
 	return parent.WithExposedPort(core.Port{
-		Protocol:    args.Protocol,
-		Port:        args.Port,
-		Description: args.Description,
+		Protocol:                    args.Protocol,
+		Port:                        args.Port,
+		Description:                 args.Description,
+		ExperimentalSkipHealthcheck: args.ExperimentalSkipHealthcheck,
 	})
 }
 

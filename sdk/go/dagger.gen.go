@@ -1163,6 +1163,8 @@ type ContainerWithExposedPortOpts struct {
 	Protocol NetworkProtocol
 	// Optional port description
 	Description string
+	// Skip the health check when run as a service.
+	ExperimentalSkipHealthcheck bool
 }
 
 // Expose a network port.
@@ -1182,6 +1184,10 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+		}
+		// `experimentalSkipHealthcheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalSkipHealthcheck) {
+			q = q.Arg("experimentalSkipHealthcheck", opts[i].ExperimentalSkipHealthcheck)
 		}
 	}
 	q = q.Arg("port", port)
@@ -4259,10 +4265,11 @@ type Port struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	id          *PortID
-	port        *int
-	protocol    *NetworkProtocol
+	description                 *string
+	experimentalSkipHealthcheck *bool
+	id                          *PortID
+	port                        *int
+	protocol                    *NetworkProtocol
 }
 
 func (r *Port) Description(ctx context.Context) (string, error) {
@@ -4272,6 +4279,18 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 	q := r.q.Select("description")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
+	if r.experimentalSkipHealthcheck != nil {
+		return *r.experimentalSkipHealthcheck, nil
+	}
+	q := r.q.Select("experimentalSkipHealthcheck")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
