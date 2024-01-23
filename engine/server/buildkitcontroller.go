@@ -37,6 +37,7 @@ import (
 	"github.com/moby/buildkit/util/throttle"
 	"github.com/moby/buildkit/util/tracing/transform"
 	bkworker "github.com/moby/buildkit/worker"
+	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/sdk/trace"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -57,8 +58,9 @@ type BuildkitController struct {
 	privilegedExecEnabled bool
 
 	// server id -> server
-	servers  map[string]*DaggerServer
-	serverMu sync.RWMutex
+	servers     map[string]*DaggerServer
+	serverMu    sync.RWMutex
+	perServerMu *locker.Locker
 
 	throttledGC func()
 	gcmu        sync.Mutex
@@ -111,6 +113,7 @@ func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, er
 		cacheManager:           opts.CacheManager,
 		worker:                 w,
 		servers:                make(map[string]*DaggerServer),
+		perServerMu:            locker.New(),
 	}
 
 	for _, entitlementStr := range opts.Entitlements {
@@ -178,18 +181,16 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	}()
 
 	if !opts.RegisterClient {
-		e.serverMu.Lock()
+		e.serverMu.RLock()
 		srv, ok := e.servers[opts.ServerID]
+		e.serverMu.RUnlock()
 		if !ok {
-			e.serverMu.Unlock()
 			return fmt.Errorf("server %q not found", opts.ServerID)
 		}
 		err := srv.bkClient.VerifyClient(opts.ClientID, opts.ClientSecretToken)
 		if err != nil {
-			e.serverMu.Unlock()
 			return fmt.Errorf("failed to verify client: %w", err)
 		}
-		e.serverMu.Unlock()
 		bklog.G(ctx).Debugf("forwarding client to server")
 		err = srv.ServeClientConn(ctx, opts, conn)
 		if errors.Is(err, io.ErrClosedPipe) {
@@ -208,8 +209,14 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		return fmt.Errorf("handleConn: %w", err)
 	})
 
-	e.serverMu.Lock()
+	// NOTE: the perServerMu here is used to ensure that we hold a lock
+	// specific to only *this server*, so we don't allow creating multiple
+	// servers with the same ID at once. This complexity is necessary so we
+	// don't hold the global serverMu lock for longer than necessary.
+	e.perServerMu.Lock(opts.ServerID)
+	e.serverMu.RLock()
 	srv, ok := e.servers[opts.ServerID]
+	e.serverMu.RUnlock()
 	if !ok {
 		bklog.G(ctx).Debugf("initializing new server")
 
@@ -217,7 +224,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		defer getSessionCancel()
 		caller, err := e.SessionManager.Get(getSessionCtx, opts.ClientID, false)
 		if err != nil {
-			e.serverMu.Unlock()
+			e.perServerMu.Unlock(opts.ServerID)
 			return fmt.Errorf("get session: %w", err)
 		}
 		bklog.G(ctx).Debugf("connected new server session")
@@ -229,7 +236,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		for _, cacheImportCfg := range opts.UpstreamCacheImportConfig {
 			_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
 			if !ok {
-				e.serverMu.Unlock()
+				e.perServerMu.Unlock(opts.ServerID)
 				return fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
 			}
 			cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
@@ -256,7 +263,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			DNSConfig:             e.DNSConfig,
 		})
 		if err != nil {
-			e.serverMu.Unlock()
+			e.perServerMu.Unlock(opts.ServerID)
 			return fmt.Errorf("new Buildkit client: %w", err)
 		}
 
@@ -268,10 +275,12 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels)
 		if err != nil {
-			e.serverMu.Unlock()
+			e.perServerMu.Unlock(opts.ServerID)
 			return fmt.Errorf("new Dagger server: %w", err)
 		}
+		e.serverMu.Lock()
 		e.servers[opts.ServerID] = srv
+		e.serverMu.Unlock()
 
 		bklog.G(ctx).Debugf("initialized new server")
 
@@ -279,9 +288,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		defer func() {
 			bklog.G(ctx).Debug("removing server")
 			e.serverMu.Lock()
-			srv.Close()
 			delete(e.servers, opts.ServerID)
 			e.serverMu.Unlock()
+
+			srv.Close()
 
 			if err := bkClient.Close(); err != nil {
 				bklog.G(ctx).WithError(err).Errorf("failed to close buildkit client for server %s", opts.ServerID)
@@ -292,13 +302,12 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			bklog.G(ctx).Debug("server removed")
 		}()
 	}
+	e.perServerMu.Unlock(opts.ServerID)
 
 	err = srv.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
 	if err != nil {
-		e.serverMu.Unlock()
 		return fmt.Errorf("failed to register client: %w", err)
 	}
-	e.serverMu.Unlock()
 
 	eg.Go(func() error {
 		bklog.G(ctx).Trace("waiting for server")
@@ -327,18 +336,16 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 		WithField("client_hostname", opts.ClientHostname).
 		WithField("server_id", opts.ServerID))
 
-	e.serverMu.Lock()
+	e.serverMu.RLock()
 	srv, ok := e.servers[opts.ServerID]
+	e.serverMu.RUnlock()
 	if !ok {
-		e.serverMu.Unlock()
 		return nil, fmt.Errorf("unknown server id %q", opts.ServerID)
 	}
 	err = srv.bkClient.VerifyClient(opts.ClientID, opts.ClientSecretToken)
 	if err != nil {
-		e.serverMu.Unlock()
 		return nil, fmt.Errorf("failed to register client: %w", err)
 	}
-	e.serverMu.Unlock()
 
 	cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(req.Cache.Exports))
 	for i, cacheExportCfg := range req.Cache.Exports {
@@ -394,10 +401,11 @@ func (e *BuildkitController) Prune(req *controlapi.PruneRequest, stream controla
 	eg, ctx := errgroup.WithContext(stream.Context())
 
 	e.serverMu.RLock()
-	if len(e.servers) == 0 {
+	cancelLeases := len(e.servers) == 0
+	e.serverMu.RUnlock()
+	if cancelLeases {
 		imageutil.CancelCacheLeases()
 	}
-	e.serverMu.RUnlock()
 
 	didPrune := false
 	defer func() {
@@ -493,9 +501,15 @@ func (e *BuildkitController) Register(server *grpc.Server) {
 
 func (e *BuildkitController) Close() error {
 	err := e.WorkerController.Close()
-	e.serverMu.RLock()
-	defer e.serverMu.RUnlock()
-	for _, s := range e.servers {
+
+	// note this *could* cause a panic in Session if it was still running, so
+	// the server should be shutdown first
+	e.serverMu.Lock()
+	servers := e.servers
+	e.servers = nil
+	e.serverMu.Unlock()
+
+	for _, s := range servers {
 		s.Close()
 	}
 	return err
