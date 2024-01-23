@@ -4424,6 +4424,142 @@ func TestModuleLoops(t *testing.T) {
 	require.ErrorContains(t, err, "module depA has a circular dependency")
 }
 
+func TestModuleConflictingNames(t *testing.T) {
+	// verify circular module dependencies result in an error
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("dep with same prefix as self", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/foo-bar").
+			With(daggerExec("mod", "init", "--name=foo-bar", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class FooBar:
+    @function
+    def fn(self) -> str:
+        return "foobar"
+`,
+			)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=foo", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class Bar:
+    @function
+    def fn(self) -> str:
+        return "test"
+
+@object_type
+class Foo:
+    @function
+    def fn(self) -> Bar:
+        return Bar()
+`,
+			)).
+			With(daggerExec("mod", "install", "./foo-bar")).
+			Sync(ctx)
+		require.ErrorContains(t, err, "module foo-bar conflicts with module foo")
+	})
+
+	t.Run("two deps with same prefix", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/foo-bar").
+			With(daggerExec("mod", "init", "--name=foo-bar", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class FooBar:
+    @function
+    def fn(self) -> str:
+        return "foobar"
+`,
+			)).
+			WithWorkdir("/work/foo").
+			With(daggerExec("mod", "init", "--name=foo", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class Bar:
+    @function
+    def fn(self) -> str:
+        return "test"
+
+@object_type
+class Foo:
+    @function
+    def fn(self) -> Bar:
+        return Bar()
+`,
+			)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class Test:
+    @function
+    def fn(self) -> str:
+        return "foobar"
+`,
+			)).
+			With(daggerExec("mod", "install", "./foo")).
+			With(daggerExec("mod", "install", "./foo-bar")).
+			Sync(ctx)
+		require.ErrorContains(t, err, "module foo-bar conflicts with module foo")
+	})
+
+	t.Run("module name conflicts with core type", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=container", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class Container:
+    @function
+    def fn(self) -> str:
+        return "foobar"
+`,
+			)).
+			With(daggerExec("mod", "install", "sync")).
+			Sync(ctx)
+		require.ErrorContains(t, err, "TODO")
+	})
+
+	t.Run("module type conflicts with core type", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=cache", "--sdk=python")).
+			With(sdkSource("python", `from dagger import function, object_type
+@object_type
+class Volume:
+    @function
+    def fn(self) -> str:
+        return "volume"
+
+@object_type
+class Cache:
+    @function
+    def fn(self) -> Volume:
+        return Volume()
+`,
+			)).
+			With(daggerExec("mod", "install", "sync")).
+			Sync(ctx)
+		require.ErrorContains(t, err, "TODO")
+	})
+}
+
 //go:embed testdata/modules/go/id/arg/main.go
 var badIDArgGoSrc string
 
