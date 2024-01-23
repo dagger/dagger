@@ -4140,7 +4140,7 @@ class Test {
   }
 }
 `, content),
-		))
+			))
 
 		out, err := ctr.With(daggerCall("foo")).Stdout(ctx)
 		require.NoError(t, err)
