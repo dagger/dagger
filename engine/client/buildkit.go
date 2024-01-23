@@ -47,11 +47,10 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 
 func buildkitConnectDefault(ctx context.Context, rec *progrock.VertexRecorder, remote *url.URL) (*bkclient.Client, error) {
 	opts := []bkclient.ClientOpt{
-		bkclient.WithFailFast(),
 		bkclient.WithTracerProvider(otel.GetTracerProvider()),
 	}
 
-	exp, err := detect.Exporter()
+	exp, _, err := detect.Exporter()
 	if err == nil {
 		if td, ok := exp.(bkclient.TracerDelegate); ok {
 			opts = append(opts, bkclient.WithTracerDelegate(td))
