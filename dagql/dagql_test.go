@@ -332,6 +332,92 @@ func TestNullableResults(t *testing.T) {
 	})
 }
 
+func TestListResults(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	dagql.Fields[Query]{
+		dagql.Func("listOfInts", func(ctx context.Context, self Query, args struct {
+		}) ([]int, error) {
+			return []int{1, 2, 3}, nil
+		}),
+		dagql.Func("emptyListOfInts", func(ctx context.Context, self Query, args struct {
+		}) ([]int, error) {
+			return []int{}, nil
+		}),
+		dagql.Func("emptyNilListOfInts", func(ctx context.Context, self Query, args struct {
+		}) ([]int, error) {
+			return nil, nil
+		}),
+		dagql.Func("nullableListOfInts", func(ctx context.Context, self Query, args struct {
+		}) (dagql.Nullable[dagql.Array[dagql.Int]], error) {
+			return dagql.Null[dagql.Array[dagql.Int]](), nil
+		}),
+		dagql.Func("listOfObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			return []*points.Point{
+				{X: 1, Y: 2},
+				{X: 3, Y: 4},
+			}, nil
+		}),
+		dagql.Func("emptyListOfObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			return []*points.Point{}, nil
+		}),
+		dagql.Func("emptyNilListOfObjects", func(ctx context.Context, self Query, args struct {
+		}) ([]*points.Point, error) {
+			return nil, nil
+		}),
+		dagql.Func("nullableListOfObjects", func(ctx context.Context, self Query, args struct {
+		}) (dagql.Nullable[dagql.Array[*points.Point]], error) {
+			return dagql.Null[dagql.Array[*points.Point]](), nil
+		}),
+	}.Install(srv)
+
+	var res struct {
+		ListOfInts            []int
+		EmptyListOfInts       []int
+		EmptyNilListOfInts    []int
+		NullableListOfInts    []int
+		ListOfObjects         []points.Point
+		EmptyListOfObjects    []points.Point
+		EmptyNilListOfObjects []points.Point
+		NullableListOfObjects []points.Point
+	}
+
+	gql := client.New(handler.NewDefaultServer(srv))
+	req(t, gql, `query {
+		listOfInts
+		emptyListOfInts
+		emptyNilListOfInts
+		nullableListOfInts
+		listOfObjects {
+			x
+			y
+		}
+		emptyListOfObjects {
+			x
+			y
+		}
+		emptyNilListOfObjects {
+			x
+			y
+		}
+		nullableListOfObjects {
+			x
+			y
+		}
+	}`, &res)
+	assert.DeepEqual(t, []int{1, 2, 3}, res.ListOfInts)
+	assert.DeepEqual(t, []int{}, res.EmptyListOfInts)
+	assert.DeepEqual(t, []int{}, res.EmptyNilListOfInts)
+	assert.Check(t, res.NullableListOfInts == nil)
+	assert.DeepEqual(t, []points.Point{{X: 1, Y: 2}, {X: 3, Y: 4}}, res.ListOfObjects)
+	assert.DeepEqual(t, []points.Point{}, res.EmptyListOfObjects)
+	assert.DeepEqual(t, []points.Point{}, res.EmptyNilListOfObjects)
+	assert.Check(t, res.NullableListOfObjects == nil)
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }
