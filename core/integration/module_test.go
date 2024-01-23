@@ -2314,14 +2314,14 @@ class Foo {
 @object
 class Playground {
   @func
-  async mySlice(): Promise<Container[]> {
+  mySlice(): Container[] {
     return [
       dag.container().from("alpine:latest").withExec(["echo", "hello world"])
     ]
   }
 
   @func
-  async myStruct(): Promise<Foo> {
+  myStruct(): Foo {
     return new Foo(
       dag.container().from("alpine:latest").withExec(["echo", "hello world"])
     )
