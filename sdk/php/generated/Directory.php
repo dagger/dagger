@@ -16,7 +16,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Load the directory as a Dagger module
      */
-    public function asModule(?string $sourceSubpath = null): Module
+    public function asModule(?string $sourceSubpath = ''): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
         if (null !== $sourceSubpath) {
@@ -49,25 +49,25 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      * Builds a new Docker container from this directory.
      */
     public function dockerBuild(
-        ?string $dockerfile = null,
         ?Platform $platform = null,
+        ?string $dockerfile = 'Dockerfile',
+        ?string $target = '',
         ?array $buildArgs = null,
-        ?string $target = null,
         ?array $secrets = null,
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
-        if (null !== $dockerfile) {
-        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
-        }
         if (null !== $platform) {
         $innerQueryBuilder->setArgument('platform', $platform);
         }
-        if (null !== $buildArgs) {
-        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
+        if (null !== $dockerfile) {
+        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
         }
         if (null !== $target) {
         $innerQueryBuilder->setArgument('target', $target);
+        }
+        if (null !== $buildArgs) {
+        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
         }
         if (null !== $secrets) {
         $innerQueryBuilder->setArgument('secrets', $secrets);
@@ -118,7 +118,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The content-addressed identifier of the directory.
+     * A unique identifier for this Directory.
      */
     public function id(): DirectoryId
     {
@@ -127,9 +127,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Creates a named sub-pipeline
+     * Creates a named sub-pipeline.
      */
-    public function pipeline(string $name, ?string $description = null, ?array $labels = null): Directory
+    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
         $innerQueryBuilder->setArgument('name', $name);
@@ -190,7 +190,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this directory plus a new directory created at the given path.
      */
-    public function withNewDirectory(string $path, ?int $permissions = null): Directory
+    public function withNewDirectory(string $path, ?int $permissions = 420): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewDirectory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -203,7 +203,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this directory plus a new file written at the given path.
      */
-    public function withNewFile(string $path, string $contents, ?int $permissions = null): Directory
+    public function withNewFile(string $path, string $contents, ?int $permissions = 420): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
         $innerQueryBuilder->setArgument('path', $path);

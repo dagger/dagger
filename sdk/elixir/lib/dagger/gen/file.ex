@@ -44,6 +44,15 @@ defmodule Dagger.File do
   )
 
   (
+    @doc "Retrieves the name of the file."
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def name(%__MODULE__{} = file) do
+      selection = select(file.selection, "name")
+      execute(selection, file.client)
+    end
+  )
+
+  (
     @doc "Retrieves the size of the file, in bytes."
     @spec size(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
     def size(%__MODULE__{} = file) do

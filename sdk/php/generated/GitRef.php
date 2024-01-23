@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A git ref (tag, branch or commit).
+ * A git ref (tag, branch, or commit).
  */
 class GitRef extends Client\AbstractObject implements Client\IdAble
 {
@@ -23,7 +23,7 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the content-addressed identifier of the git ref.
+     * A unique identifier for this GitRef.
      */
     public function id(): GitRefId
     {

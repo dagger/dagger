@@ -567,7 +567,14 @@ export type FunctionID = string & { __FunctionID: never }
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 export type GitRefTreeOpts = {
+  /**
+   * DEPRECATED: This option should be passed to `git` instead.
+   */
   sshKnownHosts?: string
+
+  /**
+   * DEPRECATED: This option should be passed to `git` instead.
+   */
   sshAuthSocket?: Socket
 }
 
@@ -745,6 +752,9 @@ export type PortForward = {
 export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
+  /**
+   * DEPRECATED: Use `loadContainerFromID` instead.
+   */
   id?: ContainerID
 
   /**
@@ -754,6 +764,9 @@ export type ClientContainerOpts = {
 }
 
 export type ClientDirectoryOpts = {
+  /**
+   * DEPRECATED: Use `loadDirectoryFromID` isntead.
+   */
   id?: DirectoryID
 }
 
@@ -3015,6 +3028,7 @@ export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
   private readonly _export?: boolean = undefined
+  private readonly _name?: string = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
 
@@ -3026,6 +3040,7 @@ export class File extends BaseClient {
     _id?: FileID,
     _contents?: string,
     _export?: boolean,
+    _name?: string,
     _size?: number,
     _sync?: FileID
   ) {
@@ -3034,6 +3049,7 @@ export class File extends BaseClient {
     this._id = _id
     this._contents = _contents
     this._export = _export
+    this._name = _name
     this._size = _size
     this._sync = _sync
   }
@@ -3096,6 +3112,27 @@ export class File extends BaseClient {
         {
           operation: "export",
           args: { path, ...opts },
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves the name of the file.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
         },
       ],
       await this._ctx.connection()
@@ -3884,6 +3921,8 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref.
+   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to `git` instead.
+   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to `git` instead.
    */
   tree = (opts?: GitRefTreeOpts): Directory => {
     return new Directory({
@@ -5282,6 +5321,7 @@ export class Client extends BaseClient {
    * Creates a scratch container.
    *
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+   * @param opts.id DEPRECATED: Use `loadContainerFromID` instead.
    * @param opts.platform Platform to initialize the container with.
    */
   container = (opts?: ClientContainerOpts): Container => {
@@ -5386,6 +5426,7 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
+   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` isntead.
    */
   directory = (opts?: ClientDirectoryOpts): Directory => {
     return new Directory({

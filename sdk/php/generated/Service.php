@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace Dagger;
 
+/**
+ * A content-addressed service providing TCP connectivity.
+ */
 class Service extends Client\AbstractObject implements Client\IdAble
 {
     /**
@@ -17,7 +20,7 @@ class Service extends Client\AbstractObject implements Client\IdAble
      *
      * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
      */
-    public function endpoint(?int $port = null, ?string $scheme = null): string
+    public function endpoint(?int $port = null, ?string $scheme = ''): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('endpoint');
         if (null !== $port) {
@@ -39,7 +42,7 @@ class Service extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A unique identifier for this service.
+     * A unique identifier for this Service.
      */
     public function id(): ServiceId
     {

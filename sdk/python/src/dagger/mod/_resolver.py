@@ -355,7 +355,7 @@ class Function(Generic[P, R]):
             original_name=original_name,
             name=name,
             wrapped_func=self.func,
-            doc=self.doc,
+            doc=self.doc or get_doc(self.func),
             origin=origin,
         )
 

@@ -11,20 +11,23 @@ namespace Dagger;
 /**
  * A simple key value object that represents a label.
  */
-class Label extends Client\AbstractObject
+class Label extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The label name.
+     * A unique identifier for this Label.
      */
+    public function id(): LabelId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\LabelId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The label value.
-     */
     public function value(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');

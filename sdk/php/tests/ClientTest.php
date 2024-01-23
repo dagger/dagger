@@ -4,6 +4,7 @@ namespace Dagger\Tests;
 
 use Dagger\Client;
 use Dagger\Dagger;
+use Dagger\PipelineLabel;
 use GraphQL\QueryBuilder\QueryBuilder;
 use PHPUnit\Framework\TestCase;
 
@@ -69,7 +70,9 @@ class ClientTest extends TestCase
     public function testPipeline()
     {
         $client = $this->newClient();
-        $stdout = $client->pipeline('test')
+        $stdout = $client->pipeline('test', 'pipeline description', [
+            new PipelineLabel('distribution', 'alpine'),
+        ])
             ->container()
             ->from('alpine:3.16.2')
             ->withExec(['cat', '/etc/alpine-release'])

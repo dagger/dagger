@@ -5,8 +5,8 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
-} from "../api/client.gen"
-import { scan } from "../introspector/scanner/scan.js"
+} from "../api/client.gen.js"
+import { ScanResult } from "../introspector/scanner/scan.js"
 import {
   ConstructorTypeDef,
   FunctionArg,
@@ -19,34 +19,38 @@ import {
 /**
  * Register the module files and returns its ID
  */
-export async function register(files: string[]): Promise<ModuleID> {
-  // Scan all files
-  const scanResult = await scan(files)
-
+export async function register(
+  files: string[],
+  scanResult: ScanResult
+): Promise<ModuleID> {
   // Get the current module
   let mod = dag.currentModule()
 
   // For each class scanned, register its type, method and properties in the module.
-  scanResult.classes.forEach((modClass) => {
+  Object.values(scanResult.classes).map((modClass) => {
     // Register the class Typedef object in Dagger
     let typeDef = dag.typeDef().withObject(modClass.name, {
       description: modClass.description,
     })
 
     // Register all functions (methods) to this object
-    modClass.methods.forEach((method) => {
+    Object.values(modClass.methods).forEach((method) => {
       typeDef = typeDef.withFunction(addFunction(method))
     })
 
     // Register all fields that belong to this object
-    modClass.fields.forEach((field) => {
-      typeDef = typeDef.withField(field.name, addTypeDef(field.typeDef), {
-        description: field.description,
-      })
+    Object.values(modClass.fields).forEach((field) => {
+      if (field.isExposed) {
+        typeDef = typeDef.withField(field.name, addTypeDef(field.typeDef), {
+          description: field.description,
+        })
+      }
     })
 
     if (modClass.constructor) {
-      typeDef.withConstructor(addConstructor(modClass.constructor, typeDef))
+      typeDef = typeDef.withConstructor(
+        addConstructor(modClass.constructor, typeDef)
+      )
     }
 
     // Add it to the module object
@@ -80,9 +84,11 @@ function addFunction(fct: FunctionTypedef): Function_ {
 /**
  * Register all arguments in the function.
  */
-function addArg(args: FunctionArg[]): (fct: Function_) => Function_ {
+function addArg(args: {
+  [name: string]: FunctionArg
+}): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {
-    args.forEach((arg) => {
+    Object.values(args).forEach((arg) => {
       const opts: FunctionWithArgOpts = {
         description: arg.description,
       }

@@ -4,9 +4,10 @@ import { fileURLToPath } from "url"
 import { dag } from "../api/client.gen.js"
 import { connection } from "../connect.js"
 import { Args } from "../introspector/registry/registry"
+import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
-import { load, loadArg } from "./load.js"
+import { load } from "./load.js"
 import { register } from "./register.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -14,10 +15,12 @@ const __dirname = path.dirname(__filename)
 
 const moduleSrcDirectory = `${__dirname}/../../src/`
 
-async function entrypoint() {
+export async function entrypoint() {
   // Pre list all files of the modules since we need it either for a registration
   // or an invocation
   const files = await listFiles(moduleSrcDirectory)
+
+  const scanResult = await scan(files)
 
   // Start a Dagger session to get the call context
   await connection(
@@ -33,7 +36,7 @@ async function entrypoint() {
       if (parentName === "") {
         // It's a registration, we register the module and assign the module id
         // to the result
-        result = await register(files)
+        result = await register(files, scanResult)
       } else {
         // Invocation
         const fnName = await fnCall.name()
@@ -41,36 +44,20 @@ async function entrypoint() {
         const fnArgs = await fnCall.inputArgs()
 
         const args: Args = {}
-        const parentArgs: Args = {}
+        const parentArgs: Args = parentJson ?? {}
 
         for (const arg of fnArgs) {
-          args[await arg.name()] = await loadArg(await arg.value())
-        }
-
-        if (parentJson) {
-          for (const [key, value] of Object.entries(parentJson)) {
-            parentArgs[key] = await loadArg(value as string)
-          }
+          args[await arg.name()] = JSON.parse(await arg.value())
         }
 
         await load(files)
 
-        result = await invoke(parentName, fnName, parentArgs, args)
-
-        // Load ID if it's a Dagger type with an id
-        if (typeof result?.id === "function") {
-          result = await result.id()
-        }
-
-        // Load its field ID if there are
-        if (typeof result === "object") {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          for (const [key, value] of Object.entries<any>(result)) {
-            if (value.id && typeof value.id === "function") {
-              result[key] = await value.id()
-            }
-          }
-        }
+        result = await invoke(scanResult, {
+          parentName,
+          fnName,
+          parentArgs,
+          fnArgs: args,
+        })
       }
 
       // If result is set, we stringify it
@@ -86,5 +73,3 @@ async function entrypoint() {
     { LogOutput: process.stdout }
   )
 }
-
-entrypoint()

@@ -666,6 +666,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
+	path = filepath.Join(dir.Dir, path)
 	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))))
 	if err != nil {
 		return nil, err

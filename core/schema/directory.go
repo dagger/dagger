@@ -19,7 +19,8 @@ var _ SchemaResolvers = &directorySchema{}
 func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
-			Doc(`Creates an empty directory.`),
+			Doc(`Creates an empty directory.`).
+			ArgDeprecated("id", "Use `loadDirectoryFromID` isntead."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Directory]{
@@ -101,7 +102,7 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 }
 
 type directoryArgs struct {
-	ID dagql.Optional[core.DirectoryID] `deprecated:"Use loadDirectoryFromID isntead."`
+	ID dagql.Optional[core.DirectoryID]
 }
 
 func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {

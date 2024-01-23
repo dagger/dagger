@@ -223,9 +223,9 @@ describe("Registry", function () {
       {},
       {
         // Send argument in disorder to ensure we order them back
-        c: 3,
-        b: 2,
         a: 1,
+        b: 2,
+        c: 3,
       }
     )
 

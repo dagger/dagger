@@ -10,14 +10,11 @@ namespace Dagger;
 
 /**
  * A definition of a field on a custom object defined in a Module.
- * A field on an object has a static value, as opposed to a function on an
- * object whose value is computed by invoking code (and can accept arguments).
+ *
+ * A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
  */
-class FieldTypeDef extends Client\AbstractObject
+class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * A doc string for the field, if any
-     */
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
@@ -25,17 +22,20 @@ class FieldTypeDef extends Client\AbstractObject
     }
 
     /**
-     * The name of the field in the object
+     * A unique identifier for this FieldTypeDef.
      */
+    public function id(): FieldTypeDefId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\FieldTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The type of the field
-     */
     public function typeDef(): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');

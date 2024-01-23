@@ -20,19 +20,17 @@ export class Alpine {
     @field
     ctr?: Container = undefined
 
-    ignored: string = ""
-
     /**
      * Returns a base Alpine container
      * @param version version to use (default to: 3.16.2)
      */
     @func
     base(version?: string): Alpine {
-        if (version === undefined) {
-            version = this.version
+        if (version) {
+            this.version = version
         }
 
-        this.ctr = dag.container().from(`alpine:${version}`)
+        this.ctr = dag.container().from(`alpine:${this.version}`)
 
         return this
     }

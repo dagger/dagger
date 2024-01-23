@@ -44,6 +44,7 @@ export type FieldTypeDef = {
   name: string
   description: string
   typeDef: TypeDef<TypeDefKind>
+  isExposed: boolean
 }
 
 /**
@@ -63,12 +64,12 @@ export type FunctionArg = {
 export type FunctionTypedef = {
   name: string
   description: string
-  args: FunctionArg[]
+  args: { [name: string]: FunctionArg }
   returnType: TypeDef<TypeDefKind>
 }
 
 export type ConstructorTypeDef = {
-  args: FunctionArg[]
+  args: { [name: string]: FunctionArg }
 }
 
 /**
@@ -77,7 +78,7 @@ export type ConstructorTypeDef = {
 export type ClassTypeDef = {
   name: string
   description: string
-  fields: FieldTypeDef[]
+  fields: { [name: string]: FieldTypeDef }
   constructor?: ConstructorTypeDef
-  methods: FunctionTypedef[]
+  methods: { [name: string]: FunctionTypedef }
 }

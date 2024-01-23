@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2011,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2019,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -7,13 +7,14 @@ This describes how to release Dagger:
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
+- [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
 This is a high-level diagram of how all the pieces fit together:
 
 ```mermaid
-flowchart TD
+flowchart TB
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
     playground["🛝 Playground"]
@@ -33,6 +34,7 @@ flowchart TD
     registry["📦 registry.dagger.io/engine"]
     ghcr["🐙 ghcr.io/dagger/engine"]
     engine --> ghcr --> registry
+
 
     go["🐹 Go SDK"]
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
@@ -54,6 +56,11 @@ flowchart TD
     elixir["🧪 Elixir SDK"]
     hex["🧪 hex.pm/packages/dagger"]
     repo ==> elixir --> hex
+
+    php["🐘 PHP SDK"]
+    php-repo["🐙 github.com/dagger/dagger-php-sdk"]
+    php-pkg["🐘 packagist.org/packages/dagger/dagger"]
+    repo ======> php --> php-repo --> php-pkg
 ```
 
 ## Let the team know
@@ -187,6 +194,11 @@ changie batch patch
 changie merge
 
 cd ../elixir
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
+changie batch patch
+changie merge
+
+cd ../php
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
 changie batch patch
 changie merge
@@ -353,6 +365,33 @@ which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/pa
 gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/elixir/$ELIXIR_SDK_VERSION \
     --notes-file sdk/elixir/.changes/$ELIXIR_SDK_VERSION.md
+```
+
+- [ ] Check that release notes look good in `Preview`
+- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [ ] Click on **Publish release**
+
+## 🐘 PHP SDK ⏱ `5mins`
+
+- [ ] Tag & publish:
+
+```console
+cd sdk/php && export PHP_SDK_VERSION=$(changie latest) && cd ../..
+git tag "sdk/php/${PHP_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/php/${PHP_SDK_VERSION}
+```
+
+This will trigger the [`Publish PHP SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-php.yml)
+which publishes to
+[github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
+
+- [ ] Upload the release notes by running:
+
+```console
+gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/php/$PHP_SDK_VERSION \
+    --notes-file sdk/php/.changes/$PHP_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`

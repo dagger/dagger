@@ -32,7 +32,8 @@ func (s *containerSchema) Install() {
 				`Optional platform argument initializes new containers to execute and
 				publish as that platform. Platform defaults to that of the builder's
 				host.`).
-			ArgDoc("platform", `Platform to initialize the container with.`),
+			ArgDoc("platform", `Platform to initialize the container with.`).
+			ArgDeprecated("id", "Use `loadContainerFromID` instead."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Container]{
@@ -444,7 +445,7 @@ func (s *containerSchema) Install() {
 }
 
 type containerArgs struct {
-	ID       dagql.Optional[core.ContainerID] `deprecated:"Use loadContainerFromID instead."`
+	ID       dagql.Optional[core.ContainerID]
 	Platform dagql.Optional[core.Platform]
 }
 

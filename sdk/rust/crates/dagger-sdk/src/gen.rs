@@ -2834,6 +2834,11 @@ impl File {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Retrieves the name of the file.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Retrieves the size of the file, in bytes.
     pub async fn size(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("size");
@@ -3138,8 +3143,10 @@ pub struct GitRef {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts<'a> {
+    /// DEPRECATED: This option should be passed to `git` instead.
     #[builder(setter(into, strip_option), default)]
     pub ssh_auth_socket: Option<SocketId>,
+    /// DEPRECATED: This option should be passed to `git` instead.
     #[builder(setter(into, strip_option), default)]
     pub ssh_known_hosts: Option<&'a str>,
 }
@@ -3828,6 +3835,7 @@ pub struct Query {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
+    /// DEPRECATED: Use `loadContainerFromID` instead.
     #[builder(setter(into, strip_option), default)]
     pub id: Option<ContainerId>,
     /// Platform to initialize the container with.
@@ -3836,6 +3844,7 @@ pub struct QueryContainerOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryDirectoryOpts {
+    /// DEPRECATED: Use `loadDirectoryFromID` isntead.
     #[builder(setter(into, strip_option), default)]
     pub id: Option<DirectoryId>,
 }

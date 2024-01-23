@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A content-addressed socket identifier.
+ * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
 readonly class SocketId extends Client\AbstractId
 {

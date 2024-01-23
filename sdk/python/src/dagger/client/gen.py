@@ -2485,6 +2485,28 @@ class File(Type):
         return await _ctx.execute(FileID)
 
     @typecheck
+    async def name(self) -> str:
+        """Retrieves the name of the file.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
     async def size(self) -> int:
         """Retrieves the size of the file, in bytes.
 
@@ -3179,7 +3201,15 @@ class GitRef(Type):
         ssh_known_hosts: str | None = None,
         ssh_auth_socket: "Socket | None" = None,
     ) -> Directory:
-        """The filesystem tree at this ref."""
+        """The filesystem tree at this ref.
+
+        Parameters
+        ----------
+        ssh_known_hosts:
+            DEPRECATED: This option should be passed to `git` instead.
+        ssh_auth_socket:
+            DEPRECATED: This option should be passed to `git` instead.
+        """
         _args = [
             Arg("sshKnownHosts", ssh_known_hosts, None),
             Arg("sshAuthSocket", ssh_auth_socket, None),
@@ -4402,6 +4432,7 @@ class Client(Root):
         Parameters
         ----------
         id:
+            DEPRECATED: Use `loadContainerFromID` instead.
         platform:
             Platform to initialize the container with.
         """
@@ -4468,7 +4499,13 @@ class Client(Root):
 
     @typecheck
     def directory(self, *, id: DirectoryID | None = None) -> Directory:
-        """Creates an empty directory."""
+        """Creates an empty directory.
+
+        Parameters
+        ----------
+        id:
+            DEPRECATED: Use `loadDirectoryFromID` isntead.
+        """
         _args = [
             Arg("id", id, None),
         ]
@@ -4478,10 +4515,10 @@ class Client(Root):
     @typecheck
     def file(self, id: FileID) -> File:
         """.. deprecated::
-        Use loadFileFromID instead.
+        Use :py:meth:`load_file_from_id` instead.
         """
         warnings.warn(
-            'Method "file" is deprecated: Use loadFileFromID instead.',
+            'Method "file" is deprecated: Use "load_file_from_id" instead.',
             DeprecationWarning,
             stacklevel=4,
         )

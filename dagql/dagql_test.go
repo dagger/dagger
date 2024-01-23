@@ -1497,9 +1497,9 @@ func TestIntrospection(t *testing.T) {
 		}).ArgDoc("documentedArg", "a really cool argument"),
 
 		dagql.Func("deprecatedField", func(ctx context.Context, self Query, args struct {
-			DeprecatedArg string
+			Foo string
 		}) (string, error) {
-			return args.DeprecatedArg, nil
+			return args.Foo, nil
 		}).Deprecated("use something else", "another para"),
 
 		dagql.Func("deprecatedArg", func(ctx context.Context, self Query, args struct {
@@ -1507,6 +1507,12 @@ func TestIntrospection(t *testing.T) {
 		}) (string, error) {
 			return args.DeprecatedArg, nil
 		}),
+
+		dagql.Func("deprecatedArgChain", func(ctx context.Context, self Query, args struct {
+			DeprecatedArg string
+		}) (string, error) {
+			return args.DeprecatedArg, nil
+		}).ArgDeprecated("deprecatedArg", "because I said so"),
 
 		dagql.Func("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return time.Now().String(), nil

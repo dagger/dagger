@@ -354,6 +354,7 @@ func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
 			"LICENSE",
 			"README.md",
 			"runtime",
+			"package.json",
 		},
 		Exclude: []string{
 			"node_modules",

@@ -13,15 +13,12 @@ namespace Dagger;
  */
 enum CacheSharingMode: string
 {
-    /**
-     * Shares the cache volume amongst many build pipelines,
-     * but will serialize the writes
-     */
-    case LOCKED = 'LOCKED';
+    /** Shares the cache volume amongst many build pipelines */
+    case SHARED = 'SHARED';
 
     /** Keeps a cache volume for a single build pipeline */
     case PRIVATE = 'PRIVATE';
 
-    /** Shares the cache volume amongst many build pipelines */
-    case SHARED = 'SHARED';
+    /** Shares the cache volume amongst many build pipelines, but will serialize the writes */
+    case LOCKED = 'LOCKED';
 }

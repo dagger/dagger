@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -16,7 +17,7 @@ var _ SchemaResolvers = &fileSchema{}
 func (s *fileSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("file", s.file).
-			Deprecated("Use loadFileFromID instead."),
+			Deprecated("Use `loadFileFromID` instead."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.File]{
@@ -26,6 +27,8 @@ func (s *fileSchema) Install() {
 			Doc(`Retrieves the contents of the file.`),
 		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
+		dagql.Func("name", s.name).
+			Doc(`Retrieves the name of the file.`),
 		dagql.Func("export", s.export).
 			Impure("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
@@ -68,6 +71,10 @@ func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (
 	}
 
 	return dagql.NewInt(int(info.Size_)), nil
+}
+
+func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
+	return dagql.NewString(filepath.Base(file.File)), nil
 }
 
 type fileExportArgs struct {
