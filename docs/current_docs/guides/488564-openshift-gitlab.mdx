@@ -3,7 +3,7 @@ slug: /488564/openshift-gitlab
 displayed_sidebar: "current"
 category: "guides"
 tags: ["kubernetes", "openshift", "gitlab", "dagger-cloud"]
-authors: ["Christian Schlatter"]
+authors: ["Christian Schlatter", "Christoph Raaflaub"]
 date: "2023-10-27"
 ---
 
@@ -17,7 +17,7 @@ This guide outlines how to set up a Continuous Integration (CI) environment with
 * A GitLab Runner which manages the execution of GitLab CI jobs. For each job, a new Runner worker pod is spawned.
 * Tainted nodes for dedicated workload
 
-![Base architecture](/img/current/guides/openshift-gitlab/pattern.png)
+![Base architecture](/img/current_docs/guides/openshift-gitlab/pattern.png)
 
 ## Assumptions
 
@@ -107,6 +107,6 @@ At this point, the deployment is configured and ready for use. Test it by commit
 
 Use the following resources to learn more about the topics discussed in this guide:
 
-* [Dagger on Kubernetes](./194031-kubernetes.md) guide
+* [Dagger on Kubernetes](./194031-kubernetes.mdx) guide
 * [Dagger GraphQL API reference](https://docs.dagger.io/api/975146/concepts)
 * Dagger [Go](https://docs.dagger.io/sdk/go), [Node.js](https://docs.dagger.io/sdk/nodejs) and [Python](https://docs.dagger.io/sdk/python) SDK references

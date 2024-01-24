@@ -9,7 +9,7 @@ stages:
     "_EXPERIMENTAL_DAGGER_RUNNER_HOST": "unix:///var/run/dagger/buildkitd.sock"  
   before_script:
     - cd /tmp 
-    - curl -sfL https://releases.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.1 BIN_DIR=/tmp sh #Dagger version must match version in values.yaml
+    - curl -sfL https://releases.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.7 BIN_DIR=/tmp sh #Dagger version must match version in values.yaml
     - export PATH=$PATH:/tmp/
 build:
   extends: [.dagger]
