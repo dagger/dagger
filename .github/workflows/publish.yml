@@ -10,7 +10,6 @@ on:
       - opened
       - synchronize
       - reopened
-      - ready_for_review
     paths:
       - sdk/go/internal/engineconn/version.gen.go
       - sdk/python/src/dagger/_engine/_version.py
