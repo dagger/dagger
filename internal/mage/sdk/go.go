@@ -147,10 +147,9 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
 		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
-		WithExec([]string{"git", "config", "--global",
-			"http.https://github.com/.extraheader",
-			fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT),
-		})
+		WithEnvVariable("GIT_CONFIG_COUNT", "1").
+		WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
+		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
 
 	repository := git.
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).

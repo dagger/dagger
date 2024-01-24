@@ -78,7 +78,7 @@ func (t PHP) Generate(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("Cannot export generated code to %q", generatedPath)
+		return fmt.Errorf("cannot export generated code to %q", generatedPath)
 	}
 	return nil
 }
@@ -93,7 +93,7 @@ func (t PHP) Publish(ctx context.Context, tag string) error {
 
 	c = c.Pipeline("sdk").Pipeline("php").Pipeline("publish")
 
-	var targetTag = strings.TrimPrefix(tag, phpSDKPath + "/")
+	var targetTag = strings.TrimPrefix(tag, phpSDKPath+"/")
 
 	var targetRepo = os.Getenv("TARGET_REPO")
 	if targetRepo == "" {
@@ -116,15 +116,15 @@ func (t PHP) Publish(ctx context.Context, tag string) error {
 		gitUserEmail = "hello@dagger.io"
 	}
 
-	_, err = util.GoBase(c).
+	git := util.GoBase(c).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
 		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
-		WithSecretVariable("GITHUB_PAT", c.SetSecret("GITHUB_PAT", encodedPAT)).
-		WithExec([]string{
-			"sh", "-c",
-			`git config --global http.https://github.com/.extraheader "AUTHORIZATION: Basic $GITHUB_PAT"`,
-		}).
+		WithEnvVariable("GIT_CONFIG_COUNT", "1").
+		WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
+		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
+
+	_, err = git.
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
 		WithWorkdir("/src/dagger").
@@ -140,7 +140,8 @@ func (t PHP) Publish(ctx context.Context, tag string) error {
 			"-f",
 			targetRepo,
 			fmt.Sprintf("%s:%s", tag, targetTag),
-		}).Sync(ctx)
+		}).
+		Sync(ctx)
 
 	return err
 }
