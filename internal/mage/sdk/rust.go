@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
@@ -145,9 +146,10 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 
 	c = c.Pipeline("sdk").Pipeline("rust").Pipeline("publish")
 
+	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
+
 	var (
 		version = strings.TrimPrefix(tag, "sdk/rust/v")
-		dryRun  = os.Getenv("CARGO_PUBLISH_DRYRUN")
 		crate   = "dagger-sdk"
 	)
 
@@ -164,17 +166,15 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 		"cargo", "publish", "-p", crate, "-v", "--all-features",
 	}
 
-	if dryRun == "false" {
+	if dryRun {
+		args = append(args, "--dry-run")
+		base = base.WithExec(args)
+	} else {
 		base = base.
 			With(util.HostSecretVar(c, "CARGO_REGISTRY_TOKEN")).
 			WithExec(args)
-	} else {
-		args = append(args, "--dry-run")
-		base = base.WithExec(args)
 	}
-
 	_, err = base.Sync(ctx)
-
 	return err
 }
 

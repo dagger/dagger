@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
@@ -136,13 +137,12 @@ func (Java) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	var (
-		version = strings.TrimPrefix(tag, "sdk/java/v")
-		dryRun  = os.Getenv("MVN_DEPLOY_DRY_RUN")
-	)
+	version := strings.TrimPrefix(tag, "sdk/java/v")
+
+	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
 
 	skipDeploy := "true" // FIXME: Always set to true as long as the maven central deployment is not configured
-	if dryRun != "" {
+	if dryRun {
 		skipDeploy = "true"
 	}
 

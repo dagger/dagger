@@ -2,9 +2,9 @@ package sdk
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
@@ -168,29 +168,29 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 
 	c = c.Pipeline("sdk").Pipeline("python").Pipeline("publish")
 
+	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
+
 	var (
 		version = strings.TrimPrefix(tag, "sdk/python/v")
-		token   = os.Getenv("PYPI_TOKEN")
 		repo    = os.Getenv("PYPI_REPO")
 	)
-
-	if token == "" {
-		return errors.New("PYPI_TOKEN environment variable must be set")
-	}
 
 	if repo == "" || repo == "pypi" {
 		repo = "main"
 	}
 
-	_, err = pythonBase(c, pythonDefaultVersion).
+	result := pythonBase(c, pythonDefaultVersion).
 		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", version).
 		WithEnvVariable("HATCH_INDEX_REPO", repo).
 		WithEnvVariable("HATCH_INDEX_USER", "__token__").
-		WithSecretVariable("HATCH_INDEX_AUTH", c.SetSecret("pypiToken", token)).
-		WithExec([]string{"hatch", "build"}).
-		WithExec([]string{"hatch", "publish"}).
-		Sync(ctx)
-
+		WithExec([]string{"hatch", "build"})
+	if !dryRun {
+		token := util.GetHostEnv("PYPI_TOKEN")
+		result = result.
+			WithSecretVariable("HATCH_INDEX_AUTH", c.SetSecret("pypiToken", token)).
+			WithExec([]string{"hatch", "publish"})
+	}
+	_, err = result.Sync(ctx)
 	return err
 }
 

@@ -3,9 +3,9 @@ package sdk
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
@@ -122,16 +122,12 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 
 	var targetTag = strings.TrimPrefix(tag, "sdk/go/")
 
+	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
+
 	var targetRepo = os.Getenv("TARGET_REPO")
 	if targetRepo == "" {
 		targetRepo = "https://github.com/dagger/dagger-go-sdk.git"
 	}
-
-	var pat = os.Getenv("GITHUB_PAT")
-	if pat == "" {
-		return errors.New("GITHUB_PAT environment variable must be set")
-	}
-	encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + pat))
 
 	var gitUserName = os.Getenv("GIT_USER_NAME")
 	if gitUserName == "" {
@@ -143,13 +139,20 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		gitUserEmail = "hello@dagger.io"
 	}
 
-	_, err = util.GoBase(c).
+	git := util.GoBase(c).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
-		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
-		WithEnvVariable("GIT_CONFIG_COUNT", "1").
-		WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
-		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT))).
+		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail})
+	if !dryRun {
+		pat := util.GetHostEnv("GITHUB_PAT")
+		encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + pat))
+		git = git.
+			WithEnvVariable("GIT_CONFIG_COUNT", "1").
+			WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
+			WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
+	}
+
+	result := git.
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
 		WithWorkdir("/src/dagger").
@@ -159,16 +162,17 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 			"--subdirectory-filter", "sdk/go",
 			"--tree-filter", "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
 			"--", tag,
-		}).
-		WithExec([]string{
+		})
+	if !dryRun {
+		result = result.WithExec([]string{
 			"git",
 			"push",
 			"-f",
 			targetRepo,
 			fmt.Sprintf("%s:%s", tag, targetTag),
-		}).
-		Sync(ctx)
-
+		})
+	}
+	_, err = result.Sync(ctx)
 	return err
 }
 
