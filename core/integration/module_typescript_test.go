@@ -428,11 +428,10 @@ func TestModuleTypescriptSignatureUnexported(t *testing.T) {
 	objs := gjson.Get(out, "host.directory.asModule.objects")
 
 	require.Equal(t, 2, len(objs.Array()))
-	minimal := objs.Get(`0.asObject`)
-	require.Equal(t, "Minimal", minimal.Get("name").String())
-	foo := objs.Get(`1.asObject`)
+	foo := objs.Get(`O.asObject`)
 	require.Equal(t, "MinimalFoo", foo.Get("name").String())
-}
+	minimal := objs.Get(`1.asObject`)
+	require.Equal(t, "Minimal", minimal.Get("name").String())}
 
 func TestModuleTypescriptDocs(t *testing.T) {
 	t.Parallel()
