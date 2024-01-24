@@ -1736,7 +1736,6 @@ class Minimal:
 				"Minimal object, short description",
 				mod.Get("objects.0.asObject.description").String(),
 			)
-
 		})
 	}
 }
