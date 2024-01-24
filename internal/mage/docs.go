@@ -50,7 +50,7 @@ func (d Docs) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.LintGeneratedCode(func() error {
+		return util.LintGeneratedCode("docs:generate", func() error {
 			return d.Generate(ctx)
 		}, generatedSchemaPath)
 	})

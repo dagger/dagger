@@ -57,7 +57,7 @@ func (t Python) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.LintGeneratedCode(func() error {
+		return util.LintGeneratedCode("sdk:python:generate", func() error {
 			return t.Generate(gctx)
 		}, pythonGeneratedAPIPath)
 	})

@@ -127,7 +127,7 @@ func (r Rust) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.LintGeneratedCode(func() error {
+		return util.LintGeneratedCode("sdk:rust:generate", func() error {
 			return r.Generate(gctx)
 		}, rustGeneratedAPIPath)
 	})
