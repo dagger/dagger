@@ -1,4 +1,4 @@
-import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+import { Directory, object, func } from "@dagger.io/dagger"
 
 @object
 class Minimal {

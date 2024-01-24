@@ -358,7 +358,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 }
 
-//go:embed testdata/modules/typescript/minimalBuiltin/index.ts
+//go:embed testdata/modules/typescript/minimal/builtin.ts
 var tsSignaturesBuiltin string
 
 func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
@@ -405,5 +405,295 @@ func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
 		out, err = modGen.With(daggerQuery(`{minimal{readOptional}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":""}}`, out)
+	})
+}
+
+//go:embed testdata/modules/typescript/minimal/unexported.ts
+var tsSignaturesUnexported string
+
+// TODO: Fixes DEV-3343 and update this test
+func TestModuleTypescriptSignatureUnexported(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=typescript")).
+		With(sdkSource("typescript", tsSignaturesUnexported))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	objs := gjson.Get(out, "host.directory.asModule.objects")
+
+	require.Equal(t, 2, len(objs.Array()))
+	minimal := objs.Get(`0.asObject`)
+	require.Equal(t, "Minimal", minimal.Get("name").String())
+	foo := objs.Get(`1.asObject`)
+	require.Equal(t, "MinimalFoo", foo.Get("name").String())
+}
+
+func TestModuleTypescriptDocs(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=typescript")).
+		With(sdkSource("typescript", tsSignatures))
+
+	out, err := modGen.With(inspectModule).Stdout(ctx)
+	require.NoError(t, err)
+	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	require.Equal(t, "Minimal", obj.Get("name").String())
+
+	hello := obj.Get(`functions.#(name="hello")`)
+	require.Equal(t, "hello", hello.Get("name").String())
+	require.Empty(t, hello.Get("description").String())
+	require.Empty(t, hello.Get("args").Array())
+
+	echoOpts := obj.Get(`functions.#(name="echoOpts")`)
+	require.Equal(t, "echoOpts", echoOpts.Get("name").String())
+	require.Equal(t, "EchoOpts does some opts things", echoOpts.Get("description").String())
+	require.Len(t, echoOpts.Get("args").Array(), 3)
+	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+	require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
+	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+	require.Equal(t, "number of times to repeat the message", echoOpts.Get("args.2.description").String())
+
+	echoMaybe := obj.Get(`functions.#(name="echoMaybe")`)
+	require.Equal(t, "echoMaybe", echoMaybe.Get("name").String())
+	require.Empty(t, echoMaybe.Get("description").String())
+	require.Len(t, echoMaybe.Get("args").Array(), 2)
+	require.Equal(t, "msg", echoMaybe.Get("args.0.name").String())
+	require.Equal(t, "the message to echo", echoMaybe.Get("args.0.description").String())
+	require.Equal(t, "isQuestion", echoMaybe.Get("args.1.name").String())
+	require.Equal(t, "set to true to add a question mark.", echoMaybe.Get("args.1.description").String())
+}
+
+//go:embed testdata/modules/typescript/optional/index.ts
+var tsOptional string
+
+func TestModuleTypescriptOptional(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=minimal", "--sdk=typescript")).
+		With(sdkSource("typescript", tsOptional))
+
+	out, err := modGen.With(daggerQuery(`{minimal{foo}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal": {"foo": ""}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
+}
+
+func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep").
+		With(daggerExec("mod", "init", "--name=dep", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+	import {  object, func, field } from "@dagger.io/dagger"
+
+@object
+class Dep {
+  @func
+  fn(): Obj {
+    return new Obj("foo")
+  }
+}
+
+@object
+class Obj {
+  @field
+  foo: string = ""
+
+  constructor(foo: string) {
+    this.foo = foo
+  }
+}
+
+@object
+class Foo {}
+`)).
+		WithWorkdir("/work/test").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=typescript", "--root=..")).
+		With(daggerExec("mod", "install", "../dep"))
+
+	t.Run("return as other module object", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ctr.With(sdkSource("typescript", `
+			import { object, func, DepObj } from "@dagger.io/dagger"
+			
+			@object
+			class Test {
+			  @func
+			  fn(): DepObj {
+				 return new DepObj()
+			  }
+			}
+			`)).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
+				"Test", "fn", "dep",
+			), err.Error())
+		})
+
+		t.Run("list", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ctr.With(sdkSource("typescript", `
+			import { object, func, DepObj } from "@dagger.io/dagger"
+			
+			@object
+			class Test {
+			  @func
+			  fn(): DepObj[] {
+				 return [new DepObj()]
+			  }
+			}
+			`)).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
+				"Test", "fn", "dep",
+			), err.Error())
+		})
+	})
+
+	t.Run("arg as other module object", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ctr.With(sdkSource("typescript", `
+import { object, func, DepObj } from "@dagger.io/dagger"
+			
+@object
+class Test {
+  @func
+  fn(obj: DepObj): void {}
+}			
+			`)).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
+				"Test", "fn", "obj", "dep",
+			), err.Error())
+		})
+
+		t.Run("list", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ctr.
+				With(sdkSource("typescript", `
+import { object, func, DepObj } from "@dagger.io/dagger"
+			
+@object
+class Test {
+  @func
+  fn(obj: DepObj[]): void {}
+}
+			`)).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
+				"Test", "fn", "obj", "dep",
+			), err.Error())
+		})
+	})
+
+	t.Run("field as other module object", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ctr.
+				With(sdkSource("typescript", `
+import { object, func, DepObj } from "@dagger.io/dagger"
+			
+@object
+class Test {
+  @func
+  fn(): Obj {
+    return new Obj()
+  }
+}
+
+@object
+class Obj {
+  @field
+  foo: DepObj
+}
+			`)).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
+				"Obj", "foo", "dep",
+			), err.Error())
+		})
+
+		t.Run("list", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ctr.
+				With(sdkSource("typescript", `
+import { object, func, DepObj } from "@dagger.io/dagger"
+			
+@object
+class Test {
+  @func
+  fn(): Obj {
+    return new Obj()
+  }
+}
+
+@object
+class Obj {
+  @field
+  foo: DepObj[]
+}
+			`)).
+				With(daggerFunctions()).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.Regexp(t, fmt.Sprintf(
+				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
+				"Obj", "foo", "dep",
+			), err.Error())
+		})
 	})
 }
