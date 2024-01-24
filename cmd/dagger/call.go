@@ -80,10 +80,23 @@ appending it to the end of the command (for example, *stdout*, *entries*, or
 				logOutputSuccess(cmd, outputPath)
 				return nil
 			}
+
 			// Just `sync`, don't print the result (id), but let user know.
+
+			// TODO: This is only "needed" when there's no output because
+			// you're left wondering if the command did anything. Otherwise,
+			// the output is sent only to progrock (TUI), so we'd need to check
+			// there if possible. Decide whether this message is ok in all cases,
+			// better to not print it, or to conditionally check.
 			cmd.PrintErrf("%s evaluated. Use \"%s --help\" to see available sub-commands.\n", modType.Name(), cmd.CommandPath())
 			return nil
 		default:
+			// TODO: Since IDs aren't stable to be used in the CLI, we should
+			// silence all ID results (or present in a compact way like
+			// ´<ContainerID:etpdi9gue9l5>`), but need a KindScalar TypeDef
+			// to get the name from modType.
+			// You can't select `id`, but you can select `sync`, and there
+			// may be others.
 			writer := cmd.OutOrStdout()
 
 			if outputPath != "" {
@@ -100,6 +113,7 @@ appending it to the end of the command (for example, *stdout*, *entries*, or
 				writer = io.MultiWriter(writer, file)
 			}
 
+			// especially useful for lists and maps
 			if jsonOutput {
 				jb, err := json.MarshalIndent(response, "", "    ")
 				if err != nil {

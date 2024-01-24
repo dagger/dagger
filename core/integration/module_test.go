@@ -4157,11 +4157,11 @@ class Test:
 `, content),
 			))
 
-		out, err := ctr.With(daggerCall("foo")).Stdout(ctx)
+		out, err := ctr.With(daggerCall("foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, strings.TrimSpace(out), content)
+		require.Equal(t, content, strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo")).Stdout(ctx)
+		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"sdk": "python"`)
 
@@ -4199,11 +4199,11 @@ class Test {
 `, content),
 			))
 
-		out, err := ctr.With(daggerCall("foo")).Stdout(ctx)
+		out, err := ctr.With(daggerCall("foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, strings.TrimSpace(out), content)
+		require.Equal(t, content, strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo")).Stdout(ctx)
+		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"sdk": "typescript"`)
 
@@ -4743,7 +4743,7 @@ s += depS
 	}
 	addModulesWithDeps(1, curDeps)
 
-	_, err := modGen.With(daggerCall("fn")).Stdout(ctx)
+	_, err := modGen.With(daggerCall("fn")).Sync(ctx)
 	require.NoError(t, err)
 }
 
