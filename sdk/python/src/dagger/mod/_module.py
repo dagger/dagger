@@ -9,13 +9,13 @@ import types
 import typing
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, MutableMapping
-from typing import Any, Self, TypeAlias, TypeVar
+from typing import Any, TypeAlias, TypeVar
 
 import anyio
 import cattrs
 import cattrs.gen
 from rich.console import Console
-from typing_extensions import dataclass_transform, overload
+from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
 from dagger import dag
