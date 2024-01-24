@@ -382,7 +382,7 @@ func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
 	})
-	
+
 	t.Run("async readSlice(dir: Directory[]): Promise<string>", func(t *testing.T) {
 		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
