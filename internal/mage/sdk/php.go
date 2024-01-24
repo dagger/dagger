@@ -116,15 +116,13 @@ func (t PHP) Publish(ctx context.Context, tag string) error {
 		gitUserEmail = "hello@dagger.io"
 	}
 
-	git := util.GoBase(c).
+	_, err = util.GoBase(c).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
 		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
 		WithEnvVariable("GIT_CONFIG_COUNT", "1").
 		WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
-		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
-
-	_, err = git.
+		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT))).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
 		WithWorkdir("/src/dagger").

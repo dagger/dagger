@@ -143,36 +143,31 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		gitUserEmail = "hello@dagger.io"
 	}
 
-	git := util.GoBase(c).
+	_, err = util.GoBase(c).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
 		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
 		WithEnvVariable("GIT_CONFIG_COUNT", "1").
 		WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
-		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
-
-	repository := git.
+		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT))).
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
-		WithWorkdir("/src/dagger")
-
-	filtered := repository.
+		WithWorkdir("/src/dagger").
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", "sdk/go",
 			"--tree-filter", "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
 			"--", tag,
-		})
-
-	// Push
-	_, err = filtered.WithExec([]string{
-		"git",
-		"push",
-		"-f",
-		targetRepo,
-		fmt.Sprintf("%s:%s", tag, targetTag),
-	}).Sync(ctx)
+		}).
+		WithExec([]string{
+			"git",
+			"push",
+			"-f",
+			targetRepo,
+			fmt.Sprintf("%s:%s", tag, targetTag),
+		}).
+		Sync(ctx)
 
 	return err
 }
