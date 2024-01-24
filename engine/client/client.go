@@ -272,11 +272,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
 
 	// host=>container networking
-	if c.ProgrockParent != "" {
-		c.Recorder = progrock.NewSubRecorder(progMultiW, c.ProgrockParent)
-	} else {
-		c.Recorder = progrock.NewRecorder(progMultiW)
-	}
 	bkSession.Allow(session.NewTunnelListenerAttachable(c.Recorder))
 	ctx = progrock.ToContext(ctx, c.Recorder)
 
