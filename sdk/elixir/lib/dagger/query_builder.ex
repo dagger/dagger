@@ -62,7 +62,7 @@ defmodule Dagger.QueryBuilder.Selection do
   end
 
   defp encode_value(value) when is_list(value) do
-    [~c"[", Enum.map(value, &encode_value/1) |> Enum.intersperse(","), ~c"]"]
+    [~c"[", Enum.map_intersperse(value, ",", &encode_value/1), ~c"]"]
   end
 
   defp encode_value(value) when is_struct(value) do
@@ -76,7 +76,7 @@ defmodule Dagger.QueryBuilder.Selection do
       [to_string(name), ~c":", encode_value(value)]
     end
 
-    [~c"{", Enum.map(value, fun) |> Enum.intersperse(","), ~c"}"]
+    [~c"{", Enum.map_intersperse(value, ",", fun), ~c"}"]
   end
 
   defp encode_value(value), do: [to_string(value)]
