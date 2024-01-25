@@ -66,7 +66,6 @@ type Params struct {
 
 	JournalFile        string
 	ProgrockWriter     progrock.Writer
-	ProgrockParent     string
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
 
@@ -144,11 +143,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		cloudURL = tel.URL()
 		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
-	if c.ProgrockParent != "" {
-		c.Recorder = progrock.NewSubRecorder(progMultiW, c.ProgrockParent)
-	} else {
-		c.Recorder = progrock.NewRecorder(progMultiW)
-	}
+	c.Recorder = progrock.NewRecorder(progMultiW)
 	ctx = progrock.ToContext(ctx, c.Recorder)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")

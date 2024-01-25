@@ -101,6 +101,8 @@ require (
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
 
+require github.com/koron-go/prefixw v1.0.0
+
 require (
 	cdr.dev/slog v1.4.2 // indirect
 	dario.cat/mergo v1.0.0 // indirect

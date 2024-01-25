@@ -23,7 +23,6 @@ import (
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
@@ -245,10 +244,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			})
 		}
 
-		// using a new random ID rather than server ID to squash any nefarious attempts to set
-		// a server id that has e.g. ../../.. or similar in it
-		progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", identity.NewID())
-
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
 			Worker:                e.worker,
 			SessionManager:        e.SessionManager,
@@ -258,7 +253,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			AuthProvider:          authProvider,
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
 			UpstreamCacheImports:  cacheImporterCfgs,
-			ProgSockPath:          progSockPath,
 			MainClientCaller:      caller,
 			DNSConfig:             e.DNSConfig,
 		})

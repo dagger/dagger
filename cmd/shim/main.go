@@ -29,7 +29,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/vito/progrock"
 	"golang.org/x/sys/unix"
 )
 
@@ -451,9 +450,6 @@ func setupBundle() int {
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
-			// propagate parent vertex ID
-			keepEnv = append(keepEnv, "_DAGGER_PROGROCK_PARENT="+execMetadata.ProgParent)
-
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.runner.sock",
@@ -467,17 +463,6 @@ func setupBundle() int {
 				Type:        "bind",
 				Options:     []string{"rbind", "ro"},
 				Source:      "/usr/local/bin/dagger",
-			})
-			// also need the progsock path for forwarding progress
-			if execMetadata.ProgSockPath == "" {
-				fmt.Fprintln(os.Stderr, "missing progsock path")
-				return errorExitCode
-			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.progrock.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      execMetadata.ProgSockPath,
 			})
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 		case strings.HasPrefix(env, aliasPrefix):
@@ -674,16 +659,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	moduleCallerDigest, ok := internalEnv("_DAGGER_MODULE_CALLER_DIGEST")
 	if ok {
 		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
-	}
-
-	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
-	if err != nil {
-		return fmt.Errorf("error connecting to progrock: %w", err)
-	}
-	clientParams.ProgrockWriter = progW
-
-	if parentID := os.Getenv("_DAGGER_PROGROCK_PARENT"); parentID != "" {
-		clientParams.ProgrockParent = parentID
 	}
 
 	sess, ctx, err := client.Connect(ctx, clientParams)

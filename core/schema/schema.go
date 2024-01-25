@@ -29,7 +29,6 @@ import (
 type InitializeArgs struct {
 	BuildkitClient *buildkit.Client
 	Platform       specs.Platform
-	ProgSockPath   string
 	OCIStore       content.Store
 	LeaseManager   *leaseutil.Manager
 	Auth           *auth.RegistryAuthProvider
@@ -48,7 +47,6 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	root := core.NewRoot()
 	root.Buildkit = params.BuildkitClient
 	root.Services = svcs
-	root.ProgrockSocketPath = params.ProgSockPath
 	root.Platform = core.Platform(params.Platform)
 	root.Secrets = params.Secrets
 	root.OCIStore = params.OCIStore
