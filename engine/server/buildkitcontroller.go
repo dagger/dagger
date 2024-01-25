@@ -313,7 +313,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Trace("waiting for server")
 		err := srv.Wait(egctx)
 		bklog.G(ctx).WithError(err).Trace("server done")
-		return fmt.Errorf("srv.Wait: %w", err)
+		if err != nil {
+			return fmt.Errorf("srv.Wait: %w", err)
+		}
+		return nil
 	})
 	err = eg.Wait()
 	if errors.Is(err, context.Canceled) {
