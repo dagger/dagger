@@ -150,6 +150,7 @@ func logOutputSuccess(cmd *cobra.Command, path string) {
 func printFunctionResult(w io.Writer, r any) error {
 	switch t := r.(type) {
 	case []any:
+		// TODO: group in progrock
 		for _, v := range t {
 			if err := printFunctionResult(w, v); err != nil {
 				return err
@@ -157,6 +158,7 @@ func printFunctionResult(w io.Writer, r any) error {
 		}
 		return nil
 	case map[string]any:
+		// TODO: group in progrock
 		for _, v := range t {
 			if err := printFunctionResult(w, v); err != nil {
 				return err
