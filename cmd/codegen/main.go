@@ -37,7 +37,7 @@ func init() {
 
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	dag, err := dagger.Connect(ctx)
+	dag, err := dagger.Connect(ctx, dagger.WithSkipCompatibilityCheck())
 	if err != nil {
 		return err
 	}
