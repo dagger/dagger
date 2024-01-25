@@ -37,6 +37,10 @@ jobs:
             export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+
+            # if we're stillaround after a *long* while, we've probably
+            # deadlocked - so send SIGQUIT to the dagger engine
+            (sleep 55m && docker exec $(docker ps -q --filter name=dagger-engine) sh -c 'set -x; ps aux; pstree -p; kill -QUIT $(pgrep -n dagger-engine)') &
           fi
           ./hack/make ${{ inputs.mage-targets }}
       - name: "ALWAYS print engine logs - if available"
@@ -64,6 +68,10 @@ jobs:
             export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+
+            # if we're stillaround after a *long* while, we've probably
+            # deadlocked - so send SIGQUIT to the dagger engine
+            (sleep 55m && docker exec $(docker ps -q --filter name=dagger-engine) sh -c 'set -x; ps aux; pstree -p; kill -QUIT $(pgrep -n dagger-engine)') &
           fi
           ./hack/make ${{ inputs.mage-targets }}
         env:
