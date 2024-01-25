@@ -80,7 +80,7 @@ class Lint:
             self.base()
             .with_focus()
             .with_exec(["ruff", "check", "--diff", "--no-cache", "."])
-            .with_exec(["black", "--check", "."])
+            .with_exec(["black", "--check", "--diff", "."])
         )
 
     @function(name="format")

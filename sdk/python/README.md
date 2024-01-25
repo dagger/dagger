@@ -122,17 +122,17 @@ dagger call -m dev lint check
 
 Re-format code following common styling conventions:
 ```shell
-dagger dl -m dev lint format
+dagger call -m dev lint format -o .
 ```
 
 Update pinned devevelopment dependencies:
 ```shell
-dagger dl -m dev lock
+dagger call -m dev lock -o .
 ```
 
 Build and preview the reference documentation:
 ```shell
-dagger up -m dev docs preview -n
+dagger call -m dev docs preview up
 ```
 
 Add `--help` to any command to check all the available options.
@@ -145,7 +145,7 @@ Testing and regenerating the client may fail if there’s changes in the engine 
 ../../hack/dev dagger call -m dev test
 ```
 
-To re-generate the client (codegen) after changes to the API schema):
+To re-generate the client (codegen) after changes to the API schema:
 
 ```shell
 ./hack/dev ./hack/make sdk:python:generate
