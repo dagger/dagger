@@ -39,6 +39,9 @@ jobs:
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
           fi
           ./hack/make ${{ inputs.mage-targets }}
+      - name: "ALWAYS print engine logs - if available"
+        if: always() && inputs.dev-engine
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
@@ -66,6 +69,9 @@ jobs:
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      - name: "ALWAYS print engine logs - if available"
+        if: always() && inputs.dev-engine
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
