@@ -65,16 +65,20 @@ func TestCoreModTypeDefs(t *testing.T) {
 	typeDefs, err := api.root.DefaultDeps.TypeDefs(ctx)
 	require.NoError(t, err)
 
-	objByName := make(map[string]*core.TypeDef)
+	typeByName := make(map[string]*core.TypeDef)
 	for _, typeDef := range typeDefs {
-		require.Equal(t, core.TypeDefKindObject, typeDef.Kind)
-		objByName[typeDef.AsObject.Value.Name] = typeDef
+		switch typeDef.Kind {
+		case core.TypeDefKindObject:
+			typeByName[typeDef.AsObject.Value.Name] = typeDef
+		case core.TypeDefKindInput:
+			typeByName[typeDef.AsInput.Value.Name] = typeDef
+		}
 	}
 
 	// just verify some subset of objects+functions as a sanity check
 
 	// Container
-	ctrTypeDef, ok := objByName["Container"]
+	ctrTypeDef, ok := typeByName["Container"]
 	require.True(t, ok)
 	ctrObj := ctrTypeDef.AsObject.Value
 
@@ -111,8 +115,35 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.Equal(t, core.TypeDefKindString, withMountedDirectoryFnOwnerArg.TypeDef.Kind)
 	require.True(t, withMountedDirectoryFnOwnerArg.TypeDef.Optional)
 
+	// PortForward input type
+	portForwardTypeDef, ok := typeByName["PortForward"]
+	require.True(t, ok)
+	require.Equal(t, core.TypeDefKindInput, portForwardTypeDef.Kind)
+	require.Len(t, portForwardTypeDef.AsInput.Value.Fields, 3)
+	var frontendPortField *core.FieldTypeDef
+	var backendPortField *core.FieldTypeDef
+	var protocolField *core.FieldTypeDef
+	for _, field := range portForwardTypeDef.AsInput.Value.Fields {
+		switch field.Name {
+		case "frontend":
+			frontendPortField = field
+		case "backend":
+			backendPortField = field
+		case "protocol":
+			protocolField = field
+		}
+	}
+	require.NotNil(t, frontendPortField)
+	require.Equal(t, core.TypeDefKindInteger, frontendPortField.TypeDef.Kind)
+	require.True(t, frontendPortField.TypeDef.Optional)
+	require.NotNil(t, backendPortField)
+	require.Equal(t, core.TypeDefKindInteger, backendPortField.TypeDef.Kind)
+	require.False(t, backendPortField.TypeDef.Optional)
+	require.NotNil(t, protocolField)
+	require.Equal(t, core.TypeDefKindString, protocolField.TypeDef.Kind)
+
 	// File
-	fileTypeDef, ok := objByName["File"]
+	fileTypeDef, ok := typeByName["File"]
 	require.True(t, ok)
 	fileObj := fileTypeDef.AsObject.Value
 

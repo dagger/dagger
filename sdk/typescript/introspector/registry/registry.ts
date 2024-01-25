@@ -1,11 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import "reflect-metadata"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Class = { new (...args: any[]): any }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type State = { [property: string]: any }
 
 export type Args = Record<string, unknown>
@@ -76,7 +77,6 @@ export class Registry {
    * The definition of @field decorator that should be on top of any
    * class' property that must be exposed to the Dagger API.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   field = (target: object, propertyKey: string) => {
     // A placeholder to declare fields
   }
@@ -86,11 +86,8 @@ export class Registry {
    * class' method that must be exposed to the Dagger API.
    */
   func = (
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     target: object,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     propertyKey: string | symbol,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     descriptor: PropertyDescriptor
   ) => {
     // The logic is done in the object constructor since it's not possible to
@@ -114,7 +111,6 @@ export class Registry {
     method: string,
     state: State,
     inputs: Args
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<any> {
     // Retrieve the resolver class from its key
     const resolver = Reflect.getMetadata(object, this) as RegistryClass
@@ -140,7 +136,6 @@ export class Registry {
     }
 
     // Instantiate the class
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let r = new resolver.class_() as any
 
     // Apply state to the class

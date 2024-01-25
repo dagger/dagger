@@ -43,6 +43,9 @@ enum TypeDefKind: string
      */
     case INTERFACE_KIND = 'INTERFACE_KIND';
 
+    /** A graphql input type, used only when representing the core API via TypeDefs. */
+    case INPUT_KIND = 'INPUT_KIND';
+
     /**
      * A special kind used to signify that no value is returned.
      *

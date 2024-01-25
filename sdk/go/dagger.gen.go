@@ -210,6 +210,9 @@ type GitRepositoryID string
 // The `HostID` scalar type represents an identifier for an object of type Host.
 type HostID string
 
+// The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+type InputTypeDefID string
+
 // The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
 type InterfaceTypeDefID string
 
@@ -247,6 +250,9 @@ type ServiceID string
 
 // The `SocketID` scalar type represents an identifier for an object of type Socket.
 type SocketID string
+
+// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+type TerminalID string
 
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
@@ -339,19 +345,18 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	envVariable   *string
-	export        *bool
-	id            *ContainerID
-	imageRef      *string
-	label         *string
-	platform      *Platform
-	publish       *string
-	shellEndpoint *string
-	stderr        *string
-	stdout        *string
-	sync          *ContainerID
-	user          *string
-	workdir       *string
+	envVariable *string
+	export      *bool
+	id          *ContainerID
+	imageRef    *string
+	label       *string
+	platform    *Platform
+	publish     *string
+	stderr      *string
+	stdout      *string
+	sync        *ContainerID
+	user        *string
+	workdir     *string
 }
 type WithContainerFunc func(r *Container) *Container
 
@@ -913,19 +918,26 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-//
-// Primarily intended for internal use with the dagger CLI.
-func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
-	if r.shellEndpoint != nil {
-		return *r.shellEndpoint, nil
+// ContainerShellOpts contains options for Container.Shell
+type ContainerShellOpts struct {
+	// If set, override the container's default shell and invoke these arguments instead.
+	Args []string
+}
+
+// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+func (r *Container) Shell(opts ...ContainerShellOpts) *Terminal {
+	q := r.q.Select("shell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
 	}
-	q := r.q.Select("shellEndpoint")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return &Terminal{
+		q: q,
+		c: r.c,
+	}
 }
 
 // The error stream of the last executed command.
@@ -983,6 +995,17 @@ func (r *Container) User(ctx context.Context) (string, error) {
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.q.Select("withDefaultArgs")
+	q = q.Arg("args", args)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Set the default command to invoke for the "shell" API.
+func (r *Container) WithDefaultShell(args []string) *Container {
+	q := r.q.Select("withDefaultShell")
 	q = q.Arg("args", args)
 
 	return &Container{
@@ -1140,6 +1163,8 @@ type ContainerWithExposedPortOpts struct {
 	Protocol NetworkProtocol
 	// Optional port description
 	Description string
+	// Skip the health check when run as a service.
+	ExperimentalSkipHealthcheck bool
 }
 
 // Expose a network port.
@@ -1159,6 +1184,10 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+		}
+		// `experimentalSkipHealthcheck` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalSkipHealthcheck) {
+			q = q.Arg("experimentalSkipHealthcheck", opts[i].ExperimentalSkipHealthcheck)
 		}
 	}
 	q = q.Arg("port", port)
@@ -3295,6 +3324,103 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// A graphql input type, which is essentially just a group of named args.
+// This is currently only used to represent pre-existing usage of graphql input types
+// in the core API. It is not used by user modules and shouldn't ever be as user
+// module accept input objects via their id rather than graphql input types.
+type InputTypeDef struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id   *InputTypeDefID
+	name *string
+}
+
+func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
+	q := r.q.Select("fields")
+
+	q = q.Select("id")
+
+	type fields struct {
+		Id FieldTypeDefID
+	}
+
+	convert := func(fields []fields) []FieldTypeDef {
+		out := []FieldTypeDef{}
+
+		for i := range fields {
+			val := FieldTypeDef{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []fields
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this InputTypeDef.
+func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response InputTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *InputTypeDef) XXX_GraphQLType() string {
+	return "InputTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *InputTypeDef) XXX_GraphQLIDType() string {
+	return "InputTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *InputTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *InputTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A definition of a custom interface defined in a Module.
 type InterfaceTypeDef struct {
 	q *querybuilder.Selection
@@ -3806,6 +3932,17 @@ func (r *Module) SourceDirectorySubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Retrieves the module with the given description
+func (r *Module) WithDescription(description string) *Module {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This module plus the given Interface type and associated functions
 func (r *Module) WithInterface(iface *TypeDef) *Module {
 	assertNotNil("iface", iface)
@@ -4139,10 +4276,11 @@ type Port struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description *string
-	id          *PortID
-	port        *int
-	protocol    *NetworkProtocol
+	description                 *string
+	experimentalSkipHealthcheck *bool
+	id                          *PortID
+	port                        *int
+	protocol                    *NetworkProtocol
 }
 
 func (r *Port) Description(ctx context.Context) (string, error) {
@@ -4152,6 +4290,18 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 	q := r.q.Select("description")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
+	if r.experimentalSkipHealthcheck != nil {
+		return *r.experimentalSkipHealthcheck, nil
+	}
+	q := r.q.Select("experimentalSkipHealthcheck")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -4648,6 +4798,17 @@ func (r *Client) LoadHostFromID(id HostID) *Host {
 	}
 }
 
+// Load a InputTypeDef from its ID.
+func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
+	q := r.q.Select("loadInputTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &InputTypeDef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Load a InterfaceTypeDef from its ID.
 func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
 	q := r.q.Select("loadInterfaceTypeDefFromID")
@@ -4753,6 +4914,17 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	q = q.Arg("id", id)
 
 	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a Terminal from its ID.
+func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
+	q := r.q.Select("loadTerminalFromID")
+	q = q.Arg("id", id)
+
+	return &Terminal{
 		q: q,
 		c: r.c,
 	}
@@ -4951,6 +5123,7 @@ type Service struct {
 	id       *ServiceID
 	start    *ServiceID
 	stop     *ServiceID
+	up       *Void
 }
 
 // ServiceEndpointOpts contains options for Service.Endpoint
@@ -5091,6 +5264,36 @@ func (r *Service) Stop(ctx context.Context) (*Service, error) {
 	return r, q.Execute(ctx, r.c)
 }
 
+// ServiceUpOpts contains options for Service.Up
+type ServiceUpOpts struct {
+	Ports []PortForward
+
+	Native bool
+}
+
+// Creates a tunnel that forwards traffic from the caller's network to this service.
+func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
+	if r.up != nil {
+		return *r.up, nil
+	}
+	q := r.q.Select("up")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
+		}
+		// `native` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Native) {
+			q = q.Arg("native", opts[i].Native)
+		}
+	}
+
+	var response Void
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
 	q *querybuilder.Selection
@@ -5139,6 +5342,68 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// An interactive terminal that clients can connect to.
+type Terminal struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id                *TerminalID
+	websocketEndpoint *string
+}
+
+// A unique identifier for this Terminal.
+func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response TerminalID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Terminal) XXX_GraphQLType() string {
+	return "Terminal"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Terminal) XXX_GraphQLIDType() string {
+	return "TerminalID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Terminal) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// An http endpoint at which this terminal can be connected to over a websocket.
+func (r *Terminal) WebsocketEndpoint(ctx context.Context) (string, error) {
+	if r.websocketEndpoint != nil {
+		return *r.websocketEndpoint, nil
+	}
+	q := r.q.Select("websocketEndpoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	q *querybuilder.Selection
@@ -5155,6 +5420,15 @@ type WithTypeDefFunc func(r *TypeDef) *TypeDef
 // This is useful for reusability and readability by not breaking the calling chain.
 func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 	return f(r)
+}
+
+func (r *TypeDef) AsInput() *InputTypeDef {
+	q := r.q.Select("asInput")
+
+	return &InputTypeDef{
+		q: q,
+		c: r.c,
+	}
 }
 
 func (r *TypeDef) AsInterface() *InterfaceTypeDef {
@@ -5433,6 +5707,9 @@ func (TypeDefKind) IsEnum() {}
 const (
 	// A boolean value.
 	BooleanKind TypeDefKind = "BOOLEAN_KIND"
+
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	InputKind TypeDefKind = "INPUT_KIND"
 
 	// An integer value.
 	IntegerKind TypeDefKind = "INTEGER_KIND"

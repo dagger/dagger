@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -148,22 +147,18 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 
 	var (
 		version = strings.TrimPrefix(tag, "sdk/rust/v")
-		token   = os.Getenv("CARGO_REGISTRY_TOKEN")
 		dryRun  = os.Getenv("CARGO_PUBLISH_DRYRUN")
 		crate   = "dagger-sdk"
 	)
-
-	if token == "" && dryRun == "false" {
-		return errors.New("CARGO_TOKEN environment variable must be set")
-	}
 
 	base := r.
 		rustBase(ctx, c, rustDockerStable).
 		WithExec([]string{
 			"cargo", "install", "cargo-edit",
-		}).WithExec([]string{
-		"cargo", "set-version", "-p", crate, version,
-	})
+		}).
+		WithExec([]string{
+			"cargo", "set-version", "-p", crate, version,
+		})
 
 	args := []string{
 		"cargo", "publish", "-p", crate, "-v", "--all-features",
@@ -171,7 +166,7 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 
 	if dryRun == "false" {
 		base = base.
-			WithEnvVariable("CARGO_REGISTRY_TOKEN", token).
+			With(util.HostSecretVar(c, "CARGO_REGISTRY_TOKEN")).
 			WithExec(args)
 	} else {
 		args = append(args, "--dry-run")

@@ -79,6 +79,11 @@ class HostID(Scalar):
     type Host."""
 
 
+class InputTypeDefID(Scalar):
+    """The `InputTypeDefID` scalar type represents an identifier for an
+    object of type InputTypeDef."""
+
+
 class InterfaceTypeDefID(Scalar):
     """The `InterfaceTypeDefID` scalar type represents an identifier for
     an object of type InterfaceTypeDef."""
@@ -139,6 +144,11 @@ class SocketID(Scalar):
     of type Socket."""
 
 
+class TerminalID(Scalar):
+    """The `TerminalID` scalar type represents an identifier for an object
+    of type Terminal."""
+
+
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
     of type TypeDef."""
@@ -195,6 +205,9 @@ class TypeDefKind(Enum):
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
+
+    INPUT_KIND = "INPUT_KIND"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
@@ -587,6 +600,7 @@ class Container(Type):
         _ctx = self._select("exposedPorts", _args)
         _ctx = Port(_ctx)._select_multiple(
             _description="description",
+            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
             _port="port",
             _protocol="protocol",
         )
@@ -879,29 +893,25 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    async def shell_endpoint(self) -> str:
-        """Return a websocket endpoint that, if connected to, will start the
-        container with a TTY streamed over the websocket.
+    def shell(
+        self,
+        *,
+        args: Sequence[str] | None = None,
+    ) -> "Terminal":
+        """Return an interactive terminal for this container using its configured
+        shell if not overridden by args (or sh as a fallback default).
 
-        Primarily intended for internal use with the dagger CLI.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        Parameters
+        ----------
+        args:
+            If set, override the container's default shell and invoke these
+            arguments instead.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("shellEndpoint", _args)
-        return await _ctx.execute(str)
+        _args = [
+            Arg("args", args, None),
+        ]
+        _ctx = self._select("shell", _args)
+        return Terminal(_ctx)
 
     @typecheck
     async def stderr(self) -> str:
@@ -1013,6 +1023,21 @@ class Container(Type):
             Arg("args", args),
         ]
         _ctx = self._select("withDefaultArgs", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def with_default_shell(self, args: Sequence[str]) -> "Container":
+        """Set the default command to invoke for the "shell" API.
+
+        Parameters
+        ----------
+        args:
+            The args of the command to set the default shell to.
+        """
+        _args = [
+            Arg("args", args),
+        ]
+        _ctx = self._select("withDefaultShell", _args)
         return Container(_ctx)
 
     @typecheck
@@ -1173,6 +1198,7 @@ class Container(Type):
         *,
         protocol: NetworkProtocol | None = "TCP",
         description: str | None = None,
+        experimental_skip_healthcheck: bool | None = False,
     ) -> "Container":
         """Expose a network port.
 
@@ -1190,11 +1216,14 @@ class Container(Type):
             Transport layer network protocol
         description:
             Optional port description
+        experimental_skip_healthcheck:
+            Skip the health check when run as a service.
         """
         _args = [
             Arg("port", port),
             Arg("protocol", protocol, "TCP"),
             Arg("description", description, None),
+            Arg("experimentalSkipHealthcheck", experimental_skip_healthcheck, False),
         ]
         _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)
@@ -3466,6 +3495,69 @@ class Host(Type):
         return Socket(_ctx)
 
 
+class InputTypeDef(Type):
+    """A graphql input type, which is essentially just a group of named
+    args. This is currently only used to represent pre-existing usage of
+    graphql input types in the core API. It is not used by user modules
+    and shouldn't ever be as user module accept input objects via their id
+    rather than graphql input types."""
+
+    @typecheck
+    async def fields(self) -> list[FieldTypeDef]:
+        _args: list[Arg] = []
+        _ctx = self._select("fields", _args)
+        _ctx = FieldTypeDef(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[FieldTypeDef])
+
+    @typecheck
+    async def id(self) -> InputTypeDefID:
+        """A unique identifier for this InputTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        InputTypeDefID
+            The `InputTypeDefID` scalar type represents an identifier for an
+            object of type InputTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(InputTypeDefID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
 class InterfaceTypeDef(Type):
     """A definition of a custom interface defined in a Module."""
 
@@ -3737,10 +3829,10 @@ class Module(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
-    async def description(self) -> str | None:
+    async def description(self) -> str:
         """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3756,7 +3848,7 @@ class Module(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     def generated_code(self) -> GeneratedCode:
@@ -3913,6 +4005,21 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceDirectorySubpath", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    def with_description(self, description: str) -> "Module":
+        """Retrieves the module with the given description
+
+        Parameters
+        ----------
+        description:
+            The description to set
+        """
+        _args = [
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDescription", _args)
+        return Module(_ctx)
 
     @typecheck
     def with_interface(self, iface: "TypeDef") -> "Module":
@@ -4241,11 +4348,13 @@ class Port(Type):
 
     __slots__ = (
         "_description",
+        "_experimental_skip_healthcheck",
         "_port",
         "_protocol",
     )
 
     _description: str | None
+    _experimental_skip_healthcheck: bool | None
     _port: int | None
     _protocol: NetworkProtocol | None
 
@@ -4270,6 +4379,26 @@ class Port(Type):
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str | None)
+
+    @typecheck
+    async def experimental_skip_healthcheck(self) -> bool:
+        """Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_experimental_skip_healthcheck"):
+            return self._experimental_skip_healthcheck
+        _args: list[Arg] = []
+        _ctx = self._select("experimentalSkipHealthcheck", _args)
+        return await _ctx.execute(bool)
 
     @typecheck
     async def id(self) -> PortID:
@@ -4755,6 +4884,15 @@ class Client(Root):
         return Host(_ctx)
 
     @typecheck
+    def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
+        """Load a InputTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadInputTypeDefFromID", _args)
+        return InputTypeDef(_ctx)
+
+    @typecheck
     def load_interface_type_def_from_id(
         self, id: InterfaceTypeDefID
     ) -> InterfaceTypeDef:
@@ -4845,6 +4983,15 @@ class Client(Root):
         ]
         _ctx = self._select("loadSocketFromID", _args)
         return Socket(_ctx)
+
+    @typecheck
+    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
+        """Load a Terminal from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadTerminalFromID", _args)
+        return Terminal(_ctx)
 
     @typecheck
     def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
@@ -5122,6 +5269,7 @@ class Service(Type):
         _ctx = self._select("ports", _args)
         _ctx = Port(_ctx)._select_multiple(
             _description="description",
+            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
             _port="port",
             _protocol="protocol",
         )
@@ -5163,6 +5311,36 @@ class Service(Type):
         _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
         return Service(_ctx)
 
+    @typecheck
+    async def up(
+        self,
+        *,
+        ports: Sequence[PortForward] | None = [],
+        native: bool | None = False,
+    ) -> Void | None:
+        """Creates a tunnel that forwards traffic from the caller's network to
+        this service.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("ports", ports, []),
+            Arg("native", native, False),
+        ]
+        _ctx = self._select("up", _args)
+        return await _ctx.execute(Void | None)
+
 
 class Socket(Type):
     """A Unix or TCP/IP socket that can be mounted into a container."""
@@ -5193,6 +5371,58 @@ class Socket(Type):
         return await _ctx.execute(SocketID)
 
 
+class Terminal(Type):
+    """An interactive terminal that clients can connect to."""
+
+    @typecheck
+    async def id(self) -> TerminalID:
+        """A unique identifier for this Terminal.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        TerminalID
+            The `TerminalID` scalar type represents an identifier for an
+            object of type Terminal.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(TerminalID)
+
+    @typecheck
+    async def websocket_endpoint(self) -> str:
+        """An http endpoint at which this terminal can be connected to over a
+        websocket.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("websocketEndpoint", _args)
+        return await _ctx.execute(str)
+
+
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -5203,6 +5433,12 @@ class TypeDef(Type):
 
     _kind: TypeDefKind | None
     _optional: bool | None
+
+    @typecheck
+    def as_input(self) -> InputTypeDef:
+        _args: list[Arg] = []
+        _ctx = self._select("asInput", _args)
+        return InputTypeDef(_ctx)
 
     @typecheck
     def as_interface(self) -> InterfaceTypeDef:
@@ -5446,6 +5682,8 @@ __all__ = [
     "HostID",
     "ImageLayerCompression",
     "ImageMediaTypes",
+    "InputTypeDef",
+    "InputTypeDefID",
     "InterfaceTypeDef",
     "InterfaceTypeDefID",
     "JSON",
@@ -5471,6 +5709,8 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
+    "Terminal",
+    "TerminalID",
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",

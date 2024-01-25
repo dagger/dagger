@@ -89,6 +89,10 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("initialize", s.moduleInitialize).
 			Doc(`Retrieves the module with the objects loaded via its SDK.`),
 
+		dagql.Func("withDescription", s.moduleWithDescription).
+			Doc(`Retrieves the module with the given description`).
+			ArgDoc("description", `The description to set`),
+
 		dagql.Func("withObject", s.moduleWithObject).
 			Doc(`This module plus the given Object type and associated functions.`),
 
@@ -154,6 +158,7 @@ func (s *moduleSchema) Install() {
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 
@@ -468,6 +473,12 @@ func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core
 }) (dagql.Nullable[core.Void], error) {
 	// TODO: error out if caller is not coming from a module
 	return dagql.Null[core.Void](), fnCall.ReturnValue(ctx, args.Value)
+}
+
+func (s *moduleSchema) moduleWithDescription(ctx context.Context, modMeta *core.Module, args struct {
+	Description string
+}) (*core.Module, error) {
+	return modMeta.WithDescription(args.Description), nil
 }
 
 func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.Module, args struct {
