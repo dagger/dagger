@@ -23,7 +23,7 @@ type Module struct {
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 
 	// The doc string of the module, if any
-	Description *string `field:"true" doc:"The doc string of the module, if any"`
+	Description string `field:"true" doc:"The doc string of the module, if any"`
 
 	// The module's SDKConfig, as set in the module config file
 	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module ref pointing to the SDK's implementation."`
@@ -572,6 +572,12 @@ func (mod Module) Clone() *Module {
 		cp.InterfaceDefs[i] = def.Clone()
 	}
 	return &cp
+}
+
+func (mod *Module) WithDescription(desc string) *Module {
+	mod = mod.Clone()
+	mod.Description = strings.TrimSpace(desc)
+	return mod
 }
 
 func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error) {

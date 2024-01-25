@@ -3829,10 +3829,10 @@ class Module(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
-    async def description(self) -> str | None:
+    async def description(self) -> str:
         """Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3848,7 +3848,7 @@ class Module(Type):
             return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     def generated_code(self) -> GeneratedCode:
@@ -4005,6 +4005,21 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceDirectorySubpath", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    def with_description(self, description: str) -> "Module":
+        """Retrieves the module with the given description
+
+        Parameters
+        ----------
+        description:
+            The description to set
+        """
+        _args = [
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDescription", _args)
+        return Module(_ctx)
 
     @typecheck
     def with_interface(self, iface: "TypeDef") -> "Module":

@@ -1275,6 +1275,7 @@ query {
   host {
     directory(path: ".") {
       asModule {
+        description
         objects {
           asObject {
             name
@@ -1683,6 +1684,62 @@ func (m *Minimal) IsEmpty() bool {
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
 
+func TestModuleDescription(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	for _, tc := range []struct {
+		sdk    string
+		source string
+	}{
+		{
+			sdk: "python",
+			source: `"""Minimal module, short description
+
+Long description, with full sentences.
+"""
+
+from dagger import field, function, object_type
+
+@object_type
+class Minimal:
+    """Minimal object, short description"""
+
+    foo: str = field(default="foo")
+`,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=minimal", "--sdk="+tc.sdk)).
+				With(sdkSource(tc.sdk, tc.source))
+
+			if tc.sdk == "go" {
+				logGen(ctx, t, modGen.Directory("."))
+			}
+
+			out, err := modGen.With(inspectModule).Stdout(ctx)
+			require.NoError(t, err)
+			mod := gjson.Get(out, "host.directory.asModule")
+			require.Equal(t,
+				"Minimal module, short description\n\nLong description, with full sentences.",
+				mod.Get("description").String(),
+			)
+			require.Equal(t,
+				"Minimal object, short description",
+				mod.Get("objects.0.asObject.description").String(),
+			)
+		})
+	}
+}
+
 func TestModulePrivateField(t *testing.T) {
 	t.Parallel()
 
@@ -1915,7 +1972,7 @@ class Test {
   repeater(msg: string, times: number): Repeater {
     return new Repeater(msg, times)
   }
-}			
+}
 `,
 		},
 	} {
@@ -2081,7 +2138,7 @@ import { object, func, field } from "@dagger.io/dagger"
 
 @object
 class X {
-  @field 
+  @field
   message: string
 
   @field
@@ -2578,7 +2635,7 @@ class Foo {
   async fn(): Promise<string> {
     return someDefault.withExec(["echo", "foo"]).stdout()
   }
-}			
+}
 `,
 		},
 	} {
@@ -3823,46 +3880,46 @@ import { Directory, object, func, field } from '@dagger.io/dagger';
 class Test {
 	@field
 	foo: string
-				
+
 	@field
 	dir: Directory
-				
+
 	@field
 	bar: number
-				
+
 	@field
 	baz: string[]
-				
+
 	@field
 	neverSetDir?: Directory
-				
+
 	constructor(foo: string, dir: Directory, bar = 42, baz: string[] = []) {
 		this.foo = foo;
 		this.dir = dir;
 		this.bar = bar;
 		this.baz = baz;
 	}
-				
+
 	@func
 	gimmeFoo(): string {
 		return this.foo;
 	}
-				
+
 	@func
 	gimmeBar(): number {
 		return this.bar;
 	}
-				
+
 	@func
 	gimmeBaz(): string[] {
 		return this.baz;
 	}
-				
+
 	@func
 	async gimmeDirEnts(): Promise<string[]> {
 		return this.dir.entries();
 	}
-}					
+}
 `,
 			},
 		} {
@@ -3980,7 +4037,7 @@ class Test {
       return this; // Return the newly-created instance
     })();
   }
-}				
+}
 `,
 			},
 		} {
@@ -4048,7 +4105,7 @@ class Test {
   constructor() {
     throw new Error("too bad")
   }
-}				
+}
 `,
 			},
 		} {
@@ -4440,7 +4497,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
 				  }
 				}
-					
+
 				`,
 			}).
 			With(daggerExec("mod", "init", "--name=existingSource", "--sdk=typescript"))
@@ -4562,7 +4619,7 @@ class PotatoSack {
   @func
   potato_%d(): string {
     return "potato #%d"
-  }			
+  }
 			`, i, i)
 		}
 

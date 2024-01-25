@@ -15,7 +15,7 @@ import anyio
 import cattrs
 import cattrs.gen
 from rich.console import Console
-from typing_extensions import dataclass_transform, overload
+from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
 from dagger import dag
@@ -76,6 +76,11 @@ class Module:
         self._resolvers: list[Resolver] = []
         self._fn_call = dag.current_function_call()
         self._mod = dag.current_module()
+
+    def with_description(self, description: str | None) -> Self:
+        if description:
+            self._mod = self._mod.with_description(description)
+        return self
 
     def add_resolver(self, resolver: Resolver):
         self._resolvers.append(resolver)
