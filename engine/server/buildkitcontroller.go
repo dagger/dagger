@@ -163,7 +163,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		WithField("client_hostname", opts.ClientHostname).
 		WithField("client_call_digest", opts.ModuleCallerDigest).
 		WithField("server_id", opts.ServerID))
-	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Trace("handling session call")
+	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Debug("handling session call")
 	defer func() {
 		if rerr != nil {
 			bklog.G(ctx).WithError(rerr).Errorf("session call failed")
@@ -203,9 +203,9 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		bklog.G(ctx).Trace("session manager handling conn")
+		bklog.G(ctx).Debug("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
-		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
+		bklog.G(ctx).WithError(err).Debug("session manager handle conn done")
 		return fmt.Errorf("handleConn: %w", err)
 	})
 
@@ -296,7 +296,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			if err := bkClient.Close(); err != nil {
 				bklog.G(ctx).WithError(err).Errorf("failed to close buildkit client for server %s", opts.ServerID)
 			}
-			bklog.G(ctx).Trace("closed buildkit client")
+			bklog.G(ctx).Debug("closed buildkit client")
 
 			time.AfterFunc(time.Second, e.throttledGC)
 			bklog.G(ctx).Debug("server removed")
@@ -313,7 +313,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Trace("waiting for server")
 		err := srv.Wait(egctx)
 		bklog.G(ctx).WithError(err).Trace("server done")
-		return fmt.Errorf("srv.Wait: %w", err)
+		if err != nil {
+			return fmt.Errorf("srv.Wait: %w", err)
+		}
+		return nil
 	})
 	err = eg.Wait()
 	if errors.Is(err, context.Canceled) {
