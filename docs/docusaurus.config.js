@@ -73,7 +73,10 @@ const config = {
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
     path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
-    path.resolve(__dirname, "plugins/docusaurus-plugin-guides"),
+    [path.resolve(__dirname, "plugins/docusaurus-plugin-guides"), {
+      currentGuidesPath: "./current_docs/guides",
+      versionedGuidesPath: "./versioned_docs/version-zenith/guides"
+    }],
     [
       "posthog-docusaurus",
       {
