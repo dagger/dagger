@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,11 +116,16 @@ appending it to the end of the command (for example, *stdout*, *entries*, or
 
 			// especially useful for lists and maps
 			if jsonOutput {
-				jb, err := json.MarshalIndent(response, "", "    ")
-				if err != nil {
+				// disable HTML escaping to improve readability
+				var buf bytes.Buffer
+				encoder := json.NewEncoder(&buf)
+				encoder.SetEscapeHTML(false)
+				encoder.SetIndent("", "    ")
+
+				if err := encoder.Encode(response); err != nil {
 					return err
 				}
-				fmt.Fprintf(writer, "%s\n", jb)
+				fmt.Fprintf(writer, "%s\n", buf.String())
 				return nil
 			}
 
