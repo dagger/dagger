@@ -30,19 +30,22 @@ const (
 	CacheVolume string = "CacheVolume"
 )
 
-var funcGroup = &cobra.Group{
-	ID:    "functions",
-	Title: "Functions",
-}
-
 var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
 }
 
 var funcListCmd = &FuncCommand{
-	Name:  "functions",
+	Name:  "functions [flags] [FUNCTION]...",
 	Short: `List available functions`,
+	Long: strings.ReplaceAll(`List available functions in a module.
+
+This is similar to ´dagger call --help´, but only focused on showing the
+available functions.
+`,
+		"´",
+		"`",
+	),
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 		var o functionProvider = fc.mod.GetMainObject()
@@ -103,7 +106,6 @@ func (fcs FuncCommands) AddFlagSet(flags *pflag.FlagSet) {
 }
 
 func (fcs FuncCommands) AddParent(rootCmd *cobra.Command) {
-	rootCmd.AddGroup(funcGroup)
 	rootCmd.AddCommand(fcs.All()...)
 }
 
@@ -210,28 +212,22 @@ type FuncCommand struct {
 
 func (fc *FuncCommand) Command() *cobra.Command {
 	if fc.cmd == nil {
-		use := fmt.Sprintf("%s [flags] [command [flags]]...", fc.Name)
-		disableFlagsInUse := true
-
-		if fc.Execute != nil {
-			use = fc.Name
-			disableFlagsInUse = false
-		}
-
 		fc.cmd = &cobra.Command{
-			Use:     use,
+			Use:     fc.Name,
 			Aliases: fc.Aliases,
 			Short:   fc.Short,
 			Long:    fc.Long,
 			Example: fc.Example,
-			GroupID: funcGroup.ID,
-			Hidden:  true, // for now, remove once we're ready for primetime
+			GroupID: moduleGroup.ID,
+			Annotations: map[string]string{
+				"experimental": "",
+			},
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
 			// subcommands.
 			DisableFlagParsing:    true,
-			DisableFlagsInUseLine: disableFlagsInUse,
+			DisableFlagsInUseLine: true,
 
 			PreRunE: func(c *cobra.Command, a []string) error {
 				// Recover what DisableFlagParsing disabled.

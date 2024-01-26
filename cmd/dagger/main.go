@@ -39,16 +39,23 @@ func init() {
 		runCmd,
 		moduleCmd,
 		sessionCmd(),
+		newGenCmd(),
 		downloadCmd,
 		upCmd,
 		shellCmd,
 	)
 
 	funcCmds.AddParent(rootCmd)
+
+	cobra.AddTemplateFunc("isExperimental", isExperimental)
+
+	rootCmd.SetUsageTemplate(usageTemplate)
+	rootCmd.AddGroup(moduleGroup)
 }
 
 var rootCmd = &cobra.Command{
-	Use: "dagger",
+	Use:   "dagger",
+	Short: "The Dagger CLI provides a command-line interface to Dagger.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
@@ -123,3 +130,111 @@ func NormalizeWorkdir(workdir string) (string, error) {
 
 	return workdir, nil
 }
+
+func isExperimental(cmd *cobra.Command) bool {
+	if _, ok := cmd.Annotations["experimental"]; ok {
+		return true
+	}
+	var experimental bool
+	cmd.VisitParents(func(cmd *cobra.Command) {
+		if _, ok := cmd.Annotations["experimental"]; ok {
+			experimental = true
+			return
+		}
+	})
+	return experimental
+}
+
+const usageTemplate = `Usage:
+
+{{- if .Runnable}}
+  {{.UseLine}}
+{{- end}}
+{{- if .HasAvailableSubCommands}}
+  {{ .CommandPath}} [command]
+{{- end}}
+
+{{- if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}
+
+{{- end}}
+
+{{- if isExperimental .}}
+
+EXPERIMENTAL:
+  {{.CommandPath}} is currently under development and may change in the future.
+
+{{- end}}
+
+{{- if .HasExample}}
+
+Examples:
+{{ .Example }}
+
+{{- end}}
+
+{{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
+{{- if eq (len .Groups) 0}}
+
+Available Commands:
+{{- range $cmds }}
+{{- if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}
+{{- end}}
+{{- end}}
+
+{{- else}}
+{{- range $group := .Groups}}
+
+{{.Title}}:
+{{- range $cmds }}
+{{- if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}
+{{- end}}
+{{- end}}{{/* range $cmds */}}
+{{- end}}{{/* range $group := .Groups */}}
+
+{{- if not .AllChildCommandsHaveGroup}}
+
+Additional Commands:
+{{- range $cmds }}
+{{- if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}
+{{- end}}
+{{- end}}{{/* range $cmds */}}
+{{- end}}{{/* if not .AllChildCommandsHaveGroup */}}
+{{- end}}{{/* if eq (len .Groups) 0 */}}
+{{- end}}{{/* if .HasAvailableSubCommands */}}
+
+{{- if .HasAvailableLocalFlags}}
+
+Flags:
+{{ .LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+
+{{- end}}
+
+{{- if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{ .InheritedFlags.FlagUsages | trimTrailingWhitespaces}}
+
+{{- end}}
+
+{{- if .HasHelpSubCommands}}
+
+Additional help topics:
+{{- range .Commands}}
+{{- if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}
+{{- end}}
+{{- end}}
+
+{{- end}}{{/* if .HasHelpSubCommands */}}
+
+{{- if .HasAvailableSubCommands }}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.
+{{- end}}
+`
