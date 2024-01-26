@@ -37,6 +37,16 @@ func parseRef(tag string) error {
 
 type Engine mg.Namespace
 
+// Connect tests a connection to a dagger engine
+func (t Engine) Connect(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	return nil
+}
+
 // Build builds the dagger cli binary
 func (t Engine) Build(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
