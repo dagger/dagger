@@ -18,8 +18,7 @@ on:
         required: false
 
 jobs:
-  # Use a free GitHub Actions runner when
-  # NOT running in the dagger/dagger repo
+  # Use a free GitHub Actions runner when NOT running in the dagger/dagger repo
   github-free-runner:
     if: ${{ github.repository != 'dagger/dagger' }}
     runs-on: ubuntu-latest
@@ -29,7 +28,7 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
-      - name: Waiting for engine to be ready
+      - name: Waiting for Dagger Engine to be ready...
         run: |
           if [ "${{ inputs.dev-engine }}" == "true" ]
           then
@@ -60,7 +59,7 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
-      - name: Waiting for engine to be ready
+      - name: Waiting for Dagger Engine to be ready...
         run: |
           if [ "${{ inputs.dev-engine }}" == "true" ]
           then
