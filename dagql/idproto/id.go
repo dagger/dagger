@@ -15,6 +15,58 @@ func New() *ID {
 	return nil
 }
 
+func (id *ID) Inputs() ([]digest.Digest, error) {
+	seen := map[digest.Digest]struct{}{}
+	var inputs []digest.Digest
+	for _, arg := range id.Args {
+		ins, err := arg.Value.Inputs()
+		if err != nil {
+			return nil, err
+		}
+		for _, in := range ins {
+			if _, ok := seen[in]; ok {
+				continue
+			}
+			seen[in] = struct{}{}
+			inputs = append(inputs, in)
+		}
+	}
+	return inputs, nil
+}
+
+func (lit *Literal) Inputs() ([]digest.Digest, error) {
+	switch x := lit.Value.(type) {
+	case *Literal_Id:
+		dig, err := x.Id.Digest()
+		if err != nil {
+			return nil, err
+		}
+		return []digest.Digest{dig}, nil
+	case *Literal_List:
+		var inputs []digest.Digest
+		for _, v := range x.List.Values {
+			ins, err := v.Inputs()
+			if err != nil {
+				return nil, err
+			}
+			inputs = append(inputs, ins...)
+		}
+		return inputs, nil
+	case *Literal_Object:
+		var inputs []digest.Digest
+		for _, v := range x.Object.Values {
+			ins, err := v.Value.Inputs()
+			if err != nil {
+				return nil, err
+			}
+			inputs = append(inputs, ins...)
+		}
+		return inputs, nil
+	default:
+		return nil, nil
+	}
+}
+
 func (id *ID) Modules() []*ID {
 	allMods := []*ID{}
 	for id != nil {

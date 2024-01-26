@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { dag, TypeDefKind } from "../api/client.gen.js"
 import { ScanResult } from "../introspector/scanner/scan.js"
 import { TypeDef } from "../introspector/scanner/typeDefs.js"
@@ -119,16 +120,18 @@ export function loadPropertyType(
  * Note: The JSON.parse() is required to remove extra quotes
  */
 export async function loadArg(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   value: any,
   type: TypeDef<TypeDefKind>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
+  // If value is undefinied, return it directly.
+  if (value === undefined) {
+    return value
+  }
+
   switch (type.kind) {
     case TypeDefKind.ListKind:
       return Promise.all(
         value.map(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           async (v: any) =>
             await loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef)
         )
@@ -165,7 +168,6 @@ export async function loadArg(
  * @param result The result of the invocation.
  * @returns Loaded result.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadResult(result: any): Promise<any> {
   if (result && typeof result?.id === "function") {
     result = await result.id()

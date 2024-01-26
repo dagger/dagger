@@ -23,13 +23,18 @@ func TestModuleDaggerShell(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	modDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+	t.Run("basic", func(t *testing.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
 import "context"
 
 func New(ctx context.Context) *Test {
 	return &Test{
-		Ctr: dag.Container().From("mirror.gcr.io/alpine:3.18").WithEnvVariable("COOLENV", "woo").WithWorkdir("/coolworkdir"),
+		Ctr: dag.Container().
+			From("mirror.gcr.io/alpine:3.18").
+			WithEnvVariable("COOLENV", "woo").
+			WithWorkdir("/coolworkdir").
+			WithDefaultShell([]string{"/bin/sh"}),
 	}
 }
 
@@ -37,55 +42,126 @@ type Test struct {
 	Ctr *Container
 }
 `), 0644)
-	require.NoError(t, err)
+		require.NoError(t, err)
 
-	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "mod", "init", "--name=test", "--sdk=go")
-	require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "mod", "init", "--name=test", "--sdk=go")
+		require.NoError(t, err)
 
-	// cache the module load itself so there's less to wait for in the shell invocation below
-	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
-	require.NoError(t, err)
+		// cache the module load itself so there's less to wait for in the shell invocation below
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		require.NoError(t, err)
 
-	// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
-	console, err := newShellTestConsole(60 * time.Second)
-	require.NoError(t, err)
-	defer console.Close()
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newShellTestConsole(60 * time.Second)
+		require.NoError(t, err)
+		defer console.Close()
 
-	tty := console.Tty()
+		tty := console.Tty()
 
-	// We want the size to be big enough to fit the output we're expecting, but increasing
-	// the size also eventually slows down the tests due to more output being generated and
-	// needing parsing.
-	err = pty.Setsize(tty, &pty.Winsize{Rows: 8, Cols: 16})
-	require.NoError(t, err)
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
 
-	cmd := hostDaggerCommand(ctx, t, modDir, "shell", "ctr")
-	cmd.Stdin = tty
-	cmd.Stdout = tty
-	cmd.Stderr = tty
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "shell")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
 
-	err = cmd.Start()
-	require.NoError(t, err)
+		err = cmd.Start()
+		require.NoError(t, err)
 
-	err = console.ExpectLineRegex(ctx, "/coolworkdir #")
-	require.NoError(t, err)
+		err = console.ExpectLineRegex(ctx, "/coolworkdir #")
+		require.NoError(t, err)
 
-	_, err = console.SendLine("echo $COOLENV")
-	require.NoError(t, err)
+		_, err = console.SendLine("echo $COOLENV")
+		require.NoError(t, err)
 
-	err = console.ExpectLineRegex(ctx, "woo")
-	require.NoError(t, err)
+		err = console.ExpectLineRegex(ctx, "woo")
+		require.NoError(t, err)
 
-	err = console.ExpectLineRegex(ctx, "/coolworkdir #")
-	require.NoError(t, err)
+		err = console.ExpectLineRegex(ctx, "/coolworkdir #")
+		require.NoError(t, err)
 
-	_, err = console.SendLine("exit")
-	require.NoError(t, err)
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
 
-	go console.ExpectEOF()
+		go console.ExpectEOF()
 
-	err = cmd.Wait()
-	require.NoError(t, err)
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("override args", func(t *testing.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import "context"
+
+func New(ctx context.Context) *Test {
+	return &Test{
+		Ctr: dag.Container().
+			From("mirror.gcr.io/alpine:3.18").
+			WithEnvVariable("COOLENV", "woo").
+			WithWorkdir("/coolworkdir").
+			WithExec([]string{"apk", "add", "python3"}).
+			WithDefaultShell([]string{"/bin/sh"}),
+	}
+}
+
+type Test struct {
+	Ctr *Container
+}
+`), 0644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "mod", "init", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		// cache the returned container so there's less to wait for in the shell invocation below
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "call", "ctr", "sync")
+		require.NoError(t, err)
+
+		console, err := newShellTestConsole(60 * time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "shell", "--args=python")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		err = console.ExpectLineRegex(ctx, ">>> ")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("import os")
+		require.NoError(t, err)
+
+		err = console.ExpectLineRegex(ctx, ">>> ")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("os.environ['COOLENV']")
+		require.NoError(t, err)
+
+		err = console.ExpectLineRegex(ctx, "'woo'")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit()")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
 }
 
 // shellTestConsole wraps expect.Console with methods that allow us to enforce timeouts despite
@@ -122,7 +198,7 @@ func (e *shellTestConsole) ExpectLineRegex(ctx context.Context, pattern string) 
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for line matching %s, most recent output:\n%s", pattern, e.output.String())
+			return fmt.Errorf("timed out waiting for line matching %q, most recent output:\n%s", pattern, e.output.String())
 		default:
 		}
 

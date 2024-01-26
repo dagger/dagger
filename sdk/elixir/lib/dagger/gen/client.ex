@@ -92,7 +92,7 @@ defmodule Dagger.Client do
       selection =
         select(
           selection,
-          "asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
+          "asInput asInterface asList asObject id kind optional withConstructor withField withFunction withInterface withKind withListOf withObject withOptional"
         )
 
       with {:ok, data} <- execute(selection, query.client) do
@@ -388,6 +388,16 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a InputTypeDef from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_input_type_def_from_id(t(), Dagger.InputTypeDef.t()) :: Dagger.InputTypeDef.t()
+    def load_input_type_def_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadInputTypeDefFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.InputTypeDef{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a InterfaceTypeDef from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_interface_type_def_from_id(t(), Dagger.InterfaceTypeDef.t()) ::
             Dagger.InterfaceTypeDef.t()
@@ -485,6 +495,16 @@ defmodule Dagger.Client do
       selection = select(query.selection, "loadSocketFromID")
       selection = arg(selection, "id", socket)
       %Dagger.Socket{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a Terminal from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_terminal_from_id(t(), Dagger.Terminal.t()) :: Dagger.Terminal.t()
+    def load_terminal_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadTerminalFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.Terminal{selection: selection, client: query.client}
     end
   )
 

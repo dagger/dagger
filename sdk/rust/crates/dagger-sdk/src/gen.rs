@@ -245,6 +245,23 @@ impl HostId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct InputTypeDefId(pub String);
+impl Into<InputTypeDefId> for &str {
+    fn into(self) -> InputTypeDefId {
+        InputTypeDefId(self.to_string())
+    }
+}
+impl Into<InputTypeDefId> for String {
+    fn into(self) -> InputTypeDefId {
+        InputTypeDefId(self.clone())
+    }
+}
+impl InputTypeDefId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct InterfaceTypeDefId(pub String);
 impl Into<InterfaceTypeDefId> for &str {
     fn into(self) -> InterfaceTypeDefId {
@@ -449,6 +466,23 @@ impl SocketId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct TerminalId(pub String);
+impl Into<TerminalId> for &str {
+    fn into(self) -> TerminalId {
+        TerminalId(self.to_string())
+    }
+}
+impl Into<TerminalId> for String {
+    fn into(self) -> TerminalId {
+        TerminalId(self.clone())
+    }
+}
+impl TerminalId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TypeDefId(pub String);
 impl Into<TypeDefId> for &str {
     fn into(self) -> TypeDefId {
@@ -595,6 +629,12 @@ pub struct ContainerPublishOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerShellOpts<'a> {
+    /// If set, override the container's default shell and invoke these arguments instead.
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
     #[builder(setter(into, strip_option), default)]
@@ -647,6 +687,9 @@ pub struct ContainerWithExposedPortOpts<'a> {
     /// Optional port description
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Skip the health check when run as a service.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_skip_healthcheck: Option<bool>,
     /// Transport layer network protocol
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
@@ -1176,11 +1219,34 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-    /// Primarily intended for internal use with the dagger CLI.
-    pub async fn shell_endpoint(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("shellEndpoint");
-        query.execute(self.graphql_client.clone()).await
+    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn shell(&self) -> Terminal {
+        let query = self.selection.select("shell");
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn shell_opts<'a>(&self, opts: ContainerShellOpts<'a>) -> Terminal {
+        let mut query = self.selection.select("shell");
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
@@ -1212,6 +1278,23 @@ impl Container {
     /// * `args` - Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     pub fn with_default_args(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Set the default command to invoke for the "shell" API.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The args of the command to set the default shell to.
+    pub fn with_default_shell(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withDefaultShell");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -1475,6 +1558,9 @@ impl Container {
         }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(experimental_skip_healthcheck) = opts.experimental_skip_healthcheck {
+            query = query.arg("experimentalSkipHealthcheck", experimental_skip_healthcheck);
         }
         return Container {
             proc: self.proc.clone(),
@@ -3465,6 +3551,31 @@ impl Host {
     }
 }
 #[derive(Clone)]
+pub struct InputTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl InputTypeDef {
+    pub fn fields(&self) -> Vec<FieldTypeDef> {
+        let query = self.selection.select("fields");
+        return vec![FieldTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+    /// A unique identifier for this InputTypeDef.
+    pub async fn id(&self) -> Result<InputTypeDefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct InterfaceTypeDef {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -3633,6 +3744,20 @@ impl Module {
     pub async fn source_directory_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceDirectorySubpath");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Retrieves the module with the given description
+    ///
+    /// # Arguments
+    ///
+    /// * `description` - The description to set
+    pub fn with_description(&self, description: impl Into<String>) -> Module {
+        let mut query = self.selection.select("withDescription");
+        query = query.arg("description", description.into());
+        return Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// This module plus the given Interface type and associated functions
     pub fn with_interface(&self, iface: TypeDef) -> Module {
@@ -3811,6 +3936,10 @@ pub struct Port {
 impl Port {
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn experimental_skip_healthcheck(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("experimentalSkipHealthcheck");
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Port.
@@ -4405,6 +4534,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load a InputTypeDef from its ID.
+    pub fn load_input_type_def_from_id(&self, id: InputTypeDef) -> InputTypeDef {
+        let mut query = self.selection.select("loadInputTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return InputTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Load a InterfaceTypeDef from its ID.
     pub fn load_interface_type_def_from_id(&self, id: InterfaceTypeDef) -> InterfaceTypeDef {
         let mut query = self.selection.select("loadInterfaceTypeDefFromID");
@@ -4560,6 +4705,22 @@ impl Query {
             }),
         );
         return Socket {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a Terminal from its ID.
+    pub fn load_terminal_from_id(&self, id: Terminal) -> Terminal {
+        let mut query = self.selection.select("loadTerminalFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return Terminal {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4759,6 +4920,13 @@ pub struct ServiceEndpointOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub scheme: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ServiceUpOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub native: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub ports: Option<Vec<PortForward>>,
+}
 impl Service {
     /// Retrieves an endpoint that clients can use to reach this container.
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
@@ -4821,6 +4989,30 @@ impl Service {
         let query = self.selection.select("stop");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Creates a tunnel that forwards traffic from the caller's network to this service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("up");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Creates a tunnel that forwards traffic from the caller's network to this service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("up");
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
+        }
+        if let Some(native) = opts.native {
+            query = query.arg("native", native);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Socket {
@@ -4832,6 +5024,24 @@ impl Socket {
     /// A unique identifier for this Socket.
     pub async fn id(&self) -> Result<SocketId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Terminal {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Terminal {
+    /// A unique identifier for this Terminal.
+    pub async fn id(&self) -> Result<TerminalId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// An http endpoint at which this terminal can be connected to over a websocket.
+    pub async fn websocket_endpoint(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("websocketEndpoint");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -4858,6 +5068,14 @@ pub struct TypeDefWithObjectOpts<'a> {
     pub description: Option<&'a str>,
 }
 impl TypeDef {
+    pub fn as_input(&self) -> InputTypeDef {
+        let query = self.selection.select("asInput");
+        return InputTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     pub fn as_interface(&self) -> InterfaceTypeDef {
         let query = self.selection.select("asInterface");
         return InterfaceTypeDef {
@@ -5128,6 +5346,8 @@ pub enum NetworkProtocol {
 pub enum TypeDefKind {
     #[serde(rename = "BOOLEAN_KIND")]
     BooleanKind,
+    #[serde(rename = "INPUT_KIND")]
+    InputKind,
     #[serde(rename = "INTEGER_KIND")]
     IntegerKind,
     #[serde(rename = "INTERFACE_KIND")]

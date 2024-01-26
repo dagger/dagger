@@ -41,3 +41,11 @@ func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {
 	}
 	return ts
 }
+
+func collectArrayInput[T any, I dagql.Input](in dagql.ArrayInput[I], conv func(I) T) []T {
+	ts := make([]T, len(in))
+	for i, v := range in {
+		ts[i] = conv(v)
+	}
+	return ts
+}

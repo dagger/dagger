@@ -399,7 +399,8 @@ func (s *containerSchema) Install() {
 				`- For setting the EXPOSE OCI field when publishing the container`).
 			ArgDoc("port", `Port number to expose`).
 			ArgDoc("protocol", `Transport layer network protocol`).
-			ArgDoc("description", `Optional port description`),
+			ArgDoc("description", `Optional port description`).
+			ArgDoc("experimentalSkipHealthcheck", `Skip the health check when run as a service.`),
 
 		dagql.Func("withoutExposedPort", s.withoutExposedPort).
 			Doc(`Unexpose a previously exposed port.`).
@@ -427,9 +428,13 @@ func (s *containerSchema) Install() {
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
 				`This is the initial state of all containers.`),
 
-		dagql.NodeFunc("shellEndpoint", s.shellEndpoint).
-			Doc(`Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.`,
-				`Primarily intended for internal use with the dagger CLI.`),
+		dagql.Func("withDefaultShell", s.withDefaultShell).
+			Doc(`Set the default command to invoke for the "shell" API.`).
+			ArgDoc("args", `The args of the command to set the default shell to.`),
+
+		dagql.NodeFunc("shell", s.shell).
+			Doc(`Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).`).
+			ArgDoc("args", `If set, override the container's default shell and invoke these arguments instead.`),
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
@@ -441,6 +446,11 @@ func (s *containerSchema) Install() {
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
+	}.Install(s.srv)
+
+	dagql.Fields[*core.Terminal]{
+		dagql.Func("websocketEndpoint", s.shellWebsocketEndpoint).
+			Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
 	}.Install(s.srv)
 }
 
@@ -1205,16 +1215,18 @@ func (s *containerSchema) withServiceBinding(ctx context.Context, parent *core.C
 }
 
 type containerWithExposedPortArgs struct {
-	Port        int
-	Protocol    core.NetworkProtocol `default:"TCP"`
-	Description *string
+	Port                        int
+	Protocol                    core.NetworkProtocol `default:"TCP"`
+	Description                 *string
+	ExperimentalSkipHealthcheck bool `default:"false"`
 }
 
 func (s *containerSchema) withExposedPort(ctx context.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
 	return parent.WithExposedPort(core.Port{
-		Protocol:    args.Protocol,
-		Port:        args.Port,
-		Description: args.Description,
+		Protocol:                    args.Protocol,
+		Port:                        args.Port,
+		Description:                 args.Description,
+		ExperimentalSkipHealthcheck: args.ExperimentalSkipHealthcheck,
 	})
 }
 
@@ -1276,15 +1288,50 @@ func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Contain
 	return child, nil
 }
 
-func (s *containerSchema) shellEndpoint(ctx context.Context, parent dagql.Instance[*core.Container], args struct{}) (dagql.String, error) {
-	endpoint, handler, err := parent.Self.ShellEndpoint(parent.ID())
+func (s *containerSchema) withDefaultShell(
+	ctx context.Context,
+	ctr *core.Container,
+	args struct {
+		Args []string
+	},
+) (*core.Container, error) {
+	ctr = ctr.Clone()
+	ctr.DefaultShell = args.Args
+	return ctr, nil
+}
+
+func (s *containerSchema) shell(
+	ctx context.Context,
+	ctr dagql.Instance[*core.Container],
+	args struct {
+		Args dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.Terminal, error) {
+	var shellArgs []string
+	if args.Args.Valid {
+		shellArgs = collectArrayInput(args.Args.Value, dagql.String.String)
+	} else {
+		// if no override args specified, use default shell
+		shellArgs = ctr.Self.DefaultShell
+	}
+
+	// if still no args, default to sh
+	if len(shellArgs) == 0 {
+		shellArgs = []string{"sh"}
+	}
+
+	term, handler, err := ctr.Self.Terminal(ctr.ID(), shellArgs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if err := parent.Self.Query.MuxEndpoint(ctx, path.Join("/", endpoint), handler); err != nil {
-		return "", err
+	if err := ctr.Self.Query.MuxEndpoint(ctx, path.Join("/", term.Endpoint), handler); err != nil {
+		return nil, err
 	}
 
-	return dagql.NewString("ws://dagger/" + endpoint), nil
+	return term, nil
+}
+
+func (s *containerSchema) shellWebsocketEndpoint(ctx context.Context, parent *core.Terminal, args struct{}) (string, error) {
+	return parent.WebsocketURL(), nil
 }

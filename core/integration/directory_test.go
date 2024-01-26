@@ -883,7 +883,7 @@ func TestDirectoryDirectMerge(t *testing.T) {
 	for fileName, inode := range fileNameToInode {
 		out, err := ctr.WithExec([]string{"stat", "-c", "%i", fileName}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, strings.TrimSpace(out), inode)
+		require.Equal(t, inode, strings.TrimSpace(out))
 	}
 }
 

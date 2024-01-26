@@ -50,7 +50,6 @@ async def codegen(output: anyio.Path | None, introspection: anyio.Path | None):
 
     if output:
         await output.write_text(code)
-        await _update_gitattributes(output)
         sys.stdout.write(f"Client generated successfully to {output}\n")
     else:
         sys.stdout.write(f"{code}\n")
@@ -68,15 +67,3 @@ async def _get_schema(path: anyio.Path | None) -> graphql.GraphQLSchema:
             return await conn.session.get_schema()
     except dagger.ClientError as e:
         parser.exit(1, f"Error: {e}\n")
-
-
-async def _update_gitattributes(output: anyio.Path) -> None:
-    git_attrs = output.with_name(".gitattributes")
-    contents = f"/{output.name} linguist-generated=true\n"
-
-    if await git_attrs.exists():
-        if contents in (text := await git_attrs.read_text()):
-            return
-        contents = f"{text}{contents}"
-
-    await git_attrs.write_text(contents)

@@ -62,7 +62,7 @@ func (t TypeScript) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.LintGeneratedCode(func() error {
+		return util.LintGeneratedCode("sdk:typescript:generate", func() error {
 			return t.Generate(gctx)
 		}, typescriptGeneratedAPIPath)
 	})
@@ -153,12 +153,10 @@ func (t TypeScript) Publish(ctx context.Context, tag string) error {
 	npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
 registry=https://registry.npmjs.org/
 always-auth=true`, token)
-	if err = os.WriteFile("sdk/typescript/.npmrc", []byte(npmrc), 0o600); err != nil {
-		return err
-	}
 
 	// set version & publish
 	_, err = build.
+		WithMountedSecret(".npmrc", c.SetSecret("npmrc", npmrc)).
 		WithExec([]string{"npm", "version", version}).
 		WithExec([]string{"npm", "publish", "--access", "public"}).
 		Sync(ctx)

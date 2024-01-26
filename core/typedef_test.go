@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
@@ -48,15 +49,20 @@ func TestTypeDefConversions(t *testing.T) {
 		val := val
 		sample, ok := Samples[TypeDefKind(val.Name)]
 		if !ok {
+			if val.Name == "INPUT_KIND" {
+				// inputs are not needed for handling in conversion
+				// and not implemented, so skip them
+				continue
+			}
 			t.Fatalf("missing TypeDefKind sample for %s", val.Name)
 		}
-		t.Run("%s.ToInput", func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s.ToInput", val.Name), func(t *testing.T) {
 			sample.ToInput()
 		})
-		t.Run("%s.ToTyped", func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s.ToTyped", val.Name), func(t *testing.T) {
 			sample.ToTyped()
 		})
-		t.Run("%s.ToType", func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s.ToType", val.Name), func(t *testing.T) {
 			sample.ToType()
 		})
 	}

@@ -105,6 +105,8 @@ type ClientCallContext struct {
 	// metadata of that ongoing function call
 	ModID  *idproto.ID
 	FnCall *FunctionCall
+
+	ProgrockParent string
 }
 
 func (q *Query) ClientCallContext(clientDigest digest.Digest) (*ClientCallContext, bool) {
@@ -146,7 +148,13 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 	return nil
 }
 
-func (q *Query) RegisterFunctionCall(dgst digest.Digest, deps *ModDeps, modID *idproto.ID, call *FunctionCall) error {
+func (q *Query) RegisterFunctionCall(
+	dgst digest.Digest,
+	deps *ModDeps,
+	modID *idproto.ID,
+	call *FunctionCall,
+	progrockParent string,
+) error {
 	if dgst == "" {
 		return fmt.Errorf("cannot register function call with empty digest")
 	}
@@ -158,9 +166,10 @@ func (q *Query) RegisterFunctionCall(dgst digest.Digest, deps *ModDeps, modID *i
 		return nil
 	}
 	q.clientCallContext[dgst] = &ClientCallContext{
-		Deps:   deps,
-		ModID:  modID,
-		FnCall: call,
+		Deps:           deps,
+		ModID:          modID,
+		FnCall:         call,
+		ProgrockParent: progrockParent,
 	}
 	return nil
 }
