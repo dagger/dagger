@@ -177,11 +177,11 @@ func (m *Test) Fn(dir *Directory) *Directory {
 	`,
 				})
 
-			out, err := modGen.With(daggerCall("fn", "--dir", "/dir/subdir")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("fn", "--dir", "/dir/subdir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.TrimSpace(out), "bar.txt\nfoo.txt")
 
-			out, err = modGen.With(daggerCall("fn", "--dir", "file:///dir/subdir")).Stdout(ctx)
+			out, err = modGen.With(daggerCall("fn", "--dir", "file:///dir/subdir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.TrimSpace(out), "bar.txt\nfoo.txt")
 		})
@@ -234,6 +234,7 @@ func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
 					if tc.subpath == "" {
 						args = append(args, "--subpath", ".changes")
 					}
+					args = append(args, "entries")
 					out, err := modGen.With(daggerCall(args...)).Stdout(ctx)
 					require.NoError(t, err)
 
@@ -383,6 +384,15 @@ func (m *Minimal) Fn() []*Foo {
 			require.NoError(t, err)
 			require.Equal(t, expected, strings.TrimSpace(out))
 		})
+
+		t.Run("json", func(t *testing.T) {
+			t.Parallel()
+			out, err := modGen.
+				With(daggerCall("fn", "bar", "--json")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`, out)
+		})
 	})
 
 	t.Run("return container", func(t *testing.T) {
@@ -407,11 +417,15 @@ type Test struct {
 
 		logGen(ctx, t, modGen.Directory("."))
 
-		t.Run("print", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
 			t.Parallel()
-			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
+			ctr := modGen.With(daggerCall("ctr"))
+			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "hello world", strings.TrimSpace(out))
+			require.Empty(t, out)
+			out, err = ctr.Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "Container evaluated")
 		})
 
 		t.Run("output", func(t *testing.T) {
@@ -450,17 +464,22 @@ type Test struct {
 
 		logGen(ctx, t, modGen.Directory("."))
 
-		t.Run("print", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
 			t.Parallel()
-			out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
+			ctr := modGen.With(daggerCall("dir"))
+			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "bar.txt\nfoo.txt", strings.TrimSpace(out))
+			require.Empty(t, out)
+			out, err = ctr.Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "Directory evaluated")
 		})
 
 		t.Run("output", func(t *testing.T) {
 			t.Parallel()
 			modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
 			require.NoError(t, err)
+
 			entries, err := modGen.Directory("./outdir").Entries(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
@@ -499,11 +518,15 @@ type Test struct {
 
 		logGen(ctx, t, modGen.Directory("."))
 
-		t.Run("print", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
 			t.Parallel()
-			out, err := modGen.With(daggerCall("file")).Stdout(ctx)
+			ctr := modGen.With(daggerCall("file"))
+			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "foo", strings.TrimSpace(out))
+			require.Empty(t, out)
+			out, err = ctr.Stderr(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "File evaluated")
 		})
 
 		t.Run("output", func(t *testing.T) {
@@ -537,6 +560,7 @@ type Test struct {
 `,
 			})
 
+		// adding sync disables the default behavior of **not** printing the ID
 		// just verify it works without error for now
 		_, err := modGen.With(daggerCall("ctr", "sync")).Stdout(ctx)
 		require.NoError(t, err)
