@@ -23,12 +23,12 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"github.com/vito/progrock"
 )
 
 type InitializeArgs struct {
 	BuildkitClient *buildkit.Client
 	Platform       specs.Platform
-	ProgSockPath   string
 	OCIStore       content.Store
 	LeaseManager   *leaseutil.Manager
 	Auth           *auth.RegistryAuthProvider
@@ -47,7 +47,6 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	root := core.NewRoot()
 	root.Buildkit = params.BuildkitClient
 	root.Services = svcs
-	root.ProgrockSocketPath = params.ProgSockPath
 	root.Platform = core.Platform(params.Platform)
 	root.Secrets = params.Secrets
 	root.OCIStore = params.OCIStore
@@ -94,6 +93,12 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest), http.StatusInternalServerError)
 		return
 	}
+
+	rec := progrock.FromContext(ctx)
+	if callContext.ProgrockParent != "" {
+		rec = rec.WithParent(callContext.ProgrockParent)
+	}
+	ctx = progrock.ToContext(ctx, rec)
 
 	schema, err := callContext.Deps.Schema(ctx)
 	if err != nil {
@@ -151,6 +156,8 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	s.root.MuxEndpoints(mux)
+
+	r = r.WithContext(ctx)
 
 	var handler http.Handler = mux
 	handler = flushAfterNBytes(buildkit.MaxFileContentsChunkSize)(handler)
