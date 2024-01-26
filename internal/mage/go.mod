@@ -11,7 +11,7 @@ require (
 	github.com/moby/buildkit v0.13.0-beta1.0.20240118111536-9d84cdcda004
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/mod v0.14.0
-	golang.org/x/sync v0.5.0
+	golang.org/x/sync v0.6.0
 )
 
 require (
