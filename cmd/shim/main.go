@@ -29,7 +29,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/vito/progrock"
 	"golang.org/x/sys/unix"
 )
 
@@ -443,6 +442,7 @@ func setupBundle() int {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
 			// keep the env var; we use it at runtime
 			keepEnv = append(keepEnv, env)
+
 			// provide the server id to connect back to
 			if execMetadata.ServerID == "" {
 				fmt.Fprintln(os.Stderr, "missing server id")
@@ -463,17 +463,6 @@ func setupBundle() int {
 				Type:        "bind",
 				Options:     []string{"rbind", "ro"},
 				Source:      "/usr/local/bin/dagger",
-			})
-			// also need the progsock path for forwarding progress
-			if execMetadata.ProgSockPath == "" {
-				fmt.Fprintln(os.Stderr, "missing progsock path")
-				return errorExitCode
-			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.progrock.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      execMetadata.ProgSockPath,
 			})
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 		case strings.HasPrefix(env, aliasPrefix):
@@ -671,12 +660,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if ok {
 		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
 	}
-
-	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
-	if err != nil {
-		return fmt.Errorf("error connecting to progrock: %w", err)
-	}
-	clientParams.ProgrockWriter = progW
 
 	sess, ctx, err := client.Connect(ctx, clientParams)
 	if err != nil {

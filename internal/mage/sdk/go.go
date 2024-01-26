@@ -43,7 +43,7 @@ func (t Go) Lint(ctx context.Context) error {
 		return err
 	}
 
-	return util.LintGeneratedCode(func() error {
+	return util.LintGeneratedCode("sdk:go:generate", func() error {
 		return t.Generate(ctx)
 	}, goGeneratedAPIPath)
 }

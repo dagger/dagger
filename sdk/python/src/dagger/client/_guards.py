@@ -17,7 +17,7 @@ IDScalar = Annotated[Scalar, Is[lambda obj: type(obj).__name__.endswith("ID")]]
 
 @typing.runtime_checkable
 class HasID(typing.Protocol):
-    async def id(self) -> IDScalar:  # noqa: A003
+    async def id(self) -> IDScalar:
         ...
 
 
