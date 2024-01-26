@@ -385,7 +385,6 @@ func (sdk *goSDK) baseWithCodegen(ctx context.Context, mod *core.Module, sourceD
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
 					"--module", ".",
-					"--propagate-logs=true",
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},
 			},

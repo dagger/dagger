@@ -86,7 +86,13 @@ func withEngineAndTUI(
 			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
 		}
 
-		params.ProgrockWriter = console.NewWriter(os.Stderr, opts...)
+		progW := console.NewWriter(os.Stderr, opts...)
+		progW, engineErr := progrockTee(progW)
+		if engineErr != nil {
+			return engineErr
+		}
+
+		params.ProgrockWriter = progW
 
 		params.EngineNameCallback = func(name string) {
 			fmt.Fprintln(os.Stderr, "Connected to engine", name)

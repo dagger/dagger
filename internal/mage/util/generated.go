@@ -17,7 +17,7 @@ import (
 // 2) Generate again
 // 3) Compare
 // 4) Restore original generated code.
-func LintGeneratedCode(fn func() error, files ...string) error {
+func LintGeneratedCode(target string, fn func() error, files ...string) error {
 	newFiles := make([]string, 0, len(files))
 	for _, file := range files {
 		err := filepath.WalkDir(file, func(path string, d fs.DirEntry, err error) error {
@@ -65,7 +65,7 @@ func LintGeneratedCode(fn func() error, files ...string) error {
 		if original != string(updated) {
 			edits := myers.ComputeEdits(span.URIFromPath(f), original, string(updated))
 			diff := fmt.Sprint(gotextdiff.ToUnified(f, f, original, edits))
-			return fmt.Errorf("generated api mismatch. please run `mage sdk:all:generate`:\n%s", diff)
+			return fmt.Errorf("Generated code mismatch. Please run `%s`:\n%s", target, diff)
 		}
 	}
 

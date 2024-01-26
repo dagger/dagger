@@ -3932,6 +3932,17 @@ func (r *Module) SourceDirectorySubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Retrieves the module with the given description
+func (r *Module) WithDescription(description string) *Module {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This module plus the given Interface type and associated functions
 func (r *Module) WithInterface(iface *TypeDef) *Module {
 	assertNotNil("iface", iface)

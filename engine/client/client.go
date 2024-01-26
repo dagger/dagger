@@ -166,9 +166,15 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	initGroup := progrock.FromContext(ctx).WithGroup("init", progrock.Weak())
+	// sneakily using ModuleCallerDigest here because it seems nicer than just
+	// making something up, and should be pretty much 1:1 I think (even
+	// non-cached things will have a different caller digest each time)
+	connectDigest := params.ModuleCallerDigest
+	if connectDigest == "" {
+		connectDigest = digest.FromString("_root") // arbitrary
+	}
 
-	loader := initGroup.Vertex("starting-engine", "connect")
+	loader := c.Recorder.Vertex(connectDigest, "connect")
 	defer func() {
 		loader.Done(rerr)
 	}()
@@ -261,7 +267,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
 
 	// host=>container networking
-	c.Recorder = progrock.NewRecorder(progMultiW)
 	bkSession.Allow(session.NewTunnelListenerAttachable(c.Recorder))
 	ctx = progrock.ToContext(ctx, c.Recorder)
 

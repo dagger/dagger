@@ -489,9 +489,6 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 // loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
 	var res struct {
-		Mod struct {
-			Name string
-		}
 		TypeDefs []*modTypeDef
 	}
 
@@ -549,9 +546,6 @@ fragment FieldParts on FieldTypeDef {
 }
 
 query TypeDefs($module: ModuleID!) {
-	mod: loadModuleFromID(id: $module) {
-		name
-	}
 	typeDefs: currentTypeDefs {
 		kind
 		optional
@@ -597,7 +591,12 @@ query TypeDefs($module: ModuleID!) {
 		return nil, fmt.Errorf("query module objects: %w", err)
 	}
 
-	modDef := &moduleDef{Name: res.Mod.Name}
+	name, err := mod.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get module name: %w", err)
+	}
+
+	modDef := &moduleDef{Name: name}
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
 		case dagger.ObjectKind:
