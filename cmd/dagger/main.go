@@ -39,6 +39,9 @@ func init() {
 		runCmd,
 		moduleCmd,
 		sessionCmd(),
+		downloadCmd,
+		upCmd,
+		shellCmd,
 	)
 
 	funcCmds.AddParent(rootCmd)
