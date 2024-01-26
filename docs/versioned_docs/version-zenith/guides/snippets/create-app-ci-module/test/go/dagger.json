@@ -1,0 +1,7 @@
+{
+  "name": "my-module",
+  "sdk": "go",
+  "dependencies": [
+    "github.com/quartz-technology/daggerverse/node/typescript@f9338ce6a760cc6cc8cc04e5fa39228f029ea27e"
+  ]
+}

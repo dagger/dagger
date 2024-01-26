@@ -54,10 +54,6 @@
             },
             {
               "type": "doc",
-              "id": "developer/go/test-build-publish"
-            },
-            {
-              "type": "doc",
               "id": "developer/go/advanced-programming"
             },
             {
@@ -106,6 +102,11 @@
           "id": "developer/troubleshooting"
         }
       ]
+    },
+    {
+      "type": "doc",
+      "id": "guides",
+      "label": "Guides"
     },
     {
       "type": "category",

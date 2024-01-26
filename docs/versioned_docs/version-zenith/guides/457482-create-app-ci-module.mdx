@@ -1,0 +1,338 @@
+---
+slug: /guides/457482/create-app-ci-module
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+authors: ["Erik Sipsma"]
+date: "2024-01-25"
+---
+
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Standardize Your Application's CI Functions as a Dagger Module
+
+<PartialExperimentalDocs />
+
+## Introduction
+
+Dagger lets you encapsulate all your project's CI tasks and workflows into functions, written in your programming language of choice, and then call those functions, either locally from your development environment or remotely on your CI provider.
+
+This gives teams standard, consistent tooling with reduced host environment requirements; you only need the Dagger CLI and the ability to run containers (no local dependencies like Golang, Python, Node, etc). Local and remote CI environments achieve parity; developers can run CI test, build and deployment pipelines locally and see the results almost instantly, and there are fewer surprises when pushing final code. A standard, cross-language toolkit enables new team members to become productive faster and reduce friction in cross-team collaboration.
+
+This guide walks you through the process of creating a Dagger module encapsulating common CI functions for an application: testing, building, and publishing it. You will learn how to:
+
+- Initialize a new Dagger module as part of your application codebase
+- Import modules from the Daggerverse to benefit from pre-packaged functionality
+- Connect imported modules with your own Dagger functions
+- Call Dagger functions to test, build, publish and run your application locally
+- Understand how to work with containers as function input arguments and return values
+
+## Requirements
+
+This guide assumes that:
+
+- You know the basics of calling and writing Dagger modules. If not, refer to the [user quickstart](../user/quickstart/index.mdx) and the [programming quickstart](../developer/go/525021-quickstart.mdx).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../user/329058-install.mdx).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have a Node.js Web application. If not, follow the steps in Appendix A to [create an example Node.js application](#appendix-a-create-an-example-application).
+
+## Step 1: Initialize a new module
+
+The example module used in this guide builds, tests and publishes a Node.js application.
+
+Begin by running `dagger mod init` in your application directory to bootstrap a new module:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```sh
+dagger mod init --name=my-module --sdk=go
+```
+
+This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
+
+</TabItem>
+<TabItem value="Python">
+
+```sh
+dagger mod init --name=my-module --sdk=python
+```
+
+This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
+
+</TabItem>
+</Tabs>
+
+## Step 2: Add a function to build the application base image
+
+The first step is to add a function to build a base image containing the application source code and runtime. This base image will serve as an input to other functions.
+
+Since the application is a Node.js application, it's convenient to use the [`node` module](https://daggerverse.dev/mod/github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f) from the [Daggerverse](https://daggerverse.dev), which provides a set of ready-made functions to manage a Node.js project.
+
+:::note
+Dagger exposes every module using a language-agnostic HTTP API. So, even though the [`node` module](https://daggerverse.dev/mod/github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f) is written in TypeScript, you can transparently call its functions from your module written in Go, Python or any other supported language.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+1. Add the `node` module as a dependency:
+
+    ```shell
+    dagger mod install github.com/quartz-technology/daggerverse/node/typescript
+    ```
+
+1. Update the generated `main.go` file with the following code:
+
+    ```go file=./snippets/create-app-ci-module/base/go/main.go
+    ```
+
+    This function does the following:
+      - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+      - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+      - It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
+        - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.Host().Directory()`.
+        - The `dag.Host().Directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+      - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+</TabItem>
+<TabItem value="Python">
+1. Add the `node` module as a dependency:
+
+    ```shell
+    dagger mod install github.com/quartz-technology/daggerverse/node/typescript
+    ```
+
+1. Update the generated `src/main.py` file with the following code:
+
+    ```python file=./snippets/create-app-ci-module/base/python/main.py
+    ```
+
+    This function does the following:
+      - It calls the `node` module's `with_version()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+      - It calls the module's `Node.with_npm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+      - It calls the module's `Node.with_source()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
+        - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.host().directory()`.
+        - The `dag.host().directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+      - It calls the module's `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+</TabItem>
+</Tabs>
+
+:::note
+`dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
+:::
+
+## Step 3: Add a function to test the application
+
+The return value of the `buildBase()` function is a `Node` object with the application source code, Node.js runtime and cahe volumes. This is everything needed to test, build and publish the application.
+
+Add a new function that runs tests for the example application, by executing the `test:unit run` command:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/create-app-ci-module/test/go/main.go
+```
+
+This function does the following:
+
+- It calls the `buildBase()` function to obtain a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.Run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
+- It uses the `Container.Stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+
+:::note
+Since the `Test()` function uses the `Context` type, the module imports the `context` package.
+:::
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/create-app-ci-module/test/python/main.py
+```
+
+This function does the following:
+
+- It calls the `build_base()` function to obtain a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
+- It uses the `Container.stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+
+</TabItem>
+</Tabs>
+
+Try the function by running it as below:
+
+```shell
+dagger call test
+```
+
+Here's an example of the output you will see:
+
+```shell
+✔ dagger call test [1m14.2s]
+┃
+┃ > myapp@0.0.0 test:unit
+┃ > vitest run
+┃
+┃  RUN  v1.1.0 /src
+┃
+┃  ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 65ms
+┃
+┃  Test Files  1 passed (1)
+┃       Tests  1 passed (1)
+┃    Start at  15:46:12
+┃    Duration  8.85s (transform 751ms, setup 0ms, collect 1.04s, tests 65ms, environment 4.51s, prepare 1.19s)
+```
+
+## Step 4: Add a function to build the application
+
+If your application passes all its tests, the typical next step is to build it.
+
+Add a new function that creates a production build of the example application:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/create-app-ci-module/build/go/main.go
+```
+
+This function does the following:
+
+- It calls the `buildBase()` function to obtain a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It obtains a reference to the `dist/` directory in the container with the `Container.Directory()` function. This function returns a `Directory` object.
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/create-app-ci-module/build/python/main.py
+```
+
+This function does the following:
+
+- It calls the `build_base()` function to obtain a `Node` object with the application source code, Node.js runtime and cache volumes.
+- It calls the module's `Node.build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It obtains a reference to the `dist/` directory in the container with the `container.directory()` function. This function returns a `Directory` object.
+
+</TabItem>
+</Tabs>
+
+:::note
+The `npm run build` command is appropriate for the example Vue application used in this guide, but other applications may use different commands. Modify your function code accordingly.
+:::
+
+Try the function by running it as below:
+
+```shell
+dagger call build
+```
+
+Here's an example of the output you will see:
+
+```shell
+✔ dagger call build [1m32.7s]
+┃ assets
+┃ favicon.ico
+┃ index.html
+```
+
+## Step 5: Add a function to publish the application image
+
+At this point, your Dagger module has functions to test and build the application. However, the Dagger API and SDKs also have native support to publish container images to remote registries.
+
+Update the module and add new functions to copy the built application into an NGINX web server container image and deliver the result to [ttl.sh](https://ttl.sh), an ephemeral Docker registry:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/create-app-ci-module/publish/go/main.go
+```
+
+This code listing adds two functions:
+
+- The `Package()` function calls the `dag` client's `Container().From()` function to initialize a new container from a base image - here, the `nginx:1.25-alpine` image.The `From()` function returns a new `Container` object with the result.
+    - It uses the `Container.WithDirectory()` function to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+    - It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.23-alpine` image) and return a revised `Container`.
+- The `Publish()` function calls the `Package()` function to obtain the container image and then calls the built-in `Container.Publish()` function to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/create-app-ci-module/publish/python/main.py
+```
+
+This code listing adds two functions:
+
+- The `package()` function calls the `dag` client's `container().from_()` function to initialize a new container from a base image - here, the `nginx:1.25-alpine` image.The `from_()` function returns a new `Container` object with the result.
+    - It uses the `Container.with_directory()` function to write the `Directory` returned by the `build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+    - It uses the `Container.with_exposed_port()` function to expose port 80 (the default NGINX port in the `nginx:1.23-alpine` image) and return a revised `Container`.
+- The `publish()` function calls the `package()` function to obtain the container image and then calls the built-in `Container.publish()` function to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+
+</TabItem>
+</Tabs>
+
+Try the function by running the command below:
+
+```shell
+dagger call publish
+```
+
+Here's an example of the output you will see:
+
+```shell
+✔ dagger call publish [5m32.6s]
+┃ ttl.sh/myapp-6263158:10m@sha256:802f4edeb30b47b5ab4c52d8cccd9d18dd9f4c0d6a0a6b8015926d0290312bb0
+```
+
+## Step 6: Add a function to run the application as a local service
+
+Dagger functions can return services as well as containers. These services can then be started in your local environment and have any exposed ports forwarded to the host machine. This has many potential use cases, such as manually testing web applications or database services directly from the host browser or host system.
+
+In order for this to work, the container image used by the service must have one or more exposed ports defined. This is already implemented in the functions shown in the previous section. So, update the module and add a new function to return the built container image as a service:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/create-app-ci-module/serve/go/main.go
+```
+
+This function simply calls the `Package()` function to obtain the container image and then returns it as a service using the `Container.AsService()` function.
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/create-app-ci-module/serve/python/main.py
+```
+
+This function simply calls the `package()` function to obtain the container image and then returns it as a service using the `Container.as_service()` function.
+
+</TabItem>
+</Tabs>
+
+Try the function by running the command below:
+
+```shell
+dagger call serve up --ports 8080:80
+```
+
+You should now be able to access the application by browsing to http://localhost:8080 on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
+
+:::tip
+The `--ports 8080:80` argument results in container port 80 being mapped to host port 8080. An alternative is to use the `--native` argument, which results in the exposed ports on the container being auto-mapped to the corresponding ports on the host.
+:::
+
+## Conclusion
+
+This guide walked you through the process of creating a Dagger module to encapsulate common CI pipeline operations for an application. It explained how to create a module, add functions to it, and work with function inputs and outputs. It also demonstrated how to use modules from the Daggerverse to speed up your own module development, by reusing functionality developed by the Dagger community.
+
+Continue your journey into Dagger with the following resources:
+
+- The [Daggerverse](https://daggerverse.dev), an online catalog of Dagger modules for you to use and learn from
+- Guide on [publishing modules to the Daggerverse](../developer/821742-publishing-modules.mdx)
+
+## Appendix A: Create an example application
+
+This tutorial assumes that you have a Node.js Web application. If not, create a simple TypeScript application using the Vue framework. Run the command below, answer "Yes" to all the prompts and select "Cypress" as the testing tool:
+
+```shell
+npm create vue@latest myapp
+```
