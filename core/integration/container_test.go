@@ -609,6 +609,23 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "2:11", res.Container.From.WithUser.User)
 		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
+
+	t.Run("stdin", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withUser(name: "daemon") {
+						withExec(args: ["sh"], stdin: "whoami") {
+							stdout
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.WithExec.Stdout)
+	})
 }
 
 func TestContainerExecWithoutUser(t *testing.T) {
