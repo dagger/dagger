@@ -27,24 +27,31 @@ func gqlObjectName(name string) string {
 	return strcase.ToCamel(name)
 }
 
-func namespaceObject(objName, namespace string) string {
-	gqlObjName := gqlObjectName(objName)
-	if rest := strings.TrimPrefix(gqlObjName, gqlObjectName(namespace)); rest != gqlObjName {
+func namespaceObject(
+	objOriginalName string,
+	modFinalName string,
+	modOriginalName string,
+) string {
+	objOriginalName = gqlObjectName(objOriginalName)
+	if rest := strings.TrimPrefix(objOriginalName, gqlObjectName(modOriginalName)); rest != objOriginalName {
 		if len(rest) == 0 {
-			// objName equals namespace, don't namespace this
-			return gqlObjName
+			// Main module object with same original name as module original name, give it
+			// the same name as the module's final name
+			return gqlObjectName(modFinalName)
 		}
 		// we have this case check here to check for a boundary
 		// e.g. if objName="Postman" and namespace="Post", then we should still namespace
 		// this to "PostPostman" instead of just going for "Postman" (but we should do that
 		// if objName="PostMan")
 		if 'A' <= rest[0] && rest[0] <= 'Z' {
-			// objName has namespace prefixed, don't namespace this
-			return gqlObjName
+			// objName has original module name prefixed, just make sure it has the final
+			// module name as prefix
+			return gqlObjectName(modFinalName + rest)
 		}
 	}
 
-	return gqlObjectName(namespace + "_" + objName)
+	// need to namespace object with final module name
+	return gqlObjectName(modFinalName + "_" + objOriginalName)
 }
 
 func gqlFieldName(name string) string {

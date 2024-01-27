@@ -1494,8 +1494,8 @@ type Module {
 
   """Update the module configuration to use the given dependencies."""
   withDependencies(
-    """The module sources of dependencies to use."""
-    dependencies: [ModuleSourceID!]!
+    """The dependency modules to install."""
+    dependencies: [ModuleDependencyID!]!
   ): Module!
 
   """Retrieves the module with the given description"""
@@ -1533,6 +1533,7 @@ type Module {
 type ModuleDependency {
   """A unique identifier for this ModuleDependency."""
   id: ModuleDependencyID!
+  name: String!
   source: ModuleSource!
 }
 
@@ -1561,6 +1562,12 @@ type ModuleSource {
 
   """A human readable ref string representation of this module source."""
   asString: String!
+
+  """TODO"""
+  directory(
+    """TODO"""
+    path: String = "/"
+  ): Directory!
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
@@ -1879,6 +1886,15 @@ type Query {
 
   """Create a new module."""
   module: Module!
+
+  """TODO"""
+  moduleDependency(
+    """TODO"""
+    name: String = ""
+
+    """TODO"""
+    source: ModuleSourceID!
+  ): ModuleDependency!
 
   """Create a new module source instance from a source ref string."""
   moduleSource(

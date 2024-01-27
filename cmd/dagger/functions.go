@@ -384,7 +384,8 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
-	if !modConf.Exists {
+	// TODO: update to allow -m on sdk-less modules
+	if !modConf.ModuleSourceConfigExists {
 		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
 	}
 	load := vtx.Task("loading module")

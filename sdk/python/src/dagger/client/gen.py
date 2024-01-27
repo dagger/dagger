@@ -4338,6 +4338,21 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     @typecheck
+    def directory(self, *, path: str | None = "/") -> Directory:
+        """TODO
+
+        Parameters
+        ----------
+        path:
+            TODO
+        """
+        _args = [
+            Arg("path", path, "/"),
+        ]
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    @typecheck
     async def id(self) -> ModuleSourceID:
         """A unique identifier for this ModuleSource.
 

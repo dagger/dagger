@@ -3962,6 +3962,12 @@ pub struct ModuleSource {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceDirectoryOpts<'a> {
+    /// TODO
+    #[builder(setter(into, strip_option), default)]
+    pub path: Option<&'a str>,
+}
 impl ModuleSource {
     pub fn as_git_source(&self) -> GitModuleSource {
         let query = self.selection.select("asGitSource");
@@ -3992,6 +3998,35 @@ impl ModuleSource {
     pub async fn as_string(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("directory");
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// TODO
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts<'a>(&self, opts: ModuleSourceDirectoryOpts<'a>) -> Directory {
+        let mut query = self.selection.select("directory");
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
+        }
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// A unique identifier for this ModuleSource.
     pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {

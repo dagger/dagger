@@ -25,6 +25,9 @@ type Module struct {
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 
+	// TODO:
+	OriginalName string
+
 	// The doc string of the module, if any
 	Description string `field:"true" doc:"The doc string of the module, if any"`
 
@@ -32,6 +35,7 @@ type Module struct {
 	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 
 	// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load.
+	// TODO: rename to GeneratedSourceRootDirectory?
 	GeneratedSourceDirectory dagql.Instance[*Directory]
 
 	// The subpath of the GeneratedSourceDirectory that contains the actual source code of the module (which may be a subdir when dagger.json is a parent dir).
@@ -81,6 +85,7 @@ func (*Module) TypeDescription() string {
 
 type ModuleDependency struct {
 	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the dependency module."`
+	Name   string                        `field:"true" name:"name" doc:"The name of the dependency module."`
 }
 
 func (*ModuleDependency) Type() *ast.Type {
@@ -121,6 +126,9 @@ func (mod *Module) WithName(ctx context.Context, name string) (*Module, error) {
 
 	mod = mod.Clone()
 	mod.NameField = name
+	if mod.OriginalName == "" {
+		mod.OriginalName = name
+	}
 	return mod, nil
 }
 
@@ -137,7 +145,7 @@ func (mod *Module) WithSDK(ctx context.Context, sdk string) (*Module, error) {
 func (mod *Module) WithDependencies(
 	ctx context.Context,
 	srv *dagql.Server,
-	dependencies []dagql.Instance[*ModuleSource],
+	dependencies []*ModuleDependency,
 ) (*Module, error) {
 	if mod.InstanceID != nil {
 		return nil, fmt.Errorf("cannot update dependencies on initialized module")
@@ -150,14 +158,17 @@ func (mod *Module) WithDependencies(
 
 	// resolve the dependency relative to this module's source
 	var eg errgroup.Group
-	for i, depSrc := range dependencies {
-		i, depSrc := i, depSrc
+	for i, dep := range dependencies {
+		if dep.Source.Self == nil {
+			return nil, fmt.Errorf("dependency %d has no source", i)
+		}
+		i, dep := i, dep
 		eg.Go(func() error {
-			err := srv.Select(ctx, mod.Source, &dependencies[i],
+			err := srv.Select(ctx, mod.Source, &dependencies[i].Source,
 				dagql.Selector{
 					Field: "resolveDependency",
 					Args: []dagql.NamedInput{
-						{Name: "dep", Value: dagql.NewID[*ModuleSource](depSrc.ID())},
+						{Name: "dep", Value: dagql.NewID[*ModuleSource](dep.Source.ID())},
 					},
 				},
 			)
@@ -174,16 +185,16 @@ func (mod *Module) WithDependencies(
 	// figure out the set of deps, keyed by their symbolic ref string, which de-dupes
 	// equivalent sources at different versions, preferring the version provided
 	// in the dependencies arg here
-	depSet := make(map[string]dagql.Instance[*ModuleSource])
-	for _, depCfg := range mod.DependencyConfig {
-		symbolic, err := depCfg.Source.Self.Symbolic()
+	depSet := make(map[string]*ModuleDependency)
+	for _, dep := range mod.DependencyConfig {
+		symbolic, err := dep.Source.Self.Symbolic()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get symbolic source ref: %w", err)
 		}
-		depSet[symbolic] = depCfg.Source
+		depSet[symbolic] = dep
 	}
 	for _, newDep := range dependencies {
-		symbolic, err := newDep.Self.Symbolic()
+		symbolic, err := newDep.Source.Self.Symbolic()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get symbolic source ref: %w", err)
 		}
@@ -192,7 +203,7 @@ func (mod *Module) WithDependencies(
 
 	mod.DependencyConfig = make([]*ModuleDependency, 0, len(depSet))
 	for _, dep := range depSet {
-		mod.DependencyConfig = append(mod.DependencyConfig, &ModuleDependency{Source: dep})
+		mod.DependencyConfig = append(mod.DependencyConfig, dep)
 	}
 
 	refStrs := make([]string, 0, len(mod.DependencyConfig))
@@ -207,6 +218,24 @@ func (mod *Module) WithDependencies(
 		return refStrs[i] < refStrs[j]
 	})
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	for _, dep := range mod.DependencyConfig {
+		refStr, err := dep.Source.Self.RefString()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
+		}
+		slog.Debug("module dependency",
+			"dep", refStr,
+			"configName", dep.Name,
+		)
+	}
+
 	mod.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependencyConfig))
 	eg = errgroup.Group{}
 	for i, depCfg := range mod.DependencyConfig {
@@ -215,6 +244,12 @@ func (mod *Module) WithDependencies(
 			err := srv.Select(ctx, depCfg.Source, &mod.DependenciesField[i],
 				dagql.Selector{
 					Field: "asModule",
+				},
+				dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.NewString(depCfg.Name)},
+					},
 				},
 				dagql.Selector{
 					Field: "initialize",
@@ -231,6 +266,12 @@ func (mod *Module) WithDependencies(
 			err = fmt.Errorf("module %s has a circular dependency: %w", mod.NameField, err)
 		}
 		return nil, fmt.Errorf("failed to load updated dependencies: %w", err)
+	}
+	// fill in any missing names if needed
+	for i, dep := range mod.DependencyConfig {
+		if dep.Name == "" {
+			dep.Name = mod.DependenciesField[i].Self.Name()
+		}
 	}
 
 	// Check for loops by walking the DAG of deps, seeing if we ever encounter this mod.
@@ -624,7 +665,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if !ok {
-			obj.Name = namespaceObject(obj.Name, mod.Name())
+			obj.Name = namespaceObject(obj.OriginalName, mod.Name(), mod.OriginalName)
 		}
 
 		for _, field := range obj.Fields {
@@ -653,7 +694,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if !ok {
-			iface.Name = namespaceObject(iface.Name, mod.Name())
+			iface.Name = namespaceObject(iface.OriginalName, mod.Name(), mod.OriginalName)
 		}
 
 		for _, fn := range iface.Functions {
@@ -748,11 +789,6 @@ func (mod Module) Clone() *Module {
 
 	if mod.Source.Self != nil {
 		cp.Source.Self = mod.Source.Self.Clone()
-	}
-
-	if mod.Description != nil {
-		cp.Description = new(string)
-		*cp.Description = *mod.Description
 	}
 
 	if mod.GeneratedSourceDirectory.Self != nil {

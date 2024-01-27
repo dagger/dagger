@@ -177,7 +177,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module
-	if objDef.Name == gqlObjectName(mod.Name()) {
+	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}

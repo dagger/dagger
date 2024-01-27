@@ -320,6 +320,12 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
+// TODO
+func ModuleDependency(source *dagger.ModuleSource, opts ...dagger.ModuleDependencyOpts) *dagger.ModuleDependency {
+	client := initClient()
+	return client.ModuleDependency(source, opts...)
+}
+
 // Create a new module source instance from a source ref string.
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()

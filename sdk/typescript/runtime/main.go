@@ -3,14 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/iancoleman/strcase"
 )
 
-type TypeScriptSdk struct{}
+func New(
+	// +optional
+	sdkSourceDir *Directory,
+) *TypeScriptSdk {
+	return &TypeScriptSdk{
+		SDKSourceDir: sdkSourceDir,
+	}
+}
+
+type TypeScriptSdk struct {
+	SDKSourceDir *Directory
+}
 
 const (
 	ModSourceDirPath         = "/src"
@@ -30,11 +39,18 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, err
 	}
 
+	subPath, err := modSource.Subpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %v", err)
+	}
+
+	entrypointPath := path.Join(ModSourceDirPath, subPath, EntrypointExecutablePath)
+	tsConfigPath := path.Join(ModSourceDirPath, subPath, "tsconfig.json")
 	return ctr.
 		// Install dependencies
 		WithExec([]string{"npm", "install"}).
-		WithMountedFile(EntrypointExecutablePath, ctr.Directory("/opt/runtime/bin").File(EntrypointExecutableFile)).
-		WithEntrypoint([]string{"tsx", EntrypointExecutablePath}), nil
+		WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
+		WithEntrypoint([]string{"tsx", "--tsconfig", tsConfigPath, entrypointPath}), nil
 }
 
 // Codegen returns the generated API client based on user's module
@@ -72,15 +88,11 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 
 	ctr := t.Base("").
 		// Add sdk directory without runtime nor codegen binary
-		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
-			Exclude: []string{"runtime", "codegen"},
-		})).
+		WithMountedDirectory(sdkSrc, t.SDKSourceDir).
 		// Add codegen binary into a special path
-		WithFile(codegenBinPath, dag.Host().File("/src/codegen")).
+		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Add template directory
-		WithDirectory("/opt", dag.Host().Directory(root(), HostDirectoryOpts{
-			Include: []string{"runtime/template", "runtime/bin"},
-		})).
+		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
 		// Mount users' module
 		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
@@ -115,7 +127,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// if it does: add sdk as dev dependency
 		// if not: copy the template and replace QuickStart with the module name
 		WithExec([]string{"sh", "-c",
-			"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/runtime/bin/__tsconfig.updator.ts; else cp -r /opt/runtime/template/*.json .; fi",
+			"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
 		},
 			ContainerWithExecOpts{SkipEntrypoint: true},
 		).
@@ -123,7 +135,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// If not, add the template file and replace QuickStart with the module name
 		// This cover the case where there's a package.json but no src directory.
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/runtime/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
+			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
 			ContainerWithExecOpts{SkipEntrypoint: true}), nil
 }
 
@@ -137,14 +149,4 @@ func (t *TypeScriptSdk) Base(version string) *Container {
 		From(fmt.Sprintf("node:%s", version)).
 		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version)).
 		WithoutEntrypoint()
-}
-
-// TODO: fix .. restriction
-func root() string {
-	workdir, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	return filepath.Join(workdir, "..")
 }

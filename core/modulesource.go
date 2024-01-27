@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/moby/buildkit/solver/pb"
@@ -132,6 +134,37 @@ func (src *ModuleSource) Symbolic() (string, error) {
 	default:
 		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
 	}
+}
+
+func (src *ModuleSource) ModuleName(ctx context.Context) (string, error) {
+	if src.RootDirectory.Self == nil {
+		return "", nil
+	}
+
+	sourceSubpath, err := src.Subpath()
+	if err != nil {
+		return "", fmt.Errorf("failed to get module source path: %w", err)
+	}
+
+	var modCfg modules.ModuleConfig
+	configFile, err := src.RootDirectory.Self.File(ctx, filepath.Join("/", sourceSubpath, modules.Filename))
+	if err != nil {
+		// no configuration for this module yet, so no name
+		return "", nil
+	}
+	configBytes, err := configFile.Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to read module config file: %w", err)
+	}
+
+	if err := json.Unmarshal(configBytes, &modCfg); err != nil {
+		return "", fmt.Errorf("failed to decode module config: %w", err)
+	}
+	if err := modCfg.Validate(); err != nil {
+		return "", fmt.Errorf("invalid module config: %w", err)
+	}
+
+	return modCfg.Name, nil
 }
 
 type LocalModuleSource struct {

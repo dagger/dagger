@@ -714,6 +714,13 @@ export type ModuleDependencyID = string & { __ModuleDependencyID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
+export type ModuleSourceDirectoryOpts = {
+  /**
+   * TODO
+   */
+  path?: string
+}
+
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -5390,6 +5397,23 @@ export class ModuleSource extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * TODO
+   * @param opts.path TODO
+   */
+  directory = (opts?: ModuleSourceDirectoryOpts): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "directory",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {

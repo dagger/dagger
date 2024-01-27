@@ -4114,7 +4114,7 @@ func (r *Module) Source() *ModuleSource {
 }
 
 // Update the module configuration to use the given dependencies.
-func (r *Module) WithDependencies(dependencies []*ModuleSource) *Module {
+func (r *Module) WithDependencies(dependencies []*ModuleDependency) *Module {
 	q := r.q.Select("withDependencies")
 	q = q.Arg("dependencies", dependencies)
 
@@ -4198,7 +4198,8 @@ type ModuleDependency struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id *ModuleDependencyID
+	id   *ModuleDependencyID
+	name *string
 }
 
 // A unique identifier for this ModuleDependency.
@@ -4239,6 +4240,18 @@ func (r *ModuleDependency) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+func (r *ModuleDependency) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 func (r *ModuleDependency) Source() *ModuleSource {
@@ -4309,6 +4322,28 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// ModuleSourceDirectoryOpts contains options for ModuleSource.Directory
+type ModuleSourceDirectoryOpts struct {
+	// TODO
+	Path string
+}
+
+// TODO
+func (r *ModuleSource) Directory(opts ...ModuleSourceDirectoryOpts) *Directory {
+	q := r.q.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+	}
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A unique identifier for this ModuleSource.
@@ -5280,6 +5315,30 @@ func (r *Client) Module() *Module {
 	q := r.q.Select("module")
 
 	return &Module{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ModuleDependencyOpts contains options for Client.ModuleDependency
+type ModuleDependencyOpts struct {
+	// TODO
+	Name string
+}
+
+// TODO
+func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependencyOpts) *ModuleDependency {
+	assertNotNil("source", source)
+	q := r.q.Select("moduleDependency")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `name` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Name) {
+			q = q.Arg("name", opts[i].Name)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &ModuleDependency{
 		q: q,
 		c: r.c,
 	}

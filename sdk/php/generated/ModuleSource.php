@@ -44,6 +44,18 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * TODO
+     */
+    public function directory(?string $path = '/'): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        if (null !== $path) {
+        $innerQueryBuilder->setArgument('path', $path);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this ModuleSource.
      */
     public function id(): ModuleSourceId

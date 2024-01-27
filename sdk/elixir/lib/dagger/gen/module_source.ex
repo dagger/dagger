@@ -52,6 +52,23 @@ defmodule Dagger.ModuleSource do
   )
 
   (
+    @doc "TODO\n\n\n\n## Optional Arguments\n\n* `path` - TODO"
+    @spec directory(t(), keyword()) :: Dagger.Directory.t()
+    def directory(%__MODULE__{} = module_source, optional_args \\ []) do
+      selection = select(module_source.selection, "directory")
+
+      selection =
+        if is_nil(optional_args[:path]) do
+          selection
+        else
+          arg(selection, "path", optional_args[:path])
+        end
+
+      %Dagger.Directory{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
     @doc "A unique identifier for this ModuleSource."
     @spec id(t()) :: {:ok, Dagger.ModuleSourceID.t()} | {:error, term()}
     def id(%__MODULE__{} = module_source) do

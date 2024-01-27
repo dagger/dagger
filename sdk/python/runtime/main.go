@@ -4,12 +4,21 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"path"
-	"path/filepath"
 )
 
-type PythonSdk struct{}
+func New(
+	// +optional
+	sdkSourceDir *Directory,
+) *PythonSdk {
+	return &PythonSdk{
+		SDKSourceDir: sdkSourceDir,
+	}
+}
+
+type PythonSdk struct {
+	SDKSourceDir *Directory
+}
 
 const (
 	ModSourceDirPath      = "/src"
@@ -26,7 +35,11 @@ const (
 //go:embed scripts/runtime.py
 var runtimeTmpl string
 
-func (m *PythonSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
+func (m *PythonSdk) ModuleRuntime(
+	ctx context.Context,
+	modSource *ModuleSource,
+	introspectionJson string,
+) (*Container, error) {
 	ctr, err := m.CodegenBase(ctx, modSource, introspectionJson)
 	if err != nil {
 		return nil, err
@@ -34,7 +47,6 @@ func (m *PythonSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, 
 
 	return ctr.
 		WithExec([]string{"python", "-m", "pip", "install", "."}).
-		WithWorkdir(ModSourceDirPath).
 		WithNewFile(RuntimeExecutablePath, ContainerWithNewFileOpts{
 			Contents:    runtimeTmpl,
 			Permissions: 0755,
@@ -70,12 +82,8 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 	}
 
 	return m.Base("").
-		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
-			Exclude: []string{"runtime"},
-		})).
-		WithMountedDirectory("/opt", dag.Host().Directory(root(), HostDirectoryOpts{
-			Include: []string{"runtime/template"},
-		})).
+		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
+		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory("./template")).
 		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc}).
 		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
@@ -90,8 +98,8 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
-		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /opt/runtime/template/pyproject.toml ."}).
-		WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /opt/runtime/template/src/main.py src/main.py; }"}), nil
+		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /opt/pyproject.toml ."}).
+		WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /opt/src/main.py src/main.py; }"}), nil
 }
 
 func (m *PythonSdk) Base(version string) *Container {
@@ -106,13 +114,4 @@ func (m *PythonSdk) Base(version string) *Container {
 		WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", ContainerWithEnvVariableOpts{
 			Expand: true,
 		})
-}
-
-// TODO: fix .. restriction
-func root() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	return filepath.Join(wd, "..")
 }
