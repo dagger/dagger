@@ -212,14 +212,16 @@ dance:
 // function that will detach from all of them after 10 seconds.
 func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	running := []*RunningService{}
+	detachOnce := sync.Once{}
 	detach := func() {
-		go func() {
-			<-time.After(DetachGracePeriod)
-			for _, svc := range running {
-				grace := TerminateGracePeriod
-				ss.Detach(ctx, svc, &grace, false)
-			}
-		}()
+		detachOnce.Do(func() {
+			go func() {
+				<-time.After(DetachGracePeriod)
+				for _, svc := range running {
+					ss.Detach(ctx, svc)
+				}
+			}()
+		})
 	}
 
 	defer func() {
@@ -338,14 +340,14 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 // Detach detaches from the given service. If the service is not running, it is
 // a no-op. If the service is running, it is stopped if there are no other
 // clients using it.
-func (ss *Services) Detach(ctx context.Context, svc *RunningService, gracePeriod *time.Duration, force bool) error {
+func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
 
 	running, found := ss.running[svc.Key]
 	if !found {
 		ss.l.Unlock()
 		// not even running; ignore
-		return nil
+		return
 	}
 
 	ss.bindings[svc.Key]--
@@ -353,15 +355,13 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService, gracePeriod
 	if ss.bindings[svc.Key] > 0 {
 		ss.l.Unlock()
 		// detached, but other instances still active
-		return nil
+		return
 	}
 
 	ss.l.Unlock()
 
-	if gracePeriod != nil {
-		return ss.stopGraceful(ctx, running, *gracePeriod)
-	}
-	return ss.stop(ctx, running, force)
+	// we should avoid blocking, and return immediately
+	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {

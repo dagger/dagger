@@ -396,8 +396,8 @@ func (svc *Service) startContainer(
 		forwardStderr(stderrClient)
 	}
 
-	exited := make(chan error, 1)
-	stopped := make(chan struct{})
+	var exitErr error
+	exited := make(chan struct{})
 	go func() {
 		defer func() {
 			if stdinClient != nil {
@@ -410,23 +410,20 @@ func (svc *Service) startContainer(
 				stderrClient.Close()
 			}
 			close(exited)
-			close(stopped)
 		}()
 
-		err := svcProc.Wait()
+		exitErr = svcProc.Wait()
 
 		// detach dependent services when process exits
 		detachDeps()
 
 		// release container
-		if err2 := gc.Release(ctx); err == nil && err2 != nil {
-			if !errors.Is(err2, context.Canceled) {
-				err = fmt.Errorf("release: %w", err2)
+		if err := gc.Release(ctx); exitErr == nil && err != nil {
+			if !errors.Is(err, context.Canceled) {
+				exitErr = fmt.Errorf("release: %w", err)
 			}
 		}
 
-		// propagate error
-		exited <- err
 		vtx.Done(err)
 	}()
 
@@ -441,7 +438,7 @@ func (svc *Service) startContainer(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-stopped:
+		case <-exited:
 			return nil
 		}
 	}
@@ -450,8 +447,8 @@ func (svc *Service) startContainer(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-exited:
-			return err
+		case <-exited:
+			return exitErr
 		}
 	}
 
@@ -472,11 +469,10 @@ func (svc *Service) startContainer(
 			Stop: stopSvc,
 			Wait: waitSvc,
 		}, nil
-	case err := <-exited:
-		if err != nil {
-			return nil, fmt.Errorf("exited: %w\noutput: %s", err, outBuf.String())
+	case <-exited:
+		if exitErr != nil {
+			return nil, fmt.Errorf("exited: %w\noutput: %s", exitErr, outBuf.String())
 		}
-
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
 }
@@ -504,12 +500,16 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 	return out
 }
 
-func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, err error) {
+func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, rerr error) {
 	svcCtx, stop := context.WithCancel(context.Background())
+	defer func() {
+		if rerr != nil {
+			stop()
+		}
+	}()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		stop()
 		return nil, err
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
@@ -521,7 +521,6 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 
 	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self)
 	if err != nil {
-		stop()
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
 
@@ -546,19 +545,16 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
 		)
 		if err != nil {
-			stop()
 			return nil, fmt.Errorf("host to container: %w", err)
 		}
 
 		_, portStr, err := net.SplitHostPort(res.GetAddr())
 		if err != nil {
-			stop()
 			return nil, fmt.Errorf("split host port: %w", err)
 		}
 
 		frontend, err = strconv.Atoi(portStr)
 		if err != nil {
-			stop()
 			return nil, fmt.Errorf("parse port: %w", err)
 		}
 
@@ -575,7 +571,6 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 
 	dig, err := id.Digest()
 	if err != nil {
-		stop()
 		return nil, err
 	}
 
@@ -587,10 +582,9 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 		},
 		Host:  dialHost,
 		Ports: ports,
-		Stop: func(_ context.Context, force bool) error {
+		Stop: func(_ context.Context, _ bool) error {
 			stop()
-			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
-			go svcs.Detach(svcCtx, upstream, nil, force)
+			svcs.Detach(svcCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
