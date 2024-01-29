@@ -1,5 +1,5 @@
 kind: Breaking
-body: Stop services using SIGTERM instead of SIGKILL
+body: Service.Stop now uses SIGTERM instead of SIGKILL by default
 time: 2024-01-02T17:27:03.66259279Z
 custom:
   Author: jedevc
