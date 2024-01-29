@@ -654,6 +654,12 @@ func (c *Client) ListenHostToContainer(
 		sendL.Lock()
 		err := listener.CloseSend()
 		sendL.Unlock()
+		connsL.Lock()
+		for _, conn := range conns {
+			conn.Close()
+		}
+		clear(conns)
+		connsL.Unlock()
 		if err == nil {
 			wg.Wait()
 		}
