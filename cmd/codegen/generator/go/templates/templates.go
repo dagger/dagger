@@ -1,98 +1,76 @@
 package templates
 
 import (
-	_ "embed"
+	"embed"
+	"io/fs"
+	"path/filepath"
+	"strings"
 	"text/template"
 )
 
 var (
-	//go:embed src/header.go.tmpl
-	headerSource string
-	header       *template.Template
+	//go:embed all:src/*
+	tmplFS embed.FS
 
-	//go:embed src/scalar.go.tmpl
-	scalarSource string
-	scalar       *template.Template
-
-	//go:embed src/input.go.tmpl
-	inputSource string
-	input       *template.Template
-
-	//go:embed src/object.go.tmpl
-	objectSource string
-	object       *template.Template
-
-	//go:embed src/enum.go.tmpl
-	enumSource string
-	enum       *template.Template
-
-	//go:embed src/module.go.tmpl
-	moduleSource string
-	module       *template.Template
+	files map[string]*template.Template
 )
 
-func Header(funcs template.FuncMap) *template.Template {
-	if header == nil {
-		var err error
-		header, err = template.New("header").Funcs(funcs).Parse(headerSource)
-		if err != nil {
-			panic(err)
+func Templates(funcs template.FuncMap) map[string]*template.Template {
+	if files != nil {
+		for _, file := range files {
+			file.Funcs(funcs)
 		}
+		return files
 	}
-	return header
-}
 
-func Scalar(funcs template.FuncMap) *template.Template {
-	if scalar == nil {
-		var err error
-		scalar, err = template.New("scalar").Funcs(funcs).Parse(scalarSource)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return scalar
-}
+	root := "src"
 
-func Input(funcs template.FuncMap) *template.Template {
-	if input == nil {
-		var err error
-		input, err = template.New("input").Funcs(funcs).Parse(inputSource)
+	tmpl := template.New("").Funcs(funcs)
+	err := fs.WalkDir(tmplFS, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			panic(err)
+			return err
 		}
-	}
-	return input
-}
+		if d.IsDir() {
+			return nil
+		}
+		ntmpl, err := template.New("").Funcs(funcs).ParseFS(tmplFS, path)
+		if err != nil {
+			return err
+		}
+		ntmpl = ntmpl.Lookup(filepath.Base(path))
 
-func Object(funcs template.FuncMap) *template.Template {
-	if object == nil {
-		var err error
-		object, err = template.New("object").Funcs(funcs).Parse(objectSource)
-		if err != nil {
-			panic(err)
-		}
+		path = strings.TrimPrefix(path, root+"/")
+		tmpl.AddParseTree(path, ntmpl.Tree)
+		return nil
+	})
+	if err != nil {
+		panic(err)
 	}
-	return object
-}
 
-func Enum(funcs template.FuncMap) *template.Template {
-	if enum == nil {
-		var err error
-		enum, err = template.New("enum").Funcs(funcs).Parse(enumSource)
+	targets := []string{}
+	err = fs.WalkDir(tmplFS, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			panic(err)
+			return err
 		}
-	}
-	return enum
-}
+		if strings.HasPrefix(d.Name(), "_") {
+			return fs.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
 
-func Module(funcs template.FuncMap) *template.Template {
-	if module == nil {
-		var err error
-		module, err = template.New("module").Funcs(funcs).Parse(moduleSource)
-		if err != nil {
-			panic(err)
-		}
+		path = strings.TrimPrefix(path, root+"/")
+		targets = append(targets, path)
+		return nil
+	})
+	if err != nil {
+		panic(err)
 	}
-	return module
+
+	files = map[string]*template.Template{}
+	for _, target := range targets {
+		tmpl, _ := tmpl.Clone()
+		files[strings.TrimSuffix(target, ".tmpl")] = tmpl.Lookup(target)
+	}
+	return files
 }

@@ -36,6 +36,7 @@ func setupDebugHandlers(addr string) error {
 	m.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
 	m.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
 	m.Handle("/debug/events", http.HandlerFunc(trace.Events))
+	// m.Handle("/debug/fgtrace", fgtrace.Config{})
 
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()

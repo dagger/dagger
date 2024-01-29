@@ -6,16 +6,19 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A directory whose contents persist across runs.
  */
-class CacheVolume extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class CacheVolume extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * A unique identifier for this CacheVolume.
+     */
     public function id(): CacheVolumeId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\CacheVolumeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\CacheVolumeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

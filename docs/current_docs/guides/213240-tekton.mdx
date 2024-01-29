@@ -43,26 +43,26 @@ Follow the steps below:
 
 1. Define a new Tekton Pipeline as follows, in a file named `git-pipeline.yaml`.
 
-  ```yaml file=./snippets/tekton/git-pipeline.yaml
-  ```
+    ```yaml file=./snippets/tekton/git-pipeline.yaml
+    ```
 
-  This Pipeline references two Tasks:
-    - The `git-clone` Task, to check out the Git repository for the project into a Tekton Workspace;
-    - A custom `dagger` Task, to run the Dagger pipeline for the project (defined below).
+    This Pipeline references two Tasks:
+      - The `git-clone` Task, to check out the Git repository for the project into a Tekton Workspace;
+      - A custom `dagger` Task, to run the Dagger pipeline for the project (defined below).
 
 1. Define a new Tekton Task as follows, in a file named `dagger-task.yaml`.
 
-  ```yaml file=./snippets/tekton/dagger-task.yaml
-  ```
+    ```yaml file=./snippets/tekton/dagger-task.yaml
+    ```
 
-  This Task installs the dependencies needed to execute the Dagger pipeline for the project (which was checked out in the previous Tekton Pipeline) and then executes the pipeline using the `npm run ci` command.
+    This Task installs the dependencies needed to execute the Dagger pipeline for the project (which was checked out in the previous Tekton Pipeline) and then executes the pipeline using the `npm run ci` command.
 
 1. Define a new Tekton PipelineRun as follows, in a file named `git-pipeline-run.yaml`.
 
-  ```yaml file=./snippets/tekton/git-pipeline-run.yaml
-  ```
+    ```yaml file=./snippets/tekton/git-pipeline-run.yaml
+    ```
 
-  This PipelineRun corresponds to the Tekton Pipeline created previously. It executes the Tekton Pipeline with a given set of input parameters: the Git repository URL and an optional Dagger Cloud token. Update the `YOUR_REPOSITORY_URL` placeholder with the correct repository URL and, if you have a Dagger Cloud token, replace the `YOUR_DAGGER_CLOUD_TOKEN` placeholder with the token or a Kubernetes secret holding the token.
+    This PipelineRun corresponds to the Tekton Pipeline created previously. It executes the Tekton Pipeline with a given set of input parameters: the Git repository URL and an optional Dagger Cloud token. Update the `YOUR_REPOSITORY_URL` placeholder with the correct repository URL and, if you have a Dagger Cloud token, replace the `YOUR_DAGGER_CLOUD_TOKEN` placeholder with the token or a Kubernetes secret holding the token.
 
 A few important points to note:
 
@@ -73,19 +73,19 @@ A few important points to note:
 
 1. Apply the configuration:
 
-  ```shell
-  kubectl apply -f dagger-task.yaml
-  kubectl apply -f git-pipeline-yaml
-  ```
+    ```shell
+    kubectl apply -f dagger-task.yaml
+    kubectl apply -f git-pipeline-yaml
+    ```
 
 1. Run the Tekton Pipeline:
 
-  ```shell
-  kubectl create -f git-pipeline-run.yaml
-  ```
+    ```shell
+    kubectl create -f git-pipeline-run.yaml
+    ```
 
-  The output will look something like `pipelinerun.tekton.dev/clone-read-run-mwvkm created`
-  To see the logs from the PipelineRun, obtain the PipelineRun name from the output and run `tkn pipelinerun logs clone-read-run-<id> -f`.
+    The output will look something like `pipelinerun.tekton.dev/clone-read-run-mwvkm created`
+    To see the logs from the PipelineRun, obtain the PipelineRun name from the output and run `tkn pipelinerun logs clone-read-run-<id> -f`.
 
 Once the PipelineRun has successfully completed, run it again. Dagger's caching should result in a significantly faster second execution.
 

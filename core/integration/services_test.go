@@ -203,6 +203,47 @@ func TestServicePorts(t *testing.T) {
 	}
 }
 
+func TestServicePortsSkipHealthCheck(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Healthchecks pass when all ports are skipped", func(t *testing.T) {
+		c, ctx := connect(t)
+
+		srv := c.Container().
+			From("python").
+			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
+				ExperimentalSkipHealthcheck: true,
+			}).
+			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
+				ExperimentalSkipHealthcheck: true,
+			}).
+			WithExec([]string{"python", "-m", "http.server"}).
+			AsService()
+
+		_, err := srv.Start(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("Healthchecks pass when some ports are skipped", func(t *testing.T) {
+		c, ctx := connect(t)
+
+		srv := c.Container().
+			From("python").
+			WithExposedPort(6214, dagger.ContainerWithExposedPortOpts{
+				ExperimentalSkipHealthcheck: true,
+			}).
+			WithExposedPort(8000).
+			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
+				ExperimentalSkipHealthcheck: true,
+			}).
+			WithExec([]string{"python", "-m", "http.server", "8000"}).
+			AsService()
+
+		_, err := srv.Start(ctx)
+		require.NoError(t, err)
+	})
+}
+
 func TestContainerPortLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -443,9 +484,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 		From(alpineImage).
 		WithExposedPort(8080).
 		// using error to compare hostname after WithServiceBinding
-		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
-			Args: []string{"sh", "-c", "echo nope; exit 42"},
-		}).
+		WithDefaultArgs([]string{"sh", "-c", "echo nope; exit 42"}).
 		AsService()
 
 	host, err := srv.Hostname(ctx)

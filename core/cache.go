@@ -6,14 +6,26 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/dagger/dagger/core/resourceid"
-	"github.com/opencontainers/go-digest"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/pkg/errors"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
 	Keys []string `json:"keys"`
+}
+
+func (*CacheVolume) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CacheVolume",
+		NonNull:   true,
+	}
+}
+
+func (*CacheVolume) TypeDescription() string {
+	return "A directory whose contents persist across runs."
 }
 
 var ErrInvalidCacheVolumeID = errors.New("invalid cache ID; create one using cacheVolume")
@@ -28,10 +40,6 @@ func (cache *CacheVolume) Clone() *CacheVolume {
 	return &cp
 }
 
-func (cache *CacheVolume) Digest() (digest.Digest, error) {
-	return stableDigest(cache)
-}
-
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
 func (cache *CacheVolume) Sum() string {
 	hash := sha256.New()
@@ -42,19 +50,37 @@ func (cache *CacheVolume) Sum() string {
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
-func (cache *CacheVolume) ID() (CacheVolumeID, error) {
-	return resourceid.Encode(cache)
-}
-
-// CacheSharingMode is a string deriving from CacheSharingMode enum
-// it can take values: SHARED, PRIVATE, LOCKED
 type CacheSharingMode string
 
-const (
-	CacheSharingModeShared  CacheSharingMode = "SHARED"
-	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
-	CacheSharingModeLocked  CacheSharingMode = "LOCKED"
+var CacheSharingModes = dagql.NewEnum[CacheSharingMode]()
+
+var (
+	CacheSharingModeShared = CacheSharingModes.Register("SHARED",
+		"Shares the cache volume amongst many build pipelines")
+	CacheSharingModePrivate = CacheSharingModes.Register("PRIVATE",
+		"Keeps a cache volume for a single build pipeline")
+	CacheSharingModeLocked = CacheSharingModes.Register("LOCKED",
+		"Shares the cache volume amongst many build pipelines, but will serialize the writes")
 )
+
+func (mode CacheSharingMode) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CacheSharingMode",
+		NonNull:   true,
+	}
+}
+
+func (mode CacheSharingMode) TypeDescription() string {
+	return "Sharing mode of the cache volume."
+}
+
+func (mode CacheSharingMode) Decoder() dagql.InputDecoder {
+	return CacheSharingModes
+}
+
+func (mode CacheSharingMode) ToLiteral() *idproto.Literal {
+	return CacheSharingModes.Literal(mode)
+}
 
 // CacheSharingMode marshals to its lowercased value.
 //
@@ -77,10 +103,4 @@ func (mode *CacheSharingMode) UnmarshalJSON(payload []byte) error {
 	*mode = CacheSharingMode(strings.ToUpper(str))
 
 	return nil
-}
-
-func (cache *CacheVolume) WithKey(key string) *CacheVolume {
-	cache = cache.Clone()
-	cache.Keys = append(cache.Keys, key)
-	return cache
 }

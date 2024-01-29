@@ -100,7 +100,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	// threads within this process are trying to provision it at the same time.
 	var proc *exec.Cmd
 	var stdout io.ReadCloser
-	var stderrBuf *bytes.Buffer
+	var stderrBuf *safeBuffer
 	var childStdin io.WriteCloser
 
 	if cfg.LogOutput != nil {
@@ -132,7 +132,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// of this function so we can return it in the error if something
 		// goes wrong here. Otherwise the only error ends up being EOF and
 		// the user has to enable log output to see anything.
-		stderrBuf = bytes.NewBuffer(nil)
+		stderrBuf = &safeBuffer{}
 		discardableBuf := &discardableWriter{w: stderrBuf}
 		go io.Copy(io.MultiWriter(cfg.LogOutput, discardableBuf), stderrPipe)
 		defer discardableBuf.Discard()
@@ -245,4 +245,21 @@ func (w *discardableWriter) Discard() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.w = io.Discard
+}
+
+type safeBuffer struct {
+	bu bytes.Buffer
+	mu sync.Mutex
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.String()
 }

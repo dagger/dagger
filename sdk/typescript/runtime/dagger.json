@@ -1,0 +1,5 @@
+{
+  "name": "TypeScriptSDK",
+  "root": "..",
+  "sdk": "go"
+}

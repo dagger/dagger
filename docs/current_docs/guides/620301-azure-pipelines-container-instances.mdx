@@ -41,29 +41,29 @@ The first step is to create an Azure resource group for the container instance, 
 
 1. Log in to Azure using the Azure CLI:
 
-  ```shell
-  az login
-  ```
+    ```shell
+    az login
+    ```
 
 1. Create a new Azure resource group (in this example, a group named `mygroup` in the `useast` location):
 
-  ```shell
-  az group create --location eastus --name my-group
-  ```
+    ```shell
+    az group create --location eastus --name my-group
+    ```
 
-  Note the resource group ID (`id` field) in the output, as you will need it when creating the service principal.
+    Note the resource group ID (`id` field) in the output, as you will need it when creating the service principal.
 
 1. Create a service principal for the application (here, a principal named `mydaggerprincipal`) and assign it the "Contributor" role. Replace the `RESOURCE-GROUP-ID` placeholder in the command with the resource group ID obtained from the previous command.
 
-  ```shell
-  az ad sp create-for-rbac --name my-dagger-principal  --role Contributor --scopes RESOURCE-GROUP-ID
-  ```
+    ```shell
+    az ad sp create-for-rbac --name my-dagger-principal  --role Contributor --scopes RESOURCE-GROUP-ID
+    ```
 
-  :::info
-  The "Contributor" role gives the service principal access to manage all resources in the group, including container instances.
-  :::
+    :::info
+    The "Contributor" role gives the service principal access to manage all resources in the group, including container instances.
+    :::
 
-  The output of the previous command contains the credentials for the service principal, including the client ID (`appId` field), tenant ID (`tenant` field) and client secret (`password` field). Note these values carefully, as they will not be shown again and you will need them in subsequent steps.
+    The output of the previous command contains the credentials for the service principal, including the client ID (`appId` field), tenant ID (`tenant` field) and client secret (`password` field). Note these values carefully, as they will not be shown again and you will need them in subsequent steps.
 
 ## Step 2: Create the Dagger pipeline
 
@@ -74,97 +74,97 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 
 1. In the application directory, install the Dagger SDK and the Azure SDK client libraries:
 
-  ```shell
-  go mod init main
-  go get dagger.io/dagger@latest
-  go get github.com/Azure/azure-sdk-for-go/sdk/azcore
-  go get github.com/Azure/azure-sdk-for-go/sdk/azidentity
-  go get github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2
-  ```
+    ```shell
+    go mod init main
+    go get dagger.io/dagger@latest
+    go get github.com/Azure/azure-sdk-for-go/sdk/azcore
+    go get github.com/Azure/azure-sdk-for-go/sdk/azidentity
+    go get github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.
 
-  ```go file=./snippets/azure-pipelines-container-instances/main.go
-  ```
+    ```go file=./snippets/azure-pipelines-container-instances/main.go
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger and Azure SDK libraries.
-    - It checks for various required credentials in the host environment.
-    - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `SetSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline.
-    - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `Container().From()` method to initialize a new container from a base image. The additional `Platform` argument to the `Container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
-    - It chains the `WithExec()` method to copy the contents of the working directory to the `/home/node` directory in the container image and then uses the `WithWorkdir()` method to change the working directory in the container image to `/home/node`.
-    - It chains the `WithExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `WithEntrypoint()` method.
-    - It uses the container object's `WithRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `Publish()` method to publish the container image to Docker Hub. It also prints the SHA identifier of the published image.
-    - It creates an Azure client (using the Azure credentials set in the host environment)
-    - It defines a deployment request to create or update a container in the Azure Container Instances service. This deployment request includes the container name, image, port configuration, location and other details.
-    - It submits the deployment request to the Azure Container Instances service and waits for a response. If successful, it prints the public IP address of the running container image.
+    This file performs the following operations:
+      - It imports the Dagger and Azure SDK libraries.
+      - It checks for various required credentials in the host environment.
+      - It creates a Dagger client with `Connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `SetSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline.
+      - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `Container().From()` method to initialize a new container from a base image. The additional `Platform` argument to the `Container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `WithDirectory()` method to return the container image with the host directory written at the `/src` path, and the `WithWorkdir()` method to set the working directory in the container image.
+      - It chains the `WithExec()` method to copy the contents of the working directory to the `/home/node` directory in the container image and then uses the `WithWorkdir()` method to change the working directory in the container image to `/home/node`.
+      - It chains the `WithExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `WithEntrypoint()` method.
+      - It uses the container object's `WithRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `Publish()` method to publish the container image to Docker Hub. It also prints the SHA identifier of the published image.
+      - It creates an Azure client (using the Azure credentials set in the host environment)
+      - It defines a deployment request to create or update a container in the Azure Container Instances service. This deployment request includes the container name, image, port configuration, location and other details.
+      - It submits the deployment request to the Azure Container Instances service and waits for a response. If successful, it prints the public IP address of the running container image.
 
 1. Run the following command to update `go.sum`:
 
-  ```shell
-  go mod tidy
-  ```
+    ```shell
+    go mod tidy
+    ```
 
 </TabItem>
 <TabItem value="Node.js">
 
 1. In the application directory, install the Dagger SDK and the Azure SDK client libraries as development dependencies:
 
-  ```shell
-  npm install @dagger.io/dagger@latest @azure/arm-containerinstance @azure/identity --save-dev
-  ```
+    ```shell
+    npm install @dagger.io/dagger@latest @azure/arm-containerinstance @azure/identity --save-dev
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `index.mjs` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.
 
-  ```javascript file=./snippets/azure-pipelines-container-instances/index.mjs
-  ```
+    ```javascript file=./snippets/azure-pipelines-container-instances/index.mjs
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger and Azure SDK libraries.
-    - It checks for various required credentials in the host environment.
-    - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `setSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline.
-    - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `container().from()` method to initialize a new container from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
-    - It chains the `withExec()` method to copy the contents of the working directory to the `/home/node` directory in the container image and then uses the `withWorkdir()` method to change the working directory in the container image to `/home/node`.
-    - It chains the `withExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `withEntrypoint()` method.
-    - It uses the container object's `withRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the container image to Docker Hub. It also prints the SHA identifier of the published image.
-    - It creates an Azure client (using the Azure credentials set in the host environment)
-    - It defines a deployment request to create or update a container in the Azure Container Instances service. This deployment request includes the container name, image, port configuration, location and other details.
-    - It submits the deployment request to the Azure Container Instances service and waits for a response. If successful, it prints the public IP address of the running container image.
+    This file performs the following operations:
+      - It imports the Dagger and Azure SDK libraries.
+      - It checks for various required credentials in the host environment.
+      - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `setSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline.
+      - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `container().from()` method to initialize a new container from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `withDirectory()` method to return the container image with the host directory written at the `/src` path, and the `withWorkdir()` method to set the working directory in the container image.
+      - It chains the `withExec()` method to copy the contents of the working directory to the `/home/node` directory in the container image and then uses the `withWorkdir()` method to change the working directory in the container image to `/home/node`.
+      - It chains the `withExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `withEntrypoint()` method.
+      - It uses the container object's `withRegistryAuth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the container image to Docker Hub. It also prints the SHA identifier of the published image.
+      - It creates an Azure client (using the Azure credentials set in the host environment)
+      - It defines a deployment request to create or update a container in the Azure Container Instances service. This deployment request includes the container name, image, port configuration, location and other details.
+      - It submits the deployment request to the Azure Container Instances service and waits for a response. If successful, it prints the public IP address of the running container image.
 
 </TabItem>
 <TabItem value="Python">
 
 1. In the application directory, create a virtual environment and install the Dagger SDK and the Azure SDK client libraries:
 
-  ```shell
-  pip install dagger-io aiohttp azure-identity azure-mgmt-containerinstance
-  ```
+    ```shell
+    pip install dagger-io aiohttp azure-identity azure-mgmt-containerinstance
+    ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.py` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.
 
-  ```python file=./snippets/azure-pipelines-container-instances/main.py
-  ```
+    ```python file=./snippets/azure-pipelines-container-instances/main.py
+    ```
 
-  This file performs the following operations:
-    - It imports the Dagger and Azure SDK libraries.
-    - It checks for various required credentials in the host environment.
-    - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-    - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline.
-    - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
-    - It uses the client's `container().from_()` method to initialize a new container from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
-    - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
-    - It chains the `with_exec()` method to copy the contents of the working directory to the `/home/node` directory in the container image and then uses the `with_eorkdir()` method to change the working directory in the container image to `/home/node`.
-    - It chains the `with_exec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `with_entrypoint()` method.
-    - It uses the container object's `with_registry_auth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the container image to Docker Hub. It also prints the SHA identifier of the published image.
-    - It creates an Azure client (using the Azure credentials set in the host environment)
-    - It defines a deployment request to create or update a container in the Azure Container Instances service. This deployment request includes the container name, image, port configuration, location and other details.
-    - It submits the deployment request to the Azure Container Instances service and waits for a response. If successful, it prints the public IP address of the running container image.
+    This file performs the following operations:
+      - It imports the Dagger and Azure SDK libraries.
+      - It checks for various required credentials in the host environment.
+      - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+      - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline.
+      - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
+      - It uses the client's `container().from_()` method to initialize a new container from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
+      - It chains the `with_exec()` method to copy the contents of the working directory to the `/home/node` directory in the container image and then uses the `with_eorkdir()` method to change the working directory in the container image to `/home/node`.
+      - It chains the `with_exec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `with_entrypoint()` method.
+      - It uses the container object's `with_registry_auth()` method to set the registry credentials (including the password set as a secret previously) and then invokes the `publish()` method to publish the container image to Docker Hub. It also prints the SHA identifier of the published image.
+      - It creates an Azure client (using the Azure credentials set in the host environment)
+      - It defines a deployment request to create or update a container in the Azure Container Instances service. This deployment request includes the container name, image, port configuration, location and other details.
+      - It submits the deployment request to the Azure Container Instances service and waits for a response. If successful, it prints the public IP address of the running container image.
 
 </TabItem>
 </Tabs>
@@ -236,17 +236,17 @@ This also means that it's very easy to move your Dagger pipeline from your local
 
 1. Commit and push the Dagger pipeline script to the application's repository:
 
-  ```shell
-  git add .
-  git commit -a -m "Added pipeline"
-  git push
-  ```
+    ```shell
+    git add .
+    git commit -a -m "Added pipeline"
+    git push
+    ```
 
 1. Create a new Azure Pipeline:
 
-  ```shell
-  az pipelines create --name dagger --repository my-app --branch master --repository-type tfsgit --yml-path azure-pipelines.yml --skip-first-run true
-  ```
+    ```shell
+    az pipelines create --name dagger --repository my-app --branch master --repository-type tfsgit --yml-path azure-pipelines.yml --skip-first-run true
+    ```
 
 1. Configure credentials for the Docker Hub registry and the Azure SDK in the Azure Pipeline by executing the commands below, replacing the placeholders as follows:
 
@@ -254,46 +254,46 @@ This also means that it's very easy to move your Dagger pipeline from your local
     - Replace the `SUBSCRIPTION-ID` placeholder with your Azure subscription ID.
     - Replace the `USERNAME` and `PASSWORD` placeholders with your Docker Hub username and password respectively.
 
-  ```shell
-  az pipelines variable create --name AZURE_TENANT_ID --value TENANT-ID --pipeline-name dagger
-  az pipelines variable create --name AZURE_CLIENT_ID --value CLIENT-ID --pipeline-name dagger
-  az pipelines variable create --name AZURE_CLIENT_SECRET --value CLIENT-SECRET --pipeline-name dagger --secret true
-  az pipelines variable create --name AZURE_SUBSCRIPTION_ID --value SUBSCRIPTION-ID --pipeline-name dagger
-  az pipelines variable create --name DOCKERHUB_USERNAME --value USERNAME --pipeline-name dagger
-  az pipelines variable create --name DOCKERHUB_PASSWORD --value PASSWORD --pipeline-name dagger --secret true
-  ```
+    ```shell
+    az pipelines variable create --name AZURE_TENANT_ID --value TENANT-ID --pipeline-name dagger
+    az pipelines variable create --name AZURE_CLIENT_ID --value CLIENT-ID --pipeline-name dagger
+    az pipelines variable create --name AZURE_CLIENT_SECRET --value CLIENT-SECRET --pipeline-name dagger --secret true
+    az pipelines variable create --name AZURE_SUBSCRIPTION_ID --value SUBSCRIPTION-ID --pipeline-name dagger
+    az pipelines variable create --name DOCKERHUB_USERNAME --value USERNAME --pipeline-name dagger
+    az pipelines variable create --name DOCKERHUB_PASSWORD --value PASSWORD --pipeline-name dagger --secret true
+    ```
 
 1. In the repository, create a new file at `azure-pipelines.yml` with the following content:
 
-  <Tabs groupId="language">
-  <TabItem value="Go">
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
-  ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-go.yml
-  ```
+    ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-go.yml
+    ```
 
-  </TabItem>
-  <TabItem value="Node.js">
+    </TabItem>
+    <TabItem value="Node.js">
 
-  ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-nodejs.yml
-  ```
+    ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-nodejs.yml
+    ```
 
-  </TabItem>
-  <TabItem value="Python">
+    </TabItem>
+    <TabItem value="Python">
 
-  ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-python.yml
-  ```
+    ```yaml file=./snippets/azure-pipelines-container-instances/azure-pipeline-python.yml
+    ```
 
-  </TabItem>
-  </Tabs>
+    </TabItem>
+    </Tabs>
 
-  This Azure Pipeline runs on every commit to the repository `master` branch. It consists of a single job with four steps, as below:
-    - The first step uses a language-specific task to download and install the programing language on the CI runner.
-    - The second and third steps download and install the required dependencies (such as the Dagger SDK, the Azure SDK and the Dagger CLI) on the CI runner.
-    - The fourth step adds executes the Dagger pipeline. It also explicity adds those variables defined as secret to the CI runner environment (other variables are automatically injected by Azure Pipelines).
+    This Azure Pipeline runs on every commit to the repository `master` branch. It consists of a single job with four steps, as below:
+      - The first step uses a language-specific task to download and install the programing language on the CI runner.
+      - The second and third steps download and install the required dependencies (such as the Dagger SDK, the Azure SDK and the Dagger CLI) on the CI runner.
+      - The fourth step adds executes the Dagger pipeline. It also explicity adds those variables defined as secret to the CI runner environment (other variables are automatically injected by Azure Pipelines).
 
-  :::tip
-  Azure Pipelines automatically transfers pipeline variables to the CI runner environment, except for those marked as secret. Secret variables need to be explicitly defined in the Azure Pipelines configuration file.
-  :::
+    :::tip
+    Azure Pipelines automatically transfers pipeline variables to the CI runner environment, except for those marked as secret. Secret variables need to be explicitly defined in the Azure Pipelines configuration file.
+    :::
 
 ## Step 5: Test the Dagger pipeline in Azure Pipelines
 
@@ -335,61 +335,61 @@ This tutorial assumes that you have an Azure DevOps repository with a Node.js We
 
 1. Create a directory for the Express application:
 
-  ```shell
-  mkdir my-app
-  cd my-app
-  ```
+    ```shell
+    mkdir my-app
+    cd my-app
+    ```
 
 1. Create a skeleton Express application:
 
-  ```shell
-  npx express-generator
-  ```
+    ```shell
+    npx express-generator
+    ```
 
 1. Make a minor modification to the application's index page:
 
-  ```shell
-  sed -i -e 's/Express/Dagger/g' routes/index.js
-  ```
+    ```shell
+    sed -i -e 's/Express/Dagger/g' routes/index.js
+    ```
 
 1. Initialize a local Git repository for the application:
 
-  ```shell
-  git init
-  ```
+    ```shell
+    git init
+    ```
 
 1. Add a `.gitignore` file and commit the application code:
 
-  ```shell
-  echo node_modules >> .gitignore
-  git add .
-  git commit -a -m "Initial commit"
-  ```
+    ```shell
+    echo node_modules >> .gitignore
+    git add .
+    git commit -a -m "Initial commit"
+    ```
 
 1. Log in to Azure using the Azure CLI:
 
-  ```shell
-  az login
-  ```
+    ```shell
+    az login
+    ```
 
 1. Create a new Azure DevOps project and repository in your Azure DevOps organization. Replace the `ORGANIZATION-URL` placeholder with your Azure DevOps organization URL (usually of the form `https://dev.azure.com/...`).
 
-  ```shell
-  az devops configure --defaults organization=ORGANIZATION-URL
-  az devops project create --name my-app
-  ```
+    ```shell
+    az devops configure --defaults organization=ORGANIZATION-URL
+    az devops project create --name my-app
+    ```
 
 1. List the available repositories and note the value of the `sshUrl` and `webUrl` fields:
 
-  ```shell
-  az repos list --project my-app | grep "sshUrl\|webUrl"
-  ```
+    ```shell
+    az repos list --project my-app | grep "sshUrl\|webUrl"
+    ```
 
 1. Browse to the URL shown in the `webUrl` field and [configure SSH authentication for the repository](https://learn.microsoft.com/en-us/azure/devops/repos/git/use-ssh-keys-to-authenticate?view=azure-devops).
 
 1. Add the Azure DevOps repository as a remote and push the application code to it. Replace the `SSH-URL` placeholder with the value of the `sshUrl` field from the previous command.
 
-  ```shell
-  git remote add origin SSH-URL
-  git push -u origin --all
-  ```
+    ```shell
+    git remote add origin SSH-URL
+    git push -u origin --all
+    ```

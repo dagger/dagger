@@ -7,9 +7,11 @@ mod querybuilder;
 pub use crate::core::config::Config;
 
 #[cfg(feature = "gen")]
+#[allow(dead_code)]
 mod client;
 
 #[cfg(feature = "gen")]
+#[allow(dead_code)]
 mod gen;
 
 #[cfg(feature = "gen")]

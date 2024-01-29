@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
- * A file identifier.
+ * The `FileID` scalar type represents an identifier for an object of type File.
  */
-readonly class FileId extends \Dagger\Client\DaggerId
+readonly class FileId extends Client\AbstractId
 {
 }

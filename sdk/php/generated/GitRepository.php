@@ -6,49 +6,49 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A git repository.
  */
-class GitRepository extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class GitRepository extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Returns details on one branch.
+     * Returns details of a branch.
      */
     public function branch(string $name): GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('branch');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('branch');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Returns details on one commit.
+     * Returns details of a commit.
      */
     public function commit(string $id): GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('commit');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * Retrieves the content-addressed identifier of the git repository.
+     * A unique identifier for this GitRepository.
      */
     public function id(): GitRepositoryId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\GitRepositoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\GitRepositoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * Returns details on one tag.
+     * Returns details of a tag.
      */
     public function tag(string $name): GitRef
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('tag');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tag');
         $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

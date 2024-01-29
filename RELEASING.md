@@ -1,19 +1,20 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2026%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2019,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
 - [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
-- [⬢ Node.js SDK ⏱ `5mins`](#-nodejs-sdk--5mins)
+- [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
+- [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
 This is a high-level diagram of how all the pieces fit together:
 
 ```mermaid
-flowchart TD
+flowchart TB
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
     playground["🛝 Playground"]
@@ -34,26 +35,32 @@ flowchart TD
     ghcr["🐙 ghcr.io/dagger/engine"]
     engine --> ghcr --> registry
 
+
     go["🐹 Go SDK"]
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
     go-pkg["🐹 dagger.io/dagger"]
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
-    registry -.- S3 -.- go & python & nodejs & elixir
+    registry -.- S3 -.- go & python & typescript & elixir
 
     python["🐍 Python SDK"]
     pypi["🐍 pypi.org/project/dagger-io"]
     readthedocs["📖 dagger-io.readthedocs.io"]
     repo ==> python --> pypi & readthedocs
 
-    nodejs["⬢ Node.js SDK"]
+    typescript["⬢ TypeScript SDK"]
     npm["⬢ npmjs.com/@dagger.io/dagger"]
-    repo ==> nodejs --> npm
+    repo ==> typescript --> npm
 
     elixir["🧪 Elixir SDK"]
     hex["🧪 hex.pm/packages/dagger"]
     repo ==> elixir --> hex
+
+    php["🐘 PHP SDK"]
+    php-repo["🐙 github.com/dagger/dagger-php-sdk"]
+    php-pkg["🐘 packagist.org/packages/dagger/dagger"]
+    repo ======> php --> php-repo --> php-pkg
 ```
 
 ## Let the team know
@@ -181,12 +188,17 @@ changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --cust
 changie batch patch
 changie merge
 
-cd ../nodejs
+cd ../typescript
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
 changie batch patch
 changie merge
 
 cd ../elixir
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
+changie batch patch
+changie merge
+
+cd ../php
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
 changie batch patch
 changie merge
@@ -206,14 +218,18 @@ cd ../..
 - [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
       branch that you are about to release. This will usually be the commit that
       bumps the Engine version, the one that you merged earlier.
-- [ ] Tag & publish:
 
 ```console
 git checkout main
-git "${DAGGER_REPO_REMOTE:?must be set}" pull
+git pull "${DAGGER_REPO_REMOTE:?must be set}"
 git branch -D bump-engine
 
 export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
+```
+
+- [ ] Tag & publish:
+
+```console
 cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push "${DAGGER_REPO_REMOTE:?must be set}" "sdk/go/${GO_SDK_VERSION:?must be set}"
@@ -231,7 +247,7 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
 ```console
 cd internal/mage
-go get dagger.io/dagger@${GO_SDK_VERSION:?must be set}
+go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require github.com/dagger/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
 
 # Check that the most important workflow works locally:
@@ -256,7 +272,7 @@ dagger run ./hack/make engine:test
       double-check that is was picked up by
       [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
       this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
-      The new version can take up to `30mins` to appear, it's OK to move on.
+      The new version can take up to `60mins` to appear, it's OK to move on.
 
 > **Note**
 >
@@ -303,26 +319,26 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
       https://readthedocs.org/projects/dagger-io/builds/
 - [ ] Click on **Publish release**
 
-## ⬢ Node.js SDK ⏱ `5mins`
+## ⬢ TypeScript SDK ⏱ `5mins`
 
 - [ ] Tag & publish:
 
 ```console
-cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/nodejs/${NODEJS_SDK_VERSION}
+cd sdk/typescript && export TYPESCRIPT_SDK_VERSION=$(changie latest) && cd ../..
+git tag "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${TYPESCRIPT_SDK_VERSION}
 ```
 
-This will trigger the [`Publish Node.js SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-nodejs.yml)
+This will trigger the [`Publish TypeScript SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-typescript.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 
 - [ ] Upload the release notes by running:
 
 ```console
-gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/nodejs/$NODEJS_SDK_VERSION \
-    --notes-file sdk/nodejs/.changes/$NODEJS_SDK_VERSION.md
+gh release create "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/typescript/$TYPESCRIPT_SDK_VERSION \
+    --notes-file sdk/typescript/.changes/$TYPESCRIPT_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`
@@ -349,6 +365,33 @@ which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/pa
 gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/elixir/$ELIXIR_SDK_VERSION \
     --notes-file sdk/elixir/.changes/$ELIXIR_SDK_VERSION.md
+```
+
+- [ ] Check that release notes look good in `Preview`
+- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [ ] Click on **Publish release**
+
+## 🐘 PHP SDK ⏱ `5mins`
+
+- [ ] Tag & publish:
+
+```console
+cd sdk/php && export PHP_SDK_VERSION=$(changie latest) && cd ../..
+git tag "sdk/php/${PHP_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/php/${PHP_SDK_VERSION}
+```
+
+This will trigger the [`Publish PHP SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-php.yml)
+which publishes to
+[github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
+
+- [ ] Upload the release notes by running:
+
+```console
+gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/php/$PHP_SDK_VERSION \
+    --notes-file sdk/php/.changes/$PHP_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`

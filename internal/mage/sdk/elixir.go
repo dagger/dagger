@@ -3,7 +3,6 @@ package sdk
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -142,7 +141,7 @@ func (Elixir) Generate(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("Cannot export generated code to `%s`", elixirSDKGeneratedPath)
+		return fmt.Errorf("cannot export generated code to `%s`", elixirSDKGeneratedPath)
 	}
 	return nil
 }
@@ -156,15 +155,10 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	defer c.Close()
 
 	var (
-		version   = strings.TrimPrefix(tag, "sdk/elixir/v")
-		mixFile   = "sdk/elixir/mix.exs"
-		hexAPIKey = os.Getenv("HEX_API_KEY")
-		dryRun    = os.Getenv("HEX_DRY_RUN")
+		version = strings.TrimPrefix(tag, "sdk/elixir/v")
+		mixFile = "sdk/elixir/mix.exs"
+		dryRun  = os.Getenv("HEX_DRY_RUN")
 	)
-
-	if hexAPIKey == "" {
-		return errors.New("HEX_API_KEY environment variable must be set")
-	}
 
 	mixExs, err := os.ReadFile(mixFile)
 	if err != nil {
@@ -184,7 +178,7 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
 
 	_, err = elixirBase(c, elixirVersions[1]).
-		WithEnvVariable("HEX_API_KEY", hexAPIKey).
+		With(util.HostSecretVar(c, "HEX_API_KEY")).
 		WithExec(args).
 		Sync(ctx)
 

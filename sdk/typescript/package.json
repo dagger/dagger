@@ -1,0 +1,56 @@
+{
+  "name": "@dagger.io/dagger",
+  "version": "0.0.0",
+  "author": "hello@dagger.io",
+  "license": "Apache-2.0",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "main": "dist/index.js",
+  "dependencies": {
+    "@lifeomic/axios-fetch": "^3.0.1",
+    "adm-zip": "^0.5.10",
+    "env-paths": "^3.0.0",
+    "execa": "^8.0.1",
+    "graphql": "^16.8.0",
+    "graphql-request": "^6.1.0",
+    "graphql-tag": "^2.12.6",
+    "node-color-log": "^10.0.2",
+    "node-fetch": "^3.3.1",
+    "reflect-metadata": "^0.2.1",
+    "tar": "^6.1.13",
+    "typescript": "^5.3.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "mocha",
+    "lint": "yarn eslint --max-warnings=0 .",
+    "fmt": "yarn eslint --fix .",
+    "docs:lint": "yarn eslint --max-warnings=0 --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/current_docs",
+    "docs:fmt": "yarn eslint --fix --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/current_docs ."
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^4.2.0",
+    "@types/adm-zip": "^0.5.0",
+    "@types/mocha": "latest",
+    "@types/node": "~16",
+    "@types/tar": "^6.1.4",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "mocha": "^10.2.0",
+    "prettier": "^2.8.7",
+    "ts-node": "^10.9.1"
+  }
+}

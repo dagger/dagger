@@ -1,8 +1,9 @@
 """Command line interface for the dagger extension runtime."""
+import importlib
 import inspect
 import logging
 import sys
-from importlib import import_module
+import types
 from typing import cast
 
 import rich.traceback
@@ -28,7 +29,8 @@ def app():
         ],
     )
     try:
-        mod = get_module()
+        pymod = import_module()
+        mod = get_module(pymod).with_description(inspect.getdoc(pymod))
         mod()
     except FatalError as e:
         if logger.isEnabledFor(logging.DEBUG):
@@ -37,11 +39,11 @@ def app():
         sys.exit(1)
 
 
-def get_module(module_name: str = "main") -> Module:
-    """Get the environment instance from the main module."""
+def import_module(module_name: str = "main") -> types.ModuleType:
+    """Import python module with given name."""
     # TODO: Allow configuring which package/module to use.
     try:
-        py_module = import_module(module_name)
+        return importlib.import_module(module_name)
     except ModuleNotFoundError as e:
         msg = (
             f'The "{module_name}" module could not be found. '
@@ -49,11 +51,14 @@ def get_module(module_name: str = "main") -> Module:
         )
         raise UserError(msg) from e
 
+
+def get_module(module: types.ModuleType) -> Module:
+    """Get the environment instance from the main module."""
     # Check for any attribute that is an instance of `Module`.
     mods = (
         cast(Module, attr)
         for name, attr in inspect.getmembers(
-            py_module, lambda obj: isinstance(obj, Module)
+            module, lambda obj: isinstance(obj, Module)
         )
         if not name.startswith("_")
     )
@@ -66,8 +71,8 @@ def get_module(module_name: str = "main") -> Module:
     if next(mods, None):
         cls_path = f"{Module.__module__}.{Module.__qualname__}"
         msg = (
-            f"Multiple `{cls_path}` instances were found in module {module_name}."
-            " Please ensure that there is only one defined."
+            f"Multiple `{cls_path}` instances were found in module "
+            f"{module.__qualname__}. Please ensure that there is only one defined."
         )
         raise UserError(msg)
 

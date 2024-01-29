@@ -7,7 +7,7 @@ defmodule Dagger.Directory do
   defstruct [:selection, :client]
 
   (
-    @doc "Load the directory as a Dagger module\n\n\n\n## Optional Arguments\n\n* `source_subpath` - An optional subpath of the directory which contains the module's source\ncode.\n\nThis is needed when the module code is in a subdirectory but requires\nparent directories to be loaded in order to execute. For example, the\nmodule source code may need a go.mod, project.toml, package.json, etc. file\nfrom a parent directory.\n\nIf not set, the module source code is loaded from the root of the\ndirectory."
+    @doc "Load the directory as a Dagger module\n\n\n\n## Optional Arguments\n\n* `source_subpath` - An optional subpath of the directory which contains the module's source code.\n\nThis is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.\n\nIf not set, the module source code is loaded from the root of the directory."
     @spec as_module(t(), keyword()) :: Dagger.Module.t()
     def as_module(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "asModule")
@@ -49,17 +49,10 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Builds a new Docker container from this directory.\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `build_args` - Build arguments to use in the build.\n* `target` - Target build stage to build.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name]."
+    @doc "Builds a new Docker container from this directory.\n\n\n\n## Optional Arguments\n\n* `platform` - The platform to build.\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n* `target` - Target build stage to build.\n* `build_args` - Build arguments to use in the build.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name]."
     @spec docker_build(t(), keyword()) :: Dagger.Container.t()
     def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "dockerBuild")
-
-      selection =
-        if is_nil(optional_args[:dockerfile]) do
-          selection
-        else
-          arg(selection, "dockerfile", optional_args[:dockerfile])
-        end
 
       selection =
         if is_nil(optional_args[:platform]) do
@@ -69,10 +62,10 @@ defmodule Dagger.Directory do
         end
 
       selection =
-        if is_nil(optional_args[:build_args]) do
+        if is_nil(optional_args[:dockerfile]) do
           selection
         else
-          arg(selection, "buildArgs", optional_args[:build_args])
+          arg(selection, "dockerfile", optional_args[:dockerfile])
         end
 
       selection =
@@ -80,6 +73,13 @@ defmodule Dagger.Directory do
           selection
         else
           arg(selection, "target", optional_args[:target])
+        end
+
+      selection =
+        if is_nil(optional_args[:build_args]) do
+          selection
+        else
+          arg(selection, "buildArgs", optional_args[:build_args])
         end
 
       selection =
@@ -148,7 +148,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "The content-addressed identifier of the directory."
+    @doc "A unique identifier for this Directory."
     @spec id(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
     def id(%__MODULE__{} = directory) do
       selection = select(directory.selection, "id")
@@ -157,7 +157,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Creates a named sub-pipeline\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
+    @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Name of the sub-pipeline.\n\n## Optional Arguments\n\n* `description` - Description of the sub-pipeline.\n* `labels` - Labels to apply to the sub-pipeline."
     @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def pipeline(%__MODULE__{} = directory, name, optional_args \\ []) do
       selection = select(directory.selection, "pipeline")
@@ -222,7 +222,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves this directory plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644."
+    @doc "Retrieves this directory plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600)."
     @spec with_file(t(), Dagger.String.t(), Dagger.File.t(), keyword()) :: Dagger.Directory.t()
     def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
       selection = select(directory.selection, "withFile")
@@ -245,7 +245,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves this directory plus a new directory created at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory created (e.g., \"/logs\").\n\n## Optional Arguments\n\n* `permissions` - Permission granted to the created directory (e.g., 0777).\n\nDefault: 0755."
+    @doc "Retrieves this directory plus a new directory created at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory created (e.g., \"/logs\").\n\n## Optional Arguments\n\n* `permissions` - Permission granted to the created directory (e.g., 0777)."
     @spec with_new_directory(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def with_new_directory(%__MODULE__{} = directory, path, optional_args \\ []) do
       selection = select(directory.selection, "withNewDirectory")
@@ -263,7 +263,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves this directory plus a new file written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written file (e.g., \"/file.txt\").\n* `contents` - Content of the written file (e.g., \"Hello world!\").\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644."
+    @doc "Retrieves this directory plus a new file written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written file (e.g., \"/file.txt\").\n* `contents` - Content of the written file (e.g., \"Hello world!\").\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600)."
     @spec with_new_file(t(), Dagger.String.t(), Dagger.String.t(), keyword()) ::
             Dagger.Directory.t()
     def with_new_file(%__MODULE__{} = directory, path, contents, optional_args \\ []) do

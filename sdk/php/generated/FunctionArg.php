@@ -6,58 +6,45 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * An argument accepted by a function.
  *
- * This is a specification for an argument at function definition time, not an
- * argument passed at function call time.
+ * This is a specification for an argument at function definition time, not an argument passed at function call time.
  */
-class FunctionArg extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class FunctionArg extends Client\AbstractObject implements Client\IdAble
 {
-    /**
-     * A default value to use for this argument when not explicitly set by the caller, if any
-     */
     public function defaultValue(): Json
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('defaultValue');
-        return new \Dagger\Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
     }
 
-    /**
-     * A doc string for the argument, if any
-     */
     public function description(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('description');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
     /**
-     * The ID of the argument
+     * A unique identifier for this FunctionArg.
      */
     public function id(): FunctionArgId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
-    /**
-     * The name of the argument
-     */
     public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The type of the argument
-     */
     public function typeDef(): TypeDef
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('typeDef');
-        return new \Dagger\Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

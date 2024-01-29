@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
- * A git reference identifier.
+ * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
  */
-readonly class GitRefId extends \Dagger\Client\DaggerId
+readonly class GitRefId extends Client\AbstractId
 {
 }

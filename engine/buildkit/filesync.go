@@ -35,15 +35,17 @@ func (c *Client) LocalImport(
 	srcPath string,
 	excludePatterns []string,
 	includePatterns []string,
-) (*bksolverpb.Definition, error) {
+) (*bksolverpb.Definition, specs.Descriptor, error) {
+	var desc specs.Descriptor
+
 	srcPath = path.Clean(srcPath)
 	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
-		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
+		return nil, desc, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, desc, err
 	}
 
 	localOpts := []llb.LocalOption{
@@ -77,7 +79,7 @@ func (c *Client) LocalImport(
 
 	copyDef, err := copyLLB.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
-		return nil, err
+		return nil, desc, err
 	}
 	copyPB := copyDef.ToPB()
 
@@ -88,19 +90,19 @@ func (c *Client) LocalImport(
 		Evaluate:   true,
 	})
 	if err != nil {
-		return nil, err
+		return nil, desc, err
 	}
 	resultProxy, err := res.SingleRef()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get single ref: %s", err)
+		return nil, desc, fmt.Errorf("failed to get single ref: %s", err)
 	}
 	cachedRes, err := resultProxy.Result(ctx)
 	if err != nil {
-		return nil, wrapError(ctx, err, c.ID())
+		return nil, desc, wrapError(ctx, err, c.ID())
 	}
 	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
 	if !ok {
-		return nil, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
+		return nil, desc, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
 	}
 	ref := workerRef.ImmutableRef
 
@@ -111,7 +113,7 @@ func (c *Client) LocalImport(
 	// is tricky and ultimately only result in a marginal performance optimization.
 	err = ref.Extract(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract ref: %s", err)
+		return nil, desc, fmt.Errorf("failed to extract ref: %s", err)
 	}
 
 	remotes, err := ref.GetRemotes(ctx, true, cacheconfig.RefConfig{
@@ -124,20 +126,21 @@ func (c *Client) LocalImport(
 		},
 	}, false, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get remotes: %s", err)
+		return nil, desc, fmt.Errorf("failed to get remotes: %s", err)
 	}
 	if len(remotes) != 1 {
-		return nil, fmt.Errorf("expected 1 remote, got %d", len(remotes))
+		return nil, desc, fmt.Errorf("expected 1 remote, got %d", len(remotes))
 	}
 	remote := remotes[0]
 	if len(remote.Descriptors) != 1 {
-		return nil, fmt.Errorf("expected 1 descriptor, got %d", len(remote.Descriptors))
+		return nil, desc, fmt.Errorf("expected 1 descriptor, got %d", len(remote.Descriptors))
 	}
-	desc := remote.Descriptors[0]
+
+	desc = remote.Descriptors[0]
 
 	blobDef, err := blob.LLB(desc).Marshal(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal blob source: %s", err)
+		return nil, desc, fmt.Errorf("failed to marshal blob source: %s", err)
 	}
 	blobPB := blobDef.ToPB()
 
@@ -148,10 +151,10 @@ func (c *Client) LocalImport(
 		Evaluate:   true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to solve blobsource: %w", wrapError(ctx, err, c.ID()))
+		return nil, desc, fmt.Errorf("failed to solve blobsource: %w", wrapError(ctx, err, c.ID()))
 	}
 
-	return blobPB, nil
+	return blobPB, desc, nil
 }
 
 // Import a directory from the engine container, as opposed to from a client
@@ -162,16 +165,15 @@ func (c *Client) EngineContainerLocalImport(
 	srcPath string,
 	excludePatterns []string,
 	includePatterns []string,
-) (*bksolverpb.Definition, error) {
+) (*bksolverpb.Definition, specs.Descriptor, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get hostname for engine local import: %s", err)
+		return nil, specs.Descriptor{}, fmt.Errorf("failed to get hostname for engine local import: %s", err)
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
 		ClientID:       c.ID(),
 		ClientHostname: hostname,
 	})
-
 	return c.LocalImport(ctx, recorder, platform, srcPath, excludePatterns, includePatterns)
 }
 
@@ -251,7 +253,7 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, nil)
+	expInstance, err := exporter.Resolve(ctx, 0, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve exporter: %s", err)
 	}
@@ -266,7 +268,7 @@ func (c *Client) LocalDirExport(
 		Path:         destPath,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, clientMetadata.ClientID)
+	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
 	}

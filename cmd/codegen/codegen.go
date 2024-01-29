@@ -4,32 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
-	nodegenerator "github.com/dagger/dagger/cmd/codegen/generator/nodejs"
+	typescriptgenerator "github.com/dagger/dagger/cmd/codegen/generator/typescript"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock"
+	"github.com/koron-go/prefixw"
 )
 
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
-	rec := progrock.FromContext(ctx)
+	logsW := os.Stdout
 
-	var vtxName string
 	if cfg.ModuleConfig != nil {
-		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleConfig.Name)
+		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleConfig.Name)
 	} else {
-		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
+		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)
 	}
-
-	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
-	defer func() { vtx.Done(err) }()
-
-	logsW := vtx.Stdout()
 
 	var introspectionSchema *introspection.Schema
 	if cfg.IntrospectionJSON != "" {
@@ -56,10 +49,14 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 		}
 
 		for _, cmd := range generated.PostCommands {
+			pw := prefixw.New(logsW, strings.Join(cmd.Args, " ")+" | ")
 			cmd.Dir = cfg.OutputDir
-			cmd.Stdout = vtx.Stdout()
-			cmd.Stderr = vtx.Stderr()
-			vtx.Task(strings.Join(cmd.Args, " ")).Done(cmd.Run())
+			cmd.Stdout = pw
+			cmd.Stderr = pw
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(pw, "error: %s\n", err)
+				return fmt.Errorf("failed to run post command: %w", err)
+			}
 		}
 
 		if !generated.NeedRegenerate {
@@ -82,15 +79,15 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 		gen = &gogenerator.GoGenerator{
 			Config: cfg,
 		}
-	case generator.SDKLangNodeJS:
-		gen = &nodegenerator.NodeGenerator{
+	case generator.SDKLangTypeScript:
+		gen = &typescriptgenerator.TypeScriptGenerator{
 			Config: cfg,
 		}
 
 	default:
 		sdks := []string{
 			string(generator.SDKLangGo),
-			string(generator.SDKLangNodeJS),
+			string(generator.SDKLangTypeScript),
 		}
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}

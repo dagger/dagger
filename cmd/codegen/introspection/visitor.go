@@ -6,28 +6,16 @@ import (
 )
 
 type Visitor struct {
-	schema   *Schema
-	handlers VisitHandlers
+	schema *Schema
 }
 
-type VisitFunc func(*Type) error
-
-type VisitHandlers struct {
-	Scalar VisitFunc
-	Object VisitFunc
-	Input  VisitFunc
-	Enum   VisitFunc
-}
-
-func (v *Visitor) Run() error {
+func (v *Visitor) Run() []*Type {
 	sequence := []struct {
-		Kind    TypeKind
-		Handler VisitFunc
-		Ignore  map[string]any
+		Kind   TypeKind
+		Ignore map[string]any
 	}{
 		{
-			Kind:    TypeKindScalar,
-			Handler: v.handlers.Scalar,
+			Kind: TypeKindScalar,
 			Ignore: map[string]any{
 				"String":   struct{}{},
 				"Float":    struct{}{},
@@ -38,33 +26,24 @@ func (v *Visitor) Run() error {
 			},
 		},
 		{
-			Kind:    TypeKindInputObject,
-			Handler: v.handlers.Input,
+			Kind: TypeKindInputObject,
 		},
 		{
-			Kind:    TypeKindObject,
-			Handler: v.handlers.Object,
+			Kind: TypeKindObject,
 		},
 		{
-			Kind:    TypeKindEnum,
-			Handler: v.handlers.Enum,
+			Kind: TypeKindEnum,
 		},
 	}
 
+	var types []*Type
 	for _, i := range sequence {
-		if err := v.visit(i.Kind, i.Handler, i.Ignore); err != nil {
-			return err
-		}
+		types = append(types, v.visit(i.Kind, i.Ignore)...)
 	}
-
-	return nil
+	return types
 }
 
-func (v *Visitor) visit(kind TypeKind, h VisitFunc, ignore map[string]any) error {
-	if h == nil {
-		return nil
-	}
-
+func (v *Visitor) visit(kind TypeKind, ignore map[string]any) []*Type {
 	types := []*Type{}
 	for _, t := range v.schema.Types {
 		if t.Kind == kind {
@@ -97,11 +76,5 @@ func (v *Visitor) visit(kind TypeKind, h VisitFunc, ignore map[string]any) error
 		})
 	}
 
-	for _, typ := range types {
-		if err := h(typ); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return types
 }

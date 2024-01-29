@@ -37,7 +37,17 @@ func parseRef(tag string) error {
 
 type Engine mg.Namespace
 
-// Build builds the dagger cli binary
+// Connect tests a connection to a Dagger Engine
+func (t Engine) Connect(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	return nil
+}
+
+// Build builds the Dagger CLI binary
 func (t Engine) Build(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -51,7 +61,7 @@ func (t Engine) Build(ctx context.Context) error {
 	return err
 }
 
-// Lint lints the engine
+// Lint lints the Engine
 func (t Engine) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -131,7 +141,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	return nil
 }
 
-// Verify that all arches for the engine can be built. Just do a local export to avoid setting up
+// Verify that all arches for the Engine can be built. Just do a local export to avoid setting up
 // a registry
 func (t Engine) TestPublish(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
@@ -221,6 +231,7 @@ func (t Engine) TestCustom(ctx context.Context) error {
 	return err
 }
 
+// Dev builds and starts an Engine & CLI from local source code
 func (t Engine) Dev(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -302,17 +313,18 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
 		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
+		"-p", "6060:6060",
 		"--name", util.EngineContainerName,
 		"--privileged",
 	}...)
 
-	runArgs = append(runArgs, imageName, "--debug")
+	runArgs = append(runArgs, imageName, "--debug", "--debugaddr=0.0.0.0:6060")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
-	// build the CLI and export locally so it can be used to connect to the engine
+	// build the CLI and export locally so it can be used to connect to the Engine
 	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
 	_ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
 	_, err = util.HostDaggerBinary(c).Export(ctx, binDest)

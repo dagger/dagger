@@ -6,28 +6,28 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * A file.
  */
-class File extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client\IdAble
+class File extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * Retrieves the contents of the file.
      */
     public function contents(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('contents');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
         return (string)$this->queryLeaf($leafQueryBuilder, 'contents');
     }
 
     /**
      * Writes the file to a file path on the host.
      */
-    public function export(string $path, ?bool $allowParentDirPath = null): bool
+    public function export(string $path, ?bool $allowParentDirPath = false): bool
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('export');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $allowParentDirPath) {
         $leafQueryBuilder->setArgument('allowParentDirPath', $allowParentDirPath);
@@ -36,20 +36,29 @@ class File extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client
     }
 
     /**
-     * Retrieves the content-addressed identifier of the file.
+     * A unique identifier for this File.
      */
     public function id(): FileId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('id');
-        return new \Dagger\Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
-     * Gets the size of the file, in bytes.
+     * Retrieves the name of the file.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Retrieves the size of the file, in bytes.
      */
     public function size(): int
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('size');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('size');
         return (int)$this->queryLeaf($leafQueryBuilder, 'size');
     }
 
@@ -58,8 +67,8 @@ class File extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client
      */
     public function sync(): FileId
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('sync');
-        return new \Dagger\Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 
     /**
@@ -67,8 +76,8 @@ class File extends \Dagger\Client\AbstractDaggerObject implements \Dagger\Client
      */
     public function withTimestamps(int $timestamp): File
     {
-        $innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('withTimestamps');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withTimestamps');
         $innerQueryBuilder->setArgument('timestamp', $timestamp);
-        return new \Dagger\Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

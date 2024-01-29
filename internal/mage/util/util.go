@@ -78,7 +78,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			".golangci.yml",
 			"**/README.md", // needed for examples test
 			"**/help.txt",  // needed for linting module bootstrap code
-			"sdk/go/codegen/generator/nodejs/templates/src/testdata/**/*",
+			"sdk/go/codegen/generator/typescript/templates/src/testdata/**/*",
 			"core/integration/testdata/**/*",
 
 			// Go SDK runtime codegen
@@ -152,7 +152,7 @@ func HostDaggerBinary(c *dagger.Client) *dagger.File {
 	return PlatformDaggerBinary(c, runtime.GOOS, runtime.GOARCH, goarm)
 }
 
-// CodegenBinary returns a binary for generating the Go and NodeJS SDKs.
+// CodegenBinary returns a binary for generating the Go and TypeScript SDKs.
 func CodegenBinary(c *dagger.Client) *dagger.File {
 	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/codegen", "-ldflags", "-s -w", "./cmd/codegen"}).
@@ -174,6 +174,13 @@ func HostDockerDir(c *dagger.Client) *dagger.Directory {
 		return c.Directory()
 	}
 	return c.Host().Directory(path)
+}
+
+// HostVar is a chainable util for setting an env var from the host in a container.
+func HostVar(c *dagger.Client, name string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithEnvVariable(name, GetHostEnv(name))
+	}
 }
 
 // HostSecretVar is a chainable util for setting a secret env var from the host in a container.

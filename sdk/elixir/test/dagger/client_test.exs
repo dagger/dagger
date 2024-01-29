@@ -180,7 +180,9 @@ defmodule Dagger.ClientTest do
              |> Container.from("alpine:3.16.2")
              |> Container.env_variables()
 
-    assert [%EnvVariable{name: "PATH"}] = envs
+    assert [{:ok, "PATH"}] =
+             envs
+             |> Enum.map(&EnvVariable.name/1)
   end
 
   test "nullable", %{client: client} do
@@ -213,7 +215,7 @@ defmodule Dagger.ClientTest do
 
     assert {:ok, "bar"} =
              client
-             |> Client.secret(id)
+             |> Client.load_secret_from_id(id)
              |> Secret.plaintext()
   end
 

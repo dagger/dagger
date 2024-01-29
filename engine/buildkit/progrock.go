@@ -3,9 +3,6 @@ package buildkit
 import (
 	"context"
 	"fmt"
-	"net"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
@@ -91,23 +88,6 @@ func (w ProgrockLogrusWriter) WriteStatus(ev *progrock.StatusUpdate) error {
 
 func (w ProgrockLogrusWriter) Close() error {
 	return nil
-}
-
-func ProgrockForwarder(sockPath string, w progrock.Writer) (progrock.Writer, func() error, error) {
-	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
-		return nil, nil, err
-	}
-	l, err := net.Listen("unix", sockPath)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	progW, err := progrock.ServeRPC(l, w)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return progW, l.Close, nil
 }
 
 func RecordVertexes(recorder *progrock.Recorder, def *pb.Definition) {

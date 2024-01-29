@@ -386,7 +386,7 @@ func updateModuleConfig(
 		return fmt.Errorf("failed to write module config: %w", err)
 	}
 
-	mod, err := modFlag.AsModule(ctx, dag)
+	mod, err := modFlag.AsUninitializedModule(ctx, dag)
 	if err != nil {
 		return fmt.Errorf("failed to load module: %w", err)
 	}
@@ -486,114 +486,101 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 	return loadedMod, nil
 }
 
-// loadModObjects loads the objects defined by the given module in an easier to use data structure.
-func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
+// loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
+func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
 	var res struct {
-		Mod struct {
-			Name string
-		}
 		TypeDefs []*modTypeDef
 	}
 
+	const query = `
+fragment TypeDefRefParts on TypeDef {
+	kind
+	optional
+	asObject {
+			name
+	}
+	asInterface {
+			name
+	}
+	asInput {
+			name
+	}
+	asList {
+			elementTypeDef {
+					kind
+					asObject {
+							name
+					}
+					asInterface {
+							name
+					}
+					asInput {
+							name
+					}
+			}
+	}
+}
+
+fragment FunctionParts on Function {
+	name
+	description
+	returnType {
+		...TypeDefRefParts
+	}
+	args {
+		name
+		description
+		defaultValue
+		typeDef {
+			...TypeDefRefParts
+		}
+	}
+}
+
+fragment FieldParts on FieldTypeDef {
+	name
+	description
+	typeDef {
+		...TypeDefRefParts
+	}
+}
+
+query TypeDefs($module: ModuleID!) {
+	typeDefs: currentTypeDefs {
+		kind
+		optional
+		asObject {
+			name
+			sourceModuleName
+			constructor {
+				...FunctionParts
+			}
+			functions {
+				...FunctionParts
+			}
+			fields {
+				...FieldParts
+			}
+		}
+		asInterface {
+			name
+			sourceModuleName
+			functions {
+				...FunctionParts
+			}
+		}
+		asInput {
+			name
+			fields {
+				...FieldParts
+			}
+		}
+	}
+}
+`
+
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `
-            query Objects($module: ModuleID!) {
-                mod: loadModuleFromID(id: $module) {
-                    name
-                }
-                typeDefs: currentTypeDefs {
-                    asObject {
-                        name
-                        sourceModuleName
-                        constructor {
-                            returnType {
-                                kind
-                                asObject {
-                                    name
-                                }
-                            }
-                            args {
-                                name
-                                description
-                                defaultValue
-                                typeDef {
-                                    kind
-                                    optional
-                                    asObject {
-                                        name
-                                    }
-                                    asList {
-                                        elementTypeDef {
-                                            kind
-                                            asObject {
-                                                name
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        functions {
-                            name
-                            description
-                            returnType {
-                                kind
-                                asObject {
-                                    name
-                                }
-                                asList {
-                                    elementTypeDef {
-                                        kind
-                                        asObject {
-                                            name
-                                        }
-                                    }
-                                }
-                            }
-                            args {
-                                name
-                                description
-                                defaultValue
-                                typeDef {
-                                    kind
-                                    optional
-                                    asObject {
-                                        name
-                                    }
-                                    asList {
-                                        elementTypeDef {
-                                            kind
-                                            asObject {
-                                                name
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        fields {
-                            name
-                            description
-                            typeDef {
-                                kind
-                                optional
-                                asObject {
-                                    name
-                                }
-                                asList {
-                                    elementTypeDef {
-                                        kind
-                                        asObject {
-                                            name
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        `,
+		Query: query,
 		Variables: map[string]interface{}{
 			"module": mod,
 		},
@@ -604,13 +591,42 @@ func loadModObjects(ctx context.Context, dag *dagger.Client, mod *dagger.Module)
 		return nil, fmt.Errorf("query module objects: %w", err)
 	}
 
-	return &moduleDef{Name: res.Mod.Name, Objects: res.TypeDefs}, nil
+	name, err := mod.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get module name: %w", err)
+	}
+
+	modDef := &moduleDef{Name: name}
+	for _, typeDef := range res.TypeDefs {
+		switch typeDef.Kind {
+		case dagger.ObjectKind:
+			modDef.Objects = append(modDef.Objects, typeDef)
+		case dagger.InterfaceKind:
+			modDef.Interfaces = append(modDef.Interfaces, typeDef)
+		case dagger.InputKind:
+			modDef.Inputs = append(modDef.Inputs, typeDef)
+		}
+	}
+	return modDef, nil
 }
 
 // moduleDef is a representation of dagger.Module.
 type moduleDef struct {
-	Name    string
-	Objects []*modTypeDef
+	Name       string
+	Objects    []*modTypeDef
+	Interfaces []*modTypeDef
+	Inputs     []*modTypeDef
+}
+
+func (m *moduleDef) AsFunctionProviders() []functionProvider {
+	providers := make([]functionProvider, 0, len(m.Objects)+len(m.Interfaces))
+	for _, obj := range m.AsObjects() {
+		providers = append(providers, obj)
+	}
+	for _, iface := range m.AsInterfaces() {
+		providers = append(providers, iface)
+	}
+	return providers
 }
 
 // AsObjects returns the module's object type definitions.
@@ -619,6 +635,26 @@ func (m *moduleDef) AsObjects() []*modObject {
 	for _, typeDef := range m.Objects {
 		if typeDef.AsObject != nil {
 			defs = append(defs, typeDef.AsObject)
+		}
+	}
+	return defs
+}
+
+func (m *moduleDef) AsInterfaces() []*modInterface {
+	var defs []*modInterface
+	for _, typeDef := range m.Interfaces {
+		if typeDef.AsInterface != nil {
+			defs = append(defs, typeDef.AsInterface)
+		}
+	}
+	return defs
+}
+
+func (m *moduleDef) AsInputs() []*modInput {
+	var defs []*modInput
+	for _, typeDef := range m.Inputs {
+		if typeDef.AsInput != nil {
+			defs = append(defs, typeDef.AsInput)
 		}
 	}
 	return defs
@@ -635,38 +671,104 @@ func (m *moduleDef) GetObject(name string) *modObject {
 	return nil
 }
 
+// GetInterface retrieves a saved interface type definition from the module.
+func (m *moduleDef) GetInterface(name string) *modInterface {
+	for _, iface := range m.AsInterfaces() {
+		// Normalize name in case an SDK uses a different convention for interface names.
+		if gqlObjectName(iface.Name) == gqlObjectName(name) {
+			return iface
+		}
+	}
+	return nil
+}
+
+// GetInterface retrieves a saved object or interface type definition from the module as a functionProvider.
+func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
+	if obj := m.GetObject(name); obj != nil {
+		return obj
+	}
+	if iface := m.GetInterface(name); iface != nil {
+		return iface
+	}
+	return nil
+}
+
+// GetInput retrieves a saved interface type definition from the module.
+func (m *moduleDef) GetInput(name string) *modInput {
+	for _, input := range m.AsInputs() {
+		// Normalize name in case an SDK uses a different convention for input names.
+		if gqlObjectName(input.Name) == gqlObjectName(name) {
+			return input
+		}
+	}
+	return nil
+}
+
 func (m *moduleDef) GetMainObject() *modObject {
 	return m.GetObject(m.Name)
 }
 
-// LoadObject attempts to replace a function's return object type or argument's
+// LoadTypeDef attempts to replace a function's return object type or argument's
 // object type with with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
-func (m *moduleDef) LoadObject(typeDef *modTypeDef) {
+func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
 		obj := m.GetObject(typeDef.AsObject.Name)
 		if obj != nil {
 			typeDef.AsObject = obj
 		}
 	}
+	if typeDef.AsInterface != nil && typeDef.AsInterface.Functions == nil {
+		iface := m.GetInterface(typeDef.AsInterface.Name)
+		if iface != nil {
+			typeDef.AsInterface = iface
+		}
+	}
+	if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
+		input := m.GetInput(typeDef.AsInput.Name)
+		if input != nil {
+			typeDef.AsInput = input
+		}
+	}
 	if typeDef.AsList != nil {
-		m.LoadObject(typeDef.AsList.ElementTypeDef)
+		m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
 	}
 }
 
 // modTypeDef is a representation of dagger.TypeDef.
 type modTypeDef struct {
-	Kind     dagger.TypeDefKind
-	Optional bool
-	AsObject *modObject
-	AsList   *modList
+	Kind        dagger.TypeDefKind
+	Optional    bool
+	AsObject    *modObject
+	AsInterface *modInterface
+	AsInput     *modInput
+	AsList      *modList
 }
 
-func (t *modTypeDef) ObjectName() string {
+type functionProvider interface {
+	ProviderName() string
+	GetFunctions() []*modFunction
+	GetFunction(name string) (*modFunction, error)
+}
+
+func (t *modTypeDef) Name() string {
 	if t.AsObject != nil {
 		return t.AsObject.Name
 	}
+	if t.AsInterface != nil {
+		return t.AsInterface.Name
+	}
 	return ""
+}
+
+func (t *modTypeDef) AsFunctionProvider() functionProvider {
+	if t.AsObject != nil {
+		return t.AsObject
+	}
+	if t.AsInterface != nil {
+		return t.AsInterface
+	}
+	return nil
 }
 
 // modObject is a representation of dagger.ObjectTypeDef.
@@ -676,6 +778,12 @@ type modObject struct {
 	Fields           []*modField
 	Constructor      *modFunction
 	SourceModuleName string
+}
+
+var _ functionProvider = (*modObject)(nil)
+
+func (o *modObject) ProviderName() string {
+	return o.Name
 }
 
 // GetFunctions returns the object's function definitions as well as the fields,
@@ -691,6 +799,55 @@ func (o *modObject) GetFunctions() []*modFunction {
 	}
 	fns = append(fns, o.Functions...)
 	return fns
+}
+
+func (o *modObject) GetFunction(name string) (*modFunction, error) {
+	for _, fn := range o.Functions {
+		if fn.Name == name || cliName(fn.Name) == name {
+			return fn, nil
+		}
+	}
+	for _, f := range o.Fields {
+		if f.Name == name || cliName(f.Name) == name {
+			return &modFunction{
+				Name:        f.Name,
+				Description: f.Description,
+				ReturnType:  f.TypeDef,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("no function '%s' in object type '%s'", name, o.Name)
+}
+
+type modInterface struct {
+	Name      string
+	Functions []*modFunction
+}
+
+var _ functionProvider = (*modInterface)(nil)
+
+func (o *modInterface) ProviderName() string {
+	return o.Name
+}
+
+func (o *modInterface) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Functions))
+	fns = append(fns, o.Functions...)
+	return fns
+}
+
+func (o *modInterface) GetFunction(name string) (*modFunction, error) {
+	for _, fn := range o.Functions {
+		if fn.Name == name || cliName(fn.Name) == name {
+			return fn, nil
+		}
+	}
+	return nil, fmt.Errorf("no function '%s' in interface type '%s'", name, o.Name)
+}
+
+type modInput struct {
+	Name   string
+	Fields []*modField
 }
 
 // modList is a representation of dagger.ListTypeDef.

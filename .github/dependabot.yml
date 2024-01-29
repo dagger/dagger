@@ -12,35 +12,24 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
 
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    labels:
-      - "kind/dependencies"
-      - "area/tooling"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
-
   - package-ecosystem: "gomod"
     directory: "/internal/mage"
     schedule:
       interval: "monthly"
     labels:
       - "kind/dependencies"
-      - "area/tooling"
+      - "area/ci"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "npm"
-    directory: "/sdk/nodejs"
+    directory: "/sdk/typescript"
     schedule:
       interval: "monthly"
     labels:
       - "kind/dependencies"
-      - "sdk/nodejs"
+      - "sdk/typescript"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]

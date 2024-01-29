@@ -6,15 +6,15 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Compression algorithm to use for image layers.
  */
 enum ImageLayerCompression: string
 {
-    case EStarGZ = 'EStarGZ';
     case Gzip = 'Gzip';
-    case Uncompressed = 'Uncompressed';
     case Zstd = 'Zstd';
+    case EStarGZ = 'EStarGZ';
+    case Uncompressed = 'Uncompressed';
 }

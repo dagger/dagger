@@ -6,16 +6,13 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Transport layer network protocol associated to a port.
  */
 enum NetworkProtocol: string
 {
-    /** TCP (Transmission Control Protocol) */
     case TCP = 'TCP';
-
-    /** UDP (User Datagram Protocol) */
     case UDP = 'UDP';
 }

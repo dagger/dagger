@@ -9,6 +9,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tui"
@@ -85,7 +86,13 @@ func withEngineAndTUI(
 			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
 		}
 
-		params.ProgrockWriter = console.NewWriter(os.Stderr, opts...)
+		progW := console.NewWriter(os.Stderr, opts...)
+		progW, engineErr := progrockTee(progW)
+		if engineErr != nil {
+			return engineErr
+		}
+
+		params.ProgrockWriter = progW
 
 		params.EngineNameCallback = func(name string) {
 			fmt.Fprintln(os.Stderr, "Connected to engine", name)
@@ -164,6 +171,10 @@ func inlineTUI(
 	tape.ShowInternal(debug)
 	tape.Focus(focus)
 	tape.RevealErrored(revealErrored)
+
+	if os.Getenv("IDS") != "" {
+		tape.SetFrontend(idtui.New())
+	}
 
 	if debug {
 		tape.MessageLevel(progrock.MessageLevel_DEBUG)

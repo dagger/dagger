@@ -14,28 +14,41 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
-	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // File is a content-addressed file.
 type File struct {
+	Query *Query
+
 	LLB      *pb.Definition `json:"llb"`
 	File     string         `json:"file"`
-	Pipeline pipeline.Path  `json:"pipeline"`
-	Platform specs.Platform `json:"platform"`
+	Platform Platform       `json:"platform"`
 
 	// Services necessary to provision the file.
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
-func (file *File) PBDefinitions() ([]*pb.Definition, error) {
+func (*File) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "File",
+		NonNull:   true,
+	}
+}
+
+func (*File) TypeDescription() string {
+	return "A file."
+}
+
+var _ HasPBDefinitions = (*File)(nil)
+
+func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if file.LLB != nil {
 		defs = append(defs, file.LLB)
@@ -45,7 +58,7 @@ func (file *File) PBDefinitions() ([]*pb.Definition, error) {
 		if ctr == nil {
 			continue
 		}
-		ctrDefs, err := ctr.PBDefinitions()
+		ctrDefs, err := ctr.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -54,11 +67,11 @@ func (file *File) PBDefinitions() ([]*pb.Definition, error) {
 	return defs, nil
 }
 
-func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *File {
+func NewFile(query *Query, def *pb.Definition, file string, platform Platform, services ServiceBindings) *File {
 	return &File{
+		Query:    query,
 		LLB:      def,
 		File:     file,
-		Pipeline: pipeline,
 		Platform: platform,
 		Services: services,
 	}
@@ -66,82 +79,69 @@ func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipe
 
 func NewFileWithContents(
 	ctx context.Context,
-	bk *buildkit.Client,
-	svcs *Services,
+	query *Query,
 	name string,
 	content []byte,
 	permissions fs.FileMode,
 	ownership *Ownership,
-	pipeline pipeline.Path,
-	platform specs.Platform,
+	platform Platform,
 ) (*File, error) {
-	dir, err := NewScratchDirectory(pipeline, platform).WithNewFile(ctx, name, content, permissions, ownership)
+	dir, err := NewScratchDirectory(query, platform).WithNewFile(ctx, name, content, permissions, ownership)
 	if err != nil {
 		return nil, err
 	}
-	return dir.File(ctx, bk, svcs, name)
+	return dir.File(ctx, name)
 }
 
-func NewFileSt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
-	def, err := st.Marshal(ctx, llb.Platform(platform))
+func NewFileSt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*File, error) {
+	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(ctx, def.ToPB(), dir, pipeline, platform, services), nil
+	return NewFile(query, def.ToPB(), dir, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (file *File) Clone() *File {
 	cp := *file
-	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
-}
-
-// ID marshals the file into a content-addressed ID.
-func (file *File) ID() (FileID, error) {
-	return resourceid.Encode(file)
 }
 
 var _ pipeline.Pipelineable = (*File)(nil)
 
 func (file *File) PipelinePath() pipeline.Path {
-	// TODO(vito): test
-	return file.Pipeline
-}
-
-// File is digestible so that it can be recorded as an output of the --debug
-// vertex that created it.
-var _ resourceid.Digestible = (*File)(nil)
-
-// Digest returns the file's content hash.
-func (file *File) Digest() (digest.Digest, error) {
-	return stableDigest(file)
+	return file.Query.Pipeline
 }
 
 func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
-func (file *File) Evaluate(ctx context.Context, bk *buildkit.Client, svcs *Services) error {
-	detach, _, err := svcs.StartBindings(ctx, bk, file.Services)
+func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	svcs := file.Query.Services
+	bk := file.Query.Buildkit
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
+	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: file.LLB,
 	})
-	return err
 }
 
 // Contents handles file content retrieval
-func (file *File) Contents(ctx context.Context, bk *buildkit.Client, svcs *Services) ([]byte, error) {
-	detach, _, err := svcs.StartBindings(ctx, bk, file.Services)
+func (file *File) Contents(ctx context.Context) ([]byte, error) {
+	svcs := file.Query.Services
+	bk := file.Query.Buildkit
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (file *File) Contents(ctx context.Context, bk *buildkit.Client, svcs *Servi
 	}
 
 	// Stat the file and preallocate file contents buffer:
-	st, err := file.Stat(ctx, bk, svcs)
+	st, err := file.Stat(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +190,11 @@ func (file *File) Contents(ctx context.Context, bk *buildkit.Client, svcs *Servi
 	return contents, nil
 }
 
-func (file *File) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services) (*fstypes.Stat, error) {
-	detach, _, err := svcs.StartBindings(ctx, bk, file.Services)
+func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
+	svcs := file.Query.Services
+	bk := file.Query.Buildkit
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +222,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 
 	stamped := llb.Scratch().File(llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)))
 
-	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform))
+	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
@@ -229,8 +232,11 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	return file, nil
 }
 
-func (file *File) Open(ctx context.Context, host *Host, bk *buildkit.Client, svcs *Services) (io.ReadCloser, error) {
-	detach, _, err := svcs.StartBindings(ctx, bk, file.Services)
+func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
+	bk := file.Query.Buildkit
+	svcs := file.Query.Services
+
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -244,19 +250,15 @@ func (file *File) Open(ctx context.Context, host *Host, bk *buildkit.Client, svc
 	return fs.Open(file.File)
 }
 
-func (file *File) Export(
-	ctx context.Context,
-	bk *buildkit.Client,
-	host *Host,
-	svcs *Services,
-	dest string,
-	allowParentDirPath bool,
-) error {
+func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bool) error {
+	svcs := file.Query.Services
+	bk := file.Query.Buildkit
+
 	src, err := file.State()
 	if err != nil {
 		return err
 	}
-	def, err := src.Marshal(ctx, llb.Platform(file.Platform))
+	def, err := src.Marshal(ctx, llb.Platform(file.Platform.Spec()))
 	if err != nil {
 		return err
 	}
@@ -269,7 +271,7 @@ func (file *File) Export(
 	)
 	defer vtx.Done(err)
 
-	detach, _, err := svcs.StartBindings(ctx, bk, file.Services)
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return err
 	}

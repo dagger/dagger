@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -18,11 +20,13 @@ import (
 )
 
 const (
-	Directory string = "Directory"
-	Container string = "Container"
-	File      string = "File"
-	Secret    string = "Secret"
-	Service   string = "Service"
+	Directory   string = "Directory"
+	Container   string = "Container"
+	File        string = "File"
+	Secret      string = "Secret"
+	Service     string = "Service"
+	Terminal    string = "Terminal"
+	PortForward string = "PortForward"
 )
 
 var funcGroup = &cobra.Group{
@@ -33,67 +37,60 @@ var funcGroup = &cobra.Group{
 var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
-	shellCmd,
-	downloadCmd,
-	upCmd,
 }
 
 var funcListCmd = &FuncCommand{
 	Name:  "functions",
-	Short: `List all functions in a module`,
+	Short: `List available functions`,
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-			termenv.String("object name").Bold(),
-			termenv.String("function name").Bold(),
-			termenv.String("description").Bold(),
-			termenv.String("return type").Bold(),
+		var o functionProvider = fc.mod.GetMainObject()
+		fmt.Fprintf(tw, "%s\t%s\n",
+			termenv.String("Name").Bold(),
+			termenv.String("Description").Bold(),
 		)
-
-		for _, o := range fc.mod.Objects {
-			if o.AsObject != nil {
-				for _, fn := range o.AsObject.GetFunctions() {
-					objName := o.AsObject.Name
-					if gqlObjectName(objName) == gqlObjectName(fc.mod.Name) {
-						objName = "*" + objName
-					}
-
-					// TODO: Add another column with available verbs.
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
-						objName,
-						fn.Name,
-						fn.Description,
-						printReturnType(fn.ReturnType),
-					)
-				}
+		// Walk the hypothetical function pipeline specified by the args
+		for _, field := range cmd.Flags().Args() {
+			// Lookup the next function in the specified pipeline
+			nextFunc, err := o.GetFunction(field)
+			if err != nil {
+				return err
 			}
+			nextType := nextFunc.ReturnType
+			if nextType.AsFunctionProvider() != nil {
+				// sipsma explains why 'nextType.AsObject' is not enough:
+				// > when we're returning the hierarchies of TypeDefs from the API,
+				// > and an object shows up as an output/input type to a function,
+				// > we just return a TypeDef with a name of the object rather than the full object definition.
+				// > You can get the full object definition only from the "top-level" returned object on the api call.
+				//
+				// > The reason is that if we repeated the full object definition every time,
+				// > you'd at best be using O(n^2) space in the result,
+				// > and at worst cause json serialization errors due to cyclic references
+				// > (i.e. with* functions on an object that return the object itself).
+				o = fc.mod.GetFunctionProvider(nextType.Name())
+				continue
+			}
+			// FIXME: handle arrays of objects
+			return fmt.Errorf("function '%s' returns non-object type %v", field, nextType.Kind)
 		}
-
+		// List functions on the final object
+		fns := o.GetFunctions()
+		sort.Slice(fns, func(i, j int) bool {
+			return fns[i].Name < fns[j].Name
+		})
+		for _, fn := range fns {
+			desc := strings.SplitN(fn.Description, "\n", 2)[0]
+			if desc == "" {
+				desc = "-"
+			}
+			fmt.Fprintf(tw, "%s\t%s\n",
+				cliName(fn.Name),
+				desc,
+			)
+		}
 		return tw.Flush()
 	},
-}
-
-func printReturnType(returnType *modTypeDef) (n string) {
-	defer func() {
-		if !returnType.Optional {
-			n += "!"
-		}
-	}()
-	switch returnType.Kind {
-	case dagger.Stringkind:
-		return "String"
-	case dagger.Integerkind:
-		return "Int"
-	case dagger.Booleankind:
-		return "Boolean"
-	case dagger.Objectkind:
-		return returnType.AsObject.Name
-	case dagger.Listkind:
-		return fmt.Sprintf("[%s]", printReturnType(returnType.AsList.ElementTypeDef))
-	default:
-		return ""
-	}
 }
 
 type FuncCommands []*FuncCommand
@@ -394,7 +391,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	}
 
 	load = vtx.Task("loading objects")
-	modDef, err := loadModObjects(ctx, dag, mod)
+	modDef, err := loadModTypeDefs(ctx, dag, mod)
 	load.Done(err)
 	if err != nil {
 		return nil, nil, err
@@ -469,9 +466,9 @@ func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, err
 	return fc.traverse(cmd)
 }
 
-func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, obj *modObject) {
-	if obj != nil {
-		for _, fn := range obj.GetFunctions() {
+func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fnProvider functionProvider) {
+	if fnProvider != nil {
+		for _, fn := range fnProvider.GetFunctions() {
 			subCmd := fc.makeSubCmd(dag, fn)
 			cmd.AddCommand(subCmd)
 		}
@@ -487,11 +484,11 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				return err
 			}
 
-			obj := fn.ReturnType.AsObject
-			if obj == nil && fn.ReturnType.AsList != nil {
-				obj = fn.ReturnType.AsList.ElementTypeDef.AsObject
+			fnProvider := fn.ReturnType.AsFunctionProvider()
+			if fnProvider == nil && fn.ReturnType.AsList != nil {
+				fnProvider = fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 			}
-			fc.addSubCommands(cmd, dag, obj)
+			fc.addSubCommands(cmd, dag, fnProvider)
 
 			// Show help for first command that has the --help flag.
 			help, _ := cmd.Flags().GetBool("help")
@@ -507,7 +504,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			switch fn.ReturnType.Kind {
-			case dagger.Objectkind:
+			case dagger.ObjectKind, dagger.InterfaceKind:
 				if fc.OnSelectObjectLeaf == nil {
 					// there is no handling of this object and no further selections, error out
 					fc.showUsage = true
@@ -515,16 +512,16 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				}
 
 				// the top-level command may handle this via OnSelectObjectLeaf
-				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.AsObject.Name)
+				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.Name())
 				if err != nil {
 					fc.showUsage = true
 					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
 				}
 
-			case dagger.Listkind:
-				obj := fn.ReturnType.AsList.ElementTypeDef.AsObject
-				if obj != nil && len(obj.GetFunctions()) > 0 {
-					// we don't handle lists of objects w/ extra functions on any commands right now
+			case dagger.ListKind:
+				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
+				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
+					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
 					fc.showUsage = true
 					return fmt.Errorf("%q requires a sub-command", cmd.Name())
 				}
@@ -554,7 +551,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
 			}
 
-			if fn.ReturnType.Kind != dagger.Voidkind {
+			if fn.ReturnType.Kind != dagger.VoidKind {
 				cmd.Println(response)
 			}
 
@@ -573,10 +570,10 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 }
 
 func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, fn *modFunction, dag *dagger.Client) error {
-	fc.mod.LoadObject(fn.ReturnType)
+	fc.mod.LoadTypeDef(fn.ReturnType)
 
 	for _, arg := range fn.Args {
-		fc.mod.LoadObject(arg.TypeDef)
+		fc.mod.LoadTypeDef(arg.TypeDef)
 	}
 
 	for _, arg := range fn.Args {

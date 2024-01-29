@@ -6,13 +6,13 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 enum ImageMediaTypes: string
 {
-    case DockerMediaTypes = 'DockerMediaTypes';
     case OCIMediaTypes = 'OCIMediaTypes';
+    case DockerMediaTypes = 'DockerMediaTypes';
 }

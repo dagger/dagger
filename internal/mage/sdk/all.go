@@ -3,12 +3,7 @@ package sdk
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 
-	"github.com/hexops/gotextdiff"
-	"github.com/hexops/gotextdiff/myers"
-	"github.com/hexops/gotextdiff/span"
 	"github.com/magefile/mage/mg"
 	"golang.org/x/sync/errgroup"
 )
@@ -24,7 +19,7 @@ type SDK interface {
 var availableSDKs = []SDK{
 	&Go{},
 	&Python{},
-	&Nodejs{},
+	&TypeScript{},
 	&Elixir{},
 	&Rust{},
 	&PHP{},
@@ -77,47 +72,4 @@ func (t All) runAll(ctx context.Context, fn func(context.Context, SDK) error) er
 		})
 	}
 	return eg.Wait()
-}
-
-// lintGeneratedCode ensures the generated code is up to date.
-//
-// 1) Read currently generated code
-// 2) Generate again
-// 3) Compare
-// 4) Restore original generated code.
-func lintGeneratedCode(fn func() error, files ...string) error {
-	originals := map[string][]byte{}
-	for _, f := range files {
-		content, err := os.ReadFile(f)
-		if err != nil {
-			return err
-		}
-		originals[f] = content
-	}
-
-	defer func() {
-		for _, f := range files {
-			defer os.WriteFile(f, originals[f], 0600)
-		}
-	}()
-
-	if err := fn(); err != nil {
-		return err
-	}
-
-	for _, f := range files {
-		original := string(originals[f])
-		updated, err := os.ReadFile(f)
-		if err != nil {
-			return err
-		}
-
-		if original != string(updated) {
-			edits := myers.ComputeEdits(span.URIFromPath(f), original, string(updated))
-			diff := fmt.Sprint(gotextdiff.ToUnified(f, f, original, edits))
-			return fmt.Errorf("generated api mismatch. please run `mage sdk:all:generate`:\n%s", diff)
-		}
-	}
-
-	return nil
 }

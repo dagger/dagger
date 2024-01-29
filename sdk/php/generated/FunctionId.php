@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
- * A reference to a Function.
+ * The `FunctionID` scalar type represents an identifier for an object of type Function.
  */
-readonly class FunctionId extends \Dagger\Client\DaggerId
+readonly class FunctionId extends Client\AbstractId
 {
 }

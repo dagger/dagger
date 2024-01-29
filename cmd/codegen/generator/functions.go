@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"strings"
 	"unicode"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -15,6 +16,8 @@ const (
 // FormatTypeFuncs is an interface to format any GraphQL type.
 // Each generator has to implement this interface.
 type FormatTypeFuncs interface {
+	WithScope(scope string) FormatTypeFuncs
+
 	FormatKindList(representation string) string
 	FormatKindScalarString(representation string) string
 	FormatKindScalarInt(representation string) string
@@ -96,8 +99,8 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error)
 // FormatReturnType formats a GraphQL type into the SDK language output,
 // unless it's an ID that will be converted which needs to be formatted
 // as an input (for chaining).
-func (c *CommonFunctions) FormatReturnType(f introspection.Field) (string, error) {
-	return c.formatType(f.TypeRef, c.ConvertID(f))
+func (c *CommonFunctions) FormatReturnType(f introspection.Field, scopes ...string) (string, error) {
+	return c.formatType(f.TypeRef, strings.Join(scopes, ""), c.ConvertID(f))
 }
 
 func (c *CommonFunctions) ToLowerCase(s string) string {
@@ -174,19 +177,21 @@ func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
 // FormatInputType formats a GraphQL type into the SDK language input
 //
 // Example: `String` -> `string`
-func (c *CommonFunctions) FormatInputType(r *introspection.TypeRef) (string, error) {
-	return c.formatType(r, true)
+func (c *CommonFunctions) FormatInputType(r *introspection.TypeRef, scopes ...string) (string, error) {
+	return c.formatType(r, strings.Join(scopes, ""), true)
 }
 
 // FormatOutputType formats a GraphQL type into the SDK language output
 //
 // Example: `String` -> `string`
-func (c *CommonFunctions) FormatOutputType(r *introspection.TypeRef) (string, error) {
-	return c.formatType(r, false)
+func (c *CommonFunctions) FormatOutputType(r *introspection.TypeRef, scopes ...string) (string, error) {
+	return c.formatType(r, strings.Join(scopes, ""), false)
 }
 
 // formatType loops through the type reference to transform it into its SDK language.
-func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (representation string, err error) {
+func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, input bool) (representation string, err error) {
+	ff := c.formatTypeFuncs.WithScope(scope)
+
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
 		case introspection.TypeKindList:
@@ -194,27 +199,27 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (repr
 			// the loop.
 			// Since an SDK needs to insert it at the end, other at the beginning.
 			defer func() {
-				representation = c.formatTypeFuncs.FormatKindList(representation)
+				representation = ff.FormatKindList(representation)
 			}()
 		case introspection.TypeKindScalar:
 			switch introspection.Scalar(ref.Name) {
 			case introspection.ScalarString:
-				return c.formatTypeFuncs.FormatKindScalarString(representation), nil
+				return ff.FormatKindScalarString(representation), nil
 			case introspection.ScalarInt:
-				return c.formatTypeFuncs.FormatKindScalarInt(representation), nil
+				return ff.FormatKindScalarInt(representation), nil
 			case introspection.ScalarFloat:
-				return c.formatTypeFuncs.FormatKindScalarFloat(representation), nil
+				return ff.FormatKindScalarFloat(representation), nil
 			case introspection.ScalarBoolean:
-				return c.formatTypeFuncs.FormatKindScalarBoolean(representation), nil
+				return ff.FormatKindScalarBoolean(representation), nil
 			default:
-				return c.formatTypeFuncs.FormatKindScalarDefault(representation, ref.Name, input), nil
+				return ff.FormatKindScalarDefault(representation, ref.Name, input), nil
 			}
 		case introspection.TypeKindObject:
-			return c.formatTypeFuncs.FormatKindObject(representation, ref.Name, input), nil
+			return ff.FormatKindObject(representation, ref.Name, input), nil
 		case introspection.TypeKindInputObject:
-			return c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name, input), nil
+			return ff.FormatKindInputObject(representation, ref.Name, input), nil
 		case introspection.TypeKindEnum:
-			return c.formatTypeFuncs.FormatKindEnum(representation, ref.Name), nil
+			return ff.FormatKindEnum(representation, ref.Name), nil
 		}
 	}
 

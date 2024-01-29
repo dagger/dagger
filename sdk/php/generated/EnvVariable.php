@@ -6,28 +6,31 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
- * A simple key value object that represents an environment variable.
+ * An environment variable name and value.
  */
-class EnvVariable extends \Dagger\Client\AbstractDaggerObject
+class EnvVariable extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The environment variable name.
+     * A unique identifier for this EnvVariable.
      */
+    public function id(): EnvVariableId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        return new \Dagger\EnvVariableId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
     public function name(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('name');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
-    /**
-     * The environment variable value.
-     */
     public function value(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder('value');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
         return (string)$this->queryLeaf($leafQueryBuilder, 'value');
     }
 }

@@ -46,7 +46,11 @@ type ManagerConfig struct {
 	EngineID     string
 }
 
-const LocalCacheID = "local"
+const (
+	LocalCacheID            = "local"
+	startupImportTimeout    = 1 * time.Minute
+	backgroundImportTimeout = 10 * time.Minute
+)
 
 func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, error) {
 	localCache := solver.NewCacheManager(ctx, LocalCacheID, managerConfig.KeyStore, managerConfig.ResultStore)
@@ -85,17 +89,23 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 	}
 	m.runtimeConfig = *config
 
-	// do an initial synchronous import at start
-	// TODO: make this non-fatal (but ensure no inconsistent state in failure case)
-	if err := m.Import(ctx); err != nil {
-		return nil, err
-	}
-	// loop for periodic async imports
 	importParentCtx, cancelImport := context.WithCancel(context.Background())
 	go func() {
 		<-m.startCloseCh
 		cancelImport()
 	}()
+
+	// do an initial synchronous import at start
+	m.inner = m.localCache // start out with just the local cache, will be updated if Import succeeds
+	startupImportCtx, startupImportCancel := context.WithTimeout(importParentCtx, startupImportTimeout)
+	defer startupImportCancel()
+	if err := m.Import(startupImportCtx); err != nil {
+		// the first import failed, but we can continue with just the local cache to start and retry
+		// importing in the background in the loop below
+		bklog.G(ctx).WithError(err).Error("failed to import cache at startup")
+	}
+
+	// loop for periodic async imports
 	go func() {
 		importTicker := time.NewTicker(config.ImportPeriod)
 		defer importTicker.Stop()
@@ -105,7 +115,7 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 			case <-m.startCloseCh:
 				return
 			}
-			importContext, cancel := context.WithTimeout(importParentCtx, 10*time.Minute)
+			importContext, cancel := context.WithTimeout(importParentCtx, backgroundImportTimeout)
 			if err := m.Import(importContext); err != nil {
 				bklog.G(ctx).WithError(err).Error("failed to import cache")
 			}
@@ -199,6 +209,10 @@ func (m *manager) Export(ctx context.Context) error {
 				return nil
 			}
 			cacheRef := workerRef.ImmutableRef
+			if cacheRef == nil {
+				bklog.G(ctx).Debugf("skipping cache result %s for %s: nil", cacheResult.ID, id)
+				return nil
+			}
 			cacheKey.Results = append(cacheKey.Results, Result{
 				ID:          cacheRef.ID(),
 				CreatedAt:   cacheResult.CreatedAt,

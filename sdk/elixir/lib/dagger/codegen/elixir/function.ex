@@ -1,16 +1,33 @@
 defmodule Dagger.Codegen.Elixir.Function do
   @moduledoc false
 
+  # TODO: retire this and find a better way
   @id_modules_map %{
-    "CacheVolumeID" => "cache_volume",
-    "ContainerID" => "container",
-    "DirectoryID" => "directory",
-    "FileID" => "file",
-    "ProjectCommandID" => "project_command",
-    "ProjectID" => "project",
-    "SecretID" => "secret",
-    "SocketID" => "socket",
-    "ServiceID" => "service"
+    "CacheVolumeID" => "CacheVolume",
+    "ContainerID" => "Container",
+    "DirectoryID" => "Directory",
+    "EnvVariableID" => "EnvVariable",
+    "FieldTypeDefID" => "FieldTypeDef",
+    "FileID" => "File",
+    "FunctionArgID" => "FunctionArg",
+    "FunctionCallArgValueID" => "FunctionCallArgValue",
+    "FunctionCallID" => "FunctionCall",
+    "FunctionID" => "Function",
+    "GeneratedCodeID" => "GeneratedCode",
+    "GitRefID" => "GitRef",
+    "GitRepositoryID" => "GitRepository",
+    "HostID" => "Host",
+    "InterfaceTypeDefID" => "InterfaceTypeDef",
+    "LabelID" => "Label",
+    "ListTypeDefID" => "ListTypeDef",
+    "ModuleConfigID" => "ModuleConfig",
+    "ModuleID" => "Module",
+    "ObjectTypeDefID" => "ObjectTypeDef",
+    "PortID" => "Port",
+    "SecretID" => "Secret",
+    "ServiceID" => "Service",
+    "SocketID" => "Socket",
+    "TypeDefID" => "TypeDef"
   }
 
   def id_module_to_var_name(id_mod), do: Map.fetch!(@id_modules_map, id_mod)

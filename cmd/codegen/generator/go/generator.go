@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strings"
+	"text/template"
 
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
@@ -25,8 +25,13 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-const ClientGenFile = "dagger.gen.go"
-const StarterTemplateFile = "main.go"
+const (
+	// ClientGenFile is the path to write the codegen for the dagger API
+	ClientGenFile = "dagger.gen.go"
+
+	// StarterTemplateFile is the path to write the default module code
+	StarterTemplateFile = "main.go"
+)
 
 type GoGenerator struct {
 	Config generator.Config
@@ -71,7 +76,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		// generate an initial dagger.gen.go from the base Dagger API
 		baseCfg := g.Config
 		baseCfg.ModuleConfig = nil
-		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil); err != nil {
+		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
@@ -101,7 +106,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
 
-	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset); err != nil {
+	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
@@ -213,98 +218,68 @@ func generateCode(
 	pkgInfo *PackageInfo,
 	pkg *packages.Package,
 	fset *token.FileSet,
+	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset)
+	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset, pass)
+	tmpls := templates.Templates(funcs)
 
-	headerData := struct {
-		*PackageInfo
-		Schema *introspection.Schema
-	}{
-		PackageInfo: pkgInfo,
-		Schema:      schema,
-	}
-
-	var render []string
-
-	var header bytes.Buffer
-	if err := templates.Header(funcs).Execute(&header, headerData); err != nil {
-		return err
-	}
-	render = append(render, header.String())
-
-	err := schema.Visit(introspection.VisitHandlers{
-		Scalar: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Scalar(funcs).Execute(&out, t); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-		Object: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Object(funcs).Execute(&out, struct {
-				*introspection.Type
-				IsModuleCode bool
-			}{
-				Type:         t,
-				IsModuleCode: cfg.ModuleConfig != nil,
-			}); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-		Enum: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Enum(funcs).Execute(&out, t); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-		Input: func(t *introspection.Type) error {
-			var out bytes.Buffer
-			if err := templates.Input(funcs).Execute(&out, t); err != nil {
-				return err
-			}
-			render = append(render, out.String())
-			return nil
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	if cfg.ModuleConfig != nil {
-		moduleData := struct {
-			Schema *introspection.Schema
-		}{
-			Schema: schema,
-		}
-
-		var moduleMain bytes.Buffer
-		if err := templates.Module(funcs).Execute(&moduleMain, moduleData); err != nil {
+	for k, tmpl := range tmpls {
+		dt, err := renderFile(ctx, cfg, schema, pkgInfo, tmpl)
+		if err != nil {
 			return err
 		}
-		render = append(render, moduleMain.String())
-	}
-
-	source := strings.Join(render, "\n")
-	formatted, err := format.Source([]byte(source))
-	if err != nil {
-		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
-	}
-	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)
-	if err != nil {
-		return fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, source)
-	}
-
-	if err := mfs.WriteFile(ClientGenFile, formatted, 0600); err != nil {
-		return err
+		if dt == nil {
+			// no contents, skip
+			continue
+		}
+		if err := mfs.MkdirAll(filepath.Dir(k), 0o755); err != nil {
+			return err
+		}
+		if err := mfs.WriteFile(k, dt, 0600); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func renderFile(
+	ctx context.Context,
+	cfg generator.Config,
+	schema *introspection.Schema,
+	pkgInfo *PackageInfo,
+	tmpl *template.Template,
+) ([]byte, error) {
+	data := struct {
+		*PackageInfo
+		Schema *introspection.Schema
+		Types  []*introspection.Type
+	}{
+		PackageInfo: pkgInfo,
+		Schema:      schema,
+		Types:       schema.Visit(),
+	}
+
+	var render bytes.Buffer
+	if err := tmpl.Execute(&render, data); err != nil {
+		return nil, err
+	}
+
+	source := render.Bytes()
+	source = bytes.TrimSpace(source)
+	if len(source) == 0 {
+		return nil, nil
+	}
+
+	formatted, err := format.Source(source)
+	if err != nil {
+		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
+	}
+	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
+	}
+	return formatted, nil
 }
 
 func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {

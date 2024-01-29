@@ -6,16 +6,16 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
  * Port forwarding rules for tunneling network traffic.
  */
-class PortForward extends \Dagger\Client\AbstractDaggerInputObject
+class PortForward extends Client\AbstractInputObject
 {
     public function __construct(
-        public int $backend,
         public ?int $frontend,
+        public int $backend,
         public ?NetworkProtocol $protocol,
     ) {
     }

@@ -6,11 +6,11 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Dagger;
+namespace Dagger;
 
 /**
- * A reference to GeneratedCode.
+ * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
  */
-readonly class GeneratedCodeId extends \Dagger\Client\DaggerId
+readonly class GeneratedCodeId extends Client\AbstractId
 {
 }

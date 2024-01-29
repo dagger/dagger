@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -101,17 +102,27 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 
 func TestSecretSet(t *testing.T) {
 	t.Parallel()
+
 	c, ctx := connect(t)
 
 	secretValue := "very-secret-text"
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	_, err := c.Container().From(alpineImage).
+	ctr, err := c.Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
-		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).
+		WithEnvVariable("word1", "very").
+		WithEnvVariable("word2", "secret").
+		WithEnvVariable("word3", "text").
+		WithExec([]string{"sh", "-exc", "test \"$AWS_KEY\" = \"${word1}-${word2}-${word3}\""}).
 		Sync(ctx)
 	require.NoError(t, err)
+
+	idEnc, err := ctr.ID(ctx)
+	require.NoError(t, err)
+	var idp idproto.ID
+	require.NoError(t, idp.Decode(string(idEnc)))
+	require.NotContains(t, idp.Display(), secretValue)
 
 	plaintext, err := s.Plaintext(ctx)
 	require.NoError(t, err)

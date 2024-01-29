@@ -1,0 +1,29 @@
+{
+  "include": [
+    "./**/*"
+  ],
+  "exclude": [
+    "./**/*.spec.ts",
+    "./dist/**/*",
+    "./**/testdata/*",
+    "./runtime/"
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "strict": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "module": "ES2022",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "declaration": true,
+    "declarationMap": true
+  },
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "dagger-nodejs-sdk"
+}

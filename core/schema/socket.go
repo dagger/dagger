@@ -4,42 +4,30 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/socket"
+	"github.com/dagger/dagger/dagql"
 )
 
 type socketSchema struct {
-	*APIServer
-
-	host *core.Host
+	srv *dagql.Server
 }
 
 var _ SchemaResolvers = &socketSchema{}
 
-func (s *socketSchema) Name() string {
-	return "socket"
-}
+func (s *socketSchema) Install() {
+	dagql.Fields[*core.Query]{
+		dagql.Func("socket", s.socket).
+			Doc("Loads a socket by its ID.").
+			Deprecated("Use `loadSocketFromID` instead."),
+	}.Install(s.srv)
 
-func (s *socketSchema) Schema() string {
-	return Socket
-}
-
-func (s *socketSchema) Resolvers() Resolvers {
-	rs := Resolvers{
-		"Query": ObjectResolver{
-			"socket": ToResolver(s.socket),
-		},
-	}
-
-	ResolveIDable[socket.Socket](rs, "Socket", ObjectResolver{})
-
-	return rs
+	dagql.Fields[*core.Socket]{}.Install(s.srv)
 }
 
 type socketArgs struct {
-	ID socket.ID
+	ID core.SocketID
 }
 
 // nolint: unparam
-func (s *socketSchema) socket(_ context.Context, _ any, args socketArgs) (*socket.Socket, error) {
-	return args.ID.Decode()
+func (s *socketSchema) socket(ctx context.Context, parent *core.Query, args socketArgs) (dagql.Instance[*core.Socket], error) {
+	return args.ID.Load(ctx, s.srv)
 }

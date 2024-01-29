@@ -34,6 +34,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &secretValue{}
 	case Service:
 		return &serviceValue{}
+	case PortForward:
+		return &portForwardValue{}
 	}
 	return nil
 }
@@ -51,6 +53,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*secretValue]{}
 	case Service:
 		return &sliceValue[*serviceValue]{}
+	case PortForward:
+		return &sliceValue[*portForwardValue]{}
 	}
 	return nil
 }
@@ -290,7 +294,14 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
 	case envSecretSource:
 		envPlaintext, ok := os.LookupEnv(v.sourceVal)
 		if !ok {
-			return nil, fmt.Errorf("secret env var not found %q", v.sourceVal)
+			// Don't show the entire env var name, in case the user accidentally passed the value instead...
+			// This is important because users originally *did* have to pass the value, before we changed to
+			// passing by name instead.
+			key := v.sourceVal
+			if len(key) >= 4 {
+				key = key[:3] + "..."
+			}
+			return nil, fmt.Errorf("secret env var not found: %q", key)
 		}
 		plaintext = envPlaintext
 
@@ -382,8 +393,58 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(_ context.Context, c *dagger.Client) (any, error) {
-	return c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}), nil
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
+	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start service: %w", err)
+	}
+	return svc, nil
+}
+
+// portForwardValue is a pflag.Value that builds a dagger.
+type portForwardValue struct {
+	frontend int
+	backend  int
+}
+
+func (v *portForwardValue) Type() string {
+	return PortForward
+}
+
+func (v *portForwardValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("portForward setting cannot be empty")
+	}
+
+	frontendStr, backendStr, ok := strings.Cut(s, ":")
+	if !ok {
+		return fmt.Errorf("portForward setting not in the form of frontend:backend: %q", s)
+	}
+
+	frontend, err := strconv.Atoi(frontendStr)
+	if err != nil {
+		return fmt.Errorf("portForward frontend not a valid integer: %q", frontendStr)
+	}
+	v.frontend = frontend
+
+	backend, err := strconv.Atoi(backendStr)
+	if err != nil {
+		return fmt.Errorf("portForward backend not a valid integer: %q", backendStr)
+	}
+	v.backend = backend
+
+	return nil
+}
+
+func (v *portForwardValue) String() string {
+	return fmt.Sprintf("%d:%d", v.frontend, v.backend)
+}
+
+func (v *portForwardValue) Get(_ context.Context, c *dagger.Client) (any, error) {
+	return &dagger.PortForward{
+		Frontend: v.frontend,
+		Backend:  v.backend,
+	}, nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
@@ -397,19 +458,19 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 	}
 
 	switch r.TypeDef.Kind {
-	case dagger.Stringkind:
+	case dagger.StringKind:
 		val, _ := getDefaultValue[string](r)
 		return flags.String(name, val, usage), nil
 
-	case dagger.Integerkind:
+	case dagger.IntegerKind:
 		val, _ := getDefaultValue[int](r)
 		return flags.Int(name, val, usage), nil
 
-	case dagger.Booleankind:
+	case dagger.BooleanKind:
 		val, _ := getDefaultValue[bool](r)
 		return flags.Bool(name, val, usage), nil
 
-	case dagger.Objectkind:
+	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
 		if val := GetCustomFlagValue(objName); val != nil {
@@ -420,23 +481,34 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 		// TODO: default to JSON?
 		return nil, fmt.Errorf("unsupported object type %q for flag: %s", objName, name)
 
-	case dagger.Listkind:
+	case dagger.InputKind:
+		inputName := r.TypeDef.AsInput.Name
+
+		if val := GetCustomFlagValue(inputName); val != nil {
+			flags.Var(val, name, usage)
+			return val, nil
+		}
+
+		// TODO: default to JSON?
+		return nil, fmt.Errorf("unsupported input type %q for flag: %s", inputName, name)
+
+	case dagger.ListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
 
 		switch elementType.Kind {
-		case dagger.Stringkind:
+		case dagger.StringKind:
 			val, _ := getDefaultValue[[]string](r)
 			return flags.StringSlice(name, val, usage), nil
 
-		case dagger.Integerkind:
+		case dagger.IntegerKind:
 			val, _ := getDefaultValue[[]int](r)
 			return flags.IntSlice(name, val, usage), nil
 
-		case dagger.Booleankind:
+		case dagger.BooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
 			return flags.BoolSlice(name, val, usage), nil
 
-		case dagger.Objectkind:
+		case dagger.ObjectKind:
 			objName := elementType.AsObject.Name
 
 			if val := GetCustomFlagValueSlice(objName); val != nil {
@@ -447,7 +519,18 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 			// TODO: default to JSON?
 			return nil, fmt.Errorf("unsupported list of objects %q for flag: %s", objName, name)
 
-		case dagger.Listkind:
+		case dagger.InputKind:
+			inputName := elementType.AsInput.Name
+
+			if val := GetCustomFlagValueSlice(inputName); val != nil {
+				flags.Var(val, name, usage)
+				return val, nil
+			}
+
+			// TODO: default to JSON?
+			return nil, fmt.Errorf("unsupported list of input type %q for flag: %s", inputName, name)
+
+		case dagger.ListKind:
 			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)
 		}
 	}

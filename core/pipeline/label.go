@@ -20,8 +20,16 @@ import (
 )
 
 type Label struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name  string `json:"name" field:"true" doc:"Label name."`
+	Value string `json:"value" field:"true" doc:"Label value."`
+}
+
+func (Label) TypeName() string {
+	return "PipelineLabel"
+}
+
+func (Label) TypeDescription() string {
+	return "Key value object that represents a pipeline label."
 }
 
 type Labels []Label

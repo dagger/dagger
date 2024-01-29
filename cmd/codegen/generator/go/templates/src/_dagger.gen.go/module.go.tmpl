@@ -1,0 +1,75 @@
+type Client struct {
+	c graphql.Client
+	q *querybuilder.Selection
+}
+
+var dag = initDag()
+
+// initializing the var dag directly rather than using
+// an init func so that users can successfully use dag
+// in any global var initialization of their own code
+func initDag() *Client {
+  gqlClient, q := getClientParams()
+	return &Client{
+		c: gqlClient,
+		q: q,
+	}
+}
+
+func getClientParams() (graphql.Client, *querybuilder.Selection) {
+	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
+	if !ok {
+		panic("DAGGER_SESSION_PORT is not set")
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
+	}
+
+	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
+	if sessionToken == "" {
+		panic("DAGGER_SESSION_TOKEN is not set")
+	}
+
+	host := fmt.Sprintf("127.0.0.1:%d", port)
+
+	dialTransport := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("tcp", host)
+		},
+	}
+	httpClient := &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.SetBasicAuth(sessionToken, "")
+			return dialTransport.RoundTrip(r)
+		}),
+	}
+	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
+
+	return gqlClient, querybuilder.Query()
+}
+
+// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errorWrappedClient struct {
+	graphql.Client
+}
+
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
+}
+
+{{ ModuleMainSrc }}
+

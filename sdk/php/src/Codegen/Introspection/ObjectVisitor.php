@@ -2,8 +2,8 @@
 
 namespace Dagger\Codegen\Introspection;
 
-use Dagger\Client\AbstractDaggerClient;
-use Dagger\Client\AbstractDaggerObject;
+use Dagger\Client\AbstractClient;
+use Dagger\Client\AbstractObject;
 use Dagger\Client\IdAble;
 use GraphQL\Type\Definition\Argument;
 use GraphQL\Type\Definition\FieldDefinition;
@@ -24,8 +24,8 @@ class ObjectVisitor extends AbstractVisitor
             throw new TypeError('ObjectVisitor can only generate from ObjectType');
         }
 
-        $parentClass = 'Query' === $type->name ? AbstractDaggerClient::class : AbstractDaggerObject::class;
-        $className = 'Query' === $type->name ? 'DaggerClient' : $type->name;
+        $parentClass = 'Query' === $type->name ? AbstractClient::class : AbstractObject::class;
+        $className = 'Query' === $type->name ? 'Client' : $type->name;
 
         $objectClass = new ClassType(Helpers::formatPhpClassName($className));
         $objectClass->setExtends($parentClass);
@@ -60,7 +60,7 @@ class ObjectVisitor extends AbstractVisitor
             // @TODO refactor
 
             if (Helpers::isScalar($returnType) || Helpers::isList($returnType) || Helpers::isEnumType($returnType)) {
-                $method->addBody('$leafQueryBuilder = new \Dagger\Client\DaggerQueryBuilder(?);', [$fieldName]);
+                $method->addBody('$leafQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$fieldName]);
                 $this->generateMethodArgumentsBody($method, $field->args, 'leafQueryBuilder');
                 if (Helpers::isCustomScalar($returnType) && !Helpers::isVoidType($returnType)) {
                     $method->addBody(
@@ -85,7 +85,7 @@ class ObjectVisitor extends AbstractVisitor
                     );
                 }
             } else {
-                $method->addBody('$innerQueryBuilder = new \Dagger\Client\DaggerQueryBuilder(?);', [$fieldName]);
+                $method->addBody('$innerQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$fieldName]);
                 $this->generateMethodArgumentsBody($method, $field->args, 'innerQueryBuilder');
                 $method->addBody(
                     'return new '.

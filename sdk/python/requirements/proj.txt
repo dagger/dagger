@@ -7,12 +7,13 @@
 anyio==4.2.0
     # via
     #   -r requirements.in
+    #   gql
     #   httpx
 attrs==23.2.0
     # via cattrs
 backoff==2.2.1
     # via gql
-beartype==0.16.4
+beartype==0.17.0
     # via -r requirements.in
 cattrs==23.2.3
     # via -r requirements.in
@@ -20,7 +21,7 @@ certifi==2023.11.17
     # via
     #   httpcore
     #   httpx
-gql==3.4.1
+gql[httpx]==3.5.0
     # via -r requirements.in
 graphql-core==3.2.3
     # via
@@ -31,7 +32,7 @@ h11==0.14.0
 httpcore==1.0.2
     # via httpx
 httpx==0.26.0
-    # via -r requirements.in
+    # via gql
 idna==3.6
     # via
     #   anyio

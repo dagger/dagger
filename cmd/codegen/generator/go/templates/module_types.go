@@ -19,30 +19,35 @@ type ParsedType interface {
 	GoSubTypes() []types.Type
 }
 
+type NamedParsedType interface {
+	ParsedType
+	Name() string
+}
+
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
 // So if the type is a struct or interface, the returned TypeSpec will not have all the fields,
 // only the type name and kind.
-// This is so that that the typedef can be referenced as the type of a an arg, return value or
-// field without needing to duplicate the full type definition every time it occurs.
-func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (ParsedType, error) {
+// This is so that the typedef can be referenced as the type of an arg, return value or field
+// without needing to duplicate the full type definition every time it occurs.
+func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, isPtr bool) (ParsedType, error) {
 	switch t := typ.(type) {
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
-		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t)
+		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t, isPtr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse named type: %w", err)
 		}
 		return typeSpec, nil
 
 	case *types.Pointer:
-		typeSpec, err := ps.parseGoTypeReference(t.Elem(), named)
+		typeSpec, err := ps.parseGoTypeReference(t.Elem(), named, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse pointer type: %w", err)
 		}
 		return typeSpec, nil
 
 	case *types.Slice:
-		elemTypeSpec, err := ps.parseGoTypeReference(t.Elem(), nil)
+		elemTypeSpec, err := ps.parseGoTypeReference(t.Elem(), nil, isPtr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse slice element type: %w", err)
 		}
@@ -55,7 +60,11 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 		if t.Kind() == types.Invalid {
 			return nil, fmt.Errorf("invalid type: %+v", t)
 		}
-		return &parsedPrimitiveType{t}, nil
+		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
+		if named != nil {
+			parsedType.alias = named.Obj().Name()
+		}
+		return parsedType, nil
 
 	case *types.Struct:
 		if named == nil {
@@ -66,6 +75,20 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 			return nil, fmt.Errorf("struct types must be named")
 		}
 		return &parsedObjectTypeReference{
+			name:   typeName,
+			isPtr:  isPtr,
+			goType: named,
+		}, nil
+
+	case *types.Interface:
+		if named == nil {
+			return nil, fmt.Errorf("interface types must be named")
+		}
+		typeName := named.Obj().Name()
+		if typeName == "" {
+			return nil, fmt.Errorf("interface types must be named")
+		}
+		return &parsedIfaceTypeReference{
 			name:   typeName,
 			goType: named,
 		}, nil
@@ -78,6 +101,10 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named) (
 // parsedPrimitiveType is a parsed type that is a primitive type like string, int, bool, etc.
 type parsedPrimitiveType struct {
 	goType *types.Basic
+	isPtr  bool
+
+	// if this is something like `type Foo string`, then alias will be "Foo"
+	alias string
 }
 
 var _ ParsedType = &parsedPrimitiveType{}
@@ -86,17 +113,21 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	var kind Code
 	switch spec.goType.Info() {
 	case types.IsString:
-		kind = Id("Stringkind")
+		kind = Id("StringKind")
 	case types.IsInteger:
-		kind = Id("Integerkind")
+		kind = Id("IntegerKind")
 	case types.IsBoolean:
-		kind = Id("Booleankind")
+		kind = Id("BooleanKind")
 	default:
 		return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 	}
-	return Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
+	def := Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
 		kind,
-	), nil
+	)
+	if spec.isPtr {
+		def = def.Dot("WithOptional").Call(Lit(true))
+	}
+	return def, nil
 }
 
 func (spec *parsedPrimitiveType) GoType() types.Type {
@@ -135,10 +166,11 @@ func (spec *parsedSliceType) GoSubTypes() []types.Type {
 // than with the full type definition
 type parsedObjectTypeReference struct {
 	name   string
+	isPtr  bool
 	goType types.Type
 }
 
-var _ ParsedType = &parsedObjectTypeReference{}
+var _ NamedParsedType = &parsedObjectTypeReference{}
 
 func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
@@ -153,4 +185,36 @@ func (spec *parsedObjectTypeReference) GoType() types.Type {
 func (spec *parsedObjectTypeReference) GoSubTypes() []types.Type {
 	// because this is a *reference* to a named type, we return the goType itself as a subtype too
 	return []types.Type{spec.goType}
+}
+
+func (spec *parsedObjectTypeReference) Name() string {
+	return spec.name
+}
+
+// parsedIfaceTypeReference is a parsed object type that is referred to just by name rather
+// than with the full type definition
+type parsedIfaceTypeReference struct {
+	name   string
+	goType types.Type
+}
+
+var _ NamedParsedType = &parsedIfaceTypeReference{}
+
+func (spec *parsedIfaceTypeReference) TypeDefCode() (*Statement, error) {
+	return Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(
+		Lit(spec.name),
+	), nil
+}
+
+func (spec *parsedIfaceTypeReference) GoType() types.Type {
+	return spec.goType
+}
+
+func (spec *parsedIfaceTypeReference) GoSubTypes() []types.Type {
+	// because this is a *reference* to a named type, we return the goType itself as a subtype too
+	return []types.Type{spec.goType}
+}
+
+func (spec *parsedIfaceTypeReference) Name() string {
+	return spec.name
 }

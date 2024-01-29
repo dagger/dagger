@@ -6,17 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/moby/buildkit/identity"
 
 	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
 )
 
 const (
-	goGeneratedAPIPath = "sdk/go/dagger.gen.go"
+	goGeneratedAPIPath = "sdk/go/"
 )
 
 var _ SDK = Go{}
@@ -43,7 +43,7 @@ func (t Go) Lint(ctx context.Context) error {
 		return err
 	}
 
-	return lintGeneratedCode(func() error {
+	return util.LintGeneratedCode("sdk:go:generate", func() error {
 		return t.Generate(ctx)
 	}, goGeneratedAPIPath)
 }
@@ -94,7 +94,7 @@ func (t Go) Generate(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	generated, err := util.GoBase(c).
+	generated := util.GoBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
@@ -102,12 +102,12 @@ func (t Go) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		File(path.Base(goGeneratedAPIPath)).
-		Contents(ctx)
+		Directory(".")
+	_, err = generated.Export(ctx, goGeneratedAPIPath)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0o600)
+	return nil
 }
 
 // Publish publishes the Go SDK
@@ -143,36 +143,31 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		gitUserEmail = "hello@dagger.io"
 	}
 
-	git := util.GoBase(c).
+	_, err = util.GoBase(c).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
 		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
-		WithExec([]string{"git", "config", "--global",
-			"http.https://github.com/.extraheader",
-			fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT),
-		})
-
-	repository := git.
+		WithEnvVariable("GIT_CONFIG_COUNT", "1").
+		WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
+		WithSecretVariable("GIT_CONFIG_VALUE_0", c.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT))).
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
-		WithWorkdir("/src/dagger")
-
-	filtered := repository.
+		WithWorkdir("/src/dagger").
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", "sdk/go",
 			"--tree-filter", "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
 			"--", tag,
-		})
-
-	// Push
-	_, err = filtered.WithExec([]string{
-		"git",
-		"push",
-		"-f",
-		targetRepo,
-		fmt.Sprintf("%s:%s", tag, targetTag),
-	}).Sync(ctx)
+		}).
+		WithExec([]string{
+			"git",
+			"push",
+			"-f",
+			targetRepo,
+			fmt.Sprintf("%s:%s", tag, targetTag),
+		}).
+		Sync(ctx)
 
 	return err
 }
