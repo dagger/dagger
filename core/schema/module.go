@@ -8,12 +8,14 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -41,6 +43,7 @@ func (s *moduleSchema) Install() {
 			ArgDoc("stable", `If true, enforce that the source is a stable version for source kinds that support versioning.`),
 
 		dagql.Func("moduleDependency", s.moduleDependency).
+			Impure(`TODO`).
 			Doc(`TODO`).
 			ArgDoc("source", `TODO`).
 			ArgDoc("name", `TODO`),
@@ -179,32 +182,6 @@ func (s *moduleSchema) Install() {
 			Impure(`TODO`).
 			Doc(`TODO`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
-
-		dagql.Func("tunnel", s.currentModuleTunnel).
-			Impure(`TODO`).
-			Doc(`TODO`).
-			ArgDoc("service", `Service to send traffic from the tunnel.`).
-			ArgDoc("native",
-				`Map each service port to the same port on the host, as if the service were running natively.`,
-				`Note: enabling may result in port conflicts.`).
-			ArgDoc("ports",
-				`Configure explicit port forwarding rules for the tunnel.`,
-				`If a port's frontend is unspecified or 0, a random port will be chosen
-				by the host.`,
-				`If no ports are given, all of the service's ports are forwarded. If
-				native is true, each port maps to the same port on the host. If native
-				is false, each port maps to a random port chosen by the host.`,
-				`If ports are given and native is true, the ports are additive.`),
-
-		dagql.Func("service", s.currentModuleService).
-			Impure(`TODO`).
-			Doc(`TODO`).
-			ArgDoc("ports",
-				`Ports to expose via the service, forwarding through the host network.`,
-				`If a port's frontend is unspecified or 0, it defaults to the same as
-				the backend port.`,
-				`An empty set of ports is not valid; an error will be returned.`).
-			ArgDoc("host", `Upstream host to forward traffic to.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Function]{
@@ -410,6 +387,24 @@ func (s *moduleSchema) moduleDependency(
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode dependency source: %w", err)
 	}
+	src.Self = src.Self.Clone()
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	srcSubpath, err := src.Self.Subpath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module source subpath: %w", err)
+	}
+	slog.Debug(
+		"MODULE DEP CONSTRUCTOR",
+		"srcSubpath", srcSubpath,
+		"srcDirSet", src.Self.RootDirectory.Self != nil,
+	)
+
 	return &core.ModuleDependency{
 		Source: src,
 		Name:   args.Name,
@@ -562,27 +557,25 @@ func (s *moduleSchema) currentModuleSource(
 	ctx context.Context,
 	curMod *core.CurrentModule,
 	args struct{},
-) (*core.Directory, error) {
-	rootDir := curMod.Module.Self.Source.Self.RootDirectory
-	subdir, err := curMod.Module.Self.Source.Self.Subpath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module source subpath: %w", err)
+) (inst dagql.Instance[*core.Directory], rerr error) {
+	rootDir := curMod.Module.Self.GeneratedSourceDirectory
+	subPath := curMod.Module.Self.GeneratedSourceSubpath
+	if subPath == "/" {
+		return rootDir, nil
 	}
-	if subdir == "/" {
-		return rootDir.Self.Clone(), nil
-	}
-	err = s.dag.Select(ctx, rootDir, &rootDir,
+	var subDir dagql.Instance[*core.Directory]
+	err := s.dag.Select(ctx, rootDir, &subDir,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(subdir)},
+				{Name: "path", Value: dagql.String(subPath)},
 			},
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module source subdirectory: %w", err)
+		return inst, fmt.Errorf("failed to get module source subdirectory: %w", err)
 	}
-	return rootDir.Self, nil
+	return subDir, nil
 }
 
 func (s *moduleSchema) currentModuleWorkdir(
@@ -608,31 +601,6 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
 	host := &hostSchema{srv: s.dag}
 	return host.file(ctx, &core.Host{curMod.Module.Self.Query}, args)
-}
-
-func (s *moduleSchema) currentModuleTunnel(
-	ctx context.Context,
-	curMod *core.CurrentModule,
-	args struct {
-		Service core.ServiceID
-		Ports   []dagql.InputObject[core.PortForward] `default:"[]"`
-		Native  bool                                  `default:"false"`
-	},
-) (*core.Service, error) {
-	host := &hostSchema{srv: s.dag}
-	return host.tunnel(ctx, &core.Host{curMod.Module.Self.Query}, args)
-}
-
-func (s *moduleSchema) currentModuleService(
-	ctx context.Context,
-	curMod *core.CurrentModule,
-	args struct {
-		Host  string `default:"localhost"`
-		Ports []dagql.InputObject[core.PortForward]
-	},
-) (*core.Service, error) {
-	host := &hostSchema{srv: s.dag}
-	return host.service(ctx, &core.Host{curMod.Module.Self.Query}, args)
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
@@ -677,6 +645,18 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	mod.DirectoryIncludeConfig = modCfg.Include
 	mod.DirectoryExcludeConfig = modCfg.Exclude
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	slog.Debug(
+		"WITH SOURCE",
+		"name", mod.NameField,
+		"sdk", mod.SDKConfig,
+	)
+
 	// honor the include/exclude values for the directory (even if it's too late to actually use them
 	// for loading performance optimizations)
 	if len(modCfg.Include) > 0 || len(modCfg.Exclude) > 0 {
@@ -701,6 +681,7 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	for i, depCfg := range modCfg.Dependencies {
 		i, depCfg := i, depCfg
 		eg.Go(func() error {
+
 			var depSrc dagql.Instance[*core.ModuleSource]
 			err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
 				dagql.Selector{
@@ -713,6 +694,28 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 			if err != nil {
 				return fmt.Errorf("failed to create module source from dependency: %w", err)
 			}
+
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			randID := identity.NewID()
+			depSrcSubpath, err := depSrc.Self.Subpath()
+			if err != nil {
+				return fmt.Errorf("failed to get module source subpath: %w", err)
+			}
+			slog.Debug(
+				"WITH SOURCE DEP",
+				"depCfgSrc", depCfg.Source,
+				"depSrcSubpath", depSrcSubpath,
+				"depSrcDirSet", depSrc.Self.RootDirectory.Self != nil,
+				"id", randID,
+			)
+
+			// TODO: can undo this and just make object direct, but also
+			// want to understand why it's not working unless impure is set...
 			var dep dagql.Instance[*core.ModuleDependency]
 			err = s.dag.Select(ctx, s.dag.Root(), &dep,
 				dagql.Selector{
@@ -726,6 +729,25 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 			if err != nil {
 				return fmt.Errorf("failed to create module dependency: %w", err)
 			}
+
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			depSrcSubpath, err = dep.Self.Source.Self.Subpath()
+			if err != nil {
+				return fmt.Errorf("failed to get module source subpath: %w", err)
+			}
+			slog.Debug(
+				"WITH SOURCE DEP2",
+				"depCfgSrc", depCfg.Source,
+				"depSrcSubpath", depSrcSubpath,
+				"depSrcDirSet", dep.Self.Source.Self.RootDirectory.Self != nil,
+				"id", randID,
+			)
+
 			deps[i] = dep.Self
 			return nil
 		})
@@ -1002,6 +1024,36 @@ func (s *moduleSchema) updateModuleConfig(ctx context.Context, mod *core.Module)
 
 func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Module) (*core.Module, error) {
 	if mod.NameField == "" || mod.SDKConfig == "" {
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		rootEnts, err := mod.GeneratedSourceDirectory.Self.Entries(ctx, "/")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module source root directory entries: %w", err)
+		}
+		/*
+			modZeroConfig, err := mod.GeneratedSourceDirectory.Self.File(ctx, "/mod0/dagger.json")
+			var modZeroConfigBytes []byte
+			if err == nil {
+				modZeroConfigBytes, err = modZeroConfig.Contents(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get module zero config file contents: %w", err)
+				}
+			}
+		*/
+
+		slog.Debug(
+			"UPDATE CODEGEN AND RUNTIME FAIL",
+			"name", mod.NameField,
+			"sdk", mod.SDKConfig,
+			"modSource", mod.Source.Self,
+			"rootEnts", rootEnts,
+			// "modZeroConfig", string(modZeroConfigBytes),
+		)
+
 		return nil, fmt.Errorf("module cannot be generated without both name and sdk set")
 	}
 
@@ -1257,6 +1309,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path: %w", err)
 	}
+
 	rootPath, _, err := findUpConfigDir(ctx, src.RootDirectory.Self, sourceSubpath, sourceSubpath)
 	if err != nil {
 		return nil, fmt.Errorf("error while finding config dir: %w", err)
@@ -1270,6 +1323,22 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source path: %w", err)
 	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	slog.Debug(
+		"MODULE SOURCE RESOLVE DEP",
+		"sourceSubpath", sourceSubpath,
+		"depSourceSubpath", depSourceSubpath,
+	)
+	if filepath.IsAbs(depSourceSubpath) {
+		debug.PrintStack()
+	}
+
 	depSourceRelSubpath := filepath.Join(sourceRelSubpath, depSourceSubpath)
 	if escapes, err := escapesParentDir(rootPath, depSourceRelSubpath); err != nil {
 		return nil, fmt.Errorf("failed to check if module dep source path escapes root: %w", err)

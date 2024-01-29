@@ -156,6 +156,11 @@ func (mod *Module) WithDependencies(
 
 	mod = mod.Clone()
 
+	clonedDependencies := make([]*ModuleDependency, len(dependencies))
+	for i, dep := range dependencies {
+		clonedDependencies[i] = dep.Clone()
+	}
+
 	// resolve the dependency relative to this module's source
 	var eg errgroup.Group
 	for i, dep := range dependencies {
@@ -163,8 +168,29 @@ func (mod *Module) WithDependencies(
 			return nil, fmt.Errorf("dependency %d has no source", i)
 		}
 		i, dep := i, dep
+
 		eg.Go(func() error {
-			err := srv.Select(ctx, mod.Source, &dependencies[i].Source,
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			depSourceRefStr, err := dep.Source.Self.RefString()
+			if err != nil {
+				return fmt.Errorf("failed to get source ref string for dependency: %w", err)
+			}
+			depSourceSubpath, err := dep.Source.Self.Subpath()
+			if err != nil {
+				return fmt.Errorf("failed to get source subpath for dependency: %w", err)
+			}
+			slog.Debug(
+				"WITH DEPENDENCY",
+				"refStr", depSourceRefStr,
+				"depSourceSubpath", depSourceSubpath,
+			)
+
+			err = srv.Select(ctx, mod.Source, &dependencies[i].Source,
 				dagql.Selector{
 					Field: "resolveDependency",
 					Args: []dagql.NamedInput{
@@ -175,6 +201,17 @@ func (mod *Module) WithDependencies(
 			if err != nil {
 				return fmt.Errorf("failed to resolve dependency module: %w", err)
 			}
+
+			depSourceSubpath, err = dep.Source.Self.Subpath()
+			if err != nil {
+				return fmt.Errorf("failed to get source subpath for dependency: %w", err)
+			}
+			slog.Debug(
+				"WITH DEPENDENCY2",
+				"refStr", depSourceRefStr,
+				"depSourceSubpath", depSourceSubpath,
+			)
+
 			return nil
 		})
 	}

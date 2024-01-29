@@ -76,9 +76,12 @@ var moduleCmd = &cobra.Command{
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger())
+			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), "")
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)
+			}
+			if !modConf.FullyInitialized() {
+				return fmt.Errorf("module must be fully initialized")
 			}
 			mod := modConf.Mod
 
@@ -89,10 +92,6 @@ var moduleCmd = &cobra.Command{
 			sdk, err := mod.SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
-			}
-			srcPath, err := mod.Source().Subpath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module source directory: %w", err)
 			}
 			depMods, err := mod.Dependencies(ctx)
 			if err != nil {
@@ -117,8 +116,12 @@ var moduleCmd = &cobra.Command{
 				sdk,
 			)
 			fmt.Fprintf(tw, "%s\t%s\n",
-				"Source:",
-				srcPath,
+				"Root Directory:",
+				modConf.LocalRootPath,
+			)
+			fmt.Fprintf(tw, "%s\t%s\n",
+				"Source Directory:",
+				modConf.LocalSourcePath,
 			)
 			fmt.Fprintf(tw, "%s\t%s\n",
 				"Dependencies:",
@@ -142,7 +145,14 @@ var moduleInitCmd = &cobra.Command{
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag)
+
+			// default the module root to the current working directory if it doesn't exist yet
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
+
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, cwd)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -188,9 +198,15 @@ var moduleInstallCmd = &cobra.Command{
 		}
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
+			}
+			if modConf.SourceKind != dagger.LocalSource {
+				return fmt.Errorf("module must be local")
+			}
+			if !modConf.FullyInitialized() {
+				return fmt.Errorf("module must be fully initialized")
 			}
 
 			depRefStr := extraArgs[0]
@@ -235,10 +251,14 @@ var moduleSyncCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
+			if modConf.SourceKind != dagger.LocalSource {
+				return fmt.Errorf("module must be local")
+			}
+
 			_, err = modConf.Mod.GeneratedSourceDirectory().Export(ctx, modConf.LocalRootPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
@@ -266,9 +286,15 @@ var modulePublishCmd = &cobra.Command{
 			cmd.SetErr(vtx.Stderr())
 
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
+			}
+			if modConf.SourceKind != dagger.LocalSource {
+				return fmt.Errorf("module must be local")
+			}
+			if !modConf.FullyInitialized() {
+				return fmt.Errorf("module must be fully initialized")
 			}
 			repo, err := git.PlainOpenWithOptions(modConf.LocalSourcePath, &git.PlainOpenOptions{
 				DetectDotGit: true,
@@ -385,7 +411,11 @@ type configuredModule struct {
 	ModuleSourceConfigExists bool
 }
 
-func getDefaultModuleConfiguration(ctx context.Context, dag *dagger.Client) (*configuredModule, error) {
+func (c *configuredModule) FullyInitialized() bool {
+	return c.ModuleRootConfigExists && c.ModuleSourceConfigExists
+}
+
+func getDefaultModuleConfiguration(ctx context.Context, dag *dagger.Client, defaultRootPath string) (*configuredModule, error) {
 	srcRefStr := moduleURL
 	if srcRefStr == "" {
 		// it's unset or default value, use mod if present
@@ -399,10 +429,15 @@ func getDefaultModuleConfiguration(ctx context.Context, dag *dagger.Client) (*co
 		}
 	}
 
-	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr)
+	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr, defaultRootPath)
 }
 
-func getModuleConfigurationForSourceRef(ctx context.Context, dag *dagger.Client, srcRefStr string) (*configuredModule, error) {
+func getModuleConfigurationForSourceRef(
+	ctx context.Context,
+	dag *dagger.Client,
+	srcRefStr string,
+	defaultRootPath string,
+) (*configuredModule, error) {
 	conf := &configuredModule{}
 
 	// first check if this is a named module from the default find-up dagger.json
@@ -449,14 +484,36 @@ func getModuleConfigurationForSourceRef(ctx context.Context, dag *dagger.Client,
 			return nil, fmt.Errorf("error trying to find config path for %s: %s", conf.LocalSourcePath, err)
 		}
 		if !conf.ModuleRootConfigExists {
-			// default to current workdir
-			conf.LocalRootPath = cwd
+			if defaultRootPath == "" {
+				// Just use the source dir. This can happen legitimately when loading
+				// an older dagger.json that didn't have root-for yet.
+				conf.LocalRootPath = conf.LocalSourcePath
+			} else {
+				// use the default, but double check it's not above any .git hit by the findUpRootFor
+				defaultRelPath, err := filepath.Rel(conf.LocalRootPath, defaultRootPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get relative path: %s", err)
+				}
+				if !filepath.IsLocal(defaultRelPath) {
+					return nil, fmt.Errorf("default module root directory %s escapes git root %s", cwd, conf.LocalRootPath)
+				}
+				conf.LocalRootPath = cwd
+			}
 		}
 
 		src, conf.ModuleSourceConfigExists, err = loadLocalModuleSource(dag, conf.LocalRootPath, conf.LocalSourcePath)
 		if err != nil {
 			return nil, fmt.Errorf("error loading local module: %s", err)
 		}
+
+		if !conf.ModuleRootConfigExists && conf.ModuleSourceConfigExists && defaultRootPath == "" {
+			// finish up the case above where we default old dagger.jsons that didn't
+			// have root-for to using the source dir. We know now that the source config
+			// file actually existed, so the root exists too. It will be updated in the engine
+			// when calling functions (and exported back to the client if they sync/install)
+			conf.ModuleRootConfigExists = true
+		}
+
 		conf.Mod = src.AsModule()
 	} else {
 		conf.Mod = src.AsModule()
@@ -557,7 +614,7 @@ func findUpRootFor(curDirPath string, sourceSubpath string) (string, bool, error
 		return "", false, err
 	}
 	if !found {
-		return "", false, nil
+		return foundDir, false, nil
 	}
 
 	configPath := filepath.Join(foundDir, modules.Filename)
@@ -599,12 +656,12 @@ func optionalModCmdWrapper(
 			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger())
+			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), "")
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
 			var loadedMod *dagger.Module
-			if modConf.ModuleSourceConfigExists {
+			if modConf.FullyInitialized() {
 				loadedMod = modConf.Mod.Initialize()
 				load := vtx.Task("loading module")
 				_, err := loadedMod.Serve(ctx)

@@ -380,13 +380,12 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 		}
 	}()
 
-	modConf, err := getDefaultModuleConfiguration(ctx, dag)
+	modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
-	// TODO: update to allow -m on sdk-less modules
-	if !modConf.ModuleSourceConfigExists {
-		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
+	if !modConf.FullyInitialized() {
+		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalSourcePath)
 	}
 	load := vtx.Task("loading module")
 	mod := modConf.Mod.Initialize()
