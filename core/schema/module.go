@@ -540,7 +540,7 @@ func (s *moduleSchema) currentModuleWorkdir(
 ) (dagql.Instance[*core.Directory], error) {
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
 	host := &hostSchema{srv: s.dag}
-	return host.directory(ctx, &core.Host{curMod.Module.Self.Query}, args)
+	return host.directory(ctx, &core.Host{Query: curMod.Module.Self.Query}, args)
 }
 
 func (s *moduleSchema) currentModuleWorkdirFile(
@@ -552,7 +552,7 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 ) (dagql.Instance[*core.File], error) {
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
 	host := &hostSchema{srv: s.dag}
-	return host.file(ctx, &core.Host{curMod.Module.Self.Query}, args)
+	return host.file(ctx, &core.Host{Query: curMod.Module.Self.Query}, args)
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
@@ -621,7 +621,6 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	for i, depCfg := range modCfg.Dependencies {
 		i, depCfg := i, depCfg
 		eg.Go(func() error {
-
 			var depSrc dagql.Instance[*core.ModuleSource]
 			err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
 				dagql.Selector{
@@ -1331,7 +1330,6 @@ func (s *moduleSchema) normalizeSourceForModule(
 ) {
 	if src.Self.RootDirectory.Self == nil {
 		return newSrc, newRootDir, "", fmt.Errorf("cannot normalize module source with no root directory")
-
 	}
 
 	sourceSubpath, err := src.Self.Subpath()
