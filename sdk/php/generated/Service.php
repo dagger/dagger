@@ -78,4 +78,19 @@ class Service extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
         return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'stop'));
     }
+
+    /**
+     * Creates a tunnel that forwards traffic from the caller's network to this service.
+     */
+    public function up(?array $ports = null, ?bool $native = false): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
+        if (null !== $ports) {
+        $leafQueryBuilder->setArgument('ports', $ports);
+        }
+        if (null !== $native) {
+        $leafQueryBuilder->setArgument('native', $native);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'up');
+    }
 }

@@ -2,10 +2,15 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"runtime/debug"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/ioctx"
+	"github.com/moby/buildkit/identity"
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
 )
 
 type serviceSchema struct {
@@ -41,6 +46,10 @@ func (s *serviceSchema) Install() {
 			Impure("Imperatively mutates runtime state.").
 			Doc(`Start the service and wait for its health checks to succeed.`,
 				`Services bound to a Container do not need to be manually started.`),
+
+		dagql.NodeFunc("up", s.up).
+			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
+			Doc(`Creates a tunnel that forwards traffic from the caller's network to this service.`),
 
 		dagql.NodeFunc("stop", s.stop).
 			Impure("Imperatively mutates runtime state.").
@@ -103,4 +112,55 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Se
 	}
 
 	return dagql.NewID[*core.Service](parent.ID()), nil
+}
+
+type upArgs struct {
+	Ports  []dagql.InputObject[core.PortForward] `default:"[]"`
+	Native bool                                  `default:"false"`
+}
+
+func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service], args upArgs) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+
+	var hostSvc dagql.Instance[*core.Service]
+	err := s.srv.Select(ctx, s.srv.Root(), &hostSvc,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "tunnel",
+			Args: []dagql.NamedInput{
+				{Name: "service", Value: dagql.NewID[*core.Service](svc.ID())},
+				{Name: "ports", Value: dagql.ArrayInput[dagql.InputObject[core.PortForward]](args.Ports)},
+				{Name: "native", Value: dagql.Boolean(args.Native)},
+			},
+		},
+	)
+	if err != nil {
+		return void, fmt.Errorf("failed to select host service: %w", err)
+	}
+
+	runningSvc, err := hostSvc.Self.Query.Services.Start(ctx, hostSvc.ID(), hostSvc.Self)
+	if err != nil {
+		return void, fmt.Errorf("failed to start host service: %w", err)
+	}
+
+	rec := progrock.FromContext(ctx)
+	vtx := rec.Vertex(digest.Digest(identity.NewID()), "", progrock.Focused())
+	defer vtx.Done(nil)
+	ioctxOut := ioctx.Stdout(ctx) // TODO: consolidate to just this once new UI is up and running
+
+	for _, port := range runningSvc.Ports {
+		portStr := fmt.Sprintf("%d/%s", port.Port, port.Protocol)
+		if port.Description != nil {
+			portStr += ": " + *port.Description
+		}
+		portStr += "\n"
+
+		vtx.Stdout().Write([]byte(portStr))
+		ioctxOut.Write([]byte(portStr))
+	}
+
+	<-ctx.Done()
+	return void, nil
 }

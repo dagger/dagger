@@ -29,12 +29,19 @@ dagger is /usr/local/bin/dagger
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.5 sh
+cd /usr/local
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.7 sh
 
 ./bin/dagger version
-dagger 0.9.5 (GIT_SHA) darwin/arm64
+dagger 0.9.7 (GIT_SHA) darwin/arm64
 ```
 
+If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
+
+```shell
+cd /usr/local
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.7 sudo sh
+```
 
 </TabItem>
 
@@ -56,10 +63,10 @@ dagger is $HOME/.local/bin/dagger
 If you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.5 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.7 sh
 
 ./bin/dagger version
-dagger 0.9.5 (GIT_SHA) linux/amd64
+dagger 0.9.7 (GIT_SHA) linux/amd64
 ```
 
 </TabItem>
@@ -86,7 +93,11 @@ If you want to install a specific version of `dagger`, pass in a version number 
 
 ```Powershell
 $script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
+<<<<<<< HEAD
 $params = "-DaggerVersion 0.9.5"
+=======
+$params = "-DaggerVersion 0.9.7"
+>>>>>>> main
 "$script $params" | Invoke-Expression
 ```
 

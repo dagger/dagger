@@ -51,7 +51,6 @@ type Opts struct {
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
-	ProgSockPath          string
 	// MainClientCaller is the caller who initialized the server associated with this
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
@@ -82,6 +81,9 @@ type Client struct {
 	closeCtx context.Context
 	cancel   context.CancelFunc
 	closeMu  sync.RWMutex
+
+	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
+	execMetadataMu sync.Mutex
 }
 
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
@@ -93,6 +95,7 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 		containers:            make(map[bkgw.Container]struct{}),
 		closeCtx:              closeCtx,
 		cancel:                cancel,
+		execMetadata:          make(map[digest.Digest]ContainerExecUncachedMetadata),
 	}
 
 	session, err := client.newSession(ctx)
@@ -248,12 +251,24 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			if execOp.Meta.ProxyEnv == nil {
 				execOp.Meta.ProxyEnv = &bksolverpb.ProxyEnv{}
 			}
+
+			// If we already solved for this execop in this dagger session, use
+			// it's uncached metadata to preserve the same vertex digest.
+			// This results in buildkit's solver de-duping the op, instead of
+			// the scheduler's edge merge.
+			c.execMetadataMu.Lock()
+			execMeta, ok := c.execMetadata[*execOp.OpDigest]
+			if !ok {
+				execMeta = ContainerExecUncachedMetadata{
+					ParentClientIDs: clientMetadata.ClientIDs(),
+					ServerID:        clientMetadata.ServerID,
+				}
+				c.execMetadata[*execOp.OpDigest] = execMeta
+			}
+			c.execMetadataMu.Unlock()
+
 			var err error
-			execOp.Meta.ProxyEnv.FtpProxy, err = ContainerExecUncachedMetadata{
-				ParentClientIDs: clientMetadata.ClientIDs(),
-				ServerID:        clientMetadata.ServerID,
-				ProgSockPath:    c.ProgSockPath,
-			}.ToPBFtpProxyVal()
+			execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 			if err != nil {
 				return err
 			}
@@ -686,7 +701,6 @@ func withOutgoingContext(ctx context.Context) context.Context {
 type ContainerExecUncachedMetadata struct {
 	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
 	ServerID        string   `json:"serverID,omitempty"`
-	ProgSockPath    string   `json:"progSockPath,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {

@@ -253,7 +253,7 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, nil)
+	expInstance, err := exporter.Resolve(ctx, 0, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve exporter: %s", err)
 	}
@@ -268,7 +268,7 @@ func (c *Client) LocalDirExport(
 		Path:         destPath,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, clientMetadata.ClientID)
+	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
 	}

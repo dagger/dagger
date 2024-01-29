@@ -197,6 +197,13 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
+export type ContainerShellOpts = {
+  /**
+   * If set, override the container's default shell and invoke these arguments instead.
+   */
+  args?: string[]
+}
+
 export type ContainerWithDirectoryOpts = {
   /**
    * Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -276,6 +283,11 @@ export type ContainerWithExposedPortOpts = {
    * Optional port description
    */
   description?: string
+
+  /**
+   * Skip the health check when run as a service.
+   */
+  experimentalSkipHealthcheck?: boolean
 }
 
 export type ContainerWithFileOpts = {
@@ -658,6 +670,11 @@ export enum ImageMediaTypes {
   Ocimediatypes = "OCIMediaTypes",
 }
 /**
+ * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+ */
+export type InputTypeDefID = string & { __InputTypeDefID: never }
+
+/**
  * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
  */
 export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
@@ -832,6 +849,11 @@ export type ServiceEndpointOpts = {
   scheme?: string
 }
 
+export type ServiceUpOpts = {
+  ports?: PortForward[]
+  native?: boolean
+}
+
 /**
  * The `ServiceID` scalar type represents an identifier for an object of type Service.
  */
@@ -841,6 +863,11 @@ export type ServiceID = string & { __ServiceID: never }
  * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
 export type SocketID = string & { __SocketID: never }
+
+/**
+ * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+ */
+export type TerminalID = string & { __TerminalID: never }
 
 export type TypeDefWithFieldOpts = {
   /**
@@ -870,6 +897,11 @@ export enum TypeDefKind {
    * A boolean value.
    */
   BooleanKind = "BOOLEAN_KIND",
+
+  /**
+   * A graphql input type, used only when representing the core API via TypeDefs.
+   */
+  InputKind = "INPUT_KIND",
 
   /**
    * An integer value.
@@ -975,7 +1007,6 @@ export class Container extends BaseClient {
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
-  private readonly _shellEndpoint?: string = undefined
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
   private readonly _sync?: ContainerID = undefined
@@ -994,7 +1025,6 @@ export class Container extends BaseClient {
     _label?: string,
     _platform?: Platform,
     _publish?: string,
-    _shellEndpoint?: string,
     _stderr?: string,
     _stdout?: string,
     _sync?: ContainerID,
@@ -1010,7 +1040,6 @@ export class Container extends BaseClient {
     this._label = _label
     this._platform = _platform
     this._publish = _publish
-    this._shellEndpoint = _shellEndpoint
     this._stderr = _stderr
     this._stdout = _stdout
     this._sync = _sync
@@ -1608,26 +1637,20 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-   *
-   * Primarily intended for internal use with the dagger CLI.
+   * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+   * @param opts.args If set, override the container's default shell and invoke these arguments instead.
    */
-  shellEndpoint = async (): Promise<string> => {
-    if (this._shellEndpoint) {
-      return this._shellEndpoint
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
+  shell = (opts?: ContainerShellOpts): Terminal => {
+    return new Terminal({
+      queryTree: [
         ...this._queryTree,
         {
-          operation: "shellEndpoint",
+          operation: "shell",
+          args: { ...opts },
         },
       ],
-      await this._ctx.connection()
-    )
-
-    return response
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -1726,6 +1749,23 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "withDefaultArgs",
+          args: { args },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Set the default command to invoke for the "shell" API.
+   * @param args The args of the command to set the default shell to.
+   */
+  withDefaultShell = (args: string[]): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDefaultShell",
           args: { args },
         },
       ],
@@ -1844,6 +1884,7 @@ export class Container extends BaseClient {
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
+   * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
    */
   withExposedPort = (
     port: number,
@@ -4192,6 +4233,103 @@ export class Host extends BaseClient {
 }
 
 /**
+ * A graphql input type, which is essentially just a group of named args.
+ * This is currently only used to represent pre-existing usage of graphql input types
+ * in the core API. It is not used by user modules and shouldn't ever be as user
+ * module accept input objects via their id rather than graphql input types.
+ */
+export class InputTypeDef extends BaseClient {
+  private readonly _id?: InputTypeDefID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: InputTypeDefID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this InputTypeDef.
+   */
+  id = async (): Promise<InputTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<InputTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+  fields = async (): Promise<FieldTypeDef[]> => {
+    type fields = {
+      id: FieldTypeDefID
+    }
+
+    const response: Awaited<fields[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "fields",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new FieldTypeDef(
+          {
+            queryTree: [
+              {
+                operation: "loadFieldTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+/**
  * A definition of a custom interface defined in a Module.
  */
 export class InterfaceTypeDef extends BaseClient {
@@ -4754,6 +4892,23 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Retrieves the module with the given description
+   * @param description The description to set
+   */
+  withDescription = (description: string): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * This module plus the given Interface type and associated functions
    */
   withInterface = (iface: TypeDef): Module_ => {
@@ -5141,6 +5296,7 @@ export class ObjectTypeDef extends BaseClient {
 export class Port extends BaseClient {
   private readonly _id?: PortID = undefined
   private readonly _description?: string = undefined
+  private readonly _experimentalSkipHealthcheck?: boolean = undefined
   private readonly _port?: number = undefined
   private readonly _protocol?: NetworkProtocol = undefined
 
@@ -5151,6 +5307,7 @@ export class Port extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: PortID,
     _description?: string,
+    _experimentalSkipHealthcheck?: boolean,
     _port?: number,
     _protocol?: NetworkProtocol
   ) {
@@ -5158,6 +5315,7 @@ export class Port extends BaseClient {
 
     this._id = _id
     this._description = _description
+    this._experimentalSkipHealthcheck = _experimentalSkipHealthcheck
     this._port = _port
     this._protocol = _protocol
   }
@@ -5192,6 +5350,23 @@ export class Port extends BaseClient {
         ...this._queryTree,
         {
           operation: "description",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+  experimentalSkipHealthcheck = async (): Promise<boolean> => {
+    if (this._experimentalSkipHealthcheck) {
+      return this._experimentalSkipHealthcheck
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "experimentalSkipHealthcheck",
         },
       ],
       await this._ctx.connection()
@@ -5776,6 +5951,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a InputTypeDef from its ID.
+   */
+  loadInputTypeDefFromID = (id: InputTypeDefID): InputTypeDef => {
+    return new InputTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadInputTypeDefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a InterfaceTypeDef from its ID.
    */
   loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
@@ -5928,6 +6119,22 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadSocketFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a Terminal from its ID.
+   */
+  loadTerminalFromID = (id: TerminalID): Terminal => {
+    return new Terminal({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadTerminalFromID",
           args: { id },
         },
       ],
@@ -6155,6 +6362,7 @@ export class Service extends BaseClient {
   private readonly _hostname?: string = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
+  private readonly _up?: Void = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -6165,7 +6373,8 @@ export class Service extends BaseClient {
     _endpoint?: string,
     _hostname?: string,
     _start?: ServiceID,
-    _stop?: ServiceID
+    _stop?: ServiceID,
+    _up?: Void
   ) {
     super(parent)
 
@@ -6174,6 +6383,7 @@ export class Service extends BaseClient {
     this._hostname = _hostname
     this._start = _start
     this._stop = _stop
+    this._up = _up
   }
 
   /**
@@ -6319,6 +6529,28 @@ export class Service extends BaseClient {
 
     return this
   }
+
+  /**
+   * Creates a tunnel that forwards traffic from the caller's network to this service.
+   */
+  up = async (opts?: ServiceUpOpts): Promise<Void> => {
+    if (this._up) {
+      return this._up
+    }
+
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "up",
+          args: { ...opts },
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
 }
 
 /**
@@ -6352,6 +6584,70 @@ export class Socket extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+}
+
+/**
+ * An interactive terminal that clients can connect to.
+ */
+export class Terminal extends BaseClient {
+  private readonly _id?: TerminalID = undefined
+  private readonly _websocketEndpoint?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: TerminalID,
+    _websocketEndpoint?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._websocketEndpoint = _websocketEndpoint
+  }
+
+  /**
+   * A unique identifier for this Terminal.
+   */
+  id = async (): Promise<TerminalID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<TerminalID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * An http endpoint at which this terminal can be connected to over a websocket.
+   */
+  websocketEndpoint = async (): Promise<string> => {
+    if (this._websocketEndpoint) {
+      return this._websocketEndpoint
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "websocketEndpoint",
         },
       ],
       await this._ctx.connection()
@@ -6404,6 +6700,17 @@ export class TypeDef extends BaseClient {
     )
 
     return response
+  }
+  asInput = (): InputTypeDef => {
+    return new InputTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asInput",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
   asInterface = (): InterfaceTypeDef => {
     return new InterfaceTypeDef({

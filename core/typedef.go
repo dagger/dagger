@@ -280,6 +280,7 @@ type TypeDef struct {
 	AsList      dagql.Nullable[*ListTypeDef]      `field:"true" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
 	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
 	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
+	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
 }
 
 func (typeDef TypeDef) Clone() *TypeDef {
@@ -292,6 +293,9 @@ func (typeDef TypeDef) Clone() *TypeDef {
 	}
 	if typeDef.AsInterface.Valid {
 		cp.AsInterface.Value = typeDef.AsInterface.Value.Clone()
+	}
+	if typeDef.AsInput.Valid {
+		cp.AsInput.Value = typeDef.AsInput.Value.Clone()
 	}
 	return &cp
 }
@@ -324,6 +328,8 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value}
 	case TypeDefKindVoid:
 		typed = Void{}
+	case TypeDefKindInput:
+		typed = typeDef.AsInput.Value.ToInputObjectSpec()
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -734,6 +740,50 @@ func (typeDef ListTypeDef) Clone() *ListTypeDef {
 	return &cp
 }
 
+type InputTypeDef struct {
+	Name   string          `field:"true" doc:"The name of the input object."`
+	Fields []*FieldTypeDef `field:"true" doc:"Static fields defined on this input object, if any."`
+}
+
+func (*InputTypeDef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "InputTypeDef",
+		NonNull:   true,
+	}
+}
+
+func (*InputTypeDef) TypeDescription() string {
+	return `A graphql input type, which is essentially just a group of named args.
+This is currently only used to represent pre-existing usage of graphql input types
+in the core API. It is not used by user modules and shouldn't ever be as user
+module accept input objects via their id rather than graphql input types.`
+}
+
+func (typeDef InputTypeDef) Clone() *InputTypeDef {
+	cp := typeDef
+
+	cp.Fields = make([]*FieldTypeDef, len(typeDef.Fields))
+	for i, field := range typeDef.Fields {
+		cp.Fields[i] = field.Clone()
+	}
+
+	return &cp
+}
+
+func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
+	spec := dagql.InputObjectSpec{
+		Name: typeDef.Name,
+	}
+	for _, field := range typeDef.Fields {
+		spec.Fields = append(spec.Fields, dagql.InputSpec{
+			Name:        field.Name,
+			Description: field.Description,
+			Type:        field.TypeDef.ToInput(),
+		})
+	}
+	return spec
+}
+
 type TypeDefKind string
 
 func (k TypeDefKind) String() string {
@@ -759,6 +809,9 @@ var (
 		`A named type of functions that can be matched+implemented by other
 		objects+interfaces.`,
 		"Always paired with an InterfaceTypeDef.")
+	TypeDefKindInput = TypeDefKinds.Register("INPUT_KIND",
+		`A graphql input type, used only when representing the core API via TypeDefs.`,
+	)
 	TypeDefKindVoid = TypeDefKinds.Register("VOID_KIND",
 		"A special kind used to signify that no value is returned.",
 		`This is used for functions that have no return value. The outer TypeDef

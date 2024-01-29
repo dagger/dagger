@@ -333,14 +333,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-     *
-     * Primarily intended for internal use with the dagger CLI.
+     * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
      */
-    public function shellEndpoint(): string
+    public function shell(?array $args = null): Terminal
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('shellEndpoint');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'shellEndpoint');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('shell');
+        if (null !== $args) {
+        $innerQueryBuilder->setArgument('args', $args);
+        }
+        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -391,6 +392,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     public function withDefaultArgs(array $args): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultArgs');
+        $innerQueryBuilder->setArgument('args', $args);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the default command to invoke for the "shell" API.
+     */
+    public function withDefaultShell(array $args): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultShell');
         $innerQueryBuilder->setArgument('args', $args);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -497,6 +508,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         int $port,
         ?NetworkProtocol $protocol = null,
         ?string $description = null,
+        ?bool $experimentalSkipHealthcheck = false,
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExposedPort');
@@ -506,6 +518,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $experimentalSkipHealthcheck) {
+        $innerQueryBuilder->setArgument('experimentalSkipHealthcheck', $experimentalSkipHealthcheck);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

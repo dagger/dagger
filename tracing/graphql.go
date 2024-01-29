@@ -62,15 +62,26 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			slog.Warn("failed to digest id", "id", id.Display(), "err", err)
 			return next(ctx)
 		}
-		payload, resolveErr := anypb.New(id)
-		if resolveErr != nil {
-			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", resolveErr)
-			return next(ctx)
-		}
-		vtx := rec.Vertex(dig, id.Field, progrock.Internal())
+		// TODO: we don't need this for anything yet
+		// inputs, err := id.Inputs()
+		// if err != nil {
+		// 	slog.Warn("failed to digest inputs", "id", id.Display(), "err", err)
+		// 	return next(ctx)
+		// }
+		vtx := rec.Vertex(dig, id.Field,
+			// progrock.WithInputs(inputs...),
+			// TODO: these really shouldn't be internal, but for backwards
+			// compatibility we don't want to overwhelm the TUI with a bunch of
+			// vertices.
+			progrock.Internal())
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 
+		payload, err := anypb.New(id)
+		if err != nil {
+			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
+			return next(ctx)
+		}
 		// send ID payload to the frontend
 		vtx.Meta("id", payload)
 
@@ -81,11 +92,12 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			}
 		}
 
-		// group any future vertices (e.g. from Buildkit) under this one
-		rec = rec.WithGroup(id.Field, progrock.WithGroupID(dig.String()))
+		// group any self-calls or Buildkit vertices beneath this vertex
+		rec = rec.WithParent(dig.String())
 
 		// call the resolver with progrock wired up
 		ctx = progrock.ToContext(ctx, rec)
+
 		res, resolveErr := next(ctx)
 
 		if resolveErr != nil {
@@ -94,8 +106,13 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			slog.Warn("error resolving "+id.Display(), "error", resolveErr)
 		}
 
+		// record an object result as an output of this vertex
+		//
+		// this allows the UI to "simplify" this ID back to its creator ID when it
+		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
+		// instead of the full container().from().[...].stdout() ID
 		if obj, ok := res.(dagql.Object); ok {
-			objDigest, err := obj.ID().Canonical().Digest()
+			objDigest, err := obj.ID().Digest()
 			if err != nil {
 				slog.Error("failed to digest object", "id", id.Display(), "err", err)
 			} else {

@@ -13,13 +13,12 @@ from gql.transport.exceptions import (
     TransportQueryError,
     TransportServerError,
 )
+from gql.transport.httpx import HTTPXAsyncTransport
 from typing_extensions import Self
 
 from dagger import ClientConnectionError
 from dagger._config import ConnectConfig, Retry
 from dagger._managers import ResourceManager
-
-from ._transport.httpx import HTTPXAsyncTransport
 
 logger = logging.getLogger(__name__)
 

@@ -334,6 +334,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a InputTypeDef from its ID.
+     */
+    public function loadInputTypeDefFromID(InputTypeDefId|InputTypeDef $id): InputTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadInputTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\InputTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a InterfaceTypeDef from its ID.
      */
     public function loadInterfaceTypeDefFromID(InterfaceTypeDefId|InterfaceTypeDef $id): InterfaceTypeDef
@@ -431,6 +441,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSocketFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Terminal from its ID.
+     */
+    public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTerminalFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

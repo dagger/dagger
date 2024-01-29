@@ -336,11 +336,11 @@ func (svc *Service) startContainer(
 		execOp.Meta.ProxyEnv = &pb.ProxyEnv{}
 	}
 
-	execOp.Meta.ProxyEnv.FtpProxy, err = buildkit.ContainerExecUncachedMetadata{
+	execMeta := buildkit.ContainerExecUncachedMetadata{
 		ParentClientIDs: clientMetadata.ClientIDs(),
 		ServerID:        clientMetadata.ServerID,
-		ProgSockPath:    bk.ProgSockPath,
-	}.ToPBFtpProxyVal()
+	}
+	execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 	if err != nil {
 		return nil, err
 	}

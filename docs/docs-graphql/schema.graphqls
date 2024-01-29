@@ -319,11 +319,15 @@ type Container {
   rootfs: Directory!
 
   """
-  Return a websocket endpoint that, if connected to, will start the container with a TTY streamed over the websocket.
-  
-  Primarily intended for internal use with the dagger CLI.
+  Return an interactive terminal for this container using its configured shell
+  if not overridden by args (or sh as a fallback default).
   """
-  shellEndpoint: String!
+  shell(
+    """
+    If set, override the container's default shell and invoke these arguments instead.
+    """
+    args: [String!]
+  ): Terminal!
 
   """
   The error stream of the last executed command.
@@ -354,6 +358,12 @@ type Container {
     """
     Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     """
+    args: [String!]!
+  ): Container!
+
+  """Set the default command to invoke for the "shell" API."""
+  withDefaultShell(
+    """The args of the command to set the default shell to."""
     args: [String!]!
   ): Container!
 
@@ -470,6 +480,9 @@ type Container {
   withExposedPort(
     """Optional port description"""
     description: String
+
+    """Skip the health check when run as a service."""
+    experimentalSkipHealthcheck: Boolean = false
 
     """Port number to expose"""
     port: Int!
@@ -1351,6 +1364,25 @@ enum ImageMediaTypes {
   DockerMediaTypes
 }
 
+"""
+A graphql input type, which is essentially just a group of named args.
+This is currently only used to represent pre-existing usage of graphql input types
+in the core API. It is not used by user modules and shouldn't ever be as user
+module accept input objects via their id rather than graphql input types.
+"""
+type InputTypeDef {
+  fields: [FieldTypeDef!]!
+
+  """A unique identifier for this InputTypeDef."""
+  id: InputTypeDefID!
+  name: String!
+}
+
+"""
+The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+"""
+scalar InputTypeDefID
+
 """A definition of a custom interface defined in a Module."""
 type InterfaceTypeDef {
   description: String!
@@ -1400,7 +1432,7 @@ scalar ListTypeDefID
 type Module {
   dependencies: [Module!]!
   dependencyConfig: [String!]!
-  description: String
+  description: String!
   generatedCode: GeneratedCode!
 
   """A unique identifier for this Module."""
@@ -1422,6 +1454,12 @@ type Module {
   serve: Void
   sourceDirectory: Directory!
   sourceDirectorySubpath: String!
+
+  """Retrieves the module with the given description"""
+  withDescription(
+    """The description to set"""
+    description: String!
+  ): Module!
 
   """This module plus the given Interface type and associated functions"""
   withInterface(iface: TypeDefID!): Module!
@@ -1517,6 +1555,7 @@ scalar Platform
 """A port exposed by a container."""
 type Port {
   description: String
+  experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
   id: PortID!
@@ -1707,6 +1746,9 @@ type Query {
   """Load a Host from its ID."""
   loadHostFromID(id: HostID!): Host!
 
+  """Load a InputTypeDef from its ID."""
+  loadInputTypeDefFromID(id: InputTypeDefID!): InputTypeDef!
+
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
 
@@ -1736,6 +1778,9 @@ type Query {
 
   """Load a Socket from its ID."""
   loadSocketFromID(id: SocketID!): Socket!
+
+  """Load a Terminal from its ID."""
+  loadTerminalFromID(id: TerminalID!): Terminal!
 
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
@@ -1836,6 +1881,11 @@ type Service {
 
   """Stop the service."""
   stop: ServiceID!
+
+  """
+  Creates a tunnel that forwards traffic from the caller's network to this service.
+  """
+  up(native: Boolean = false, ports: [PortForward!] = []): Void
 }
 
 """
@@ -1854,8 +1904,25 @@ The `SocketID` scalar type represents an identifier for an object of type Socket
 """
 scalar SocketID
 
+"""An interactive terminal that clients can connect to."""
+type Terminal {
+  """A unique identifier for this Terminal."""
+  id: TerminalID!
+
+  """
+  An http endpoint at which this terminal can be connected to over a websocket.
+  """
+  websocketEndpoint: String!
+}
+
+"""
+The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+"""
+scalar TerminalID
+
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
+  asInput: InputTypeDef
   asInterface: InterfaceTypeDef
   asList: ListTypeDef
   asObject: ObjectTypeDef
@@ -1949,6 +2016,11 @@ enum TypeDefKind {
   Always paired with an InterfaceTypeDef.
   """
   INTERFACE_KIND
+
+  """
+  A graphql input type, used only when representing the core API via TypeDefs.
+  """
+  INPUT_KIND
 
   """
   A special kind used to signify that no value is returned.

@@ -80,6 +80,9 @@ type Container struct {
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
 	Focused bool `json:"focused"`
+
+	// The args to invoke when using the "shell" api on this container.
+	DefaultShell []string `json:"defaultShell,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
@@ -1720,7 +1723,7 @@ func metaMount(stdin string) (llb.State, string) {
 	// TODO(vito): have the shim exec as the other user instead?
 	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
 	if stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o600, []byte(stdin))
+		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o666, []byte(stdin))
 	}
 
 	return llb.Scratch().File(

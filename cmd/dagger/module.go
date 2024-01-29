@@ -489,191 +489,98 @@ func loadMod(ctx context.Context, c *dagger.Client) (*dagger.Module, error) {
 // loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
 	var res struct {
-		Mod struct {
-			Name string
-		}
 		TypeDefs []*modTypeDef
 	}
 
+	const query = `
+fragment TypeDefRefParts on TypeDef {
+	kind
+	optional
+	asObject {
+			name
+	}
+	asInterface {
+			name
+	}
+	asInput {
+			name
+	}
+	asList {
+			elementTypeDef {
+					kind
+					asObject {
+							name
+					}
+					asInterface {
+							name
+					}
+					asInput {
+							name
+					}
+			}
+	}
+}
+
+fragment FunctionParts on Function {
+	name
+	description
+	returnType {
+		...TypeDefRefParts
+	}
+	args {
+		name
+		description
+		defaultValue
+		typeDef {
+			...TypeDefRefParts
+		}
+	}
+}
+
+fragment FieldParts on FieldTypeDef {
+	name
+	description
+	typeDef {
+		...TypeDefRefParts
+	}
+}
+
+query TypeDefs($module: ModuleID!) {
+	typeDefs: currentTypeDefs {
+		kind
+		optional
+		asObject {
+			name
+			sourceModuleName
+			constructor {
+				...FunctionParts
+			}
+			functions {
+				...FunctionParts
+			}
+			fields {
+				...FieldParts
+			}
+		}
+		asInterface {
+			name
+			sourceModuleName
+			functions {
+				...FunctionParts
+			}
+		}
+		asInput {
+			name
+			fields {
+				...FieldParts
+			}
+		}
+	}
+}
+`
+
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `
-            query Objects($module: ModuleID!) {
-                mod: loadModuleFromID(id: $module) {
-                    name
-                }
-                typeDefs: currentTypeDefs {
-                    kind
-                    optional
-                    asObject {
-                        name
-                        sourceModuleName
-                        constructor {
-                            returnType {
-                                kind
-                                asObject {
-                                    name
-                                }
-                            }
-                            args {
-                                name
-                                description
-                                defaultValue
-                                typeDef {
-                                    kind
-                                    optional
-                                    asObject {
-                                        name
-                                    }
-                                    asInterface {
-                                        name
-                                    }
-                                    asList {
-                                        elementTypeDef {
-                                            kind
-                                            asObject {
-                                                name
-                                            }
-                                            asInterface {
-                                                name
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        functions {
-                            name
-                            description
-                            returnType {
-                                kind
-                                asObject {
-                                    name
-                                }
-                                asInterface {
-                                    name
-                                }
-                                asList {
-                                    elementTypeDef {
-                                        kind
-                                        asObject {
-                                            name
-                                        }
-                                        asInterface {
-                                            name
-                                        }
-                                    }
-                                }
-                            }
-                            args {
-                                name
-                                description
-                                defaultValue
-                                typeDef {
-                                    kind
-                                    optional
-                                    asObject {
-                                        name
-                                    }
-                                    asInterface {
-                                        name
-                                    }
-                                    asList {
-                                        elementTypeDef {
-                                            kind
-                                            asObject {
-                                                name
-                                            }
-                                            asInterface {
-                                                name
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        fields {
-                            name
-                            description
-                            typeDef {
-                                kind
-                                optional
-                                asObject {
-                                    name
-                                }
-                                asInterface {
-                                    name
-                                }
-                                asList {
-                                    elementTypeDef {
-                                        kind
-                                        asObject {
-                                            name
-                                        }
-                                        asInterface {
-                                            name
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    asInterface {
-                        name
-                        sourceModuleName
-                        functions {
-                            name
-                            description
-                            returnType {
-                                kind
-                                asObject {
-                                    name
-                                }
-                                asInterface {
-                                    name
-                                }
-                                asList {
-                                    elementTypeDef {
-                                        kind
-                                        asObject {
-                                            name
-                                        }
-                                        asInterface {
-                                            name
-                                        }
-                                    }
-                                }
-                            }
-                            args {
-                                name
-                                description
-                                defaultValue
-                                typeDef {
-                                    kind
-                                    optional
-                                    asObject {
-                                        name
-                                    }
-                                    asInterface {
-                                        name
-                                    }
-                                    asList {
-                                        elementTypeDef {
-                                            kind
-                                            asObject {
-                                                name
-                                            }
-                                            asInterface {
-                                                name
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        `,
+		Query: query,
 		Variables: map[string]interface{}{
 			"module": mod,
 		},
@@ -684,13 +591,20 @@ func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module
 		return nil, fmt.Errorf("query module objects: %w", err)
 	}
 
-	modDef := &moduleDef{Name: res.Mod.Name}
+	name, err := mod.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get module name: %w", err)
+	}
+
+	modDef := &moduleDef{Name: name}
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
 		case dagger.ObjectKind:
 			modDef.Objects = append(modDef.Objects, typeDef)
 		case dagger.InterfaceKind:
 			modDef.Interfaces = append(modDef.Interfaces, typeDef)
+		case dagger.InputKind:
+			modDef.Inputs = append(modDef.Inputs, typeDef)
 		}
 	}
 	return modDef, nil
@@ -701,6 +615,7 @@ type moduleDef struct {
 	Name       string
 	Objects    []*modTypeDef
 	Interfaces []*modTypeDef
+	Inputs     []*modTypeDef
 }
 
 func (m *moduleDef) AsFunctionProviders() []functionProvider {
@@ -730,6 +645,16 @@ func (m *moduleDef) AsInterfaces() []*modInterface {
 	for _, typeDef := range m.Interfaces {
 		if typeDef.AsInterface != nil {
 			defs = append(defs, typeDef.AsInterface)
+		}
+	}
+	return defs
+}
+
+func (m *moduleDef) AsInputs() []*modInput {
+	var defs []*modInput
+	for _, typeDef := range m.Inputs {
+		if typeDef.AsInput != nil {
+			defs = append(defs, typeDef.AsInput)
 		}
 	}
 	return defs
@@ -768,6 +693,17 @@ func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
 	return nil
 }
 
+// GetInput retrieves a saved interface type definition from the module.
+func (m *moduleDef) GetInput(name string) *modInput {
+	for _, input := range m.AsInputs() {
+		// Normalize name in case an SDK uses a different convention for input names.
+		if gqlObjectName(input.Name) == gqlObjectName(name) {
+			return input
+		}
+	}
+	return nil
+}
+
 func (m *moduleDef) GetMainObject() *modObject {
 	return m.GetObject(m.Name)
 }
@@ -788,6 +724,12 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 			typeDef.AsInterface = iface
 		}
 	}
+	if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
+		input := m.GetInput(typeDef.AsInput.Name)
+		if input != nil {
+			typeDef.AsInput = input
+		}
+	}
 	if typeDef.AsList != nil {
 		m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
 	}
@@ -799,6 +741,7 @@ type modTypeDef struct {
 	Optional    bool
 	AsObject    *modObject
 	AsInterface *modInterface
+	AsInput     *modInput
 	AsList      *modList
 }
 
@@ -900,6 +843,11 @@ func (o *modInterface) GetFunction(name string) (*modFunction, error) {
 		}
 	}
 	return nil, fmt.Errorf("no function '%s' in interface type '%s'", name, o.Name)
+}
+
+type modInput struct {
+	Name   string
+	Fields []*modField
 }
 
 // modList is a representation of dagger.ListTypeDef.

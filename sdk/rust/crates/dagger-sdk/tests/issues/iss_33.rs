@@ -12,6 +12,7 @@ async fn test_issue_30_alt() -> eyre::Result<()> {
             ContainerWithExposedPortOpts {
                 protocol: Some(NetworkProtocol::Tcp),
                 description: None,
+                experimental_skip_healthcheck: None,
             },
         )
         .with_exposed_port_opts(
@@ -19,6 +20,7 @@ async fn test_issue_30_alt() -> eyre::Result<()> {
             ContainerWithExposedPortOpts {
                 protocol: Some(NetworkProtocol::Udp),
                 description: None,
+                experimental_skip_healthcheck: None,
             },
         )
         .with_exec(vec!["echo", "hello"])

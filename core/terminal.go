@@ -16,16 +16,37 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 )
 
-func (container *Container) ShellEndpoint(svcID *idproto.ID) (string, http.Handler, error) {
-	shellID, err := svcID.Digest()
-	if err != nil {
-		return "", nil, err
+type Terminal struct {
+	Endpoint string `json:"endpoint"`
+}
+
+func (*Terminal) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Terminal",
+		NonNull:   true,
 	}
-	endpoint := "shells/" + shellID.Encoded()
-	return endpoint, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+}
+
+func (*Terminal) TypeDescription() string {
+	return "An interactive terminal that clients can connect to."
+}
+
+func (term *Terminal) WebsocketURL() string {
+	return fmt.Sprintf("ws://dagger/%s", term.Endpoint)
+}
+
+func (container *Container) Terminal(svcID *idproto.ID, args []string) (*Terminal, http.Handler, error) {
+	termID, err := svcID.Digest()
+	if err != nil {
+		return nil, nil, err
+	}
+	endpoint := "terminals/" + termID.Encoded()
+	term := &Terminal{Endpoint: endpoint}
+	return term, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
 		if err != nil {
 			panic(err)
@@ -34,34 +55,45 @@ func (container *Container) ShellEndpoint(svcID *idproto.ID) (string, http.Handl
 		var upgrader = websocket.Upgrader{}
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			bklog.G(r.Context()).WithError(err).Error("shell handler failed to upgrade")
+			bklog.G(r.Context()).WithError(err).Error("terminal handler failed to upgrade")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		defer ws.Close()
 
-		bklog.G(r.Context()).Debugf("shell handler for %s has been upgraded", endpoint)
-		defer bklog.G(context.Background()).Debugf("shell handler for %s finished", endpoint)
+		bklog.G(r.Context()).Debugf("terminal handler for %s has been upgraded", endpoint)
+		defer bklog.G(context.Background()).Debugf("terminal handler for %s finished", endpoint)
 
-		if err := container.runShell(r.Context(), svcID, ws, clientMetadata); err != nil {
-			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
+		if err := container.runTerminal(r.Context(), svcID, ws, clientMetadata, args); err != nil {
+			bklog.G(r.Context()).WithError(err).Error("terminal handler failed")
 			err = ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			if err != nil {
-				bklog.G(r.Context()).WithError(err).Error("shell handler failed to write close message")
+				bklog.G(r.Context()).WithError(err).Error("terminal handler failed to write close message")
 			}
 		}
 	}), nil
 }
 
-func (container *Container) runShell(
+func (container *Container) runTerminal(
 	ctx context.Context,
 	svcID *idproto.ID,
 	conn *websocket.Conn,
 	clientMetadata *engine.ClientMetadata,
+	args []string,
 ) error {
+	container = container.Clone()
+
+	container, err := container.WithExec(ctx, ContainerExecOpts{
+		Args:           args,
+		SkipEntrypoint: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create container for interactive terminal: %w", err)
+	}
+
 	svc, err := container.Service(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
 
 	eg, egctx := errgroup.WithContext(ctx)
