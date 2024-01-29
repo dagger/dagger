@@ -12,13 +12,13 @@ import (
 func TestModuleDaggerCallArgTypes(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	t.Run("service args", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("used as service binding", func(t *testing.T) {
 			t.Parallel()
+
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -56,6 +56,8 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 
 		t.Run("used directly", func(t *testing.T) {
 			t.Parallel()
+
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -107,6 +109,8 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 	t.Run("list args", func(t *testing.T) {
 		t.Parallel()
 
+		c, ctx := connect(t)
+
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -157,6 +161,8 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 
 		t.Run("local dir", func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
+
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -188,6 +194,7 @@ func (m *Test) Fn(dir *Directory) *Directory {
 
 		t.Run("git dir", func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -224,7 +231,6 @@ func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
 			} {
 				tc := tc
 				t.Run(fmt.Sprintf("%s:%s", tc.baseURL, tc.subpath), func(t *testing.T) {
-					t.Parallel()
 					url := tc.baseURL + "#v0.9.1"
 					if tc.subpath != "" {
 						url += ":" + tc.subpath
@@ -247,6 +253,7 @@ func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
 
 	t.Run("secret args", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -268,15 +275,12 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
 
 		t.Run("explicit env", func(t *testing.T) {
-			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "shhh", strings.TrimSpace(out))
 			})
 			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
 				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
@@ -285,50 +289,41 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 		t.Run("implicit env", func(t *testing.T) {
 			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "shhh", strings.TrimSpace(out))
 			})
 			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
 				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
 		t.Run("file", func(t *testing.T) {
-			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "file shhh", strings.TrimSpace(out))
 			})
 			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
 				require.ErrorContains(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
 			})
 		})
 
 		t.Run("cmd", func(t *testing.T) {
-			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "cmd shhh", strings.TrimSpace(out))
 			})
 			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "cmd:exit 1")).Stdout(ctx)
 				require.ErrorContains(t, err, `failed to run secret command "exit 1": exit status 1`)
 			})
 		})
 
 		t.Run("invalid source", func(t *testing.T) {
-			t.Parallel()
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
 			require.ErrorContains(t, err, `unsupported secret arg source: "wtf"`)
 		})
@@ -338,10 +333,10 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 func TestModuleDaggerCallReturnTypes(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	t.Run("return list objects", func(t *testing.T) {
 		t.Parallel()
+
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -369,14 +364,12 @@ func (m *Minimal) Fn() []*Foo {
 		expected := "0\n1\n2"
 
 		t.Run("print", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expected, strings.TrimSpace(out))
 		})
 
 		t.Run("output", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.
 				With(daggerCall("fn", "bar", "-o", "./outfile")).
 				File("./outfile").
@@ -386,7 +379,6 @@ func (m *Minimal) Fn() []*Foo {
 		})
 
 		t.Run("json", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.
 				With(daggerCall("fn", "bar", "--json")).
 				Stdout(ctx)
@@ -397,6 +389,7 @@ func (m *Minimal) Fn() []*Foo {
 
 	t.Run("return container", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -418,7 +411,6 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(t *testing.T) {
-			t.Parallel()
 			ctr := modGen.With(daggerCall("ctr"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
@@ -429,7 +421,6 @@ type Test struct {
 		})
 
 		t.Run("output", func(t *testing.T) {
-			t.Parallel()
 			modGen, err := modGen.With(daggerCall("ctr", "-o", "./container.tar")).Sync(ctx)
 			require.NoError(t, err)
 			size, err := modGen.File("./container.tar").Size(ctx)
@@ -442,6 +433,7 @@ type Test struct {
 
 	t.Run("return directory", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -465,7 +457,6 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(t *testing.T) {
-			t.Parallel()
 			ctr := modGen.With(daggerCall("dir"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
@@ -476,7 +467,6 @@ type Test struct {
 		})
 
 		t.Run("output", func(t *testing.T) {
-			t.Parallel()
 			modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
 			require.NoError(t, err)
 
@@ -496,6 +486,7 @@ type Test struct {
 
 	t.Run("return file", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -519,7 +510,6 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(t *testing.T) {
-			t.Parallel()
 			ctr := modGen.With(daggerCall("file"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
@@ -530,7 +520,6 @@ type Test struct {
 		})
 
 		t.Run("output", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.
 				With(daggerCall("file", "-o", "./outfile")).
 				File("./outfile").
@@ -542,6 +531,7 @@ type Test struct {
 
 	t.Run("sync", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -570,10 +560,9 @@ type Test struct {
 func TestModuleDaggerCallCoreChaining(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	t.Run("container", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -593,14 +582,12 @@ type Test struct {
 			})
 
 		t.Run("file", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "3.18.5", strings.TrimSpace(out))
 		})
 
 		t.Run("export", func(t *testing.T) {
-			t.Parallel()
 			modGen, err := modGen.With(daggerCall("ctr", "export", "--path=./container.tar.gz")).Sync(ctx)
 			require.NoError(t, err)
 			size, err := modGen.File("./container.tar.gz").Size(ctx)
@@ -611,6 +598,7 @@ type Test struct {
 
 	t.Run("directory", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -632,14 +620,12 @@ type Test struct {
 			})
 
 		t.Run("file", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.With(daggerCall("dir", "file", "--path=foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "foo", strings.TrimSpace(out))
 		})
 
 		t.Run("export", func(t *testing.T) {
-			t.Parallel()
 			modGen, err := modGen.With(daggerCall("dir", "export", "--path=./outdir")).Sync(ctx)
 			require.NoError(t, err)
 			ents, err := modGen.Directory("./outdir").Entries(ctx)
@@ -650,6 +636,7 @@ type Test struct {
 
 	t.Run("return file", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -671,14 +658,12 @@ type Test struct {
 			})
 
 		t.Run("size", func(t *testing.T) {
-			t.Parallel()
 			out, err := modGen.With(daggerCall("file", "size")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "3", strings.TrimSpace(out))
 		})
 
 		t.Run("export", func(t *testing.T) {
-			t.Parallel()
 			modGen, err := modGen.With(daggerCall("file", "export", "--path=./outfile")).Sync(ctx)
 			require.NoError(t, err)
 			contents, err := modGen.File("./outfile").Contents(ctx)
@@ -718,7 +703,6 @@ func (t *Test) File() *File {
 	logGen(ctx, t, modGen.Directory("."))
 
 	t.Run("truncate file", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.
 			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
 				Contents: "foobar",
@@ -731,13 +715,11 @@ func (t *Test) File() *File {
 	})
 
 	t.Run("not a file", func(t *testing.T) {
-		t.Parallel()
 		_, err := modGen.With(daggerCall("hello", "-o", ".")).Sync(ctx)
 		require.ErrorContains(t, err, "is a directory")
 	})
 
 	t.Run("allow dir for file", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.
 			With(daggerCall("file", "-o", ".")).
 			File("foo.txt").
@@ -747,13 +729,10 @@ func (t *Test) File() *File {
 	})
 
 	t.Run("create parent dirs", func(t *testing.T) {
-		t.Parallel()
-
 		ctr, err := modGen.With(daggerCall("hello", "-o", "foo/bar.txt")).Sync(ctx)
 		require.NoError(t, err)
 
 		t.Run("print success", func(t *testing.T) {
-			t.Parallel()
 			// should print success to stderr so it doesn't interfere with piping output
 			out, err := ctr.Stderr(ctx)
 			require.NoError(t, err)
@@ -761,14 +740,12 @@ func (t *Test) File() *File {
 		})
 
 		t.Run("check directory permissions", func(t *testing.T) {
-			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "755", strings.TrimSpace(out))
 		})
 
 		t.Run("check file permissions", func(t *testing.T) {
-			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo/bar.txt"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "644", strings.TrimSpace(out))
@@ -776,8 +753,6 @@ func (t *Test) File() *File {
 	})
 
 	t.Run("check umask", func(t *testing.T) {
-		t.Parallel()
-
 		ctr, err := modGen.
 			WithNewFile("/entrypoint.sh", dagger.ContainerWithNewFileOpts{
 				Contents: `#!/bin/sh
@@ -792,14 +767,12 @@ exec "$@"
 		require.NoError(t, err)
 
 		t.Run("directory", func(t *testing.T) {
-			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "750", strings.TrimSpace(out))
 		})
 
 		t.Run("file", func(t *testing.T) {
-			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo/bar.txt"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "640", strings.TrimSpace(out))
